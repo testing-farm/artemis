@@ -13,12 +13,13 @@ software configuration of each guest. Requests are matched with one or more *poo
 provisioning service like AWS, Azure or private OpenStack instance, each with its own set of available machine
 setups it can provide - and a machine is acquired from the most suitable pool.
 
-Requests are sorted into several *priority groups* - given that pools may not have infinite resources,
-some priority groups may be more important than others.
-
 Each provisioning request is asynchronous by its nature: user submits a request and receives a request ID.
 User then periodically checks status of the request until the request becomes ready. From that moment on,
 until canceled, the guest is available and reserved for the user.
+
+Pools and users deal with limited resources - number of guests, amount of RAM or disk space. Requests are sorted
+into several *priority groups* - given the current usage of resources, some priority groups may become more important
+than others. Pools and users are given limits on how many resources they can provide or consume, respectively.
 
 **NOTE:** the actual specification of format environment is described depends on other project - we need to
 link these two specs together.
@@ -28,7 +29,7 @@ link these two specs together.
 "User" represents an entity that can provision multiple guests. Rules like resource usage
 limitations may apply to users with different effects.
 
-A user has an ID, called `username`. Users can provision guests and own SSH keys.
+A user has an ID, called `username`. Users can own SSH keys, manage pools (when allowed) and provision guests.
 
 ### Create user [POST /users]
 
@@ -222,6 +223,8 @@ A user has an ID, called `username`. Users can provision guests and own SSH keys
 
 When provisioned, a SSH key is configured on the guest to allow access via SSH connection.
 
+A SSH key has an ID, called `keyname`. Each key os owned by one user, and one user may own multiple SSH keys.
+
 ### Create SSH key [POST /ssh-keys]
 
 - Request (application/json)
@@ -336,6 +339,9 @@ When provisioned, a SSH key is configured on the guest to allow access via SSH c
 
 "Guest" stands for a remote machine that accepts SSH connections, and satisfies given environmental requirements.
 
+A guest has an ID, called `guestname`. When user makes a provisioning request, response contains the ID. User may own
+multiple requests, each provisioning one guest.
+
 ### Create guest request [POST /guests]
 
 - Request (application/json)
@@ -421,6 +427,8 @@ When provisioned, a SSH key is configured on the guest to allow access via SSH c
 ## Pools [/pools]
 
 Pools are sources of guests - given the requested environment and current state of things, the service would pick one of the pools to satisfy the request.
+
+A pool has an ID, called `poolname`. Privileged users can manage pools (adding, removing, changing settings and so on).
 
 ### Inspect pool [GET /pools/{poolname}]
 
