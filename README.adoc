@@ -1,8 +1,3 @@
----
-layout: page
-permalink: /README.html
-nav_exclude: true
----
 = Artemis
 
 *Artemis* is a machine provisioning service. Its goal is to provision a machine - using a set of preconfigured providers as backends - which would satisfy the given hardware and software requirements.
