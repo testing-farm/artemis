@@ -1,0 +1,612 @@
+FORMAT: 1A
+HOST: https://artemis6.docs.apiary.io
+
+# Artemis
+
+This document describes version **0.0.1** of the API. All endpoints must start with `/v0.0.1/` prefix.
+
+**Artemis** is an API of a machine provisioning service. Its goal is to provision a machine - using a set of
+preconfigured providers as backends - which would satisfy the given hardware and software r.
+
+After adding one or more *SSH keys*, users request provisioning of *guests*, describing the desired hardware and
+software configuration of each guest. Requests are matched with one or more *pools* - each pool represents one
+provisioning service like AWS, Azure or private OpenStack instance, each with its own set of available machine
+setups it can provide - and a machine is acquired from the most suitable pool.
+
+Requests are sorted into several *priority groups* - given that pools may not have infinite resources,
+some priority groups may be more important than others.
+
+Each provisioning request is asynchronous by its nature: user submits a request and receives a request ID.
+User then periodically checks status of the request until the request becomes ready. From that moment on,
+until canceled, the guest is available and reserved for the user.
+
+**NOTE:** the actual specification of format environment is described depends on other project - we need to
+link these two specs together.
+
+## Users [/users]
+
+"User" represents an entity that can provision multiple guests. Rules like resource usage
+limitations may apply to users with different effects.
+
+A user has an ID, called `username`. Users can provision guests and own SSH keys.
+
+### Create user [POST /users]
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+    - Attributes (User update)
+
+- Response 201
+
+    - Headers
+
+            Location: /users/{username}
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+### Inspect user [GET /users/{username}]
+
+- Parameters
+
+    - username (string) - ID of the user.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (User info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Inspect user resource usage [GET /users/{username}/resources]
+
+- Parameters
+
+    - username (string) - ID of the user.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (Summary resource usage info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Inspect user authentication token [GET /users/{username}/token]
+
+- Parameters
+
+    - username (string) - ID of the user
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (User token info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Create user authentication token [POST /users/{username}/token]
+
+- Parameters
+
+    - username (string) - ID of the user
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Update user [PUT /users/{username}]
+
+- Parameters
+
+    - username (sring) - ID of the user.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+    - Attributes (User update)
+
+- Response 200
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Delete user [DELETE /users/{username}]
+
+- Parameters
+
+    - username (sring) - ID of the user.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+## SSH Keys [/ssh-keys]
+
+When provisioned, a SSH key is configured on the guest to allow access via SSH connection.
+
+### Create SSH key [POST /ssh-keys]
+
+- Request (application/json)
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+    - Attributes (SSH key update)
+
+- Response 201
+
+    - Headers
+
+            Location: /ssh-keys/{keyname}
+
+- Response 303 (application/json)
+
+    - Attributes (Error)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+### Inspect existing SSH key [GET /ssh-keys/{keyname}]
+
+- Parameters
+
+    - keyname (string) - ID of the key.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (SSH key info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Update SSH key [PUT /ssh-keys/{keyname}]
+
+- Parameters
+
+    - keyname (string) - ID of the key.
+
+- Request (application/json)
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+    - Attributes (SSH key update)
+
+- Response 200
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Delete SSH key [DELETE /ssh-keys/{keyname}]
+
+- Parameters
+
+    - keyname (string) - ID of the key.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+## Guests [/guest]
+
+"Guest" stands for a remote machine that accepts SSH connections, and satisfies given environmental requirements.
+
+### Create guest request [POST /guests]
+
+- Request (application/json)
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+    - Attributes (Guest request)
+
+- Response 201 (application/json)
+
+    - Headers
+
+            Location: /guest/{guestname}
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 500 (application/json)
+
+    - Attributes (Error)
+
+### Inspect guest request [GET /guests/{guestname}]
+
+- Parameters
+
+    - guestname (string) - ID of the guest.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (Guest info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Cancel guest request [DELETE /guests/{guestname}]
+
+- Parameters
+
+    - guestname (string) - ID of the guest.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+## Pools [/pools]
+
+Pools are sources of guests - given the requested environment and current state of things, the service would pick one of the pools to satisfy the request.
+
+### Inspect pool [GET /pools/{poolname}]
+
+- Parameters
+
+    - poolname (string) - ID of the pool.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (Pool info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Inspect pool resource usage [GET /pools/{poolname}/resources]
+
+- Parameters
+
+    - poolname (string) - ID of the pool.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (Summary resource usage info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+## Queue [/queue]
+
+Queue of guest requests.
+
+### Inspect queue content [GET /queue/{priority_group}]
+
+- Parameters
+
+    - priority_group (string) - ID of the priority group.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200
+
+    - Attributes (array[Guest info])
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorNotAuthorized)
+
+## Data Structures
+
+### Error
+
+- message (string, required) - verbose description of the error.
+
+### ErrorNotFound
+
+- message: No such entity (string, required) - verbose description of the error.
+
+### ErrorNotAuthorized
+
+- message: Not authorized to perform this action (string, required) - verbose description of the error.
+
+### User info
+
+- username (string, required) - name of the user.
+
+### User update
+
+- username (string) - name of the user.
+
+### SSH key info
+
+- keyname (string, required) - name of the key. Serves as a key ID.
+- owner (string, required) - name of the user that owns this key.
+- enabled (boolean, required) - whether the key is enabled or not.
+- used_by (number, required) - number of guests using the key.
+
+### SSH key update
+
+- keyname (string, required) - name of the key. Serves as a key ID.
+- enabled (boolean, required) - whether the key is enabled or not.
+- private_key (string) - private part of the SSH key.
+
+### Guest SSH info
+
+- username (string, required) - SSH username to use when logging in.
+- port (number, required)
+- keyname (string, required) - name of the SSH key set up on the guest.
+
+### Guest environment
+
+- requested (Environment, required) - the requested environment.
+- actual (Environment) - an actual environment - it *may* differ from the requested one if the service was allowed to diverge from the request, and it was impossible to follow the request perfectly.
+
+### Environment compose
+
+- name (string) - Name of the compose.
+- url (string) - URL of the compose. If present, it overrides `name`.
+
+### Environment
+
+- arch (string, required) - Architecture.
+- compose (Environment compose, required) - OS compose.
+
+### Guest info
+
+- guestname (string, required) - Name of the guest as specified in a response to a provisioning request.
+- owner (string, required) - Owner of the guest.
+- priority (string, required) - Priority group of the request.
+- environment (Guest environment, required) - Environment descriptions of this guest.
+- address (array[string]) - List of IP addresses of the guest. Valid only when `state` is `ready`.
+- ssh (Guest SSH info) - SSH connection details. Valid only when `state` is `ready`.
+- state (enum) - current state of the guest. Valid only when `state` is `ready`.
+  - error - something wrong happened.
+  - pending - guest request is being evaluate.
+  - provisioning - guest is being provisioned from a pool.
+  - ready - guest is ready and may be used.
+  - condemned - guest is being removed.
+
+### Guest request
+
+- environment (Environment, required) - Requested environment of the guest.
+- keyname (string, required) - SSH key to set up.
+- priority_group (string) - name of a *priority group* the request belongs to.
+
+### Pool info
+
+- poolname (string, required)
+- owner (string, required)
+- requests (object, required)
+  - pending (array[Guest info])
+
+### Resource usage info
+
+- actual (number, required) - current usage.
+- limit (number, required) - hard limit.
+- unit (string, required) - unit used to measure the usage.
+
+### Summary resource usage info
+
+- guests (object, required)
+  - Attributes (Resource usage info)
+- cores (object, required)
+  - Attributes (Resource usage info)
+- ram (object, required)
+  - Attributes (Resource usage info)
+- addresses (object, required)
+  - Attributes (Resource usage info)
+
+### User token info
+
+- token (string, required) - authentication token assigned to this user
