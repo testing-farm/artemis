@@ -1,14 +1,12 @@
 image: "ruby:2.3"
 
-before_script:
-  - gem install apiaryio
-
 stages:
   - deploy
 
-deploy_job:
+publish_apiary:
   stage: deploy
   script:
+    - gem install apiaryio
     - apiary publish --api-name="artemis6" --path "api/apiary.apib"
   only:
     - master
