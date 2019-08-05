@@ -1,0 +1,14 @@
+---
+layout: page
+permalink: /README.html
+nav_exclude: true
+---
+= Artemis
+
+*Artemis* is a machine provisioning service. Its goal is to provision a machine - using a set of preconfigured providers as backends - which would satisfy the given hardware and software requirements.
+
+After adding one or more *SSH keys*, users request provisioning of *guests*, describing the desired hardware and software configuration of each guest. Requests are matched with one or more *pools* - each pool represents one provisioning service like AWS, Azure or private OpenStack instance, each with its own set of available machine setups it can provide - and a machine is acquired from the most suitable pool.
+
+Requests are sorted into several *priority groups* - given that pools may not have infinite resources, some priority groups may be more important than others.
+
+Each provisioning request is asynchronous by its nature: user submits a request and receives a request ID. User then periodically checks status of the request until the request becomes ready. From that moment on, until canceled, the guest is available and reserved for the user.
