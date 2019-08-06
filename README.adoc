@@ -7,3 +7,7 @@ After adding one or more *SSH keys*, users request provisioning of *guests*, des
 Requests are sorted into several *priority groups* - given that pools may not have infinite resources, some priority groups may be more important than others.
 
 Each provisioning request is asynchronous by its nature: user submits a request and receives a request ID. User then periodically checks status of the request until the request becomes ready. From that moment on, until canceled, the guest is available and reserved for the user.
+
+== API
+
+Specification of API is available at https://artemis6.docs.apiary.io/#reference.
