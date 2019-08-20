@@ -47,13 +47,23 @@ A user has an ID, called `username`. Users can own SSH keys, manage pools (when 
 
             Location: /users/{username}
 
+    - Attributes (User info)
+
 - Response 401 (application/json)
 
     - Headers
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
+
+- Response 409 (application/json)
+
+    - Attributes (ErrorConflict)
 
 ### Inspect user [GET /users/{username}]
 
@@ -77,7 +87,11 @@ A user has an ID, called `username`. Users can own SSH keys, manage pools (when 
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -105,7 +119,11 @@ A user has an ID, called `username`. Users can own SSH keys, manage pools (when 
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -133,7 +151,11 @@ A user has an ID, called `username`. Users can own SSH keys, manage pools (when 
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -159,13 +181,17 @@ A user has an ID, called `username`. Users can own SSH keys, manage pools (when 
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
     - Attributes (ErrorNotFound)
 
-### Update user [PUT /users/{username}]
+### Update user [PATCH /users/{username}]
 
 - Parameters
 
@@ -187,7 +213,11 @@ A user has an ID, called `username`. Users can own SSH keys, manage pools (when 
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -213,7 +243,11 @@ A user has an ID, called `username`. Users can own SSH keys, manage pools (when 
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -241,9 +275,15 @@ A SSH key has an ID, called `keyname`. Each key os owned by one user, and one us
 
             Location: /ssh-keys/{keyname}
 
+    - Attributes (SSH key info)
+
 - Response 303 (application/json)
 
     - Attributes (Error)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 401 (application/json)
 
@@ -251,7 +291,11 @@ A SSH key has an ID, called `keyname`. Each key os owned by one user, and one us
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 409 (application/json)
+
+    - Attributes (ErrorConflict)
 
 ### Inspect existing SSH key [GET /ssh-keys/{keyname}]
 
@@ -275,13 +319,17 @@ A SSH key has an ID, called `keyname`. Each key os owned by one user, and one us
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
     - Attributes (ErrorNotFound)
 
-### Update SSH key [PUT /ssh-keys/{keyname}]
+### Update SSH key [PATCH /ssh-keys/{keyname}]
 
 - Parameters
 
@@ -303,7 +351,11 @@ A SSH key has an ID, called `keyname`. Each key os owned by one user, and one us
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -329,7 +381,11 @@ A SSH key has an ID, called `keyname`. Each key os owned by one user, and one us
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -358,13 +414,19 @@ multiple requests, each provisioning one guest.
 
             Location: /guest/{guestname}
 
+    - Attributes (Guest info)
+
 - Response 401 (application/json)
 
     - Headers
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 500 (application/json)
 
@@ -392,7 +454,11 @@ multiple requests, each provisioning one guest.
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -418,7 +484,11 @@ multiple requests, each provisioning one guest.
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -452,7 +522,11 @@ A pool has an ID, called `poolname`. Privileged users can manage pools (adding, 
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -480,7 +554,11 @@ A pool has an ID, called `poolname`. Privileged users can manage pools (adding, 
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 - Response 404 (application/json)
 
@@ -512,7 +590,11 @@ Queue of guest requests.
 
             WWW-Authenticate: Basic realm="protected"
 
-    - Attributes (ErrorNotAuthorized)
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
 
 ## Data Structures
 
@@ -524,9 +606,17 @@ Queue of guest requests.
 
 - message: No such entity (string, required) - verbose description of the error.
 
-### ErrorNotAuthorized
+### ErrorUnauthorized
 
 - message: Not authorized to perform this action (string, required) - verbose description of the error.
+
+### ErrorForbidden
+
+- message: Not authorized to perform this action (string, required) - verbose description of the error.
+
+### ErrorConflict
+
+- message: Object already exists. (string, required) - verbose description of the error.
 
 ### User info
 
@@ -534,7 +624,6 @@ Queue of guest requests.
 
 ### User update
 
-- username (string) - name of the user.
 
 ### SSH key info
 
@@ -547,7 +636,6 @@ Queue of guest requests.
 
 - keyname (string, required) - name of the key. Serves as a key ID.
 - enabled (boolean, required) - whether the key is enabled or not.
-- private_key (string) - private part of the SSH key.
 
 ### Guest SSH info
 
