@@ -1,0 +1,7 @@
+.mypy_cache
+.tox
+.vault_pass
+.vscode
+
+__pycache__
+artemis.egg-info
