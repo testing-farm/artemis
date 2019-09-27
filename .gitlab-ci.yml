@@ -1,9 +1,27 @@
-image: "ruby:2.3"
+image: quay.io/python-devs/ci-image
 
 stages:
+  - test
   - deploy
 
+unit-tests:
+  stage: test
+  script:
+    - tox -v -e py36-unit-tests
+
+static-analysis:
+  stage: test
+  script:
+    - tox -v -e py36-static-analysis
+
+type-check:
+  stage: test
+  script:
+    - tox -v -e type-check
+
 publish_apiary:
+  image: "ruby:2.3"
+
   stage: deploy
   script:
     - gem install apiaryio
