@@ -1,23 +1,43 @@
 import os.path
 
+import dataclasses
+
 from typing import cast, Dict
 from .vault import Vault
 
 
-def _key_filepath(config_root, owner, name):
+def _key_filepath(store_dirpath, owner, name):
     # type: (str, str, str) -> str
 
-    return os.path.join(config_root, owner, '{}.yaml'.format(name))
+    return os.path.join(store_dirpath, owner, '{}.yaml'.format(name))
 
 
+class KeyStore:
+    def __init__(self, vault, store_dirpath):
+        # type: (Vault, str) -> None
+
+        self.vault = vault
+        self.store_dirpath = store_dirpath
+
+    def get_key(self, owner, name):
+        # type: (str, str) -> Key
+
+        return Key(self, owner, name)
+
+
+@dataclasses.dataclass
 class Key:
-    def __init__(self, store, owner, name):
-        # type: (KeyStore, str, str) -> None
+    store: KeyStore
+    owner: str
+    name: str
 
-        self.store = store
+    def __repr__(self):
+        # type: () -> str
 
-        self.owner = owner
-        self.name = name
+        return '<Key: owner={}, name={}>'.format(
+            self.owner,
+            self.name
+        )
 
     @property
     def _data(self):
@@ -25,7 +45,7 @@ class Key:
 
         return cast(
             Dict[str, str],
-            self.store.vault.load(_key_filepath('', self.owner, self.name))
+            self.store.vault.load(_key_filepath(self.store.store_dirpath, self.owner, self.name))
         )
 
     @property
@@ -39,15 +59,3 @@ class Key:
         # type: () -> str
 
         return self._data['public']
-
-
-class KeyStore:
-    def __init__(self, vault):
-        # type: (Vault) -> None
-
-        self.vault = vault
-
-    def get_key(self, owner, name):
-        # type: (str, str) -> Key
-
-        return Key(self, owner, name)

@@ -17,11 +17,11 @@ setup(
     },
 
     install_requires=[
-        'ansible-vault',
-        'gluetool',
-
-        # required by gluetool but we want to get rid of it
-        'setuptools-scm'
+        'ansible-vault==1.2.0',
+        'dataclasses==0.6',
+        'gluetool==1.19.1',
+        'apache-libcloud==2.6.0',
+        'paramiko==2.6.0'
     ],
 
     author='tft',
