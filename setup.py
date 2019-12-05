@@ -23,6 +23,7 @@ setup(
     install_requires=[
         'ansible-vault==1.2.0',
         'awscli==1.16.298',
+        'beautifulsoup4',
         'dataclasses==0.6',
         'dramatiq[rabbitmq, watch]',
         'gluetool==1.19.1',

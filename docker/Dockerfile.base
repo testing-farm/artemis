@@ -5,6 +5,7 @@ FROM alpine:3
 ENV PYTHONUNBUFFERED=1
 
 RUN    apk add --no-cache bash \
+                          beaker-client \
                           gcc \
                           libffi-dev \
                           libxml2-dev \

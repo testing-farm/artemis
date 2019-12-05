@@ -17,6 +17,7 @@ import artemis.guest
 import artemis.drivers.openstack
 import artemis.script
 import artemis.drivers.aws
+import artemis.drivers.beaker
 
 from artemis import Failure, safe_call, safe_db_execute
 from artemis.db import GuestRequest
@@ -121,7 +122,8 @@ _ = artemis.get_broker()
 
 POOL_DRIVERS = {
     'openstack': artemis.drivers.openstack.OpenStackDriver,
-    'aws': artemis.drivers.aws.AWSDriver
+    'aws': artemis.drivers.aws.AWSDriver,
+    'beaker': artemis.drivers.beaker.BeakerDriver
 }
 
 
