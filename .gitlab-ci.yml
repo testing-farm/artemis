@@ -7,12 +7,14 @@ stages:
 unit-tests:
   stage: test
   script:
-    - tox -v -e py36-unit-tests
+    - IN_TEST=yes tox -v -e py36-unit-tests
+    - IN_TEST=yes tox -v -e py37-unit-tests
 
 static-analysis:
   stage: test
   script:
-    - tox -v -e py36-static-analysis
+    - IN_TEST=yes tox -v -e py36-static-analysis
+    - IN_TEST=yes tox -v -e py37-static-analysis
 
 type-check:
   stage: test

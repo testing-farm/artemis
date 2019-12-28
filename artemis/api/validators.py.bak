@@ -1,0 +1,111 @@
+import artemis.db
+
+from typing import Any, TypeVar, no_type_check
+from artemis.api import app, errors
+
+_T = TypeVar("_T")
+
+
+class UniqueUsernameValidator:
+    """Custom validator for usernames that checks if the field's value is unique"""
+
+    @no_type_check
+    def validate(self, value: Any):
+        db = artemis.db.DB.DB
+
+        manager = app.UserManager(db=db)
+        if not manager.get_by_username(username=value) is None:
+            raise errors.NonUniqueValidationError()
+        return value
+
+
+class ForeignKeyUsernameValidator:
+    """Custom validator for usernames that checks if the field's value could be used a foreign key"""
+
+    @no_type_check
+    def validate(self, value: Any):
+        db = app.DB()
+        manager = app.UserManager(db=db)
+        if manager.get_by_username(username=value) is None:
+            raise errors.ForeignKeyValidationError()
+        return value
+
+
+class ForeignKeyKeynameValidator:
+    """Custom validator for keynames that checks if the field's value could be used a foreign key"""
+
+    @no_type_check
+    def validate(self, value: Any):
+        db = artemis.db.DB.DB
+
+        manager = app.SSHKeyManager(db=db)
+
+        if manager.get_by_keyname(keyname=value) is None:
+            raise errors.ForeignKeyValidationError()
+
+        return value
+
+
+class ForeignKeyPriorityValidator:
+    """Custom validator for priorities that checks if the field's value could be used a foreign key"""
+
+    @no_type_check
+    def validate(self, value: Any):
+        db = app.DB()
+        manager = app.PriorityManager(db=db)
+        if manager.get_by_name(name=value) is None:
+            raise errors.ForeignKeyValidationError()
+        return value
+
+
+class ForeignKeyPoolnameValidator:
+    """Custom validator for poolnames that checks if the field's value could be used a foreign key"""
+
+    @no_type_check
+    def validate(self, value: Any):
+        db = app.DB()
+        manager = app.PoolManager(db=db)
+        if manager.get_by_poolname(poolname=value) is None:
+            raise errors.ForeignKeyValidationError()
+        return value
+
+
+class EnvironmentValidator:
+    """Custom validator for environments that checks if it matches API schema"""
+
+    @no_type_check
+    def validate(self, value: Any):
+        if value is not None:
+            if type(value) != dict or \
+               "arch" not in value.keys() or \
+               "compose" not in value.keys() or \
+               type(value["arch"]) != str or \
+               type(value["compose"]) != dict or \
+               "name" not in value["compose"].keys() or \
+               "url" not in value["compose"].keys() or \
+               type(value["compose"]["name"]) != str or \
+               type(value["compose"]["url"]) != str:
+                raise errors.SchemaValidationError
+        return value
+
+
+class UniqueKeynameValidator:
+    """Custom validator for keynames that checks if the field's value is unique"""
+
+    @no_type_check
+    def validate(self, value: Any):
+        db = app.DB()
+        manager = app.SSHKeyManager(db=db)
+        if not manager.get_by_keyname(keyname=value) is None:
+            raise errors.NonUniqueValidationError()
+        return value
+
+
+class RequiredValidator:
+    """Custom validator for required fields"""
+
+    @no_type_check
+    def validate(self, value: Any):
+        if value is None:
+            raise errors.RequiredValidationError()
+        return value

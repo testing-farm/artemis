@@ -1,10 +1,12 @@
 import argparse
 
+import gluetool.log
 from gluetool.result import Result
 
 import artemis
+import artemis.environment
+from artemis import Failure
 from artemis.guest import Guest
-from artemis.environment import Environment
 
 # Type annotations
 from typing import Any, Dict, Optional
@@ -15,17 +17,19 @@ class PoolCapabilities(argparse.Namespace):
     supports_snapshots = False
 
 
-class PoolDriver:
-    def __init__(self, server_config, pool_config):
-        # type: (Dict[str, Any], Dict[str, Any]) -> None
+class PoolDriver(gluetool.log.LoggerMixin):
+    def __init__(self, logger: gluetool.log.ContextAdapter, pool_config: Dict[str, Any]) -> None:
+        super(PoolDriver, self).__init__(logger)
 
-        self.server_config = server_config
         self.pool_config = pool_config
 
-    def can_acquire(self,
-                    environment  # type: Environment
-                   ):  # noqa
-        # type: (...) -> Result[bool, str]
+    def guest_factory(self, guest_request: artemis.db.Guest) -> Result[Guest, Failure]:
+        raise NotImplementedError()
+
+    def can_acquire(
+        self,
+        environment: artemis.environment.Environment
+    ) -> Result[bool, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
@@ -33,12 +37,13 @@ class PoolDriver:
 
         raise NotImplementedError()
 
-    def acquire_guest(self,
-                      environment,  # type: Environment
-                      key,  # type: artemis.keys.Key
-                      cancelled=None  # type: Optional[threading.Event]
-                     ):  # noqa
-        # type: (...) -> Result[Guest, str]
+    def acquire_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: artemis.environment.Environment,
+        master_key: artemis.db.SSHKey,
+        cancelled: Optional[threading.Event] = None
+    ) -> Result[Guest, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
         by `environment`.
@@ -54,8 +59,7 @@ class PoolDriver:
 
         raise NotImplementedError()
 
-    def release_guest(self, guest):
-        # type: (Guest) -> Result[bool, str]
+    def release_guest(self, guest: Guest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 
@@ -65,9 +69,7 @@ class PoolDriver:
 
         raise NotImplementedError()
 
-    def capabilities(self):
-        # type: () -> Result[PoolCapabilities, str]
-
+    def capabilities(self) -> Result[PoolCapabilities, Failure]:
         # nothing yet, thinking about what capabilities might Beaker provide...
 
         return Result.Ok(PoolCapabilities())

@@ -7,17 +7,13 @@ from typing import Any, Dict, Optional
 
 
 class ScriptEngine:
-    def __init__(self):
-        # type: () -> None
-
+    def __init__(self) -> None:
         super(ScriptEngine, self).__init__()
 
-        self._scripts = {}  # type: Dict[str, Any]
-        self._variables = {}  # type: Dict[str, Any]
+        self._scripts: Dict[str, Any] = {}
+        self._variables: Dict[str, Any] = {}
 
-    def _load_script_file(self, name, filepath):
-        # type: (str, str) -> None
-
+    def _load_script_file(self, name: str, filepath: str) -> None:
         filepath = os.path.expanduser(filepath)
 
         try:
@@ -37,9 +33,7 @@ class ScriptEngine:
 
             self._scripts[member_name] = fn
 
-    def _load_variables_file(self, filepath):
-        # type: (str) -> None
-
+    def _load_variables_file(self, filepath: str) -> None:
         variables = gluetool.utils.load_yaml(filepath)
 
         if not isinstance(variables, dict):
@@ -47,9 +41,7 @@ class ScriptEngine:
 
         self._variables.update(variables)
 
-    def run_script(self, name, variables=None):
-        # type: (str, Optional[Dict[str, Any]]) -> Any
-
+    def run_script(self, name: str, variables: Optional[Dict[str, Any]] = None) -> Any:
         variables = variables or {}
 
         kwargs = gluetool.utils.dict_update(

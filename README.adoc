@@ -11,3 +11,137 @@ Each provisioning request is asynchronous by its nature: user submits a request 
 == API
 
 Specification of API is available at https://artemis6.docs.apiary.io/#reference.
+
+
+== How to run the WIP version
+
+* create a virtualenv:
++
+[source,shell]
+....
+$ virtualenv -p /usr/bin/python3.7 foo
+....
++
+* install Artemis:
++
+[source,shell]
+....
+$ pip install --edit .
+....
++
+* you need a configuration - ping mprchlik for the archive, and unpack it into the repository directory
+* initialize sqlite database:
++
+[source,shell]
+....
+$ ARTEMIS_DB_URL="sqlite:///test.db" ARTEMIS_CONFIG_DIR="$(pwd)/artemis-configuration" artemis-init-sqlite-schema
+....
++
+* check `run.sh` for details, but it should be safe to run as-is
+* start it up:
++
+[source,shell]
+....
+$ ./run.sh
+....
+
+== How to provision a machine
+
+* execute API call:
++
+[source,shell]
+....
+$ http -j -p HBhb POST "http://127.0.0.1:8001/guests/" keyname='ci-key' environment:='{"arch": "x86_64", "compose": {"openstack": {"image": "RHEL-8.2
+.0-x86_64-nightly-latest"}}}' priority_group='default-priority'
+POST /guests/ HTTP/1.1
+Accept: application/json
+Accept-Encoding: gzip, deflate
+Connection: keep-alive
+Content-Length: 167
+Content-Type: application/json
+Host: 127.0.0.1:8001
+User-Agent: HTTPie/0.9.4
+
+{
+    "environment": {
+        "arch": "x86_64",
+        "compose": {
+            "openstack": {
+                "image": "RHEL-8.2.0-x86_64-nightly-latest"
+            }
+        }
+    },
+    "keyname": "ci-key",
+    "priority_group": "default-priority"
+}
+
+HTTP/1.1 201 Created
+Connection: close
+Date: Tue, 19 Nov 2019 11:19:20 GMT
+Server: gunicorn/19.9.0
+content-length: 280
+content-type: application/json; charset=utf-8
+
+{
+    "address": null,
+    "environment": {
+        "arch": "x86_64",
+        "compose": {
+            "openstack": {
+                "image": "RHEL-8.2.0-x86_64-nightly-latest"
+            }
+        }
+    },
+    "guestname": "658986d6-118b-41ae-8560-4beadd00be38",
+    "owner": "artemis",
+    "ssh": {
+        "keyname": "ci-key",
+        "port": 22,
+        "username": "root"
+    },
+    "state": "pending"
+}
+....
++
+* from now, you may check the progress by checking the state of the request, until you get similar response:
++
+[source,shell]
+....
+$ http -j -p HBhb "http://127.0.0.1:8001/guests/658986d6-118b-41ae-8560-4beadd00be38"
+GET /guests/658986d6-118b-41ae-8560-4beadd00be38 HTTP/1.1
+Accept: application/json
+Accept-Encoding: gzip, deflate
+Connection: keep-alive
+Content-Type: application/json
+Host: 127.0.0.1:8001
+User-Agent: HTTPie/0.9.4
+
+
+
+HTTP/1.1 200 OK
+Connection: close
+Date: Tue, 19 Nov 2019 11:21:14 GMT
+Server: gunicorn/19.9.0
+content-length: 288
+content-type: application/json; charset=utf-8
+
+{
+    "address": "10.0.132.189",
+    "environment": {
+        "arch": "x86_64",
+        "compose": {
+            "openstack": {
+                "image": "RHEL-8.2.0-x86_64-nightly-latest"
+            }
+        }
+    },
+    "guestname": "658986d6-118b-41ae-8560-4beadd00be38",
+    "owner": "artemis",
+    "ssh": {
+        "keyname": "ci-key",
+        "port": 22,
+        "username": "root"
+    },
+    "state": "ready"
+}
+....
