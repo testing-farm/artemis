@@ -1,6 +1,5 @@
 import asyncio
 import json
-import sys
 import threading
 
 import dramatiq
@@ -8,6 +7,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
+
 from gluetool.result import Result, Ok, Error
 
 import artemis
@@ -15,10 +15,11 @@ import artemis.db
 import artemis.guest
 import artemis.drivers.openstack
 
-from artemis import Failure, safe_call
-from artemis.db import Guest
+from artemis import Failure, safe_call, safe_db_execute
+from artemis.db import GuestRequest
 
-from typing import cast, Any, Callable, Dict, Optional
+from typing import cast, Any, Callable, Dict, Optional, Tuple
+from typing_extensions import Protocol
 
 
 # There is a very basic thing we must be aware of: a task - the Python function below - can run multiple times,
@@ -71,6 +72,47 @@ from typing import cast, Any, Callable, Dict, Optional
 # - allow retries modification and tweaking
 # - "lazy actor" wrapper to avoid the necessity of initializing dramatiq at the import time
 
+
+# This should be correct type, but mypy has some issue with it :/
+#
+#   Argument 4 to "run_doer" has incompatible type
+#   "Callable[[ContextAdapter, DB, Event, str, str], Coroutine[Any, Any, None]]"; expected "DoerType"
+# I'm adding "type: ignore" temporarily to run_doer cllas until solution is found.
+class DoerType(Protocol):
+    async def __call__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        db: artemis.db.DB,
+        cancel: threading.Event,
+        *args: Any,
+        **kwargs: Any
+    ) -> Any: ...
+
+
+class Actor(Protocol):
+    def send(
+        self,
+        *args: Any,
+        **kwargs: Any
+    ) -> None: ...
+
+
+class TaskLogger(gluetool.log.ContextAdapter):
+    def __init__(self, logger: gluetool.log.ContextAdapter, task_name: str) -> None:
+        super(TaskLogger, self).__init__(logger, {
+            'ctx_task_name': (30, task_name)
+        })
+
+    def begin(self) -> None:
+        self.warning('beginning')
+
+    def finished(self) -> None:
+        self.warning('finished')
+
+    def failed(self, failure: Failure) -> None:
+        self.error('failed: {}'.format(failure.exception), exc_info=failure.exc_info)
+
+
 _ = artemis.get_broker()
 
 
@@ -81,17 +123,17 @@ POOL_DRIVERS = {
 
 def run_doer(
     logger: gluetool.log.ContextAdapter,
-    fn: Callable[..., None],
+    db: artemis.db.DB,
+    cancel: threading.Event,
+    fn: DoerType,
     *args: Any,
     **kwargs: Any
-) -> None:
+) -> Any:
     try:
-        cancel = threading.Event()
-
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        doer_task: asyncio.Task = loop.create_task(fn(*args, **kwargs))
+        doer_task = loop.create_task(fn(logger, db, cancel, *args, **kwargs))
 
         loop.run_until_complete(doer_task)
 
@@ -121,20 +163,54 @@ def run_doer(
     return doer_task.result()
 
 
+def task_core(
+    doer: DoerType,
+    logger_getter: Callable[[gluetool.log.ContextAdapter], TaskLogger],
+    doer_args: Optional[Tuple[Any, ...]] = None,
+    doer_kwargs: Optional[Dict[str, Any]] = None
+) -> None:
+    root_logger = artemis.get_logger()
+    db = artemis.get_db(root_logger)
+
+    logger = logger_getter(root_logger)
+
+    logger.begin()
+
+    cancel = threading.Event()
+
+    doer_args = doer_args or tuple()
+    doer_kwargs = doer_kwargs or dict()
+
+    try:
+        run_doer(logger, db, cancel, doer, *doer_args, **doer_kwargs)
+
+        logger.finished()
+        return
+
+    except Exception as exc:
+        logger.failed(Failure.from_exc('unhandled exception', exc))
+
+    # To avoid chain of exceptions in the log - which we already logged above - raise a generic,
+    # insignificant exception to notify our master about the failure.
+    raise Exception('message processing failed')
+
+
 def _dispatch_task(
     logger: gluetool.log.ContextAdapter,
-    task: Callable[..., None],
+    task: Actor,
     *args: Any,
     **kwargs: Any
-) -> Result[None, Exception]:
+) -> Result[None, Failure]:
     r = safe_call(task.send, *args, **kwargs)
 
     if r.is_ok:
         return Ok(None)
 
-    logger.error('failed to submit task "{}"'.format(task), exc_info=r.error)
+    exc_info = r.error.exc_info if r.error else None
 
-    return Error(r.error)
+    logger.error('failed to submit task {}'.format(task), exc_info=exc_info)
+
+    return Error(Failure('failed to submit task {}'.format(task), exc_info=exc_info))
 
 
 def _get_guest_by_state(
@@ -142,13 +218,16 @@ def _get_guest_by_state(
     session: sqlalchemy.orm.session.Session,
     guestname: str,
     state: artemis.guest.GuestState
-) -> Optional[artemis.db.Guest]:
+) -> Optional[artemis.db.GuestRequest]:
     query = session \
-            .query(Guest) \
-            .filter(Guest.guestname == guestname) \
-            .filter(Guest.state == state.value)
+            .query(GuestRequest) \
+            .filter(GuestRequest.guestname == guestname) \
+            .filter(GuestRequest.state == state.value)
 
-    r_query = safe_call(query.one)
+    r_query = cast(
+        Result[artemis.db.GuestRequest, Failure],
+        safe_call(query.one)
+    )
 
     if r_query.is_ok:
         return r_query.unwrap()
@@ -159,7 +238,7 @@ def _get_guest_by_state(
         logger.warning('not in {} state anymore'.format(state.value))
         return None
 
-    raise failure.exception
+    failure.reraise()
 
 
 def _update_guest_state(
@@ -170,6 +249,8 @@ def _update_guest_state(
     new: artemis.guest.GuestState,
     set_values: Optional[Dict[str, Any]] = None
 ) -> bool:
+    logger.warning('state switch: {} => {}'.format(current.value, new.value))
+
     if set_values:
         values = set_values
         values.update({
@@ -182,25 +263,30 @@ def _update_guest_state(
         }
 
     query = sqlalchemy \
-        .update(Guest) \
-        .where(Guest.guestname == guestname) \
-        .where(Guest.state == current.value) \
+        .update(GuestRequest.__table__) \
+        .where(GuestRequest.guestname == guestname) \
+        .where(GuestRequest.state == current.value) \
         .values(**values)
 
-    logger.warning('query: {}'.format(str(query)))
-
-    r = safe_call(session.execute, query)
+    r = safe_db_execute(logger, session, query)
 
     if r.is_ok:
-        return True
+        if r.value is True:
+            logger.warning('state switch: {} => {}: succeeded'.format(current.value, new.value))
+
+        else:
+            logger.warning('state switch: {} => {}: failed'.format(current.value, new.value))
+
+        return r.unwrap()
 
     failure = cast(Failure, r.value)
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        logger.warning('not in {} state anymore'.format(current.value))
+        logger.warning('state switch: {} => {}: no result found'.format(current.value, new.value))
+
         return False
 
-    raise failure.exception
+    failure.reraise()
 
 
 def _get_pool(
@@ -222,21 +308,30 @@ def _get_pool(
     return pool_driver_class(logger, json.loads(pool_record.parameters))
 
 
-def _get_master_key(
+def _get_ssh_key(
     logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session
+    session: sqlalchemy.orm.session.Session,
+    ownername: str,
+    keyname: str
 ) -> artemis.db.SSHKey:
     try:
         return cast(
             artemis.db.SSHKey,
             session.query(artemis.db.SSHKey).filter(
-                artemis.db.SSHKey.ownername == 'artemis',
-                artemis.db.SSHKey.keyname == 'master-key'
+                artemis.db.SSHKey.ownername == ownername,
+                artemis.db.SSHKey.keyname == keyname
             ).one()
         )
 
     except sqlalchemy.orm.exc.NoResultFound:
-        raise Exception('no master key')
+        raise Exception('no key {}:{}'.format(ownername, keyname))
+
+
+def _get_master_key(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session
+) -> artemis.db.SSHKey:
+    return _get_ssh_key(logger, session, 'artemis', 'master-key')
 
 
 async def do_release_guest_request(
@@ -250,33 +345,36 @@ async def do_release_guest_request(
         if not gr:
             return
 
-        if not gr.poolname:
-            raise Exception('guest record without a pool')
+        if gr.poolname:
+            pool = _get_pool(logger, session, gr.poolname)
 
-        pool = _get_pool(logger, session, gr.poolname)
+            if cancel.is_set():
+                return
 
-        if cancel.is_set():
-            return
+            guest_sshkey = _get_ssh_key(
+                logger,
+                session,
+                gr.ownername,
+                gr.ssh_keyname
+            )
 
-        r_guest = pool.guest_factory(gr)
-        if r_guest.is_error:
-            cast(Failure, r_guest.value).log(logger.error, label='failed to locate')
-            return
+            r_guest = pool.guest_factory(gr, ssh_key=guest_sshkey)
+            if r_guest.is_error:
+                cast(Failure, r_guest.value).log(logger.error, label='failed to locate')
+                return
 
-        r_release = pool.release_guest(r_guest.unwrap())
+            r_release = pool.release_guest(r_guest.unwrap())
 
-        if r_release.is_error:
-            cast(Failure, r_release.value).log(logger.error, label='failed to locate')
-            return
+            if r_release.is_error:
+                cast(Failure, r_release.value).log(logger.error, label='failed to locate')
+                return
 
         query = sqlalchemy \
-            .delete(Guest) \
-            .where(Guest.guestname == guestname) \
-            .where(Guest.state == artemis.guest.GuestState.CONDEMNED.value)
+            .delete(GuestRequest.__table__) \
+            .where(GuestRequest.guestname == guestname) \
+            .where(GuestRequest.state == artemis.guest.GuestState.CONDEMNED.value)
 
-        logger.warning('query: {}'.format(str(query)))
-
-        r_condemn = safe_call(session.execute, query)
+        r_condemn = safe_db_execute(logger, session, query)
 
         if r_condemn.is_ok:
             return
@@ -287,30 +385,19 @@ async def do_release_guest_request(
             logger.warning('not in CONDEMNED state anymore')
             return
 
-        raise failure.exception
+        failure.reraise()
 
 
-@dramatiq.actor(min_backoff=15, max_backoff=16)
+@dramatiq.actor(min_backoff=15, max_backoff=16)  # type: ignore  # Untyped decorator makes function untyped
 def release_guest_request(guestname: str) -> None:
-    root_logger = artemis.get_logger()
-    db = artemis.get_db(root_logger)
-
-    logger = artemis.guest.GuestLogger(root_logger, guestname)
-
-    cancel = threading.Event()
-
-    try:
-        run_doer(logger, do_release_guest_request, logger, db, cancel, guestname)
-
-    except sqlalchemy.exc.SQLAlchemyError as exc:
-        logger.error('unhandled DB error: {}'.format(exc), exc_info=sys.exc_info())
-
-        raise
-
-    except Exception as exc:
-        logger.error('unhandled error: {}'.format(exc), exc_info=sys.exc_info())
-
-        raise
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_release_guest_request,
+        logger_getter=lambda root_logger: TaskLogger(
+            artemis.guest.GuestLogger(root_logger, guestname),
+            'release'
+        ),
+        doer_args=(guestname,)
+    )
 
 
 async def do_acquire_guest(
@@ -321,7 +408,7 @@ async def do_acquire_guest(
     poolname: str
 ) -> None:
     with db.get_session() as session:
-        def _undo_guest_acquire(guest: Guest) -> None:
+        def _undo_guest_acquire(guest: artemis.guest.Guest) -> None:
             r = pool.release_guest(guest)
 
             if r.is_ok:
@@ -352,6 +439,9 @@ async def do_acquire_guest(
             _undo_guest_acquire(guest)
             return
 
+        # TODO: instead of switching to READY, we need to switch into transient state instead,
+        # and upload the requested key to the guest (using our master key).
+
         # We have a guest, we can move the guest record to the next state. We must atomicaly add guest's address
         # while making sure nobody else did it before us.
         if _update_guest_state(
@@ -362,7 +452,6 @@ async def do_acquire_guest(
             artemis.guest.GuestState.READY,
             set_values={
                 'address': guest.address,
-                'poolname': poolname,
                 'pool_data': guest.pool_data_to_db()
             }
         ):
@@ -374,27 +463,16 @@ async def do_acquire_guest(
         _undo_guest_acquire(guest)
 
 
-@dramatiq.actor(min_backoff=15, max_backoff=16)
+@dramatiq.actor(min_backoff=15, max_backoff=16)  # type: ignore  # Untyped decorator makes function untyped
 def acquire_guest(guestname: str, poolname: str) -> None:
-    root_logger = artemis.get_logger()
-    db = artemis.get_db(root_logger)
-
-    logger = artemis.guest.GuestLogger(root_logger, guestname)
-
-    cancel = threading.Event()
-
-    try:
-        run_doer(logger, do_acquire_guest, logger, db, cancel, guestname, poolname)
-
-    except sqlalchemy.exc.SQLAlchemyError as exc:
-        logger.error('unhandled DB error: {}'.format(exc), exc_info=sys.exc_info())
-
-        raise
-
-    except Exception as exc:
-        logger.error('unhandled error: {}'.format(exc), exc_info=sys.exc_info())
-
-        raise
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_acquire_guest,
+        logger_getter=lambda root_logger: TaskLogger(
+            artemis.guest.GuestLogger(root_logger, guestname),
+            'acquire'
+        ),
+        doer_args=(guestname, poolname)
+    )
 
 
 async def do_route_guest_request(
@@ -403,11 +481,6 @@ async def do_route_guest_request(
     cancel: threading.Event,
     guestname: str
 ) -> None:
-    root_logger = artemis.get_logger()
-    db = artemis.get_db(root_logger)
-
-    logger = artemis.guest.GuestLogger(root_logger, guestname)
-
     with db.get_session() as session:
         def _undo_guest_in_provisioning() -> None:
             if _update_guest_state(
@@ -454,7 +527,7 @@ async def do_route_guest_request(
         # of us.
 
         logger.info('finding suitable provisioner')
-        # ...
+        pool_name = 'baseosci-openstack'
 
         if cancel.is_set():
             return
@@ -465,7 +538,10 @@ async def do_route_guest_request(
             session,
             guestname,
             artemis.guest.GuestState.ROUTING,
-            artemis.guest.GuestState.PROVISIONING
+            artemis.guest.GuestState.PROVISIONING,
+            set_values={
+                'poolname': pool_name
+            }
         ):
             # We failed to move guest to PROVISIONING state which means some other instance of this task changed
             # guest's state instead of us, which means we should throw everything away because our decisions no
@@ -480,7 +556,7 @@ async def do_route_guest_request(
         # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
         # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
         # task.
-        r = _dispatch_task(logger, acquire_guest, guestname, 'baseosci-openstack')
+        r = _dispatch_task(logger, acquire_guest, guestname, pool_name)
 
         if r.is_ok:
             return
@@ -494,24 +570,13 @@ async def do_route_guest_request(
         _undo_guest_in_provisioning()
 
 
-@dramatiq.actor
+@dramatiq.actor  # type: ignore  # Untyped decorator makes function untyped
 def route_guest_request(guestname: str) -> None:
-    root_logger = artemis.get_logger()
-    db = artemis.get_db(root_logger)
-
-    logger = artemis.guest.GuestLogger(root_logger, guestname)
-
-    cancel = threading.Event()
-
-    try:
-        run_doer(logger, do_route_guest_request, logger, db, cancel, guestname)
-
-    except sqlalchemy.exc.SQLAlchemyError as exc:
-        logger.error('unhandled DB error: {}'.format(exc), exc_info=sys.exc_info())
-
-        raise
-
-    except Exception as exc:
-        logger.error('unhandled error: {}'.format(exc), exc_info=sys.exc_info())
-
-        raise
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_route_guest_request,
+        logger_getter=lambda root_logger: TaskLogger(
+            artemis.guest.GuestLogger(root_logger, guestname),
+            'route'
+        ),
+        doer_args=(guestname,)
+    )

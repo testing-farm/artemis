@@ -6,42 +6,56 @@ import sqlalchemy.orm.session
 import artemis
 import artemis.guest
 
-from artemis.tasks import route_guest_request, release_guest_request
+from artemis.tasks import TaskLogger, route_guest_request, release_guest_request, _update_guest_state
 
 
 def _dispatch_guest_request(
     root_logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    guest: artemis.db.Guest
+    guest: artemis.db.GuestRequest
 ) -> None:
-    logger = artemis.guest.GuestLogger(root_logger, guest.guestname)
+    logger = TaskLogger(
+        artemis.guest.GuestLogger(root_logger, guest.guestname),
+        'dispatch-acquire'
+    )
 
-    logger.info('pending request')
+    logger.begin()
 
     # Release the guest to the next stage. If this succeeds, dispatcher will no longer have any power
     # over the guest, and completion of the request would be taken over by a set of tasks.
-    guest.state = artemis.guest.GuestState.ROUTING.value
-    session.commit()
+    if not _update_guest_state(
+        logger,
+        session,
+        guest.guestname,
+        artemis.guest.GuestState.PENDING,
+        artemis.guest.GuestState.ROUTING
+    ):
+        # Somebody already did our job, the guest request is not in PENDING state anymore.
+        logger.finished()
+        return
 
     # Kick of the task chain for this request.
     route_guest_request.send(guest.guestname)
 
-    logger.info('scheduled routing task')
+    logger.finished()
 
 
 def _release_guest_request(
     root_logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    guest: artemis.db.Guest
+    guest: artemis.db.GuestRequest
 ) -> None:
-    logger = artemis.guest.GuestLogger(root_logger, guest.guestname)
+    logger = TaskLogger(
+        artemis.guest.GuestLogger(root_logger, guest.guestname),
+        'dispatch-release'
+    )
 
-    logger.info('condemned request')
+    logger.begin()
 
     # Schedule task to remove the given guest request.
     release_guest_request.send(guest.guestname)
 
-    logger.info('scheduled removal task')
+    logger.finished()
 
 
 def main() -> None:
@@ -57,16 +71,16 @@ def main() -> None:
         # For each pending guest request, start their processing by submitting the first, routing task.
         with db.get_session() as session:
             guest_requests = session \
-                             .query(artemis.db.Guest) \
-                             .filter(artemis.db.Guest.state == artemis.guest.GuestState.PENDING.value) \
+                             .query(artemis.db.GuestRequest) \
+                             .filter(artemis.db.GuestRequest.state == artemis.guest.GuestState.PENDING.value) \
                              .all()
 
             for guest in guest_requests:
                 _dispatch_guest_request(root_logger, session, guest)
 
             guest_requests = session \
-                .query(artemis.db.Guest) \
-                .filter(artemis.db.Guest.state == artemis.guest.GuestState.CONDEMNED.value) \
+                .query(artemis.db.GuestRequest) \
+                .filter(artemis.db.GuestRequest.state == artemis.guest.GuestState.CONDEMNED.value) \
                 .all()
 
             for guest in guest_requests:

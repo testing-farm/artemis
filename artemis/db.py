@@ -1,11 +1,12 @@
 import json
+import logging
 import os
 
 from contextlib import contextmanager
 
 import sqlalchemy
 import sqlalchemy.ext.declarative
-from sqlalchemy import Column, ForeignKey, String, Boolean, Text
+from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer
 from sqlalchemy.orm import relationship
 
 from typing import cast, Any, Dict, Iterator
@@ -18,22 +19,22 @@ Base = sqlalchemy.ext.declarative.declarative_base()
 class User(Base):
     __tablename__ = 'users'
 
-    username = Column(String(250), primary_key=True)
+    username = Column(String(250), primary_key=True, nullable=False)
 
     sshkeys = relationship('SSHKey', back_populates='owner')
-    guests = relationship('Guest', back_populates='owner')
+    guests = relationship('GuestRequest', back_populates='owner')
 
 
 class SSHKey(Base):
     __tablename__ = 'sshkeys'
 
-    keyname = Column(String(250), primary_key=True)
+    keyname = Column(String(250), primary_key=True, nullable=False)
     enabled = Column(Boolean())
-    ownername = Column(String(250), ForeignKey('users.username'))
-    file = Column(String(250))
+    ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
+    file = Column(String(250), nullable=False)
 
     owner = relationship('User', back_populates='sshkeys')
-    guests = relationship('Guest', back_populates='sshkey')
+    guests = relationship('GuestRequest', back_populates='ssh_key')
 
     @property
     def _data(self) -> Dict[str, str]:
@@ -59,38 +60,44 @@ class SSHKey(Base):
 class PriorityGroup(Base):
     __tablename__ = 'priority_groups'
 
-    name = Column(String(250), primary_key=True)
+    name = Column(String(250), primary_key=True, nullable=False)
 
-    guests = relationship('Guest', back_populates='priority_group')
+    guests = relationship('GuestRequest', back_populates='priority_group')
 
 
 class Pool(Base):
     __tablename__ = 'pools'
 
-    poolname = Column(String(250), primary_key=True)
-    driver = Column(String(250))
-    parameters = Column(Text())
+    poolname = Column(String(250), primary_key=True, nullable=False)
+    driver = Column(String(250), nullable=False)
+    parameters = Column(Text(), nullable=False)
 
-    guests = relationship('Guest', back_populates='pool')
+    guests = relationship('GuestRequest', back_populates='pool')
 
 
-class Guest(Base):
-    __tablename__ = 'guests'
+class GuestRequest(Base):
+    __tablename__ = 'guest_requests'
 
-    guestname = Column(String(250), primary_key=True)
-    environment = Column(Text())
-    ownername = Column(String(250), ForeignKey('users.username'))
-    keyname = Column(String(250), ForeignKey('sshkeys.keyname'))
-    priorityname = Column(String(250), ForeignKey('priority_groups.name'))
-    poolname = Column(String(250), ForeignKey('pools.poolname'))
-    state = Column(String(250))
+    guestname = Column(String(250), primary_key=True, nullable=False)
+    environment = Column(Text(), nullable=False)
+    ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
+    priorityname = Column(String(250), ForeignKey('priority_groups.name'), nullable=True)
+    poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
 
-    address = Column(String(250))
+    state = Column(String(250), nullable=False)
 
-    pool_data = Column(Text())
+    address = Column(String(250), nullable=True)
+
+    # SSH info
+    ssh_keyname = Column(String(250), ForeignKey('sshkeys.keyname'), nullable=False)
+    ssh_port = Column(Integer(), nullable=False)
+    ssh_username = Column(String(250), nullable=False)
+
+    # Pool-specific data.
+    pool_data = Column(Text(), nullable=False)
 
     owner = relationship('User', back_populates='guests')
-    sshkey = relationship('SSHKey', back_populates='guests')
+    ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
 
@@ -102,6 +109,8 @@ class DB:
         url: str
     ) -> None:
         logger.info('connecting to db {}'.format(url))
+
+        gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
 
         self._engine = sqlalchemy.create_engine(url)
         self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self._engine)

@@ -11,6 +11,7 @@ import sqlalchemy
 import sqlalchemy.orm.exc
 
 import artemis
+import artemis.db
 import artemis.guest
 
 from molten import HTTP_201, Field
@@ -19,6 +20,12 @@ from artemis.api import errors
 from typing import Any, Dict, List, NoReturn, Optional, Tuple, Union
 from artemis.db import DB
 from inspect import Parameter
+
+
+DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
+
+DEFAULT_SSH_PORT = 22
+DEFAULT_SSH_USERNAME = 'root'
 
 
 class DBComponent:
@@ -95,14 +102,18 @@ class GuestResponse:
         self.state = state.value
 
     @classmethod
-    def from_db(cls, guest: artemis.db.Guest) -> Any:
+    def from_db(cls, guest: artemis.db.GuestRequest):
+        # type: (...) -> GuestResponse
+
         return cls(
             guestname=guest.guestname,
-            owner='artemis',  # guest.owner.username,
+            owner=guest.ownername,
             environment=json.loads(guest.environment),
             address=guest.address,
             ssh=GuestSSHInfo(
-                'root', 22, guest.sshkey.keyname
+                guest.ssh_username,
+                guest.ssh_port,
+                guest.ssh_keyname
             ),
             state=artemis.guest.GuestState(guest.state)
         )
@@ -114,7 +125,7 @@ class GuestRequestManager:
 
     def get_guest_requests(self) -> List[GuestResponse]:
         with self.db.get_session() as session:
-            guests = session.query(artemis.db.Guest).all()
+            guests = session.query(artemis.db.GuestRequest).all()
 
         return [
             GuestResponse.from_db(guest) for guest in guests
@@ -125,32 +136,33 @@ class GuestRequestManager:
 
         with self.db.get_session() as session:
             session.add(
-                artemis.db.Guest(
+                artemis.db.GuestRequest(
                     guestname=guestname,
                     environment=json.dumps(guest_request.environment),
-                    ownername=None,
-                    keyname=guest_request.keyname,
+                    ownername=DEFAULT_GUEST_REQUEST_OWNER,
+                    ssh_keyname=guest_request.keyname,
+                    ssh_port=DEFAULT_SSH_PORT,
+                    ssh_username=DEFAULT_SSH_USERNAME,
                     priorityname=guest_request.priority_group,
                     poolname=None,
+                    pool_data=json.dumps({}),
                     state=artemis.guest.GuestState.PENDING.value
                 )
             )
 
-        return GuestResponse(
-            guestname=guestname,
-            owner='artemis',
-            environment=guest_request.environment,
-            address=None,
-            ssh=GuestSSHInfo(
-                'root', 22, guest_request.keyname
-            ),
-            state=artemis.guest.GuestState.PENDING
-        )
+        gr = self.get_by_guestname(guestname)
+
+        assert gr is not None
+
+        return gr
 
     def get_by_guestname(self, guestname: str) -> Optional[GuestResponse]:
         try:
             with self.db.get_session() as session:
-                guest = session.query(artemis.db.Guest).filter(artemis.db.Guest.guestname == guestname).one()
+                guest = session \
+                        .query(artemis.db.GuestRequest) \
+                        .filter(artemis.db.GuestRequest.guestname == guestname) \
+                        .one()
 
         except sqlalchemy.orm.exc.NoResultFound:
             return None
@@ -160,11 +172,14 @@ class GuestRequestManager:
     def delete_by_guestname(self, guestname: str) -> None:
         with self.db.get_session() as session:
             query = sqlalchemy \
-                .update(artemis.db.Guest) \
-                .where(artemis.db.Guest.guestname == guestname) \
-                .values(state=artemis.guest.GuestState.CONDEMNED.value)
+                    .update(artemis.db.GuestRequest.__table__) \
+                    .where(artemis.db.GuestRequest.guestname == guestname) \
+                    .values(state=artemis.guest.GuestState.CONDEMNED.value)
 
-            session.execute(query)
+            if artemis.safe_db_execute(artemis.get_logger(), session, query):
+                return
+
+            raise errors.GenericError()
 
 
 class GuestRequestManagerComponent:
@@ -225,7 +240,9 @@ def run_app() -> molten.app.App:
 
     get_docs = molten.openapi.handlers.OpenAPIUIHandler()
 
-    metadata = molten.openapi.documents.Metadata(
+    # Type checking this call is hard, mypy complains about unexpected keyword arguments, and refactoring
+    # didn't help at all, just yielded another kind of errors.
+    metadata = molten.openapi.documents.Metadata(  # type: ignore
         title='Artemis API',
         description='Artemis provisioning system API.',
         version='0.0.1'

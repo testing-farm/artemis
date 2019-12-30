@@ -1,4 +1,5 @@
 import pytest
+import threading
 import gluetool.log
 import gluetool.utils
 
@@ -21,10 +22,15 @@ def server_config(logger):
 
 
 @pytest.fixture
-def db(logger, monkeypatch, server_config):
+def db(logger, monkeypatch):
     monkeypatch.setenv('ARTEMIS_DB_URL', 'sqlite://')
 
-    return artemis.get_db(logger, server_config)
+    return artemis.get_db(logger)
+
+
+@pytest.fixture
+def cancel():
+    return threading.Event()
 
 
 @pytest.fixture
@@ -45,19 +51,19 @@ def worker(broker):
     worker.stop()
 
 
-def test_run_doer(logger):
-    async def do(foo):
-        return foo
+def test_run_doer(logger, db, cancel):
+    async def foo(_logger, _db, _cancel, bar):
+        return bar
 
-    assert artemis.tasks.run_doer(logger, do, 79) == 79
+    assert artemis.tasks.run_doer(logger, db, cancel, foo, 79) == 79
 
 
-def test_run_doer_exception(logger):
-    async def do():
+def test_run_doer_exception(logger, db, cancel):
+    async def foo(_logger, _db, _cancel):
         raise Exception('foo')
 
     with pytest.raises(Exception, match=r'foo'):
-        assert artemis.tasks.run_doer(logger, do) == 79
+        assert artemis.tasks.run_doer(logger, db, cancel, foo) == 79
 
 
 def test_dispatch_task(logger, monkeypatch):
@@ -73,15 +79,23 @@ def test_dispatch_task(logger, monkeypatch):
 
 
 def test_dispatcher_task_exception(logger, monkeypatch):
-    mock_safe_call = MagicMock(return_value=gluetool.result.Error(79))
-    mock_fn = MagicMock()
+    mock_safe_call = MagicMock(
+        return_value=gluetool.result.Error(
+            artemis.Failure('dummy failure')
+        )
+    )
+
+    mock_fn = MagicMock(
+        __str__=lambda x: 'dummy_task'
+    )
 
     monkeypatch.setattr(artemis.tasks, 'safe_call', mock_safe_call)
 
     r = artemis.tasks._dispatch_task(logger, mock_fn)
 
     assert r.is_error
-    assert r.error == 79
+    assert isinstance(r.error, artemis.Failure)
+    assert r.error.message == 'failed to submit task dummy_task'
     mock_safe_call.assert_called_once_with(mock_fn.send)
 
 

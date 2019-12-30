@@ -24,7 +24,12 @@ NodeRefType = Any
 
 
 class OpenStackGuest(artemis.guest.Guest):
-    def __init__(self, node: NodeRefType, address: str, ssh_info: artemis.guest.SSHInfo) -> None:
+    def __init__(
+        self,
+        node: NodeRefType,
+        address: Optional[str] = None,
+        ssh_info: Optional[artemis.guest.SSHInfo] = None
+    ) -> None:
         super(OpenStackGuest, self).__init__(address, ssh_info)
 
         self._node = node
@@ -60,7 +65,11 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         self.master_key_pool_name = pool_config['master-key-name']
 
-    def guest_factory(self, guest_request: artemis.db.Guest) -> Result[OpenStackGuest, Failure]:
+    def guest_factory(
+        self,
+        guest_request: artemis.db.GuestRequest,
+        ssh_key: artemis.db.SSHKey
+    ) -> Result[artemis.guest.Guest, Failure]:
         if not guest_request.pool_data:
             return Error(Failure('invalid pool data'))
 
@@ -80,15 +89,15 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
                 nodes[0],
                 guest_request.address,
                 artemis.guest.SSHInfo(
-                    port=22,
-                    username='root',
-                    key=None  # TODO
+                    port=guest_request.ssh_port,
+                    username=guest_request.ssh_username,
+                    key=ssh_key
                 )
             )
         )
 
     def can_acquire(self, environment: artemis.environment.Environment) -> Result[bool, Failure]:
-        if environment.arch != 'x86_64':
+        if environment.arch not in self.pool_config['available-arches']:
             return Ok(False)
 
         return Ok(True)
@@ -245,11 +254,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             OpenStackGuest(
                 node,
                 valid_ipv4_addresses[0],
-                artemis.guest.SSHInfo(
-                    port=22,
-                    username='root',
-                    key=master_key
-                )
+                ssh_info=None
             )
         )
 

@@ -6,7 +6,7 @@ import gluetool.log
 
 import artemis.db
 
-from typing import Any, List
+from typing import Any, Optional
 
 
 class GuestState(enum.Enum):
@@ -25,6 +25,7 @@ class GuestState(enum.Enum):
     #: Provisioning is done, there is a guest available for SSH connections.
     READY = 'ready'
 
+    #: The guest has been released by the user, and it's resources may be released by its pool's driver.
     CONDEMNED = 'condemned'
 
 
@@ -45,14 +46,12 @@ class SSHInfo:
     key: artemis.db.SSHKey
     port: int = 22
     username: str = 'root'
-    options: List[str] = dataclasses.field(default_factory=list)
 
     def __repr__(self) -> str:
-        return '<SSHInfo: port={}, username={}, key={}, options={}>'.format(
+        return '<SSHInfo: port={}, username={}, key={}>'.format(
             self.port,
             self.username,
-            self.key.keyname if self.key else '',
-            self.options
+            self.key.keyname if self.key else ''
         )
 
 
@@ -62,7 +61,11 @@ class Guest:
     to track their own internal information (e.g. cloud instance IDs) within the same object.
     """
 
-    def __init__(self, address: str, ssh_info: SSHInfo) -> None:
+    def __init__(
+        self,
+        address: Optional[str] = None,
+        ssh_info: Optional[SSHInfo] = None
+    ) -> None:
         self.address = address
         self.ssh_info = ssh_info
 
@@ -75,7 +78,7 @@ class Guest:
     def pool_data_to_db(self) -> str:
         return json.dumps({})
 
-    def pool_data_from_db(self, guest_record: artemis.db.Guest) -> Any:
+    def pool_data_from_db(self, guest_record: artemis.db.GuestRequest) -> Any:
         assert guest_record.pool_data is not None
 
         return json.loads(guest_record.pool_data)

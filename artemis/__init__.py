@@ -1,6 +1,5 @@
 import logging
 import os
-import sys
 import traceback as _traceback
 
 import dramatiq
@@ -14,12 +13,24 @@ import dramatiq.middleware.retries
 import gluetool.log
 import gluetool.utils
 from gluetool.result import Result, Ok, Error
+import sqlalchemy.orm.session
 
 import artemis.db
 import artemis.vault
 
-from typing import cast, Any, Callable, Dict, Optional, Tuple, TypeVar, Union
+from typing import cast, Any, Callable, Dict, NoReturn, Optional, Tuple, TypeVar, Union
 from types import TracebackType
+
+import stackprinter
+
+stackprinter.set_excepthook(
+    style='darkbg2',
+    source_lines=7,
+    show_signature=True,
+    show_vals='all',
+    reverse=False,
+    add_summary=False
+)
 
 
 ExceptionInfoType = Union[
@@ -63,7 +74,8 @@ class Failure:
         self,
         message: str,
         exc_info: Optional[ExceptionInfoType] = None,
-        traceback: Optional[_traceback.StackSummary] = None
+        traceback: Optional[_traceback.StackSummary] = None,
+        parent: Optional['Failure'] = None
     ):
         self.message = message
         self.exc_info = exc_info
@@ -71,8 +83,10 @@ class Failure:
         self.sentry_event_id: Optional[str] = None
         self.sentry_event_url: Optional[str] = None
 
-        self.exception = None
-        self.traceback = None
+        self.exception: Optional[BaseException] = None
+        self.traceback: Optional[_traceback.StackSummary] = None
+
+        self.parent = parent
 
         if exc_info:
             self.exception = exc_info[1]
@@ -102,14 +116,30 @@ class Failure:
         log_fn: gluetool.log.LoggingFunctionType,
         label: str = Optional[None]
     ) -> None:
+        exc_info = self.exc_info if self.exc_info else (None, None, None)
+
         if label:
             log_fn(
                 '{}: {}'.format(label, self.message),
-                exc_info=self.exc_info
+                exc_info=exc_info
             )
+
+        else:
+            log_fn(
+                self.message,
+                exc_info=exc_info
+            )
+
+    def reraise(self) -> NoReturn:
+        if self.exception:
+            raise self.exception
+
+        raise Exception('Cannot reraise undefined exception')
 
 
 def get_logger() -> gluetool.log.ContextAdapter:
+    gluetool.color.switch(True)
+
     return gluetool.log.Logging.setup_logger(
         level=logging.INFO
     )
@@ -167,9 +197,76 @@ def get_vault() -> artemis.vault.Vault:
         return artemis.vault.Vault(f.read())
 
 
-def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, gluetool.log.ExceptionInfoType]:
+def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Failure]:
+    """
+    Call given function, with provided arguments.
+
+    :returns: if an exception was raised during the function call, an error result is returned, wrapping the failure.
+        Otherwise, a valid result is returned, wrapping function's return value.
+    """
+
     try:
         return Ok(fn(*args, **kwargs))
 
-    except Exception:
-        return Error(sys.exc_info())
+    except Exception as exc:
+        return Error(Failure.from_exc('failed to execute {}'.format(fn.__name__), exc))
+
+
+def safe_db_execute(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    query: Any,
+    expected_rows: int = 1
+) -> Result[bool, Failure]:
+    """
+    Execute a given SQL query, followed by an explicit commit.
+
+    The main purpose of this function is to provide helper for queries that modify database state with respect
+    to concurrent access. We often need to update records in a way that works as a sort of a locking, providing
+    a consistent, serialized access. We need to prepare the query, execute it, commit the transaction and make
+    sure it updated/deleted the expected amount of records - all these steps can be broken by exceptions.
+
+    :returns: if the commit was successfull, a valid result is returned. If the commit failed,
+        .e.g. because another thread changed the database content and made the query invalid,
+        an error result is returned, wrapping the failure.
+    """
+
+    logger.warning('safe execute: {}'.format(str(query)))
+
+    r = safe_call(session.execute, query)
+
+    if r.is_error:
+        assert r.error is not None
+
+        return Error(
+            Failure(
+                'failed to execute query: {}'.format(r.error.message),
+                parent=r.error
+            )
+        )
+
+    query_result = cast(
+        sqlalchemy.engine.ResultProxy,
+        r.value
+    )
+
+    if query_result.rowcount != expected_rows:
+        logger.warning('expected {} matching rows, found {}'.format(expected_rows, query_result.rowcount))
+
+        return Ok(False)
+
+    r = safe_call(session.commit)
+
+    if r.is_ok:
+        logger.warning('found {} matching rows, as expected'.format(query_result.rowcount))
+
+        return Ok(True)
+
+    assert r.error is not None
+
+    return Error(
+        Failure(
+            'failed to commit query: {}'.format(r.error.message),
+            parent=r.error
+        )
+    )

@@ -23,7 +23,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         self.pool_config = pool_config
 
-    def guest_factory(self, guest_request: artemis.db.Guest) -> Result[Guest, Failure]:
+    def guest_factory(
+        self,
+        guest_request: artemis.db.GuestRequest,
+        ssh_key: artemis.db.SSHKey
+    ) -> Result[Guest, Failure]:
         raise NotImplementedError()
 
     def can_acquire(
@@ -49,10 +53,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
         by `environment`.
 
         :param Environment environment: environmental requirements a guest must satisfy.
-        :param Key key: master key to upload to the guest.
+        :param Key key: master key used for SSH connection.
         :param threading.Event cancelled: if set, method should cancel its operation, release
             resources, and return.
-        :rtype: result.Result[Guest, str]
+        :rtype: result.Result[Guest, Failure]
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
         """
@@ -64,7 +68,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Release guest and its resources back to the pool.
 
         :param Guest guest: a guest to be destroyed.
-        :rtype: result.Result[bool, str]
+        :rtype: result.Result[bool, Failure]
         """
 
         raise NotImplementedError()

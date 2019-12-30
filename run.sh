@@ -23,13 +23,13 @@ if [ "$ARTEMIS_WORKER_QUEUES" != "" ]; then
     ARTEMIS_WORKER_OPTIONS="-Q \"${ARTEMIS_WORKER_QUEUES}\" ${ARTEMIS_WORKER_OPTIONS}"
 fi
 
-docker run --rm --hostname my-rabbit --name some-rabbit --publish 5672:5672 rabbitmq:3 &
+docker run --rm --hostname my-rabbit --name some-rabbit --publish 5672:5672 rabbitmq:3 & &> /dev/null
 
 # Wait for rabbitmq to become available
 sleep 10
 
 artemis-api-server &
 artemis-dispatcher &
-dramatiq ${ARTEMIS_WORKER_OPTIONS} artemis.tasks &
+dramatiq ${ARTEMIS_WORKER_OPTIONS} --watch artemis artemis.tasks &
 
 sleep 1000

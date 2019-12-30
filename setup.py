@@ -29,7 +29,8 @@ setup(
         'molten==0.7.4',
         'apache-libcloud==2.6.0',
         'paramiko==2.6.0',
-        'sqlalchemy'
+        'sqlalchemy',
+        'stackprinter'
     ],
 
     author='tft',
