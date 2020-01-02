@@ -14,6 +14,7 @@ import artemis
 import artemis.db
 import artemis.guest
 import artemis.drivers.openstack
+import artemis.drivers.aws
 
 from artemis import Failure, safe_call, safe_db_execute
 from artemis.db import GuestRequest
@@ -117,7 +118,8 @@ _ = artemis.get_broker()
 
 
 POOL_DRIVERS = {
-    'openstack': artemis.drivers.openstack.OpenStackDriver
+    'openstack': artemis.drivers.openstack.OpenStackDriver,
+    'aws': artemis.drivers.aws.AWSDriver
 }
 
 
@@ -299,6 +301,7 @@ def _update_guest_state(
     failure.reraise()
 
 
+
 def _get_pool(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -314,8 +317,14 @@ def _get_pool(
         raise Exception('no such pool "{}"'.format(poolname))
 
     pool_driver_class = POOL_DRIVERS[pool_record.driver]
+    driver = pool_driver_class(logger, json.loads(pool_record.parameters))
 
-    return pool_driver_class(logger, json.loads(pool_record.parameters))
+    r_sanity = driver.sanity()
+    if r_sanity.is_error:
+        cast(Failure, r_sanity.value).log(logger.error, label='pool sanity failed')
+        raise Exception('pool sanity failed')
+
+    return driver
 
 
 def _get_ssh_key(
@@ -659,7 +668,7 @@ async def do_route_guest_request(
         # of us.
 
         logger.info('finding suitable provisioner')
-        pool_name = 'baseosci-openstack'
+        pool_name = 'aws-testing-farm-01'
 
         if cancel.is_set():
             return
