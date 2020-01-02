@@ -1,7 +1,7 @@
 import argparse
 
 import gluetool.log
-from gluetool.result import Result
+from gluetool.result import Result, Ok
 
 import artemis
 import artemis.environment
@@ -29,6 +29,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
         ssh_key: artemis.db.SSHKey
     ) -> Result[Guest, Failure]:
         raise NotImplementedError()
+
+    def sanity(self) -> Result[bool, Failure]:
+        """
+        Do sanity checks after initializing the driver. Useful to check for pool configuration
+        correctness or anything else.
+        """
+        return Ok(True)
 
     def can_acquire(
         self,
