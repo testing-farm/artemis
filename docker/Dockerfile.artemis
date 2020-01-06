@@ -1,8 +1,0 @@
-FROM artemis-base
-
-COPY artemis /APP_SOURCE/artemis/
-COPY setup.py /APP_SOURCE/
-
-RUN    source /APP/bin/activate \
-    && cd /APP_SOURCE \
-    && pip install .

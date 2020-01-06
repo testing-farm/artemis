@@ -1,0 +1,26 @@
+apiVersion: skaffold/v1beta16
+kind: Config
+metadata:
+  name: artemis
+build:
+  artifacts:
+    - image: artemis
+      docker:
+        dockerfile: container/Dockerfile
+
+  # by default to not push to remote repository
+  local:
+    push: false
+
+  # tag images by date and time
+  tagPolicy:
+    dateTime: {}
+
+deploy:
+  kubectl:
+    manifests:
+      - k8s/api.yaml
+      - k8s/rabbitmq.yaml
+      - k8s/postgres.yaml
+      - k8s/dispatcher.yaml
+      - k8s/worker.yaml

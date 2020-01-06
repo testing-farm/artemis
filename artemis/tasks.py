@@ -301,7 +301,6 @@ def _update_guest_state(
     failure.reraise()
 
 
-
 def _get_pool(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,

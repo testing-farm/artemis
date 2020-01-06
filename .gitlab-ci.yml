@@ -1,4 +1,5 @@
-image: quay.io/python-devs/ci-image
+# source: https://gitlab.com/testing-farm/images/tree/master/python-ci-image
+image: quay.io/testing-farm/python-ci-image
 
 stages:
   - test

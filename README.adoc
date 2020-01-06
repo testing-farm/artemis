@@ -17,7 +17,58 @@ Artemis uses a single SSH key, called *master key*, to access all guests. This i
 Specification of API is available at https://artemis6.docs.apiary.io/#reference.
 
 
-== How to run the WIP version
+== Local development environment
+
+The development environment runs Artemis in https://docs.okd.io/latest/minishift[Minishift] via https://skaffold.dev[Skaffold]. Currently the development environment requires Docker to be installed on the machine, as skaffold uses docker API for building the container images.
+
+=== Install requirements
+
+==== Install Docker
+
+Currently docker is required to run the development environment. Hopefully we can get this workflow working with Podman soon.
+
+[NOTE]
+====
+If you are running Fedora 31+, where docker does not work out of box, follow this guide to get it working - https://asciidoctor.org/docs/asciidoc-syntax-quick-reference/
+====
+
+Follow this guide to install Docker CE on Fedora: https://docs.docker.com/install/linux/docker-ce/fedora/
+
+==== Install Skaffold
+
+Skaffold is a development tool for local Kubernetes development.
+
+To install it follow the following guide: https://skaffold.dev/docs/install/
+
+==== Install Minishift
+
+Minishift is a local Openshift run in a kvm VM on your localhost.
+
+To install it follow the following guide: https://docs.okd.io/latest/minishift/getting-started/installing.html#installing-manually
+
+==== Install Openshift Client Tools
+
+Openshift Client Tools are required to interact with Minishift cluster.
+
+To install them follow the following guide: https://docs.okd.io/1.5/cli_reference/get_started_cli.html#cli-linux
+
+=== Create configuration
+
+Create the Artemis development configuration in the directory 'configuration/' in the project root. Note that the configuration must have a flat
+structure without any subdirectories currently.
+
+=== Start the development environment
+
+Start the development environment by sourcing the develop.sh script
++
+[source,shell]
+....
+$ source develop.sh
+....
++
+The first execution of the script will take some time, as it needs to start Minishift and initially build Artemis.
+
+== How to run the WIP version (deprecated)
 
 * create a virtualenv:
 +
