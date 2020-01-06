@@ -16,13 +16,15 @@ setup(
         'console_scripts': [
             'artemis-api-server = artemis.api:main',
             'artemis-dispatcher = artemis.dispatcher:main',
-            'artemis-init-sqlite-schema = artemis.db:init_sqlite'
+            'artemis-init-sqlite-schema = artemis.db:init_sqlite',
+            'artemis-init-postgres-schema = artemis.db:init_postgres'
         ]
     },
 
     install_requires=[
         'ansible-vault==1.2.0',
         'awscli==1.16.298',
+        'beaker-client==27.0',
         'beautifulsoup4',
         'dataclasses==0.6',
         'dramatiq[rabbitmq, watch]',
@@ -31,6 +33,7 @@ setup(
         'molten==0.7.4',
         'apache-libcloud==2.6.0',
         'paramiko==2.6.0',
+        'psycopg2==2.8.4',
         'sqlalchemy',
         'stackprinter'
     ],

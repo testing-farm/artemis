@@ -1,0 +1,110 @@
+---
+#
+# Artemis API server
+#
+# Waits for postgresql and rabbitmq services to be available.
+#
+# For local development only!
+#
+apiVersion: v1
+kind: Service
+metadata:
+  name: artemis-api
+  labels:
+    app: artemis
+    service: artemis-api
+spec:
+  ports:
+    - port: 80
+      targetPort: 8001
+      name: artemis-api
+  selector:
+    service: artemis-api
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: artemis-api
+spec:
+  to:
+    kind: Service
+    name: artemis-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artemis-api
+spec:
+  selector:
+    matchLabels:
+      service: artemis-api
+  template:
+    metadata:
+      labels:
+        service: artemis-api
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: artemis
+          command:
+            - /wait-for-postgres.sh
+          env:
+            - name: POSTGRESQL_HOSTNAME
+              value: artemis-postgres
+            - name: POSTGRESQL_USER
+              value: artemis
+            - name: POSTGRESQL_PASSWORD
+              value: artemis
+            - name: POSTGRESQL_PORT
+              value: "5432"
+        - name: wait-for-rabbitmq
+          image: artemis
+          command:
+            - /wait-for-rabbitmq.sh
+          env:
+            - name: RABBITMQ_HOSTNAME
+              value: artemis-rabbitmq
+            - name: RABBITMQ_PORT
+              value: "5672"
+        # we ignore errors for initialization script, it can safely fail
+        # once it initially initialized the database schema
+        - name: initdb
+          image: artemis
+          command:
+            - bash
+            - -c
+            - "/entrypoint.sh initdb || true"
+          env:
+            - name: ARTEMIS_CONFIG_DIR
+              value: /configuration
+            - name: ARTEMIS_DB_URL
+              value: postgresql://artemis:artemis@artemis-postgres:5432/artemis
+            - name: ARTEMIS_VAULT_PASSWORD_FILE
+              value: /configuration/.vault_pass
+          volumeMounts:
+            - name: artemis-configuration
+              mountPath: /configuration
+      containers:
+        - name: api
+          image: artemis
+          command:
+            - /entrypoint.sh
+            - api
+          env:
+            - name: ARTEMIS_BROKER_URL
+              value: amqp://guest:guest@artemis-rabbitmq:5672
+            - name: ARTEMIS_CONFIG_DIR
+              value: /configuration
+            - name: ARTEMIS_DB_URL
+              value: postgresql://artemis:artemis@artemis-postgres:5432/artemis
+            - name: ARTEMIS_VAULT_PASSWORD_FILE
+              value: /configuration/.vault_pass
+          ports:
+            - containerPort: 8001
+          volumeMounts:
+            - name: artemis-configuration
+              mountPath: /configuration
+      volumes:
+        - name: artemis-configuration
+          configMap:
+            name: artemis-configuration

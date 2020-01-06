@@ -1,0 +1,40 @@
+---
+#
+# RabbitMQ
+#
+# For local development only!
+#
+apiVersion: v1
+kind: Service
+metadata:
+  name: artemis-rabbitmq
+  labels:
+    app: artemis
+    service: artemis-rabbitmq
+spec:
+  ports:
+    - port: 5672
+      targetPort: 5672
+      name: artemis-rabbitmq
+  selector:
+    service: artemis-rabbitmq
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artemis-rabbitmq
+spec:
+  selector:
+    matchLabels:
+      service: artemis-rabbitmq
+  template:
+    metadata:
+      labels:
+        app: artemis
+        service: artemis-rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3
+          ports:
+            - containerPort: 5672

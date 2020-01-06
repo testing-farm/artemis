@@ -1,8 +1,0 @@
-FROM artemis
-
-COPY docker/entrypoint-worker.sh /entrypoint.sh
-RUN chmod a+x /entrypoint.sh
-
-EXPOSE 8000/tcp
-
-ENTRYPOINT ["/entrypoint.sh"]

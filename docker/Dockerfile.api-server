@@ -1,6 +1,0 @@
-FROM artemis
-
-COPY docker/entrypoint-api-server.sh /entrypoint.sh
-RUN chmod a+x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]

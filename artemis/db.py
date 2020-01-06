@@ -179,6 +179,22 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
             )
 
 
+def init_postgres() -> None:
+    # artemis imports artemis.db, therefore artemis.db cannot import artemis on module-level.
+    import artemis
+
+    logger = artemis.get_logger()
+    server_config = artemis.get_config()
+
+    db_url = artemis.get_db_url()
+
+    assert db_url.startswith('postgresql://')
+
+    db = artemis.get_db(logger)
+
+    _init_schema(logger, db, server_config)
+
+
 def init_sqlite() -> None:
     # artemis imports artemis.db, therefore artemis.db cannot import artemis on module-level.
     import artemis

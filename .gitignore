@@ -2,6 +2,12 @@
 .tox
 .vault_pass
 .vscode
+.nvimrc
+.vimrc
+
+configuration
 
 __pycache__
 artemis.egg-info
+
+*~
