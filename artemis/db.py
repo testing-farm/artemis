@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 import os
@@ -6,7 +7,7 @@ from contextlib import contextmanager
 
 import sqlalchemy
 import sqlalchemy.ext.declarative
-from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer
+from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer, DateTime
 from sqlalchemy.orm import relationship
 
 from typing import cast, Any, Dict, Iterator
@@ -103,6 +104,16 @@ class GuestRequest(Base):
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
+
+
+class Metrics(Base):
+    __tablename__ = 'metrics'
+
+    _id = Column(Integer, primary_key=True)
+    poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
+    state = Column(String(250), nullable=True)
+    count = Column(Integer, default=1)
+    updated = Column(DateTime, default=datetime.datetime.now())
 
 
 class DB:

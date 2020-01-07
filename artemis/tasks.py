@@ -21,6 +21,7 @@ import artemis.drivers.aws
 import artemis.drivers.beaker
 
 from artemis import Failure, safe_call, safe_db_execute
+from artemis import metrics
 from artemis.db import GuestRequest
 
 from typing import cast, Any, Callable, Dict, List, Optional, Tuple
@@ -306,6 +307,11 @@ def _update_guest_state(
     if r.is_ok:
         if r.value is True:
             logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
+            # record metric
+            gr = _get_guest_by_state(logger, session, guestname, new_state)
+            if gr:
+                metrics.GUEST_REQUESTS_STATE_COUNT.labels(session, logger, gr.poolname, new_state.value).inc()
+                metrics.GUEST_REQUESTS_STATE_COUNT.labels(session, logger, gr.poolname, current_state.value).dec()
 
         else:
             logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))

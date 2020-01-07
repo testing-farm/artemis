@@ -14,10 +14,9 @@ from libcloud.compute.deployment import MultiStepDeployment, SSHKeyDeployment, S
 
 import artemis
 from artemis import Failure
-import artemis.db
 import artemis.drivers
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional, Dict
 
 
 NodeRefType = Any
@@ -68,6 +67,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         )
 
         self.master_key_pool_name = pool_config['master-key-name']
+        # TODO: replace hard-coded value
+        self.poolname = 'baseosci-openstack'  # type: str # type: ignore
 
     def guest_factory(
         self,

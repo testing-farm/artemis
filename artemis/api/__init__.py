@@ -7,6 +7,10 @@ import uuid
 import molten
 import molten.dependency_injection
 import molten.openapi
+from molten import HTTP_201, Field
+from molten.contrib.prometheus import expose_metrics
+from molten.typing import Middleware
+
 import sqlalchemy
 import sqlalchemy.orm.exc
 
@@ -14,7 +18,6 @@ import artemis
 import artemis.db
 import artemis.guest
 
-from molten import HTTP_201, Field
 from artemis.api import errors
 
 from typing import Any, Dict, List, NoReturn, Optional, Tuple, Union
@@ -233,10 +236,12 @@ def run_app() -> molten.app.App:
         GuestRequestManagerComponent()
     ]
 
-#    mw: List[molten.Middleware] = [
-#        molten.ResponseRendererMiddleware(),
-#        middleware.AuthorizationMiddleware,
-#    ]
+# TODO: uncomment when registration is done
+    mw: List[Middleware] = [
+        # middleware.AuthorizationMiddleware,
+        molten.middleware.ResponseRendererMiddleware(),
+
+    ]
 
     get_docs = molten.openapi.handlers.OpenAPIUIHandler()
 
@@ -257,14 +262,14 @@ def run_app() -> molten.app.App:
             Route('/{guestname}', get_guest_request),
             Route('/{guestname}', delete_guest, method='DELETE'),
         ]),
+        Route('/metrics', expose_metrics),
         Route('/_docs', get_docs),
         Route('/_schema', get_schema),
     ]
 
     return molten.app.App(
             components=components,
-            # TODO: uncomment when registration is done
-            # middleware=mw,
+            middleware=mw,
             routes=routes
     )
 
