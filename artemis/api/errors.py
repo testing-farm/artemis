@@ -14,6 +14,17 @@ class GenericError(HTTPError):
         )
 
 
+class BadRequestError(HTTPError):
+    def __init__(self, headers: Any = None) -> None:
+        super().__init__(
+            status=HTTP_400,
+            response={
+                'message': 'Bad Request'
+            },
+            headers=headers
+        )
+
+
 class NoSuchEntityError(HTTPError):
     def __init__(self, headers: Any = None) -> None:
         super().__init__(

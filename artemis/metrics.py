@@ -4,13 +4,14 @@ import threading
 
 from prometheus_client import Gauge, CollectorRegistry, generate_latest
 
-from molten import Response, HTTP_200
 from molten.contrib.prometheus import REQUEST_DURATION, REQUEST_COUNT, REQUESTS_INPROGRESS
 
 import gluetool.log
 
 import artemis
 import artemis.tasks
+
+from typing import cast
 
 _registry_lock = threading.Lock()
 
@@ -45,7 +46,7 @@ def get_global_metrics(
     return global_metrics
 
 
-def get_metrics() -> Response:
+def generate_metrics() -> bytes:
 
     logger = artemis.get_logger()
     db = artemis.get_db(logger)
@@ -73,4 +74,4 @@ def get_metrics() -> Response:
         CURRENT_GUEST_REQUEST_COUNT_TOTAL.set(global_metrics.current_guest_request_count_total)
         OVERALL_GUEST_REQUEST_COUNT_TOTAL.set(global_metrics.overall_guest_request_count_total)
 
-        return HTTP_200, generate_latest().decode("utf-8")
+        return cast(bytes, generate_latest())

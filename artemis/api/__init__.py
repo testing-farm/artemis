@@ -1,5 +1,6 @@
 import datetime
 import json
+import io
 import os
 import shutil
 import sys
@@ -10,17 +11,20 @@ import uuid
 import molten
 import molten.dependency_injection
 import molten.openapi
-from molten import HTTP_201, Field
+from molten import HTTP_201, HTTP_200, Field, Response
+from molten.contrib.prometheus import prometheus_middleware
 from molten.typing import Middleware
+
+from gluetool.log import log_dict
 
 import artemis
 import artemis.db
 import artemis.guest
 
 from artemis.api import errors
-from artemis.metrics import get_metrics
+from artemis.metrics import generate_metrics
 
-from typing import Any, Dict, List, NoReturn, Optional, Tuple, Union
+from typing import Any, Dict, List, NoReturn, Optional, Union
 from artemis.db import DB
 from inspect import Parameter
 
@@ -122,6 +126,55 @@ class GuestResponse:
         )
 
 
+class APIResponse(Response):  # type: ignore
+    ''' Class that represents API response structure.
+        An instance of this class should be returned by routes.
+
+        :param object obj: Schema instance (for example GuestRequest).
+        :param str status: HTTP status code string.
+        :param dict headers: HTTP response headers.
+        :param str content: JSON-serializable string that will be used as response's body
+        :param stream: bytes-like string that will be used as response's body
+        :param str encoding: Data encoding
+    '''
+
+    def __init__(
+        self,
+        obj: Optional[Union[Any, List[Any]]] = None,
+        status: str = HTTP_200,
+        headers: Optional[Dict[Any, Any]] = None,
+        content: Optional[str] = None,
+        stream: Optional[Union[bytes, str]] = None,
+        encoding: str = 'utf-8'
+    ) -> None:
+
+        if obj is not None:
+
+            header = 'Content-Type'
+            hvalue = 'application/json'
+
+            if headers is None:
+                headers = {header: hvalue}
+            elif header not in headers:
+                headers[header] = hvalue
+
+            try:
+                content = json.dumps(obj, default=lambda o: o.__dict__, sort_keys=True)
+            except (TypeError, OverflowError):
+                log = artemis.get_logger()
+                log_dict(log.debug, 'object is not JSON serializable', obj.__dict__)
+                raise errors.BadRequestError()
+
+        if isinstance(stream, str):
+            stream = stream.encode(encoding)
+
+        super(APIResponse, self).__init__(status=status,
+                                          headers=headers,
+                                          content=content,
+                                          stream=io.BytesIO(stream or b''),
+                                          encoding=encoding)
+
+
 class GuestRequestManager:
     def __init__(self, db: DB) -> None:
         self.db = db
@@ -207,25 +260,30 @@ class GuestRequestManagerComponent:
 #
 # Routes
 #
-def get_guest_requests(manager: GuestRequestManager) -> List[GuestResponse]:
-    return manager.get_guest_requests()
+def get_guest_requests(manager: GuestRequestManager) -> APIResponse:
+    return APIResponse(manager.get_guest_requests())
 
 
-def create_guest_request(guest_request: GuestRequest, manager: GuestRequestManager) -> Tuple[str, GuestResponse]:
-    return HTTP_201, manager.create(guest_request)
+def create_guest_request(guest_request: GuestRequest, manager: GuestRequestManager) -> APIResponse:
+    return APIResponse(manager.create(guest_request), status=HTTP_201)
 
 
-def get_guest_request(guestname: str, manager: GuestRequestManager) -> GuestResponse:
+def get_guest_request(guestname: str, manager: GuestRequestManager) -> APIResponse:
     guest_response = manager.get_by_guestname(guestname)
 
     if guest_response is None:
-        raise errors.NoSuchEntityError
+        raise errors.NoSuchEntityError()
 
-    return guest_response
+    return APIResponse(guest_response)
 
 
-def delete_guest(guestname: str, manager: GuestRequestManager) -> None:
+def delete_guest(guestname: str, manager: GuestRequestManager) -> APIResponse:
     manager.delete_by_guestname(guestname)
+    return APIResponse()
+
+
+def get_metrics() -> APIResponse:
+    return APIResponse(stream=generate_metrics())
 
 
 def run_app() -> molten.app.App:
@@ -247,8 +305,7 @@ def run_app() -> molten.app.App:
 # TODO: uncomment when registration is done
     mw: List[Middleware] = [
         # middleware.AuthorizationMiddleware,
-        artemis.middleware.prometheus_middleware,
-        molten.middleware.ResponseRendererMiddleware()
+        prometheus_middleware
     ]
 
     get_docs = molten.openapi.handlers.OpenAPIUIHandler()

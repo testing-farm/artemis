@@ -1,16 +1,12 @@
-import time
 import traceback
 
 import dramatiq.middleware.retries
 from dramatiq.common import compute_backoff
 
-from molten import Request, Response
-from molten.contrib.prometheus import REQUEST_DURATION, REQUEST_COUNT, REQUESTS_INPROGRESS
-
 import artemis
 import artemis.guest
 
-from typing import cast, Any, Callable, Optional
+from typing import cast, Any, Optional
 
 
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class cannot subclass 'Retries
@@ -114,27 +110,3 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         _, backoff = compute_backoff(retries, factor=min_backoff, max_backoff=max_backoff)
         self.logger.info("Retrying message %r in %d milliseconds.", message.message_id, backoff)
         broker.enqueue(message, delay=backoff)
-
-
-def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
-    """Collect prometheus metrics from your handlers.
-    """
-
-    def middleware(request: Request) -> Any:
-        status = "500 Internal Server Error"
-        start_time = time.monotonic()
-        requests_inprogress = REQUESTS_INPROGRESS.labels(request.method, request.path)
-        requests_inprogress.inc()
-
-        try:
-            response = handler()
-            if isinstance(response, Response):
-                status = response.status
-            else:
-                status = response[0]
-            return response
-        finally:
-            requests_inprogress.dec()
-            REQUEST_COUNT.labels(request.method, request.path, status).inc()
-            REQUEST_DURATION.labels(request.method, request.path).observe(time.monotonic() - start_time)
-    return middleware
