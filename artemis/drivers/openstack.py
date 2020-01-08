@@ -23,6 +23,10 @@ from typing import Any, Dict, Optional
 NodeRefType = Any
 
 
+DEFAULT_ATTEMPT_TIMEOUT = 240
+DEFAULT_ATTEMPTS = 3
+
+
 class OpenStackGuest(artemis.guest.Guest):
     def __init__(
         self,
@@ -150,7 +154,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             networks = self._os_driver.ex_list_networks()
 
         except libcloud.common.types.LibcloudError as exc:
-            return Error(Failure('failed to fetch networks', exc))
+            return Error(Failure.from_exc('failed to fetch networks', exc))
 
         # TODO: this will be handled by a script, for now we simply pick our local common variety of a network.
 
@@ -228,7 +232,9 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
                 ssh_key=master_key_private_file.name,
                 ssh_username=ssh_username,
                 deploy=msd,
-                ssh_interface='private_ips'
+                ssh_interface='private_ips',
+                timeout=self.pool_config.get('deploy-attempt-timeout', DEFAULT_ATTEMPT_TIMEOUT),
+                max_tries=self.pool_config.get('deploy-attempts', DEFAULT_ATTEMPTS)
             )
 
         except libcloud.common.types.LibcloudError as exc:
@@ -244,7 +250,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         valid_ipv4_addresses = [
             address
-            for address in addresses if libcloud.compute.base.is_valid_ip_address(address, family=socket.AF_INET)
+            for address in addresses
+            if libcloud.compute.base.is_valid_ip_address(address, family=socket.AF_INET)
         ]
 
         if not addresses:
