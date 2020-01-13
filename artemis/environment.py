@@ -79,6 +79,7 @@ class Environment:
         )
 
         if 'compose' in serialized:
+
             if 'id' in serialized['compose']:
                 env.compose.id = serialized['compose']['id']
 

@@ -29,7 +29,11 @@ def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(
         image_name = environment.compose.id
 
     try:
-        image = pool._os_driver.get_image(image_name)
+        image_id = None
+        for image_data in pool._os_driver.connection.request('/images').object['images']:
+            if image_data['name'] == image_name:
+                image_id = image_data['id']
+        image = pool._os_driver.get_image(image_id)
 
     except Exception:
         logger.error('Cannot find image for {}'.format(environment))

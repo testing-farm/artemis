@@ -206,7 +206,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         add_master_key = SSHKeyDeployment(master_key.public)
 
         # if cloud_user:
-        if True:
+        # TODO: determine when cloud-user should be used
+        if False:
             ssh_username = 'cloud-user'
             copy_to_root = ScriptDeployment('sudo cp /home/cloud-user/.ssh/authorized_keys /root/.ssh/authorized_keys')
 
