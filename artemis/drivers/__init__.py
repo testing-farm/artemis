@@ -52,6 +52,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Acquire one guest from the pool. The guest must satisfy requirements specified
         by `environment`.
 
+        If the returned guest is missing an address, it is considered to be unfinished,
+        and followup calls to ``update_guest`` would be scheduled by Artemis core.
+
         :param Environment environment: environmental requirements a guest must satisfy.
         :param Key key: master key used for SSH connection.
         :param threading.Event cancelled: if set, method should cancel its operation, release
@@ -59,6 +62,19 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :rtype: result.Result[Guest, Failure]
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
+        """
+
+        raise NotImplementedError()
+
+    def update_guest(
+        self,
+        guest: Guest,
+        cancelled: Optional[threading.Event] = None
+    ) -> Result[Guest, Failure]:
+        """
+        Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
+        with an address set, driver signals the provisioning is now complete. Returning a guest instance without an
+        address would schedule yet another call to this method in the future.
         """
 
         raise NotImplementedError()

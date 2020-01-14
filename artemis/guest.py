@@ -22,6 +22,10 @@ class GuestState(enum.Enum):
     #: A pool has been assigned to fulfill the request. A provisioning task exists for this guest request.
     PROVISIONING = 'provisioning'
 
+    #: A pool driver began provisioning, and promised us delivery of the guest. This may require
+    #: some time, and probably also a series of additional tasks.
+    PROMISED = 'promised'
+
     #: Provisioning is done, there is a guest available for SSH connections.
     READY = 'ready'
 
@@ -82,3 +86,7 @@ class Guest:
         assert guest_record.pool_data is not None
 
         return json.loads(guest_record.pool_data)
+
+    @property
+    def is_promised(self) -> bool:
+        return self.address is None

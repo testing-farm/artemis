@@ -245,44 +245,54 @@ def _update_guest_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     guestname: str,
-    current: artemis.guest.GuestState,
-    new: artemis.guest.GuestState,
-    set_values: Optional[Dict[str, Any]] = None
+    current_state: artemis.guest.GuestState,
+    new_state: artemis.guest.GuestState,
+    set_values: Optional[Dict[str, Any]] = None,
+    current_pool_data: Optional[str] = None
 ) -> bool:
-    logger.warning('state switch: {} => {}'.format(current.value, new.value))
+    logger.warning('state switch: {} => {}'.format(current_state.value, new_state.value))
 
     if set_values:
         values = set_values
         values.update({
-            'state': new.value
+            'state': new_state.value
         })
 
     else:
         values = {
-            'state': new.value
+            'state': new_state.value
         }
 
-    query = sqlalchemy \
-        .update(GuestRequest.__table__) \
-        .where(GuestRequest.guestname == guestname) \
-        .where(GuestRequest.state == current.value) \
-        .values(**values)
+    if current_pool_data:
+        query = sqlalchemy \
+            .update(GuestRequest.__table__) \
+            .where(GuestRequest.guestname == guestname) \
+            .where(GuestRequest.state == current_state.value) \
+            .where(GuestRequest.pool_data == current_pool_data) \
+            .values(**values)
+
+    else:
+        query = sqlalchemy \
+            .update(GuestRequest.__table__) \
+            .where(GuestRequest.guestname == guestname) \
+            .where(GuestRequest.state == current_state.value) \
+            .values(**values)
 
     r = safe_db_execute(logger, session, query)
 
     if r.is_ok:
         if r.value is True:
-            logger.warning('state switch: {} => {}: succeeded'.format(current.value, new.value))
+            logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
 
         else:
-            logger.warning('state switch: {} => {}: failed'.format(current.value, new.value))
+            logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
 
         return r.unwrap()
 
     failure = cast(Failure, r.value)
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        logger.warning('state switch: {} => {}: no result found'.format(current.value, new.value))
+        logger.warning('state switch: {} => {}: no result found'.format(current_state.value, new_state.value))
 
         return False
 
@@ -400,6 +410,109 @@ def release_guest_request(guestname: str) -> None:
     )
 
 
+async def do_update_guest(
+    logger: gluetool.log.ContextAdapter,
+    db: artemis.db.DB,
+    cancel: threading.Event,
+    guestname: str
+) -> None:
+    with db.get_session() as session:
+        def _undo_guest_update(guest: artemis.guest.Guest) -> None:
+            r = pool.release_guest(guest)
+
+            if r.is_ok:
+                return
+
+            raise Exception(r.error)
+
+        gr = _get_guest_by_state(logger, session, guestname, artemis.guest.GuestState.PROMISED)
+        if not gr:
+            return
+
+        assert gr.poolname is not None
+
+        current_pool_data = gr.pool_data
+
+        pool = _get_pool(logger, session, gr.poolname)
+
+        if cancel.is_set():
+            return
+
+        guest_sshkey = _get_ssh_key(
+            logger,
+            session,
+            gr.ownername,
+            gr.ssh_keyname
+        )
+
+        r_guest = pool.guest_factory(gr, ssh_key=guest_sshkey)
+
+        if r_guest.is_error:
+            cast(Failure, r_guest.value).log(logger.error, label='failed to locate')
+            return
+
+        r_update = pool.update_guest(r_guest.unwrap())
+
+        if r_update.is_error:
+            cast(Failure, r_update.value).log(logger.error, label='failed to update')
+            return
+
+        guest = r_update.unwrap()
+
+        if guest.is_promised:
+            if _update_guest_state(
+                logger,
+                session,
+                guestname,
+                artemis.guest.GuestState.PROMISED,
+                artemis.guest.GuestState.PROMISED,
+                set_values={
+                    'pool_data': guest.pool_data_to_db()
+                },
+                current_pool_data=current_pool_data
+            ):
+                r_promise = _dispatch_task(logger, update_guest, guestname)
+
+                if r_promise.is_ok:
+                    logger.info('scheduled update')
+                    return
+
+        else:
+            if _update_guest_state(
+                logger,
+                session,
+                guestname,
+                artemis.guest.GuestState.PROMISED,
+                artemis.guest.GuestState.READY,
+                set_values={
+                    'address': guest.address,
+                    'pool_data': guest.pool_data_to_db()
+                },
+                current_pool_data=current_pool_data
+            ):
+                logger.info('successfully acquired')
+                return
+
+        # Failed to change the state means somebody else already did the update. We have a guest on our hands,
+        # which points to resources that are now wasted because there is another instance of this guest
+        # already updated or finished. We can safely ask driver to release resources of this particular
+        # guest instance - this is not going to affect the instance whose changes were commited to the database
+        # before ours.
+        _undo_guest_update(guest)
+
+
+@dramatiq.actor(min_backoff=15, max_backoff=16)  # type: ignore  # Untyped decorator makes function untyped
+def update_guest(guestname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_update_guest,
+        logger_getter=lambda root_logger: TaskLogger(
+            artemis.guest.GuestLogger(root_logger, guestname),
+            'update'
+        ),
+        doer_args=(guestname,)
+    )
+
+
 async def do_acquire_guest(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
@@ -430,8 +543,8 @@ async def do_acquire_guest(
 
         result = pool.acquire_guest(logger, environment, master_key)
 
-        if result.is_error:
-            raise Exception('failed to acquire: {}'.format(result.error))
+        if result.is_error and result.error:
+            raise Exception('failed to acquire: {}'.format(result.error.message))
 
         guest = result.unwrap()
 
@@ -442,21 +555,40 @@ async def do_acquire_guest(
         # TODO: instead of switching to READY, we need to switch into transient state instead,
         # and upload the requested key to the guest (using our master key).
 
-        # We have a guest, we can move the guest record to the next state. We must atomicaly add guest's address
-        # while making sure nobody else did it before us.
-        if _update_guest_state(
-            logger,
-            session,
-            guestname,
-            artemis.guest.GuestState.PROVISIONING,
-            artemis.guest.GuestState.READY,
-            set_values={
-                'address': guest.address,
-                'pool_data': guest.pool_data_to_db()
-            }
-        ):
-            logger.info('successfully acquired')
-            return
+        # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
+        # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
+        # save guest's address. In both cases, we must be sure nobody else did any changes before us.
+        if guest.is_promised:
+            if _update_guest_state(
+                logger,
+                session,
+                guestname,
+                artemis.guest.GuestState.PROVISIONING,
+                artemis.guest.GuestState.PROMISED,
+                set_values={
+                    'pool_data': guest.pool_data_to_db()
+                }
+            ):
+                r_promise = _dispatch_task(logger, update_guest, guestname)
+
+                if r_promise.is_ok:
+                    logger.info('scheduled update')
+                    return
+
+        else:
+            if _update_guest_state(
+                logger,
+                session,
+                guestname,
+                artemis.guest.GuestState.PROVISIONING,
+                artemis.guest.GuestState.READY,
+                set_values={
+                    'address': guest.address,
+                    'pool_data': guest.pool_data_to_db()
+                }
+            ):
+                logger.info('successfully acquired')
+                return
 
         # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
         # Again, we must undo and forget about the guest request.
