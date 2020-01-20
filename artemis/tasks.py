@@ -7,6 +7,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
+import stackprinter
 
 from gluetool.result import Result, Ok, Error
 
@@ -14,11 +15,12 @@ import artemis
 import artemis.db
 import artemis.guest
 import artemis.drivers.openstack
+import artemis.script
 
 from artemis import Failure, safe_call, safe_db_execute
 from artemis.db import GuestRequest
 
-from typing import cast, Any, Callable, Dict, Optional, Tuple
+from typing import cast, Any, Callable, Dict, List, Optional, Tuple
 from typing_extensions import Protocol
 
 
@@ -110,7 +112,7 @@ class TaskLogger(gluetool.log.ContextAdapter):
         self.warning('finished')
 
     def failed(self, failure: Failure) -> None:
-        self.error('failed: {}'.format(failure.exception), exc_info=failure.exc_info)
+        self.error('failed:\n{}'.format(stackprinter.format(failure.exception)))
 
 
 _ = artemis.get_broker()
@@ -188,7 +190,7 @@ def task_core(
         return
 
     except Exception as exc:
-        logger.failed(Failure.from_exc('unhandled exception', exc))
+        logger.failed(Failure.from_exc('task failed', exc))
 
     # To avoid chain of exceptions in the log - which we already logged above - raise a generic,
     # insignificant exception to notify our master about the failure.
@@ -316,6 +318,22 @@ def _get_pool(
     pool_driver_class = POOL_DRIVERS[pool_record.driver]
 
     return pool_driver_class(logger, json.loads(pool_record.parameters))
+
+
+def _get_pools(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session
+) -> List[artemis.drivers.PoolDriver]:
+    pools: List[artemis.drivers.PoolDriver] = []
+
+    for pool_record in session.query(artemis.db.Pool).all():
+        pool_driver_class = POOL_DRIVERS[pool_record.driver]
+
+        pools += [
+            pool_driver_class(logger, json.loads(pool_record.parameters))
+        ]
+
+    return pools
 
 
 def _get_ssh_key(
@@ -543,7 +561,9 @@ async def do_acquire_guest(
 
         result = pool.acquire_guest(logger, environment, master_key)
 
-        if result.is_error and result.error:
+        if result.is_error:
+            assert result.error is not None
+
             raise Exception('failed to acquire: {}'.format(result.error.message))
 
         guest = result.unwrap()
@@ -659,7 +679,22 @@ async def do_route_guest_request(
         # of us.
 
         logger.info('finding suitable provisioner')
-        pool_name = 'baseosci-openstack'
+
+        r_engine = artemis.script.hook_engine('ROUTE')
+
+        if r_engine.is_error:
+            assert r_engine.error is not None
+
+            raise Exception('Failed to load ROUTE hook: {}'.format(r_engine.error.message))
+
+        engine = r_engine.unwrap()
+
+        pool_name = engine.run_hook(
+            'ROUTE',
+            logger=logger,
+            guest_request=guest,
+            pools=_get_pools(logger, session)
+        )
 
         if cancel.is_set():
             return
@@ -702,7 +737,7 @@ async def do_route_guest_request(
         _undo_guest_in_provisioning()
 
 
-@dramatiq.actor  # type: ignore  # Untyped decorator makes function untyped
+@dramatiq.actor(max_retries=5)  # type: ignore  # Untyped decorator makes function untyped
 def route_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_route_guest_request,

@@ -5,7 +5,6 @@ import tempfile
 import threading
 
 import gluetool.log
-from gluetool.log import log_dict
 from gluetool.result import Result, Ok, Error
 
 import libcloud.common.types
@@ -127,27 +126,26 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         logger: gluetool.log.ContextAdapter,
         environment: artemis.environment.Environment
     ) -> Result[Any, Failure]:
-        try:
-            images = self._os_driver.list_images()
+        r_engine = artemis.script.hook_engine('OPENSTACK_ENVIRONMENT_TO_IMAGE')
 
-        except libcloud.common.types.LibcloudError as exc:
-            return Error(Failure.from_exc('failed to fetch images', exc))
+        if r_engine.is_error:
+            assert r_engine.error is not None
 
-        # TODO: this will be handled by a script, for now we simply pick our local common variety of an image.
-        if environment.compose.is_openstack:
-            assert environment.compose.openstack
-            image_name = environment.compose.openstack.image
+            raise Exception('Failed to load OPENSTACK_ENVIRONMENT_TO_IMAGE hook: {}'.format(r_engine.error.message))
 
-        else:
-            image_name = self.pool_config['default-image']
+        engine = r_engine.unwrap()
 
-        suitable_images = [image for image in images if image.name == image_name]
+        image = engine.run_hook(
+            'OPENSTACK_ENVIRONMENT_TO_IMAGE',
+            logger=logger,
+            pool=self,
+            environment=environment
+        )
 
-        if not suitable_images:
-            log_dict(logger.warning, 'available images', [image.name for image in images])
-            return Error(Failure('no such image "{}"'.format(self.pool_config['default-image'])))
+        if image is None:
+            return Error(Failure('Failed to find image for environment {}'.format(environment)))
 
-        return Ok(suitable_images[0])
+        return Ok(image)
 
     def _env_to_network(self, environment: artemis.environment.Environment) -> Result[Any, Failure]:
         try:

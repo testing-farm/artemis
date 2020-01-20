@@ -1,19 +1,22 @@
 import imp
-import os.path
+import os
 
+from gluetool.result import Result, Ok, Error
 import gluetool.utils
 
-from typing import Any, Dict, Optional
+from artemis import Failure
+
+from typing import Any, Dict
 
 
 class ScriptEngine:
     def __init__(self) -> None:
         super(ScriptEngine, self).__init__()
 
-        self._scripts: Dict[str, Any] = {}
-        self._variables: Dict[str, Any] = {}
+        self.functions: Dict[str, Any] = {}
+        self.variables: Dict[str, Any] = {}
 
-    def _load_script_file(self, name: str, filepath: str) -> None:
+    def load_script_file(self, filepath: str) -> None:
         filepath = os.path.expanduser(filepath)
 
         try:
@@ -31,23 +34,45 @@ class ScriptEngine:
             if not callable(fn):
                 continue
 
-            self._scripts[member_name] = fn
+            self.functions[member_name] = fn
 
-    def _load_variables_file(self, filepath: str) -> None:
+    def load_variables_file(self, filepath: str) -> None:
         variables = gluetool.utils.load_yaml(filepath)
 
         if not isinstance(variables, dict):
             raise Exception('Cannot add variables from {}, not a key: value format'.format(filepath))
 
-        self._variables.update(variables)
+        self.variables.update(variables)
 
-    def run_script(self, name: str, variables: Optional[Dict[str, Any]] = None) -> Any:
-        variables = variables or {}
-
+    def run(self, name: str, **kwargs: Any) -> Any:
         kwargs = gluetool.utils.dict_update(
             {},
-            self._variables,
-            variables
+            self.variables,
+            kwargs or {}
         )
 
-        return self._scripts[name](**kwargs)
+        return self.functions[name](**kwargs)
+
+    def run_hook(self, name: str, **kwargs: Any) -> Any:
+        return self.run('hook_{}'.format(name.upper()), **kwargs)
+
+
+def hook_engine(hook_name: str) -> Result[ScriptEngine, Failure]:
+    script_filepath = os.getenv('ARTEMIS_HOOK_{}'.format(hook_name.upper()), None)
+    hook_callback_name = 'hook_{}'.format(hook_name.upper())
+
+    if not script_filepath:
+        return Error(Failure('Hook {} is not defined'.format(hook_name)))
+
+    script_filepath = os.path.expanduser(script_filepath)
+
+    if not os.path.exists(script_filepath):
+        return Error(Failure('Script file {} does not exist'.format(script_filepath)))
+
+    engine = ScriptEngine()
+    engine.load_script_file(script_filepath)
+
+    if hook_callback_name not in engine.functions:
+        return Error(Failure('Hook callback {} is not present in {}'.format(hook_callback_name, script_filepath)))
+
+    return Ok(engine)

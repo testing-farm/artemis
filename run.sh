@@ -9,6 +9,9 @@ export ARTEMIS_BROKER_URL="amqp://guest:guest@127.0.0.1:5672"
 export ARTEMIS_DB_URL="sqlite:///test.db"
 export ARTEMIS_VAULT_PASSWORD_FILE="$(pwd)/artemis-configuration/.vault_pass"
 
+export ARTEMIS_HOOK_ROUTE="$(pwd)/hook_ROUTE.py"
+export ARTEMIS_HOOK_OPENSTACK_ENVIRONMENT_TO_IMAGE="$(pwd)/hook_OPENSTACK_ENVIRONMENT_TO_IMAGE.py"
+
 ARTEMIS_WORKER_OPTIONS="${ARTEMIS_WORKER_OPTIONS:-}"
 
 if [ "$ARTEMIS_WORKER_PROCESSES" != "" ]; then
