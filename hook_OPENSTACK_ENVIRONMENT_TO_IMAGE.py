@@ -1,4 +1,4 @@
-import sys
+import re
 
 import artemis.db
 import artemis.drivers
@@ -31,7 +31,7 @@ def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(
     try:
         image_id = None
         for image_data in pool._os_driver.connection.request('/images').object['images']:
-            if image_data['name'] == image_name:
+            if re.match(r'.+{}'.format(image_name), image_data['name']):
                 image_id = image_data['id']
         image = pool._os_driver.get_image(image_id)
 
