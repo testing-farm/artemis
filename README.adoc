@@ -46,6 +46,10 @@ Minishift is a local Openshift run in a kvm VM on your localhost.
 
 To install it follow the following guide: https://docs.okd.io/latest/minishift/getting-started/installing.html#installing-manually
 
+To set up the virtualization environment follow the following guide: https://docs.okd.io/latest/minishift/getting-started/setting-up-virtualization-environment.html#setting-up-kvm-driver
+
+Minishift makes requests to the GitHub API to download an image. Sometimes, the GitHub limits the request from IP addresses. To solve this, follow the following guide: https://github.com/minishift/minishift/blob/master/docs/source/troubleshooting/troubleshooting-getting-started.adoc#github-api-rate-limit-exceeded
+
 ==== Install Openshift Client Tools
 
 Openshift Client Tools are required to interact with Minishift cluster.
