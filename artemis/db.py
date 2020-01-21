@@ -174,7 +174,7 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
                 Pool(
                     poolname=pool_config['name'],
                     driver=pool_config['driver'],
-                    parameters=json.dumps(pool_config['parameters'])
+                    parameters=json.dumps(pool_config.get('parameters', {}))
                 )
             )
 
