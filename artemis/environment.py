@@ -79,9 +79,7 @@ class Environment:
         )
 
         if 'compose' in serialized:
-
-            if 'id' in serialized['compose']:
-                env.compose.id = serialized['compose']['id']
+            env.compose.id = serialized['compose'].get('id', None)
 
             def _add_complex_container(field: str, klass: object) -> None:
                 if field not in serialized['compose']:
