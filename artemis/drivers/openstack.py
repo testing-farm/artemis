@@ -183,7 +183,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             of error.
         """
 
-        logger.info('provisioning environment {}'.format(environment.serialize_to_json()))
+        logger.info('provisioning environment {}'.format(environment))
 
         result = self._env_to_flavor(environment)
         if result.is_error:
