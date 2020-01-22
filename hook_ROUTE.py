@@ -4,19 +4,20 @@ import artemis.db
 import artemis.drivers
 import gluetool.log
 
-from typing import List
+from typing import List, Optional
 
 
 def hook_ROUTE(
-    logger: gluetool.log.ContextAdapter = None,
-    guest_request: artemis.db.GuestRequest = None,
-    pools: List[artemis.drivers.PoolDriver] = None
+    logger: Optional[gluetool.log.ContextAdapter] = None,
+    guest_request: Optional[artemis.db.GuestRequest] = None,
+    pools: Optional[List[artemis.drivers.PoolDriver]] = None
 ) -> str:
+    assert logger is not None
     assert guest_request is not None
     assert pools is not None
 
-    logger.warn('Available pools')
+    logger.warning('Available pools')
     for pool in pools:
-        logger.warn('  {}'.format(pool.__class__.__name__))
+        logger.warning('  {}'.format(pool.__class__.__name__))
 
     return 'baseosci-openstack'
