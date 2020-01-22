@@ -426,7 +426,7 @@ async def do_release_guest_request(
         failure.reraise()
 
 
-@dramatiq.actor(min_backoff=15, max_backoff=16)  # type: ignore  # Untyped decorator makes function untyped
+@dramatiq.actor(max_retries=10, min_backoff=15000, max_backoff=14400000)  # type: ignore  # Untyped decorator
 def release_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_guest_request,
@@ -529,7 +529,7 @@ async def do_update_guest(
         _undo_guest_update(guest)
 
 
-@dramatiq.actor(min_backoff=15, max_backoff=16)  # type: ignore  # Untyped decorator makes function untyped
+@dramatiq.actor(max_retries=10, min_backoff=15000, max_backoff=14400000)  # type: ignore  # Untyped decorator
 def update_guest(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_update_guest,
@@ -625,7 +625,7 @@ async def do_acquire_guest(
         _undo_guest_acquire(guest)
 
 
-@dramatiq.actor(min_backoff=15, max_backoff=16)  # type: ignore  # Untyped decorator makes function untyped
+@dramatiq.actor(max_retries=10, min_backoff=15000, max_backoff=14400000)  # type: ignore  # Untyped decorator
 def acquire_guest(guestname: str, poolname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_acquire_guest,
@@ -747,7 +747,7 @@ async def do_route_guest_request(
         _undo_guest_in_provisioning()
 
 
-@dramatiq.actor(max_retries=5)  # type: ignore  # Untyped decorator makes function untyped
+@dramatiq.actor(max_retries=10, min_backoff=15000, max_backoff=14400000)  # type: ignore  # Untyped decorator
 def route_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_route_guest_request,
