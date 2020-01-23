@@ -14,6 +14,7 @@ from libcloud.compute.deployment import MultiStepDeployment, SSHKeyDeployment, S
 
 import artemis
 from artemis import Failure
+import artemis.db
 import artemis.drivers
 
 from typing import Any, Dict, Optional
@@ -166,6 +167,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        guest_request: artemis.db.GuestRequest,
         environment: artemis.environment.Environment,
         master_key: artemis.db.SSHKey,
         cancelled: Optional[threading.Event] = None
@@ -223,7 +225,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         try:
             node = self._os_driver.deploy_node(
-                name='libcloud-experiment',
+                name=guest_request.guestname,
                 size=size,
                 image=image,
                 networks=[network],

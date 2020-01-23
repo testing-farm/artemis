@@ -51,6 +51,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        guest_request: artemis.db.GuestRequest,
         environment: artemis.environment.Environment,
         master_key: artemis.db.SSHKey,
         cancelled: Optional[threading.Event] = None

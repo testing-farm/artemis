@@ -12,6 +12,7 @@ from gluetool.result import Result, Ok, Error
 from gluetool.log import log_xml, log_blob
 
 import artemis
+import artemis.db
 import artemis.drivers
 from artemis import Failure
 
@@ -334,6 +335,7 @@ class BeakerDriver(artemis.drivers.PoolDriver):
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        guest_request: artemis.db.GuestRequest,
         environment: artemis.environment.Environment,
         master_key: artemis.db.SSHKey,
         cancelled: Optional[threading.Event] = None

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import threading
 
 import dramatiq
@@ -125,6 +126,20 @@ POOL_DRIVERS = {
     'aws': artemis.drivers.aws.AWSDriver,
     'beaker': artemis.drivers.beaker.BeakerDriver
 }
+
+
+def actor_kwargs(actor_name: str) -> Dict[str, Any]:
+    def _get(var_name: str, default: Any) -> Any:
+        return os.getenv(
+            'ARTEMIS_ACTOR_{}_{}'.format(actor_name.upper(), var_name),
+            default
+        )
+
+    return {
+        'max_retries': _get('RETRIES', 5),
+        'min_backoff': _get('MIN_BACKOFF', 15000),
+        'max_backoff': _get('MAX_BACKOFF', 60000)
+    }
 
 
 def run_doer(
@@ -426,7 +441,7 @@ async def do_release_guest_request(
         failure.reraise()
 
 
-@dramatiq.actor(max_retries=10, min_backoff=15000, max_backoff=14400000)  # type: ignore  # Untyped decorator
+@dramatiq.actor(**actor_kwargs('RELEASE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def release_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_guest_request,
@@ -529,7 +544,7 @@ async def do_update_guest(
         _undo_guest_update(guest)
 
 
-@dramatiq.actor(max_retries=10, min_backoff=15000, max_backoff=14400000)  # type: ignore  # Untyped decorator
+@dramatiq.actor(**actor_kwargs('UPDATE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def update_guest(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_update_guest,
@@ -569,7 +584,7 @@ async def do_acquire_guest(
         if cancel.is_set():
             return
 
-        result = pool.acquire_guest(logger, environment, master_key)
+        result = pool.acquire_guest(logger, gr, environment, master_key)
 
         if result.is_error:
             assert result.error is not None
@@ -625,7 +640,7 @@ async def do_acquire_guest(
         _undo_guest_acquire(guest)
 
 
-@dramatiq.actor(max_retries=10, min_backoff=15000, max_backoff=14400000)  # type: ignore  # Untyped decorator
+@dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def acquire_guest(guestname: str, poolname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_acquire_guest,
@@ -747,7 +762,7 @@ async def do_route_guest_request(
         _undo_guest_in_provisioning()
 
 
-@dramatiq.actor(max_retries=10, min_backoff=15000, max_backoff=14400000)  # type: ignore  # Untyped decorator
+@dramatiq.actor(**actor_kwargs('ROUTE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def route_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_route_guest_request,
