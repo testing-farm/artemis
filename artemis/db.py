@@ -110,7 +110,8 @@ class DB:
     ) -> None:
         logger.info('connecting to db {}'.format(url))
 
-        gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
+        if os.getenv('ARTEMIS_LOG_DB_QUERIES', None):
+            gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
 
         self._engine = sqlalchemy.create_engine(url)
         self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self._engine)
