@@ -17,12 +17,19 @@ FROM alpine:3.10
 # See: https://github.com/Docker-Hub-frolvlad/docker-alpine-python3/pull/13
 ENV PYTHONUNBUFFERED=1
 
+# default configuration directory
+ENV CONFIGURATION=/configuration
+
+# default home directory
+ENV HOME=/tmp
+
 #
 # Prepare virtual environment and install all required dependencies
 #
 RUN    apk add --no-cache bash \
                           curl \
                           gcc \
+                          krb5 \
                           krb5-dev \
                           libffi-dev \
                           libxml2-dev \
@@ -41,6 +48,24 @@ RUN    apk add --no-cache bash \
     && if [ ! -e /usr/bin/pip ]; then ln -s pip3 /usr/bin/pip ; fi \
     && pip3 install -U virtualenv \
     && virtualenv -p /usr/bin/python3 /APP
+
+#
+# Make sure AWS credentials are available from configuration
+#
+#  ~/.aws/config is symlinked to $CONFIGURATION/aws-config
+#  ~/.aws/credentials is symlinked to $CONFIGURATION/aws-credentials
+#
+RUN    mkdir -p $HOME/.aws \
+    && ln -s $CONFIGURATION/aws-config $HOME/.aws/config \
+    && ln -s $CONFIGURATION/aws-credentials $HOME/.aws/credentials
+
+#
+# Make sure Beaker credentials are symlinked from configuration
+#
+#  /etc/beaker/client.conf is symlinked to $CONFIGURATION/beaker-client-config
+#
+RUN    mkdir -p /etc/beaker \
+    && ln -s $CONFIGURATION/beaker-client-config /etc/beaker/client.conf
 
 #
 # Add setup.py and install all requirements
