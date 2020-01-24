@@ -9,7 +9,6 @@ import dramatiq.middleware.age_limit
 import dramatiq.middleware.time_limit
 import dramatiq.middleware.shutdown
 import dramatiq.middleware.callbacks
-import dramatiq.middleware.retries
 import gluetool.log
 import gluetool.utils
 from gluetool.result import Result, Ok, Error
@@ -17,6 +16,7 @@ import sqlalchemy.orm.session
 
 import artemis.db
 import artemis.vault
+import artemis.middleware
 
 from typing import cast, Any, Callable, Dict, NoReturn, Optional, Tuple, TypeVar, Union
 from types import TracebackType
@@ -164,12 +164,19 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
             dramatiq.middleware.time_limit.TimeLimit(),
             dramatiq.middleware.shutdown.ShutdownNotifications(),
             dramatiq.middleware.callbacks.Callbacks(),
-            dramatiq.middleware.retries.Retries()
+            artemis.middleware.Retries()
         ])
 
     else:
         broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
-            url=os.getenv('ARTEMIS_BROKER_URL', DEFAULT_BROKER_URL)
+            url=os.getenv('ARTEMIS_BROKER_URL', DEFAULT_BROKER_URL),
+            middleware=[
+                dramatiq.middleware.age_limit.AgeLimit(),
+                dramatiq.middleware.time_limit.TimeLimit(),
+                dramatiq.middleware.shutdown.ShutdownNotifications(),
+                dramatiq.middleware.callbacks.Callbacks(),
+                artemis.middleware.Retries()
+            ]
         )
 
     dramatiq.set_broker(broker)
