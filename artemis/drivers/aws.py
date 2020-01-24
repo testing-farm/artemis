@@ -153,28 +153,26 @@ class AWSDriver(artemis.drivers.PoolDriver):
         logger: gluetool.log.ContextAdapter,
         environment: artemis.environment.Environment
     ) -> Result[Any, Failure]:
+        r_engine = artemis.script.hook_engine('AWS_ENVIRONMENT_TO_IMAGE')
 
-        result = self._aws_command(['ec2', 'describe-images', '--owner=self'], key='Images')
+        if r_engine.is_error:
+            assert r_engine.error is not None
 
-        if result.is_error:
-            return result
+            raise Exception('Failed to load AWS_ENVIRONMENT_TO_IMAGE hook: {}'.format(r_engine.error.message))
 
-        images = result.unwrap()
+        engine = r_engine.unwrap()
 
-        if environment.compose.is_aws:
-            assert environment.compose.aws
-            image_name = environment.compose.aws.image  # type: Optional[str]
+        image = engine.run_hook(
+            'AWS_ENVIRONMENT_TO_IMAGE',
+            logger=logger,
+            pool=self,
+            environment=environment
+        )
 
-        else:
-            image_name = environment.compose.id
+        if image is None:
+            return Error(Failure('Failed to find image for environment {}'.format(environment)))
 
-        suitable_images = [image for image in images if image['Name'] == image_name]
-
-        if not suitable_images:
-            log_dict(logger.warning, 'available images', [image['Name'] for image in images])
-            return Error(Failure('No such image "{}"'.format(image_name)))
-
-        return Ok(suitable_images[0])
+        return Ok(image)
 
     def _aws_command(self, args: List[str], key: Optional[str] = None) -> Result[Any, Failure]:
         """
