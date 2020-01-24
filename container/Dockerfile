@@ -23,6 +23,9 @@ ENV CONFIGURATION=/configuration
 # default home directory
 ENV HOME=/tmp
 
+# default kerberos ccache file
+ENV KRB_CCACHE=/dev/shm/ccache
+
 #
 # Prepare virtual environment and install all required dependencies
 #
@@ -47,7 +50,8 @@ RUN    apk add --no-cache bash \
     && pip3 install --no-cache --upgrade pip setuptools wheel \
     && if [ ! -e /usr/bin/pip ]; then ln -s pip3 /usr/bin/pip ; fi \
     && pip3 install -U virtualenv \
-    && virtualenv -p /usr/bin/python3 /APP
+    && virtualenv -p /usr/bin/python3 /APP \
+    && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
 
 #
 # Make sure AWS credentials are available from configuration
