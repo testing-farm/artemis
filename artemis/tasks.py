@@ -78,6 +78,11 @@ from typing_extensions import Protocol
 # - "lazy actor" wrapper to avoid the necessity of initializing dramatiq at the import time
 
 
+# initialize database ONCE per worker
+root_logger = artemis.get_logger()
+db = artemis.get_db(root_logger)
+
+
 # This should be correct type, but mypy has some issue with it :/
 #
 #   Argument 4 to "run_doer" has incompatible type
@@ -190,9 +195,6 @@ def task_core(
     doer_args: Optional[Tuple[Any, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None
 ) -> None:
-    root_logger = artemis.get_logger()
-    db = artemis.get_db(root_logger)
-
     logger = logger_getter(root_logger)
 
     logger.begin()
