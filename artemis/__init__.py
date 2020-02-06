@@ -141,7 +141,8 @@ def get_logger() -> gluetool.log.ContextAdapter:
     gluetool.color.switch(True)
 
     return gluetool.log.Logging.setup_logger(
-        level=logging.INFO
+        level=logging.INFO,
+        json_output=gluetool.utils.normalize_bool_option(os.getenv('ARTEMIS_LOG_JSON', 'yes'))
     )
 
 

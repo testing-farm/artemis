@@ -42,6 +42,8 @@ spec:
               value: /configuration
             - name: ARTEMIS_DB_URL
               value: postgres://artemis:artemis@artemis-postgres:5432/artemis
+            - name: ARTEMIS_LOG_JSON
+              value: "no"
             - name: ARTEMIS_VAULT_PASSWORD_FILE
               value: /configuration/.vault_pass
           volumeMounts:
