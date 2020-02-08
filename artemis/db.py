@@ -110,9 +110,7 @@ class Metrics(Base):
     __tablename__ = 'metrics'
 
     _id = Column(Integer, primary_key=True)
-    poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
-    state = Column(String(250), nullable=True)
-    count = Column(Integer, default=1)
+    count = Column(Integer, default=0)
     updated = Column(DateTime, default=datetime.datetime.now())
 
 
@@ -207,6 +205,9 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
                     parameters=json.dumps(pool_config.get('parameters', {}))
                 )
             )
+
+        logger.info('Adding metrics counter')
+        session.add(Metrics())
 
 
 def init_postgres() -> None:

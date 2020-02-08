@@ -54,9 +54,14 @@ class BeakerGuest(artemis.guest.Guest):
 
 
 class BeakerDriver(artemis.drivers.PoolDriver):
-    def __init__(self, logger: gluetool.log.ContextAdapter, pool_config: Dict[str, Any]) -> None:
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        pool_config: Dict[str, Any],
+        poolname: Optional[str] = None
+    ) -> None:
 
-        super(BeakerDriver, self).__init__(logger, pool_config)
+        super(BeakerDriver, self).__init__(logger, pool_config, poolname=poolname)
 
     def _run_bkr(self, options: List[str]) -> Result[str, Failure]:
         """

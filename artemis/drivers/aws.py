@@ -83,8 +83,13 @@ class AWSGuest(artemis.guest.Guest):
 
 
 class AWSDriver(artemis.drivers.PoolDriver):
-    def __init__(self, logger: gluetool.log.ContextAdapter, pool_config: Dict[str, Any]) -> None:
-        super(AWSDriver, self).__init__(logger, pool_config)
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        pool_config: Dict[str, Any],
+        poolname: Optional[str] = None
+    ) -> None:
+        super(AWSDriver, self).__init__(logger, pool_config, poolname=poolname)
 
     def sanity(self) -> Result[bool, Failure]:
         required_variables = [
