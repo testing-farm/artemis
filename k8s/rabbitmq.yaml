@@ -19,6 +19,30 @@ spec:
   selector:
     service: artemis-rabbitmq
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artemis-rabbitmq-management
+  labels:
+    app: artemis
+    service: artemis-rabbitmq
+spec:
+  ports:
+    - port: 80
+      targetPort: 15672
+      name: artemis-rabbitmq
+  selector:
+    service: artemis-rabbitmq
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: artemis-rabbitmq-management
+spec:
+  to:
+    kind: Service
+    name: artemis-rabbitmq-management
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,6 +59,7 @@ spec:
     spec:
       containers:
         - name: rabbitmq
-          image: rabbitmq:3
+          image: rabbitmq:3-management
           ports:
             - containerPort: 5672
+            - containerPort: 15672

@@ -90,6 +90,39 @@ $ source develop.sh
 +
 The first execution of the script will take some time, as it needs to start Minishift and initially build Artemis.
 
+=== Enable development environment
+
+If you want to interact with minishift where artemis is deployed, you can use the `-s` option while sourcing the `develop.sh` script.
++
+[source,shell]
+....
+$ source develop.sh -s
+....
++
+This is required only once per terminal session.
+
+=== Details of local development services
+
+[NOTE]
+====
+Make sure you have sourced the `develop.sh` script with `-s` option before interacting with minishift via `oc` command.
+====
+
+* RabbitMQ Management Console
+  * hostname: `oc get route artemis-api`
+  * user: guest
+  * password: guest
+
+* RabbitMQ Management Console
+  * hostname: `oc get route artemis-rabbitmq-management`
+  * user: guest
+  * password: guest
+
+* PostgreSQL:
+  * user: artemis
+  * password: artemis
+  * database: artemis
+
 == How to run the WIP version (deprecated)
 
 * create a virtualenv:
