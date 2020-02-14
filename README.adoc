@@ -1,5 +1,3 @@
-image:https://quay.io/repository/testing-farm/artemis/status["Docker Repository on Quay", link="https://quay.io/repository/testing-farm/artemis"]
-
 = Artemis
 
 *Artemis* is a machine provisioning service. Its goal is to provision a machine - using a set of preconfigured providers as backends - which would satisfy the given hardware and software requirements.
@@ -9,7 +7,6 @@ Using REST API, users request provisioning of *guests*, describing the desired h
 Requests are sorted into several *priority groups* - given that pools may not have infinite resources, some priority groups may be more important than others.
 
 Each provisioning request is asynchronous by its nature: user submits a *guest request* and receives an ID, *guest name*. User then periodically checks status of the request, using the provided ID, until the request becomes ready. From that moment on, the guest is available and reserved for the user. The request can be cancelled at any time, causing release of its resources.
-
 
 == Environment variables
 
