@@ -31,11 +31,10 @@ setup(
         'gluetool==1.20',
         'gunicorn==19.9.0',
         'molten==0.7.4',
-        'apache-libcloud==2.6.0',
-        'paramiko==2.6.0',
         'psycopg2==2.8.4',
         'sqlalchemy',
-        'stackprinter'
+        'stackprinter',
+        'python-openstackclient==5.0.0'
     ],
 
     author='tft',

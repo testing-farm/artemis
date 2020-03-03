@@ -1,52 +1,42 @@
 import json
-import os
-import socket
-import tempfile
+import re
 import threading
+from datetime import datetime
 
 import gluetool.log
+from gluetool.glue import GlueCommandError
 from gluetool.result import Result, Ok, Error
-
-import libcloud.common.types
-from libcloud.compute.providers import get_driver
-from libcloud.compute.types import Provider
-from libcloud.compute.deployment import MultiStepDeployment, SSHKeyDeployment, ScriptDeployment
+from gluetool.utils import Command
 
 import artemis
-from artemis import Failure
+import artemis.db
 import artemis.drivers
+from artemis import Failure
 
-from typing import Any, Optional, Dict
-
-
-NodeRefType = Any
-
-
-DEFAULT_ATTEMPT_TIMEOUT = 240
-DEFAULT_ATTEMPTS = 3
+from typing import Any, Dict, List, Optional
 
 
 class OpenStackGuest(artemis.guest.Guest):
     def __init__(
         self,
-        node: NodeRefType,
+        instance_id: str,
         address: Optional[str] = None,
         ssh_info: Optional[artemis.guest.SSHInfo] = None
     ) -> None:
         super(OpenStackGuest, self).__init__(address, ssh_info)
 
-        self._node = node
+        self.instance_id = instance_id
 
     def __repr__(self) -> str:
         return '<OpenStackGuest: os_instance={}, address={}, ssh_info={}>'.format(
-            self._node.uuid,
+            self.instance_id,
             self.address,
             self.ssh_info
         )
 
     def pool_data_to_db(self) -> str:
         return json.dumps({
-            'instance_id': str(self._node.id)
+            'instance_id': str(self.instance_id)
         })
 
 
@@ -59,19 +49,58 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
     ) -> None:
         super(OpenStackDriver, self).__init__(logger, pool_config, poolname=poolname)
 
-        os_driver_class = get_driver(Provider.OPENSTACK)
+        self.pool_config = pool_config
 
-        self._os_driver = os_driver_class(
-            pool_config['username'],
-            pool_config['password'],
-            api_version='2.0',
-            ex_force_auth_url=pool_config['auth-url'],
-            ex_tenant_name=pool_config['project-name'],
-            ex_domain_name=pool_config['user-domain-name'],
-            ex_force_service_region='regionOne'
-        )
+    def _run_os(self, options: List[str], json_format: bool = True) -> Result[Any, Failure]:
+        """
+        Run os command with additional options and return output in json format
 
-        self.master_key_pool_name = pool_config['master-key-name']
+        :param List(str) options: options for the command
+        :param bool json_format: returns json format if true
+        :rtype: result.Result[str, Failure]
+        :returns: :py:class:`result.Result` with output, or specification of error.
+        """
+        os_base = [
+            'openstack',
+            '--os-auth-url', self.pool_config['auth-url'],
+            '--os-identity-api-version', self.pool_config['api-version'],
+            '--os-user-domain-name', self.pool_config['user-domain-name'],
+            '--os-project-domain-name', self.pool_config['project-domain-name'],
+            '--os-project-name', self.pool_config['project-name'],
+            '--os-username', self.pool_config['username'],
+            '--os-password', self.pool_config['password']
+        ]
+
+        # -f(format) option must be placed after a command
+        if json_format:
+            options += ['-f', 'json']
+
+        try:
+            output = Command(os_base, options=options, logger=self.logger).run()
+
+        except GlueCommandError as exc:
+            return Error(Failure("Failure during 'os {}' execution: {}".format(' '.join(options), exc.output.stderr)))
+
+        if output.stdout:
+            if isinstance(output.stdout, str):
+                cmd_out = output.stdout
+            else:
+                cmd_out = output.stdout.decode('utf-8')
+
+            assert isinstance(cmd_out, str)
+
+            if not json_format:
+                return Ok(cmd_out)
+
+            try:
+                json_out = json.loads(cmd_out)
+            except json.JSONDecodeError as exc:
+                return Error(Failure.from_exc(
+                    "Failed to parse output of 'os {}' to json".format(' '.join(options)), exc))
+
+            return Ok(json_out)
+
+        return Ok(True)
 
     def guest_factory(
         self,
@@ -83,18 +112,15 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         pool_data = json.loads(guest_request.pool_data)
 
-        nodes = [
-            node
-            for node in self._os_driver.list_nodes()
-            if node.id == pool_data['instance_id']
-        ]
+        options = ['server', 'show', pool_data['instance_id']]
+        r_output = self._run_os(options)
 
-        if not nodes:
+        if r_output.is_error:
             return Error(Failure('no such guest'))
 
         return Ok(
             OpenStackGuest(
-                nodes[0],
+                pool_data['instance_id'],
                 guest_request.address,
                 artemis.guest.SSHInfo(
                     port=guest_request.ssh_port,
@@ -111,20 +137,34 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         return Ok(True)
 
     def _env_to_flavor(self, environment: artemis.environment.Environment) -> Result[Any, Failure]:
-        try:
-            sizes = self._os_driver.list_sizes()
+        r_flavors = self._run_os(['flavor', 'list'])
 
-        except libcloud.common.types.LibcloudError as exc:
-            return Error(Failure.from_exc('failed to fetch flavors', exc))
+        if r_flavors.is_error:
+            return Error(r_flavors.value)
+        flavors = r_flavors.unwrap()
+
+        # flavors has next structure:
+        # [
+        #   {
+        #       "Name": str,
+        #       "RAM": int,
+        #       "Ephemeral": int,
+        #       "VCPUs": int,
+        #       "Is Public": bool,
+        #       "Disk": int,
+        #       "ID": str,
+        #   },
+        #   ...
+        # ]
 
         # TODO: this will be handled by a script, for now we simply pick our local common variety of a flavor.
 
-        suitable_sizes = [size for size in sizes if size.name == self.pool_config['default-flavor']]
+        suitable_flavors = [flavor for flavor in flavors if flavor["Name"] == self.pool_config['default-flavor']]
 
-        if not suitable_sizes:
+        if not suitable_flavors:
             return Error(Failure('no such flavor'))
 
-        return Ok(suitable_sizes[0])
+        return Ok(suitable_flavors[0]["ID"])
 
     def _env_to_image(
         self,
@@ -153,20 +193,32 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         return Ok(image)
 
     def _env_to_network(self, environment: artemis.environment.Environment) -> Result[Any, Failure]:
-        try:
-            networks = self._os_driver.ex_list_networks()
+        r_networks = self._run_os(['network', 'list'])
 
-        except libcloud.common.types.LibcloudError as exc:
-            return Error(Failure.from_exc('failed to fetch networks', exc))
+        if r_networks.is_error:
+            return Error(r_networks.value)
+        networks = r_networks.unwrap()
+
+        # networks has next structure:
+        # [
+        #   {
+        #     "Subnets": [
+        #       str
+        #     ],
+        #     "ID": str,
+        #     "Name": str,
+        #   },
+        #   ...
+        # ]
 
         # TODO: this will be handled by a script, for now we simply pick our local common variety of a network.
 
-        suitable_networks = [network for network in networks if network.name == self.pool_config['default-network']]
+        suitable_networks = [network for network in networks if network["Name"] == self.pool_config['default-network']]
 
         if not suitable_networks:
             return Error(Failure('no such network'))
 
-        return Ok(suitable_networks[0])
+        return Ok(suitable_networks[0]["ID"])
 
     def acquire_guest(
         self,
@@ -191,81 +243,59 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         logger.info('provisioning environment {}'.format(environment))
 
-        result = self._env_to_flavor(environment)
-        if result.is_error:
-            return Error(result.value)
+        r_flavor = self._env_to_flavor(environment)
+        if r_flavor.is_error:
+            return Error(r_flavor.value)
 
-        size = result.unwrap()
+        flavor = r_flavor.unwrap()
 
-        result = self._env_to_image(logger, environment)
-        if result.is_error:
-            return Error(result.value)
+        r_image = self._env_to_image(logger, environment)
+        if r_image.is_error:
+            return Error(r_image.value)
 
-        image = result.unwrap()
+        image = r_image.unwrap()
 
-        result = self._env_to_network(environment)
-        if result.is_error:
-            return Error(result.value)
+        r_network = self._env_to_network(environment)
+        if r_network.is_error:
+            return Error(r_network.value)
 
-        network = result.unwrap()
+        network = r_network.unwrap()
 
-        add_master_key = SSHKeyDeployment(master_key.public)
+        name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
 
-        # if cloud_user:
-        # TODO: determine when cloud-user should be used
-        if False:
-            ssh_username = 'cloud-user'
-            copy_to_root = ScriptDeployment('sudo cp /home/cloud-user/.ssh/authorized_keys /root/.ssh/authorized_keys')
-
-            msd = MultiStepDeployment([add_master_key, copy_to_root])
-
-        else:
-            ssh_username = 'root'
-            msd = MultiStepDeployment([add_master_key])
-
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as master_key_private_file:
-            master_key_private_file.write(master_key.private)
-            master_key_private_file.flush()
-
-        try:
-            node = self._os_driver.deploy_node(
-                name=guest_request.guestname,
-                size=size,
-                image=image,
-                networks=[network],
-                ex_keyname=self.master_key_pool_name,
-                ssh_key=master_key_private_file.name,
-                ssh_username=ssh_username,
-                deploy=msd,
-                ssh_interface='private_ips',
-                timeout=self.pool_config.get('deploy-attempt-timeout', DEFAULT_ATTEMPT_TIMEOUT),
-                max_tries=self.pool_config.get('deploy-attempts', DEFAULT_ATTEMPTS)
-            )
-
-        except libcloud.common.types.LibcloudError as exc:
-            return Error(Failure.from_exc('failed to deploy node', exc))
-
-        finally:
-            os.unlink(master_key_private_file.name)
-
-        addresses = node.private_ips
-
-        if not addresses:
-            return Error(Failure('no known IP address'))
-
-        valid_ipv4_addresses = [
-            address
-            for address in addresses
-            if libcloud.compute.base.is_valid_ip_address(address, family=socket.AF_INET)
+        os_options = [
+            'server',
+            'create',
+            '--flavor', flavor,
+            '--image', image,
+            '--network', network,
+            '--key-name', self.pool_config['master-key-name'],
+            '--wait',
+            name
         ]
 
-        if not addresses:
-            return Error(Failure('no known IPv4 address'))
+        r_output = self._run_os(os_options)
+
+        if r_output.is_error:
+            return Error(r_output.value)
+        output = r_output.unwrap()
+
+        if not output['id']:
+            return Error(Failure('Instance id not found'))
+        instance_id = output['id']
+
+        if not output['addresses']:
+            return Error(Failure('Ip addresses not found'))
+
+        # output['addresses'] == "network_name=ip_address, ipv6"
+        match_obj = re.match(r'.*=(.*),.*', output['addresses'])
+        if match_obj:
+            ip_address = match_obj.group(1)
 
         return Ok(
             OpenStackGuest(
-                node,
-                valid_ipv4_addresses[0],
+                instance_id,
+                ip_address,
                 ssh_info=None
             )
         )
@@ -283,17 +313,11 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         assert isinstance(guest, OpenStackGuest)
 
-        if guest._node is None:
-            return Error(Failure('guest has no node'))
+        options = ['server', 'delete', '--wait', guest.instance_id]
 
-        try:
-            guest._node.destroy()
-
-        except libcloud.common.types.LibcloudError as exc:
-            return Error(Failure.from_exc('failed to destroy node', exc))
-
-        except Exception as exc:
-            return Error(Failure.from_exc('failed to destroy node', exc))
+        r_output = self._run_os(options, json_format=False)
+        if r_output.is_error:
+            return Error(r_output.value)
 
         return Ok(True)
 

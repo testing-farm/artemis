@@ -39,11 +39,18 @@ def _image_by_name(
     pool: artemis.drivers.openstack.OpenStackDriver,
     image_name: str
 ) -> Optional[Any]:
-    for image_data in pool._os_driver.connection.request('/images').object['images']:
-        if image_data['name'] != image_name:
+    r_images_list = pool._run_os(['image', 'list'])
+
+    if r_images_list.is_error:
+        logger.error('Fail to get images', sentry=True)
+        return None
+    images_list = r_images_list.unwrap()
+
+    for image_data in images_list:
+        if image_data['Name'] != image_name:
             continue
 
-        return pool._os_driver.get_image(image_data['id'])
+        return image_data['ID']
 
     logger.error('cannot find image {}'.format(image_name))
 
