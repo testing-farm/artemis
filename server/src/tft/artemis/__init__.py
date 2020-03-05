@@ -4,13 +4,6 @@ import os
 import traceback as _traceback
 import urllib.parse
 
-import dramatiq
-import dramatiq.brokers.rabbitmq
-import dramatiq.brokers.stub
-import dramatiq.middleware.age_limit
-import dramatiq.middleware.time_limit
-import dramatiq.middleware.shutdown
-import dramatiq.middleware.callbacks
 import gluetool.log
 import gluetool.sentry
 import gluetool.utils
@@ -642,53 +635,6 @@ def get_config() -> Dict[str, Any]:
             logger=get_logger()
         )
     )
-
-
-def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
-    if os.getenv('IN_TEST', None):
-        broker = dramatiq.brokers.stub.StubBroker(middleware=[
-            dramatiq.middleware.age_limit.AgeLimit(),
-            dramatiq.middleware.time_limit.TimeLimit(),
-            dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
-            dramatiq.middleware.callbacks.Callbacks(),
-            artemis_middleware.Retries(),
-            periodiq.PeriodiqMiddleware()
-        ])
-
-    else:
-        # We need a better control over some aspects of our broker connection, e.g. heartbeat
-        # and timeouts. This is possible, but we cannt use broker URL as a argument, this is
-        # not supported with Dramatiq and Pika. Therefore, we need to parse the URL and construct
-        # connection parameters, with expected content, and add more details when needed.
-
-        import pika
-
-        broker_url = os.getenv('ARTEMIS_BROKER_URL', DEFAULT_BROKER_URL)
-        parsed_url = urllib.parse.urlparse(broker_url)
-
-        broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
-            middleware=[
-                dramatiq.middleware.age_limit.AgeLimit(),
-                dramatiq.middleware.time_limit.TimeLimit(),
-                dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
-                dramatiq.middleware.callbacks.Callbacks(),
-                artemis_middleware.Retries(),
-                periodiq.PeriodiqMiddleware()
-            ],
-            parameters=[{
-                'host': parsed_url.hostname,
-                'port': int(parsed_url.port),
-                'credentials': pika.PlainCredentials(parsed_url.username, parsed_url.password),
-                'heartbeat': int(os.getenv('ARTEMIS_BROKER_HEARTBEAT_TIMEOUT', DEFAULT_RABBITMQ_HEARTBEAT_TIMEOUT)),
-                'blocked_connection_timeout': int(
-                    os.getenv('ARTEMIS_BROKER_BLOCKED_TIMEOUT', DEFAULT_RABBITMQ_BLOCKED_TIMEOUT)
-                ),
-            }]
-        )
-
-    dramatiq.set_broker(broker)
-
-    return broker
 
 
 def get_db_url() -> str:

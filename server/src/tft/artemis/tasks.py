@@ -3,13 +3,14 @@ import json
 import os
 import threading
 
-import dramatiq
 import gluetool.log
 import periodiq
 import sqlalchemy
 import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
 import stackprinter
+
+from selinon import SelinonTask
 
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import normalize_bool_option
@@ -93,12 +94,6 @@ DEFAULT_POOL_RESOURCES_METRICS_REFRESH_TICK = 60
 root_logger = get_logger()
 db = get_db(root_logger)
 
-# Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
-BROKER = get_broker()
-
-
-_CLOSE_AFTER_DISPATCH = normalize_bool_option(os.getenv('ARTEMIS_CLOSE_AFTER_DISPATCH', 'no'))
-
 
 POOL_DRIVERS = {
     'aws': aws_driver.AWSDriver,
@@ -177,6 +172,10 @@ class FailureHandlerType(Protocol):
         label: str,
         sentry: bool = True
     ) -> DoerReturnType: ...
+
+
+class NeverRaisedError(Exception):
+    pass
 
 
 class TaskLogger(gluetool.log.ContextAdapter):
@@ -343,15 +342,15 @@ def run_doer(
 
         _wait('doer finished in regular mode')
 
-    except dramatiq.middleware.Interrupt as exc:
-        if isinstance(exc, dramatiq.middleware.TimeLimitExceeded):
-            logger.error('task time depleted')
+    except NeverRaisedError as _:
+        # if isinstance(exc, dramatiq.middleware.TimeLimitExceeded):
+        #     logger.error('task time depleted')
 
-        elif isinstance(exc, dramatiq.middleware.Shutdown):
-            logger.error('worker shutdown requested')
+        # elif isinstance(exc, dramatiq.middleware.Shutdown):
+        #     logger.error('worker shutdown requested')
 
-        else:
-            assert False, 'Unhandled interrupt exception'
+        # else:
+        #     assert False, 'Unhandled interrupt exception'
 
         logger.debug('entering doer cancellation mode')
 
@@ -1381,13 +1380,15 @@ def do_release_guest_request(
     return handle_failure(r_delete, 'failed to release guest')
 
 
-@dramatiq.actor(**actor_kwargs('RELEASE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
-def release_guest_request(guestname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_release_guest_request,
-        logger=get_guest_logger('release', root_logger, guestname),
-        doer_args=(guestname,)
-    )
+class ReleaseGuestRequest(SelinonTask):
+    def run(self, node_args: Tuple[str]) -> None:
+        guestname = node_args[0]
+
+        task_core(  # type: ignore  # Argument 1 has incompatible type
+            do_release_guest_request,
+            logger=get_guest_logger('release', root_logger, guestname),
+            doer_args=(guestname,)
+        )
 
 
 def do_update_guest(
@@ -1453,7 +1454,7 @@ def do_update_guest(
             current_pool_data=current_pool_data
         )
 
-        workspace.dispatch_task(update_guest, guestname)
+        # TODO: remove workspace.dispatch_task(update_guest, guestname)
 
         if workspace.result:
             _undo_guest_update(guest)
@@ -1488,13 +1489,15 @@ def do_update_guest(
     return SUCCESS
 
 
-@dramatiq.actor(**actor_kwargs('UPDATE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
-def update_guest(guestname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_update_guest,
-        logger=get_guest_logger('update', root_logger, guestname),
-        doer_args=(guestname,)
-    )
+class UpdateGuestRequest(SelinonTask):
+    def run(self, node_args: Tuple[str]) -> None:
+        guestname = node_args[0]
+
+        task_core(  # type: ignore  # Argument 1 has incompatible type
+            do_update_guest,
+            logger=get_guest_logger('update', root_logger, guestname),
+            doer_args=(guestname,)
+        )
 
 
 def do_acquire_guest(
@@ -1502,15 +1505,14 @@ def do_acquire_guest(
     db: DB,
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
-    guestname: str,
-    poolname: str
+    guestname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,
         session,
         guestname=guestname,
         task='acquire-guest',
-        poolname=poolname
+        # TODO: poolname=poolname
     )
 
     handle_success('enter-task')
@@ -1562,7 +1564,7 @@ def do_acquire_guest(
             }
         )
 
-        workspace.dispatch_task(update_guest, guestname)
+        # TODO: remove workspace.dispatch_task(update_guest, guestname)
 
         if workspace.result:
             _undo_guest_acquire()
@@ -1596,13 +1598,15 @@ def do_acquire_guest(
     return SUCCESS
 
 
-@dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
-def acquire_guest(guestname: str, poolname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_acquire_guest,
-        logger=get_guest_logger('acquire', root_logger, guestname),
-        doer_args=(guestname, poolname)
-    )
+class AcquireGuestRequest(SelinonTask):
+    def run(self, node_args: Tuple[str, str]) -> None:
+        guestname = node_args[0]
+
+        task_core(  # type: ignore  # Argument 1 has incompatible type
+            do_acquire_guest,
+            logger=get_guest_logger('acquire', root_logger, guestname),
+            doer_args=(guestname,)
+        )
 
 
 def do_route_guest_request(
@@ -1680,7 +1684,7 @@ def do_route_guest_request(
     # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
     # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
     # task.
-    workspace.dispatch_task(acquire_guest, guestname, pool.poolname)
+    # TODO: remove workspace.dispatch_task(acquire_guest, guestname, pool.poolname)
 
     if workspace.result:
         workspace.ungrab_guest_request(GuestState.PROVISIONING, GuestState.ROUTING)
@@ -1697,13 +1701,15 @@ def do_route_guest_request(
     return SUCCESS
 
 
-@dramatiq.actor(**actor_kwargs('ROUTE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
-def route_guest_request(guestname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_route_guest_request,
-        logger=get_guest_logger('route', root_logger, guestname),
-        doer_args=(guestname,)
-    )
+class RouteGuestRequest(SelinonTask):
+    def run(self, node_args: Tuple[str]) -> None:
+        guestname = node_args[0]
+
+        task_core(  # type: ignore  # Argument 1 has incompatible type
+            do_route_guest_request,
+            logger=get_guest_logger('route', root_logger, guestname),
+            doer_args=(guestname,)
+        )
 
 
 def do_release_snapshot_request(
@@ -1772,13 +1778,16 @@ def do_release_snapshot_request(
     return handle_failure(r_delete, 'failed to release snapshot')
 
 
-@dramatiq.actor(**actor_kwargs('RELEASE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def release_snapshot_request(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_release_snapshot_request,
-        logger=get_snapshot_logger('release-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(guestname, snapshotname)
-    )
+class ReleaseSnapshotRequest(SelinonTask):
+    def run(self, node_args: Tuple[str]) -> None:
+        guestname = node_args[0]
+        snapshotname = node_args[1]
+
+        task_core(  # type: ignore  # Argument 1 has incompatible type
+            do_release_snapshot_request,
+            logger=get_snapshot_logger('release-snapshot', root_logger, guestname, snapshotname),
+            doer_args=(guestname, snapshotname)
+        )
 
 
 def do_update_snapshot(
@@ -1842,7 +1851,7 @@ def do_update_snapshot(
             GuestState.PROMISED,
         )
 
-        workspace.dispatch_task(update_snapshot, guestname, snapshotname)
+        # TODO: remove workspace.dispatch_task(update_snapshot, guestname, snapshotname)
 
         if workspace.result:
             _undo_snapshot_update(snapshot)
@@ -1868,13 +1877,16 @@ def do_update_snapshot(
     return SUCCESS
 
 
-@dramatiq.actor(**actor_kwargs('UPDATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def update_snapshot(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_update_snapshot,
-        logger=get_snapshot_logger('update-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(guestname, snapshotname)
-    )
+class UpdateSnapshotRequest(SelinonTask):
+    def run(self, node_args: Tuple[str]) -> None:
+        guestname = node_args[0]
+        snapshotname = node_args[1]
+
+        task_core(  # type: ignore  # Argument 1 has incompatible type
+            do_update_snapshot,
+            logger=get_snapshot_logger('update-snapshot', root_logger, guestname, snapshotname),
+            doer_args=(guestname, snapshotname)
+        )
 
 
 def do_create_snapshot(
@@ -1943,7 +1955,7 @@ def do_create_snapshot(
             GuestState.PROMISED,
         )
 
-        workspace.dispatch_task(update_snapshot, guestname, snapshotname)
+        # TODO: remove workspace.dispatch_task(update_snapshot, guestname, snapshotname)
 
         if workspace.result:
             _undo_snapshot_create()
@@ -1969,13 +1981,16 @@ def do_create_snapshot(
     return SUCCESS
 
 
-@dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def create_snapshot(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_create_snapshot,
-        logger=get_snapshot_logger('acquire-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(guestname, snapshotname)
-    )
+class CreateSnapshotRequest(SelinonTask):
+    def run(self, node_args: Tuple[str]) -> None:
+        guestname = node_args[0]
+        snapshotname = node_args[1]
+
+        task_core(  # type: ignore  # Argument 1 has incompatible type
+            do_create_snapshot,
+            logger=get_snapshot_logger('acquire-snapshot', root_logger, guestname, snapshotname),
+            doer_args=(guestname, snapshotname)
+        )
 
 
 def do_route_snapshot_request(
@@ -2016,7 +2031,7 @@ def do_route_snapshot_request(
     if workspace.result:
         return workspace.result
 
-    workspace.dispatch_task(create_snapshot, guestname, snapshotname)
+    # TODO: remove workspace.dispatch_task(create_snapshot, guestname, snapshotname)
 
     if workspace.result:
         workspace.ungrab_guest_request(GuestState.CREATING, GuestState.ROUTING)
@@ -2028,13 +2043,16 @@ def do_route_snapshot_request(
     return SUCCESS
 
 
-@dramatiq.actor(**actor_kwargs('ROUTE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def route_snapshot_request(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_route_snapshot_request,
-        logger=get_snapshot_logger('route-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(guestname, snapshotname)
-    )
+class RouteSnapshotRequest(SelinonTask):
+    def run(self, node_args: Tuple[str]) -> None:
+        guestname = node_args[0]
+        snapshotname = node_args[1]
+
+        task_core(  # type: ignore # Argument 1 has incompatible type
+            do_route_snapshot_request,
+            logger=get_snapshot_logger('route-snapshot', root_logger, guestname, snapshotname),
+            doer_args=(guestname, snapshotname)
+        )
 
 
 def do_restore_snapshot_request(
@@ -2098,13 +2116,16 @@ def do_restore_snapshot_request(
     return SUCCESS
 
 
-@dramatiq.actor(**actor_kwargs('RESTORE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_restore_snapshot_request,
-        logger=get_snapshot_logger('restore-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(guestname, snapshotname)
-    )
+class RestoreSnapshotRequest(SelinonTask):
+    def run(self, node_args: Tuple[str]) -> None:
+        guestname = node_args[0]
+        snapshotname = node_args[1]
+
+        task_core(  # type: ignore # Argument 1 has incompatible type
+            do_restore_snapshot_request,
+            logger=get_snapshot_logger('restore-snapshot', root_logger, guestname, snapshotname),
+            doer_args=(guestname, snapshotname)
+        )
 
 
 def do_refresh_pool_resources_metrics(

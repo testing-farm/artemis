@@ -1,0 +1,91 @@
+---
+
+global:
+  trace:
+    - logging: true
+
+tasks:
+    - name: route_guest_request
+      import: artemis.tasks
+      classname: RouteGuestRequest
+      max_retry: 5
+      retry_countdown: 10
+      storage: Memory
+
+    - name: acquire_guest_request
+      import: artemis.tasks
+      classname: AcquireGuestRequest
+      max_retry: 5
+      retry_countdown: 10
+      storage: Memory
+
+    - name: update_guest_request
+      import: artemis.tasks
+      classname: UpdateGuestRequest
+      max_retry: 5
+      retry_countdown: 10
+      storage: Memory
+
+    - name: release_guest_request
+      import: artemis.tasks
+      classname: ReleaseGuestRequest
+      max_retry: 5
+      retry_countdown: 10
+      storage: Memory
+
+    - name: route_snapshot_request
+      import: artemis.task
+      classname: RouteSnapshotRequest
+      max_retry: 5
+      retry_countdown: 10
+      storage: Memory
+
+    - name: create_snapshot_request
+      import: artemis.task
+      classname: CreateSnapshotRequest
+      max_retry: 5
+      retry_countdown: 10
+      storage: Memory
+
+    - name: update_snapshot_request
+      import: artemis.task
+      classname: UpdateSnapshotRequest
+      max_retry: 5
+      retry_countdown: 10
+      storage: Memory
+
+    - name: restore_snapshot_request
+      import: artemis.task
+      classname: RestoreSnapshotRequest
+      max_retry: 5
+      retry_countdown: 10
+      storage: Memory
+
+    - name: release_snapshot_request
+      import: artemis.task
+      classname: ReleaseSnapshotRequest
+      max_retry: 5
+      retry_countdown: 10
+      storage: Memory
+
+flows:
+    - provision_guest_flow
+    - release_guest_flow
+    - provision_snapshot_flow
+    - release_snapshot_flow
+    - restore_snapshot_flow
+
+storages:
+    - name: Memory
+      classname: InMemoryStorage
+      import: selinon.storages.memory
+      configuration:
+        echo: false
+
+    - name: 'SqlStorage'
+      classname: 'PostgreSQL'
+      import: 'selinon.storages.postgresql'
+      configuration:
+        connection_string: 'postgres://postgres:postgres@postgres:5432/postgres'
+        encoding: 'utf-8'
+      echo: false

@@ -23,11 +23,15 @@ from .middleware import error_handler_middleware, prometheus_middleware
 from .. import get_logger, get_db, safe_db_execute, log_guest_event
 from .. import db as artemis_db
 from .. import metrics
+from .. import selinon
 from ..guest import GuestState
 
 from typing import Any, Dict, List, NoReturn, Optional, Union
 
 from inspect import Parameter
+
+from selinon import run_flow
+import celery
 
 
 DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
@@ -53,6 +57,20 @@ class DBComponent:
 
     def resolve(self) -> artemis_db.DB:
         return self.db
+
+
+class CeleryComponent:
+    # is_cacheable = True
+    is_singleton = True
+
+    def __init__(self, app: celery.Celery) -> None:
+        self.app = app
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is celery.Celery
+
+    def resolve(self) -> Any:
+        return self.app
 
 
 @molten.schema
@@ -319,6 +337,8 @@ class GuestRequestManager:
                 }
             )
 
+        run_flow('provision_guest_flow', (gr.guestname,))
+
         return gr
 
     def get_by_guestname(self, guestname: str) -> Optional[GuestResponse]:
@@ -352,6 +372,9 @@ class GuestRequestManager:
                     guestname,
                     'condemned'
                 )
+
+            if artemis.safe_db_execute(artemis.get_logger(), session, query):
+                run_flow('release_guest_flow', (guestname,))
                 return
 
             raise errors.GenericError(request=request)
@@ -472,6 +495,8 @@ class SnapshotRequestManager:
 
         assert snapshot_response is not None
 
+        run_flow('provision_snapshot_flow', (snapshot_response.snapshotname,))
+
         return snapshot_response
 
     def delete_snapshot(self, guestname: str, snapshotname: str) -> None:
@@ -483,6 +508,7 @@ class SnapshotRequestManager:
                     .values(state=GuestState.CONDEMNED.value)
 
             if safe_db_execute(get_logger(), session, query):
+                run_flow('release_snapshot_flow', (snapshotname,))
                 return
 
             raise errors.GenericError()
@@ -500,6 +526,8 @@ class SnapshotRequestManager:
                 snapshot_response = self.get_snapshot(guestname, snapshotname)
 
                 assert snapshot_response is not None
+
+                run_flow('release_snapshot_flow', (snapshot_response.snapshotname,))
 
                 return snapshot_response
 
@@ -625,7 +653,8 @@ def run_app() -> molten.app.App:
         DBComponent(db),
         GuestRequestManagerComponent(),
         GuestEventManagerComponent(),
-        SnapshotRequestManagerComponent()
+        SnapshotRequestManagerComponent(),
+        CeleryComponent(artemis.celery.APP)
     ]
 
 # TODO: uncomment when registration is done

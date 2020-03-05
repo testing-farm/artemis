@@ -1,0 +1,59 @@
+---
+
+flow-definitions:
+    - name: provision_guest_flow
+      propagate_parent: true
+      edges:
+        - from: null
+          to: route_guest_request
+
+        - from: route_guest_request
+          to: acquire_guest_request
+
+        - from: acquire_guest_request
+          to: update_guest_request
+
+      failures:
+        - nodes:
+            - acquire_guest_request
+          fallback:
+            - route_guest_request
+
+    - name: release_guest_flow
+      propagate_parent: true
+      edges:
+        - from: null
+          to: release_guest_request
+
+    - name: provision_snapshot_flow
+      propagate_parent: true
+      edges:
+        - from: null
+          to: route_snapshot_request
+
+        - from: route_snapshot_request
+          to: create_snapshot_request
+
+        - from: create_snapshot_request
+          to: UPDATE_SNAPSHOT_REQUEST
+
+      failures:
+        - nodes:
+            - create_snapshot_request
+          fallback:
+            - route_snapshot_request
+
+    - name: release_snapshot_flow
+      propagate_parent: true
+      edges:
+        - from: null
+          to: release_snapshot_request
+
+    - name: restore_snapshot_flow
+      propagate_parent: true
+      edges:
+        - from: null
+          to: restore_snapshot_request
+
+        - from: restore_snapshot_request
+          to: update_snapshot_request

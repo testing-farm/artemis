@@ -32,6 +32,7 @@ sqlalchemy = "^1.3.12"
 stackprinter = "^0.2.4"
 typing-extensions = "^3.7.4"
 periodiq = "^0.12.1"
+selinon = {extras = ["celery", "postgresql", "sentry"], version = "^1.1.0"}
 
 [tool.poetry.dev-dependencies]
 flake8 = "*"
