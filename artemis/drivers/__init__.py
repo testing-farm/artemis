@@ -1,4 +1,6 @@
 import argparse
+import dataclasses
+import sqlalchemy
 
 import gluetool.log
 from gluetool.result import Result, Ok
@@ -6,10 +8,10 @@ from gluetool.result import Result, Ok
 import artemis
 import artemis.environment
 from artemis import Failure
-from artemis.guest import Guest
+from artemis.guest import Guest, GuestState
 
 # Type annotations
-from typing import Any, Dict, Optional
+from typing import Any, List, Dict, Optional, cast
 import threading
 
 
@@ -17,11 +19,24 @@ class PoolCapabilities(argparse.Namespace):
     supports_snapshots = False
 
 
+@dataclasses.dataclass
+class PoolMetrics:
+    current_guest_request_count: int = 0
+    current_guest_request_count_per_state: Dict[artemis.guest.GuestState, int] = \
+        dataclasses.field(default_factory=dict)
+
+
 class PoolDriver(gluetool.log.LoggerMixin):
-    def __init__(self, logger: gluetool.log.ContextAdapter, pool_config: Dict[str, Any]) -> None:
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        pool_config: Dict[str, Any],
+        poolname: Optional[str] = None
+    ) -> None:
         super(PoolDriver, self).__init__(logger)
 
         self.pool_config = pool_config
+        self.poolname = poolname
 
     def guest_factory(
         self,
@@ -101,3 +116,28 @@ class PoolDriver(gluetool.log.LoggerMixin):
         # nothing yet, thinking about what capabilities might Beaker provide...
 
         return Result.Ok(PoolCapabilities())
+
+    def current_guests_in_pool(self, session: sqlalchemy.orm.session.Session) -> List[artemis.db.GuestRequest]:
+        return cast(List[artemis.db.GuestRequest],
+                    session.query(artemis.db.GuestRequest)
+                    .filter(artemis.db.GuestRequest.poolname == self.poolname)
+                    .all())
+
+    def metrics(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session
+    ) -> PoolMetrics:
+        """ Provide Promethues metrics about current pool state. """
+
+        assert self.poolname
+        metrics = PoolMetrics()
+
+        current_guests = self.current_guests_in_pool(session)
+        metrics.current_guest_request_count = len(current_guests)
+
+        for state in GuestState:
+            current_guest_count = len([guest for guest in current_guests if guest.state == state.value])
+            metrics.current_guest_request_count_per_state[state] = current_guest_count
+
+        return metrics

@@ -306,7 +306,6 @@ def _update_guest_state(
     if r.is_ok:
         if r.value is True:
             logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
-
         else:
             logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
 
@@ -347,7 +346,7 @@ def _get_pool(
     return driver
 
 
-def _get_pools(
+def get_pools(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session
 ) -> List[artemis.drivers.PoolDriver]:
@@ -357,7 +356,7 @@ def _get_pools(
         pool_driver_class = POOL_DRIVERS[pool_record.driver]
 
         pools += [
-            pool_driver_class(logger, json.loads(pool_record.parameters))
+            pool_driver_class(logger, json.loads(pool_record.parameters), poolname=pool_record.poolname)
         ]
 
     return pools
@@ -720,7 +719,7 @@ async def do_route_guest_request(
             'ROUTE',
             logger=logger,
             guest_request=guest,
-            pools=_get_pools(logger, session)
+            pools=get_pools(logger, session)
         )
 
         if cancel.is_set():

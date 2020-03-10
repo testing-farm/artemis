@@ -14,10 +14,9 @@ from libcloud.compute.deployment import MultiStepDeployment, SSHKeyDeployment, S
 
 import artemis
 from artemis import Failure
-import artemis.db
 import artemis.drivers
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional, Dict
 
 
 NodeRefType = Any
@@ -52,8 +51,13 @@ class OpenStackGuest(artemis.guest.Guest):
 
 
 class OpenStackDriver(artemis.drivers.PoolDriver):
-    def __init__(self, logger: gluetool.log.ContextAdapter, pool_config: Dict[str, Any]) -> None:
-        super(OpenStackDriver, self).__init__(logger, pool_config)
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        pool_config: Dict[str, Any],
+        poolname: Optional[str] = None
+    ) -> None:
+        super(OpenStackDriver, self).__init__(logger, pool_config, poolname=poolname)
 
         os_driver_class = get_driver(Provider.OPENSTACK)
 

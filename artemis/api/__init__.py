@@ -1,21 +1,24 @@
+import datetime
 import json
 import os
 import shutil
 import sys
+import sqlalchemy
+import sqlalchemy.orm.exc
 import uuid
 
 import molten
 import molten.dependency_injection
 import molten.openapi
-import sqlalchemy
-import sqlalchemy.orm.exc
+from molten import HTTP_201, Field
+from molten.typing import Middleware
 
 import artemis
 import artemis.db
 import artemis.guest
 
-from molten import HTTP_201, Field
 from artemis.api import errors
+from artemis.metrics import get_metrics
 
 from typing import Any, Dict, List, NoReturn, Optional, Tuple, Union
 from artemis.db import DB
@@ -150,6 +153,14 @@ class GuestRequestManager:
                 )
             )
 
+            # update metrics table counter
+            query = sqlalchemy \
+                .update(artemis.db.Metrics.__table__) \
+                .values({artemis.db.Metrics.count: artemis.db.Metrics.count + 1,
+                         artemis.db.Metrics.updated: datetime.datetime.now()})
+
+            artemis.safe_call(session.execute, query)
+
         gr = self.get_by_guestname(guestname)
 
         assert gr is not None
@@ -233,10 +244,12 @@ def run_app() -> molten.app.App:
         GuestRequestManagerComponent()
     ]
 
-#    mw: List[molten.Middleware] = [
-#        molten.ResponseRendererMiddleware(),
-#        middleware.AuthorizationMiddleware,
-#    ]
+# TODO: uncomment when registration is done
+    mw: List[Middleware] = [
+        # middleware.AuthorizationMiddleware,
+        artemis.middleware.prometheus_middleware,
+        molten.middleware.ResponseRendererMiddleware()
+    ]
 
     get_docs = molten.openapi.handlers.OpenAPIUIHandler()
 
@@ -257,14 +270,14 @@ def run_app() -> molten.app.App:
             Route('/{guestname}', get_guest_request),
             Route('/{guestname}', delete_guest, method='DELETE'),
         ]),
+        Route('/metrics', get_metrics),
         Route('/_docs', get_docs),
         Route('/_schema', get_schema),
     ]
 
     return molten.app.App(
             components=components,
-            # TODO: uncomment when registration is done
-            # middleware=mw,
+            middleware=mw,
             routes=routes
     )
 

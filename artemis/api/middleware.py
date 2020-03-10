@@ -1,12 +1,12 @@
-from typing import Any, Callable, Optional
-from molten import Header, Request
+from molten import Headers, Request
 from artemis.api import errors
+from typing import Any, Callable, Optional
 
 NO_AUTH = ["/_docs", "/_schema"]
 
 
-def AuthorizationMiddleware(handler: Callable[..., Any]) -> Callable[..., Any]:
-    def middleware(request: Request, authorization: Optional[Header]) -> Any:
+def authorization_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
+    def middleware(request: Request, authorization: Optional[Headers]) -> Any:
         if request.path not in NO_AUTH:
             if authorization is None or "Basic" not in authorization:
                 raise errors.NotAuthorizedError

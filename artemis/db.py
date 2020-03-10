@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 import os
@@ -6,7 +7,7 @@ from contextlib import contextmanager
 
 import sqlalchemy
 import sqlalchemy.ext.declarative
-from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer
+from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer, DateTime
 from sqlalchemy.orm import relationship
 
 from typing import cast, Any, Dict, Iterator
@@ -105,6 +106,14 @@ class GuestRequest(Base):
     pool = relationship('Pool', back_populates='guests')
 
 
+class Metrics(Base):
+    __tablename__ = 'metrics'
+
+    _id = Column(Integer, primary_key=True)
+    count = Column(Integer, default=0)
+    updated = Column(DateTime, default=datetime.datetime.now())
+
+
 class DB:
     def __init__(
         self,
@@ -196,6 +205,9 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
                     parameters=json.dumps(pool_config.get('parameters', {}))
                 )
             )
+
+        logger.info('Adding metrics counter')
+        session.add(Metrics())
 
 
 def init_postgres() -> None:
