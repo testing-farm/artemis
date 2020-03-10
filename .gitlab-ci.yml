@@ -23,7 +23,7 @@ type-check:
     - tox -v -e type-check
 
 publish_apiary:
-  image: "ruby:2.3"
+  image: "ruby:2.4"
 
   stage: deploy
   script:
