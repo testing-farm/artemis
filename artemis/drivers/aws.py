@@ -388,23 +388,28 @@ class AWSDriver(artemis.drivers.PoolDriver):
             tags.update(self.pool_config['tags'])
 
         if not tags:
-            self.debug('Skippint tagging as not tags specified.')
+            self.debug('Skipping tagging as no tags specified.')
             return
 
         # we need ARN of the instnace for tagging
         arn = 'arn:aws:ec2:{}:{}:instance/{}'.format(
-            self.pool_config['availability-zone'],
+            # region can be transformed from availability zone by omiting the last character
+            self.pool_config['availability-zone'][:-1],
             owner,
             instance['InstanceId']
         )
 
         for tag, value in tags.items():
             self.info("tagging resource '{}' with '{}={}'".format(arn, tag, value))
-            self._aws_command([
-                'ec2', 'tag-resources',
+            r_tag = self._aws_command([
+                'resourcegroupstaggingapi', 'tag-resources',
                 '--resource-arn-list', arn,
                 '--tags', '{}={}'.format(tag, value)
             ])
+
+            # do not fail if failed to tag, but scream to Sentry
+            if r_tag.is_error:
+                self.warn("Failed to tag ARN '{}' to tag '{}={}'".format(arn, tag, value), sentry=True)
 
     def acquire_guest(
         self,
