@@ -97,17 +97,29 @@ function sanity() {
     fi
 
     # check if configuration available
-    [ ! -d "configuration" ] && error "no artemis configuration found under 'configuration' directory. Please add it."
+    if [ ! -d "configuration" ]; then
+        error "no artemis configuration found under 'configuration' directory. Please add it."
+        return 1
+    fi
 
     # make sure configuration config map exists or update it
     if ! oc get configmap/artemis-configuration &>/dev/null; then
         # create configmap
         info "creating configuration config map from 'configuration' directory"
-        oc create configmap artemis-configuration --from-file=configuration
+        if ! oc create configmap artemis-configuration --from-file=configuration; then
+            error "Failed to create configmap, cannot continue"
+            return 1
+        fi
     else
         # update configmap
         info "updating configuration config map from 'configuration' directory"
-        oc create --dry-run -o json configmap artemis-configuration --from-file=configuration | oc replace -f -
+        configmap=$(mktemp)
+        if ! oc create --dry-run -o json configmap artemis-configuration --from-file=configuration > $configmap; then
+            error "Failed to update configmap, cannot continue"
+            return 1
+        fi
+        oc replace -f $configmap
+        rm -f $configmap
     fi
 }
 
