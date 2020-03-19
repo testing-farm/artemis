@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import threading
 
 from contextlib import contextmanager
 
@@ -10,8 +11,9 @@ import sqlalchemy.ext.declarative
 from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer, DateTime
 from sqlalchemy.orm import relationship
 
-from typing import cast, Any, Dict, Iterator
+from typing import cast, Any, Callable, Dict, Iterator
 import gluetool.log
+
 
 # SQLAlchemy defaults
 DEFAULT_SQLALCHEMY_POOL_SIZE = 20
@@ -115,47 +117,67 @@ class Metrics(Base):
 
 
 class DB:
-    def __init__(
-        self,
+    class __DB:
+        def __init__(
+            self,
+            logger: gluetool.log.ContextAdapter,
+            url: str
+        ) -> None:
+            logger.info('connecting to db {}'.format(url))
+
+            if os.getenv('ARTEMIS_LOG_DB_QUERIES', None):
+                gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
+
+            # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
+            if url.startswith('postgresql://'):
+                pool_size = os.getenv('ARTEMIS_SQLALCHEMY_POOL_SIZE', DEFAULT_SQLALCHEMY_POOL_SIZE)
+                max_overflow = os.getenv('ARTEMIS_SQLALCHEMY_MAX_OVERFLOW', DEFAULT_SQLALCHEMY_MAX_OVERFLOW)
+
+                gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
+                    'pool_size': pool_size,
+                    'max_overflow': max_overflow
+                })
+
+                self._engine = sqlalchemy.create_engine(url, pool_size=pool_size, max_overflow=max_overflow)
+
+            # SQLite does not support altering pool size nor max overflow
+            else:
+                self._engine = sqlalchemy.create_engine(url)
+
+            self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self._engine)
+
+        @contextmanager
+        def get_session(self) -> Iterator[sqlalchemy.orm.session.Session]:
+            session = self._sessionmaker()
+
+            try:
+                yield session
+
+                session.commit()
+
+            except Exception:
+                session.rollback()
+
+                raise
+
+    instance = None  # type: __DB
+    _lock = threading.Lock()
+
+    def __new__(
+        cls,
         logger: gluetool.log.ContextAdapter,
         url: str
-    ) -> None:
-        logger.info('connecting to db {}'.format(url))
+    ) -> '__DB':
+        if DB.instance is None:
+            with DB._lock:
+                if DB.instance is None:
+                    DB.instance = DB.__DB(logger, url)
 
-        if os.getenv('ARTEMIS_LOG_DB_QUERIES', None):
-            gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
-
-        # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
-        if url.startswith('postgresql://'):
-            pool_size = os.getenv('ARTEMIS_SQLALCHEMY_POOL_SIZE', DEFAULT_SQLALCHEMY_POOL_SIZE)
-            max_overflow = os.getenv('ARTEMIS_SQLALCHEMY_MAX_OVERFLOW', DEFAULT_SQLALCHEMY_MAX_OVERFLOW)
-
-            gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
-                'pool_size': pool_size,
-                'max_overflow': max_overflow
-            })
-
-            self._engine = sqlalchemy.create_engine(url, pool_size=pool_size, max_overflow=max_overflow)
-
-        # SQLite does not support altering pool size nor max overflow
-        else:
-            self._engine = sqlalchemy.create_engine(url)
-
-        self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self._engine)
-
-    @contextmanager
-    def get_session(self) -> Iterator[sqlalchemy.orm.session.Session]:
-        session = self._sessionmaker()
-
-        try:
-            yield session
-
-            session.commit()
-
-        except Exception:
-            session.rollback()
-
-            raise
+                # declared as class attributes only to avoid typing errors ("DB has no attribute" ...)
+                # those attributes should never be used, use instance attributes only
+                cls.get_session = DB.instance.get_session  # type: Callable[[], Any]
+                cls._engine = DB.instance._engine  # type: sqlalchemy.engine.Engine
+        return DB.instance
 
 
 def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
