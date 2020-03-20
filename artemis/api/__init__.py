@@ -21,7 +21,7 @@ import artemis
 import artemis.db
 import artemis.guest
 
-from artemis.api import errors
+from artemis.api import errors, handlers
 from artemis.metrics import generate_metrics
 
 from typing import Any, Dict, List, NoReturn, Optional, Union
@@ -318,7 +318,7 @@ def run_app() -> molten.app.App:
         version='0.0.1'
     )
 
-    get_schema = molten.openapi.handlers.OpenAPIHandler(metadata=metadata)
+    get_schema = handlers.OpenAPIHandler(metadata=metadata)
 
     routes: List[Union[Route, Include]] = [
         Include('/guests', [
