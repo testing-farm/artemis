@@ -168,16 +168,16 @@ class DB:
         logger: gluetool.log.ContextAdapter,
         url: str
     ) -> '__DB':
-        if DB.instance is None:
-            with DB._lock:
-                if DB.instance is None:
-                    DB.instance = DB.__DB(logger, url)
+        with DB._lock:
+            if DB.instance is None:
+                DB.instance = DB.__DB(logger, url)
 
                 # declared as class attributes only to avoid typing errors ("DB has no attribute" ...)
                 # those attributes should never be used, use instance attributes only
                 cls.get_session = DB.instance.get_session  # type: Callable[[], Any]
                 cls._engine = DB.instance._engine  # type: sqlalchemy.engine.Engine
-        return DB.instance
+
+            return DB.instance
 
 
 def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
