@@ -34,6 +34,18 @@ class GuestState(enum.Enum):
     #: The guest has been released by the user, and it's resources may be released by its pool's driver.
     CONDEMNED = 'condemned'
 
+    #: Initial state for snapshot restoring. Newly created restore snapshot request are set to RESTORING.
+    RESTORING = 'restoring'
+
+    #: Restore request is being evaluated
+    PROCESSING = 'processing'
+
+    #: Release request is being evaluated
+    RELEASING = 'releasing'
+
+    #: A pool has been assigned to fulfill the request. A provisioning task exists for this guest request.
+    CREATING = 'creating'
+
 
 class GuestLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, guestname: str) -> None:

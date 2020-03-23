@@ -11,6 +11,7 @@ from gluetool.utils import Command
 import artemis
 import artemis.db
 import artemis.drivers
+import artemis.snapshot
 from artemis import Failure
 
 from typing import Any, Dict, List, Optional
@@ -39,6 +40,21 @@ class OpenStackGuest(artemis.guest.Guest):
         return json.dumps({
             'instance_id': str(self.instance_id)
         })
+
+
+class OpenStackSnapshot(artemis.snapshot.Snapshot):
+    def __init__(
+        self,
+        snapshotname: str,
+        guestname: str,
+        status: Optional[str] = None
+    ) -> None:
+        super(OpenStackSnapshot, self).__init__(snapshotname, guestname)
+        self.status = status
+
+    @property
+    def is_promised(self) -> bool:
+        return self.status != 'active'
 
 
 class OpenStackDriver(artemis.drivers.PoolDriver):
@@ -100,41 +116,6 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
                     "Failed to parse output of 'os {}' to json".format(' '.join(options)), exc))
 
             return Ok(json_out)
-
-        return Ok(True)
-
-    def guest_factory(
-        self,
-        guest_request: artemis.db.GuestRequest,
-        ssh_key: artemis.db.SSHKey
-    ) -> Result[artemis.guest.Guest, Failure]:
-        if not guest_request.pool_data:
-            return Error(Failure('invalid pool data'))
-
-        pool_data = json.loads(guest_request.pool_data)
-
-        options = ['server', 'show', pool_data['instance_id']]
-        r_output = self._run_os(options)
-
-        if r_output.is_error:
-            return Error(Failure('no such guest'))
-
-        return Ok(
-            OpenStackGuest(
-                guest_request.guestname,
-                pool_data['instance_id'],
-                guest_request.address,
-                artemis.guest.SSHInfo(
-                    port=guest_request.ssh_port,
-                    username=guest_request.ssh_username,
-                    key=ssh_key
-                )
-            )
-        )
-
-    def can_acquire(self, environment: artemis.environment.Environment) -> Result[bool, Failure]:
-        if environment.arch not in self.pool_config['available-arches']:
-            return Ok(False)
 
         return Ok(True)
 
@@ -239,6 +220,276 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         ))
 
         return Ok(suitable_network["Network ID"])
+
+    def _show_guest(
+        self,
+        instance_id: str,
+    ) -> Result[Any, Failure]:
+        os_options = ['server', 'show', instance_id]
+
+        r_output = self._run_os(os_options)
+
+        if r_output.is_error:
+            return Error(r_output.value)
+
+        return Ok(r_output.unwrap())
+
+    def _show_snapshot(
+        self,
+        snapshotname: str,
+    ) -> Result[Any, Failure]:
+        os_options = ['image', 'show', snapshotname]
+
+        r_output = self._run_os(os_options)
+
+        if r_output.is_error:
+            return Error(r_output.value)
+
+        return Ok(r_output.unwrap())
+
+    def _is_guest_stopped(
+        self,
+        instance_id: str,
+    ) -> Result[bool, Failure]:
+        r_output = self._show_guest(instance_id)
+
+        if r_output.is_error:
+            return Error(r_output.value)
+
+        output = r_output.unwrap()
+
+        if output['status'] == 'SHUTOFF':
+            return Ok(True)
+        return Ok(False)
+
+    def _stop_guest(
+        self,
+        instance_id: str,
+    ) -> Result[bool, Failure]:
+        # Do nothing if guest is already stopped
+        r_stopped = self._is_guest_stopped(instance_id)
+
+        if r_stopped.is_error:
+            assert isinstance(r_stopped.value, Failure)
+            return Error(r_stopped.value)
+
+        if r_stopped.unwrap():
+            return Ok(True)
+
+        self.logger.info('stoping the guest instance')
+        os_options = ['server', 'stop', instance_id]
+        r_stop = self._run_os(os_options, json_format=False)
+
+        if r_stop.is_error:
+            return Error(r_stop.value)
+        return Ok(True)
+
+    def _start_guest(
+        self,
+        instance_id: str,
+    ) -> Result[bool, Failure]:
+        # Do nothing if guest is not stopped
+        r_stopped = self._is_guest_stopped(instance_id)
+
+        if r_stopped.is_error:
+            assert isinstance(r_stopped.value, Failure)
+            return Error(r_stopped.value)
+
+        if not r_stopped.unwrap():
+            return Ok(True)
+
+        self.logger.info('starting the guest instance')
+        os_options = ['server', 'start', instance_id]
+        r_stop = self._run_os(os_options, json_format=False)
+
+        if r_stop.is_error:
+            return Error(r_stop.value)
+        return Ok(True)
+
+    def can_acquire(self, environment: artemis.environment.Environment) -> Result[bool, Failure]:
+        if environment.arch not in self.pool_config['available-arches']:
+            return Ok(False)
+
+        return Ok(True)
+
+    def guest_factory(
+        self,
+        guest_request: artemis.db.GuestRequest,
+        ssh_key: artemis.db.SSHKey
+    ) -> Result[artemis.guest.Guest, Failure]:
+        if not guest_request.pool_data:
+            return Error(Failure('invalid pool data'))
+
+        pool_data = json.loads(guest_request.pool_data)
+
+        r_output = self._show_guest(pool_data['instance_id'])
+
+        if r_output.is_error:
+            return Error(Failure('no such guest'))
+
+        return Ok(
+            OpenStackGuest(
+                guest_request.guestname,
+                pool_data['instance_id'],
+                guest_request.address,
+                artemis.guest.SSHInfo(
+                    port=guest_request.ssh_port,
+                    username=guest_request.ssh_username,
+                    key=ssh_key
+                )
+            )
+        )
+
+    def snapshot_factory(
+        self,
+        snapshot_request: artemis.db.SnapshotRequest,
+    ) -> Result[artemis.snapshot.Snapshot, Failure]:
+        r_output = self._show_snapshot(snapshot_request.snapshotname)
+
+        if r_output.is_error:
+            return Error(r_output.value)
+
+        output = r_output.unwrap()
+
+        status = ''
+
+        if output:
+            status = output['status']
+
+        return Ok(
+            OpenStackSnapshot(
+                snapshot_request.snapshotname,
+                snapshot_request.guestname,
+                status if status else None
+            )
+        )
+
+    def create_snapshot(
+        self,
+        snapshot_request: artemis.db.SnapshotRequest,
+        guest: artemis.guest.Guest
+    ) -> Result[artemis.snapshot.Snapshot, Failure]:
+
+        if not isinstance(guest, OpenStackGuest):
+            return Error(Failure('guest is not an OpenStack guest'))
+
+        assert isinstance(guest, OpenStackGuest)
+
+        r_stop = self._stop_guest(guest.instance_id)
+
+        if r_stop.is_error:
+            assert isinstance(r_stop.value, Failure)
+            return Error(r_stop.value)
+
+        os_options = [
+            'server', 'image', 'create',
+            '--name', snapshot_request.snapshotname,
+            guest.instance_id
+        ]
+
+        r_output = self._run_os(os_options)
+
+        if r_output.is_error:
+            return Error(r_output.value)
+        output = r_output.unwrap()
+
+        status = ''
+
+        if output:
+            status = output['status']
+
+        # If snapshot is active, we can turn on the guest
+        if status == 'active':
+            r_start = self._start_guest(guest.instance_id)
+
+            if r_start.is_error:
+                assert isinstance(r_start.value, Failure)
+                return Error(r_start.value)
+
+        return Ok(OpenStackSnapshot(
+            snapshot_request.snapshotname,
+            snapshot_request.guestname,
+            status if status else None
+        ))
+
+    def update_snapshot(
+        self,
+        snapshot: artemis.snapshot.Snapshot,
+        guest: artemis.guest.Guest,
+        canceled: Optional[threading.Event] = None
+    ) -> Result[artemis.snapshot.Snapshot, Failure]:
+
+        if not isinstance(snapshot, OpenStackSnapshot):
+            return Error(Failure('snapshot is not an OpenStack guest'))
+
+        assert isinstance(snapshot, OpenStackSnapshot)
+
+        if not isinstance(guest, OpenStackGuest):
+            return Error(Failure('guest is not an OpenStack guest'))
+
+        assert isinstance(guest, OpenStackGuest)
+
+        r_output = self._show_snapshot(snapshot.snapshotname)
+
+        if r_output.is_error:
+            return Error(r_output.value)
+
+        output = r_output.unwrap()
+
+        if not output:
+            return Error(Failure('Image show commmand output is empty'))
+
+        status = output['status']
+        self.logger.info('snapshot status is {}'.format(status))
+
+        if status != 'active':
+            return Ok(snapshot)
+
+        # If snapshot is active, we can turn on the guest
+        r_start = self._start_guest(guest.instance_id)
+
+        if r_start.is_error:
+            assert isinstance(r_start.value, Failure)
+            return Error(r_start.value)
+
+        snapshot.status = status
+        return Ok(snapshot)
+
+    def remove_snapshot(
+        self,
+        snapshot: artemis.snapshot.Snapshot,
+    ) -> Result[bool, Failure]:
+        os_options = ['image', 'delete', snapshot.snapshotname]
+
+        r_output = self._run_os(os_options, json_format=False)
+
+        if r_output.is_error:
+            return Error(r_output.value)
+
+        return Ok(True)
+
+    def restore_snapshot(
+        self,
+        snapshot_request: artemis.db.SnapshotRequest,
+        guest: artemis.guest.Guest
+    ) -> Result[bool, Failure]:
+        if not isinstance(guest, OpenStackGuest):
+            return Error(Failure('guest is not an OpenStack guest'))
+
+        assert isinstance(guest, OpenStackGuest)
+
+        os_options = [
+            'server', 'rebuild',
+            '--image', snapshot_request.snapshotname,
+            guest.instance_id, '--wait'
+        ]
+
+        r_output = self._run_os(os_options, json_format=False)
+
+        if r_output.is_error:
+            return Error(r_output.value)
+
+        return Ok(True)
 
     def acquire_guest(
         self,

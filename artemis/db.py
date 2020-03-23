@@ -151,6 +151,16 @@ class GuestEvent(Base):
         self.details = json.dumps(details)
 
 
+class SnapshotRequest(Base):
+    __tablename__ = 'snapshot_requests'
+
+    snapshotname = Column(String(250), primary_key=True, nullable=False)
+    guestname = Column(String(250), ForeignKey('guest_requests.guestname'), nullable=False)
+    poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
+
+    state = Column(String(250), nullable=False)
+
+
 class Metrics(Base):
     __tablename__ = 'metrics'
 

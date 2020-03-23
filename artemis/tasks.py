@@ -21,7 +21,7 @@ import artemis.drivers.aws
 import artemis.drivers.beaker
 
 from artemis import Failure, safe_call, safe_db_execute, log_guest_event, log_error_guest_event
-from artemis.db import GuestRequest
+from artemis.db import GuestRequest, SnapshotRequest
 
 from typing import cast, Any, Callable, Dict, List, Optional, Tuple
 from typing_extensions import Protocol
@@ -266,6 +266,34 @@ def _get_guest_by_state(
     failure.reraise()
 
 
+def _get_snapshot_by_state(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    snapshotname: str,
+    state: artemis.guest.GuestState
+) -> Optional[artemis.db.SnapshotRequest]:
+    query = session \
+            .query(SnapshotRequest) \
+            .filter(SnapshotRequest.snapshotname == snapshotname) \
+            .filter(SnapshotRequest.state == state.value)
+
+    r_query = cast(
+        Result[artemis.db.SnapshotRequest, Failure],
+        safe_call(query.one)
+    )
+
+    if r_query.is_ok:
+        return r_query.unwrap()
+
+    failure = cast(Failure, r_query.value)
+
+    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
+        logger.warning('not in {} state anymore'.format(state.value))
+        return None
+
+    failure.reraise()
+
+
 def _update_guest_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -329,6 +357,67 @@ def _update_guest_state(
                 logger,
                 session,
                 guestname,
+                cast(Failure, r.value),
+                'failed to switch state: {} => {}'.format(current_state.value, new_state.value)
+            )
+
+        return r.unwrap()
+
+    failure = cast(Failure, r.value)
+
+    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
+        logger.warning('state switch: {} => {}: no result found'.format(current_state.value, new_state.value))
+
+        return False
+
+    failure.reraise()
+
+
+def _update_snapshot_state(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    snapshotname: str,
+    current_state: artemis.guest.GuestState,
+    new_state: artemis.guest.GuestState,
+    set_values: Optional[Dict[str, Any]] = None,
+) -> bool:
+    logger.warning('state switch: {} => {}'.format(current_state.value, new_state.value))
+
+    if set_values:
+        values = set_values
+        values.update({
+            'state': new_state.value
+        })
+
+    else:
+        values = {
+            'state': new_state.value
+        }
+
+    query = sqlalchemy \
+        .update(SnapshotRequest.__table__) \
+        .where(SnapshotRequest.snapshotname == snapshotname) \
+        .where(SnapshotRequest.state == current_state.value) \
+        .values(**values)
+
+    r = safe_db_execute(logger, session, query)
+
+    if r.is_ok:
+        if r.value is True:
+            logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
+            eventname = 'state-changed'
+            details = {'state': new_state.value}
+            details['guestname'] = snapshotname
+
+            log_guest_event(logger, session, eventname, **details)
+
+        else:
+            logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
+            details['state'] = current_state.value
+            log_error_guest_event(
+                logger,
+                session,
+                snapshotname,
                 cast(Failure, r.value),
                 'failed to switch state: {} => {}'.format(current_state.value, new_state.value)
             )
@@ -916,4 +1005,651 @@ def route_guest_request(guestname: str) -> None:
             'route'
         ),
         doer_args=(guestname,)
+    )
+
+
+async def do_release_snapshot_request(
+    logger: gluetool.log.ContextAdapter,
+    db: artemis.db.DB,
+    cancel: threading.Event,
+    snapshotname: str
+) -> None:
+    with db.get_session() as session:
+        def _undo_snapshot_in_removing() -> None:
+            if _update_guest_state(
+                logger,
+                session,
+                snapshotname,
+                artemis.guest.GuestState.RELEASING,
+                artemis.guest.GuestState.CONDEMNED
+            ):
+                return
+
+            assert False, 'unreachable'
+
+        snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.CONDEMNED)
+        if not snapshot_request:
+            return
+
+        if not _update_snapshot_state(
+            logger,
+            session,
+            snapshotname,
+            artemis.guest.GuestState.CONDEMNED,
+            artemis.guest.GuestState.RELEASING
+        ):
+            return
+
+        if snapshot_request.poolname:
+            r_pool = _get_pool(logger, session, snapshot_request.poolname)
+
+            if r_pool.is_error:
+                log_error_guest_event(
+                    logger,
+                    session,
+                    snapshot_request.poolname,
+                    cast(Failure, r_pool.value),
+                    'pool sanity failed'
+                )
+
+            pool = r_pool.unwrap()
+
+            if cancel.is_set():
+                _undo_snapshot_in_removing()
+                return
+
+            r_snapshot = pool.snapshot_factory(snapshot_request)
+            if r_snapshot.is_error:
+                log_error_guest_event(
+                    logger,
+                    session,
+                    snapshotname,
+                    cast(Failure, r_snapshot.value),
+                    'failed to locate'
+                )
+                return
+
+            r_release = pool.remove_snapshot(r_snapshot.unwrap())
+
+            if r_release.is_error:
+                log_error_guest_event(
+                    logger,
+                    session,
+                    snapshotname,
+                    cast(Failure, r_release.value),
+                    'failed to locate'
+                )
+                return
+
+        query = sqlalchemy \
+            .delete(SnapshotRequest.__table__) \
+            .where(SnapshotRequest.snapshotname == snapshotname) \
+            .where(SnapshotRequest.state == artemis.guest.GuestState.RELEASING.value)
+
+        r_condemn = safe_db_execute(logger, session, query)
+
+        if r_condemn.is_ok:
+            return
+
+        failure = cast(Failure, r_condemn.error)
+
+        if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
+            logger.warning('not in CONDEMNED state anymore')
+            return
+
+        failure.reraise()
+
+
+@dramatiq.actor(**actor_kwargs('RELEASE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+def release_snapshot_request(snapshotname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_release_snapshot_request,
+        logger_getter=lambda root_logger: TaskLogger(
+            artemis.snapshot.SnapshotLogger(root_logger, snapshotname),
+            'release'
+        ),
+        doer_args=(snapshotname,)
+    )
+
+
+async def do_update_snapshot(
+    logger: gluetool.log.ContextAdapter,
+    db: artemis.db.DB,
+    cancel: threading.Event,
+    snapshotname: str
+) -> None:
+    with db.get_session() as session:
+        def _undo_snapshot_update(snapshot: artemis.snapshot.Snapshot) -> None:
+            r = pool.remove_snapshot(snapshot)
+
+            if r.is_ok:
+                return
+
+            raise Exception(r.error)
+
+        snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.PROMISED)
+        if not snapshot_request:
+            return
+
+        assert snapshot_request.poolname is not None
+
+        guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
+
+        if not guest_request:
+            return
+
+        r_pool = _get_pool(logger, session, snapshot_request.poolname)
+
+        if r_pool.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshot_request.poolname,
+                cast(Failure, r_pool.value),
+                'pool sanity failed'
+            )
+
+        pool = r_pool.unwrap()
+
+        r_guest_sshkey = _get_ssh_key(
+            logger,
+            session,
+            guest_request.ownername,
+            guest_request.ssh_keyname
+        )
+
+        if r_guest_sshkey.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshot_request.guestname,
+                cast(Failure, r_guest_sshkey.value),
+                'failed to get SSH key',
+                poolname=snapshot_request.poolname,
+            )
+
+        guest_sshkey = r_guest_sshkey.unwrap()
+
+        r_guest = pool.guest_factory(guest_request, ssh_key=guest_sshkey)
+        if r_guest.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshot_request.guestname,
+                cast(Failure, r_guest.value),
+                'failed to locate'
+            )
+            return
+
+        guest = r_guest.unwrap()
+
+        if cancel.is_set():
+            return
+
+        r_snapshot = pool.snapshot_factory(snapshot_request)
+
+        if r_snapshot.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshotname,
+                cast(Failure, r_snapshot.value),
+                'failed to locate'
+            )
+            return
+
+        r_update = pool.update_snapshot(r_snapshot.unwrap(), guest)
+
+        if r_update.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshotname,
+                cast(Failure, r_update.value),
+                'failed to update'
+            )
+            return
+
+        snapshot = r_update.unwrap()
+
+        if snapshot.is_promised:
+            if _update_snapshot_state(
+                logger,
+                session,
+                snapshotname,
+                artemis.guest.GuestState.PROMISED,
+                artemis.guest.GuestState.PROMISED,
+            ):
+                r_promise = _dispatch_task(logger, update_snapshot, snapshotname)
+
+                if r_promise.is_ok:
+                    logger.info('scheduled update')
+                    return
+
+        else:
+            if _update_snapshot_state(
+                logger,
+                session,
+                snapshotname,
+                artemis.guest.GuestState.PROMISED,
+                artemis.guest.GuestState.READY,
+            ):
+                logger.info('successfully created')
+                return
+
+        # Failed to change the state means somebody else already did the update. We have a snapshot on our hands,
+        # which points to resources that are now wasted because there is another instance of this snapshot
+        # already updated or finished. We can safely ask driver to release resources of this particular
+        # snapshot instance - this is not going to affect the instance whose changes were commited to the database
+        # before ours.
+        _undo_snapshot_update(snapshot)
+
+
+@dramatiq.actor(**actor_kwargs('UPDATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+def update_snapshot(snapshotname: str, guestname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_update_snapshot,
+        logger_getter=lambda root_logger: TaskLogger(
+            artemis.snapshot.SnapshotLogger(artemis.guest.GuestLogger(root_logger, guestname), snapshotname),
+            'update'
+        ),
+        doer_args=(snapshotname,)
+    )
+
+
+async def do_create_snapshot(
+    logger: gluetool.log.ContextAdapter,
+    db: artemis.db.DB,
+    cancel: threading.Event,
+    snapshotname: str
+) -> None:
+    with db.get_session() as session:
+        def _undo_snapshot_create(snapshot: artemis.snapshot.Snapshot) -> None:
+            r = pool.remove_snapshot(snapshot)
+
+            if r.is_ok:
+                return
+
+            raise Exception(r.error)
+
+        snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.CREATING)
+
+        if not snapshot_request:
+            return
+
+        if cancel.is_set():
+            return
+
+        guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
+
+        if not guest_request:
+            return
+
+        if not snapshot_request.poolname:
+            return
+
+        r_pool = _get_pool(logger, session, snapshot_request.poolname)
+
+        if r_pool.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshot_request.poolname,
+                cast(Failure, r_pool.value),
+                'pool sanity failed'
+            )
+
+        pool = r_pool.unwrap()
+
+        r_guest_sshkey = _get_ssh_key(
+            logger,
+            session,
+            guest_request.ownername,
+            guest_request.ssh_keyname
+        )
+
+        if r_guest_sshkey.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshot_request.guestname,
+                cast(Failure, r_guest_sshkey.value),
+                'failed to get SSH key',
+                poolname=snapshot_request.poolname,
+            )
+
+        guest_sshkey = r_guest_sshkey.unwrap()
+
+        r_guest = pool.guest_factory(guest_request, ssh_key=guest_sshkey)
+        if r_guest.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshot_request.guestname,
+                cast(Failure, r_guest.value),
+                'failed to locate'
+            )
+            return
+
+        guest = r_guest.unwrap()
+
+        if cancel.is_set():
+            return
+
+        r_create = pool.create_snapshot(snapshot_request, guest)
+
+        if r_create.is_error:
+            assert r_create.error is not None
+
+            error = cast(Failure, r_create.value)
+
+            log_error_guest_event(
+                logger,
+                session,
+                snapshotname,
+                error,
+                'failed to create: {}',
+                poolname=snapshot_request.poolname,
+                environment=error.details.get('environment'),
+                hook_error=error.details.get('hook_error')
+            )
+
+            raise Exception(error)
+
+        snapshot = r_create.unwrap()
+
+        if cancel.is_set():
+            _undo_snapshot_create(snapshot)
+            return
+
+        # If snapshot was promised - schedule update task. Otherwise change state to ready
+        if snapshot.is_promised:
+            if _update_snapshot_state(
+                logger,
+                session,
+                snapshotname,
+                artemis.guest.GuestState.CREATING,
+                artemis.guest.GuestState.PROMISED
+            ):
+                r_promise = _dispatch_task(logger, update_snapshot, snapshotname, snapshot.guestname)
+
+                if r_promise.is_ok:
+                    logger.info('scheduled update')
+                    return
+
+        else:
+            if _update_snapshot_state(
+                logger,
+                session,
+                snapshotname,
+                artemis.guest.GuestState.CREATING,
+                artemis.guest.GuestState.READY,
+            ):
+                logger.info('successfully created')
+                return
+
+        # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
+        # Again, we must undo and forget about the guest request.
+        _undo_snapshot_create(snapshot)
+
+
+@dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+def create_snapshot(snapshotname: str, guestname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_create_snapshot,
+        logger_getter=lambda root_logger: TaskLogger(
+            artemis.snapshot.SnapshotLogger(artemis.guest.GuestLogger(root_logger, guestname), snapshotname),
+            'acquire'
+        ),
+        doer_args=(snapshotname,)
+    )
+
+
+async def do_route_snapshot_request(
+    logger: gluetool.log.ContextAdapter,
+    db: artemis.db.DB,
+    cancel: threading.Event,
+    snapshotname: str
+) -> None:
+    with db.get_session() as session:
+        def _undo_snapshot_in_creating() -> None:
+            if _update_guest_state(
+                logger,
+                session,
+                snapshotname,
+                artemis.guest.GuestState.PROVISIONING,
+                artemis.guest.GuestState.ROUTING
+            ):
+                return
+
+            # We should never ever end up here, because:
+            #
+            # - undo worked => _update_snapshot_state returns True and we leave right above this comment
+            # - undo failed because of unspecified exception -> the exception is reraised in _update_snapshot_state
+            # - undo failed because there was no such record in db -> _update_snapshot_state returns False, which is not
+            # possible...
+            #
+            # We are the only instance of this task that got this far. We were the only instance that managed to move
+            # snapshot to PROVISIONING state, any other instance should see it alread has that state (or they fail to
+            # change it), stopping their execution at that point. We should be the only instance that has anything to
+            # undo.
+            #
+            # So, what changed the snapshot state if it haven't been any other instance of this task, and if we failed
+            # to dispatch any provisioning task??
+            assert False, 'unreachable'
+
+        # First, pick up our assigned snapshot request. Make sure it hasn't been
+        # processed yet.
+        snapshot = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.ROUTING)
+
+        if not snapshot:
+            return
+
+        if cancel.is_set():
+            return
+
+        # Do stuff, examine request and send it a message.
+        #
+        # Be aware that while the request was free to take, it may be being processed by multiple instances of this
+        # task at once - we didn't acquire any lock! We could either introduce locking, or we can continue and make
+        # sure the request didn't change when we start commiting changes. And since asking or forgiveness is simpler
+        # than asking for permission, let's continue but be prepared to clean up if someone else did the work instead
+        # of us.
+
+        # We are expecting, that guest is READY and active
+        guest_request = _get_guest_by_state(logger, session, snapshot.guestname, artemis.guest.GuestState.READY)
+
+        if not guest_request:
+            return
+
+        if cancel.is_set():
+            return
+
+        # Mark request as suitable for provisioning.
+        if not _update_snapshot_state(
+            logger,
+            session,
+            snapshotname,
+            artemis.guest.GuestState.ROUTING,
+            artemis.guest.GuestState.CREATING,
+            set_values={
+                'poolname': guest_request.poolname
+            }
+        ):
+            # We failed to move snapshot to CREATING state which means some other instance of this task changed
+            # snapshot's state instead of us, which means we should throw everything away because our decisions no
+            # longer matter.
+            return
+
+        # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
+        # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
+        # task.
+        r = _dispatch_task(logger, create_snapshot, snapshotname, snapshot.guestname)
+        logger.info('task was dispatched')
+
+        if r.is_ok:
+            return
+
+        # We failed to dispatch the task, but we already marked the request as suitable for provisioning, which means
+        # that any subsequent run of this task would not be able to evaluate it again since it's no longer in ROUTING
+        # state. We should undo this change.
+        #
+        # On the other hand, we just cannot chain undos of undos indefinitely, so if this attempt fails, let's give up
+        # and let humans solve the problems.
+        _undo_snapshot_in_creating()
+
+
+@dramatiq.actor(**actor_kwargs('ROUTE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+def route_snapshot_request(snapshotname: str) -> None:
+    task_core(  # type: ignore # Argument 1 has incompatible type
+        do_route_snapshot_request,
+        logger_getter=lambda root_logger: TaskLogger(
+            artemis.snapshot.SnapshotLogger(root_logger, snapshotname),
+            'route'
+        ),
+        doer_args=(snapshotname,)
+    )
+
+
+async def do_restore_snapshot_request(
+    logger: gluetool.log.ContextAdapter,
+    db: artemis.db.DB,
+    cancel: threading.Event,
+    snapshotname: str
+) -> None:
+    with db.get_session() as session:
+        def _undo_snapshot_restore() -> None:
+            if _update_guest_state(
+                logger,
+                session,
+                snapshotname,
+                artemis.guest.GuestState.PROCESSING,
+                artemis.guest.GuestState.RESTORING
+            ):
+                return
+
+            assert False, 'unreachable'
+
+        snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.RESTORING)
+
+        if not snapshot_request:
+            return
+
+        if _update_snapshot_state(
+            logger,
+            session,
+            snapshotname,
+            artemis.guest.GuestState.RESTORING,
+            artemis.guest.GuestState.PROCESSING
+        ):
+            logger.info('state changed to processing')
+
+        if cancel.is_set():
+            _undo_snapshot_restore()
+            return
+
+        guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
+
+        if not guest_request:
+            _undo_snapshot_restore()
+            return
+
+        assert snapshot_request.poolname is not None
+
+        r_pool = _get_pool(logger, session, snapshot_request.poolname)
+
+        if r_pool.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshot_request.poolname,
+                cast(Failure, r_pool.value),
+                'pool sanity failed'
+            )
+
+        pool = r_pool.unwrap()
+
+        r_guest_sshkey = _get_ssh_key(
+            logger,
+            session,
+            guest_request.ownername,
+            guest_request.ssh_keyname
+        )
+
+        if r_guest_sshkey.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshot_request.guestname,
+                cast(Failure, r_guest_sshkey.value),
+                'failed to get SSH key',
+                poolname=snapshot_request.poolname,
+            )
+
+        guest_sshkey = r_guest_sshkey.unwrap()
+
+        r_guest = pool.guest_factory(guest_request, ssh_key=guest_sshkey)
+        if r_guest.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                snapshot_request.guestname,
+                cast(Failure, r_guest.value),
+                'failed to locate'
+            )
+            _undo_snapshot_restore()
+            return
+
+        guest = r_guest.unwrap()
+
+        if cancel.is_set():
+            _undo_snapshot_restore()
+            return
+
+        r_restore = pool.restore_snapshot(snapshot_request, guest)
+
+        if r_restore.is_error:
+            _undo_snapshot_restore()
+
+            assert r_restore.error is not None
+
+            error = cast(Failure, r_restore.value)
+
+            log_error_guest_event(
+                logger,
+                session,
+                snapshotname,
+                error,
+                'failed to restore: {}',
+                poolname=snapshot_request.poolname,
+                environment=error.details.get('environment'),
+                hook_error=error.details.get('hook_error')
+            )
+
+            raise Exception(error)
+
+        if _update_snapshot_state(
+            logger,
+            session,
+            snapshotname,
+            artemis.guest.GuestState.PROCESSING,
+            artemis.guest.GuestState.READY
+        ):
+            logger.info('restored sucessfully')
+            return
+
+        # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
+        # Again, we must undo and forget about the guest request.
+        _undo_snapshot_restore()
+
+
+@dramatiq.actor(**actor_kwargs('RESTORE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+def restore_snapshot_request(snapshotname: str) -> None:
+    task_core(  # type: ignore # Argument 1 has incompatible type
+        do_restore_snapshot_request,
+        logger_getter=lambda root_logger: TaskLogger(
+            artemis.snapshot.SnapshotLogger(root_logger, snapshotname),
+            'restore'
+        ),
+        doer_args=(snapshotname,)
     )

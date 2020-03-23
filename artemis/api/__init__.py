@@ -20,6 +20,7 @@ from gluetool.log import log_dict
 import artemis
 import artemis.db
 import artemis.guest
+import artemis.snapshot
 
 from artemis.api import errors, handlers
 from artemis.metrics import generate_metrics
@@ -151,6 +152,33 @@ class GuestEvent:
             guestname=event.guestname,
             details=json.loads(event.details) if event.details else {},
             updated=event.updated
+        )
+
+
+class SnapshotResponse:
+    snapshotname: str = Field()
+    guestname: str = Field()
+    state: artemis.guest.GuestState = Field()
+
+    def __init__(
+        self,
+        snapshotname: str,
+        guestname: str,
+        state: artemis.guest.GuestState
+
+    ) -> None:
+        self.snapshotname = snapshotname
+        self.guestname = guestname
+        self.state = state.value
+
+    @classmethod
+    def from_db(cls, snapshot_request: artemis.db.SnapshotRequest):
+        # type: (...) -> SnapshotResponse
+
+        return cls(
+            snapshotname=snapshot_request.snapshotname,
+            guestname=snapshot_request.guestname,
+            state=artemis.guest.GuestState(snapshot_request.state)
         )
 
 
@@ -333,6 +361,88 @@ class GuestEventManagerComponent:
         return GuestEventManager(db)
 
 
+class SnapshotRequestManager:
+    def __init__(self, db: DB) -> None:
+        self.db = db
+
+    def get_snapshot(self, guestname: str, snapshotname: str) -> Optional[SnapshotResponse]:
+        try:
+            with self.db.get_session() as session:
+                snapshot = session \
+                           .query(artemis.db.SnapshotRequest.__table__) \
+                           .filter(artemis.db.SnapshotRequest.snapshotname == snapshotname) \
+                           .filter(artemis.db.SnapshotRequest.guestname == guestname) \
+                           .one()
+
+                response = SnapshotResponse.from_db(snapshot)
+
+        except sqlalchemy.orm.exc.NoResultFound:
+            return None
+
+        return response
+
+    def create_snapshot(self, guestname: str) -> SnapshotResponse:
+        snapshotname = str(uuid.uuid4())
+
+        with self.db.get_session() as session:
+            session.add(
+                artemis.db.SnapshotRequest(
+                    snapshotname=snapshotname,
+                    guestname=guestname,
+                    poolname=None,
+                    state=artemis.guest.GuestState.PENDING.value
+                )
+            )
+
+        snapshot_response = self.get_snapshot(guestname, snapshotname)
+
+        assert snapshot_response is not None
+
+        return snapshot_response
+
+    def delete_snapshot(self, guestname: str, snapshotname: str) -> None:
+        with self.db.get_session() as session:
+            query = sqlalchemy \
+                    .update(artemis.db.SnapshotRequest.__table__) \
+                    .where(artemis.db.SnapshotRequest.snapshotname == snapshotname) \
+                    .where(artemis.db.SnapshotRequest.guestname == guestname) \
+                    .values(state=artemis.guest.GuestState.CONDEMNED.value)
+
+            if artemis.safe_db_execute(artemis.get_logger(), session, query):
+                return
+
+            raise errors.GenericError()
+
+    def restore_snapshot(self, guestname: str, snapshotname: str) -> SnapshotResponse:
+        with self.db.get_session() as session:
+            query = sqlalchemy \
+                    .update(artemis.db.SnapshotRequest.__table__) \
+                    .where(artemis.db.SnapshotRequest.snapshotname == snapshotname) \
+                    .where(artemis.db.SnapshotRequest.guestname == guestname) \
+                    .where(artemis.db.SnapshotRequest.state != artemis.guest.GuestState.CONDEMNED.value) \
+                    .values(state=artemis.guest.GuestState.RESTORING.value)
+
+            if artemis.safe_db_execute(artemis.get_logger(), session, query):
+                snapshot_response = self.get_snapshot(guestname, snapshotname)
+
+                assert snapshot_response is not None
+
+                return snapshot_response
+
+            raise errors.GenericError()
+
+
+class SnapshotRequestManagerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is SnapshotRequestManager
+
+    def resolve(self, db: DB) -> SnapshotRequestManager:
+        return SnapshotRequestManager(db)
+
+
 #
 # Routes
 #
@@ -367,6 +477,28 @@ def get_metrics() -> APIResponse:
     return APIResponse(stream=generate_metrics())
 
 
+def get_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:
+    snapshot_response = manager.get_snapshot(guestname, snapshotname)
+
+    if snapshot_response is None:
+        raise errors.NoSuchEntityError()
+
+    return APIResponse(snapshot_response)
+
+
+def create_snapshot_request(guestname: str, manager: SnapshotRequestManager) -> APIResponse:
+    return APIResponse(manager.create_snapshot(guestname), status=HTTP_201)
+
+
+def delete_snapshot(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:
+    manager.delete_snapshot(guestname, snapshotname)
+    return APIResponse()
+
+
+def restore_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:
+    return APIResponse(manager.restore_snapshot(guestname, snapshotname), status=HTTP_201)
+
+
 def run_app() -> molten.app.App:
     from molten.router import Include, Route
 
@@ -382,6 +514,7 @@ def run_app() -> molten.app.App:
         DBComponent(db),
         GuestRequestManagerComponent(),
         GuestEventManagerComponent(),
+        SnapshotRequestManagerComponent()
     ]
 
 # TODO: uncomment when registration is done
@@ -409,6 +542,10 @@ def run_app() -> molten.app.App:
             Route('/{guestname}', get_guest_request),
             Route('/{guestname}', delete_guest, method='DELETE'),
             Route('/{guestname}/events', get_guest_events),
+            Route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+            Route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+            Route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+            Route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
         ]),
         Route('/metrics', get_metrics),
         Route('/_docs', get_docs),

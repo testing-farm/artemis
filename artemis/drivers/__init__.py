@@ -9,6 +9,7 @@ import artemis
 import artemis.environment
 from artemis import Failure
 from artemis.guest import Guest, GuestState
+import artemis.snapshot
 
 # Type annotations
 from typing import Any, List, Dict, Optional, cast
@@ -43,6 +44,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
         guest_request: artemis.db.GuestRequest,
         ssh_key: artemis.db.SSHKey
     ) -> Result[Guest, Failure]:
+        raise NotImplementedError()
+
+    def snapshot_factory(
+        self,
+        snapshpt_request: artemis.db.SnapshotRequest
+    ) -> Result[artemis.snapshot.Snapshot, Failure]:
         raise NotImplementedError()
 
     def sanity(self) -> Result[bool, Failure]:
@@ -110,6 +117,72 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :rtype: result.Result[bool, Failure]
         """
 
+        raise NotImplementedError()
+
+    def create_snapshot(
+        self,
+        snapshot_request: artemis.db.SnapshotRequest,
+        guest: artemis.guest.Guest
+    ) -> Result[artemis.snapshot.Snapshot, Failure]:
+        """
+        Create snapshot of a guest.
+        If the returned snapshot is not active, ``update_snapshot`` would be scheduled by Artemis core.
+
+        :param SnapshotRequest snapshot_request: snapshot request to process
+        :param Guest guest: a guest, which will be snapshoted
+        :rtype: result.Result[Snapshot, Failure]
+        :returns: :py:class:`result.result` with either :py:class:`artemis.snapshot.Snapshot`
+            or specification of error.
+        """
+        raise NotImplementedError()
+
+    def update_snapshot(
+        self,
+        snapshot: artemis.snapshot.Snapshot,
+        guest: artemis.guest.Guest,
+        canceled: Optional[threading.Event] = None
+    ) -> Result[artemis.snapshot.Snapshot, Failure]:
+        """
+        Update state of the snapshot.
+        Called for unfinished snapshot.
+        If snapshot status is active, snapshot request is evaluated as finished
+
+        :param Snapshot snapshot: snapshot to update
+        :param Guest guest: a guest, which was snapshoted
+        :rtype: result.Result[Snapshot, Failure]
+        :returns: :py:class:`result.result` with either :py:class:`artemis.snapshot.Snapshot`
+            or specification of error.
+        """
+        raise NotImplementedError()
+
+    def remove_snapshot(
+        self,
+        snapshot: artemis.snapshot.Snapshot,
+    ) -> Result[bool, Failure]:
+        """
+        Remove snapshot from the pool.
+
+        :param Snapshot snapshot: snapshot to remove
+        :rtype: result.Result[bool, Failure]
+        :returns: :py:class:`result.result` with either `bool`
+            or specification of error.
+        """
+        raise NotImplementedError()
+
+    def restore_snapshot(
+        self,
+        snapshot_request: artemis.db.SnapshotRequest,
+        guest: artemis.guest.Guest
+    ) -> Result[bool, Failure]:
+        """
+        Restore the guest to the snapshot.
+
+        :param SnapshotRequest snapshot_request: snapshot request to process
+        :param Guest guest: a guest, which will be restored
+        :rtype: result.Result[bool, Failure]
+        :returns: :py:class:`result.result` with either `bool`
+            or specification of error.
+        """
         raise NotImplementedError()
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
