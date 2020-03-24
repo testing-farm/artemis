@@ -48,6 +48,8 @@ spec:
               value: "debug"
             - name: ARTEMIS_VAULT_PASSWORD_FILE
               value: /configuration/.vault_pass
+            - name: ARTEMIS_ACTOR_DEFAULT_RETRIES
+              value: "1"
           volumeMounts:
             - name: artemis-configuration
               mountPath: /configuration

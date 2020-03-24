@@ -140,8 +140,10 @@ def actor_kwargs(actor_name: str) -> Dict[str, Any]:
             default
         )
 
+    default_retries = os.getenv('ARTEMIS_ACTOR_DEFAULT_RETRIES', 5)
+
     return {
-        'max_retries': _get('RETRIES', 5),
+        'max_retries': _get('RETRIES', default_retries),
         'min_backoff': _get('MIN_BACKOFF', 15000),
         'max_backoff': _get('MAX_BACKOFF', 60000)
     }
