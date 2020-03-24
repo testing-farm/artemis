@@ -183,9 +183,11 @@ class GuestRequestManager:
         with self.db.get_session() as session:
             guests = session.query(artemis.db.GuestRequest).all()
 
-        return [
-            GuestResponse.from_db(guest) for guest in guests
-        ]
+            responses = [
+                GuestResponse.from_db(guest) for guest in guests
+            ]
+
+        return responses
 
     def create(self, guest_request: GuestRequest) -> GuestResponse:
         guestname = str(uuid.uuid4())
@@ -228,10 +230,12 @@ class GuestRequestManager:
                         .filter(artemis.db.GuestRequest.guestname == guestname) \
                         .one()
 
+                response = GuestResponse.from_db(guest)
+
         except sqlalchemy.orm.exc.NoResultFound:
             return None
 
-        return GuestResponse.from_db(guest)
+        return response
 
     def delete_by_guestname(self, guestname: str) -> None:
         with self.db.get_session() as session:

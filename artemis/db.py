@@ -160,6 +160,9 @@ class DB:
 
                 raise
 
+            finally:
+                session.close()
+
     instance = None  # type: __DB
     _lock = threading.Lock()
 
