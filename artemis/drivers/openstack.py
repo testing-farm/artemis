@@ -193,7 +193,10 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         return Ok(image)
 
     def _env_to_network(self, environment: artemis.environment.Environment) -> Result[Any, Failure]:
-        r_networks = self._run_os(['network', 'list'])
+        ip_version = self.pool_config['ip-version']
+        network_regex = self.pool_config['network-regex']
+
+        r_networks = self._run_os(['ip', 'availability', 'list', '--ip-version', ip_version])
 
         if r_networks.is_error:
             return Error(r_networks.value)
@@ -202,23 +205,33 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         # networks has next structure:
         # [
         #   {
-        #     "Subnets": [
-        #       str
-        #     ],
-        #     "ID": str,
-        #     "Name": str,
+        #     "Network ID": str,
+        #     "Network Name": str,
+        #     "Total IPs": int,
+        #     "Used IPs": int
         #   },
         #   ...
         # ]
 
-        # TODO: this will be handled by a script, for now we simply pick our local common variety of a network.
-
-        suitable_networks = [network for network in networks if network["Name"] == self.pool_config['default-network']]
+        # Keep only matched with regex networks
+        suitable_networks = [network for network in networks if re.match(network_regex, network["Network Name"])]
 
         if not suitable_networks:
-            return Error(Failure('no such network'))
+            return Error(Failure('no suitable network'))
 
-        return Ok(suitable_networks[0]["ID"])
+        # Count free IPs for all suitable networks
+        for network in suitable_networks:
+            network['Free IPs'] = network['Total IPs'] - network['Used IPs']
+
+        # Find max 'Free Ips' value and return network dict
+        suitable_network = max(suitable_networks, key=lambda x: x['Free IPs'])
+
+        self.logger.info('Using {} network with {} free IPs'.format(
+            suitable_network['Network Name'],
+            suitable_network['Free IPs']
+        ))
+
+        return Ok(suitable_network["Network ID"])
 
     def acquire_guest(
         self,
