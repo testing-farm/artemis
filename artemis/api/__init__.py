@@ -126,6 +126,34 @@ class GuestResponse:
         )
 
 
+@molten.schema
+class GuestEvent:
+    eventname: str = Field()
+
+    def __init__(
+        self,
+        eventname: str,
+        guestname: str,
+        updated: Any,
+        details: Any
+    ) -> None:
+        self.eventname = eventname
+        self.guestname = guestname
+        self.details = details
+        self.updated = str(updated)
+
+    @classmethod
+    def from_db(cls, event: artemis.db.GuestEvent):
+        # type: (...) -> GuestEvent
+
+        return cls(
+            eventname=event.eventname,
+            guestname=event.guestname,
+            details=json.loads(event.details) if event.details else {},
+            updated=event.updated
+        )
+
+
 class APIResponse(Response):  # type: ignore
     ''' Class that represents API response structure.
         An instance of this class should be returned by routes.
@@ -220,6 +248,17 @@ class GuestRequestManager:
 
         assert gr is not None
 
+        # add guest event
+        logger = artemis.get_logger()
+        with self.db.get_session() as session:
+            artemis.log_guest_event(
+                logger,
+                session,
+                'created',
+                gr.guestname,
+                state=gr.state
+            )
+
         return gr
 
     def get_by_guestname(self, guestname: str) -> Optional[GuestResponse]:
@@ -244,10 +283,32 @@ class GuestRequestManager:
                     .where(artemis.db.GuestRequest.guestname == guestname) \
                     .values(state=artemis.guest.GuestState.CONDEMNED.value)
 
-            if artemis.safe_db_execute(artemis.get_logger(), session, query):
+            logger = artemis.get_logger()
+            if artemis.safe_db_execute(logger, session, query):
+                # add guest event
+                artemis.log_guest_event(
+                    logger,
+                    session,
+                    'deleted',
+                    guestname
+                )
                 return
 
             raise errors.GenericError()
+
+
+class GuestEventManager:
+    def __init__(self, db: DB) -> None:
+        self.db = db
+
+    def get_events_by_guestname(self, guestname: str) -> Optional[List[GuestEvent]]:
+        with self.db.get_session() as session:
+            events = session.query(artemis.db.GuestEvent) \
+                .filter(artemis.db.GuestEvent.guestname == guestname) \
+                .all()
+
+            guest_events = [GuestEvent.from_db(event) for event in events]
+            return guest_events
 
 
 class GuestRequestManagerComponent:
@@ -259,6 +320,17 @@ class GuestRequestManagerComponent:
 
     def resolve(self, db: DB) -> GuestRequestManager:
         return GuestRequestManager(db)
+
+
+class GuestEventManagerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is GuestEventManager
+
+    def resolve(self, db: DB) -> GuestEventManager:
+        return GuestEventManager(db)
 
 
 #
@@ -286,6 +358,11 @@ def delete_guest(guestname: str, manager: GuestRequestManager) -> APIResponse:
     return APIResponse()
 
 
+def get_guest_events(guestname: str, manager: GuestEventManager) -> APIResponse:
+    events = manager.get_events_by_guestname(guestname)
+    return APIResponse(events)
+
+
 def get_metrics() -> APIResponse:
     return APIResponse(stream=generate_metrics())
 
@@ -303,7 +380,8 @@ def run_app() -> molten.app.App:
             })
         ),
         DBComponent(db),
-        GuestRequestManagerComponent()
+        GuestRequestManagerComponent(),
+        GuestEventManagerComponent(),
     ]
 
 # TODO: uncomment when registration is done
@@ -330,6 +408,7 @@ def run_app() -> molten.app.App:
             Route('/', create_guest_request, method='POST'),
             Route('/{guestname}', get_guest_request),
             Route('/{guestname}', delete_guest, method='DELETE'),
+            Route('/{guestname}/events', get_guest_events),
         ]),
         Route('/metrics', get_metrics),
         Route('/_docs', get_docs),

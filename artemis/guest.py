@@ -1,9 +1,11 @@
 import dataclasses
 import enum
 import json
+import sqlalchemy
 
 import gluetool.log
 
+import artemis
 import artemis.db
 
 from typing import Any, Optional
@@ -67,9 +69,11 @@ class Guest:
 
     def __init__(
         self,
+        guestname: str,
         address: Optional[str] = None,
         ssh_info: Optional[SSHInfo] = None
     ) -> None:
+        self.guestname = guestname
         self.address = address
         self.ssh_info = ssh_info
 
@@ -86,6 +90,17 @@ class Guest:
         assert guest_record.pool_data is not None
 
         return json.loads(guest_record.pool_data)
+
+    def log_event(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        eventname: str,
+        **details: Any
+    ) -> None:
+        """ Create event log record for guest """
+
+        artemis.log_guest_event(logger, session, eventname, self.guestname, **details)
 
     @property
     def is_promised(self) -> bool:

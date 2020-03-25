@@ -12,6 +12,8 @@ import sqlalchemy.ext.declarative
 from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer, DateTime
 from sqlalchemy.orm import relationship
 
+import artemis
+
 from typing import cast, Any, Callable, Dict, Iterator, Optional, Union
 import gluetool.log
 
@@ -116,6 +118,37 @@ class GuestRequest(Base):
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
+
+    def log_event(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        eventname: str,
+        **details: Optional[Dict[Any, Any]]
+    ) -> None:
+        """ Create event log record for guest """
+
+        artemis.log_guest_event(logger, session, eventname, self.guestname, **details)
+
+
+class GuestEvent(Base):
+    __tablename__ = 'guest_events'
+
+    _id = Column(Integer(), primary_key=True)
+    updated = Column(DateTime, default=datetime.datetime.now())
+    guestname = Column(String(250), nullable=False)
+    eventname = Column(String(250), nullable=False)
+    details = Column(Text())
+
+    def __init__(
+        self,
+        eventname: str,
+        guestname: str,
+        **details: Any
+    ) -> None:
+        self.eventname = eventname
+        self.guestname = guestname
+        self.details = json.dumps(details)
 
 
 class Metrics(Base):

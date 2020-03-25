@@ -68,6 +68,7 @@ class Failure:
     :ivar Exception exception: Shortcut to ``exc_info[1]``, if available, or ``None``.
     :ivar tuple exc_info: Exception information as returned by :py:func:`sys.exc_info`.
     :ivar str sentry_event_id: If set, the failure was reported to the Sentry under this ID.
+    :ivar dict details: Additional details about the exception.
     """
 
     def __init__(
@@ -75,10 +76,12 @@ class Failure:
         message: str,
         exc_info: Optional[ExceptionInfoType] = None,
         traceback: Optional[_traceback.StackSummary] = None,
-        parent: Optional['Failure'] = None
+        parent: Optional['Failure'] = None,
+        **details: Any
     ):
         self.message = message
         self.exc_info = exc_info
+        self.details = details
 
         self.sentry_event_id: Optional[str] = None
         self.sentry_event_url: Optional[str] = None
@@ -278,3 +281,46 @@ def safe_db_execute(
             parent=r.error
         )
     )
+
+
+def log_guest_event(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    eventname: str,
+    guestname: Optional[str] = None,
+    **details: Any
+) -> None:
+    """ Create event log record for guest """
+
+    guestname = guestname or details.get('guestname', None)
+
+    if guestname:
+        session.add(
+            artemis.db.GuestEvent(
+                guestname=guestname,
+                eventname=eventname,
+                **details
+            )
+        )
+    else:
+        logger.error('refusing to log event {}: no guestname!'.format(eventname), sentry=True)
+
+    logger.warning('logged guest request event {}: guestname={} details={}'.format(
+        eventname,
+        guestname,
+        details)
+    )
+
+
+def log_error_guest_event(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    guestname: str,
+    error: Failure,
+    label: str,
+    **details: Any
+) -> None:
+    """ Create error event log record for guest """
+
+    error.log(logger.error, label='{}: {}: {}'.format(label, guestname, error.message))
+    log_guest_event(logger, session, 'error', guestname, error=error.message, **details)

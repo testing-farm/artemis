@@ -19,11 +19,12 @@ from typing import Any, Dict, List, Optional
 class OpenStackGuest(artemis.guest.Guest):
     def __init__(
         self,
+        guestname: str,
         instance_id: str,
         address: Optional[str] = None,
         ssh_info: Optional[artemis.guest.SSHInfo] = None
     ) -> None:
-        super(OpenStackGuest, self).__init__(address, ssh_info)
+        super(OpenStackGuest, self).__init__(guestname, address, ssh_info)
 
         self.instance_id = instance_id
 
@@ -120,6 +121,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         return Ok(
             OpenStackGuest(
+                guest_request.guestname,
                 pool_data['instance_id'],
                 guest_request.address,
                 artemis.guest.SSHInfo(
@@ -185,10 +187,15 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             logger=logger,
             pool=self,
             environment=environment
-        )
+        )  # type: Result[Any, Failure]
 
         if r_image.is_error:
-            return Error(Failure('Failed to find image for environment {}'.format(environment)))
+            return Error(
+                Failure(
+                    'Failed to find image for environment {}'.format(environment),
+                    environment=environment.serialize_to_json()
+                )
+            )
 
         return r_image
 
@@ -264,7 +271,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         r_image = self._env_to_image(logger, environment)
         if r_image.is_error:
-            return Error(r_image.value)
+            assert r_image.error
+            return Error(r_image.error)
 
         image = r_image.unwrap()
 
@@ -307,6 +315,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         return Ok(
             OpenStackGuest(
+                guest_request.guestname,
                 instance_id,
                 ip_address,
                 ssh_info=None

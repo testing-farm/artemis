@@ -28,13 +28,14 @@ DEFAULT_RESERVE_DURATION = '86400'  # 24 hours
 class BeakerGuest(artemis.guest.Guest):
     def __init__(
         self,
+        guestname: str,
         job_id: str,
         address: Optional[str],
         environment: artemis.environment.Environment,
         ssh_info: artemis.guest.SSHInfo
     ) -> None:
 
-        super(BeakerGuest, self).__init__(address, ssh_info)
+        super(BeakerGuest, self).__init__(guestname, address, ssh_info)
         self.job_id = job_id
         self.environment = environment
 
@@ -315,6 +316,7 @@ class BeakerDriver(artemis.drivers.PoolDriver):
 
         return Ok(
             BeakerGuest(
+                guestname=guest_request.guestname,
                 job_id=pool_data['job_id'],
                 address=guest_request.address,
                 environment=environment,
@@ -377,6 +379,7 @@ class BeakerDriver(artemis.drivers.PoolDriver):
 
         return Ok(
             BeakerGuest(
+                guestname=guest_request.guestname,
                 job_id=job_id,
                 address=None,
                 environment=environment,

@@ -20,7 +20,7 @@ import artemis.script
 import artemis.drivers.aws
 import artemis.drivers.beaker
 
-from artemis import Failure, safe_call, safe_db_execute
+from artemis import Failure, safe_call, safe_db_execute, log_guest_event, log_error_guest_event
 from artemis.db import GuestRequest
 
 from typing import cast, Any, Callable, Dict, List, Optional, Tuple
@@ -272,6 +272,7 @@ def _update_guest_state(
     guestname: str,
     current_state: artemis.guest.GuestState,
     new_state: artemis.guest.GuestState,
+    guest: Optional[artemis.guest.Guest] = None,
     set_values: Optional[Dict[str, Any]] = None,
     current_pool_data: Optional[str] = None
 ) -> bool:
@@ -306,10 +307,31 @@ def _update_guest_state(
     r = safe_db_execute(logger, session, query)
 
     if r.is_ok:
+
         if r.value is True:
             logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
+            eventname = 'state-changed'
+            details = {'state': new_state.value}
+
+            if guest:
+                details['address'] = guest.address
+                log = guest.log_event
+            else:
+                details['guestname'] = guestname
+                log = log_guest_event
+
+            log(logger, session, eventname, **details)
+
         else:
             logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
+            details['state'] = current_state.value
+            log_error_guest_event(
+                logger,
+                session,
+                guestname,
+                cast(Failure, r.value),
+                'failed to switch state: {} => {}'.format(current_state.value, new_state.value)
+            )
 
         return r.unwrap()
 
@@ -327,7 +349,7 @@ def _get_pool(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     poolname: str
-) -> artemis.drivers.PoolDriver:
+) -> Result[artemis.drivers.PoolDriver, Failure]:
     try:
         pool_record = session \
                     .query(artemis.db.Pool) \
@@ -341,11 +363,11 @@ def _get_pool(
     driver = pool_driver_class(logger, json.loads(pool_record.parameters))
 
     r_sanity = driver.sanity()
-    if r_sanity.is_error:
-        cast(Failure, r_sanity.value).log(logger.error, label='pool sanity failed')
-        raise Exception('pool sanity failed')
 
-    return driver
+    if r_sanity.is_error:
+        return Error(cast(Failure, r_sanity.value))
+
+    return Ok(driver)
 
 
 def get_pools(
@@ -369,24 +391,26 @@ def _get_ssh_key(
     session: sqlalchemy.orm.session.Session,
     ownername: str,
     keyname: str
-) -> artemis.db.SSHKey:
+) -> Result[artemis.db.SSHKey, Failure]:
     try:
-        return cast(
-            artemis.db.SSHKey,
-            session.query(artemis.db.SSHKey).filter(
-                artemis.db.SSHKey.ownername == ownername,
-                artemis.db.SSHKey.keyname == keyname
-            ).one()
+        return Ok(
+            cast(
+                artemis.db.SSHKey,
+                session.query(artemis.db.SSHKey).filter(
+                    artemis.db.SSHKey.ownername == ownername,
+                    artemis.db.SSHKey.keyname == keyname
+                ).one()
+            )
         )
 
     except sqlalchemy.orm.exc.NoResultFound:
-        raise Exception('no key {}:{}'.format(ownername, keyname))
+        return Error(Failure('no key {}:{}'.format(ownername, keyname)))
 
 
 def _get_master_key(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session
-) -> artemis.db.SSHKey:
+) -> Result[artemis.db.SSHKey, Failure]:
     return _get_ssh_key(logger, session, 'artemis', 'master-key')
 
 
@@ -402,27 +426,63 @@ async def do_release_guest_request(
             return
 
         if gr.poolname:
-            pool = _get_pool(logger, session, gr.poolname)
+            r_pool = _get_pool(logger, session, gr.poolname)
+
+            if r_pool.is_error:
+                log_error_guest_event(
+                    logger,
+                    session,
+                    guestname,
+                    cast(Failure, r_pool.value),
+                    'pool sanity failed'
+                )
+                return
+
+            pool = r_pool.unwrap()
 
             if cancel.is_set():
                 return
 
-            guest_sshkey = _get_ssh_key(
+            r_guest_sshkey = _get_ssh_key(
                 logger,
                 session,
                 gr.ownername,
                 gr.ssh_keyname
             )
 
+            if r_guest_sshkey.is_error:
+                log_error_guest_event(
+                    logger,
+                    session,
+                    guestname,
+                    cast(Failure, r_guest_sshkey.value),
+                    'failed to get guest SSH key'
+                )
+                return
+
+            guest_sshkey = r_guest_sshkey.unwrap()
             r_guest = pool.guest_factory(gr, ssh_key=guest_sshkey)
+
             if r_guest.is_error:
-                cast(Failure, r_guest.value).log(logger.error, label='failed to locate')
+                log_error_guest_event(
+                    logger,
+                    session,
+                    guestname,
+                    cast(Failure, r_guest.value),
+                    'failed to locate'
+                )
                 return
 
             r_release = pool.release_guest(r_guest.unwrap())
 
             if r_release.is_error:
-                cast(Failure, r_release.value).log(logger.error, label='failed to locate')
+                log_error_guest_event(
+                    logger,
+                    session,
+                    guestname,
+                    cast(Failure, r_release.value),
+                    'failed to locate'
+                )
                 return
 
         query = sqlalchemy \
@@ -479,28 +539,66 @@ async def do_update_guest(
 
         current_pool_data = gr.pool_data
 
-        pool = _get_pool(logger, session, gr.poolname)
+        r_pool = _get_pool(logger, session, gr.poolname)
+
+        if r_pool.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                guestname,
+                cast(Failure, r_pool.value),
+                'pool sanity failed',
+                poolname=gr.poolname,
+            )
+            return
+
+        pool = r_pool.unwrap()
 
         if cancel.is_set():
             return
 
-        guest_sshkey = _get_ssh_key(
+        r_guest_sshkey = _get_ssh_key(
             logger,
             session,
             gr.ownername,
             gr.ssh_keyname
         )
 
-        r_guest = pool.guest_factory(gr, ssh_key=guest_sshkey)
+        if r_guest_sshkey.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                guestname,
+                cast(Failure, r_pool.value),
+                'failed to get SSH key',
+                poolname=gr.poolname
+            )
+            return
+
+        r_guest = pool.guest_factory(gr, ssh_key=r_guest_sshkey.unwrap())
 
         if r_guest.is_error:
-            cast(Failure, r_guest.value).log(logger.error, label='failed to locate')
+            log_error_guest_event(
+                logger,
+                session,
+                guestname,
+                cast(Failure, r_pool.value),
+                'failed to locate',
+                poolname=gr.poolname,
+            )
             return
 
         r_update = pool.update_guest(r_guest.unwrap())
 
         if r_update.is_error:
-            cast(Failure, r_update.value).log(logger.error, label='failed to update')
+            log_error_guest_event(
+                logger,
+                session,
+                guestname,
+                cast(Failure, r_update.value),
+                'failed to locate',
+                poolname=gr.poolname,
+            )
             return
 
         guest = r_update.unwrap()
@@ -512,6 +610,7 @@ async def do_update_guest(
                 guestname,
                 artemis.guest.GuestState.PROMISED,
                 artemis.guest.GuestState.PROMISED,
+                guest=guest,
                 set_values={
                     'pool_data': guest.pool_data_to_db()
                 },
@@ -530,6 +629,7 @@ async def do_update_guest(
                 guestname,
                 artemis.guest.GuestState.PROMISED,
                 artemis.guest.GuestState.READY,
+                guest=guest,
                 set_values={
                     'address': guest.address,
                     'pool_data': guest.pool_data_to_db()
@@ -579,9 +679,33 @@ async def do_acquire_guest(
         if not gr:
             return
 
-        pool = _get_pool(logger, session, poolname)
-        master_key = _get_master_key(logger, session)
+        r_pool = _get_pool(logger, session, poolname)
 
+        if r_pool.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                guestname,
+                cast(Failure, r_pool.value),
+                'pool sanity failed',
+                poolname=gr.poolname,
+            )
+            return
+
+        pool = r_pool.unwrap()
+
+        r_master_key = _get_master_key(logger, session)
+        if r_master_key.is_error:
+            log_error_guest_event(
+                logger,
+                session,
+                guestname,
+                cast(Failure, r_master_key.value),
+                'failed to get SSH key',
+                poolname=gr.poolname,
+            )
+
+        master_key = r_master_key.unwrap()
         environment = artemis.environment.Environment.unserialize_from_json(json.loads(gr.environment))
 
         if cancel.is_set():
@@ -589,58 +713,76 @@ async def do_acquire_guest(
 
         result = pool.acquire_guest(logger, gr, environment, master_key)
 
-        if result.is_error:
-            assert result.error is not None
+        if result.is_ok:
+            guest = result.unwrap()
 
-            raise Exception('failed to acquire: {}'.format(result.error.message))
+            if cancel.is_set():
+                _undo_guest_acquire(guest)
+                return
 
-        guest = result.unwrap()
+            # TODO: instead of switching to READY, we need to switch into transient state instead,
+            # and upload the requested key to the guest (using our master key).
 
-        if cancel.is_set():
+            # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
+            # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
+            # save guest's address. In both cases, we must be sure nobody else did any changes before us.
+            if guest.is_promised:
+                if _update_guest_state(
+                    logger,
+                    session,
+                    guestname,
+                    artemis.guest.GuestState.PROVISIONING,
+                    artemis.guest.GuestState.PROMISED,
+                    guest=guest,
+                    set_values={
+                        'pool_data': guest.pool_data_to_db()
+                    }
+                ):
+                    r_promise = _dispatch_task(logger, update_guest, guestname)
+
+                    if r_promise.is_ok:
+                        logger.info('scheduled update')
+                        return
+
+            else:
+                if _update_guest_state(
+                    logger,
+                    session,
+                    guestname,
+                    artemis.guest.GuestState.PROVISIONING,
+                    artemis.guest.GuestState.READY,
+                    guest=guest,
+                    set_values={
+                        'address': guest.address,
+                        'pool_data': guest.pool_data_to_db()
+                    }
+                ):
+                    logger.info('successfully acquired')
+                    return
+
+            # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
+            # Again, we must undo and forget about the guest request.
             _undo_guest_acquire(guest)
             return
 
-        # TODO: instead of switching to READY, we need to switch into transient state instead,
-        # and upload the requested key to the guest (using our master key).
+    # Code execution could only end up here if provisioning failed
+    assert result.error is not None
 
-        # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
-        # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
-        # save guest's address. In both cases, we must be sure nobody else did any changes before us.
-        if guest.is_promised:
-            if _update_guest_state(
-                logger,
-                session,
-                guestname,
-                artemis.guest.GuestState.PROVISIONING,
-                artemis.guest.GuestState.PROMISED,
-                set_values={
-                    'pool_data': guest.pool_data_to_db()
-                }
-            ):
-                r_promise = _dispatch_task(logger, update_guest, guestname)
+    error = cast(Failure, result.value)
 
-                if r_promise.is_ok:
-                    logger.info('scheduled update')
-                    return
+    with db.get_session() as session:
+        log_error_guest_event(
+            logger,
+            session,
+            guestname,
+            error,
+            'failed to provision: {}',
+            poolname=poolname,
+            environment=error.details.get('environment'),
+            hook_error=error.details.get('hook_error')
+        )
 
-        else:
-            if _update_guest_state(
-                logger,
-                session,
-                guestname,
-                artemis.guest.GuestState.PROVISIONING,
-                artemis.guest.GuestState.READY,
-                set_values={
-                    'address': guest.address,
-                    'pool_data': guest.pool_data_to_db()
-                }
-            ):
-                logger.info('successfully acquired')
-                return
-
-        # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
-        # Again, we must undo and forget about the guest request.
-        _undo_guest_acquire(guest)
+    raise Exception(error)
 
 
 @dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator

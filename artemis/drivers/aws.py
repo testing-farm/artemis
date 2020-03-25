@@ -58,12 +58,13 @@ class FailedSpotRequest(Failure):
 class AWSGuest(artemis.guest.Guest):
     def __init__(
         self,
+        guestname: str,
         instance_id: str,
         spot_request_id: str,
         address: Optional[str] = None,
         ssh_info: Optional[artemis.guest.SSHInfo] = None
     ) -> None:
-        super(AWSGuest, self).__init__(address, ssh_info)
+        super(AWSGuest, self).__init__(guestname, address, ssh_info)
         self._instance_id = instance_id
         self._spot_request_id = spot_request_id
 
@@ -115,9 +116,12 @@ class AWSDriver(artemis.drivers.PoolDriver):
     ) -> Result[artemis.guest.Guest, Failure]:
 
         if not guest_request.pool_data:
-            return Error(Failure('invalid pool data'))
+            return Error(Failure('no pool data'))
 
         pool_data = json.loads(guest_request.pool_data)
+
+        if 'instance_id' not in pool_data:
+            return Error(Failure('no instance_id in pool data found, pool data: {}'.format(pool_data)))
 
         result = self._aws_command(
             ['ec2', 'describe-instances', '--instance-id={}'.format(pool_data['instance_id'])],
@@ -129,9 +133,9 @@ class AWSDriver(artemis.drivers.PoolDriver):
             return Error(Failure('no instance found'))
 
         instance = result.unwrap()[0]['Instances'][0]
-
         return Ok(
             AWSGuest(
+                guest_request.guestname,
                 pool_data['instance_id'],
                 pool_data['spot_request_id'],
                 instance['PrivateIpAddress'],
@@ -172,10 +176,17 @@ class AWSDriver(artemis.drivers.PoolDriver):
             logger=logger,
             pool=self,
             environment=environment
-        )
+        )  # type: Result[Any, Failure]
 
         if r_image.is_error:
-            return Error(Failure('Failed to find image for environment {}'.format(environment)))
+            assert r_image.error is not None
+            return Error(
+                Failure(
+                    'Failed to find image for environment',
+                    environment=environment.serialize_to_json(),
+                    hook_error=r_image.error.message
+                )
+            )
 
         return r_image
 
@@ -252,7 +263,8 @@ class AWSDriver(artemis.drivers.PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         instance_type: str,
-        image: Dict[str, str]
+        image: Dict[str, str],
+        guestname: str
     ) -> Result[artemis.guest.Guest, Failure]:
 
         # find our spot instance prices for the instance_type in our availability zone
@@ -367,6 +379,7 @@ class AWSDriver(artemis.drivers.PoolDriver):
 
         return Ok(
             AWSGuest(
+                guestname,
                 instance['InstanceId'],
                 spot_request_id,
                 instance['PrivateIpAddress'],
@@ -442,14 +455,21 @@ class AWSDriver(artemis.drivers.PoolDriver):
         instance_type = r_instance_type.unwrap()
 
         # find out image from enviroment
-        r_image = self._env_to_image(logger, environment)
+        try:
+            r_image = self._env_to_image(logger, environment)
+        except Exception as exc:
+            error_msg = str(exc)
+            if 'Failed to load AWS_ENVIRONMENT_TO_IMAGE hook' in error_msg:
+                return Error(Failure(error_msg))
+            raise exc
+
         if r_image.is_error:
             return r_image
 
         image = r_image.unwrap()
 
         # request a spot instance and wait for it's full fillment
-        r_spot_instance = self._request_spot_instance(logger, instance_type, image)
+        r_spot_instance = self._request_spot_instance(logger, instance_type, image, guest_request.guestname)
 
         if r_spot_instance.is_error:
             # cleanup the spot request if needed
