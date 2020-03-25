@@ -46,3 +46,49 @@ spec:
               value: artemis
           ports:
             - containerPort: 5432
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: artemis-postgres-exporter
+spec:
+  to:
+    kind: Service
+    name: artemis-postgres-exporter
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artemis-postgres-exporter
+  labels:
+    app: artemis
+    service: artemis-postgres-exporter
+spec:
+  ports:
+    - port: 80
+      targetPort: 9187
+      name: artemis-postgres-exporter
+  selector:
+    service: artemis-postgres-exporter
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artemis-postgres-exporter
+spec:
+  selector:
+    matchLabels:
+      service: artemis-postgres-exporter
+  template:
+    metadata:
+      labels:
+        service: artemis-postgres-exporter
+    spec:
+      containers:
+        - name: postgres-exporter
+          image: wrouesnel/postgres_exporter
+          env:
+            - name: DATA_SOURCE_NAME
+              value: postgres://artemis:artemis@artemis-postgres:5432/artemis?sslmode=disable
+          ports:
+            - containerPort: 9187
