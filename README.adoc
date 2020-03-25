@@ -19,7 +19,8 @@ Artemis expects these environment variables to be specified by the user:
 These environment variables provide some defaults but can be overridden:
 
 * `ARTEMIS_CONFIG_DIR` - Directory with configuration, by default current working directory
-* `ARTEMIS_DB_URL` - SQLalchemy connection string, by default `file://
+* `ARTEMIS_DB_URL` - SQLalchemy connection string, by default `file://`
+* `ARTEMIS_LOG_DB_POOL` - Log events related to database connection pool. Unset by default, use `yes` for INFO-level or `debug` for more details.
 * `ARTEMUS_LOG_DB_QUERIES` - Log database queries, by default `no`
 * `ARTEMIS_LOG_JSON` - Log output in JSON format, by default `yes`
 * `ARTEMIS_SQLALCHEMY_POOL_SIZE` - Connection pool size for postgresql database, by default `20`

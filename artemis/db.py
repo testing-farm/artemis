@@ -1,3 +1,4 @@
+import dataclasses
 import datetime
 import json
 import logging
@@ -11,8 +12,17 @@ import sqlalchemy.ext.declarative
 from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer, DateTime
 from sqlalchemy.orm import relationship
 
-from typing import cast, Any, Callable, Dict, Iterator
+from typing import cast, Any, Callable, Dict, Iterator, Optional, Union
 import gluetool.log
+
+
+@dataclasses.dataclass
+class DBPoolMetrics:
+    ''' Class for storing DB pool metrics '''
+    size: int = 0
+    checked_in_connections: int = 0
+    checked_out_connections: int = 0
+    current_overflow: int = 0
 
 
 # SQLAlchemy defaults
@@ -117,16 +127,29 @@ class Metrics(Base):
 
 
 class DB:
+    instance: 'Optional[__DB]' = None
+    _lock = threading.RLock()
+
     class __DB:
         def __init__(
             self,
             logger: gluetool.log.ContextAdapter,
             url: str
         ) -> None:
+            self.logger = logger
+
             logger.info('connecting to db {}'.format(url))
 
             if os.getenv('ARTEMIS_LOG_DB_QUERIES', None):
                 gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
+
+            self._echo_pool: Union[str, bool] = False
+            if 'ARTEMIS_LOG_DB_POOL' in os.environ:
+                if os.environ['ARTEMIS_LOG_DB_POOL'].lower() == 'debug':
+                    self._echo_pool = 'debug'
+
+                else:
+                    self._echo_pool = gluetool.utils.normalize_bool_option(os.environ['ARTEMIS_LOG_DB_POOL'])
 
             # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
             if url.startswith('postgresql://'):
@@ -134,11 +157,17 @@ class DB:
                 max_overflow = os.getenv('ARTEMIS_SQLALCHEMY_MAX_OVERFLOW', DEFAULT_SQLALCHEMY_MAX_OVERFLOW)
 
                 gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
+                    'echo_pool': self._echo_pool,
                     'pool_size': pool_size,
                     'max_overflow': max_overflow
                 })
 
-                self._engine = sqlalchemy.create_engine(url, pool_size=pool_size, max_overflow=max_overflow)
+                self._engine = sqlalchemy.create_engine(
+                    url,
+                    echo_pool=self._echo_pool,
+                    pool_size=pool_size,
+                    max_overflow=max_overflow
+                )
 
             # SQLite does not support altering pool size nor max overflow
             else:
@@ -146,9 +175,37 @@ class DB:
 
             self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self._engine)
 
+        def pool_metrics(self) -> DBPoolMetrics:
+            with DB._lock:
+                # Some pools, like NullPool, don't really pool connections, therefore they have no concept
+                # of these metrics.
+                if hasattr(self._engine.pool, 'size'):
+                    return DBPoolMetrics(
+                        size=self._engine.pool.size(),
+                        checked_in_connections=self._engine.pool.checkedin(),
+                        checked_out_connections=self._engine.pool.checkedout(),
+                        current_overflow=self._engine.pool.overflow()
+                    )
+
+                else:
+                    return DBPoolMetrics(
+                        size=-1,
+                        checked_in_connections=-1,
+                        checked_out_connections=-1,
+                        current_overflow=-1
+                    )
+
         @contextmanager
         def get_session(self) -> Iterator[sqlalchemy.orm.session.Session]:
-            session = self._sessionmaker()
+            with DB._lock:
+                if self._echo_pool:
+                    gluetool.log.log_dict(
+                        self.logger.info,
+                        'pool metrics',
+                        self.pool_metrics()
+                    )
+
+                session = self._sessionmaker()
 
             try:
                 yield session
@@ -163,9 +220,6 @@ class DB:
             finally:
                 session.close()
 
-    instance = None  # type: __DB
-    _lock = threading.Lock()
-
     def __new__(
         cls,
         logger: gluetool.log.ContextAdapter,
@@ -178,6 +232,7 @@ class DB:
                 # declared as class attributes only to avoid typing errors ("DB has no attribute" ...)
                 # those attributes should never be used, use instance attributes only
                 cls.get_session = DB.instance.get_session  # type: Callable[[], Any]
+                cls.pool_metrics = DB.instance.pool_metrics  # type: Callable[[], DBPoolMetrics]
                 cls._engine = DB.instance._engine  # type: sqlalchemy.engine.Engine
 
             return DB.instance
