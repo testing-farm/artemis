@@ -287,8 +287,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         if not output['addresses']:
             return Error(Failure('Ip addresses not found'))
 
-        # output['addresses'] == "network_name=ip_address, ipv6"
-        match_obj = re.match(r'.*=(.*),.*', output['addresses'])
+        # output['addresses'] == "network_name=ip_address[, ipv6]"
+        match_obj = re.match(r'.*=([^,]*)', output['addresses'])
         if match_obj:
             ip_address = match_obj.group(1)
 
