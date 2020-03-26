@@ -50,6 +50,10 @@ spec:
               value: /configuration/.vault_pass
             - name: ARTEMIS_ACTOR_DEFAULT_RETRIES
               value: "1"
+            - name: ARTEMIS_WORKER_PROCESSES
+              value: "2"
+            - name: ARTEMIS_WORKER_THREADS
+              value: "4"
           volumeMounts:
             - name: artemis-configuration
               mountPath: /configuration

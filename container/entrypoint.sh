@@ -31,6 +31,20 @@ expose_hooks() {
     done
 }
 
+ARTEMIS_WORKER_OPTIONS="${ARTEMIS_WORKER_OPTIONS:-}"
+ 
+if [ "$ARTEMIS_WORKER_PROCESSES" != "" ]; then
+    ARTEMIS_WORKER_OPTIONS="-p ${ARTEMIS_WORKER_PROCESSES} ${ARTEMIS_WORKER_OPTIONS}"
+fi
+ 
+if [ "$ARTEMIS_WORKER_THREADS" != "" ]; then
+    ARTEMIS_WORKER_OPTIONS="-t ${ARTEMIS_WORKER_THREADS} ${ARTEMIS_WORKER_OPTIONS}"
+fi
+ 
+if [ "$ARTEMIS_WORKER_QUEUES" != "" ]; then
+    ARTEMIS_WORKER_OPTIONS="-Q \"${ARTEMIS_WORKER_QUEUES}\" ${ARTEMIS_WORKER_OPTIONS}"
+fi
+
 case $APP in
     api)
         exec artemis-api-server
@@ -43,7 +57,7 @@ case $APP in
         ;;
     worker)
         expose_hooks
-        exec dramatiq artemis.tasks
+        exec dramatiq $ARTEMIS_WORKER_OPTIONS artemis.tasks
         ;;
     *)
         echo "Unknown application '$APP'"
