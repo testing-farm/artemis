@@ -97,9 +97,12 @@ class BeakerDriver(artemis.drivers.PoolDriver):
         :rtype: result.Result[bs4.BeautifulSoup, Failure]
         :returns: :py:class:`result.Result` with job xml, or specification of error.
         """
+        distro = None  # type: Optional[str]
         if environment.compose.is_beaker:
             assert environment.compose.beaker
             distro = environment.compose.beaker.distro
+        else:
+            distro = environment.compose.id
 
         if not distro:
             return Error(Failure('No distro specified'))
