@@ -79,7 +79,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
 
         actor = broker.get_actor(message.actor_name)
         retries = message.options.setdefault("retries", 0)
-        max_retries = int(message.options.get("max_retries")) or int(actor.options.get("max_retries", self.max_retries))
+        max_retries = message.options.get("max_retries") or actor.options.get("max_retries", self.max_retries)
         retry_when = actor.options.get("retry_when", self.retry_when)
         if retry_when is not None and not retry_when(retries, exception) or \
            retry_when is None and max_retries is not None and retries >= max_retries:
