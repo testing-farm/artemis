@@ -6,15 +6,15 @@ import gluetool.utils
 
 from artemis import Failure
 
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 
 class ScriptEngine:
     def __init__(self) -> None:
         super(ScriptEngine, self).__init__()
 
-        self.functions: Dict[str, Any] = {}
-        self.variables: Dict[str, Any] = {}
+        self.functions: Dict[str, Callable[..., Result[Any, Failure]]] = {}
+        self.variables: Dict[str, Callable[..., Result[Any, Failure]]] = {}
 
     def load_script_file(self, filepath: str) -> None:
         filepath = os.path.expanduser(filepath)
@@ -44,7 +44,7 @@ class ScriptEngine:
 
         self.variables.update(variables)
 
-    def run(self, name: str, **kwargs: Any) -> Any:
+    def run(self, name: str, **kwargs: Any) -> Result[Any, Failure]:
         kwargs = gluetool.utils.dict_update(
             {},
             self.variables,
@@ -53,7 +53,7 @@ class ScriptEngine:
 
         return self.functions[name](**kwargs)
 
-    def run_hook(self, name: str, **kwargs: Any) -> Any:
+    def run_hook(self, name: str, **kwargs: Any) -> Result[Any, Failure]:
         return self.run('hook_{}'.format(name.upper()), **kwargs)
 
 

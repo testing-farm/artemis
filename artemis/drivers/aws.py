@@ -167,17 +167,17 @@ class AWSDriver(artemis.drivers.PoolDriver):
 
         engine = r_engine.unwrap()
 
-        image = engine.run_hook(
+        r_image = engine.run_hook(
             'AWS_ENVIRONMENT_TO_IMAGE',
             logger=logger,
             pool=self,
             environment=environment
         )
 
-        if image is None:
+        if r_image.is_error:
             return Error(Failure('Failed to find image for environment {}'.format(environment)))
 
-        return Ok(image)
+        return r_image
 
     def _aws_command(self, args: List[str], key: Optional[str] = None) -> Result[Any, Failure]:
         """
