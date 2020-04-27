@@ -1,0 +1,25 @@
+digraph Artemis {
+    node [shape=box];
+
+    //user interface
+    User[shape=oval];
+    CLI[shape=oval];
+    // User -> "API Server" [label="request/response",style=dotted,dir=both];
+    User -> "API Server" [dir=both];
+    CLI -> "API Server" [dir=both];
+
+    // API Server
+    "API Server" -> Artemis [dir=both];
+
+    //queue
+    Artemis -> Queue [dir=both];
+
+    // provisioning part
+    Artemis -> openstack [dir=both];
+    Artemis -> beaker [dir=both];
+    Artemis -> aws [dir=both];
+    Artemis -> "..." [dir=both];
+
+    {rank=same; openstack beaker aws "..."}
+    {rank=same; Artemis Queue }
+}
