@@ -1,0 +1,33 @@
+digraph Artemis {
+    graph [fontsize=8 fontname="Verdana"];
+    node [shape=box fontsize=8 fontname="Verdana" width=1 height=0.5];
+    ordering = out;
+
+    subgraph cluster_artemis_core {
+        label = "Artemis ";
+        color = blue;
+        node [style=filled];
+
+        "API Server";
+        Scheduler;
+        Queue;
+        Workers;
+
+        "API Server" -> Queue [dir=both];
+        Scheduler -> Queue;
+        Workers -> Queue [dir=both];
+
+        { rank=same; "API Server" }
+        { rank=same; Queue Workers}
+    }
+
+    User -> "API Server" [dir=both];
+    CLI -> "API Server" [dir=both];
+    "CI pipeline" -> "API Server" [dir=both];
+
+    Workers -> "Pool #1" [dir=both];
+    Workers -> "Pool #2" [dir=both];
+    Workers -> "Pool #3" [dir=both];
+
+    { rank=same; User CLI "CI pipeline" }
+}
