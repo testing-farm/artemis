@@ -26,6 +26,7 @@ class ArtemisHTTPError(HTTPError):
         headers: Any = None,
         request: Optional[Request] = None
     ) -> None:
+        self.request = request
         gluetool_sentry.submit_message(
             '{}: {}'.format(
                 status if status else 'No HTTP status',

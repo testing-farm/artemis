@@ -14,7 +14,7 @@ from sqlalchemy.orm import relationship
 
 import artemis
 
-from typing import cast, Any, Callable, Dict, Iterator, Optional, Union
+from typing import cast, Any, Callable, Dict, Iterator, List, Optional, Union
 import gluetool.log
 
 
@@ -152,6 +152,39 @@ class GuestEvent(Base):
         self.eventname = eventname
         self.guestname = guestname
         self.details = json.dumps(details)
+
+    @classmethod
+    def sort(
+        cls,
+        query: sqlalchemy.orm.query.Query,
+        page: int,
+        page_size: int,
+        sort_field: str,
+        sort_order: str,
+        since: Optional[str],
+        until: Optional[str],
+        **kwargs: Optional[Dict[str, Any]]
+    ) -> List['GuestEvent']:
+
+        if since:
+            query = query.filter(cls.updated >= since)
+
+        if until:
+            query = query.filter(cls.updated <= until)
+
+        try:
+            _sort_by = getattr(cls, sort_field)
+            _sort = getattr(_sort_by, sort_order)()
+        except AttributeError:
+            from artemis.api.errors import BadRequestError
+            raise BadRequestError()
+
+        events = query.order_by(_sort) \
+            .limit(page_size) \
+            .offset((page-1) * page_size) \
+            .all()  # type: List['GuestEvent']
+
+        return events
 
 
 class SnapshotRequest(Base):

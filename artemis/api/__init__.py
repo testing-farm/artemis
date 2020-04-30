@@ -11,7 +11,7 @@ import uuid
 import molten
 import molten.dependency_injection
 import molten.openapi
-from molten import HTTP_201, HTTP_200, Field, Response, Request
+from molten import HTTP_201, HTTP_200, HTTP_400, Field, Response, Request
 from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
@@ -25,6 +25,7 @@ import artemis.snapshot
 
 from artemis.api import errors, handlers
 from artemis.metrics import generate_metrics
+from artemis.api.middleware import error_handler_middleware
 
 from typing import Any, Dict, List, NoReturn, Optional, Union
 from artemis.db import DB
@@ -35,6 +36,10 @@ DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
 
 DEFAULT_SSH_PORT = 22
 DEFAULT_SSH_USERNAME = 'root'
+
+DEFAULT_EVENTS_PAGE = 1
+DEFAULT_EVENTS_PAGE_SIZE = 20
+DEFAULT_EVENTS_SORT_BY = ['updated', 'desc']
 
 
 class DBComponent:
@@ -244,9 +249,12 @@ class APIResponse(Response):  # type: ignore
             try:
                 content = json.dumps(obj, default=_convert_values, sort_keys=True)
             except (TypeError, OverflowError):
+                error_msg = 'object is not JSON serializable'
                 log = artemis.get_logger()
-                log_dict(log.debug, 'object is not JSON serializable', obj.__dict__)
-                raise errors.BadRequestError(request=request)
+                log_dict(log.debug, error_msg, obj.__dict__)
+                status = HTTP_400
+                content = json.dumps({'message': error_msg})
+                stream = None
 
         if isinstance(stream, str):
             stream = stream.encode(encoding)
@@ -356,12 +364,37 @@ class GuestEventManager:
     def __init__(self, db: DB) -> None:
         self.db = db
 
-    def get_events_by_guestname(self, guestname: str) -> Optional[List[GuestEvent]]:
+    def get_events(
+        self,
+        page: int = DEFAULT_EVENTS_PAGE,
+        page_size: int = DEFAULT_EVENTS_PAGE_SIZE,
+        sort_field: str = DEFAULT_EVENTS_SORT_BY[0],
+        sort_order: str = DEFAULT_EVENTS_SORT_BY[1],
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        **kwargs: Optional[Dict[str, Any]]
+    ) -> List[GuestEvent]:
         with self.db.get_session() as session:
-            events = session.query(artemis.db.GuestEvent) \
-                .filter(artemis.db.GuestEvent.guestname == guestname) \
-                .all()
+            query = session.query(artemis.db.GuestEvent)
+            events = artemis.db.GuestEvent.sort(query, page, page_size, sort_field, sort_order, since, until)
+            guest_events = [GuestEvent.from_db(event) for event in events]
+            return guest_events
 
+    def get_events_by_guestname(
+        self,
+        guestname: str,
+        page: int = DEFAULT_EVENTS_PAGE,
+        page_size: int = DEFAULT_EVENTS_PAGE_SIZE,
+        sort_field: str = DEFAULT_EVENTS_SORT_BY[0],
+        sort_order: str = DEFAULT_EVENTS_SORT_BY[1],
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        **kwargs: Optional[Dict[str, Any]]
+    ) -> List[GuestEvent]:
+        with self.db.get_session() as session:
+            query = session.query(artemis.db.GuestEvent) \
+                .filter(artemis.db.GuestEvent.guestname == guestname)
+            events = artemis.db.GuestEvent.sort(query, page, page_size, sort_field, sort_order, since, until)
             guest_events = [GuestEvent.from_db(event) for event in events]
             return guest_events
 
@@ -496,8 +529,50 @@ def delete_guest(guestname: str, request: Request, manager: GuestRequestManager)
     return APIResponse(request=request)
 
 
+def _validate_events_params(request: Request) -> Dict[str, Any]:
+    '''Not a route, utility function to validate URL params for all */events routes'''
+
+    req_params = request.params
+    params: Dict[str, Any] = {}
+
+    try:
+        page_param = req_params.get('page')
+        page_size_param = req_params.get('page_size')
+        params['page'] = int(page_param) if page_param else DEFAULT_EVENTS_PAGE
+        params['page_size'] = int(page_size_param) if page_size_param else DEFAULT_EVENTS_PAGE_SIZE
+        params['since'] = req_params.get('since')
+        params['until'] = req_params.get('until')
+        sort_by = req_params.get('sort_by')
+        if not sort_by:
+            params['sort_field'], params['sort_order'] = DEFAULT_EVENTS_SORT_BY
+        else:
+            parsed = sort_by.replace(' ', '').split(',')
+            if len(parsed) < 2:
+                params['sort_field'] = parsed[0]
+                params['sort_order'] = DEFAULT_EVENTS_SORT_BY[1]
+            else:
+                params['sort_field'], params['sort_order'] = parsed
+    except (ValueError, AttributeError):
+        raise errors.BadRequestError(request=request)
+
+    if params['sort_field'] not in filter(lambda x: not x.startswith('_'), artemis.db.GuestEvent.__dict__) or \
+       params['sort_order'] not in ("asc", "desc"):
+        raise errors.BadRequestError(request=request)
+    return params
+
+
+def get_events(
+        request: Request,
+        manager: GuestEventManager,
+) -> APIResponse:
+    params: Dict[str, Any] = _validate_events_params(request)
+    events = manager.get_events(**params)
+    return APIResponse(events)
+
+
 def get_guest_events(guestname: str, request: Request, manager: GuestEventManager) -> APIResponse:
-    events = manager.get_events_by_guestname(guestname)
+    params: Dict[str, Any] = _validate_events_params(request)
+    events = manager.get_events_by_guestname(guestname, **params)
     return APIResponse(events, request=request)
 
 
@@ -551,6 +626,7 @@ def run_app() -> molten.app.App:
     mw: List[Middleware] = [
         # middleware.AuthorizationMiddleware,
         ResponseRendererMiddleware(),
+        error_handler_middleware,
         prometheus_middleware
     ]
 
@@ -572,6 +648,7 @@ def run_app() -> molten.app.App:
             Route('/', create_guest_request, method='POST'),
             Route('/{guestname}', get_guest_request),
             Route('/{guestname}', delete_guest, method='DELETE'),
+            Route('/events', get_events),
             Route('/{guestname}/events', get_guest_events),
             Route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
             Route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
