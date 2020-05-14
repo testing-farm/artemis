@@ -10,6 +10,7 @@ import dramatiq.middleware.time_limit
 import dramatiq.middleware.shutdown
 import dramatiq.middleware.callbacks
 import gluetool.log
+import gluetool.sentry
 import gluetool.utils
 from gluetool.result import Result, Ok, Error
 import sqlalchemy.orm.session
@@ -58,6 +59,9 @@ DEFAULT_BROKER_URL = 'amqp://guest:guest@127.0.0.1:5672'
 DEFAULT_DB_URL = 'sqlite:///test.db'
 DEFAULT_VAULT_PASSWORD_FILE = '~/.vault_password'
 
+# Gluetool Sentry instance
+gluetool_sentry = gluetool.sentry.Sentry()
+
 
 class Failure:
     """
@@ -77,6 +81,7 @@ class Failure:
         exc_info: Optional[ExceptionInfoType] = None,
         traceback: Optional[_traceback.StackSummary] = None,
         parent: Optional['Failure'] = None,
+        sentry: Optional[bool] = True,
         **details: Any
     ):
         self.message = message
@@ -100,6 +105,16 @@ class Failure:
 
         if self.traceback is None:
             self.traceback = _traceback.extract_stack()
+
+        if sentry:
+            self.sentry_event_id = gluetool_sentry.submit_message(
+                'Failure: {}'.format(message),
+                exception=self.exception if self.exception else '<no exception>',
+                traceback=self.traceback,
+                **details
+            )
+            if self.sentry_event_id:
+                self.sentry_event_url = gluetool_sentry.event_url(self.sentry_event_id, logger=get_logger())
 
     @classmethod
     def from_exc(self, message: str, exc: Exception):
@@ -145,7 +160,8 @@ def get_logger() -> gluetool.log.ContextAdapter:
 
     return gluetool.log.Logging.setup_logger(
         level=logging.INFO,
-        json_output=gluetool.utils.normalize_bool_option(os.getenv('ARTEMIS_LOG_JSON', 'yes'))
+        json_output=gluetool.utils.normalize_bool_option(os.getenv('ARTEMIS_LOG_JSON', 'yes')),
+        sentry=gluetool_sentry
     )
 
 

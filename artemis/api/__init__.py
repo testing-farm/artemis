@@ -11,7 +11,7 @@ import uuid
 import molten
 import molten.dependency_injection
 import molten.openapi
-from molten import HTTP_201, HTTP_200, Field, Response
+from molten import HTTP_201, HTTP_200, Field, Response, Request
 from molten.contrib.prometheus import prometheus_middleware
 from molten.typing import Middleware
 
@@ -192,6 +192,7 @@ class APIResponse(Response):  # type: ignore
         :param str content: JSON-serializable string that will be used as response's body
         :param stream: bytes-like string that will be used as response's body
         :param str encoding: Data encoding
+        :parame Request request: Request instance
     '''
 
     def __init__(
@@ -201,7 +202,8 @@ class APIResponse(Response):  # type: ignore
         headers: Optional[Dict[Any, Any]] = None,
         content: Optional[str] = None,
         stream: Optional[Union[bytes, str]] = None,
-        encoding: str = 'utf-8'
+        encoding: str = 'utf-8',
+        request: Request = None
     ) -> None:
 
         if obj is not None:
@@ -219,7 +221,7 @@ class APIResponse(Response):  # type: ignore
             except (TypeError, OverflowError):
                 log = artemis.get_logger()
                 log_dict(log.debug, 'object is not JSON serializable', obj.__dict__)
-                raise errors.BadRequestError()
+                raise errors.BadRequestError(request=request)
 
         if isinstance(stream, str):
             stream = stream.encode(encoding)
@@ -304,7 +306,7 @@ class GuestRequestManager:
 
         return response
 
-    def delete_by_guestname(self, guestname: str) -> None:
+    def delete_by_guestname(self, guestname: str, request: Request) -> None:
         with self.db.get_session() as session:
             query = sqlalchemy \
                     .update(artemis.db.GuestRequest.__table__) \
@@ -322,7 +324,7 @@ class GuestRequestManager:
                 )
                 return
 
-            raise errors.GenericError()
+            raise errors.GenericError(request=request)
 
 
 class GuestEventManager:
@@ -446,35 +448,35 @@ class SnapshotRequestManagerComponent:
 #
 # Routes
 #
-def get_guest_requests(manager: GuestRequestManager) -> APIResponse:
-    return APIResponse(manager.get_guest_requests())
+def get_guest_requests(manager: GuestRequestManager, request: Request) -> APIResponse:
+    return APIResponse(manager.get_guest_requests(), request=request)
 
 
-def create_guest_request(guest_request: GuestRequest, manager: GuestRequestManager) -> APIResponse:
-    return APIResponse(manager.create(guest_request), status=HTTP_201)
+def create_guest_request(guest_request: GuestRequest, manager: GuestRequestManager, request: Request) -> APIResponse:
+    return APIResponse(manager.create(guest_request), request=request, status=HTTP_201)
 
 
-def get_guest_request(guestname: str, manager: GuestRequestManager) -> APIResponse:
+def get_guest_request(guestname: str, manager: GuestRequestManager, request: Request) -> APIResponse:
     guest_response = manager.get_by_guestname(guestname)
 
     if guest_response is None:
-        raise errors.NoSuchEntityError()
+        raise errors.NoSuchEntityError(request=request)
 
-    return APIResponse(guest_response)
-
-
-def delete_guest(guestname: str, manager: GuestRequestManager) -> APIResponse:
-    manager.delete_by_guestname(guestname)
-    return APIResponse()
+    return APIResponse(guest_response, request=request)
 
 
-def get_guest_events(guestname: str, manager: GuestEventManager) -> APIResponse:
+def delete_guest(guestname: str, request: Request, manager: GuestRequestManager) -> APIResponse:
+    manager.delete_by_guestname(guestname, request=request)
+    return APIResponse(request=request)
+
+
+def get_guest_events(guestname: str, request: Request, manager: GuestEventManager) -> APIResponse:
     events = manager.get_events_by_guestname(guestname)
-    return APIResponse(events)
+    return APIResponse(events, request=request)
 
 
-def get_metrics() -> APIResponse:
-    return APIResponse(stream=generate_metrics())
+def get_metrics(request: Request) -> APIResponse:
+    return APIResponse(stream=generate_metrics(), request=request)
 
 
 def get_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:
