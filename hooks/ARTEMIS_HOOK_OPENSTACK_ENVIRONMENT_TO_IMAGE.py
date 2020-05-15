@@ -7,7 +7,7 @@ import gluetool.log
 
 import stackprinter
 
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 
 # We could use variables.yaml maybe, or openshift-image-map variant based on compose ID.

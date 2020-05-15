@@ -1,5 +1,4 @@
 import random
-import sys
 
 import artemis.db
 import artemis.drivers
