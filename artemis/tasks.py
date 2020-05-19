@@ -514,6 +514,15 @@ async def do_release_guest_request(
         if not gr:
             return
 
+        if not _update_guest_state(
+            logger,
+            session,
+            guestname,
+            artemis.guest.GuestState.CONDEMNED,
+            artemis.guest.GuestState.RELEASING
+        ):
+            return
+
         if gr.poolname:
             r_pool = _get_pool(logger, session, gr.poolname)
 
@@ -577,7 +586,7 @@ async def do_release_guest_request(
         query = sqlalchemy \
             .delete(GuestRequest.__table__) \
             .where(GuestRequest.guestname == guestname) \
-            .where(GuestRequest.state == artemis.guest.GuestState.CONDEMNED.value)
+            .where(GuestRequest.state == artemis.guest.GuestState.RELEASING.value)
 
         r_condemn = safe_db_execute(logger, session, query)
 
@@ -587,7 +596,7 @@ async def do_release_guest_request(
         failure = cast(Failure, r_condemn.error)
 
         if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-            logger.warning('not in CONDEMNED state anymore')
+            logger.warning('not in RELEASING state anymore')
             return
 
         failure.reraise()
