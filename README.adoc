@@ -39,6 +39,8 @@ Specification of API is available at https://artemis6.docs.apiary.io/#reference.
 == Local development environment
 
 The development environment runs Artemis in https://docs.okd.io/latest/minishift[Minishift] via https://skaffold.dev[Skaffold]. Currently the development environment requires Docker to be installed on the machine, as skaffold uses docker API for building the container images.
+Skaffold will redeploy artemis uppon code changes automatically.
+Currently, Artemis is not working with latest skaffold, install https://storage.googleapis.com/skaffold/releases/v1.5.0/skaffold-linux-amd6[version 1.5].
 
 === Install requirements
 
@@ -62,6 +64,8 @@ To install it follow the following guide: https://skaffold.dev/docs/install/
 ==== Install Minishift
 
 Minishift is a local Openshift run in a kvm VM on your localhost.
+
+Currently, new version of minishift is not working properly in this use case. Install MiniShift v1.29.0 which is tested.
 
 To install it follow the following guide: https://docs.okd.io/latest/minishift/getting-started/installing.html#installing-manually
 
@@ -90,6 +94,17 @@ $ source develop.sh
 ....
 +
 The first execution of the script will take some time, as it needs to start Minishift and initially build Artemis.
+
+[NOTE]
+====
+For change of logging level, use env variable `DEBUG`, for example:
++
+[source,shell]
+....
+$ DEBUG=3 source develop.sh
+....
++
+====
 
 === Enable development environment
 
@@ -124,135 +139,17 @@ Make sure you have sourced the `develop.sh` script with `-s` option before inter
   * password: artemis
   * database: artemis
 
-== How to run the WIP version (deprecated)
+[NOTE]
+====
+If Artemis is killed (e.g. CTRL+C), wait for all pods to be terminated before sourcing develop.sh again.
+`oc get pods`
+====
 
-* create a virtualenv:
-+
-[source,shell]
-....
-$ virtualenv -p /usr/bin/python3.7 foo
-....
-+
-* install Artemis:
-+
-[source,shell]
-....
-$ pip install --edit .
-....
-+
-* you need a configuration - ping mprchlik for the archive, and unpack it into the repository directory
-* initialize sqlite database:
-+
-[source,shell]
-....
-$ ARTEMIS_DB_URL="sqlite:///test.db" ARTEMIS_CONFIG_DIR="$(pwd)/artemis-configuration" artemis-init-sqlite-schema
-....
-+
-* check `run.sh` for details, but it should be safe to run as-is
-* start it up:
-+
-[source,shell]
-....
-$ ./run.sh
-....
 
 == How to provision a machine
 
-* execute API call:
-+
-[source,shell]
-....
-$ http -j -p HBhb POST "http://127.0.0.1:8001/guests/" keyname='ci-key' environment:='{"arch": "x86_64", "compose": {"openstack": {"image": "RHEL-8.2
-.0-x86_64-nightly-latest"}}}' priority_group='default-priority'
-POST /guests/ HTTP/1.1
-Accept: application/json
-Accept-Encoding: gzip, deflate
-Connection: keep-alive
-Content-Length: 167
-Content-Type: application/json
-Host: 127.0.0.1:8001
-User-Agent: HTTPie/0.9.4
+* the best way is to use artemis-cli
+* alternatively execute API call via web browser
+  * find out API url:`minishift openshift service --url artemis-api`
+  * add '_docs' to url and open in browser
 
-{
-    "environment": {
-        "arch": "x86_64",
-        "compose": {
-            "openstack": {
-                "image": "RHEL-8.2.0-x86_64-nightly-latest"
-            }
-        }
-    },
-    "keyname": "ci-key",
-    "priority_group": "default-priority"
-}
-
-HTTP/1.1 201 Created
-Connection: close
-Date: Tue, 19 Nov 2019 11:19:20 GMT
-Server: gunicorn/19.9.0
-content-length: 280
-content-type: application/json; charset=utf-8
-
-{
-    "address": null,
-    "environment": {
-        "arch": "x86_64",
-        "compose": {
-            "openstack": {
-                "image": "RHEL-8.2.0-x86_64-nightly-latest"
-            }
-        }
-    },
-    "guestname": "658986d6-118b-41ae-8560-4beadd00be38",
-    "owner": "artemis",
-    "ssh": {
-        "keyname": "ci-key",
-        "port": 22,
-        "username": "root"
-    },
-    "state": "pending"
-}
-....
-+
-* from now, you may check the progress by checking the state of the request, until you get similar response:
-+
-[source,shell]
-....
-$ http -j -p HBhb "http://127.0.0.1:8001/guests/658986d6-118b-41ae-8560-4beadd00be38"
-GET /guests/658986d6-118b-41ae-8560-4beadd00be38 HTTP/1.1
-Accept: application/json
-Accept-Encoding: gzip, deflate
-Connection: keep-alive
-Content-Type: application/json
-Host: 127.0.0.1:8001
-User-Agent: HTTPie/0.9.4
-
-
-
-HTTP/1.1 200 OK
-Connection: close
-Date: Tue, 19 Nov 2019 11:21:14 GMT
-Server: gunicorn/19.9.0
-content-length: 288
-content-type: application/json; charset=utf-8
-
-{
-    "address": "10.0.132.189",
-    "environment": {
-        "arch": "x86_64",
-        "compose": {
-            "openstack": {
-                "image": "RHEL-8.2.0-x86_64-nightly-latest"
-            }
-        }
-    },
-    "guestname": "658986d6-118b-41ae-8560-4beadd00be38",
-    "owner": "artemis",
-    "ssh": {
-        "keyname": "ci-key",
-        "port": 22,
-        "username": "root"
-    },
-    "state": "ready"
-}
-....
