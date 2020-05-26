@@ -1,0 +1,8 @@
+---
+
+properties:
+  artemis_api_url:
+    type: string
+
+required:
+  - artemis_api_url
