@@ -140,7 +140,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         snapshot: artemis.snapshot.Snapshot,
         guest: artemis.guest.Guest,
-        canceled: Optional[threading.Event] = None
+        canceled: Optional[threading.Event] = None,
+        start_again: bool = True
     ) -> Result[artemis.snapshot.Snapshot, Failure]:
         """
         Update state of the snapshot.

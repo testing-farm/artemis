@@ -398,8 +398,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         if output:
             status = output['status']
 
-        # If snapshot is active, we can turn on the guest
-        if status == 'active':
+        # If snapshot is active, we can turn on the guest if start_again is True
+        if status == 'active' and snapshot_request.start_again:
             r_start = self._start_guest(guest.instance_id)
 
             if r_start.is_error:
@@ -416,7 +416,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         self,
         snapshot: artemis.snapshot.Snapshot,
         guest: artemis.guest.Guest,
-        canceled: Optional[threading.Event] = None
+        canceled: Optional[threading.Event] = None,
+        start_again: bool = True
     ) -> Result[artemis.snapshot.Snapshot, Failure]:
 
         if not isinstance(snapshot, OpenStackSnapshot):
@@ -445,12 +446,13 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         if status != 'active':
             return Ok(snapshot)
 
-        # If snapshot is active, we can turn on the guest
-        r_start = self._start_guest(guest.instance_id)
+        # If snapshot is active and start_again is True, we can turn on the guest
+        if start_again:
+            r_start = self._start_guest(guest.instance_id)
 
-        if r_start.is_error:
-            assert isinstance(r_start.value, Failure)
-            return Error(r_start.value)
+            if r_start.is_error:
+                assert isinstance(r_start.value, Failure)
+                return Error(r_start.value)
 
         snapshot.status = status
         return Ok(snapshot)

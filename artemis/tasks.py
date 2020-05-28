@@ -1207,7 +1207,7 @@ async def do_update_snapshot(
             )
             return
 
-        r_update = pool.update_snapshot(r_snapshot.unwrap(), guest)
+        r_update = pool.update_snapshot(r_snapshot.unwrap(), guest, start_again=snapshot_request.start_again)
 
         if r_update.is_error:
             log_error_guest_event(

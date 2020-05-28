@@ -155,6 +155,17 @@ class GuestEvent:
         )
 
 
+@molten.schema
+class SnapshotRequest:
+    start_again: bool = Field()
+
+    def __init__(
+        self,
+        start_again: bool,
+    ) -> None:
+        self.start_again = start_again
+
+
 class SnapshotResponse:
     snapshotname: str = Field()
     guestname: str = Field()
@@ -383,7 +394,7 @@ class SnapshotRequestManager:
 
         return response
 
-    def create_snapshot(self, guestname: str) -> SnapshotResponse:
+    def create_snapshot(self, guestname: str, snapshot_request: SnapshotRequest) -> SnapshotResponse:
         snapshotname = str(uuid.uuid4())
 
         with self.db.get_session() as session:
@@ -392,7 +403,8 @@ class SnapshotRequestManager:
                     snapshotname=snapshotname,
                     guestname=guestname,
                     poolname=None,
-                    state=artemis.guest.GuestState.PENDING.value
+                    state=artemis.guest.GuestState.PENDING.value,
+                    start_again=snapshot_request.start_again
                 )
             )
 
@@ -488,8 +500,10 @@ def get_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotReq
     return APIResponse(snapshot_response)
 
 
-def create_snapshot_request(guestname: str, manager: SnapshotRequestManager) -> APIResponse:
-    return APIResponse(manager.create_snapshot(guestname), status=HTTP_201)
+def create_snapshot_request(guestname: str,
+                            snapshot_request: SnapshotRequest,
+                            manager: SnapshotRequestManager) -> APIResponse:
+    return APIResponse(manager.create_snapshot(guestname, snapshot_request), status=HTTP_201)
 
 
 def delete_snapshot(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:

@@ -160,6 +160,8 @@ class SnapshotRequest(Base):
 
     state = Column(String(250), nullable=False)
 
+    start_again = Column(Boolean(), nullable=False)
+
 
 class Metrics(Base):
     __tablename__ = 'metrics'
