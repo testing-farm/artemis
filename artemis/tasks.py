@@ -1229,7 +1229,7 @@ async def do_update_snapshot(
                 artemis.guest.GuestState.PROMISED,
                 artemis.guest.GuestState.PROMISED,
             ):
-                r_promise = _dispatch_task(logger, update_snapshot, snapshotname)
+                r_promise = _dispatch_task(logger, update_snapshot, snapshotname, guest_request.guestname)
 
                 if r_promise.is_ok:
                     logger.info('scheduled update')
