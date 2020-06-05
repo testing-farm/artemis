@@ -202,7 +202,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         # ]
 
         # Keep only matched with regex networks
-        suitable_networks = [network for network in networks if re.match(network_regex, network["Network Name"])]
+        suitable_networks = [network for network in networks if re.fullmatch(network_regex, network["Network Name"])]
 
         if not suitable_networks:
             return Error(Failure('no suitable network'))
