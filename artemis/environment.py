@@ -51,6 +51,7 @@ class Environment:
 
     arch: str
     compose: Compose
+    snapshots: bool = False
 
     def __repr__(self) -> str:
         return json.dumps(dataclasses.asdict(self))
