@@ -135,7 +135,7 @@ class GuestEvent(Base):
     __tablename__ = 'guest_events'
 
     _id = Column(Integer(), primary_key=True)
-    updated = Column(DateTime, default=datetime.datetime.now())
+    updated = Column(DateTime, default=datetime.datetime.utcnow)
     guestname = Column(String(250), nullable=False)
     eventname = Column(String(250), nullable=False)
     details = Column(Text())
@@ -168,7 +168,7 @@ class Metrics(Base):
 
     _id = Column(Integer, primary_key=True)
     count = Column(Integer, default=0)
-    updated = Column(DateTime, default=datetime.datetime.now())
+    updated = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 class DB:

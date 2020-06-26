@@ -63,6 +63,10 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
             self._move_to_routing(logger, guestname, artemis.guest.GuestState.PROMISED)
             return True
 
+        # for route_guest_request, stay in ROUTING
+        elif actor.actor_name == 'route_guest_request':
+            return True
+
         logger.warning('cannot retry routing from actor {}'.format(actor.actor_name))
         return False
 

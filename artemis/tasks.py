@@ -957,12 +957,34 @@ async def do_route_guest_request(
 
         engine = r_engine.unwrap()
 
-        pool_name = engine.run_hook(
+        r_pool = engine.run_hook(
             'ROUTE',
             logger=logger,
             guest_request=guest,
             pools=get_pools(logger, session)
         )
+
+        # Route hook failed, request cannot be fulfilled ;(
+        if r_pool.is_error:
+            assert r_pool.error is not None
+
+            logger.error('route hook failed, releasing guest: {}'.format(r_pool.error.message))
+
+            _update_guest_state(
+                logger,
+                session,
+                guestname,
+                artemis.guest.GuestState.ROUTING,
+                artemis.guest.GuestState.CONDEMNED,
+            )
+
+            return
+
+        pool = r_pool.unwrap()
+
+        # No suitable pool found
+        if not pool:
+            raise Exception('No suitable pools found, raising to retry routing')
 
         if cancel.is_set():
             return
@@ -975,7 +997,7 @@ async def do_route_guest_request(
             artemis.guest.GuestState.ROUTING,
             artemis.guest.GuestState.PROVISIONING,
             set_values={
-                'poolname': pool_name
+                'poolname': pool.poolname
             }
         ):
             # We failed to move guest to PROVISIONING state which means some other instance of this task changed
@@ -991,7 +1013,7 @@ async def do_route_guest_request(
         # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
         # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
         # task.
-        r = _dispatch_task(logger, acquire_guest, guestname, pool_name)
+        r = _dispatch_task(logger, acquire_guest, guestname, pool.poolname)
 
         if r.is_ok:
             return

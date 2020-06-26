@@ -136,13 +136,13 @@ class GuestEvent:
         self,
         eventname: str,
         guestname: str,
-        updated: Any,
+        updated: datetime.datetime,
         details: Any
     ) -> None:
         self.eventname = eventname
         self.guestname = guestname
         self.details = details
-        self.updated = str(updated)
+        self.updated = updated
 
     @classmethod
     def from_db(cls, event: artemis.db.GuestEvent):
@@ -218,6 +218,12 @@ class APIResponse(Response):  # type: ignore
         request: Request = None
     ) -> None:
 
+        def _convert_values(value: Any) -> Any:
+            if isinstance(value, datetime.datetime):
+                return str(value)
+
+            return value.__dict__
+
         if obj is not None:
 
             header = 'Content-Type'
@@ -229,7 +235,7 @@ class APIResponse(Response):  # type: ignore
                 headers[header] = hvalue
 
             try:
-                content = json.dumps(obj, default=lambda o: o.__dict__, sort_keys=True)
+                content = json.dumps(obj, default=_convert_values, sort_keys=True)
             except (TypeError, OverflowError):
                 log = artemis.get_logger()
                 log_dict(log.debug, 'object is not JSON serializable', obj.__dict__)
