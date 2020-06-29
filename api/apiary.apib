@@ -69,6 +69,35 @@ multiple requests, each provisioning one guest.
 
     - Attributes (Error)
 
+### Inspect all guest request [GET /guests]
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (array[Guest info])
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+
 ### Inspect guest request [GET /guests/{guestname}]
 
 - Parameters
@@ -131,6 +160,177 @@ multiple requests, each provisioning one guest.
 
     - Attributes (ErrorNotFound)
 
+### Create snapshot request [POST /guests/{guestname}/snapshots]
+
+- Parameters
+
+    - guestname (string) - ID of the guest.
+
+- Request (application/json)
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+    - Attributes (Snapshot request)
+
+- Response 201 (application/json)
+
+    - Headers
+
+            Location: /guest/{guestname}/snapshots/{snapshotname}
+
+    - Attributes (Snapshot info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
+
+- Response 500 (application/json)
+
+    - Attributes (Error)
+
+### Inspect snapshot request [GET /guests/{guestname}/snapshots/{snapshotname}]
+
+- Parameters
+
+    - guestname (string) - ID of the guest.
+    - snapshotname (string) - ID of the snapshot.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (Snapshot info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Restore snapshot request [POST /guests/{guestname}/snapshots/{snapshotname}/restore]
+
+- Parameters
+
+    - guestname (string) - ID of the guest.
+    - snapshotname (string) - ID of the snapshot.
+
+- Request (application/json)
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 201 (application/json)
+
+    - Headers
+
+            Location: /guest/{guestname}/snapshots/{snapshotname}
+
+    - Attributes (Snapshot info)
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
+
+- Response 500 (application/json)
+
+    - Attributes (Error)
+
+### Cancel snapshot request [DELETE /guests/{guestname}/snapshots/{snapshotname}]
+
+- Parameters
+
+    - guestname (string) - ID of the guest.
+    - snapshotname (string) - ID of the snapshot.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
+### Inspect guest events [GET /guests/{guestname}/events]
+
+- Parameters
+
+    - guestname (string) - ID of the guest.
+
+- Request
+
+    - Headers
+
+            Authorization: Basic ABC123
+
+- Response 200 (application/json)
+
+    - Attributes (array[Guest event])
+
+- Response 401 (application/json)
+
+    - Headers
+
+            WWW-Authenticate: Basic realm="protected"
+
+    - Attributes (ErrorUnauthorized)
+
+- Response 403 (application/json)
+
+    - Attributes (ErrorForbidden)
+
+- Response 404 (application/json)
+
+    - Attributes (ErrorNotFound)
+
 
 ## Data Structures
 
@@ -174,6 +374,7 @@ multiple requests, each provisioning one guest.
 
 - arch (string, required) - Architecture.
 - compose (Environment compose, required) - OS compose.
+- snaphots (boolean) - Request a guest with snapshots support
 
 ### Guest info
 
@@ -187,11 +388,53 @@ multiple requests, each provisioning one guest.
   - error - something wrong happened.
   - pending - guest request is being evaluate.
   - provisioning - guest is being provisioned from a pool.
+  - promised - guest is being promised by pool.
   - ready - guest is ready and may be used.
-  - condemned - guest is being removed.
+  - condemned - cancel guest request is being evaluated.
+  - releasing - guest is being removed.
 
 ### Guest request
 
 - environment (Environment, required) - Requested environment of the guest.
 - keyname (string, required) - SSH key to set up.
 - priority_group (string) - name of a *priority group* the request belongs to.
+
+### Snapshot request
+
+- start_again (boolean) - Start a guest after creating a snapshot
+
+### Snapshot info
+
+- snapshotname (string, required) - Name of the snapshot as specified in a response to a creating request.
+- guestname (string, required) - Name of the guest as specified in a response to a provisioning request.
+- start_again (boolean, required) - Start a guest after creating a snapshot
+- state (enum, required) - current state of the guest. Valid only when `state` is `ready`.
+  - error - something wrong happened.
+  - pending - snapshot request is being evaluate.
+  - creating - snapshot is being created.
+  - promised - snapshot is being promised by pool.
+  - ready - snapshot is ready and may be used.
+  - restoring - snapshot restore request is being evaluated.
+  - processing - snapshot is being restored.
+  - condemned - cancel snapshot request is being evaluated.
+  - releasing - snapshot is being removed.
+
+### Guest event details
+
+- address (array[string]) - List of IP addresses of the guest. Valid only when `state` is `ready`.
+- environment (Environment) - Requested environment of the guest.
+- state (enum) - current state of the guest. Valid only when `state` is `ready`.
+  - error - something wrong happened.
+  - pending - guest request is being evaluate.
+  - provisioning - guest is being provisioned from a pool.
+  - promised - guest is being promised by pool.
+  - ready - guest is ready and may be used.
+  - condemned - cancel guest request is being evaluated.
+  - releasing - guest is being removed.
+
+### Guest event
+
+- details (Guest event details, required) - Details of the guest event.
+- eventname (string, required) - Name of the guest event.
+- guestname (string, required) - Name of the guest as specified in a response to a provisioning request.
+- updated (string, required) - Timestamp of the guest event in "yyyy-MM-dd HH:mm:ss.SSS" format
