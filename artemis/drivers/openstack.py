@@ -96,7 +96,17 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             output = Command(os_base, options=options, logger=self.logger).run()
 
         except GlueCommandError as exc:
-            return Error(Failure("Failure during 'os {}' execution: {}".format(' '.join(options), exc.output.stderr)))
+
+            # The command has sensitive data which we don't want to expose in logs
+            # scrubbed_command is free of sensitive data
+            scrubbed_command = ['openstack'] + options
+
+            return Error(Failure.from_exc(
+                "Error running openstack command",
+                exc,
+                command_output=exc.output,
+                scrubbed_command=scrubbed_command
+            ))
 
         if output.stdout:
             if isinstance(output.stdout, str):

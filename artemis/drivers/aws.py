@@ -202,7 +202,12 @@ class AWSDriver(artemis.drivers.PoolDriver):
         try:
             output = Command(command).run()
         except gluetool.glue.GlueCommandError as exc:
-            return Error(Failure.from_exc("Error running aws command '{}'".format(' '.join(command)), exc))
+            return Error(Failure.from_exc(
+                "Error running aws command",
+                exc,
+                command_output=exc.output,
+                scrubbed_command=exc.output.cmd
+            ))
 
         assert output.stdout  # required to make typing happy
         json = gluetool.utils.from_json(output.stdout)

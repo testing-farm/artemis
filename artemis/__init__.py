@@ -82,6 +82,7 @@ class Failure:
         traceback: Optional[_traceback.StackSummary] = None,
         parent: Optional['Failure'] = None,
         sentry: Optional[bool] = True,
+        command_output: Optional[gluetool.utils.ProcessOutput] = None,
         **details: Any
     ):
         self.message = message
@@ -95,6 +96,8 @@ class Failure:
         self.traceback: Optional[_traceback.StackSummary] = None
 
         self.parent = parent
+
+        self.command_output: Optional[gluetool.utils.ProcessOutput] = command_output
 
         if exc_info:
             self.exception = exc_info[1]
@@ -117,7 +120,13 @@ class Failure:
                 self.sentry_event_url = gluetool_sentry.event_url(self.sentry_event_id, logger=get_logger())
 
     @classmethod
-    def from_exc(self, message: str, exc: Exception):
+    def from_exc(
+        self,
+        message: str,
+        exc: Exception,
+        command_output: Optional[gluetool.utils.ProcessOutput] = None,
+        **details: Any
+    ):
         # type: (...) -> Failure
 
         return Failure(
@@ -126,7 +135,9 @@ class Failure:
                 exc.__class__,
                 exc,
                 exc.__traceback__
-            )
+            ),
+            command_output=command_output,
+            **details
         )
 
     def log(
@@ -137,16 +148,36 @@ class Failure:
         exc_info = self.exc_info if self.exc_info else (None, None, None)
 
         if label:
-            log_fn(
-                '{}: {}'.format(label, self.message),
-                exc_info=exc_info
-            )
-
+            # Sometimes label already contains message
+            if self.message in label:
+                msg = label
+            else:
+                msg = '{}: {}'.format(label, self.message)
         else:
-            log_fn(
-                self.message,
-                exc_info=exc_info
-            )
+            msg = self.message
+
+        items = [msg]
+
+        if 'scrubbed_command' in self.details:
+            items += [
+                '',
+                'COMMAND:',
+                gluetool.utils.format_command_line([self.details['scrubbed_command']])
+            ]
+
+        if self.command_output:
+
+            items += [
+                '',
+                'STDERR:',
+                gluetool.log.format_blob(self.command_output.stderr or '')
+            ]
+
+        log_fn(
+            '\n'.join(items),
+            exc_info=exc_info,
+            extra=self.details
+        )
 
     def reraise(self) -> NoReturn:
         if self.exception:
@@ -334,7 +365,7 @@ def log_error_guest_event(
 ) -> None:
     """ Create error event log record for guest """
 
-    error.log(logger.error, label='{}: {}: {}'.format(label, guestname, error.message))
+    error.log(logger.error, label='{}: {}: '.format(label, guestname))
     log_guest_event(logger, session, guestname, 'error', error=error.message, **details)
 
     if sentry:
