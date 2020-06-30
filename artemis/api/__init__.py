@@ -13,6 +13,7 @@ import molten.dependency_injection
 import molten.openapi
 from molten import HTTP_201, HTTP_200, Field, Response, Request
 from molten.contrib.prometheus import prometheus_middleware
+from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
 
 from gluetool.log import log_dict
@@ -536,6 +537,7 @@ def run_app() -> molten.app.App:
 # TODO: uncomment when registration is done
     mw: List[Middleware] = [
         # middleware.AuthorizationMiddleware,
+        ResponseRendererMiddleware(),
         prometheus_middleware
     ]
 
