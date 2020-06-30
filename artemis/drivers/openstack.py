@@ -322,6 +322,9 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         pool_data = json.loads(guest_request.pool_data)
 
+        if 'instance_id' not in pool_data:
+            return Error(Failure('no guest was provisioned for request'))
+
         r_output = self._show_guest(pool_data['instance_id'])
 
         if r_output.is_error:
