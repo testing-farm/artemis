@@ -49,7 +49,7 @@ spec:
             - name: ARTEMIS_VAULT_PASSWORD_FILE
               value: /configuration/.vault_pass
             - name: ARTEMIS_ACTOR_DEFAULT_RETRIES
-              value: "1"
+              value: "2"
             - name: ARTEMIS_WORKER_PROCESSES
               value: "2"
             - name: ARTEMIS_WORKER_THREADS

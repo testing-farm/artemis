@@ -114,6 +114,8 @@ function sanity() {
         # update configmap
         info "updating configuration config map from 'configuration' directory"
         configmap=$(mktemp)
+        # kubectl does not like these temp files ...
+        rm -f configuration/*~
         if ! oc create --dry-run -o json configmap artemis-configuration --from-file=configuration > $configmap; then
             error "Failed to update configmap, cannot continue"
             return 1
