@@ -302,24 +302,19 @@ def safe_db_execute(
 def log_guest_event(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
+    guestname: str,
     eventname: str,
-    guestname: Optional[str] = None,
     **details: Any
 ) -> None:
     """ Create event log record for guest """
 
-    guestname = guestname or details.get('guestname', None)
-
-    if guestname:
-        session.add(
-            artemis.db.GuestEvent(
-                guestname=guestname,
-                eventname=eventname,
-                **details
-            )
+    session.add(
+        artemis.db.GuestEvent(
+            guestname=guestname,
+            eventname=eventname,
+            **details
         )
-    else:
-        logger.error('refusing to log event {}: no guestname!'.format(eventname), sentry=True)
+    )
 
     logger.warning('logged guest request event {}: guestname={} details={}'.format(
         eventname,
@@ -339,4 +334,4 @@ def log_error_guest_event(
     """ Create error event log record for guest """
 
     error.log(logger.error, label='{}: {}: {}'.format(label, guestname, error.message))
-    log_guest_event(logger, session, 'error', guestname, error=error.message, **details)
+    log_guest_event(logger, session, guestname, 'error', error=error.message, **details)

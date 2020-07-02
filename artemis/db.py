@@ -128,7 +128,7 @@ class GuestRequest(Base):
     ) -> None:
         """ Create event log record for guest """
 
-        artemis.log_guest_event(logger, session, eventname, self.guestname, **details)
+        artemis.log_guest_event(logger, session, self.guestname, eventname, **details)
 
 
 class GuestEvent(Base):

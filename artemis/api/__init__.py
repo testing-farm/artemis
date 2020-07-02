@@ -302,8 +302,8 @@ class GuestRequestManager:
             artemis.log_guest_event(
                 logger,
                 session,
-                'created',
                 gr.guestname,
+                'created',
                 state=gr.state
             )
 
@@ -337,8 +337,8 @@ class GuestRequestManager:
                 artemis.log_guest_event(
                     logger,
                     session,
-                    'deleted',
-                    guestname
+                    guestname,
+                    'condemned'
                 )
                 return
 

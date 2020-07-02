@@ -79,6 +79,7 @@ def _dispatch_snapshot_request(
         logger,
         session,
         snapshot.snapshotname,
+        snapshot.guestname,
         artemis.guest.GuestState.PENDING,
         artemis.guest.GuestState.ROUTING
     ):
