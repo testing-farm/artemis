@@ -217,7 +217,7 @@ def fetch_remote(
 
     if res.status_code not in [200, 201]:
         if on_error:
-            on_error(res)
+            on_error(res, request_kwargs)
 
         else:
             logger.error(
@@ -230,13 +230,13 @@ def fetch_artemis(cfg, endpoint, method='get', request_kwargs=None, logger=None)
     assert cfg.artemis_api_url is not None
     if not logger:
         logger = Logger()
-    def _error_callback(res: requests.Response) -> None:
+    def _error_callback(res: requests.Response, request_kwargs) -> None:
         assert logger is not None
 
         logger.error(
-                'Failed to communicate with Artemis API Server, responded with code {}: {}'.format(res.status_code, res.reason)
+                'Failed to communicate with Artemis API Server, responded with code {}: {}'
+                '\nRequest:\n{}\n{}'.format(res.status_code, res.reason, res.request.url, request_kwargs)
         )
-
 
     return fetch_remote('{}/{}'.format(cfg.artemis_api_url, endpoint), logger, method=method, request_kwargs=request_kwargs, on_error=_error_callback)
 
