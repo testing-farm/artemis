@@ -113,7 +113,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
                 json_out = json.loads(cmd_out)
             except json.JSONDecodeError as exc:
                 return Error(Failure.from_exc(
-                    "Failed to parse output of 'os {}' to json".format(' '.join(options)), exc))
+                    "Failed to parse output of 'os {}' to json, output: {}".format(' '.join(options), cmd_out), exc))
 
             return Ok(json_out)
 
