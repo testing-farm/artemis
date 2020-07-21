@@ -75,8 +75,9 @@ case $APP in
         COMMAND="poetry run artemis-dispatcher"
         ;;
     initdb)
-        # Ignore any errors for now here, we run the schema initialization at each API initialization.
-        # We will soon replace this with alembic.
+        # Initialize or upgrade the database to the latest version
+        poetry run alembic upgrade head
+        # Initialize records from server.yml
         poetry run artemis-init-postgres-schema
         exit 0
         ;;

@@ -2,6 +2,11 @@
 
 set -x
 
+if [ "$(readlink -f $(dirname 0))" != "$PWD" ]; then
+    echo "This script must be run from project root"
+    exit 1
+fi
+
 trap 'kill $(jobs -p)' EXIT
 
 export ARTEMIS_CONFIG_DIR="$(pwd)/configuration"
@@ -32,6 +37,7 @@ if [ "$ARTEMIS_WORKER_QUEUES" != "" ]; then
     ARTEMIS_WORKER_OPTIONS="-Q \"${ARTEMIS_WORKER_QUEUES}\" ${ARTEMIS_WORKER_OPTIONS}"
 fi
 
+poetry run alembic upgrade head
 poetry run artemis-init-postgres-schema
 
 poetry run artemis-api-server &

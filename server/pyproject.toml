@@ -17,6 +17,7 @@ packages = [
 [tool.poetry.dependencies]
 python = "^3.7"
 ansible-vault = "^1.2.0"
+alembic = "^1.4.2"
 awscli = "^1.16.298"
 beaker-client = "^27.0"
 beautifulsoup4 = "^4.6.3"
