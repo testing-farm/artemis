@@ -28,7 +28,7 @@ setup(
         'beautifulsoup4',
         'dataclasses==0.6',
         'dramatiq[rabbitmq, watch]',
-        'gluetool==1.20',
+        'gluetool==1.22',
         'gunicorn==19.9.0',
         'molten==0.7.4',
         'psycopg2==2.8.4',

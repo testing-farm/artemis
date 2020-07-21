@@ -112,7 +112,7 @@ class Guest:
     ) -> None:
         """ Create event log record for guest """
 
-        artemis.log_guest_event(logger, session, eventname, self.guestname, **details)
+        artemis.log_guest_event(logger, session, self.guestname, eventname, **details)
 
     @property
     def is_promised(self) -> bool:

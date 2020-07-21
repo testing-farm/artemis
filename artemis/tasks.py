@@ -107,6 +107,23 @@ class Actor(Protocol):
     ) -> None: ...
 
 
+class EventLoggerType(Protocol):
+    def __call__(
+        self,
+        eventname: str,
+        **more_details: Any
+    ) -> None: ...
+
+
+class ErrorEventLoggerType(Protocol):
+    def __call__(
+        self,
+        result: Result[Any, Failure],
+        message: str,
+        **more_details: Any
+    ) -> None: ...
+
+
 class TaskLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, task_name: str) -> None:
         super(TaskLogger, self).__init__(logger, {
@@ -131,6 +148,51 @@ POOL_DRIVERS = {
     'aws': artemis.drivers.aws.AWSDriver,
     'beaker': artemis.drivers.beaker.BeakerDriver
 }
+
+
+def create_event_loggers(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    guestname: str,
+    **default_details: Any
+) -> Tuple[EventLoggerType, ErrorEventLoggerType]:
+    def _log_event(
+        eventname: str,
+        **more_details: Any
+    ) -> None:
+        details = {
+            **default_details,
+            **more_details
+        }
+
+        log_guest_event(
+            logger,
+            session,
+            guestname,
+            eventname,
+            **details
+        )
+
+    def _log_error_event(
+        result: Result[Any, Failure],
+        message: str,
+        **more_details: Any
+    ) -> None:
+        details = {
+            **default_details,
+            **more_details
+        }
+
+        log_error_guest_event(
+            logger,
+            session,
+            guestname,
+            result.unwrap_error(),
+            message,
+            **details
+        )
+
+    return _log_event, _log_error_event
 
 
 def actor_kwargs(actor_name: str) -> Dict[str, Any]:
@@ -257,7 +319,7 @@ def _get_guest_by_state(
     if r_query.is_ok:
         return r_query.unwrap()
 
-    failure = cast(Failure, r_query.value)
+    failure = r_query.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('not in {} state anymore'.format(state.value))
@@ -285,7 +347,7 @@ def _get_snapshot_by_state(
     if r_query.is_ok:
         return r_query.unwrap()
 
-    failure = cast(Failure, r_query.value)
+    failure = r_query.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('not in {} state anymore'.format(state.value))
@@ -335,35 +397,28 @@ def _update_guest_state(
     r = safe_db_execute(logger, session, query)
 
     if r.is_ok:
+        EVENT, ERROR_EVENT = create_event_loggers(
+            logger,
+            session,
+            guestname,
+            current_state=current_state.value,
+            new_state=new_state.value,
+            address=guest.address if guest else None
+        )
 
         if r.value is True:
             logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
-            eventname = 'state-changed'
-            details = {'state': new_state.value}
 
-            if guest:
-                details['address'] = guest.address
-                log = guest.log_event
-            else:
-                details['guestname'] = guestname
-                log = log_guest_event
-
-            log(logger, session, eventname, **details)
+            EVENT('state-changed')
 
         else:
             logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
-            details['state'] = current_state.value
-            log_error_guest_event(
-                logger,
-                session,
-                guestname,
-                cast(Failure, r.value),
-                'failed to switch state: {} => {}'.format(current_state.value, new_state.value)
-            )
+
+            ERROR_EVENT(r, 'failed to switch state')
 
         return r.unwrap()
 
-    failure = cast(Failure, r.value)
+    failure = r.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('state switch: {} => {}: no result found'.format(current_state.value, new_state.value))
@@ -377,6 +432,7 @@ def _update_snapshot_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     snapshotname: str,
+    guestname: str,
     current_state: artemis.guest.GuestState,
     new_state: artemis.guest.GuestState,
     set_values: Optional[Dict[str, Any]] = None,
@@ -403,28 +459,28 @@ def _update_snapshot_state(
     r = safe_db_execute(logger, session, query)
 
     if r.is_ok:
+        EVENT, ERROR_EVENT = create_event_loggers(
+            logger,
+            session,
+            guestname,
+            snapshotname=snapshotname,
+            current_state=current_state.value,
+            new_state=new_state.value
+        )
+
         if r.value is True:
             logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
-            eventname = 'state-changed'
-            details = {'state': new_state.value}
-            details['guestname'] = snapshotname
 
-            log_guest_event(logger, session, eventname, **details)
+            EVENT('snapshot-state-changed')
 
         else:
             logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
-            details['state'] = current_state.value
-            log_error_guest_event(
-                logger,
-                session,
-                snapshotname,
-                cast(Failure, r.value),
-                'failed to switch state: {} => {}'.format(current_state.value, new_state.value)
-            )
+
+            ERROR_EVENT(r, 'failed to switch snapshot state')
 
         return r.unwrap()
 
-    failure = cast(Failure, r.value)
+    failure = r.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('state switch: {} => {}: no result found'.format(current_state.value, new_state.value))
@@ -454,7 +510,7 @@ def _get_pool(
     r_sanity = driver.sanity()
 
     if r_sanity.is_error:
-        return Error(cast(Failure, r_sanity.value))
+        return Error(r_sanity.unwrap_error())
 
     return Ok(driver)
 
@@ -510,6 +566,8 @@ async def do_release_guest_request(
     guestname: str
 ) -> None:
     with db.get_session() as session:
+        EVENT, ERROR_EVENT = create_event_loggers(logger, session, guestname)
+
         gr = _get_guest_by_state(logger, session, guestname, artemis.guest.GuestState.CONDEMNED)
         if not gr:
             return
@@ -527,13 +585,7 @@ async def do_release_guest_request(
             r_pool = _get_pool(logger, session, gr.poolname)
 
             if r_pool.is_error:
-                log_error_guest_event(
-                    logger,
-                    session,
-                    guestname,
-                    cast(Failure, r_pool.value),
-                    'pool sanity failed'
-                )
+                ERROR_EVENT(r_pool, 'pool sanity failed')
                 return
 
             pool = r_pool.unwrap()
@@ -549,38 +601,20 @@ async def do_release_guest_request(
             )
 
             if r_guest_sshkey.is_error:
-                log_error_guest_event(
-                    logger,
-                    session,
-                    guestname,
-                    cast(Failure, r_guest_sshkey.value),
-                    'failed to get guest SSH key'
-                )
+                ERROR_EVENT(r_guest_sshkey, 'failed to get SSH key')
                 return
 
             guest_sshkey = r_guest_sshkey.unwrap()
             r_guest = pool.guest_factory(gr, ssh_key=guest_sshkey)
 
             if r_guest.is_error:
-                log_error_guest_event(
-                    logger,
-                    session,
-                    guestname,
-                    cast(Failure, r_guest.value),
-                    'failed to locate'
-                )
+                ERROR_EVENT(r_guest, 'failed to load guest')
                 return
 
             r_release = pool.release_guest(r_guest.unwrap())
 
             if r_release.is_error:
-                log_error_guest_event(
-                    logger,
-                    session,
-                    guestname,
-                    cast(Failure, r_release.value),
-                    'failed to locate'
-                )
+                ERROR_EVENT(r_release, 'failed to release guest')
                 return
 
         query = sqlalchemy \
@@ -591,9 +625,10 @@ async def do_release_guest_request(
         r_condemn = safe_db_execute(logger, session, query)
 
         if r_condemn.is_ok:
+            EVENT('released')
             return
 
-        failure = cast(Failure, r_condemn.error)
+        failure = r_condemn.unwrap_error()
 
         if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
             logger.warning('not in RELEASING state anymore')
@@ -635,19 +670,14 @@ async def do_update_guest(
 
         assert gr.poolname is not None
 
+        _, ERROR_EVENT = create_event_loggers(logger, session, guestname)
+
         current_pool_data = gr.pool_data
 
         r_pool = _get_pool(logger, session, gr.poolname)
 
         if r_pool.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                guestname,
-                cast(Failure, r_pool.value),
-                'pool sanity failed',
-                poolname=gr.poolname,
-            )
+            ERROR_EVENT(r_pool, 'pool sanity failed')
             return
 
         pool = r_pool.unwrap()
@@ -663,40 +693,19 @@ async def do_update_guest(
         )
 
         if r_guest_sshkey.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                guestname,
-                cast(Failure, r_pool.value),
-                'failed to get SSH key',
-                poolname=gr.poolname
-            )
+            ERROR_EVENT(r_pool, 'failed to get SSH key')
             return
 
         r_guest = pool.guest_factory(gr, ssh_key=r_guest_sshkey.unwrap())
 
         if r_guest.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                guestname,
-                cast(Failure, r_pool.value),
-                'failed to locate',
-                poolname=gr.poolname,
-            )
+            ERROR_EVENT(r_pool, 'failed to load guest')
             return
 
         r_update = pool.update_guest(r_guest.unwrap())
 
         if r_update.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                guestname,
-                cast(Failure, r_update.value),
-                'failed to locate',
-                poolname=gr.poolname,
-            )
+            ERROR_EVENT(r_update, 'failed to update guest')
             return
 
         guest = r_update.unwrap()
@@ -777,31 +786,19 @@ async def do_acquire_guest(
         if not gr:
             return
 
+        _, ERROR_EVENT = create_event_loggers(logger, session, guestname)
+
         r_pool = _get_pool(logger, session, poolname)
 
         if r_pool.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                guestname,
-                cast(Failure, r_pool.value),
-                'pool sanity failed',
-                poolname=gr.poolname,
-            )
+            ERROR_EVENT(r_pool, 'pool sanity failed')
             return
 
         pool = r_pool.unwrap()
 
         r_master_key = _get_master_key(logger, session)
         if r_master_key.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                guestname,
-                cast(Failure, r_master_key.value),
-                'failed to get SSH key',
-                poolname=gr.poolname,
-            )
+            ERROR_EVENT(r_master_key, 'failed to get SSH key')
 
         master_key = r_master_key.unwrap()
         environment = artemis.environment.Environment.unserialize_from_json(json.loads(gr.environment))
@@ -864,17 +861,14 @@ async def do_acquire_guest(
             return
 
     # Code execution could only end up here if provisioning failed
-    assert result.error is not None
-
-    error = cast(Failure, result.value)
+    error = result.unwrap_error()
 
     with db.get_session() as session:
-        log_error_guest_event(
-            logger,
-            session,
-            guestname,
-            error,
-            'failed to provision: {}',
+        _, ERROR_EVENT = create_event_loggers(logger, session, guestname)
+
+        ERROR_EVENT(
+            result,
+            'failed to provision: {}'.format(error.message),
             poolname=poolname,
             environment=error.details.get('environment'),
             hook_error=error.details.get('hook_error')
@@ -951,9 +945,7 @@ async def do_route_guest_request(
         r_engine = artemis.script.hook_engine('ROUTE')
 
         if r_engine.is_error:
-            assert r_engine.error is not None
-
-            raise Exception('Failed to load ROUTE hook: {}'.format(r_engine.error.message))
+            raise Exception('Failed to load ROUTE hook: {}'.format(r_engine.unwrap_error().message))
 
         engine = r_engine.unwrap()
 
@@ -966,9 +958,7 @@ async def do_route_guest_request(
 
         # Route hook failed, request cannot be fulfilled ;(
         if r_pool.is_error:
-            assert r_pool.error is not None
-
-            logger.error('route hook failed, releasing guest: {}'.format(r_pool.error.message))
+            logger.error('route hook failed, releasing guest: {}'.format(r_pool.unwrap_error().message))
 
             _update_guest_state(
                 logger,
@@ -1062,10 +1052,18 @@ async def do_release_snapshot_request(
         if not snapshot_request:
             return
 
+        EVENT, ERROR_EVENT = create_event_loggers(
+            logger,
+            session,
+            snapshot_request.guestname,
+            snapshotname=snapshot_request.snapshotname
+        )
+
         if not _update_snapshot_state(
             logger,
             session,
             snapshotname,
+            snapshot_request.guestname,
             artemis.guest.GuestState.CONDEMNED,
             artemis.guest.GuestState.RELEASING
         ):
@@ -1075,13 +1073,10 @@ async def do_release_snapshot_request(
             r_pool = _get_pool(logger, session, snapshot_request.poolname)
 
             if r_pool.is_error:
-                log_error_guest_event(
-                    logger,
-                    session,
-                    snapshot_request.poolname,
-                    cast(Failure, r_pool.value),
-                    'pool sanity failed'
-                )
+                ERROR_EVENT(r_pool, 'pool sanity failed')
+
+                _undo_snapshot_in_removing()
+                return
 
             pool = r_pool.unwrap()
 
@@ -1091,25 +1086,17 @@ async def do_release_snapshot_request(
 
             r_snapshot = pool.snapshot_factory(snapshot_request)
             if r_snapshot.is_error:
-                log_error_guest_event(
-                    logger,
-                    session,
-                    snapshotname,
-                    cast(Failure, r_snapshot.value),
-                    'failed to locate'
-                )
+                ERROR_EVENT(r_snapshot, 'failed to load pool')
+
+                _undo_snapshot_in_removing()
                 return
 
             r_release = pool.remove_snapshot(r_snapshot.unwrap())
 
             if r_release.is_error:
-                log_error_guest_event(
-                    logger,
-                    session,
-                    snapshotname,
-                    cast(Failure, r_release.value),
-                    'failed to locate'
-                )
+                ERROR_EVENT(r_release, 'failed to remove snapshot')
+
+                _undo_snapshot_in_removing()
                 return
 
         query = sqlalchemy \
@@ -1120,9 +1107,10 @@ async def do_release_snapshot_request(
         r_condemn = safe_db_execute(logger, session, query)
 
         if r_condemn.is_ok:
+            EVENT('snapshot-released')
             return
 
-        failure = cast(Failure, r_condemn.error)
+        failure = r_condemn.unwrap_error()
 
         if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
             logger.warning('not in CONDEMNED state anymore')
@@ -1162,6 +1150,8 @@ async def do_update_snapshot(
         if not snapshot_request:
             return
 
+        _, ERROR_EVENT = create_event_loggers(logger, session, snapshot_request.guestname, snapshotname=snapshotname)
+
         assert snapshot_request.poolname is not None
 
         guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
@@ -1172,13 +1162,8 @@ async def do_update_snapshot(
         r_pool = _get_pool(logger, session, snapshot_request.poolname)
 
         if r_pool.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshot_request.poolname,
-                cast(Failure, r_pool.value),
-                'pool sanity failed'
-            )
+            ERROR_EVENT(r_pool, 'pool sanity failed')
+            return
 
         pool = r_pool.unwrap()
 
@@ -1190,26 +1175,14 @@ async def do_update_snapshot(
         )
 
         if r_guest_sshkey.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshot_request.guestname,
-                cast(Failure, r_guest_sshkey.value),
-                'failed to get SSH key',
-                poolname=snapshot_request.poolname,
-            )
+            ERROR_EVENT(r_guest_sshkey, 'failed to get SSH key')
+            return
 
         guest_sshkey = r_guest_sshkey.unwrap()
 
         r_guest = pool.guest_factory(guest_request, ssh_key=guest_sshkey)
         if r_guest.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshot_request.guestname,
-                cast(Failure, r_guest.value),
-                'failed to locate'
-            )
+            ERROR_EVENT(r_guest, 'failed to load pool')
             return
 
         guest = r_guest.unwrap()
@@ -1220,25 +1193,13 @@ async def do_update_snapshot(
         r_snapshot = pool.snapshot_factory(snapshot_request)
 
         if r_snapshot.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshotname,
-                cast(Failure, r_snapshot.value),
-                'failed to locate'
-            )
+            ERROR_EVENT(r_snapshot, 'failed to load snapshot')
             return
 
         r_update = pool.update_snapshot(r_snapshot.unwrap(), guest, start_again=snapshot_request.start_again)
 
         if r_update.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshotname,
-                cast(Failure, r_update.value),
-                'failed to update'
-            )
+            ERROR_EVENT(r_update, 'failed to update snapshot')
             return
 
         snapshot = r_update.unwrap()
@@ -1248,6 +1209,7 @@ async def do_update_snapshot(
                 logger,
                 session,
                 snapshotname,
+                snapshot_request.guestname,
                 artemis.guest.GuestState.PROMISED,
                 artemis.guest.GuestState.PROMISED,
             ):
@@ -1262,6 +1224,7 @@ async def do_update_snapshot(
                 logger,
                 session,
                 snapshotname,
+                snapshot_request.guestname,
                 artemis.guest.GuestState.PROMISED,
                 artemis.guest.GuestState.READY,
             ):
@@ -1308,6 +1271,8 @@ async def do_create_snapshot(
         if not snapshot_request:
             return
 
+        _, ERROR_EVENT = create_event_loggers(logger, session, snapshot_request.guestname, snapshotname=snapshotname)
+
         if cancel.is_set():
             return
 
@@ -1322,13 +1287,8 @@ async def do_create_snapshot(
         r_pool = _get_pool(logger, session, snapshot_request.poolname)
 
         if r_pool.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshot_request.poolname,
-                cast(Failure, r_pool.value),
-                'pool sanity failed'
-            )
+            ERROR_EVENT(r_pool, 'pool sanity failed')
+            return
 
         pool = r_pool.unwrap()
 
@@ -1340,26 +1300,14 @@ async def do_create_snapshot(
         )
 
         if r_guest_sshkey.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshot_request.guestname,
-                cast(Failure, r_guest_sshkey.value),
-                'failed to get SSH key',
-                poolname=snapshot_request.poolname,
-            )
+            ERROR_EVENT(r_guest_sshkey, 'failed to get SSH key')
+            return
 
         guest_sshkey = r_guest_sshkey.unwrap()
 
         r_guest = pool.guest_factory(guest_request, ssh_key=guest_sshkey)
         if r_guest.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshot_request.guestname,
-                cast(Failure, r_guest.value),
-                'failed to locate'
-            )
+            ERROR_EVENT(r_guest, 'failed to load pool')
             return
 
         guest = r_guest.unwrap()
@@ -1370,17 +1318,11 @@ async def do_create_snapshot(
         r_create = pool.create_snapshot(snapshot_request, guest)
 
         if r_create.is_error:
-            assert r_create.error is not None
+            error = r_create.unwrap_error()
 
-            error = cast(Failure, r_create.value)
-
-            log_error_guest_event(
-                logger,
-                session,
-                snapshotname,
-                error,
-                'failed to create: {}',
-                poolname=snapshot_request.poolname,
+            ERROR_EVENT(
+                r_create,
+                'failed to create snapshot: {}'.format(error.message),
                 environment=error.details.get('environment'),
                 hook_error=error.details.get('hook_error')
             )
@@ -1399,6 +1341,7 @@ async def do_create_snapshot(
                 logger,
                 session,
                 snapshotname,
+                snapshot_request.guestname,
                 artemis.guest.GuestState.CREATING,
                 artemis.guest.GuestState.PROMISED
             ):
@@ -1413,6 +1356,7 @@ async def do_create_snapshot(
                 logger,
                 session,
                 snapshotname,
+                snapshot_request.guestname,
                 artemis.guest.GuestState.CREATING,
                 artemis.guest.GuestState.READY,
             ):
@@ -1501,6 +1445,7 @@ async def do_route_snapshot_request(
             logger,
             session,
             snapshotname,
+            snapshot.guestname,
             artemis.guest.GuestState.ROUTING,
             artemis.guest.GuestState.CREATING,
             set_values={
@@ -1566,10 +1511,13 @@ async def do_restore_snapshot_request(
         if not snapshot_request:
             return
 
+        _, ERROR_EVENT = create_event_loggers(logger, session, snapshot_request.guestname, snapshotname=snapshotname)
+
         if _update_snapshot_state(
             logger,
             session,
             snapshotname,
+            snapshot_request.guestname,
             artemis.guest.GuestState.RESTORING,
             artemis.guest.GuestState.PROCESSING
         ):
@@ -1590,13 +1538,10 @@ async def do_restore_snapshot_request(
         r_pool = _get_pool(logger, session, snapshot_request.poolname)
 
         if r_pool.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshot_request.poolname,
-                cast(Failure, r_pool.value),
-                'pool sanity failed'
-            )
+            ERROR_EVENT(r_pool, 'pool sanity failed')
+
+            _undo_snapshot_restore()
+            return
 
         pool = r_pool.unwrap()
 
@@ -1608,26 +1553,17 @@ async def do_restore_snapshot_request(
         )
 
         if r_guest_sshkey.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshot_request.guestname,
-                cast(Failure, r_guest_sshkey.value),
-                'failed to get SSH key',
-                poolname=snapshot_request.poolname,
-            )
+            ERROR_EVENT(r_guest_sshkey, 'failed to get SSH key')
+
+            _undo_snapshot_restore()
+            return
 
         guest_sshkey = r_guest_sshkey.unwrap()
 
         r_guest = pool.guest_factory(guest_request, ssh_key=guest_sshkey)
         if r_guest.is_error:
-            log_error_guest_event(
-                logger,
-                session,
-                snapshot_request.guestname,
-                cast(Failure, r_guest.value),
-                'failed to locate'
-            )
+            ERROR_EVENT(r_guest, 'failed to load guest')
+
             _undo_snapshot_restore()
             return
 
@@ -1642,17 +1578,11 @@ async def do_restore_snapshot_request(
         if r_restore.is_error:
             _undo_snapshot_restore()
 
-            assert r_restore.error is not None
+            error = r_restore.unwrap_error()
 
-            error = cast(Failure, r_restore.value)
-
-            log_error_guest_event(
-                logger,
-                session,
-                snapshotname,
-                error,
-                'failed to restore: {}',
-                poolname=snapshot_request.poolname,
+            ERROR_EVENT(
+                r_restore,
+                'failed to restore snapshot: {}'.format(error.message),
                 environment=error.details.get('environment'),
                 hook_error=error.details.get('hook_error')
             )
@@ -1663,6 +1593,7 @@ async def do_restore_snapshot_request(
             logger,
             session,
             snapshotname,
+            snapshot_request.guestname,
             artemis.guest.GuestState.PROCESSING,
             artemis.guest.GuestState.READY
         ):
