@@ -303,9 +303,9 @@ class GuestRequestManager:
                 logger,
                 session,
                 gr.guestname,
-                'created',
-                state=gr.state
+                'created'
             )
+
 
         return gr
 
