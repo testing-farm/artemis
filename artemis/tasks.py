@@ -627,17 +627,19 @@ async def do_release_guest_request(
             guest_sshkey = r_guest_sshkey.unwrap()
             r_guest = pool.guest_factory(gr, ssh_key=guest_sshkey)
 
+            # If we cancelled the guest early, no provisioned guest is available
             if r_guest.is_error:
+                failure = r_guest.unwrap_error()
                 ERROR_EVENT(r_guest, 'failed to load guest')
                 _undo_guest_in_releasing()
-                return
 
-            r_release = pool.release_guest(r_guest.unwrap())
+            # This can happen if somebody removed the instance outside of Artemis
+            else:
+                r_release = pool.release_guest(r_guest.unwrap())
 
-            if r_release.is_error:
-                ERROR_EVENT(r_release, 'failed to release guest')
-                _undo_guest_in_releasing()
-                return
+                if r_release.is_error:
+                    ERROR_EVENT(r_release, 'failed to release guest', sentry=True)
+                    _undo_guest_in_releasing()
 
         query = sqlalchemy \
             .delete(GuestRequest.__table__) \

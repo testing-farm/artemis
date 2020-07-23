@@ -329,9 +329,19 @@ def log_error_guest_event(
     guestname: str,
     error: Failure,
     label: str,
+    sentry: bool = False,
     **details: Any
 ) -> None:
     """ Create error event log record for guest """
 
     error.log(logger.error, label='{}: {}: {}'.format(label, guestname, error.message))
     log_guest_event(logger, session, guestname, 'error', error=error.message, **details)
+
+    if sentry:
+        gluetool_sentry.submit_message(
+            error.message,
+            tags={
+                **{'guestname': guestname},
+                **details
+            }
+        )
