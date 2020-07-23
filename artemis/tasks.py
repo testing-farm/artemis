@@ -364,9 +364,12 @@ def _update_guest_state(
     new_state: artemis.guest.GuestState,
     guest: Optional[artemis.guest.Guest] = None,
     set_values: Optional[Dict[str, Any]] = None,
-    current_pool_data: Optional[str] = None
+    current_pool_data: Optional[str] = None,
+    **details: Any
 ) -> bool:
     logger.warning('state switch: {} => {}'.format(current_state.value, new_state.value))
+
+    details = details or {}
 
     if set_values:
         values = set_values
@@ -403,7 +406,7 @@ def _update_guest_state(
             guestname,
             current_state=current_state.value,
             new_state=new_state.value,
-            address=guest.address if guest else None
+            **details,
         )
 
         if r.value is True:
@@ -760,7 +763,7 @@ async def do_update_guest(
                     'address': guest.address,
                     'pool_data': guest.pool_data_to_db()
                 },
-                current_pool_data=current_pool_data
+                current_pool_data=current_pool_data,
             ):
                 logger.info('successfully acquired')
                 return
@@ -859,6 +862,8 @@ async def do_acquire_guest(
                         return
 
             else:
+                pool_data_to_db = guest.pool_data_to_db()
+
                 if _update_guest_state(
                     logger,
                     session,
@@ -868,8 +873,11 @@ async def do_acquire_guest(
                     guest=guest,
                     set_values={
                         'address': guest.address,
-                        'pool_data': guest.pool_data_to_db()
-                    }
+                        'pool_data': pool_data_to_db
+                    },
+                    address=guest.address,
+                    pool=gr.poolname,
+                    pool_data=json.loads(pool_data_to_db)
                 ):
                     logger.info('successfully acquired')
                     return
@@ -1007,7 +1015,8 @@ async def do_route_guest_request(
             artemis.guest.GuestState.PROVISIONING,
             set_values={
                 'poolname': pool.poolname
-            }
+            },
+            pool=pool.poolname
         ):
             # We failed to move guest to PROVISIONING state which means some other instance of this task changed
             # guest's state instead of us, which means we should throw everything away because our decisions no
