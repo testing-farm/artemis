@@ -568,8 +568,23 @@ async def do_release_guest_request(
     with db.get_session() as session:
         EVENT, ERROR_EVENT = create_event_loggers(logger, session, guestname)
 
+        def _undo_guest_in_releasing() -> None:
+            if _update_guest_state(
+                logger,
+                session,
+                guestname,
+                artemis.guest.GuestState.RELEASING,
+                artemis.guest.GuestState.CONDEMNED
+            ):
+                return
+
+            assert False, 'unreachable'
+
         gr = _get_guest_by_state(logger, session, guestname, artemis.guest.GuestState.CONDEMNED)
         if not gr:
+            return
+
+        if cancel.is_set():
             return
 
         if not _update_guest_state(
@@ -591,6 +606,7 @@ async def do_release_guest_request(
             pool = r_pool.unwrap()
 
             if cancel.is_set():
+                _undo_guest_in_releasing()
                 return
 
             r_guest_sshkey = _get_ssh_key(
@@ -602,6 +618,7 @@ async def do_release_guest_request(
 
             if r_guest_sshkey.is_error:
                 ERROR_EVENT(r_guest_sshkey, 'failed to get SSH key')
+                _undo_guest_in_releasing()
                 return
 
             guest_sshkey = r_guest_sshkey.unwrap()
@@ -609,12 +626,14 @@ async def do_release_guest_request(
 
             if r_guest.is_error:
                 ERROR_EVENT(r_guest, 'failed to load guest')
+                _undo_guest_in_releasing()
                 return
 
             r_release = pool.release_guest(r_guest.unwrap())
 
             if r_release.is_error:
                 ERROR_EVENT(r_release, 'failed to release guest')
+                _undo_guest_in_releasing()
                 return
 
         query = sqlalchemy \
