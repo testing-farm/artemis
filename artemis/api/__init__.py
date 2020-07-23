@@ -56,14 +56,14 @@ class GuestRequest:
     keyname: str = Field()
     environment: Dict[str, Any] = Field()
     priority_group: Optional[str] = Field()
-    user_data: Optional[Dict[str, str]] = Field()
+    user_data: Optional[Dict[str, Optional[str]]] = Field()
 
     def __init__(
         self,
         keyname: str,
         environment: Dict[str, Any],
         priority_group: str,
-        user_data: Optional[Dict[str, Any]]
+        user_data: Optional[Dict[str, Optional[str]]]
     ) -> None:
         self.keyname = keyname
         self.environment = environment
@@ -96,7 +96,7 @@ class GuestResponse:
     address: Optional[str] = Field()
     ssh: GuestSSHInfo = Field()
     state: artemis.guest.GuestState = Field()
-    user_data: Dict[str, str] = Field()
+    user_data: Dict[str, Optional[str]] = Field()
 
     def __init__(
         self,
@@ -106,7 +106,7 @@ class GuestResponse:
         address: Optional[str],
         ssh: GuestSSHInfo,
         state: artemis.guest.GuestState,
-        user_data: Dict[str, str]
+        user_data: Dict[str, Optional[str]]
     ) -> None:
         self.guestname = guestname
         self.owner = owner
