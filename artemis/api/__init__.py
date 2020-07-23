@@ -56,16 +56,19 @@ class GuestRequest:
     keyname: str = Field()
     environment: Dict[str, Any] = Field()
     priority_group: Optional[str] = Field()
+    user_data: Optional[Dict[str, Optional[str]]] = Field()
 
     def __init__(
         self,
         keyname: str,
         environment: Dict[str, Any],
-        priority_group: str
+        priority_group: str,
+        user_data: Optional[Dict[str, Optional[str]]]
     ) -> None:
         self.keyname = keyname
         self.environment = environment
         self.priority_group = priority_group
+        self.user_data = user_data or {}
 
 
 @molten.schema
@@ -93,6 +96,7 @@ class GuestResponse:
     address: Optional[str] = Field()
     ssh: GuestSSHInfo = Field()
     state: artemis.guest.GuestState = Field()
+    user_data: Dict[str, Optional[str]] = Field()
 
     def __init__(
         self,
@@ -101,7 +105,8 @@ class GuestResponse:
         environment: Dict[str, Any],
         address: Optional[str],
         ssh: GuestSSHInfo,
-        state: artemis.guest.GuestState
+        state: artemis.guest.GuestState,
+        user_data: Dict[str, Optional[str]]
     ) -> None:
         self.guestname = guestname
         self.owner = owner
@@ -109,6 +114,7 @@ class GuestResponse:
         self.address = address
         self.ssh = ssh
         self.state = state.value
+        self.user_data = user_data
 
     @classmethod
     def from_db(cls, guest: artemis.db.GuestRequest):
@@ -124,7 +130,8 @@ class GuestResponse:
                 guest.ssh_port,
                 guest.ssh_keyname
             ),
-            state=artemis.guest.GuestState(guest.state)
+            state=artemis.guest.GuestState(guest.state),
+            user_data=json.loads(guest.user_data)
         )
 
 
@@ -280,6 +287,7 @@ class GuestRequestManager:
                     priorityname=guest_request.priority_group,
                     poolname=None,
                     pool_data=json.dumps({}),
+                    user_data=json.dumps(guest_request.user_data),
                     state=artemis.guest.GuestState.PENDING.value
                 )
             )

@@ -114,6 +114,9 @@ class GuestRequest(Base):
     # Pool-specific data.
     pool_data = Column(Text(), nullable=False)
 
+    # User specified data
+    user_data = Column(Text(), nullable=False)
+
     owner = relationship('User', back_populates='guests')
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
