@@ -63,11 +63,11 @@ class GuestRequest:
         keyname: str,
         environment: Dict[str, Any],
         priority_group: str,
-<<<<<<< HEAD
         user_data: Optional[Dict[str, Optional[str]]]
-=======
-        user_data: Optional[Dict[str, Any]]
     ) -> None:
+        self.keyname = keyname
+        self.environment = environment
+        self.priority_group = priority_group
         self.user_data = user_data or {}
 
 

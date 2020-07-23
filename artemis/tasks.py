@@ -901,7 +901,7 @@ async def do_acquire_guest(
             hook_error=error.details.get('hook_error')
         )
 
-    raise Exception(error)
+    raise Exception(error.message)
 
 
 @dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator

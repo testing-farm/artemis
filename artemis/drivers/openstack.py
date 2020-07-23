@@ -547,6 +547,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             '--image', image,
             '--network', network,
             '--key-name', self.pool_config['master-key-name'],
+            '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
             '--wait',
             name
         ]

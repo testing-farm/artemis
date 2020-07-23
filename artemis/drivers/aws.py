@@ -375,6 +375,7 @@ class AWSDriver(artemis.drivers.PoolDriver):
         self._tag_instance(instance, owner, tags={
             'Name': '{}::{}'.format(instance['PrivateIpAddress'], image['Name']),
             'SpotRequestId': spot_request_id,
+            'ArtemisGuestName': guestname,
         })
 
         return Ok(
