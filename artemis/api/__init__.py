@@ -306,7 +306,6 @@ class GuestRequestManager:
                 'created'
             )
 
-
         return gr
 
     def get_by_guestname(self, guestname: str) -> Optional[GuestResponse]:
