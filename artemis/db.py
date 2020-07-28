@@ -221,7 +221,7 @@ class DB:
 
             logger.info('connecting to db {}'.format(url))
 
-            if os.getenv('ARTEMIS_LOG_DB_QUERIES', None):
+            if os.getenv('ARTEMIS_LOG_DB_QUERIES', None) == 'yes':
                 gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
 
             self._echo_pool: Union[str, bool] = False
@@ -229,7 +229,7 @@ class DB:
                 if os.environ['ARTEMIS_LOG_DB_POOL'].lower() == 'debug':
                     self._echo_pool = 'debug'
 
-                else:
+                elif os.environ['ARTEMIS_LOG_DB_POOL'].lower() == 'yes':
                     self._echo_pool = gluetool.utils.normalize_bool_option(os.environ['ARTEMIS_LOG_DB_POOL'])
 
             # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
