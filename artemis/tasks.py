@@ -631,7 +631,6 @@ async def do_release_guest_request(
             if r_guest.is_error:
                 failure = r_guest.unwrap_error()
                 ERROR_EVENT(r_guest, 'failed to load guest')
-                _undo_guest_in_releasing()
 
             # This can happen if somebody removed the instance outside of Artemis
             else:
@@ -639,7 +638,6 @@ async def do_release_guest_request(
 
                 if r_release.is_error:
                     ERROR_EVENT(r_release, 'failed to release guest', sentry=True)
-                    _undo_guest_in_releasing()
 
         query = sqlalchemy \
             .delete(GuestRequest.__table__) \
