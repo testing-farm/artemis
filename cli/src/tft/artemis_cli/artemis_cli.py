@@ -9,12 +9,15 @@ import click
 import click_completion
 import stackprinter
 
+from typing import Optional
 from tft import artemis_cli
 from . import Logger, Configuration, fetch_remote, NL, GREEN, RED, YELLOW, WHITE, prettify_json, \
               artemis_inspect, artemis_create, artemis_delete, prompt, confirm
 
 from typing import cast, Any
 
+# to prevent infinite loop in pagination support
+PAGINATION_MAX_COUNT=10000
 
 stackprinter.set_excepthook(
     style='darkbg2',
@@ -167,11 +170,85 @@ def cmd_guest_list(cfg: Configuration) -> None:
     print(prettify_json(True, response.json()))
 
 @cmd_guest.command(name='events', short_help='List event log')
-@click.argument('guestname', metavar='ID', default=None,)
+@click.argument('guestname', metavar='ID', required=False, default=None)
+@click.option('--page-size', type=int, default=50, help='Number of events per page')
+@click.option('--page', type=int, default=None, help='Page number')
+@click.option('--since', type=str, default=None, help='Since time')
+@click.option('--until', type=str, default=None, help='Until time')
+@click.option('--first', type=int, default=None, help='First N events')
+@click.option('--last', type=int, default=None, help='Last N events')
 @click.pass_obj
-def cmd_guest_events(cfg: Configuration, guestname: str) -> None:
-    response = artemis_inspect(cfg, 'guests', '{}/events'.format(guestname))
-    print(prettify_json(True, response.json()))
+def cmd_guest_events(
+        cfg: Configuration,
+        guestname: Optional[str],
+        page_size: Optional[int],
+        page: Optional[int],
+        since: Optional[str],
+        until: Optional[str],
+        first: Optional[int],
+        last: Optional[int]
+)-> None:
+    """
+    Prints event log
+
+    Optional argument guestname limits events only to given guest.
+    Event log support pagination (with default value on Artemi server).
+    Events can be also limited by first N values.
+    """
+    params = {}
+    # sorting by 'updated', 'asc' is default, 'desc' is used for --last
+    params['sort_field'] = 'updated'
+    params['sort_by'] = 'asc'
+
+    def _set_param(name, value):
+        if value:
+            params[name] = value
+
+    for param in ['page_size', 'page', 'since', 'until']:
+        _set_param(param, locals().get(param))
+
+    if len([x for x in [first, last, page] if x]) > 1:
+        cfg.logger = Logger()
+        Logger().error('only one of --first, --last and --page parameters could be used at once')
+
+    if first:
+        params['page_size'] = first
+        params['page'] = 1
+
+    if last:
+        params['page_size'] = last
+        params['page'] = 1
+        params['sort_by'] = 'desc'
+
+    if guestname:
+        # get events for given guest
+        rid = '{}/events'.format(guestname)
+    else:
+        # get all events
+        rid = 'events'
+
+    if page or first or last:
+        # request for specific page
+        response = artemis_inspect(cfg, 'guests', rid , params=params)
+        results_json = response.json()
+    else:
+        # get all pages
+        results_json = []
+        for page in range(1, PAGINATION_MAX_COUNT):
+            params['page'] = page
+            response = artemis_inspect(cfg, 'guests', rid , params=params)
+            results_json = results_json + response.json()
+            if len(response.json()) < page_size:
+                # last page, result is complete
+                break
+        else:
+            Logger().error('Pagination: reached limit {} pages'.format(PAGINATION_MAX_COUNT))
+
+    if last:
+        # for --last, sorting has opposit order, need to reverse here
+        results_json.reverse()
+
+    print(prettify_json(True, results_json))
 
 
 @cli_root.command(name='init', short_help='Initialize configuration file.')

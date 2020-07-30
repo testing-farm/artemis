@@ -240,8 +240,8 @@ def fetch_artemis(cfg, endpoint, method='get', request_kwargs=None, logger=None)
 
     return fetch_remote('{}/{}'.format(cfg.artemis_api_url, endpoint), logger, method=method, request_kwargs=request_kwargs, on_error=_error_callback)
 
-def artemis_inspect(cfg, resource, rid, logger=None):
-    return fetch_artemis(cfg, '/{}/{}'.format(resource, rid), logger=None)
+def artemis_inspect(cfg, resource, rid, params=None, data=None, logger=None):
+    return fetch_artemis(cfg, '/{}/{}'.format(resource, rid), request_kwargs={'json': data, 'params': params}, logger=None)
 
 def artemis_create(cfg, resource, data, logger=None):
     return fetch_artemis(cfg, '/{}'.format(resource), method='post', request_kwargs={'json':data}, logger=None)
