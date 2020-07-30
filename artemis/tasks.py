@@ -595,6 +595,7 @@ async def do_release_guest_request(
             return
 
         if cancel.is_set():
+            logger.debug('canceling task')
             return
 
         if not _update_guest_state(
@@ -607,6 +608,11 @@ async def do_release_guest_request(
             return
 
         if gr.poolname:
+            common_failure_details = {
+                'guestname': guestname,
+                'poolname': gr.poolname
+            }
+
             r_pool = _get_pool(logger, session, gr.poolname)
 
             if r_pool.is_error:
@@ -616,6 +622,7 @@ async def do_release_guest_request(
             pool = r_pool.unwrap()
 
             if cancel.is_set():
+                logger.info('canceling task')
                 _undo_guest_in_releasing()
                 return
 
@@ -637,13 +644,16 @@ async def do_release_guest_request(
             # If we cancelled the guest early, no provisioned guest is available
             if r_guest.is_error:
                 failure = r_guest.unwrap_error()
-                ERROR_EVENT(r_guest, 'failed to load guest')
+                failure.details.update(common_failure_details)
+                ERROR_EVENT(r_guest, 'failed to load guest', sentry=True)
 
             # This can happen if somebody removed the instance outside of Artemis
             else:
                 r_release = pool.release_guest(r_guest.unwrap())
 
                 if r_release.is_error:
+                    failure = r_guest.unwrap_error()
+                    failure.details.update(common_failure_details)
                     ERROR_EVENT(r_release, 'failed to release guest', sentry=True)
 
         query = sqlalchemy \
@@ -802,6 +812,12 @@ async def do_acquire_guest(
     guestname: str,
     poolname: str
 ) -> None:
+
+    common_failure_details = {
+        'guestname': guestname,
+        'poolname': poolname
+    }
+
     with db.get_session() as session:
         def _undo_guest_acquire(guest: artemis.guest.Guest) -> None:
             r = pool.release_guest(guest)
@@ -895,20 +911,19 @@ async def do_acquire_guest(
             return
 
     # Code execution could only end up here if provisioning failed
-    error = result.unwrap_error()
+    failure = result.unwrap_error()
+    failure.details.update(common_failure_details)
 
     with db.get_session() as session:
         _, ERROR_EVENT = create_event_loggers(logger, session, guestname)
 
         ERROR_EVENT(
             result,
-            'failed to provision: {}'.format(error.message),
-            poolname=poolname,
-            environment=error.details.get('environment'),
-            hook_error=error.details.get('hook_error')
+            'failed to provision: {}'.format(failure.message),
+            sentry=True
         )
 
-    raise Exception(error.message)
+    raise Exception(failure.message)
 
 
 @dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator

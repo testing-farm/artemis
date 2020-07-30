@@ -89,6 +89,8 @@ class Failure:
         self.exc_info = exc_info
         self.details = details
 
+        self.sentry = sentry
+        self.submited_to_sentry: bool = False
         self.sentry_event_id: Optional[str] = None
         self.sentry_event_url: Optional[str] = None
 
@@ -108,16 +110,6 @@ class Failure:
 
         if self.traceback is None:
             self.traceback = _traceback.extract_stack()
-
-        if sentry:
-            self.sentry_event_id = gluetool_sentry.submit_message(
-                'Failure: {}'.format(message),
-                exception=self.exception if self.exception else '<no exception>',
-                traceback=self.traceback,
-                **details
-            )
-            if self.sentry_event_id:
-                self.sentry_event_url = gluetool_sentry.event_url(self.sentry_event_id, logger=get_logger())
 
     @classmethod
     def from_exc(
@@ -139,6 +131,36 @@ class Failure:
             command_output=command_output,
             **details
         )
+
+    def get_event_details(self) -> Dict[str, Any]:
+        event_details = self.details.copy()
+
+        # We don't want command or its output in the event details - hard to serialize, full of secrets, etc.
+        event_details.pop('command_output', None)
+        event_details.pop('scrubbed_command', None)
+        # Guestname will be provided by event instance itself, no need to parse it as event details
+        event_details.pop('guestname', None)
+
+        return event_details
+
+    def get_sentry_details(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+
+        tags = {}
+        extra = {}
+
+        if 'scrubbed_command' in self.details:
+            extra['scrubbed_command'] = gluetool.utils.format_command_line(self.details['scrubbed_command'])
+
+        if 'command_output' in self.details:
+            extra['stderr'] = self.details['command_output'].stderr
+
+        if 'guestname' in self.details:
+            tags['guestname'] = self.details['guestname']
+
+        if 'poolname' in self.details:
+            tags['poolname'] = self.details['poolname']
+
+        return tags, extra
 
     def log(
         self,
@@ -178,6 +200,29 @@ class Failure:
             exc_info=exc_info,
             extra=self.details
         )
+
+    def submit_to_sentry(self, **additional_tags: Any) -> None:
+
+        if self.submited_to_sentry:
+            return
+
+        tags, extra = self.get_sentry_details()
+
+        if additional_tags:
+            tags.update(additional_tags)
+
+        self.sentry_event_id = gluetool_sentry.submit_message(
+            'Failure: {}'.format(self.message),
+            exception=self.exception if self.exception else '<no exception>',
+            traceback=self.traceback,
+            tags=tags,
+            extra=extra
+        )
+
+        self.submited_to_sentry = True
+
+        if self.sentry_event_id:
+            self.sentry_event_url = gluetool_sentry.event_url(self.sentry_event_id, logger=get_logger())
 
     def reraise(self) -> NoReturn:
         if self.exception:
@@ -366,13 +411,11 @@ def log_error_guest_event(
     """ Create error event log record for guest """
 
     error.log(logger.error, label='{}: {}: '.format(label, guestname))
-    log_guest_event(logger, session, guestname, 'error', error=error.message, **details)
+
+    if details:
+        error.details.update(details)
+
+    log_guest_event(logger, session, guestname, 'error', error=error.message, **error.get_event_details())
 
     if sentry:
-        gluetool_sentry.submit_message(
-            error.message,
-            tags={
-                **{'guestname': guestname},
-                **details
-            }
-        )
+        error.submit_to_sentry()

@@ -195,7 +195,6 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         network_regex = self.pool_config['network-regex']
 
         r_networks = self._run_os(['ip', 'availability', 'list', '--ip-version', ip_version])
-
         if r_networks.is_error:
             return Error(r_networks.value)
         networks = r_networks.unwrap()
@@ -338,7 +337,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         r_output = self._show_guest(pool_data['instance_id'])
 
         if r_output.is_error:
-            return Error(Failure('no such guest'))
+            return Error(r_output.unwrap_error())
 
         return Ok(
             OpenStackGuest(
@@ -531,7 +530,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         r_flavor = self._env_to_flavor(environment)
         if r_flavor.is_error:
-            return Error(r_flavor.value)
+            assert r_flavor.error
+            return Error(r_flavor.error)
 
         flavor = r_flavor.unwrap()
 
@@ -544,7 +544,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         r_network = self._env_to_network(environment)
         if r_network.is_error:
-            return Error(r_network.value)
+            assert r_network.error
+            return Error(r_network.error)
 
         network = r_network.unwrap()
 
@@ -565,7 +566,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         r_output = self._run_os(os_options)
 
         if r_output.is_error:
-            return Error(r_output.value)
+            assert r_output.error
+            return Error(r_output.error)
         output = r_output.unwrap()
 
         if not output['id']:
