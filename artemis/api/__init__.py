@@ -39,7 +39,8 @@ DEFAULT_SSH_USERNAME = 'root'
 
 DEFAULT_EVENTS_PAGE = 1
 DEFAULT_EVENTS_PAGE_SIZE = 20
-DEFAULT_EVENTS_SORT_BY = ['updated', 'desc']
+DEFAULT_EVENTS_SORT_FIELD = 'updated'
+DEFAULT_EVENTS_SORT_BY = 'desc'
 
 
 class DBComponent:
@@ -368,15 +369,15 @@ class GuestEventManager:
         self,
         page: int = DEFAULT_EVENTS_PAGE,
         page_size: int = DEFAULT_EVENTS_PAGE_SIZE,
-        sort_field: str = DEFAULT_EVENTS_SORT_BY[0],
-        sort_order: str = DEFAULT_EVENTS_SORT_BY[1],
+        sort_field: str = DEFAULT_EVENTS_SORT_FIELD,
+        sort_by: str = DEFAULT_EVENTS_SORT_BY,
         since: Optional[str] = None,
         until: Optional[str] = None,
         **kwargs: Optional[Dict[str, Any]]
     ) -> List[GuestEvent]:
         with self.db.get_session() as session:
             query = session.query(artemis.db.GuestEvent)
-            events = artemis.db.GuestEvent.sort(query, page, page_size, sort_field, sort_order, since, until)
+            events = artemis.db.GuestEvent.sort(query, page, page_size, sort_field, sort_by, since, until)
             guest_events = [GuestEvent.from_db(event) for event in events]
             return guest_events
 
@@ -385,8 +386,8 @@ class GuestEventManager:
         guestname: str,
         page: int = DEFAULT_EVENTS_PAGE,
         page_size: int = DEFAULT_EVENTS_PAGE_SIZE,
-        sort_field: str = DEFAULT_EVENTS_SORT_BY[0],
-        sort_order: str = DEFAULT_EVENTS_SORT_BY[1],
+        sort_field: str = DEFAULT_EVENTS_SORT_FIELD,
+        sort_by: str = DEFAULT_EVENTS_SORT_BY,
         since: Optional[str] = None,
         until: Optional[str] = None,
         **kwargs: Optional[Dict[str, Any]]
@@ -394,7 +395,7 @@ class GuestEventManager:
         with self.db.get_session() as session:
             query = session.query(artemis.db.GuestEvent) \
                 .filter(artemis.db.GuestEvent.guestname == guestname)
-            events = artemis.db.GuestEvent.sort(query, page, page_size, sort_field, sort_order, since, until)
+            events = artemis.db.GuestEvent.sort(query, page, page_size, sort_field, sort_by, since, until)
             guest_events = [GuestEvent.from_db(event) for event in events]
             return guest_events
 
@@ -540,24 +541,17 @@ def _validate_events_params(request: Request) -> Dict[str, Any]:
         page_size_param = req_params.get('page_size')
         params['page'] = int(page_param) if page_param else DEFAULT_EVENTS_PAGE
         params['page_size'] = int(page_size_param) if page_size_param else DEFAULT_EVENTS_PAGE_SIZE
+        params['sort_field'] = req_params.get('sort_field', DEFAULT_EVENTS_SORT_FIELD)
+        params['sort_by'] = req_params.get('sort_by', DEFAULT_EVENTS_SORT_BY)
         params['since'] = req_params.get('since')
         params['until'] = req_params.get('until')
-        sort_by = req_params.get('sort_by')
-        if not sort_by:
-            params['sort_field'], params['sort_order'] = DEFAULT_EVENTS_SORT_BY
-        else:
-            parsed = sort_by.replace(' ', '').split(',')
-            if len(parsed) < 2:
-                params['sort_field'] = parsed[0]
-                params['sort_order'] = DEFAULT_EVENTS_SORT_BY[1]
-            else:
-                params['sort_field'], params['sort_order'] = parsed
     except (ValueError, AttributeError):
         raise errors.BadRequestError(request=request)
 
     if params['sort_field'] not in filter(lambda x: not x.startswith('_'), artemis.db.GuestEvent.__dict__) or \
-       params['sort_order'] not in ("asc", "desc"):
+       params['sort_by'] not in ('asc', 'desc'):
         raise errors.BadRequestError(request=request)
+
     return params
 
 
