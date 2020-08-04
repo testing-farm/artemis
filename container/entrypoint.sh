@@ -1,5 +1,24 @@
 #!/bin/sh -x
 
+terminate() {
+    # Optional terminate command. Can be used to wait for specific conditions when the container should finish.
+    if [ -n "TERMINATE_COMMAND" ]; then
+        $TERMINATE_COMMAND
+    fi
+
+    # no pid means we failed too early
+    if [ -n "$PID" ]; then
+        echo "Skipping termination, entrypoint failed too early"
+        return
+    fi
+
+    echo "Terminating application"
+    kill -TERM $PID
+}
+
+# Trap is needed to correctly propagate SIGTERM from container
+trap terminate TERM INT
+
 # activate virtualenv
 . /APP/bin/activate
 
@@ -47,20 +66,23 @@ fi
 
 case $APP in
     api)
-        exec artemis-api-server
+        artemis-api-server &
         ;;
     dispatcher)
-        exec artemis-dispatcher
+        artemis-dispatcher &
         ;;
     initdb)
-        exec artemis-init-postgres-schema
+        artemis-init-postgres-schema &
         ;;
     worker)
         expose_hooks
-        exec dramatiq $ARTEMIS_WORKER_OPTIONS artemis.tasks
+        dramatiq $ARTEMIS_WORKER_OPTIONS artemis.tasks &
         ;;
     *)
         echo "Unknown application '$APP'"
         exit 1
         ;;
 esac
+
+PID=$!
+wait $PID
