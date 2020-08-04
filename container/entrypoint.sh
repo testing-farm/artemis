@@ -1,13 +1,13 @@
 #!/bin/sh -x
 
 terminate() {
-    # Optional terminate command. Can be used to wait for specific conditions when the container should finish.
+    # optional terminate command, can be used to wait for specific conditions when the container should finish
     if [ -n "TERMINATE_COMMAND" ]; then
         $TERMINATE_COMMAND
     fi
 
     # no pid means we failed too early
-    if [ -n "$PID" ]; then
+    if [ -z "$PID" ]; then
         echo "Skipping termination, entrypoint failed too early"
         return
     fi
@@ -16,12 +16,13 @@ terminate() {
     kill -TERM $PID
 }
 
-# Trap is needed to correctly propagate SIGTERM from container
+# trap is needed to correctly propagate SIGTERM from container
 trap terminate TERM INT
 
 # activate virtualenv
 . /APP/bin/activate
 
+# name of the Artemis application to start
 APP=$1
 
 # helpers
@@ -66,17 +67,20 @@ fi
 
 case $APP in
     api)
-        artemis-api-server &
+        COMMAND="artemis-api-server"
         ;;
     dispatcher)
-        artemis-dispatcher &
+        COMMAND="artemis-dispatcher"
         ;;
     initdb)
-        artemis-init-postgres-schema &
+        # Ignore any errors for now here, we run the schema initialization at each API initialization.
+        # We will soon replace this with alembic.
+        artemis-init-postgres-schema
+        exit 0
         ;;
     worker)
         expose_hooks
-        dramatiq $ARTEMIS_WORKER_OPTIONS artemis.tasks &
+        COMMAND="dramatiq $ARTEMIS_WORKER_OPTIONS artemis.tasks"
         ;;
     *)
         echo "Unknown application '$APP'"
@@ -84,5 +88,18 @@ case $APP in
         ;;
 esac
 
+# Logs from each application are logged in a separate timestamped file. Hostname helps
+# to identify the pod which run it.
+[ -z "$ARTEMIS_LOG_DIR" ] && ARTEMIS_LOG_DIR=$(mktemp -d)
+LOG_FILE="$ARTEMIS_LOG_DIR/$(date -u '+%Y-%m-%d_%H:%M:%S')_$(hostname).log"
+echo "Logging to '$LOG_FILE'"
+
+# We run the command in background to get his PID which is used to properly
+# terminate it with SIGTERM signal.
+$COMMAND &>$LOG_FILE &
 PID=$!
+
+# Show logs from log file, retry until the log file appears (we run it as subprocess) ...
+tail -F $LOG_FILE &
+
 wait $PID
