@@ -26,6 +26,8 @@ from artemis.db import GuestRequest, SnapshotRequest
 from typing import cast, Any, Callable, Dict, List, Optional, Tuple
 from typing_extensions import Protocol
 
+DEFAULT_MIN_BACKOFF_SECONDS = 15
+DEFAULT_MAX_BACKOFF_SECONDS = 60
 
 # There is a very basic thing we must be aware of: a task - the Python function below - can run multiple times,
 # sequentialy or in parallel. It's like multithreading application above a database, without any locks available.
@@ -197,17 +199,22 @@ def create_event_loggers(
 
 def actor_kwargs(actor_name: str) -> Dict[str, Any]:
     def _get(var_name: str, default: Any) -> Any:
-        return os.getenv(
+        var_value = os.getenv(
             'ARTEMIS_ACTOR_{}_{}'.format(actor_name.upper(), var_name),
             default
         )
+        # We don't bother about milliseconds in backoff values. For a sake of simplicity
+        # variables stores value in seconds and here we convert it back to milliseconds
+        if 'backoff' in var_name.lower():
+            var_value = int(var_value) * 1000
+        return var_value
 
     default_retries = os.getenv('ARTEMIS_ACTOR_DEFAULT_RETRIES', 5)
 
     return {
         'max_retries': int(_get('RETRIES', default_retries)),
-        'min_backoff': int(_get('MIN_BACKOFF', 15000)),
-        'max_backoff': int(_get('MAX_BACKOFF', 60000))
+        'min_backoff': int(_get('MIN_BACKOFF', DEFAULT_MIN_BACKOFF_SECONDS)),
+        'max_backoff': int(_get('MAX_BACKOFF', DEFAULT_MAX_BACKOFF_SECONDS))
     }
 
 
