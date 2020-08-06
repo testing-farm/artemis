@@ -1,6 +1,8 @@
+import datetime
 import traceback
 
 import dramatiq.middleware.retries
+import gluetool
 from dramatiq.common import compute_backoff
 
 import artemis
@@ -22,7 +24,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
 
     def _move_to_routing(
         self,
-        logger: artemis.guest.GuestLogger,
+        logger: gluetool.log.ContextAdapter,
         guestname: str,
         current_state: artemis.guest.GuestState
     ) -> None:
@@ -46,9 +48,33 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
 
             logger.info('returned back to routing')
 
+    def _move_to_error(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guestname: str,
+        current_state: artemis.guest.GuestState
+    ) -> None:
+        # we need to import late, because middleware is called initialized in __init__
+        # from artemis.tasks import _update_guest_state
+        from artemis.tasks import _update_guest_state
+
+        # try to move from given state to ERROR
+        with artemis.get_db(self.logger).get_session() as session:
+            if not _update_guest_state(
+                self.logger,
+                session,
+                guestname,
+                current_state,
+                artemis.guest.GuestState.ERROR
+            ):
+                # Somebody already did our job, the guest request is not in expected state anymore.
+                return
+
+            logger.info('moved to error state')
+
     def _retry_routing(
         self,
-        logger: artemis.guest.GuestLogger,
+        logger: gluetool.log.ContextAdapter,
         guestname: str,
         actor: Any,
         message: Any
@@ -65,7 +91,8 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
 
         # for route_guest_request, stay in ROUTING
         elif actor.actor_name == 'route_guest_request':
-            return True
+            self._move_to_error(logger, guestname, artemis.guest.GuestState.ROUTING)
+            return False
 
         logger.warning('cannot retry routing from actor {}'.format(actor.actor_name))
         return False
@@ -81,28 +108,36 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         if exception is None:
             return
 
+        logger = artemis.get_logger()
+
         actor = broker.get_actor(message.actor_name)
         retries = message.options.setdefault("retries", 0)
         max_retries = message.options.get("max_retries") or actor.options.get("max_retries", self.max_retries)
         retry_when = actor.options.get("retry_when", self.retry_when)
+
+        guestname = self._guestname_from_message(message)
+
+        if guestname:
+            logger = artemis.guest.GuestLogger(logger, guestname)
+
+        logger.info(
+            'retries: message={} actor={} retries={} max_retries={}'.format(
+                message.message_id, message.actor_name, retries, max_retries
+            )
+        )
+
         if retry_when is not None and not retry_when(retries, exception) or \
            retry_when is None and max_retries is not None and retries >= max_retries:
-            root_logger = artemis.get_logger()
-
-            guestname = self._guestname_from_message(message)
 
             if not guestname:
-                root_logger.warning('Retries exceeded for message %r.', message.message_id)
+                logger.warning('retries: retries exceeded for message {}.'.format(message.message_id))
                 message.fail()
                 return
-
-            logger = artemis.guest.GuestLogger(root_logger, guestname)
 
             # try to move the request back to ROUTING for retry and finish
             if not self._retry_routing(logger, guestname, actor, message):
                 logger.error('failed to retry routing')
                 message.fail()
-                return
 
             return
 
@@ -112,5 +147,8 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         max_backoff = message.options.get("max_backoff") or actor.options.get("max_backoff", self.max_backoff)
         max_backoff = min(max_backoff, dramatiq.middleware.retries.DEFAULT_MAX_BACKOFF)
         _, backoff = compute_backoff(retries, factor=min_backoff, max_backoff=max_backoff)
-        self.logger.info("Retrying message %r in %d milliseconds.", message.message_id, backoff)
+
+        retry_at = datetime.datetime.utcnow() + datetime.timedelta(milliseconds=backoff)
+        logger.info("retries: message={} backoff={} retrying_at='{}'".format(message.message_id, backoff, retry_at))
+
         broker.enqueue(message, delay=backoff)
