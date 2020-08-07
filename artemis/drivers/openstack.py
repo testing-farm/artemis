@@ -313,6 +313,17 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             return Error(r_stop.value)
         return Ok(True)
 
+    def _output_to_ip(self, output: Any) -> Result[Optional[str], Failure]:
+        if not output['addresses']:
+            return Ok(None)
+
+        # output['addresses'] == "network_name=ip_address[, ipv6]"
+        match_obj = re.match(r'.*=([^,]*)', output['addresses'])
+        if not match_obj:
+            return Error(Failure('Failed to get ip'))
+
+        return Ok(match_obj.group(1))
+
     def can_acquire(self, environment: artemis.environment.Environment) -> Result[bool, Failure]:
         if environment.arch not in self.pool_config['available-arches']:
             return Ok(False)
@@ -551,7 +562,6 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             '--network', network,
             '--key-name', self.pool_config['master-key-name'],
             '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
-            '--wait',
             name
         ]
 
@@ -566,13 +576,27 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             return Error(Failure('Instance id not found'))
         instance_id = output['id']
 
-        if not output['addresses']:
-            return Error(Failure('Ip addresses not found'))
+        status = output['status'].lower()
 
-        # output['addresses'] == "network_name=ip_address[, ipv6]"
-        match_obj = re.match(r'.*=([^,]*)', output['addresses'])
-        if match_obj:
-            ip_address = match_obj.group(1)
+        self.logger.info('instance status is {}'.format(status))
+
+        if status == 'error':
+            self.release_guest(
+                OpenStackGuest(
+                    guest_request.guestname,
+                    instance_id,
+                    None,
+                    ssh_info=None
+                )
+            )
+            return Error(Failure('Instance ended up in error state'))
+
+        r_ip_address = self._output_to_ip(output)
+
+        if r_ip_address.is_error:
+            assert isinstance(r_ip_address.value, Failure)
+            return Error(r_ip_address.value)
+        ip_address = r_ip_address.unwrap()
 
         return Ok(
             OpenStackGuest(
@@ -582,6 +606,52 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
                 ssh_info=None
             )
         )
+
+    def update_guest(
+        self,
+        guest: artemis.guest.Guest,
+        cancelled: Optional[threading.Event] = None
+    ) -> Result[artemis.guest.Guest, Failure]:
+
+        if not isinstance(guest, OpenStackGuest):
+            return Error(Failure('guest is not an OpenStack guest'))
+
+        assert isinstance(guest, OpenStackGuest)
+
+        r_output = self._show_guest(guest.instance_id)
+
+        if r_output.is_error:
+            return Error(Failure('no such guest'))
+
+        output = r_output.unwrap()
+
+        if not output:
+            return Error(Failure('Server show commmand output is empty'))
+
+        status = output['status'].lower()
+        self.logger.info('instance status is {}'.format(status))
+
+        if status == 'error':
+            self.release_guest(
+                OpenStackGuest(
+                    guest.guestname,
+                    guest.instance_id,
+                    None,
+                    ssh_info=None
+                )
+            )
+            return Error(Failure('Instance ended up in error state'))
+
+        r_ip_address = self._output_to_ip(output)
+
+        if r_ip_address.is_error:
+            assert isinstance(r_ip_address.value, Failure)
+            return Error(r_ip_address.value)
+        ip_address = r_ip_address.unwrap()
+
+        guest.address = ip_address
+
+        return Ok(guest)
 
     def release_guest(self, guest: artemis.guest.Guest) -> Result[bool, Failure]:
         """
