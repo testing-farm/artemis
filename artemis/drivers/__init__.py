@@ -98,7 +98,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def update_guest(
         self,
-        guest: Guest,
+        guest_request: artemis.db.GuestRequest,
+        environment: artemis.environment.Environment,
+        master_key: artemis.db.SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[Guest, Failure]:
         """

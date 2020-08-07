@@ -839,7 +839,9 @@ def do_update_guest(
             ERROR_EVENT(r_pool, 'failed to load guest')
             return
 
-        r_update = pool.update_guest(r_guest.unwrap())
+        environment = artemis.environment.Environment.unserialize_from_json(json.loads(gr.environment))
+
+        r_update = pool.update_guest(gr, environment, r_guest_sshkey.unwrap())
 
         if r_update.is_error:
             ERROR_EVENT(r_update, 'failed to update guest')

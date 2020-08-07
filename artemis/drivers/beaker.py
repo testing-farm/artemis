@@ -254,7 +254,10 @@ class BeakerDriver(artemis.drivers.PoolDriver):
 
         return Ok(job_results.find('recipe')['system'])
 
-    def update_guest(self, guest: artemis.guest.Guest,
+    def update_guest(self,
+                     guest_request: artemis.db.GuestRequest,
+                     environment: artemis.environment.Environment,
+                     master_key: artemis.db.SSHKey,
                      cancelled: Optional[threading.Event] = None) -> Result[artemis.guest.Guest, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
@@ -266,6 +269,17 @@ class BeakerDriver(artemis.drivers.PoolDriver):
         :rtype: Result[BeakerGuest, Failure]
         :returns: :py:class:`result.Result` with guest, or specification of error.
         """
+
+        assert guest_request.poolname
+        if 'beaker' not in guest_request.poolname.lower():
+            return Error(Failure('guest is not an OpenStack guest'))
+
+        r_guest = self.guest_factory(guest_request, ssh_key=master_key)
+
+        if r_guest.is_error:
+            return Error(r_guest.unwrap_error())
+        guest = r_guest.unwrap()
+
         assert isinstance(guest, BeakerGuest)  # mypy compliance
 
         r_get_job_results = self._get_job_results(guest.job_id)
@@ -295,7 +309,7 @@ class BeakerDriver(artemis.drivers.PoolDriver):
             return Ok(guest)
 
         if job_status == 'Fail':
-            r_reschedule_job = self._reschedule_job(guest.job_id, guest.environment)
+            r_reschedule_job = self._reschedule_job(guest.job_id, environment)
             if r_reschedule_job.is_error and r_reschedule_job.error:
                 return Error(r_reschedule_job.error)
 

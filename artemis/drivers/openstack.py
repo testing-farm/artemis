@@ -360,6 +360,87 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         return Ok(True)
 
+    def _output_to_ip(self, output: Any) -> Result[Optional[str], Failure]:
+        if not output['addresses']:
+            # It's ok! That means the instance is not ready yet. We need to wait a bit for ip address.
+            # The `update_guest` task will be scheduled until ip adress is None.
+            return Ok(None)
+
+        # output['addresses'] == "network_name=ip_address[, ipv6]"
+        match_obj = re.match(r'.*=((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*', output['addresses'])
+        if not match_obj:
+            return Error(Failure('Failed to get ip', addresses=output['addresses']))
+
+        return Ok(match_obj.group(1))
+
+    def _do_acquire_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: artemis.db.GuestRequest,
+        environment: artemis.environment.Environment,
+        master_key: artemis.db.SSHKey,
+        cancelled: Optional[threading.Event] = None
+    ) -> Result[artemis.guest.Guest, Failure]:
+
+        logger.info('provisioning environment {}'.format(environment))
+
+        r_flavor = self._env_to_flavor(environment)
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
+
+        flavor = r_flavor.unwrap()
+
+        r_image = self._env_to_image(logger, environment)
+        if r_image.is_error:
+            return Error(r_image.unwrap_error())
+
+        image = r_image.unwrap()
+
+        r_network = self._env_to_network(environment)
+        if r_network.is_error:
+            return Error(r_network.unwrap_error())
+
+        network = r_network.unwrap()
+
+        name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
+
+        os_options = [
+            'server',
+            'create',
+            '--flavor', flavor,
+            '--image', image,
+            '--network', network,
+            '--key-name', self.pool_config['master-key-name'],
+            '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
+            name
+        ]
+
+        r_output = self._run_os(os_options)
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        output = r_output.unwrap()
+
+        if not output['id']:
+            return Error(Failure('Instance id not found'))
+        instance_id = output['id']
+
+        status = output['status'].lower()
+
+        self.logger.info('instance status is {}'.format(status))
+
+        # There is no chance that the guest will be ready in this step
+        # Return the guest with no ip and check it in the next update_guest event
+        return Ok(
+            OpenStackGuest(
+                guest_request.guestname,
+                instance_id,
+                None,
+                ssh_info=None
+            )
+        )
+
     def can_acquire(self, environment: artemis.environment.Environment) -> Result[bool, Failure]:
         if environment.arch not in self.pool_config['available-arches']:
             return Ok(False)
@@ -567,68 +648,69 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
         """
+        return self._do_acquire_guest(
+            logger,
+            guest_request,
+            environment,
+            master_key,
+            cancelled)
 
-        logger.info('provisioning environment {}'.format(environment))
+    def update_guest(
+        self,
+        guest_request: artemis.db.GuestRequest,
+        environment: artemis.environment.Environment,
+        master_key: artemis.db.SSHKey,
+        cancelled: Optional[threading.Event] = None
+    ) -> Result[artemis.guest.Guest, Failure]:
 
-        r_flavor = self._env_to_flavor(environment)
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
+        assert guest_request.poolname
+        if 'openstack' not in guest_request.poolname.lower():
+            return Error(Failure('guest is not an OpenStack guest'))
 
-        flavor = r_flavor.unwrap()
+        r_guest = self.guest_factory(guest_request, ssh_key=master_key)
 
-        r_image = self._env_to_image(logger, environment)
-        if r_image.is_error:
-            return Error(r_image.unwrap_error())
+        if r_guest.is_error:
+            return Error(r_guest.unwrap_error())
+        guest = r_guest.unwrap()
 
-        image = r_image.unwrap()
+        assert isinstance(guest, OpenStackGuest)
 
-        r_network = self._env_to_network(environment)
-        if r_network.is_error:
-            return Error(r_network.unwrap_error())
-
-        network = r_network.unwrap()
-
-        name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
-
-        os_options = [
-            'server',
-            'create',
-            '--flavor', flavor,
-            '--image', image,
-            '--network', network,
-            '--key-name', self.pool_config['master-key-name'],
-            '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
-            '--wait',
-            name
-        ]
-
-        r_output = self._run_os(os_options)
+        r_output = self._show_guest(guest.instance_id)
 
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure('no such guest'))
 
         output = r_output.unwrap()
 
-        if not output['id']:
-            return Error(Failure('Instance id not found'))
-        instance_id = output['id']
+        if not output:
+            return Error(Failure('Server show commmand output is empty'))
 
-        if not output['addresses']:
-            return Error(Failure('Ip addresses not found'))
+        status = output['status'].lower()
 
-        # output['addresses'] == "network_name=ip_address[, ipv6]"
-        match_obj = re.match(r'.*=([^,]*)', output['addresses'])
-        if match_obj:
-            ip_address = match_obj.group(1)
+        self.logger.info('instance status is {}'.format(status))
 
-        return Ok(
-            OpenStackGuest(
-                guest_request.guestname,
-                instance_id,
-                ip_address,
-                ssh_info=None
+        if status == 'error':
+            self.release_guest(
+                OpenStackGuest(
+                    guest.guestname,
+                    guest.instance_id,
+                    None,
+                    ssh_info=None
+                )
             )
-        )
+            self.logger.warning('Instance ended up in error state. provisioning a new one')
+
+            return self._do_acquire_guest(self.logger, guest_request, environment, master_key)
+
+        r_ip_address = self._output_to_ip(output)
+
+        if r_ip_address.is_error:
+            return Error(r_ip_address.unwrap_error())
+        ip_address = r_ip_address.unwrap()
+
+        guest.address = ip_address
+
+        return Ok(guest)
 
     def release_guest(self, guest: artemis.guest.Guest) -> Result[bool, Failure]:
         """
