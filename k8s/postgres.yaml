@@ -47,15 +47,6 @@ spec:
           ports:
             - containerPort: 5432
 ---
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: artemis-postgres-exporter
-spec:
-  to:
-    kind: Service
-    name: artemis-postgres-exporter
----
 apiVersion: v1
 kind: Service
 metadata:

@@ -21,15 +21,6 @@ spec:
   selector:
     service: artemis-api
 ---
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: artemis-api
-spec:
-  to:
-    kind: Service
-    name: artemis-api
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -45,7 +36,7 @@ spec:
     spec:
       initContainers:
         - name: wait-for-postgres
-          image: artemis
+          image: quay.io/testing-farm/artemis
           command:
             - /wait-for-postgres.sh
           env:
@@ -58,7 +49,7 @@ spec:
             - name: POSTGRESQL_PORT
               value: "5432"
         - name: wait-for-rabbitmq
-          image: artemis
+          image: quay.io/testing-farm/artemis
           command:
             - /wait-for-rabbitmq.sh
           env:
@@ -69,7 +60,7 @@ spec:
         # we ignore errors for initialization script, it can safely fail
         # once it initially initialized the database schema
         - name: initdb
-          image: artemis
+          image: quay.io/testing-farm/artemis
           command:
             - bash
             - -c
@@ -90,7 +81,7 @@ spec:
               mountPath: /configuration
       containers:
         - name: api
-          image: artemis
+          image: quay.io/testing-farm/artemis
           command:
             - /entrypoint.sh
             - api

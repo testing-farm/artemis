@@ -34,15 +34,6 @@ spec:
   selector:
     service: artemis-rabbitmq
 ---
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: artemis-rabbitmq-management
-spec:
-  to:
-    kind: Service
-    name: artemis-rabbitmq-management
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
