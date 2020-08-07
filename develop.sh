@@ -130,7 +130,7 @@ function sanity() {
 #
 function run_skaffold() {
     info "running skaffold"
-    skaffold dev
+    skaffold dev --trigger=manual
 }
 
 #

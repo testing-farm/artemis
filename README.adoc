@@ -117,6 +117,10 @@ $ source develop.sh -s
 +
 This is required only once per terminal session.
 
+=== How to trigger redeployment
+
+If you want to redeploy artemis in the local environment after you made some changes, in the terminal where the `develop.sh` script is sourced press the `enter` key. This is called `manual` deployment trigger and is a bit more sane then the default trigger which redeploys automatically if any of the files changed.
+
 === Details of local development services
 
 [NOTE]
