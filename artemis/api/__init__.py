@@ -12,7 +12,6 @@ import molten
 import molten.dependency_injection
 import molten.openapi
 from molten import HTTP_201, HTTP_200, HTTP_400, Field, Response, Request
-from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
 
@@ -25,7 +24,7 @@ import artemis.snapshot
 
 from artemis.api import errors, handlers
 from artemis.metrics import generate_metrics
-from artemis.api.middleware import error_handler_middleware
+from artemis.api.middleware import error_handler_middleware, prometheus_middleware
 
 from typing import Any, Dict, List, NoReturn, Optional, Union
 from artemis.db import DB

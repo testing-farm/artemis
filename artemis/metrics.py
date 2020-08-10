@@ -3,13 +3,13 @@ import threading
 
 from prometheus_client import Gauge, CollectorRegistry, generate_latest
 
-from molten.contrib.prometheus import REQUEST_DURATION, REQUEST_COUNT, REQUESTS_INPROGRESS
 
 import gluetool.log
 
 import artemis
 import artemis.db
 import artemis.tasks
+from artemis.api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 
 from typing import cast
 
@@ -81,7 +81,6 @@ def generate_metrics() -> bytes:
 
     with _registry_lock:
         registry = CollectorRegistry()
-        registry.register(REQUEST_DURATION)
         registry.register(REQUEST_COUNT)
         registry.register(REQUESTS_INPROGRESS)
         registry.register(OVERALL_GUEST_REQUEST_COUNT_TOTAL)
