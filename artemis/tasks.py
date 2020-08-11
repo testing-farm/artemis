@@ -257,7 +257,11 @@ def run_doer(
             finish_future = asyncio.gather(*pending)
 
             logger.debug('waiting for doer to finish')
-            loop.run_until_complete(finish_future)
+
+            try:
+                loop.run_until_complete(finish_future)
+            except Exception:
+                logger.debug('doer ')
 
             logger.debug('doer finished in cancellation mode')
 
@@ -888,7 +892,9 @@ async def do_acquire_guest(
                 if r.is_ok:
                     return
 
-                raise Exception(r.error)
+                # raise Exception(r.error)
+                logger.debug('releasing guest failed, continuing anyway')
+                return
 
             if _cancel_task_if(logger, cancel, undo=_undo_guest_acquire):
                 return
