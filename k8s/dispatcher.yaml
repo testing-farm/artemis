@@ -45,7 +45,7 @@ spec:
             - name: ARTEMIS_LOG_JSON
               value: "no"
             - name: ARTEMIS_LOG_DB_POOL
-              value: "debug"
+              value: "no"
             - name: ARTEMIS_VAULT_PASSWORD_FILE
               value: /configuration/.vault_pass
             - name: ARTEMIS_ACTOR_DEFAULT_RETRIES
