@@ -14,6 +14,9 @@ terminate() {
 
     echo "Terminating application"
     kill -TERM $PID
+
+    # wait for the application to terminate
+    wait $PID
 }
 
 # trap is needed to correctly propagate SIGTERM from container
