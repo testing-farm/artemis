@@ -132,7 +132,11 @@ class AWSDriver(artemis.drivers.PoolDriver):
         if result.is_error:
             return Error(Failure('no instance found'))
 
-        instance = result.unwrap()[0]['Instances'][0]
+        try:
+            instance = result.unwrap()[0]['Instances'][0]
+        except (KeyError, IndexError):
+            return Error(Failure('no instance found'))
+
         return Ok(
             AWSGuest(
                 guest_request.guestname,
