@@ -258,7 +258,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
         broker = dramatiq.brokers.stub.StubBroker(middleware=[
             dramatiq.middleware.age_limit.AgeLimit(),
             dramatiq.middleware.time_limit.TimeLimit(),
-            dramatiq.middleware.shutdown.ShutdownNotifications(),
+            dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
             dramatiq.middleware.callbacks.Callbacks(),
             artemis.middleware.Retries()
         ])
@@ -269,7 +269,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
             middleware=[
                 dramatiq.middleware.age_limit.AgeLimit(),
                 dramatiq.middleware.time_limit.TimeLimit(),
-                dramatiq.middleware.shutdown.ShutdownNotifications(),
+                dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
                 dramatiq.middleware.callbacks.Callbacks(),
                 artemis.middleware.Retries()
             ]
