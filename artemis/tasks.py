@@ -1,4 +1,4 @@
-import asyncio
+import concurrent.futures
 import json
 import os
 import threading
@@ -60,15 +60,15 @@ DEFAULT_MAX_BACKOFF_SECONDS = 60
 # asynchronous exceptions, taking necessary steps in except/finally branches. This would of course make the code
 # hard to read, with all that exception handling, leaving us with spagetti code everywhere.
 #
-# So, asyncio to the rescue! Let's cheat a bit. Thread A will spawn - with the help of asyncio, futures and event
-# loop - new thread, B, which will run the actual code of the task. In thread A we'll have the event loop code, which,
-# when receiving the asynchronous exceptions, would set "cancel?" event which was passed to the task in thread B.
-# After that, thread A would continue running the event loop, waiting for thread B to finish.
+# So, futures to the rescue! Let's cheat a bit. Thread A will spawn - with the help of futures - new thread, B, which
+# will run the actual code of the task. In thread A we'll have the executor instance, which, when receiving the
+# asynchronous exceptions, would set "cancel?" event which was passed to the task doer in thread B. After that,
+# thread A would continue waiting for thread B to finish.
 #
-# Thread B started running the task, and will check "canceled?" event from time to time. Should the event become set,
-# it can safely unroll & quit. Asynchronous exceptions are delivered to the thread A, no need to fear them in thread B.
-# We don't need to *kill* thread B when asynchronous exception arrived to thread A, we just need to tell it to quit
-# as soon as possible.
+# Thread B started running the task doer, and will check "canceled?" event from time to time. Should the event become
+# set, it can safely unroll & quit. Asynchronous exceptions are delivered to the thread A, no need to fear them in
+# thread B. We don't need to *kill* thread B when asynchronous exception arrived to thread A, we just need to tell it
+# to quit as soon as possible.
 #
 # When thread B finishes, successfully or by raising an exception, its "return value" is "picked up" by thread A,
 # possibly raising the original exception raised in thread B, giving thread A a chance to react to them even more.
@@ -91,7 +91,7 @@ db = artemis.get_db(root_logger)
 #   "Callable[[ContextAdapter, DB, Event, str, str], Coroutine[Any, Any, None]]"; expected "DoerType"
 # I'm adding "type: ignore" temporarily to run_doer cllas until solution is found.
 class DoerType(Protocol):
-    async def __call__(
+    def __call__(
         self,
         logger: gluetool.log.ContextAdapter,
         db: artemis.db.DB,
@@ -226,38 +226,88 @@ def run_doer(
     *args: Any,
     **kwargs: Any
 ) -> Any:
+    """
+    Run a given function - "doer" - isolated in its own thread. This thread then serves as a landing
+    spot for dramatiq control exceptions (e.g. Shutdown).
+
+    Control exceptions are delivered to the thread that runs the task. We don't want to interrupt
+    the actual task code, which is hidden in the doer, so we offload it to a separate thread, catch
+    exceptions here, and notify doer via "cancel" event.
+    """
+
+    executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+    doer_future: Optional[concurrent.futures.Future[Any]] = None
+
+    def _wait(message: str) -> None:
+        """
+        Wait for doer future to complete.
+
+        Serves as a helper, to provide unified logging.
+        """
+
+        assert doer_future is not None
+
+        while True:
+            # We could drop timeout parameter, but it seems that without timeout in play, control exceptions
+            # are delivered when blocking wait() finishes, which is obviously *after* the doer competes its
+            # job - and that's too late for canceling anything, so not using timeout makes cancellation impossible.
+            #
+            # This is connected to GIL and how an exception can be delivered to a thread. So, we use timeout,
+            # to interrupt wait() regularly, so we get a chance to receive exceptions and signal cancellation
+            # to doer thread. The actual timeout length is pretty much pointless.
+            done_futures, undone_futures = concurrent.futures.wait({doer_future}, timeout=10.0)
+
+            gluetool.log.log_dict(logger.debug, 'doer futures', [done_futures, undone_futures])
+
+            if len(undone_futures) != 0:
+                logger.debug('doer is still running')
+                continue
+
+            break
+
+        logger.debug(message)
+
+        assert len(done_futures) == 1
+        assert len(undone_futures) == 0
+        assert doer_future in done_futures
+
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix=threading.current_thread().name
+        )
 
-        doer_task = loop.create_task(fn(logger, db, cancel, *args, **kwargs))
+        logger.debug('submitting task doer {}'.format(fn))
 
-        loop.run_until_complete(doer_task)
+        doer_future = executor.submit(fn, logger, db, cancel, *args, **kwargs)
+
+        _wait('doer finished in regular mode')
 
     except dramatiq.middleware.Interrupt as exc:
         if isinstance(exc, dramatiq.middleware.TimeLimitExceeded):
-            logger.error('time depleted')
+            logger.error('task time depleted')
 
         elif isinstance(exc, dramatiq.middleware.Shutdown):
-            logger.error('killed')
+            logger.error('worker shutdown requested')
 
         else:
             assert False, 'Unhandled interrupt exception'
 
+        logger.debug('entering doer cancellation mode')
+
         cancel.set()
 
-        pending = asyncio.Task.all_tasks(loop)
+        logger.debug('waiting for doer to finish')
 
-        if not pending:
-            return
+        _wait('doer finished in cancellation mode')
 
-        finish_future = asyncio.gather(*pending)
+    assert doer_future is not None
+    assert doer_future.done(), 'doer finished yet not marked as done'
 
-        loop.run_until_complete(finish_future)
+    if executor:
+        executor.shutdown()
 
-        assert doer_task.done()
-
-    return doer_task.result()
+    return doer_future.result()
 
 
 def task_core(
@@ -287,6 +337,31 @@ def task_core(
     # To avoid chain of exceptions in the log - which we already logged above - raise a generic,
     # insignificant exception to notify our master about the failure.
     raise Exception('message processing failed')
+
+
+def _cancel_task_if(
+    logger: gluetool.log.ContextAdapter,
+    cancel: threading.Event,
+    undo: Optional[Callable[[], None]] = None
+) -> bool:
+    """
+    Check given cancellation event, and if it's set, call given (optional) undo callback.
+
+    Returns ``True`` if task is supposed to be cancelled, ``False`` otherwise.
+    """
+
+    if not cancel.is_set():
+        logger.debug('cancellation not requested')
+        return False
+
+    logger.warning('cancellation requested')
+
+    if undo:
+        logger.debug('running undo step')
+
+        undo()
+
+    return True
 
 
 def _dispatch_task(
@@ -569,7 +644,7 @@ def _get_master_key(
     return _get_ssh_key(logger, session, 'artemis', 'master-key')
 
 
-async def do_release_guest_request(
+def do_release_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
     cancel: threading.Event,
@@ -594,8 +669,7 @@ async def do_release_guest_request(
         if not gr:
             return
 
-        if cancel.is_set():
-            logger.debug('canceling task')
+        if _cancel_task_if(logger, cancel):
             return
 
         if not _update_guest_state(
@@ -617,13 +691,12 @@ async def do_release_guest_request(
 
             if r_pool.is_error:
                 ERROR_EVENT(r_pool, 'pool sanity failed')
+                _undo_guest_in_releasing()
                 return
 
             pool = r_pool.unwrap()
 
-            if cancel.is_set():
-                logger.info('canceling task')
-                _undo_guest_in_releasing()
+            if _cancel_task_if(logger, cancel, undo=_undo_guest_in_releasing):
                 return
 
             r_guest_sshkey = _get_ssh_key(
@@ -673,6 +746,8 @@ async def do_release_guest_request(
             logger.warning('not in RELEASING state anymore')
             return
 
+        _undo_guest_in_releasing()
+
         failure.reraise()
 
 
@@ -688,7 +763,7 @@ def release_guest_request(guestname: str) -> None:
     )
 
 
-async def do_update_guest(
+def do_update_guest(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
     cancel: threading.Event,
@@ -721,7 +796,7 @@ async def do_update_guest(
 
         pool = r_pool.unwrap()
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         r_guest_sshkey = _get_ssh_key(
@@ -805,7 +880,7 @@ def update_guest(guestname: str) -> None:
     )
 
 
-async def do_acquire_guest(
+def do_acquire_guest(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
     cancel: threading.Event,
@@ -819,14 +894,6 @@ async def do_acquire_guest(
     }
 
     with db.get_session() as session:
-        def _undo_guest_acquire(guest: artemis.guest.Guest) -> None:
-            r = pool.release_guest(guest)
-
-            if r.is_ok:
-                return
-
-            raise Exception(r.error)
-
         gr = _get_guest_by_state(logger, session, guestname, artemis.guest.GuestState.PROVISIONING)
         if not gr:
             return
@@ -848,16 +915,23 @@ async def do_acquire_guest(
         master_key = r_master_key.unwrap()
         environment = artemis.environment.Environment.unserialize_from_json(json.loads(gr.environment))
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
-        result = pool.acquire_guest(logger, gr, environment, master_key)
+        result = pool.acquire_guest(logger, gr, environment, master_key, cancelled=cancel)
 
         if result.is_ok:
             guest = result.unwrap()
 
-            if cancel.is_set():
-                _undo_guest_acquire(guest)
+            def _undo_guest_acquire() -> None:
+                r = pool.release_guest(guest)
+
+                if r.is_ok:
+                    return
+
+                raise Exception(r.error)
+
+            if _cancel_task_if(logger, cancel, undo=_undo_guest_acquire):
                 return
 
             # TODO: instead of switching to READY, we need to switch into transient state instead,
@@ -907,7 +981,7 @@ async def do_acquire_guest(
 
             # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
             # Again, we must undo and forget about the guest request.
-            _undo_guest_acquire(guest)
+            _undo_guest_acquire()
             return
 
     # Code execution could only end up here if provisioning failed
@@ -938,7 +1012,7 @@ def acquire_guest(guestname: str, poolname: str) -> None:
     )
 
 
-async def do_route_guest_request(
+def do_route_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
     cancel: threading.Event,
@@ -978,7 +1052,7 @@ async def do_route_guest_request(
         if not guest:
             return
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         # Do stuff, examine request, pick the provisioner, and send it a message.
@@ -1025,7 +1099,7 @@ async def do_route_guest_request(
         if not pool:
             raise Exception('No suitable pools found, raising to retry routing')
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         # Mark request as suitable for provisioning.
@@ -1045,9 +1119,7 @@ async def do_route_guest_request(
             # longer matter.
             return
 
-        if cancel.is_set():
-            _undo_guest_in_provisioning()
-
+        if _cancel_task_if(logger, cancel, undo=_undo_guest_in_provisioning):
             return
 
         # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
@@ -1079,7 +1151,7 @@ def route_guest_request(guestname: str) -> None:
     )
 
 
-async def do_release_snapshot_request(
+def do_release_snapshot_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
     cancel: threading.Event,
@@ -1130,8 +1202,7 @@ async def do_release_snapshot_request(
 
             pool = r_pool.unwrap()
 
-            if cancel.is_set():
-                _undo_snapshot_in_removing()
+            if _cancel_task_if(logger, cancel, undo=_undo_snapshot_in_removing):
                 return
 
             r_snapshot = pool.snapshot_factory(snapshot_request)
@@ -1181,21 +1252,13 @@ def release_snapshot_request(snapshotname: str) -> None:
     )
 
 
-async def do_update_snapshot(
+def do_update_snapshot(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
     cancel: threading.Event,
     snapshotname: str
 ) -> None:
     with db.get_session() as session:
-        def _undo_snapshot_update(snapshot: artemis.snapshot.Snapshot) -> None:
-            r = pool.remove_snapshot(snapshot)
-
-            if r.is_ok:
-                return
-
-            raise Exception(r.error)
-
         snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.PROMISED)
         if not snapshot_request:
             return
@@ -1237,7 +1300,7 @@ async def do_update_snapshot(
 
         guest = r_guest.unwrap()
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         r_snapshot = pool.snapshot_factory(snapshot_request)
@@ -1245,6 +1308,14 @@ async def do_update_snapshot(
         if r_snapshot.is_error:
             ERROR_EVENT(r_snapshot, 'failed to load snapshot')
             return
+
+        def _undo_snapshot_update() -> None:
+            r = pool.remove_snapshot(snapshot)
+
+            if r.is_ok:
+                return
+
+            raise Exception(r.error)
 
         r_update = pool.update_snapshot(r_snapshot.unwrap(), guest, start_again=snapshot_request.start_again)
 
@@ -1286,7 +1357,7 @@ async def do_update_snapshot(
         # already updated or finished. We can safely ask driver to release resources of this particular
         # snapshot instance - this is not going to affect the instance whose changes were commited to the database
         # before ours.
-        _undo_snapshot_update(snapshot)
+        _undo_snapshot_update()
 
 
 @dramatiq.actor(**actor_kwargs('UPDATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1301,21 +1372,13 @@ def update_snapshot(snapshotname: str, guestname: str) -> None:
     )
 
 
-async def do_create_snapshot(
+def do_create_snapshot(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
     cancel: threading.Event,
     snapshotname: str
 ) -> None:
     with db.get_session() as session:
-        def _undo_snapshot_create(snapshot: artemis.snapshot.Snapshot) -> None:
-            r = pool.remove_snapshot(snapshot)
-
-            if r.is_ok:
-                return
-
-            raise Exception(r.error)
-
         snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.CREATING)
 
         if not snapshot_request:
@@ -1323,7 +1386,7 @@ async def do_create_snapshot(
 
         _, ERROR_EVENT = create_event_loggers(logger, session, snapshot_request.guestname, snapshotname=snapshotname)
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
@@ -1362,7 +1425,7 @@ async def do_create_snapshot(
 
         guest = r_guest.unwrap()
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         r_create = pool.create_snapshot(snapshot_request, guest)
@@ -1381,8 +1444,15 @@ async def do_create_snapshot(
 
         snapshot = r_create.unwrap()
 
-        if cancel.is_set():
-            _undo_snapshot_create(snapshot)
+        def _undo_snapshot_create() -> None:
+            r = pool.remove_snapshot(snapshot)
+
+            if r.is_ok:
+                return
+
+            raise Exception(r.error)
+
+        if _cancel_task_if(logger, cancel, undo=_undo_snapshot_create):
             return
 
         # If snapshot was promised - schedule update task. Otherwise change state to ready
@@ -1415,7 +1485,7 @@ async def do_create_snapshot(
 
         # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
         # Again, we must undo and forget about the guest request.
-        _undo_snapshot_create(snapshot)
+        _undo_snapshot_create()
 
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1430,7 +1500,7 @@ def create_snapshot(snapshotname: str, guestname: str) -> None:
     )
 
 
-async def do_route_snapshot_request(
+def do_route_snapshot_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
     cancel: threading.Event,
@@ -1470,7 +1540,7 @@ async def do_route_snapshot_request(
         if not snapshot:
             return
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         # Do stuff, examine request and send it a message.
@@ -1487,7 +1557,7 @@ async def do_route_snapshot_request(
         if not guest_request:
             return
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         # Mark request as suitable for provisioning.
@@ -1537,7 +1607,7 @@ def route_snapshot_request(snapshotname: str) -> None:
     )
 
 
-async def do_restore_snapshot_request(
+def do_restore_snapshot_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
     cancel: threading.Event,
@@ -1573,8 +1643,7 @@ async def do_restore_snapshot_request(
         ):
             logger.info('state changed to processing')
 
-        if cancel.is_set():
-            _undo_snapshot_restore()
+        if _cancel_task_if(logger, cancel, undo=_undo_snapshot_restore):
             return
 
         guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
@@ -1619,8 +1688,7 @@ async def do_restore_snapshot_request(
 
         guest = r_guest.unwrap()
 
-        if cancel.is_set():
-            _undo_snapshot_restore()
+        if _cancel_task_if(logger, cancel, undo=_undo_snapshot_restore):
             return
 
         r_restore = pool.restore_snapshot(snapshot_request, guest)

@@ -52,14 +52,14 @@ def worker(broker):
 
 
 def test_run_doer(logger, db, cancel):
-    async def foo(_logger, _db, _cancel, bar):
+    def foo(_logger, _db, _cancel, bar):
         return bar
 
     assert artemis.tasks.run_doer(logger, db, cancel, foo, 79) == 79
 
 
 def test_run_doer_exception(logger, db, cancel):
-    async def foo(_logger, _db, _cancel):
+    def foo(_logger, _db, _cancel):
         raise Exception('foo')
 
     with pytest.raises(Exception, match=r'foo'):

@@ -339,12 +339,12 @@ def safe_db_execute(
     r = safe_call(session.execute, query)
 
     if r.is_error:
-        assert r.error is not None
+        failure = r.unwrap_error()
 
         return Error(
             Failure(
-                'failed to execute query: {}'.format(r.error.message),
-                parent=r.error
+                'failed to execute query: {}'.format(failure.message),
+                parent=failure
             )
         )
 
@@ -365,12 +365,10 @@ def safe_db_execute(
 
         return Ok(True)
 
-    assert r.error is not None
-
     return Error(
         Failure(
-            'failed to commit query: {}'.format(r.error.message),
-            parent=r.error
+            'failed to commit query: {}'.format(r.unwrap_error().message),
+            parent=r.unwrap_error()
         )
     )
 
