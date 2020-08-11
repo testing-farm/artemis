@@ -167,9 +167,9 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         r_engine = artemis.script.hook_engine('OPENSTACK_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
-            assert r_engine.error is not None
-
-            raise Exception('Failed to load OPENSTACK_ENVIRONMENT_TO_IMAGE hook: {}'.format(r_engine.error.message))
+            raise Exception(
+                'Failed to load OPENSTACK_ENVIRONMENT_TO_IMAGE hook: {}'.format(r_engine.unwrap_error().message)
+            )
 
         engine = r_engine.unwrap()
 
@@ -279,8 +279,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         r_stopped = self._is_guest_stopped(instance_id)
 
         if r_stopped.is_error:
-            assert isinstance(r_stopped.value, Failure)
-            return Error(r_stopped.value)
+            return Error(r_stopped.unwrap_error())
 
         if r_stopped.unwrap():
             return Ok(True)
@@ -301,8 +300,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         r_stopped = self._is_guest_stopped(instance_id)
 
         if r_stopped.is_error:
-            assert isinstance(r_stopped.value, Failure)
-            return Error(r_stopped.value)
+            return Error(r_stopped.unwrap_error())
 
         if not r_stopped.unwrap():
             return Ok(True)
@@ -390,8 +388,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         r_stop = self._stop_guest(guest.instance_id)
 
         if r_stop.is_error:
-            assert isinstance(r_stop.value, Failure)
-            return Error(r_stop.value)
+            return Error(r_stop.unwrap_error())
 
         os_options = [
             'server', 'image', 'create',
@@ -415,8 +412,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             r_start = self._start_guest(guest.instance_id)
 
             if r_start.is_error:
-                assert isinstance(r_start.value, Failure)
-                return Error(r_start.value)
+                return Error(r_start.unwrap_error())
 
         return Ok(OpenStackSnapshot(
             snapshot_request.snapshotname,
@@ -463,8 +459,7 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
             r_start = self._start_guest(guest.instance_id)
 
             if r_start.is_error:
-                assert isinstance(r_start.value, Failure)
-                return Error(r_start.value)
+                return Error(r_start.unwrap_error())
 
         snapshot.status = status
         return Ok(snapshot)
@@ -530,22 +525,19 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         r_flavor = self._env_to_flavor(environment)
         if r_flavor.is_error:
-            assert r_flavor.error
-            return Error(r_flavor.error)
+            return Error(r_flavor.unwrap_error())
 
         flavor = r_flavor.unwrap()
 
         r_image = self._env_to_image(logger, environment)
         if r_image.is_error:
-            assert r_image.error
-            return Error(r_image.error)
+            return Error(r_image.unwrap_error())
 
         image = r_image.unwrap()
 
         r_network = self._env_to_network(environment)
         if r_network.is_error:
-            assert r_network.error
-            return Error(r_network.error)
+            return Error(r_network.unwrap_error())
 
         network = r_network.unwrap()
 
@@ -566,8 +558,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         r_output = self._run_os(os_options)
 
         if r_output.is_error:
-            assert r_output.error
-            return Error(r_output.error)
+            return Error(r_output.unwrap_error())
+
         output = r_output.unwrap()
 
         if not output['id']:

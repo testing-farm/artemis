@@ -232,30 +232,39 @@ def run_doer(
 
         doer_task = loop.create_task(fn(logger, db, cancel, *args, **kwargs))
 
+        logger.debug('starting task doer {}'.format(fn))
         loop.run_until_complete(doer_task)
+
+        logger.debug('doer finished in regular mode')
 
     except dramatiq.middleware.Interrupt as exc:
         if isinstance(exc, dramatiq.middleware.TimeLimitExceeded):
-            logger.error('time depleted')
+            logger.error('task time depleted')
 
         elif isinstance(exc, dramatiq.middleware.Shutdown):
-            logger.error('killed')
+            logger.error('worker shutdown requested')
 
         else:
             assert False, 'Unhandled interrupt exception'
+
+        logger.debug('entering doer cancellation mode')
 
         cancel.set()
 
         pending = asyncio.Task.all_tasks(loop)
 
-        if not pending:
-            return
+        if pending:
+            finish_future = asyncio.gather(*pending)
 
-        finish_future = asyncio.gather(*pending)
+            logger.debug('waiting for doer to finish')
+            loop.run_until_complete(finish_future)
 
-        loop.run_until_complete(finish_future)
+            logger.debug('doer finished in cancellation mode')
 
-        assert doer_task.done()
+        else:
+            logger.debug('doer already finished')
+
+        assert doer_task.done(), 'doer finished yet not marked as done'
 
     return doer_task.result()
 
@@ -287,6 +296,31 @@ def task_core(
     # To avoid chain of exceptions in the log - which we already logged above - raise a generic,
     # insignificant exception to notify our master about the failure.
     raise Exception('message processing failed')
+
+
+def _cancel_task_if(
+    logger: gluetool.log.ContextAdapter,
+    cancel: threading.Event,
+    undo: Optional[Callable[[], None]] = None
+) -> bool:
+    """
+    Check given cancellation event, and if it's set, call given (optional) undo callback.
+
+    Returns ``True`` if task is supposed to be cancelled, ``False`` otherwise.
+    """
+
+    if not cancel.is_set():
+        logger.debug('cancellation not requested')
+        return False
+
+    logger.warning('cancellation requested')
+
+    if undo:
+        logger.debug('running undo step')
+
+        undo()
+
+    return True
 
 
 def _dispatch_task(
@@ -594,8 +628,7 @@ async def do_release_guest_request(
         if not gr:
             return
 
-        if cancel.is_set():
-            logger.debug('canceling task')
+        if _cancel_task_if(logger, cancel):
             return
 
         if not _update_guest_state(
@@ -617,13 +650,12 @@ async def do_release_guest_request(
 
             if r_pool.is_error:
                 ERROR_EVENT(r_pool, 'pool sanity failed')
+                _undo_guest_in_releasing()
                 return
 
             pool = r_pool.unwrap()
 
-            if cancel.is_set():
-                logger.info('canceling task')
-                _undo_guest_in_releasing()
+            if _cancel_task_if(logger, cancel, undo=_undo_guest_in_releasing):
                 return
 
             r_guest_sshkey = _get_ssh_key(
@@ -673,6 +705,8 @@ async def do_release_guest_request(
             logger.warning('not in RELEASING state anymore')
             return
 
+        _undo_guest_in_releasing()
+
         failure.reraise()
 
 
@@ -721,7 +755,7 @@ async def do_update_guest(
 
         pool = r_pool.unwrap()
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         r_guest_sshkey = _get_ssh_key(
@@ -819,14 +853,6 @@ async def do_acquire_guest(
     }
 
     with db.get_session() as session:
-        def _undo_guest_acquire(guest: artemis.guest.Guest) -> None:
-            r = pool.release_guest(guest)
-
-            if r.is_ok:
-                return
-
-            raise Exception(r.error)
-
         gr = _get_guest_by_state(logger, session, guestname, artemis.guest.GuestState.PROVISIONING)
         if not gr:
             return
@@ -848,7 +874,7 @@ async def do_acquire_guest(
         master_key = r_master_key.unwrap()
         environment = artemis.environment.Environment.unserialize_from_json(json.loads(gr.environment))
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         result = pool.acquire_guest(logger, gr, environment, master_key)
@@ -856,8 +882,15 @@ async def do_acquire_guest(
         if result.is_ok:
             guest = result.unwrap()
 
-            if cancel.is_set():
-                _undo_guest_acquire(guest)
+            def _undo_guest_acquire() -> None:
+                r = pool.release_guest(guest)
+
+                if r.is_ok:
+                    return
+
+                raise Exception(r.error)
+
+            if _cancel_task_if(logger, cancel, undo=_undo_guest_acquire):
                 return
 
             # TODO: instead of switching to READY, we need to switch into transient state instead,
@@ -907,7 +940,7 @@ async def do_acquire_guest(
 
             # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
             # Again, we must undo and forget about the guest request.
-            _undo_guest_acquire(guest)
+            _undo_guest_acquire()
             return
 
     # Code execution could only end up here if provisioning failed
@@ -978,7 +1011,7 @@ async def do_route_guest_request(
         if not guest:
             return
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         # Do stuff, examine request, pick the provisioner, and send it a message.
@@ -1025,7 +1058,7 @@ async def do_route_guest_request(
         if not pool:
             raise Exception('No suitable pools found, raising to retry routing')
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         # Mark request as suitable for provisioning.
@@ -1045,9 +1078,7 @@ async def do_route_guest_request(
             # longer matter.
             return
 
-        if cancel.is_set():
-            _undo_guest_in_provisioning()
-
+        if _cancel_task_if(logger, cancel, undo=_undo_guest_in_provisioning):
             return
 
         # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
@@ -1130,8 +1161,7 @@ async def do_release_snapshot_request(
 
             pool = r_pool.unwrap()
 
-            if cancel.is_set():
-                _undo_snapshot_in_removing()
+            if _cancel_task_if(logger, cancel, undo=_undo_snapshot_in_removing):
                 return
 
             r_snapshot = pool.snapshot_factory(snapshot_request)
@@ -1188,14 +1218,6 @@ async def do_update_snapshot(
     snapshotname: str
 ) -> None:
     with db.get_session() as session:
-        def _undo_snapshot_update(snapshot: artemis.snapshot.Snapshot) -> None:
-            r = pool.remove_snapshot(snapshot)
-
-            if r.is_ok:
-                return
-
-            raise Exception(r.error)
-
         snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.PROMISED)
         if not snapshot_request:
             return
@@ -1237,7 +1259,7 @@ async def do_update_snapshot(
 
         guest = r_guest.unwrap()
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         r_snapshot = pool.snapshot_factory(snapshot_request)
@@ -1245,6 +1267,14 @@ async def do_update_snapshot(
         if r_snapshot.is_error:
             ERROR_EVENT(r_snapshot, 'failed to load snapshot')
             return
+
+        def _undo_snapshot_update() -> None:
+            r = pool.remove_snapshot(snapshot)
+
+            if r.is_ok:
+                return
+
+            raise Exception(r.error)
 
         r_update = pool.update_snapshot(r_snapshot.unwrap(), guest, start_again=snapshot_request.start_again)
 
@@ -1286,7 +1316,7 @@ async def do_update_snapshot(
         # already updated or finished. We can safely ask driver to release resources of this particular
         # snapshot instance - this is not going to affect the instance whose changes were commited to the database
         # before ours.
-        _undo_snapshot_update(snapshot)
+        _undo_snapshot_update()
 
 
 @dramatiq.actor(**actor_kwargs('UPDATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1308,14 +1338,6 @@ async def do_create_snapshot(
     snapshotname: str
 ) -> None:
     with db.get_session() as session:
-        def _undo_snapshot_create(snapshot: artemis.snapshot.Snapshot) -> None:
-            r = pool.remove_snapshot(snapshot)
-
-            if r.is_ok:
-                return
-
-            raise Exception(r.error)
-
         snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.CREATING)
 
         if not snapshot_request:
@@ -1323,7 +1345,7 @@ async def do_create_snapshot(
 
         _, ERROR_EVENT = create_event_loggers(logger, session, snapshot_request.guestname, snapshotname=snapshotname)
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
@@ -1362,7 +1384,7 @@ async def do_create_snapshot(
 
         guest = r_guest.unwrap()
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         r_create = pool.create_snapshot(snapshot_request, guest)
@@ -1381,8 +1403,15 @@ async def do_create_snapshot(
 
         snapshot = r_create.unwrap()
 
-        if cancel.is_set():
-            _undo_snapshot_create(snapshot)
+        def _undo_snapshot_create() -> None:
+            r = pool.remove_snapshot(snapshot)
+
+            if r.is_ok:
+                return
+
+            raise Exception(r.error)
+
+        if _cancel_task_if(logger, cancel, undo=_undo_snapshot_create):
             return
 
         # If snapshot was promised - schedule update task. Otherwise change state to ready
@@ -1415,7 +1444,7 @@ async def do_create_snapshot(
 
         # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
         # Again, we must undo and forget about the guest request.
-        _undo_snapshot_create(snapshot)
+        _undo_snapshot_create()
 
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1470,7 +1499,7 @@ async def do_route_snapshot_request(
         if not snapshot:
             return
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         # Do stuff, examine request and send it a message.
@@ -1487,7 +1516,7 @@ async def do_route_snapshot_request(
         if not guest_request:
             return
 
-        if cancel.is_set():
+        if _cancel_task_if(logger, cancel):
             return
 
         # Mark request as suitable for provisioning.
@@ -1573,8 +1602,7 @@ async def do_restore_snapshot_request(
         ):
             logger.info('state changed to processing')
 
-        if cancel.is_set():
-            _undo_snapshot_restore()
+        if _cancel_task_if(logger, cancel, undo=_undo_snapshot_restore):
             return
 
         guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
@@ -1619,8 +1647,7 @@ async def do_restore_snapshot_request(
 
         guest = r_guest.unwrap()
 
-        if cancel.is_set():
-            _undo_snapshot_restore()
+        if _cancel_task_if(logger, cancel, undo=_undo_snapshot_restore):
             return
 
         r_restore = pool.restore_snapshot(snapshot_request, guest)

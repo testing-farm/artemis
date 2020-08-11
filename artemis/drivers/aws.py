@@ -2,7 +2,7 @@ import json
 import re
 import threading
 
-from typing import cast, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import gluetool.log
 from gluetool.log import log_dict
@@ -165,9 +165,7 @@ class AWSDriver(artemis.drivers.PoolDriver):
         r_engine = artemis.script.hook_engine('AWS_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
-            assert r_engine.error is not None
-
-            raise Exception('Failed to load AWS_ENVIRONMENT_TO_IMAGE hook: {}'.format(r_engine.error.message))
+            raise Exception('Failed to load AWS_ENVIRONMENT_TO_IMAGE hook: {}'.format(r_engine.unwrap_error().message))
 
         engine = r_engine.unwrap()
 
@@ -179,12 +177,11 @@ class AWSDriver(artemis.drivers.PoolDriver):
         )  # type: Result[Any, Failure]
 
         if r_image.is_error:
-            assert r_image.error is not None
             return Error(
                 Failure(
                     'Failed to find image for environment',
                     environment=environment.serialize_to_json(),
-                    hook_error=r_image.error.message
+                    hook_error=r_image.unwrap_error().message
                 )
             )
 
@@ -276,8 +273,7 @@ class AWSDriver(artemis.drivers.PoolDriver):
         r_price = self._get_spot_price(logger, instance_type, image)
         if r_price.is_error:
             # _get_spot_price has different return value, we cannot return it as it is
-            assert r_price.error
-            return Error(r_price.error)
+            return Error(r_price.unwrap_error())
 
         spot_price = r_price.unwrap()
 
@@ -312,8 +308,7 @@ class AWSDriver(artemis.drivers.PoolDriver):
 
             # Command returned error, there is no point to continue, return None
             if r_spot_status.is_error:
-                assert r_spot_status.error
-                cast(Failure, r_spot_status).log(logger.error, label='provisioning failed')
+                r_spot_status.unwrap_error().log(logger.error, label='provisioning failed')
                 return Ok(None)
 
             spot_request_result = r_spot_status.unwrap()[0]
@@ -347,8 +342,7 @@ class AWSDriver(artemis.drivers.PoolDriver):
 
             # command returned an unxpected result
             if r_instance.is_error:
-                assert r_instance.error
-                cast(Failure, r_instance).log(logger.error, label='provisioning failed')
+                r_instance.unwrap_error().log(logger.error, label='provisioning failed')
                 return Ok(None)
 
             instance = r_instance.unwrap()[0]['Instances'][0]
