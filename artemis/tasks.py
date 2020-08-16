@@ -931,9 +931,6 @@ def do_acquire_guest(
 
                 raise Exception(r.error)
 
-            if _cancel_task_if(logger, cancel, undo=_undo_guest_acquire):
-                return
-
             # TODO: instead of switching to READY, we need to switch into transient state instead,
             # and upload the requested key to the guest (using our master key).
 
