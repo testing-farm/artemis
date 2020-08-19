@@ -1,3 +1,4 @@
+import os
 import json
 import re
 import threading
@@ -6,7 +7,7 @@ from datetime import datetime
 import gluetool.log
 from gluetool.glue import GlueCommandError
 from gluetool.result import Result, Ok, Error
-from gluetool.utils import Command
+from gluetool.utils import Command, wait
 
 import artemis
 import artemis.db
@@ -14,7 +15,11 @@ import artemis.drivers
 import artemis.snapshot
 from artemis import Failure
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+
+
+# Temeout for wait function in _stop_guest and _start_guest events
+WAIT_TIMEOUT = int(os.getenv('ARTEMIS_OPENSTACK_WAIT_TIMEOUT', 180))
 
 
 class OpenStackGuest(artemis.guest.Guest):
@@ -290,6 +295,27 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         if r_stop.is_error:
             return Error(r_stop.value)
+
+        # TODO: dirty fix for now, will be implemented as a task ASAP
+        def _wait_is_guest_stopped() -> Result[bool, Union[bool, Failure]]:
+
+            r_stopped = self._is_guest_stopped(instance_id)
+
+            if r_stopped.is_error:
+                return Error(r_stopped.unwrap_error())
+
+            if r_stopped.unwrap():
+                return Ok(True)
+
+            return Error(False)
+
+        # Wait until guest will be stopped
+        try:
+            wait('wait for guest been stopped', _wait_is_guest_stopped, timeout=WAIT_TIMEOUT, logger=self.logger)
+
+        except Exception as exc:
+            return Error(Failure.from_exc('failed while waiting for guest been stopped', exc))
+
         return Ok(True)
 
     def _start_guest(
@@ -311,6 +337,27 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
 
         if r_stop.is_error:
             return Error(r_stop.value)
+
+        # TODO: dirty fix for now, will be implemented as a task ASAP
+        def _wait_is_guest_started() -> Result[bool, Union[bool, Failure]]:
+
+            r_stopped = self._is_guest_stopped(instance_id)
+
+            if r_stopped.is_error:
+                return Error(r_stopped.unwrap_error())
+
+            if not r_stopped.unwrap():
+                return Ok(True)
+
+            return Error(False)
+
+        # Wait until guest will be started
+        try:
+            wait('wait for guest been stopped', _wait_is_guest_started, timeout=WAIT_TIMEOUT, logger=self.logger)
+
+        except Exception as exc:
+            return Error(Failure.from_exc('failed while waiting for guest been started', exc))
+
         return Ok(True)
 
     def can_acquire(self, environment: artemis.environment.Environment) -> Result[bool, Failure]:
