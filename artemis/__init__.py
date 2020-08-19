@@ -148,7 +148,7 @@ class Failure:
         extra = {}
 
         if 'scrubbed_command' in self.details:
-            extra['scrubbed_command'] = gluetool.utils.format_command_line(self.details['scrubbed_command'])
+            extra['scrubbed_command'] = gluetool.utils.format_command_line([self.details['scrubbed_command']])
 
         if 'command_output' in self.details:
             extra['stderr'] = self.details['command_output'].stderr
