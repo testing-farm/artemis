@@ -22,6 +22,8 @@ import artemis.drivers.beaker
 
 from artemis import Failure, safe_call, safe_db_execute, log_guest_event, log_error_guest_event
 from artemis.db import GuestRequest, SnapshotRequest
+from artemis.guest import GuestLogger
+from artemis.snapshot import SnapshotLogger
 
 from typing import cast, Any, Callable, Dict, List, Optional, Tuple
 from typing_extensions import Protocol
@@ -312,12 +314,10 @@ def run_doer(
 
 def task_core(
     doer: DoerType,
-    logger_getter: Callable[[gluetool.log.ContextAdapter], TaskLogger],
+    logger: TaskLogger,
     doer_args: Optional[Tuple[Any, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None
 ) -> None:
-    logger = logger_getter(root_logger)
-
     logger.begin()
 
     cancel = threading.Event()
@@ -644,6 +644,32 @@ def _get_master_key(
     return _get_ssh_key(logger, session, 'artemis', 'master-key')
 
 
+def get_guest_logger(
+    task_name: str,
+    root_logger: gluetool.log.ContextAdapter,
+    guestname: str
+) -> TaskLogger:
+    return TaskLogger(
+        GuestLogger(root_logger, guestname),
+        task_name
+    )
+
+
+def get_snapshot_logger(
+    task_name: str,
+    root_logger: gluetool.log.ContextAdapter,
+    guestname: str,
+    snapshotname: str
+) -> TaskLogger:
+    return TaskLogger(
+        SnapshotLogger(
+            GuestLogger(root_logger, guestname),
+            snapshotname
+        ),
+        task_name
+    )
+
+
 def do_release_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
@@ -755,10 +781,7 @@ def do_release_guest_request(
 def release_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_guest_request,
-        logger_getter=lambda root_logger: TaskLogger(
-            artemis.guest.GuestLogger(root_logger, guestname),
-            'release'
-        ),
+        logger=get_guest_logger('release', root_logger, guestname),
         doer_args=(guestname,)
     )
 
@@ -872,10 +895,7 @@ def do_update_guest(
 def update_guest(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_update_guest,
-        logger_getter=lambda root_logger: TaskLogger(
-            artemis.guest.GuestLogger(root_logger, guestname),
-            'update'
-        ),
+        logger=get_guest_logger('update', root_logger, guestname),
         doer_args=(guestname,)
     )
 
@@ -1001,10 +1021,7 @@ def do_acquire_guest(
 def acquire_guest(guestname: str, poolname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_acquire_guest,
-        logger_getter=lambda root_logger: TaskLogger(
-            artemis.guest.GuestLogger(root_logger, guestname),
-            'acquire'
-        ),
+        logger=get_guest_logger('acquire', root_logger, guestname),
         doer_args=(guestname, poolname)
     )
 
@@ -1140,10 +1157,7 @@ def do_route_guest_request(
 def route_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_route_guest_request,
-        logger_getter=lambda root_logger: TaskLogger(
-            artemis.guest.GuestLogger(root_logger, guestname),
-            'route'
-        ),
+        logger=get_guest_logger('route', root_logger, guestname),
         doer_args=(guestname,)
     )
 
@@ -1238,13 +1252,10 @@ def do_release_snapshot_request(
 
 
 @dramatiq.actor(**actor_kwargs('RELEASE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def release_snapshot_request(snapshotname: str) -> None:
+def release_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_snapshot_request,
-        logger_getter=lambda root_logger: TaskLogger(
-            artemis.snapshot.SnapshotLogger(root_logger, snapshotname),
-            'release'
-        ),
+        logger=get_snapshot_logger('release-snapshot', root_logger, guestname, snapshotname),
         doer_args=(snapshotname,)
     )
 
@@ -1331,7 +1342,7 @@ def do_update_snapshot(
                 artemis.guest.GuestState.PROMISED,
                 artemis.guest.GuestState.PROMISED,
             ):
-                r_promise = _dispatch_task(logger, update_snapshot, snapshotname, guest_request.guestname)
+                r_promise = _dispatch_task(logger, update_snapshot, snapshot.guestname, snapshotname)
 
                 if r_promise.is_ok:
                     logger.info('scheduled update')
@@ -1358,13 +1369,10 @@ def do_update_snapshot(
 
 
 @dramatiq.actor(**actor_kwargs('UPDATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def update_snapshot(snapshotname: str, guestname: str) -> None:
+def update_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_update_snapshot,
-        logger_getter=lambda root_logger: TaskLogger(
-            artemis.snapshot.SnapshotLogger(artemis.guest.GuestLogger(root_logger, guestname), snapshotname),
-            'update'
-        ),
+        logger=get_snapshot_logger('update-snapshot', root_logger, guestname, snapshotname),
         doer_args=(snapshotname,)
     )
 
@@ -1462,7 +1470,7 @@ def do_create_snapshot(
                 artemis.guest.GuestState.CREATING,
                 artemis.guest.GuestState.PROMISED
             ):
-                r_promise = _dispatch_task(logger, update_snapshot, snapshotname, snapshot.guestname)
+                r_promise = _dispatch_task(logger, update_snapshot, snapshot.guestname, snapshotname)
 
                 if r_promise.is_ok:
                     logger.info('scheduled update')
@@ -1486,13 +1494,10 @@ def do_create_snapshot(
 
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def create_snapshot(snapshotname: str, guestname: str) -> None:
+def create_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot,
-        logger_getter=lambda root_logger: TaskLogger(
-            artemis.snapshot.SnapshotLogger(artemis.guest.GuestLogger(root_logger, guestname), snapshotname),
-            'acquire'
-        ),
+        logger=get_snapshot_logger('acquire-snapshot', root_logger, guestname, snapshotname),
         doer_args=(snapshotname,)
     )
 
@@ -1577,7 +1582,7 @@ def do_route_snapshot_request(
         # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
         # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
         # task.
-        r = _dispatch_task(logger, create_snapshot, snapshotname, snapshot.guestname)
+        r = _dispatch_task(logger, create_snapshot, snapshot.guestname, snapshotname)
         logger.info('task was dispatched')
 
         if r.is_ok:
@@ -1593,13 +1598,10 @@ def do_route_snapshot_request(
 
 
 @dramatiq.actor(**actor_kwargs('ROUTE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def route_snapshot_request(snapshotname: str) -> None:
+def route_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_route_snapshot_request,
-        logger_getter=lambda root_logger: TaskLogger(
-            artemis.snapshot.SnapshotLogger(root_logger, snapshotname),
-            'route'
-        ),
+        logger=get_snapshot_logger('route-snapshot', root_logger, guestname, snapshotname),
         doer_args=(snapshotname,)
     )
 
@@ -1721,12 +1723,9 @@ def do_restore_snapshot_request(
 
 
 @dramatiq.actor(**actor_kwargs('RESTORE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
-def restore_snapshot_request(snapshotname: str) -> None:
+def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_restore_snapshot_request,
-        logger_getter=lambda root_logger: TaskLogger(
-            artemis.snapshot.SnapshotLogger(root_logger, snapshotname),
-            'restore'
-        ),
+        logger=get_snapshot_logger('restore-snapshot', root_logger, guestname, snapshotname),
         doer_args=(snapshotname,)
     )

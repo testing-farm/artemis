@@ -7,7 +7,8 @@ import artemis
 import artemis.guest
 import artemis.snapshot
 
-from artemis.tasks import TaskLogger, route_guest_request, release_guest_request, _update_guest_state
+from artemis.tasks import get_guest_logger, get_snapshot_logger
+from artemis.tasks import route_guest_request, release_guest_request, _update_guest_state
 from artemis.tasks import route_snapshot_request, release_snapshot_request, restore_snapshot_request
 from artemis.tasks import _update_snapshot_state
 
@@ -17,10 +18,7 @@ def _dispatch_guest_request(
     session: sqlalchemy.orm.session.Session,
     guest: artemis.db.GuestRequest
 ) -> None:
-    logger = TaskLogger(
-        artemis.guest.GuestLogger(root_logger, guest.guestname),
-        'dispatch-acquire'
-    )
+    logger = get_guest_logger('dispatch-acquire', root_logger, guest.guestname)
 
     logger.begin()
 
@@ -48,10 +46,7 @@ def _release_guest_request(
     session: sqlalchemy.orm.session.Session,
     guest: artemis.db.GuestRequest
 ) -> None:
-    logger = TaskLogger(
-        artemis.guest.GuestLogger(root_logger, guest.guestname),
-        'dispatch-release'
-    )
+    logger = get_guest_logger('dispatch-release', root_logger, guest.guestname)
 
     logger.begin()
 
@@ -66,10 +61,7 @@ def _dispatch_snapshot_request(
     session: sqlalchemy.orm.session.Session,
     snapshot: artemis.db.SnapshotRequest
 ) -> None:
-    logger = TaskLogger(
-        artemis.snapshot.SnapshotLogger(root_logger, snapshot.snapshotname),
-        'dispatch-snapshot-create'
-    )
+    logger = get_snapshot_logger('dispatch-snapshot-create', root_logger, snapshot.guestname, snapshot.snapshotname)
 
     logger.begin()
 
@@ -87,7 +79,7 @@ def _dispatch_snapshot_request(
         logger.finished()
         return
 
-    route_snapshot_request.send(snapshot.snapshotname)
+    route_snapshot_request.send(snapshot.guestname, snapshot.snapshotname)
 
     logger.finished()
 
@@ -97,16 +89,12 @@ def _release_snapshot_request(
     session: sqlalchemy.orm.session.Session,
     snapshot: artemis.db.SnapshotRequest
 ) -> None:
-
-    logger = TaskLogger(
-        artemis.snapshot.SnapshotLogger(root_logger, snapshot.snapshotname),
-        'dispatch-snapshot-release'
-    )
+    logger = get_snapshot_logger('dispatch-snapshot-release', root_logger, snapshot.guestname, snapshot.snapshotname)
 
     logger.begin()
 
     # Schedule task to remove the given snapshot request.
-    release_snapshot_request.send(snapshot.snapshotname)
+    release_snapshot_request.send(snapshot.guestname, snapshot.snapshotname)
 
     logger.finished()
 
@@ -116,16 +104,12 @@ def _restore_snapshot_request(
     session: sqlalchemy.orm.session.Session,
     snapshot: artemis.db.SnapshotRequest
 ) -> None:
-
-    logger = TaskLogger(
-        artemis.snapshot.SnapshotLogger(root_logger, snapshot.snapshotname),
-        'dispatch-snapshot-restore'
-    )
+    logger = get_snapshot_logger('dispatch-snapshot-restore', root_logger, snapshot.guestname, snapshot.snapshotname)
 
     logger.begin()
 
     # Schedule task to remove the given snapshot equest.
-    restore_snapshot_request.send(snapshot.snapshotname)
+    restore_snapshot_request.send(snapshot.guestname, snapshot.snapshotname)
 
     logger.finished()
 
