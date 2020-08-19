@@ -128,7 +128,6 @@ class Failure:
                 exc,
                 exc.__traceback__
             ),
-            command_output=command_output,
             **details
         )
 
