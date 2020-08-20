@@ -43,10 +43,11 @@ class OpenStackGuest(artemis.guest.Guest):
             self.ssh_info
         )
 
-    def pool_data_to_db(self) -> str:
-        return json.dumps({
+    @property
+    def pool_data(self) -> Dict[str, Any]:
+        return {
             'instance_id': str(self.instance_id)
-        })
+        }
 
 
 class OpenStackSnapshot(artemis.snapshot.Snapshot):
@@ -190,7 +191,8 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         if r_image.is_error:
             return Error(
                 Failure(
-                    'Failed to find image for environment {}'.format(environment),
+                    'Failed to find image for environment',
+                    caused_by=r_image.unwrap_error(),
                     environment=environment.serialize_to_json()
                 )
             )

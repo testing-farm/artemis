@@ -13,13 +13,16 @@ import gluetool.log
 import gluetool.sentry
 import gluetool.utils
 from gluetool.result import Result, Ok, Error
+import ruamel.yaml
+import ruamel.yaml.compat
 import sqlalchemy.orm.session
+
 
 import artemis.db
 import artemis.vault
 import artemis.middleware
 
-from typing import cast, Any, Callable, Dict, NoReturn, Optional, Tuple, TypeVar, Union
+from typing import cast, Any, Callable, Dict, List, NoReturn, Optional, Tuple, TypeVar, Union
 from types import TracebackType
 
 import stackprinter
@@ -53,6 +56,8 @@ ExceptionInfoType = Union[
 # Type variable used in generic types
 T = TypeVar('T')
 
+FailureDetailsType = Dict[str, Any]
+
 
 DEFAULT_CONFIG_DIR = os.getcwd()
 DEFAULT_BROKER_URL = 'amqp://guest:guest@127.0.0.1:5672'
@@ -61,6 +66,18 @@ DEFAULT_VAULT_PASSWORD_FILE = '~/.vault_password'
 
 # Gluetool Sentry instance
 gluetool_sentry = gluetool.sentry.Sentry()
+
+
+def format_struct_as_yaml(data: Any) -> str:
+    stream = ruamel.yaml.compat.StringIO()
+
+    YAML = gluetool.utils.YAML()
+
+    ruamel.yaml.scalarstring.walk_tree(data)
+
+    YAML.dump(data, stream)
+
+    return cast(str, stream.getvalue())
 
 
 class Failure:
@@ -80,8 +97,10 @@ class Failure:
         message: str,
         exc_info: Optional[ExceptionInfoType] = None,
         traceback: Optional[_traceback.StackSummary] = None,
-        parent: Optional['Failure'] = None,
+        caused_by: Optional['Failure'] = None,
         sentry: Optional[bool] = True,
+        # these are common "details" so we add them as extra keyword arguments with their types
+        scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         **details: Any
     ):
@@ -97,9 +116,13 @@ class Failure:
         self.exception: Optional[BaseException] = None
         self.traceback: Optional[_traceback.StackSummary] = None
 
-        self.parent = parent
+        self.caused_by = caused_by
 
-        self.command_output: Optional[gluetool.utils.ProcessOutput] = command_output
+        if scrubbed_command:
+            self.details['scrubbed_command'] = scrubbed_command
+
+        if command_output:
+            self.details['command_output'] = command_output
 
         if exc_info:
             self.exception = exc_info[1]
@@ -116,6 +139,9 @@ class Failure:
         self,
         message: str,
         exc: Exception,
+        caused_by: Optional['Failure'] = None,
+        # these are common "details" so we add them as extra keyword arguments with their types
+        scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         **details: Any
     ):
@@ -128,24 +154,42 @@ class Failure:
                 exc,
                 exc.__traceback__
             ),
+            caused_by=caused_by,
+            scrubbed_command=scrubbed_command,
+            command_output=command_output,
             **details
         )
 
     def get_event_details(self) -> Dict[str, Any]:
+        """
+        Returns a mapping of failure details, suitable for storing in DB as a guest event details.
+        """
+
         event_details = self.details.copy()
+
+        event_details['message'] = self.message
 
         # We don't want command or its output in the event details - hard to serialize, full of secrets, etc.
         event_details.pop('command_output', None)
         event_details.pop('scrubbed_command', None)
+
         # Guestname will be provided by event instance itself, no need to parse it as event details
         event_details.pop('guestname', None)
+
+        if self.caused_by:
+            event_details['caused_by'] = self.caused_by.get_event_details()
 
         return event_details
 
     def get_sentry_details(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Returns two mappings, tags and extra, accepted by Sentry as issue details.
+        """
 
-        tags = {}
-        extra = {}
+        tags: Dict[str, str] = {}
+        extra: Dict[str, Any] = {}
+
+        extra['message'] = self.message
 
         if 'scrubbed_command' in self.details:
             extra['scrubbed_command'] = gluetool.utils.format_command_line([self.details['scrubbed_command']])
@@ -156,10 +200,58 @@ class Failure:
         if 'guestname' in self.details:
             tags['guestname'] = self.details['guestname']
 
+        if 'snapshotname' in self.details:
+            tags['snapshotname'] = self.details['snapshotname']
+
         if 'poolname' in self.details:
             tags['poolname'] = self.details['poolname']
 
+        if self.caused_by:
+            caused_by_tags, caused_by_extra = self.caused_by.get_sentry_details()
+
+            extra['caused_by'] = {
+                'tags': caused_by_tags,
+                'extra': caused_by_extra
+            }
+
         return tags, extra
+
+    def get_log_details(self) -> Dict[str, Any]:
+        """
+        Returns a mapping of failure details, suitable for logging subsystem.
+        """
+
+        details = self.details.copy()
+
+        details['message'] = self.message
+
+        if 'scrubbed_command' in details:
+            details['scrubbed_command'] = gluetool.utils.format_command_line([details['scrubbed_command']])
+
+        if 'command_output' in details:
+            command_output = details['command_output']
+
+            details['command_output'] = {}
+
+            # This is a workaround for one problem in gluetool's ProcessOutput - it's stderr/stdout
+            # are declared as strings, but often can contain bytes, because gluetool still sits
+            # in Python 2 world :/
+            if isinstance(command_output.stdout, bytes):
+                details['command_output']['stdout'] = command_output.stdout.decode('utf-8')
+
+            else:
+                details['command_output']['stdout'] = command_output.stdout
+
+            if isinstance(command_output.stderr, bytes):
+                details['command_output']['stderr'] = command_output.stderr.decode('utf-8')
+
+            else:
+                details['command_output']['stderr'] = command_output.stderr
+
+        if self.caused_by:
+            details['caused-by'] = self.caused_by.get_log_details()
+
+        return details
 
     def log(
         self,
@@ -168,40 +260,20 @@ class Failure:
     ) -> None:
         exc_info = self.exc_info if self.exc_info else (None, None, None)
 
+        details = self.get_log_details()
+
         if label:
-            # Sometimes label already contains message
-            if self.message in label:
-                msg = label
-            else:
-                msg = '{}: {}'.format(label, self.message)
+            text = '{}\n\n{}'.format(label, artemis.format_struct_as_yaml(details))
+
         else:
-            msg = self.message
-
-        items = [msg]
-
-        if 'scrubbed_command' in self.details:
-            items += [
-                '',
-                'COMMAND:',
-                gluetool.utils.format_command_line([self.details['scrubbed_command']])
-            ]
-
-        if self.command_output:
-
-            items += [
-                '',
-                'STDERR:',
-                gluetool.log.format_blob(self.command_output.stderr or '')
-            ]
+            text = artemis.format_struct_as_yaml(details)
 
         log_fn(
-            '\n'.join(items),
-            exc_info=exc_info,
-            extra=self.details
+            text,
+            exc_info=exc_info
         )
 
     def submit_to_sentry(self, **additional_tags: Any) -> None:
-
         if self.submited_to_sentry:
             return
 
@@ -343,7 +415,7 @@ def safe_db_execute(
         return Error(
             Failure(
                 'failed to execute query: {}'.format(failure.message),
-                parent=failure
+                caused_by=failure
             )
         )
 
@@ -367,9 +439,34 @@ def safe_db_execute(
     return Error(
         Failure(
             'failed to commit query: {}'.format(r.unwrap_error().message),
-            parent=r.unwrap_error()
+            caused_by=r.unwrap_error()
         )
     )
+
+
+def handle_failure(
+    logger: gluetool.log.ContextAdapter,
+    result: Result[Any, Failure],
+    label: str,
+    sentry: bool = True,
+    **details: Any
+) -> None:
+    assert result.is_error
+
+    failure = result.unwrap_error()
+
+    failure.details.update(details)
+
+    failure.log(logger.error, label=label)
+
+    if sentry:
+        failure.submit_to_sentry()
+
+        if failure.sentry_event_url:
+            logger.warning('submitted to Sentry as {}'.format(failure.sentry_event_url))
+
+        else:
+            logger.warning('not submitted to Sentry')
 
 
 def log_guest_event(
@@ -389,30 +486,40 @@ def log_guest_event(
         )
     )
 
-    logger.warning('logged guest request event {}: guestname={} details={}'.format(
-        eventname,
-        guestname,
-        details)
-    )
+    r = safe_call(session.commit)
+
+    if r.is_error:
+        handle_failure(
+            logger,
+            r,
+            'failed to store guest event',
+            sentry=True,
+            guestname=guestname,
+            eventname=eventname
+        )
+
+        logger.warning('failed to log event {}'.format(eventname))
+        return
+
+    gluetool.log.log_dict(logger.info, 'logged event {}'.format(eventname), details)
 
 
 def log_error_guest_event(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     guestname: str,
-    error: Failure,
-    label: str,
-    sentry: bool = False,
-    **details: Any
+    message: str,
+    failure: Failure
 ) -> None:
-    """ Create error event log record for guest """
+    """ Create event log record for guest """
 
-    error.log(logger.error, label='{}: {}: '.format(label, guestname))
-
-    if details:
-        error.details.update(details)
-
-    log_guest_event(logger, session, guestname, 'error', error=error.message, **error.get_event_details())
-
-    if sentry:
-        error.submit_to_sentry()
+    log_guest_event(
+        logger,
+        session,
+        guestname,
+        'error',
+        error=message,
+        **{
+            'failure': failure.get_event_details()
+        }
+    )

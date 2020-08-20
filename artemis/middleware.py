@@ -121,7 +121,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
             logger = artemis.guest.GuestLogger(logger, guestname)
 
         logger.info(
-            'retries: message={} actor={} retries={} max_retries={}'.format(
+            'retries: message={} actor={} attempts={} max_retries={}'.format(
                 message.message_id, message.actor_name, retries, max_retries
             )
         )

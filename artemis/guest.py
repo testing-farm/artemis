@@ -8,7 +8,10 @@ import gluetool.log
 import artemis
 import artemis.db
 
-from typing import Any, Optional
+from typing import cast, Any, Dict, Optional
+
+
+GuestPoolDataType = Dict[str, Any]
 
 
 class GuestState(enum.Enum):
@@ -95,13 +98,19 @@ class Guest:
             self.ssh_info
         )
 
-    def pool_data_to_db(self) -> str:
-        return json.dumps({})
+    @property
+    def pool_data(self) -> GuestPoolDataType:
+        return {}
 
-    def pool_data_from_db(self, guest_record: artemis.db.GuestRequest) -> Any:
+    @staticmethod
+    def pool_data_to_db(pool_data: GuestPoolDataType) -> str:
+        return json.dumps(pool_data, sort_keys=True)
+
+    @staticmethod
+    def pool_data_from_db(guest_record: artemis.db.GuestRequest) -> GuestPoolDataType:
         assert guest_record.pool_data is not None
 
-        return json.loads(guest_record.pool_data)
+        return cast(GuestPoolDataType, json.loads(guest_record.pool_data))
 
     def log_event(
         self,

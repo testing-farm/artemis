@@ -320,7 +320,10 @@ class GuestRequestManager:
                 logger,
                 session,
                 gr.guestname,
-                'created'
+                'created',
+                **{
+                    'user_data': guest_request.user_data
+                }
             )
 
         return gr

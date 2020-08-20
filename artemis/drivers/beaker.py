@@ -47,11 +47,12 @@ class BeakerGuest(artemis.guest.Guest):
             self.ssh_info
         )
 
-    def pool_data_to_db(self) -> str:
-        return json.dumps({
+    @property
+    def pool_data(self) -> Dict[str, Any]:
+        return {
             'job_id': str(self.job_id),
             'environment': str(self.environment)
-        })
+        }
 
 
 class BeakerDriver(artemis.drivers.PoolDriver):

@@ -109,9 +109,12 @@ def _policy_one_attempt_forgiving(
     threshold = datetime.datetime.utcnow() - datetime.timedelta(seconds=ERROR_FORGIVING_THRESHOLD)
 
     error_pools = [
-        event.details.get('poolname')
+        event.details['failure']['poolname']
         for event in events
-        if event.details and event.eventname == 'error' and event.updated > threshold
+        if event.updated > threshold
+        and event.eventname == 'error'
+        and event.details
+        and event.details.get('failure', {}).get('poolname')
     ]
 
     gluetool.log.log_dict(logger.info, 'pools which ended in error from {}'.format(threshold), error_pools)

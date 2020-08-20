@@ -76,11 +76,12 @@ class AWSGuest(artemis.guest.Guest):
             self.ssh_info
         )
 
-    def pool_data_to_db(self) -> str:
-        return json.dumps({
+    @property
+    def pool_data(self) -> Dict[str, Any]:
+        return {
             'instance_id': str(self._instance_id),
             'spot_request_id': str(self._spot_request_id)
-        })
+        }
 
 
 class AWSDriver(artemis.drivers.PoolDriver):
@@ -183,9 +184,9 @@ class AWSDriver(artemis.drivers.PoolDriver):
         if r_image.is_error:
             return Error(
                 Failure(
-                    'Failed to find image for environment',
-                    environment=environment.serialize_to_json(),
-                    hook_error=r_image.unwrap_error().message
+                    'failed to find image for environment',
+                    caused_by=r_image.unwrap_error(),
+                    environment=environment.serialize_to_json()
                 )
             )
 
@@ -202,6 +203,7 @@ class AWSDriver(artemis.drivers.PoolDriver):
 
         try:
             output = Command(command).run()
+
         except gluetool.glue.GlueCommandError as exc:
             return Error(Failure.from_exc(
                 "Error running aws command",

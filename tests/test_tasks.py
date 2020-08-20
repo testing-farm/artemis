@@ -52,18 +52,20 @@ def worker(broker):
 
 
 def test_run_doer(logger, db, cancel):
-    def foo(_logger, _db, _cancel, bar):
+    def foo(_logger, _db, _session, _cancel, bar):
         return bar
 
-    assert artemis.tasks.run_doer(logger, db, cancel, foo, 79) == 79
+    with db.get_session() as session:
+        assert artemis.tasks.run_doer(logger, db, session, cancel, foo, 79) == 79
 
 
 def test_run_doer_exception(logger, db, cancel):
-    def foo(_logger, _db, _cancel):
+    def foo(_logger, _db, _session, _cancel):
         raise Exception('foo')
 
-    with pytest.raises(Exception, match=r'foo'):
-        assert artemis.tasks.run_doer(logger, db, cancel, foo) == 79
+    with db.get_session() as session:
+        with pytest.raises(Exception, match=r'foo'):
+            assert artemis.tasks.run_doer(logger, db, session, cancel, foo) == 79
 
 
 def test_dispatch_task(logger, monkeypatch):
@@ -95,7 +97,7 @@ def test_dispatcher_task_exception(logger, monkeypatch):
 
     assert r.is_error
     assert isinstance(r.error, artemis.Failure)
-    assert r.error.message == 'failed to submit task dummy_task'
+    assert r.error.message == 'failed to dispatch task'
     mock_safe_call.assert_called_once_with(mock_fn.send)
 
 

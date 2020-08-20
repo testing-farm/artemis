@@ -25,7 +25,7 @@ from artemis.db import GuestRequest, SnapshotRequest
 from artemis.guest import GuestLogger
 from artemis.snapshot import SnapshotLogger
 
-from typing import cast, Any, Callable, Dict, List, Optional, Tuple
+from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Union
 from typing_extensions import Protocol
 
 DEFAULT_MIN_BACKOFF_SECONDS = 15
@@ -82,27 +82,58 @@ DEFAULT_MAX_BACKOFF_SECONDS = 60
 # - "lazy actor" wrapper to avoid the necessity of initializing dramatiq at the import time
 
 
-# initialize database ONCE per worker
+# Initialize our top-level objects, database and logger, shared by all threads and in *this* worker.
 root_logger = artemis.get_logger()
 db = artemis.get_db(root_logger)
 
+# Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
+_ = artemis.get_broker()
 
-# This should be correct type, but mypy has some issue with it :/
+
+POOL_DRIVERS = {
+    'openstack': artemis.drivers.openstack.OpenStackDriver,
+    'aws': artemis.drivers.aws.AWSDriver,
+    'beaker': artemis.drivers.beaker.BeakerDriver
+}
+
+
+# A class of unique "reschedule task" doer return value
 #
-#   Argument 4 to "run_doer" has incompatible type
-#   "Callable[[ContextAdapter, DB, Event, str, str], Coroutine[Any, Any, None]]"; expected "DoerType"
-# I'm adding "type: ignore" temporarily to run_doer cllas until solution is found.
+# Note: we could use object() to create this value, but using custom class let's use limit allowed types returned
+# by doer.
+class _RescheduleType:
+    pass
+
+
+# Unique object representing "reschedule task" return value of doer.
+Reschedule = _RescheduleType()
+
+# Doer return value type.
+DoerReturnType = Result[Union[None, _RescheduleType], Failure]
+
+# Helpers for constructing return values.
+SUCCESS: DoerReturnType = Ok(None)
+RESCHEDULE: DoerReturnType = Ok(Reschedule)
+
+
+def FAIL(result: Result[Any, Failure]) -> DoerReturnType:
+    return Error(result.unwrap_error())
+
+
+# Task doer type.
 class DoerType(Protocol):
     def __call__(
         self,
         logger: gluetool.log.ContextAdapter,
         db: artemis.db.DB,
+        session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
         *args: Any,
         **kwargs: Any
-    ) -> Any: ...
+    ) -> DoerReturnType: ...
 
 
+# Task actor type.
 class Actor(Protocol):
     def send(
         self,
@@ -111,21 +142,21 @@ class Actor(Protocol):
     ) -> None: ...
 
 
-class EventLoggerType(Protocol):
+# Types of functions we use to handle success and failures.
+class SuccessHandlerType(Protocol):
     def __call__(
         self,
-        eventname: str,
-        **more_details: Any
+        eventname: str
     ) -> None: ...
 
 
-class ErrorEventLoggerType(Protocol):
+class FailureHandlerType(Protocol):
     def __call__(
         self,
         result: Result[Any, Failure],
-        message: str,
-        **more_details: Any
-    ) -> None: ...
+        label: str,
+        sentry: bool = True
+    ) -> DoerReturnType: ...
 
 
 class TaskLogger(gluetool.log.ContextAdapter):
@@ -144,59 +175,62 @@ class TaskLogger(gluetool.log.ContextAdapter):
         self.error('failed:\n{}'.format(stackprinter.format(failure.exception)))
 
 
-_ = artemis.get_broker()
-
-
-POOL_DRIVERS = {
-    'openstack': artemis.drivers.openstack.OpenStackDriver,
-    'aws': artemis.drivers.aws.AWSDriver,
-    'beaker': artemis.drivers.beaker.BeakerDriver
-}
-
-
-def create_event_loggers(
+def create_event_handlers(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    guestname: str,
+    guestname: Optional[str] = None,
+    task: Optional[str] = None,
     **default_details: Any
-) -> Tuple[EventLoggerType, ErrorEventLoggerType]:
-    def _log_event(
-        eventname: str,
-        **more_details: Any
+) -> Tuple[SuccessHandlerType, FailureHandlerType, Dict[str, Any]]:
+    """
+    Return helper functions that take care of handling success and failure situations in tasks. These handlers take
+    care of reporting the event:
+
+    * create a guest event,
+    * in case of failures, log the failure and submit it to Sentry.
+
+    Third returned value is a "spice" mapping - all key: value entries added to this mapping will be added
+    as extra details to all logs and failures.
+    """
+
+    spice_details: Dict[str, Any] = {**default_details}
+
+    if task:
+        spice_details['task'] = task
+
+    def handle_success(
+        eventname: str
     ) -> None:
-        details = {
-            **default_details,
-            **more_details
-        }
+        if guestname:
+            log_guest_event(
+                logger,
+                session,
+                guestname,
+                eventname,
+                **spice_details
+            )
 
-        log_guest_event(
-            logger,
-            session,
-            guestname,
-            eventname,
-            **details
-        )
-
-    def _log_error_event(
+    def handle_failure(
         result: Result[Any, Failure],
-        message: str,
-        **more_details: Any
-    ) -> None:
-        details = {
-            **default_details,
-            **more_details
-        }
+        label: str,
+        sentry: bool = True
+    ) -> DoerReturnType:
+        failure = result.unwrap_error()
 
-        log_error_guest_event(
-            logger,
-            session,
-            guestname,
-            result.unwrap_error(),
-            message,
-            **details
-        )
+        artemis.handle_failure(logger, result, label, sentry=sentry, **spice_details)
 
-    return _log_event, _log_error_event
+        if guestname:
+            log_error_guest_event(
+                logger,
+                session,
+                guestname,
+                label,
+                failure
+            )
+
+        return Error(failure)
+
+    return handle_success, handle_failure, spice_details
 
 
 def actor_kwargs(actor_name: str) -> Dict[str, Any]:
@@ -223,11 +257,12 @@ def actor_kwargs(actor_name: str) -> Dict[str, Any]:
 def run_doer(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
     fn: DoerType,
     *args: Any,
     **kwargs: Any
-) -> Any:
+) -> DoerReturnType:
     """
     Run a given function - "doer" - isolated in its own thread. This thread then serves as a landing
     spot for dramatiq control exceptions (e.g. Shutdown).
@@ -238,7 +273,7 @@ def run_doer(
     """
 
     executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
-    doer_future: Optional[concurrent.futures.Future[Any]] = None
+    doer_future: Optional[concurrent.futures.Future[DoerReturnType]] = None
 
     def _wait(message: str) -> None:
         """
@@ -281,7 +316,7 @@ def run_doer(
 
         logger.debug('submitting task doer {}'.format(fn))
 
-        doer_future = executor.submit(fn, logger, db, cancel, *args, **kwargs)
+        doer_future = executor.submit(fn, logger, db, session, cancel, *args, **kwargs)
 
         _wait('doer finished in regular mode')
 
@@ -325,18 +360,32 @@ def task_core(
     doer_args = doer_args or tuple()
     doer_kwargs = doer_kwargs or dict()
 
-    try:
-        run_doer(logger, db, cancel, doer, *doer_args, **doer_kwargs)
+    doer_result: DoerReturnType = Error(Failure('undefined doer result'))
 
-        logger.finished()
-        return
+    try:
+        with db.get_session() as session:
+            doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
 
     except Exception as exc:
-        logger.failed(Failure.from_exc('task failed', exc))
+        stackprinter.show_current_exception()
+        failure = Failure.from_exc('unhandled doer exception', exc)
+        failure.log(logger.error)
 
-    # To avoid chain of exceptions in the log - which we already logged above - raise a generic,
-    # insignificant exception to notify our master about the failure.
-    raise Exception('message processing failed')
+        doer_result = Error(failure)
+
+    if doer_result.is_ok:
+        result = doer_result.unwrap()
+
+        logger.finished()
+
+        if result is Reschedule:
+            raise Exception('message processing requested reschedule')
+
+        return
+
+    # To avoid chain a of exceptions in the log - which we already logged above - raise a generic,
+    # insignificant exception to notify scheduler that this task failed and needs to be retried.
+    raise Exception('message processing failed: {}'.format(doer_result.unwrap_error().message))
 
 
 def _cancel_task_if(
@@ -377,9 +426,13 @@ def _dispatch_task(
 
     exc_info = r.error.exc_info if r.error else None
 
-    logger.error('failed to submit task {}'.format(task), exc_info=exc_info)
-
-    return Error(Failure('failed to submit task {}'.format(task), exc_info=exc_info))
+    return Error(Failure(
+        'failed to dispatch task',
+        exc_info=exc_info,
+        task_name=str(task),
+        task_args=args,
+        task_kwargs=kwargs
+    ))
 
 
 def _get_guest_by_state(
@@ -387,7 +440,7 @@ def _get_guest_by_state(
     session: sqlalchemy.orm.session.Session,
     guestname: str,
     state: artemis.guest.GuestState
-) -> Optional[artemis.db.GuestRequest]:
+) -> Result[Optional[artemis.db.GuestRequest], Failure]:
     query = session \
             .query(GuestRequest) \
             .filter(GuestRequest.guestname == guestname) \
@@ -399,15 +452,15 @@ def _get_guest_by_state(
     )
 
     if r_query.is_ok:
-        return r_query.unwrap()
+        return Ok(r_query.unwrap())
 
     failure = r_query.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('not in {} state anymore'.format(state.value))
-        return None
+        return Ok(None)
 
-    failure.reraise()
+    return Error(failure)
 
 
 def _get_snapshot_by_state(
@@ -415,7 +468,7 @@ def _get_snapshot_by_state(
     session: sqlalchemy.orm.session.Session,
     snapshotname: str,
     state: artemis.guest.GuestState
-) -> Optional[artemis.db.SnapshotRequest]:
+) -> Result[Optional[artemis.db.SnapshotRequest], Failure]:
     query = session \
             .query(SnapshotRequest) \
             .filter(SnapshotRequest.snapshotname == snapshotname) \
@@ -427,15 +480,15 @@ def _get_snapshot_by_state(
     )
 
     if r_query.is_ok:
-        return r_query.unwrap()
+        return Ok(r_query.unwrap())
 
     failure = r_query.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('not in {} state anymore'.format(state.value))
-        return None
+        return Ok(None)
 
-    failure.reraise()
+    return Error(failure)
 
 
 def _update_guest_state(
@@ -446,12 +499,19 @@ def _update_guest_state(
     new_state: artemis.guest.GuestState,
     guest: Optional[artemis.guest.Guest] = None,
     set_values: Optional[Dict[str, Any]] = None,
-    current_pool_data: Optional[str] = None,
+    current_pool_data: Optional[artemis.guest.GuestPoolDataType] = None,
     **details: Any
-) -> bool:
-    logger.warning('state switch: {} => {}'.format(current_state.value, new_state.value))
+) -> Result[bool, Failure]:
+    handle_success, handle_failure, _ = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        current_state=current_state.value,
+        new_state=new_state.value,
+        **details
+    )
 
-    details = details or {}
+    logger.warning('state switch: {} => {}'.format(current_state.value, new_state.value))
 
     if set_values:
         values = set_values
@@ -469,7 +529,7 @@ def _update_guest_state(
             .update(GuestRequest.__table__) \
             .where(GuestRequest.guestname == guestname) \
             .where(GuestRequest.state == current_state.value) \
-            .where(GuestRequest.pool_data == current_pool_data) \
+            .where(GuestRequest.pool_data == artemis.guest.Guest.pool_data_to_db(current_pool_data)) \
             .values(**values)
 
     else:
@@ -482,35 +542,29 @@ def _update_guest_state(
     r = safe_db_execute(logger, session, query)
 
     if r.is_ok:
-        EVENT, ERROR_EVENT = create_event_loggers(
-            logger,
-            session,
-            guestname,
-            current_state=current_state.value,
-            new_state=new_state.value,
-            **details,
-        )
-
         if r.value is True:
             logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
 
-            EVENT('state-changed')
+            handle_success('state-changed')
 
         else:
             logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
 
-            ERROR_EVENT(r, 'failed to switch state')
+            handle_failure(
+                Error(Failure('failed to switch guest state')),
+                'failed to switch guest state'
+            )
 
-        return r.unwrap()
+        return Ok(r.unwrap())
 
     failure = r.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('state switch: {} => {}: no result found'.format(current_state.value, new_state.value))
 
-        return False
+        return Ok(False)
 
-    failure.reraise()
+    return Error(failure)
 
 
 def _update_snapshot_state(
@@ -521,7 +575,18 @@ def _update_snapshot_state(
     current_state: artemis.guest.GuestState,
     new_state: artemis.guest.GuestState,
     set_values: Optional[Dict[str, Any]] = None,
-) -> bool:
+    **details: Any
+) -> Result[bool, Failure]:
+    handle_success, handle_failure, _ = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        snapshotname=snapshotname,
+        current_state=current_state.value,
+        new_state=new_state.value,
+        **details
+    )
+
     logger.warning('state switch: {} => {}'.format(current_state.value, new_state.value))
 
     if set_values:
@@ -544,35 +609,26 @@ def _update_snapshot_state(
     r = safe_db_execute(logger, session, query)
 
     if r.is_ok:
-        EVENT, ERROR_EVENT = create_event_loggers(
-            logger,
-            session,
-            guestname,
-            snapshotname=snapshotname,
-            current_state=current_state.value,
-            new_state=new_state.value
-        )
-
         if r.value is True:
             logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
 
-            EVENT('snapshot-state-changed')
+            handle_success('snapshot-state-changed')
 
         else:
             logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
 
-            ERROR_EVENT(r, 'failed to switch snapshot state')
+            handle_failure(Error(Failure('failed to switch snapshot state')), 'failed to switch snapshot state')
 
-        return r.unwrap()
+        return Ok(r.unwrap())
 
     failure = r.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('state switch: {} => {}: no result found'.format(current_state.value, new_state.value))
 
-        return False
+        return Ok(False)
 
-    failure.reraise()
+    return Error(failure)
 
 
 def _get_pool(
@@ -670,111 +726,575 @@ def get_snapshot_logger(
     )
 
 
+class Workspace:
+    """
+    A workspace is a container for tools commonly used by task doers - a workdesk, a drawer with hammers and
+    screwdrivers, ready for task to help with common operations, so they perform these operations in the same
+    way.
+
+    Workspace takes care of executing given operation, evaluating the returned promise, handling failure
+    and so on. The biggest advatage is that this outcome is stored in the workspace, and any consecutive
+    operation called will become no-op if any previous operation outcome wasn't a success.
+
+    This allows for chaining of calls, checking the result once at the end:
+
+    .. code::
+
+       workspace.load_guest_request()
+       workspace.load_ssh_key()
+       workspace.load_gr_pool()
+
+       if workspace.result:
+           return workspace.result
+
+    If ``load_guest_request`` failed, it'd set ``workspace.result`` to a proper ``FAIL`` instance, suitable
+    for immediate return by a task doer, ``load_ssh_key`` and ``load_gr_pool`` wouldn't do *anything* - both
+    would return immediately. So, no need to deal with the intermediate results and spaghetti code in each task.
+
+    On top of that, ``workspace.result`` is compatible with doer return values, so it can be immediately returned,
+    as each failure was already handled inside workspace.
+    """
+
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        cancel: threading.Event,
+        handle_failure: FailureHandlerType
+    ) -> None:
+        self.logger = logger
+        self.session = session
+        self.cancel = cancel
+        self.handle_failure = handle_failure
+
+        self.result: Optional[DoerReturnType] = None
+
+        self.guestname: Optional[str] = None
+        self.snapshotname: Optional[str] = None
+
+        self.gr: Optional[artemis.db.GuestRequest] = None
+        self.sr: Optional[artemis.db.SnapshotRequest] = None
+        self.ssh_key: Optional[artemis.db.SSHKey] = None
+        self.pool: Optional[artemis.drivers.PoolDriver] = None
+        self.guest: Optional[artemis.guest.Guest] = None
+        self.snapshot: Optional[artemis.snapshot.Snapshot] = None
+
+    def load_guest_request(self, guestname: str, state: artemis.guest.GuestState) -> None:
+        """
+        Load a guest request from a database, as long as it is in a given state.
+
+        **OUTCOMES:**
+
+          * ``SUCCESS`` if guest doesn't exist or it isn't in a given state
+          * ``RESCHEDULE`` if cancel was requested
+          * ``FAIL`` otherwise
+
+        **SETS:**
+
+          * ``guestname``
+          * ``gr``
+        """
+
+        if self.result:
+            return
+
+        self.guestname = guestname
+
+        r = _get_guest_by_state(self.logger, self.session, guestname, state)
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to load guest request')
+            return
+
+        gr = r.unwrap()
+
+        if not gr:
+            self.result = SUCCESS
+            return
+
+        if _cancel_task_if(self.logger, self.cancel):
+            self.result = RESCHEDULE
+            return
+
+        self.gr = gr
+
+    def load_snapshot_request(self, snapshotname: str, state: artemis.guest.GuestState) -> None:
+        """
+        Load a snapshot request from a database, as long as it is in a given state.
+
+        **OUTCOMES:**
+
+          * ``SUCCESS`` if snapshot doesn't exist or it isn't in a given state
+          * ``RESCHEDULE`` if cancel was requested
+          * ``FAIL`` otherwise
+
+        **SETS:**
+
+          * ``snapshotname``
+          * ``sr``
+        """
+
+        if self.result:
+            return
+
+        self.snapshotname = snapshotname
+
+        r = _get_snapshot_by_state(self.logger, self.session, snapshotname, state)
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to load snapshot request')
+            return
+
+        sr = r.unwrap()
+
+        if not sr:
+            self.result = SUCCESS
+            return
+
+        if _cancel_task_if(self.logger, self.cancel):
+            self.result = RESCHEDULE
+            return
+
+        self.sr = sr
+
+    def load_ssh_key(self) -> None:
+        """
+        Load a SSH key specified by a guest request from a database.
+
+        **OUTCOMES:**
+
+          * ``RESCHEDULE`` if cancel was requested
+          * ``FAIL`` otherwise
+
+        **SETS:**
+
+          * ``ssh_key``
+        """
+
+        if self.result:
+            return
+
+        assert self.gr
+
+        r = _get_ssh_key(
+            self.logger,
+            self.session,
+            self.gr.ownername,
+            self.gr.ssh_keyname
+        )
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to get SSH key')
+            return
+
+        if _cancel_task_if(self.logger, self.cancel):
+            self.result = RESCHEDULE
+            return
+
+        self.ssh_key = r.unwrap()
+
+    def load_gr_pool(self) -> None:
+        """
+        Load a pool as specified by a guest request.
+
+        **OUTCOMES:**
+
+          * ``RESCHEDULE`` if cancel was requested
+          * ``FAIL`` otherwise
+
+        **SETS:**
+
+          * ``pool``
+        """
+
+        if self.result:
+            return
+
+        assert self.gr
+        assert self.gr.poolname is not None
+
+        r = _get_pool(self.logger, self.session, self.gr.poolname)
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'pool sanity failed')
+            return
+
+        if _cancel_task_if(self.logger, self.cancel):
+            self.result = RESCHEDULE
+            return
+
+        self.pool = r.unwrap()
+
+    def load_sr_pool(self) -> None:
+        """
+        Load a pool as specified by a snapshot request.
+
+        **OUTCOMES:**
+
+          * ``RESCHEDULE`` if cancel was requested
+          * ``FAIL`` otherwise
+
+        **SETS:**
+
+          * ``pool``
+        """
+
+        if self.result:
+            return
+
+        assert self.sr
+        assert self.sr.poolname is not None
+
+        r = _get_pool(self.logger, self.session, self.sr.poolname)
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'pool sanity failed')
+            return
+
+        if _cancel_task_if(self.logger, self.cancel):
+            self.result = RESCHEDULE
+            return
+
+        self.pool = r.unwrap()
+
+    def load_guest(self) -> None:
+        """
+        Load a guest described by a guest request.
+
+        **OUTCOMES:**
+
+          * ``RESCHEDULE`` if cancel was requested
+          * ``FAIL`` otherwise
+
+        **SETS:**
+
+          * ``guest``
+        """
+
+        if self.result:
+            return
+
+        assert self.gr
+        assert self.ssh_key
+        assert self.pool
+
+        r = self.pool.guest_factory(self.gr, ssh_key=self.ssh_key)
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to load guest')
+            return
+
+        if _cancel_task_if(self.logger, self.cancel):
+            self.result = RESCHEDULE
+            return
+
+        self.guest = r.unwrap()
+
+    def load_snapshot(self) -> None:
+        """
+        Load a snapshot described by a snapshot request.
+
+        **OUTCOMES:**
+
+          * ``RESCHEDULE`` if cancel was requested
+          * ``FAIL`` otherwise
+
+        **SETS:**
+
+          * ``snapshot``
+        """
+
+        if self.result:
+            return
+
+        assert self.sr
+        assert self.pool
+
+        r = self.pool.snapshot_factory(self.sr)
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to load snapshot')
+
+        if _cancel_task_if(self.logger, self.cancel):
+            self.result = RESCHEDULE
+            return
+
+        self.snapshot = r.unwrap()
+
+    def update_guest_state(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Updates guest state with given values.
+
+        **OUTCOMES:**
+
+          * ``FAIL``
+        """
+
+        if self.result:
+            return
+
+        assert self.guestname
+
+        r = _update_guest_state(
+            self.logger,
+            self.session,
+            self.guestname,
+            *args,
+            **kwargs
+        )
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to update guest request')
+            return
+
+        if not r.unwrap():
+            self.result = self.handle_failure(Error(Failure('foo')), 'failed to update guest state')
+            return
+
+    def update_snapshot_state(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Updates snapshot state with given values.
+
+        **OUTCOMES:**
+
+          * ``FAIL``
+        """
+
+        if self.result:
+            return
+
+        assert self.snapshotname
+        assert self.guestname
+
+        r = _update_snapshot_state(
+            self.logger,
+            self.session,
+            self.snapshotname,
+            self.guestname,
+            *args,
+            **kwargs
+        )
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to update snapshot request')
+            return
+
+        if not r.unwrap():
+            self.result = self.handle_failure(Error(Failure('foo')), 'failed to update guest state')
+            return
+
+    def grab_guest_request(self, *args: Any, **kwargs: Any) -> None:
+        """
+        "Grab" the guest for task by changing its state.
+
+        **OUTCOMES:**
+
+          * ``SUCCESS`` if the guest does not exist or is not in the given state.
+          * ``FAIL``
+        """
+
+        if self.result:
+            return
+
+        assert self.guestname
+
+        r = _update_guest_state(
+            self.logger,
+            self.session,
+            self.guestname,
+            *args,
+            **kwargs
+        )
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to grab guest request')
+            return
+
+        if not r.unwrap():
+            self.result = SUCCESS
+            return
+
+    def grab_snapshot_request(self, *args: Any, **kwargs: Any) -> None:
+        """
+        "Grab" the snapshot for task by changing its state.
+
+        **OUTCOMES:**
+
+          * ``SUCCESS`` if the guest does not exist or is not in the given state.
+          * ``FAIL``
+        """
+
+        if self.result:
+            return
+
+        assert self.snapshotname
+        assert self.guestname
+
+        r = _update_snapshot_state(
+            self.logger,
+            self.session,
+            self.snapshotname,
+            self.guestname,
+            *args,
+            **kwargs
+        )
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to grab snapshot request')
+            return
+
+        if not r.unwrap():
+            self.result = SUCCESS
+            return
+
+    def ungrab_guest_request(self, *args: Any, **kwargs: Any) -> None:
+        assert self.guestname
+
+        r = _update_guest_state(
+            self.logger,
+            self.session,
+            self.guestname,
+            *args,
+            **kwargs
+        )
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to ungrab guest request')
+            return
+
+        if r.unwrap():
+            return
+
+        assert False, 'unreachable'
+
+    def ungrab_snapshot_request(self, *args: Any, **kwargs: Any) -> None:
+        assert self.snapshotname
+        assert self.guestname
+
+        r = _update_snapshot_state(
+            self.logger,
+            self.session,
+            self.snapshotname,
+            self.guestname,
+            *args,
+            **kwargs
+        )
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to ungrab snapshot request')
+            return
+
+        if r.unwrap():
+            return
+
+        assert False, 'unreachable'
+
+    def dispatch_task(self, task: Actor, *args: Any) -> None:
+        if self.result:
+            return
+
+        r = _dispatch_task(self.logger, task, *args)
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to dispatch update task')
+            return
+
+    def run_hook(self, hook_name: str, **kwargs: Any) -> Any:
+        r_engine = artemis.script.hook_engine(hook_name)
+
+        if r_engine.is_error:
+            self.result = self.handle_failure(r_engine, 'failed to load {} hook'.format(hook_name))
+            return
+
+        engine = r_engine.unwrap()
+
+        r = engine.run_hook(
+            hook_name,
+            logger=self.logger,
+            **kwargs
+        )
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'hook failed')
+            return
+
+        return r.unwrap()
+
+
 def do_release_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
     guestname: str
-) -> None:
-    with db.get_session() as session:
-        EVENT, ERROR_EVENT = create_event_loggers(logger, session, guestname)
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='release-guest'
+    )
 
-        def _undo_guest_in_releasing() -> None:
-            if _update_guest_state(
-                logger,
-                session,
-                guestname,
-                artemis.guest.GuestState.RELEASING,
-                artemis.guest.GuestState.CONDEMNED
-            ):
-                return
+    handle_success('enter-task')
 
-            assert False, 'unreachable'
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, artemis.guest.GuestState.CONDEMNED)
+    workspace.grab_guest_request(artemis.guest.GuestState.CONDEMNED, artemis.guest.GuestState.RELEASING)
 
-        gr = _get_guest_by_state(logger, session, guestname, artemis.guest.GuestState.CONDEMNED)
-        if not gr:
-            return
+    if workspace.result:
+        return workspace.result
 
-        if _cancel_task_if(logger, cancel):
-            return
+    assert workspace.gr
 
-        if not _update_guest_state(
-            logger,
-            session,
-            guestname,
-            artemis.guest.GuestState.CONDEMNED,
-            artemis.guest.GuestState.RELEASING
-        ):
-            return
+    if workspace.gr.poolname:
+        spice_details['poolname'] = workspace.gr.poolname
 
-        if gr.poolname:
-            common_failure_details = {
-                'guestname': guestname,
-                'poolname': gr.poolname
-            }
+        workspace.load_gr_pool()
+        workspace.load_ssh_key()
 
-            r_pool = _get_pool(logger, session, gr.poolname)
+        if workspace.result:
+            workspace.ungrab_guest_request(artemis.guest.GuestState.RELEASING, artemis.guest.GuestState.CONDEMNED)
 
-            if r_pool.is_error:
-                ERROR_EVENT(r_pool, 'pool sanity failed')
-                _undo_guest_in_releasing()
-                return
+            return workspace.result
 
-            pool = r_pool.unwrap()
+        workspace.load_guest()
 
-            if _cancel_task_if(logger, cancel, undo=_undo_guest_in_releasing):
-                return
+        # If we cancelled the guest early, no provisioned guest is available
+        if workspace.result:
+            pass
 
-            r_guest_sshkey = _get_ssh_key(
-                logger,
-                session,
-                gr.ownername,
-                gr.ssh_keyname
-            )
+        # This can happen if somebody removed the instance outside of Artemis
+        else:
+            assert workspace.pool
+            assert workspace.guest
 
-            if r_guest_sshkey.is_error:
-                ERROR_EVENT(r_guest_sshkey, 'failed to get SSH key')
-                _undo_guest_in_releasing()
-                return
+            r_release = workspace.pool.release_guest(workspace.guest)
 
-            guest_sshkey = r_guest_sshkey.unwrap()
-            r_guest = pool.guest_factory(gr, ssh_key=guest_sshkey)
+            if r_release.is_error:
+                handle_failure(r_release, 'failed to release guest')
 
-            # If we cancelled the guest early, no provisioned guest is available
-            if r_guest.is_error:
-                failure = r_guest.unwrap_error()
-                failure.details.update(common_failure_details)
-                ERROR_EVENT(r_guest, 'failed to load guest', sentry=True)
+    query = sqlalchemy \
+        .delete(GuestRequest.__table__) \
+        .where(GuestRequest.guestname == guestname) \
+        .where(GuestRequest.state == artemis.guest.GuestState.RELEASING.value)
 
-            # This can happen if somebody removed the instance outside of Artemis
-            else:
-                r_release = pool.release_guest(r_guest.unwrap())
+    r_delete = safe_db_execute(logger, session, query)
 
-                if r_release.is_error:
-                    failure = r_guest.unwrap_error()
-                    failure.details.update(common_failure_details)
-                    ERROR_EVENT(r_release, 'failed to release guest', sentry=True)
+    if r_delete.is_ok:
+        handle_success('released')
 
-        query = sqlalchemy \
-            .delete(GuestRequest.__table__) \
-            .where(GuestRequest.guestname == guestname) \
-            .where(GuestRequest.state == artemis.guest.GuestState.RELEASING.value)
+        return SUCCESS
 
-        r_condemn = safe_db_execute(logger, session, query)
+    failure = r_delete.unwrap_error()
 
-        if r_condemn.is_ok:
-            EVENT('released')
-            return
+    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
+        logger.warning('not in RELEASING state anymore')
 
-        failure = r_condemn.unwrap_error()
+        return SUCCESS
 
-        if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-            logger.warning('not in RELEASING state anymore')
-            return
+    workspace.ungrab_guest_request(artemis.guest.GuestState.RELEASING, artemis.guest.GuestState.CONDEMNED)
 
-        _undo_guest_in_releasing()
-
-        failure.reraise()
+    return handle_failure(r_delete, 'failed to release guest')
 
 
 @dramatiq.actor(**actor_kwargs('RELEASE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
@@ -789,108 +1309,96 @@ def release_guest_request(guestname: str) -> None:
 def do_update_guest(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
     guestname: str
-) -> None:
-    with db.get_session() as session:
-        def _undo_guest_update(guest: artemis.guest.Guest) -> None:
-            r = pool.release_guest(guest)
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='update-guest'
+    )
 
-            if r.is_ok:
-                return
+    handle_success('enter-task')
 
-            raise Exception(r.error)
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, artemis.guest.GuestState.PROMISED)
+    workspace.load_ssh_key()
+    workspace.load_gr_pool()
+    workspace.load_guest()
 
-        gr = _get_guest_by_state(logger, session, guestname, artemis.guest.GuestState.PROMISED)
-        if not gr:
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+    assert workspace.pool
+    assert workspace.ssh_key
+    assert workspace.guest
+
+    spice_details['poolname'] = workspace.gr.poolname
+    current_pool_data = artemis.guest.Guest.pool_data_from_db(workspace.gr)
+
+    def _undo_guest_update(guest: artemis.guest.Guest) -> None:
+        assert workspace.pool
+
+        r = workspace.pool.release_guest(guest)
+
+        if r.is_ok:
             return
 
-        assert gr.poolname is not None
+        handle_failure(r, 'failed to undo guest update')
 
-        _, ERROR_EVENT = create_event_loggers(logger, session, guestname)
+    environment = artemis.environment.Environment.unserialize_from_json(json.loads(workspace.gr.environment))
 
-        current_pool_data = gr.pool_data
+    r_update = workspace.pool.update_guest(workspace.gr, environment, workspace.ssh_key)
 
-        r_pool = _get_pool(logger, session, gr.poolname)
+    if r_update.is_error:
+        return handle_failure(r_update, 'failed to update guest')
 
-        if r_pool.is_error:
-            ERROR_EVENT(r_pool, 'pool sanity failed')
-            return
+    guest = r_update.unwrap()
 
-        pool = r_pool.unwrap()
-
-        if _cancel_task_if(logger, cancel):
-            return
-
-        r_guest_sshkey = _get_ssh_key(
-            logger,
-            session,
-            gr.ownername,
-            gr.ssh_keyname
+    if guest.is_promised:
+        workspace.update_guest_state(
+            artemis.guest.GuestState.PROMISED,
+            artemis.guest.GuestState.PROMISED,
+            guest=guest,
+            set_values={
+                'pool_data': artemis.guest.Guest.pool_data_to_db(guest.pool_data)
+            },
+            current_pool_data=current_pool_data
         )
 
-        if r_guest_sshkey.is_error:
-            ERROR_EVENT(r_pool, 'failed to get SSH key')
-            return
+        workspace.dispatch_task(update_guest, guestname)
 
-        r_guest = pool.guest_factory(gr, ssh_key=r_guest_sshkey.unwrap())
+        if workspace.result:
+            _undo_guest_update(guest)
 
-        if r_guest.is_error:
-            ERROR_EVENT(r_pool, 'failed to load guest')
-            return
+            return workspace.result
 
-        environment = artemis.environment.Environment.unserialize_from_json(json.loads(gr.environment))
+        logger.info('scheduled update')
 
-        r_update = pool.update_guest(gr, environment, r_guest_sshkey.unwrap())
+        return SUCCESS
 
-        if r_update.is_error:
-            ERROR_EVENT(r_update, 'failed to update guest')
-            return
+    workspace.update_guest_state(
+        artemis.guest.GuestState.PROMISED,
+        artemis.guest.GuestState.READY,
+        guest=guest,
+        set_values={
+            'address': guest.address,
+            'pool_data': artemis.guest.Guest.pool_data_to_db(guest.pool_data)
+        },
+        current_pool_data=current_pool_data
+    )
 
-        guest = r_update.unwrap()
-
-        if guest.is_promised:
-            if _update_guest_state(
-                logger,
-                session,
-                guestname,
-                artemis.guest.GuestState.PROMISED,
-                artemis.guest.GuestState.PROMISED,
-                guest=guest,
-                set_values={
-                    'pool_data': guest.pool_data_to_db()
-                },
-                current_pool_data=current_pool_data
-            ):
-                r_promise = _dispatch_task(logger, update_guest, guestname)
-
-                if r_promise.is_ok:
-                    logger.info('scheduled update')
-                    return
-
-        else:
-            if _update_guest_state(
-                logger,
-                session,
-                guestname,
-                artemis.guest.GuestState.PROMISED,
-                artemis.guest.GuestState.READY,
-                guest=guest,
-                set_values={
-                    'address': guest.address,
-                    'pool_data': guest.pool_data_to_db()
-                },
-                current_pool_data=current_pool_data,
-            ):
-                logger.info('successfully acquired')
-                return
-
-        # Failed to change the state means somebody else already did the update. We have a guest on our hands,
-        # which points to resources that are now wasted because there is another instance of this guest
-        # already updated or finished. We can safely ask driver to release resources of this particular
-        # guest instance - this is not going to affect the instance whose changes were commited to the database
-        # before ours.
+    if workspace.result:
         _undo_guest_update(guest)
+
+        return workspace.result
+
+    logger.info('successfully acquired')
+
+    return SUCCESS
 
 
 @dramatiq.actor(**actor_kwargs('UPDATE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
@@ -905,118 +1413,100 @@ def update_guest(guestname: str) -> None:
 def do_acquire_guest(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
     guestname: str,
     poolname: str
-) -> None:
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='acquire-guest',
+        poolname=poolname
+    )
 
-    common_failure_details = {
-        'guestname': guestname,
-        'poolname': poolname
-    }
+    handle_success('enter-task')
 
-    with db.get_session() as session:
-        gr = _get_guest_by_state(logger, session, guestname, artemis.guest.GuestState.PROVISIONING)
-        if not gr:
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, artemis.guest.GuestState.PROVISIONING)
+    workspace.load_ssh_key()
+    workspace.load_gr_pool()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+    assert workspace.pool
+    assert workspace.ssh_key
+
+    environment = artemis.environment.Environment.unserialize_from_json(json.loads(workspace.gr.environment))
+
+    result = workspace.pool.acquire_guest(logger, workspace.gr, environment, workspace.ssh_key, cancelled=cancel)
+
+    if result.is_error:
+        return handle_failure(result, 'failed to provision')
+
+    guest = result.unwrap()
+
+    def _undo_guest_acquire() -> None:
+        assert workspace.pool
+
+        r = workspace.pool.release_guest(guest)
+
+        if r.is_ok:
             return
 
-        _, ERROR_EVENT = create_event_loggers(logger, session, guestname)
+        raise Exception(r.error)
 
-        r_pool = _get_pool(logger, session, poolname)
+    # TODO: instead of switching to READY, we need to switch into transient state instead,
+    # and upload the requested key to the guest (using our master key).
 
-        if r_pool.is_error:
-            ERROR_EVENT(r_pool, 'pool sanity failed')
-            return
-
-        pool = r_pool.unwrap()
-
-        r_master_key = _get_master_key(logger, session)
-        if r_master_key.is_error:
-            ERROR_EVENT(r_master_key, 'failed to get SSH key')
-
-        master_key = r_master_key.unwrap()
-        environment = artemis.environment.Environment.unserialize_from_json(json.loads(gr.environment))
-
-        if _cancel_task_if(logger, cancel):
-            return
-
-        result = pool.acquire_guest(logger, gr, environment, master_key, cancelled=cancel)
-
-        if result.is_ok:
-            guest = result.unwrap()
-
-            def _undo_guest_acquire() -> None:
-                r = pool.release_guest(guest)
-
-                if r.is_ok:
-                    return
-
-                raise Exception(r.error)
-
-            # TODO: instead of switching to READY, we need to switch into transient state instead,
-            # and upload the requested key to the guest (using our master key).
-
-            # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
-            # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
-            # save guest's address. In both cases, we must be sure nobody else did any changes before us.
-            if guest.is_promised:
-                if _update_guest_state(
-                    logger,
-                    session,
-                    guestname,
-                    artemis.guest.GuestState.PROVISIONING,
-                    artemis.guest.GuestState.PROMISED,
-                    guest=guest,
-                    set_values={
-                        'pool_data': guest.pool_data_to_db()
-                    }
-                ):
-                    r_promise = _dispatch_task(logger, update_guest, guestname)
-
-                    if r_promise.is_ok:
-                        logger.info('scheduled update')
-                        return
-
-            else:
-                pool_data_to_db = guest.pool_data_to_db()
-
-                if _update_guest_state(
-                    logger,
-                    session,
-                    guestname,
-                    artemis.guest.GuestState.PROVISIONING,
-                    artemis.guest.GuestState.READY,
-                    guest=guest,
-                    set_values={
-                        'address': guest.address,
-                        'pool_data': pool_data_to_db
-                    },
-                    address=guest.address,
-                    pool=gr.poolname,
-                    pool_data=json.loads(pool_data_to_db)
-                ):
-                    logger.info('successfully acquired')
-                    return
-
-            # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
-            # Again, we must undo and forget about the guest request.
-            _undo_guest_acquire()
-            return
-
-    # Code execution could only end up here if provisioning failed
-    failure = result.unwrap_error()
-    failure.details.update(common_failure_details)
-
-    with db.get_session() as session:
-        _, ERROR_EVENT = create_event_loggers(logger, session, guestname)
-
-        ERROR_EVENT(
-            result,
-            'failed to provision: {}'.format(failure.message),
-            sentry=True
+    # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
+    # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
+    # save guest's address. In both cases, we must be sure nobody else did any changes before us.
+    if guest.is_promised:
+        workspace.update_guest_state(
+            artemis.guest.GuestState.PROVISIONING,
+            artemis.guest.GuestState.PROMISED,
+            guest=guest,
+            set_values={
+                'pool_data': artemis.guest.Guest.pool_data_to_db(guest.pool_data)
+            }
         )
 
-    raise Exception(failure.message)
+        workspace.dispatch_task(update_guest, guestname)
+
+        if workspace.result:
+            _undo_guest_acquire()
+
+            return workspace.result
+
+        logger.info('scheduled update')
+
+        return SUCCESS
+
+    workspace.update_guest_state(
+        artemis.guest.GuestState.PROVISIONING,
+        artemis.guest.GuestState.READY,
+        guest=guest,
+        set_values={
+            'address': guest.address,
+            'pool_data': artemis.guest.Guest.pool_data_to_db(guest.pool_data)
+        },
+        address=guest.address,
+        pool=workspace.gr.poolname,
+        pool_data=guest.pool_data
+    )
+
+    if workspace.result:
+        _undo_guest_acquire()
+
+        return workspace.result
+
+    logger.info('successfully acquired')
+
+    return SUCCESS
 
 
 @dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1031,128 +1521,84 @@ def acquire_guest(guestname: str, poolname: str) -> None:
 def do_route_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
     guestname: str
-) -> None:
-    with db.get_session() as session:
-        def _undo_guest_in_provisioning() -> None:
-            if _update_guest_state(
-                logger,
-                session,
-                guestname,
-                artemis.guest.GuestState.PROVISIONING,
-                artemis.guest.GuestState.ROUTING
-            ):
-                return
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='route-guest'
+    )
 
-            # We should never ever end up here, because:
-            #
-            # - undo worked => _update_guest_state returns True and we leave right above this comment
-            # - undo failed because of unspecified exception -> the exception is reraised in _update_guest_state
-            # - undo failed because there was no such record in db -> _update_guest_state returns False, which is not
-            # possible...
-            #
-            # We are the only instance of this task that got this far. We were the only instance that managed to move
-            # guest to PROVISIONING state, any other instance should see it alread has that state (or they fail to
-            # change it), stopping their execution at that point. We should be the only instance that has anything to
-            # undo.
-            #
-            # So, what changed the guest state if it haven't been any other instance of this task, and if we failed to
-            # dispatch any provisioning task??
-            assert False, 'unreachable'
+    handle_success('enter-task')
 
-        # First, pick up our assigned guest request. Make sure it hasn't been
-        # processed yet.
-        guest = _get_guest_by_state(logger, session, guestname, artemis.guest.GuestState.ROUTING)
+    workspace = Workspace(logger, session, cancel, handle_failure)
 
-        if not guest:
-            return
+    # First, pick up our assigned guest request. Make sure it hasn't been
+    # processed yet.
+    workspace.load_guest_request(guestname, artemis.guest.GuestState.ROUTING)
 
-        if _cancel_task_if(logger, cancel):
-            return
+    if workspace.result:
+        return workspace.result
 
-        # Do stuff, examine request, pick the provisioner, and send it a message.
-        #
-        # Be aware that while the request was free to take, it may be being processed by multiple instances of this
-        # task at once - we didn't acquire any lock! We could either introduce locking, or we can continue and make
-        # sure the request didn't change when we start commiting changes. And since asking or forgiveness is simpler
-        # than asking for permission, let's continue but be prepared to clean up if someone else did the work instead
-        # of us.
+    # Do stuff, examine request, pick the provisioner, and send it a message.
+    #
+    # Be aware that while the request was free to take, it may be being processed by multiple instances of this
+    # task at once - we didn't acquire any lock! We could either introduce locking, or we can continue and make
+    # sure the request didn't change when we start commiting changes. And since asking for forgiveness is simpler
+    # than asking for permission, let's continue but be prepared to clean up if someone else did the work instead
+    # of us.
 
-        logger.info('finding suitable provisioner')
+    logger.info('finding suitable provisioner')
 
-        r_engine = artemis.script.hook_engine('ROUTE')
+    pool = workspace.run_hook(
+        'ROUTE',
+        guest_request=workspace.gr,
+        pools=get_pools(logger, session)
+    )
 
-        if r_engine.is_error:
-            raise Exception('Failed to load ROUTE hook: {}'.format(r_engine.unwrap_error().message))
+    # Route hook failed, request cannot be fulfilled ;(
+    if workspace.result:
+        return workspace.result
 
-        engine = r_engine.unwrap()
+    # No suitable pool found
+    if not pool:
+        return RESCHEDULE
 
-        r_pool = engine.run_hook(
-            'ROUTE',
-            logger=logger,
-            guest_request=guest,
-            pools=get_pools(logger, session)
-        )
+    if _cancel_task_if(logger, cancel):
+        return RESCHEDULE
 
-        # Route hook failed, request cannot be fulfilled ;(
-        if r_pool.is_error:
-            logger.error('route hook failed, releasing guest: {}'.format(r_pool.unwrap_error().message))
+    # Mark request as suitable for provisioning.
+    workspace.update_guest_state(
+        artemis.guest.GuestState.ROUTING,
+        artemis.guest.GuestState.PROVISIONING,
+        set_values={
+            'poolname': pool.poolname
+        },
+        pool=pool.poolname
+    )
 
-            _update_guest_state(
-                logger,
-                session,
-                guestname,
-                artemis.guest.GuestState.ROUTING,
-                artemis.guest.GuestState.CONDEMNED,
-            )
+    if workspace.result:
+        # We failed to move guest to PROVISIONING state which means some other instance of this task changed
+        # guest's state instead of us, which means we should throw everything away because our decisions no
+        # longer matter.
+        return SUCCESS
 
-            return
+    # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
+    # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
+    # task.
+    workspace.dispatch_task(acquire_guest, guestname, pool.poolname)
 
-        pool = r_pool.unwrap()
+    if workspace.result:
+        workspace.ungrab_guest_request(artemis.guest.GuestState.PROVISIONING, artemis.guest.GuestState.ROUTING)
 
-        # No suitable pool found
-        if not pool:
-            raise Exception('No suitable pools found, raising to retry routing')
+        return workspace.result
 
-        if _cancel_task_if(logger, cancel):
-            return
+    logger.info('scheduled provisioning')
 
-        # Mark request as suitable for provisioning.
-        if not _update_guest_state(
-            logger,
-            session,
-            guestname,
-            artemis.guest.GuestState.ROUTING,
-            artemis.guest.GuestState.PROVISIONING,
-            set_values={
-                'poolname': pool.poolname
-            },
-            pool=pool.poolname
-        ):
-            # We failed to move guest to PROVISIONING state which means some other instance of this task changed
-            # guest's state instead of us, which means we should throw everything away because our decisions no
-            # longer matter.
-            return
-
-        if _cancel_task_if(logger, cancel, undo=_undo_guest_in_provisioning):
-            return
-
-        # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
-        # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
-        # task.
-        r = _dispatch_task(logger, acquire_guest, guestname, pool.poolname)
-
-        if r.is_ok:
-            return
-
-        # We failed to dispatch the task, but we already marked the request as suitable for provisioning, which means
-        # that any subsequent run of this task would not be able to evaluate it again since it's no longer in ROUTING
-        # state. We should undo this change.
-        #
-        # On the other hand, we just cannot chain undos of undos indefinitely, so if this attempt fails, let's give up
-        # and let humans solve the problems.
-        _undo_guest_in_provisioning()
+    return SUCCESS
 
 
 @dramatiq.actor(**actor_kwargs('ROUTE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1167,93 +1613,66 @@ def route_guest_request(guestname: str) -> None:
 def do_release_snapshot_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
+    guestname: str,
     snapshotname: str
-) -> None:
-    with db.get_session() as session:
-        def _undo_snapshot_in_removing() -> None:
-            # snapshot_request can't be None at this moment
-            assert snapshot_request
-            if _update_snapshot_state(
-                logger,
-                session,
-                snapshotname,
-                snapshot_request.guestname,
-                artemis.guest.GuestState.RELEASING,
-                artemis.guest.GuestState.CONDEMNED
-            ):
-                return
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='release-snapshot',
+        snapshotname=snapshotname
+    )
 
-            assert False, 'unreachable'
+    handle_success('enter-task')
 
-        snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.CONDEMNED)
-        if not snapshot_request:
-            return
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.CONDEMNED)
+    workspace.grab_snapshot_request(artemis.guest.GuestState.CONDEMNED, artemis.guest.GuestState.RELEASING)
 
-        EVENT, ERROR_EVENT = create_event_loggers(
-            logger,
-            session,
-            snapshot_request.guestname,
-            snapshotname=snapshot_request.snapshotname
-        )
+    if workspace.result:
+        return workspace.result
 
-        if not _update_snapshot_state(
-            logger,
-            session,
-            snapshotname,
-            snapshot_request.guestname,
-            artemis.guest.GuestState.CONDEMNED,
-            artemis.guest.GuestState.RELEASING
-        ):
-            return
+    def _undo_grab() -> None:
+        workspace.ungrab_snapshot_request(artemis.guest.GuestState.RELEASING, artemis.guest.GuestState.CONDEMNED)
 
-        if snapshot_request.poolname:
-            r_pool = _get_pool(logger, session, snapshot_request.poolname)
+    assert workspace.sr
 
-            if r_pool.is_error:
-                ERROR_EVENT(r_pool, 'pool sanity failed')
+    if workspace.sr.poolname:
+        spice_details['poolname'] = workspace.sr.poolname
 
-                _undo_snapshot_in_removing()
-                return
+        workspace.load_sr_pool()
+        workspace.load_snapshot()
 
-            pool = r_pool.unwrap()
+        if workspace.result:
+            _undo_grab()
 
-            if _cancel_task_if(logger, cancel, undo=_undo_snapshot_in_removing):
-                return
+            return workspace.result
 
-            r_snapshot = pool.snapshot_factory(snapshot_request)
-            if r_snapshot.is_error:
-                ERROR_EVENT(r_snapshot, 'failed to load pool')
+    query = sqlalchemy \
+        .delete(SnapshotRequest.__table__) \
+        .where(SnapshotRequest.snapshotname == snapshotname) \
+        .where(SnapshotRequest.state == artemis.guest.GuestState.RELEASING.value)
 
-                _undo_snapshot_in_removing()
-                return
+    r_delete = safe_db_execute(logger, session, query)
 
-            r_release = pool.remove_snapshot(r_snapshot.unwrap())
+    if r_delete.is_ok:
+        handle_success('snapshot-released')
 
-            if r_release.is_error:
-                ERROR_EVENT(r_release, 'failed to remove snapshot')
+        return SUCCESS
 
-                _undo_snapshot_in_removing()
-                return
+    failure = r_delete.unwrap_error()
 
-        query = sqlalchemy \
-            .delete(SnapshotRequest.__table__) \
-            .where(SnapshotRequest.snapshotname == snapshotname) \
-            .where(SnapshotRequest.state == artemis.guest.GuestState.RELEASING.value)
+    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
+        logger.warning('not in RELEASING state anymore')
 
-        r_condemn = safe_db_execute(logger, session, query)
+        return SUCCESS
 
-        if r_condemn.is_ok:
-            EVENT('snapshot-released')
-            return
+    _undo_grab()
 
-        failure = r_condemn.unwrap_error()
-
-        if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-            logger.warning('not in CONDEMNED state anymore')
-            return
-
-        failure.reraise()
+    return handle_failure(r_delete, 'failed to release snapshot')
 
 
 @dramatiq.actor(**actor_kwargs('RELEASE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1261,116 +1680,95 @@ def release_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_snapshot_request,
         logger=get_snapshot_logger('release-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(snapshotname,)
+        doer_args=(guestname, snapshotname)
     )
 
 
 def do_update_snapshot(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
+    guestname: str,
     snapshotname: str
-) -> None:
-    with db.get_session() as session:
-        snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.PROMISED)
-        if not snapshot_request:
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='update-snapshot',
+        snapshotname=snapshotname
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.PROMISED)
+    workspace.load_guest_request(guestname, artemis.guest.GuestState.READY)
+    workspace.load_sr_pool()
+    workspace.load_ssh_key()
+    workspace.load_guest()
+    workspace.load_snapshot()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.sr
+    assert workspace.snapshot
+    assert workspace.guest
+    assert workspace.pool
+
+    r_update = workspace.pool.update_snapshot(
+        workspace.snapshot,
+        workspace.guest,
+        start_again=workspace.sr.start_again
+    )
+
+    if r_update.is_error:
+        return handle_failure(r_update, 'failed to update snapshot')
+
+    snapshot = r_update.unwrap()
+
+    def _undo_snapshot_update(snapshot: artemis.snapshot.Snapshot) -> None:
+        assert workspace.pool
+
+        r = workspace.pool.remove_snapshot(snapshot)
+
+        if r.is_ok:
             return
 
-        _, ERROR_EVENT = create_event_loggers(logger, session, snapshot_request.guestname, snapshotname=snapshotname)
+        handle_failure(r, 'failed to undo guest update')
 
-        assert snapshot_request.poolname is not None
-
-        guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
-
-        if not guest_request:
-            return
-
-        r_pool = _get_pool(logger, session, snapshot_request.poolname)
-
-        if r_pool.is_error:
-            ERROR_EVENT(r_pool, 'pool sanity failed')
-            return
-
-        pool = r_pool.unwrap()
-
-        r_guest_sshkey = _get_ssh_key(
-            logger,
-            session,
-            guest_request.ownername,
-            guest_request.ssh_keyname
+    if snapshot.is_promised:
+        workspace.update_snapshot_state(
+            artemis.guest.GuestState.PROMISED,
+            artemis.guest.GuestState.PROMISED,
         )
 
-        if r_guest_sshkey.is_error:
-            ERROR_EVENT(r_guest_sshkey, 'failed to get SSH key')
-            return
+        workspace.dispatch_task(update_snapshot, guestname, snapshotname)
 
-        guest_sshkey = r_guest_sshkey.unwrap()
+        if workspace.result:
+            _undo_snapshot_update(snapshot)
 
-        r_guest = pool.guest_factory(guest_request, ssh_key=guest_sshkey)
-        if r_guest.is_error:
-            ERROR_EVENT(r_guest, 'failed to load pool')
-            return
+            return workspace.result
 
-        guest = r_guest.unwrap()
+        logger.info('scheduled update')
 
-        if _cancel_task_if(logger, cancel):
-            return
+        return SUCCESS
 
-        r_snapshot = pool.snapshot_factory(snapshot_request)
+    workspace.update_snapshot_state(
+        artemis.guest.GuestState.PROMISED,
+        artemis.guest.GuestState.READY
+    )
 
-        if r_snapshot.is_error:
-            ERROR_EVENT(r_snapshot, 'failed to load snapshot')
-            return
+    if workspace.result:
+        _undo_snapshot_update(snapshot)
 
-        def _undo_snapshot_update() -> None:
-            r = pool.remove_snapshot(snapshot)
+        return workspace.result
 
-            if r.is_ok:
-                return
+    logger.info('successfully created')
 
-            raise Exception(r.error)
-
-        r_update = pool.update_snapshot(r_snapshot.unwrap(), guest, start_again=snapshot_request.start_again)
-
-        if r_update.is_error:
-            ERROR_EVENT(r_update, 'failed to update snapshot')
-            return
-
-        snapshot = r_update.unwrap()
-
-        if snapshot.is_promised:
-            if _update_snapshot_state(
-                logger,
-                session,
-                snapshotname,
-                snapshot_request.guestname,
-                artemis.guest.GuestState.PROMISED,
-                artemis.guest.GuestState.PROMISED,
-            ):
-                r_promise = _dispatch_task(logger, update_snapshot, snapshot.guestname, snapshotname)
-
-                if r_promise.is_ok:
-                    logger.info('scheduled update')
-                    return
-
-        else:
-            if _update_snapshot_state(
-                logger,
-                session,
-                snapshotname,
-                snapshot_request.guestname,
-                artemis.guest.GuestState.PROMISED,
-                artemis.guest.GuestState.READY,
-            ):
-                logger.info('successfully created')
-                return
-
-        # Failed to change the state means somebody else already did the update. We have a snapshot on our hands,
-        # which points to resources that are now wasted because there is another instance of this snapshot
-        # already updated or finished. We can safely ask driver to release resources of this particular
-        # snapshot instance - this is not going to affect the instance whose changes were commited to the database
-        # before ours.
-        _undo_snapshot_update()
+    return SUCCESS
 
 
 @dramatiq.actor(**actor_kwargs('UPDATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1378,124 +1776,100 @@ def update_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_update_snapshot,
         logger=get_snapshot_logger('update-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(snapshotname,)
+        doer_args=(guestname, snapshotname)
     )
 
 
 def do_create_snapshot(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
+    guestname: str,
     snapshotname: str
-) -> None:
-    with db.get_session() as session:
-        snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.CREATING)
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='create-snapshot',
+        snapshotname=snapshotname
+    )
 
-        if not snapshot_request:
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.CREATING)
+    workspace.load_guest_request(guestname, artemis.guest.GuestState.READY)
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.sr
+    assert workspace.gr
+
+    # When can this happen?
+    if not workspace.sr.poolname:
+        return RESCHEDULE
+
+    workspace.load_sr_pool()
+    workspace.load_ssh_key()
+    workspace.load_guest()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.pool
+    assert workspace.ssh_key
+    assert workspace.guest
+
+    r_create = workspace.pool.create_snapshot(workspace.sr, workspace.guest)
+
+    if r_create.is_error:
+        return handle_failure(r_create, 'failed to create snapshot')
+
+    snapshot = r_create.unwrap()
+
+    def _undo_snapshot_create() -> None:
+        assert workspace.pool
+
+        r = workspace.pool.remove_snapshot(snapshot)
+
+        if r.is_ok:
             return
 
-        _, ERROR_EVENT = create_event_loggers(logger, session, snapshot_request.guestname, snapshotname=snapshotname)
+        handle_failure(r, 'failed to undo snapshot create')
 
-        if _cancel_task_if(logger, cancel):
-            return
-
-        guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
-
-        if not guest_request:
-            return
-
-        if not snapshot_request.poolname:
-            return
-
-        r_pool = _get_pool(logger, session, snapshot_request.poolname)
-
-        if r_pool.is_error:
-            ERROR_EVENT(r_pool, 'pool sanity failed')
-            return
-
-        pool = r_pool.unwrap()
-
-        r_guest_sshkey = _get_ssh_key(
-            logger,
-            session,
-            guest_request.ownername,
-            guest_request.ssh_keyname
+    if snapshot.is_promised:
+        workspace.update_snapshot_state(
+            artemis.guest.GuestState.CREATING,
+            artemis.guest.GuestState.PROMISED,
         )
 
-        if r_guest_sshkey.is_error:
-            ERROR_EVENT(r_guest_sshkey, 'failed to get SSH key')
-            return
+        workspace.dispatch_task(update_snapshot, guestname, snapshotname)
 
-        guest_sshkey = r_guest_sshkey.unwrap()
+        if workspace.result:
+            _undo_snapshot_create()
 
-        r_guest = pool.guest_factory(guest_request, ssh_key=guest_sshkey)
-        if r_guest.is_error:
-            ERROR_EVENT(r_guest, 'failed to load pool')
-            return
+            return workspace.result
 
-        guest = r_guest.unwrap()
+        logger.info('scheduled update')
 
-        if _cancel_task_if(logger, cancel):
-            return
+        return SUCCESS
 
-        r_create = pool.create_snapshot(snapshot_request, guest)
+    workspace.update_snapshot_state(
+        artemis.guest.GuestState.CREATING,
+        artemis.guest.GuestState.READY
+    )
 
-        if r_create.is_error:
-            error = r_create.unwrap_error()
-
-            ERROR_EVENT(
-                r_create,
-                'failed to create snapshot: {}'.format(error.message),
-                environment=error.details.get('environment'),
-                hook_error=error.details.get('hook_error')
-            )
-
-            raise Exception(error)
-
-        snapshot = r_create.unwrap()
-
-        def _undo_snapshot_create() -> None:
-            r = pool.remove_snapshot(snapshot)
-
-            if r.is_ok:
-                return
-
-            raise Exception(r.error)
-
-        if _cancel_task_if(logger, cancel, undo=_undo_snapshot_create):
-            return
-
-        # If snapshot was promised - schedule update task. Otherwise change state to ready
-        if snapshot.is_promised:
-            if _update_snapshot_state(
-                logger,
-                session,
-                snapshotname,
-                snapshot_request.guestname,
-                artemis.guest.GuestState.CREATING,
-                artemis.guest.GuestState.PROMISED
-            ):
-                r_promise = _dispatch_task(logger, update_snapshot, snapshot.guestname, snapshotname)
-
-                if r_promise.is_ok:
-                    logger.info('scheduled update')
-                    return
-
-        else:
-            if _update_snapshot_state(
-                logger,
-                session,
-                snapshotname,
-                snapshot_request.guestname,
-                artemis.guest.GuestState.CREATING,
-                artemis.guest.GuestState.READY,
-            ):
-                logger.info('successfully created')
-                return
-
-        # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
-        # Again, we must undo and forget about the guest request.
+    if workspace.result:
         _undo_snapshot_create()
+
+        return workspace.result
+
+    logger.info('successfully created')
+
+    return SUCCESS
 
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1503,106 +1877,58 @@ def create_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot,
         logger=get_snapshot_logger('acquire-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(snapshotname,)
+        doer_args=(guestname, snapshotname)
     )
 
 
 def do_route_snapshot_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
+    guestname: str,
     snapshotname: str
-) -> None:
-    with db.get_session() as session:
-        def _undo_snapshot_in_creating() -> None:
-            # snapshot can't be None at this moment
-            assert snapshot
-            if _update_snapshot_state(
-                logger,
-                session,
-                snapshotname,
-                snapshot.guestname,
-                artemis.guest.GuestState.PROVISIONING,
-                artemis.guest.GuestState.ROUTING
-            ):
-                return
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='route-snapshot',
+        snapshotname=snapshotname
+    )
 
-            # We should never ever end up here, because:
-            #
-            # - undo worked => _update_snapshot_state returns True and we leave right above this comment
-            # - undo failed because of unspecified exception -> the exception is reraised in _update_snapshot_state
-            # - undo failed because there was no such record in db -> _update_snapshot_state returns False, which is not
-            # possible...
-            #
-            # We are the only instance of this task that got this far. We were the only instance that managed to move
-            # snapshot to PROVISIONING state, any other instance should see it alread has that state (or they fail to
-            # change it), stopping their execution at that point. We should be the only instance that has anything to
-            # undo.
-            #
-            # So, what changed the snapshot state if it haven't been any other instance of this task, and if we failed
-            # to dispatch any provisioning task??
-            assert False, 'unreachable'
+    handle_success('enter-task')
 
-        # First, pick up our assigned snapshot request. Make sure it hasn't been
-        # processed yet.
-        snapshot = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.ROUTING)
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.ROUTING)
+    workspace.load_guest_request(guestname, artemis.guest.GuestState.READY)
 
-        if not snapshot:
-            return
+    if workspace.result:
+        return workspace.result
 
-        if _cancel_task_if(logger, cancel):
-            return
+    assert workspace.gr
 
-        # Do stuff, examine request and send it a message.
-        #
-        # Be aware that while the request was free to take, it may be being processed by multiple instances of this
-        # task at once - we didn't acquire any lock! We could either introduce locking, or we can continue and make
-        # sure the request didn't change when we start commiting changes. And since asking or forgiveness is simpler
-        # than asking for permission, let's continue but be prepared to clean up if someone else did the work instead
-        # of us.
+    workspace.grab_snapshot_request(
+        artemis.guest.GuestState.ROUTING,
+        artemis.guest.GuestState.CREATING,
+        set_values={
+            'poolname': workspace.gr.poolname
+        }
+    )
 
-        # We are expecting, that guest is READY and active
-        guest_request = _get_guest_by_state(logger, session, snapshot.guestname, artemis.guest.GuestState.READY)
+    if workspace.result:
+        return workspace.result
 
-        if not guest_request:
-            return
+    workspace.dispatch_task(create_snapshot, guestname, snapshotname)
 
-        if _cancel_task_if(logger, cancel):
-            return
+    if workspace.result:
+        workspace.ungrab_guest_request(artemis.guest.GuestState.CREATING, artemis.guest.GuestState.ROUTING)
 
-        # Mark request as suitable for provisioning.
-        if not _update_snapshot_state(
-            logger,
-            session,
-            snapshotname,
-            snapshot.guestname,
-            artemis.guest.GuestState.ROUTING,
-            artemis.guest.GuestState.CREATING,
-            set_values={
-                'poolname': guest_request.poolname
-            }
-        ):
-            # We failed to move snapshot to CREATING state which means some other instance of this task changed
-            # snapshot's state instead of us, which means we should throw everything away because our decisions no
-            # longer matter.
-            return
+        return workspace.result
 
-        # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
-        # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
-        # task.
-        r = _dispatch_task(logger, create_snapshot, snapshot.guestname, snapshotname)
-        logger.info('task was dispatched')
+    logger.info('scheduled creation')
 
-        if r.is_ok:
-            return
-
-        # We failed to dispatch the task, but we already marked the request as suitable for provisioning, which means
-        # that any subsequent run of this task would not be able to evaluate it again since it's no longer in ROUTING
-        # state. We should undo this change.
-        #
-        # On the other hand, we just cannot chain undos of undos indefinitely, so if this attempt fails, let's give up
-        # and let humans solve the problems.
-        _undo_snapshot_in_creating()
+    return SUCCESS
 
 
 @dramatiq.actor(**actor_kwargs('ROUTE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1610,127 +1936,69 @@ def route_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_route_snapshot_request,
         logger=get_snapshot_logger('route-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(snapshotname,)
+        doer_args=(guestname, snapshotname)
     )
 
 
 def do_restore_snapshot_request(
     logger: gluetool.log.ContextAdapter,
     db: artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
+    guestname: str,
     snapshotname: str
-) -> None:
-    with db.get_session() as session:
-        def _undo_snapshot_restore() -> None:
-            # snapshot_request can't be None at this moment
-            assert snapshot_request
-            if _update_snapshot_state(
-                logger,
-                session,
-                snapshotname,
-                snapshot_request.guestname,
-                artemis.guest.GuestState.PROCESSING,
-                artemis.guest.GuestState.RESTORING
-            ):
-                return
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='restore-snapshot',
+        snapshotname=snapshotname
+    )
 
-            assert False, 'unreachable'
+    handle_success('enter-task')
 
-        snapshot_request = _get_snapshot_by_state(logger, session, snapshotname, artemis.guest.GuestState.RESTORING)
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.RESTORING)
+    workspace.load_guest_request(guestname, artemis.guest.GuestState.READY)
+    workspace.grab_snapshot_request(artemis.guest.GuestState.RESTORING, artemis.guest.GuestState.PROCESSING)
 
-        if not snapshot_request:
-            return
+    if workspace.result:
+        return workspace.result
 
-        _, ERROR_EVENT = create_event_loggers(logger, session, snapshot_request.guestname, snapshotname=snapshotname)
+    workspace.load_sr_pool()
+    workspace.load_ssh_key()
+    workspace.load_guest()
 
-        if _update_snapshot_state(
-            logger,
-            session,
-            snapshotname,
-            snapshot_request.guestname,
-            artemis.guest.GuestState.RESTORING,
-            artemis.guest.GuestState.PROCESSING
-        ):
-            logger.info('state changed to processing')
+    if workspace.result:
+        workspace.ungrab_snapshot_request(artemis.guest.GuestState.PROCESSING, artemis.guest.GuestState.RESTORING)
 
-        if _cancel_task_if(logger, cancel, undo=_undo_snapshot_restore):
-            return
+        return workspace.result
 
-        guest_request = _get_guest_by_state(logger, session, snapshot_request.guestname, artemis.guest.GuestState.READY)
+    assert workspace.sr
+    assert workspace.pool
+    assert workspace.guest
 
-        if not guest_request:
-            _undo_snapshot_restore()
-            return
+    r_restore = workspace.pool.restore_snapshot(workspace.sr, workspace.guest)
 
-        assert snapshot_request.poolname is not None
+    if r_restore.is_error:
+        workspace.ungrab_snapshot_request(artemis.guest.GuestState.PROCESSING, artemis.guest.GuestState.RESTORING)
 
-        r_pool = _get_pool(logger, session, snapshot_request.poolname)
+        return FAIL(r_restore)
 
-        if r_pool.is_error:
-            ERROR_EVENT(r_pool, 'pool sanity failed')
+    workspace.update_snapshot_state(
+        artemis.guest.GuestState.PROCESSING,
+        artemis.guest.GuestState.READY
+    )
 
-            _undo_snapshot_restore()
-            return
+    if workspace.result:
+        workspace.ungrab_snapshot_request(artemis.guest.GuestState.PROCESSING, artemis.guest.GuestState.RESTORING)
 
-        pool = r_pool.unwrap()
+        return workspace.result
 
-        r_guest_sshkey = _get_ssh_key(
-            logger,
-            session,
-            guest_request.ownername,
-            guest_request.ssh_keyname
-        )
+    logger.info('restored sucessfully')
 
-        if r_guest_sshkey.is_error:
-            ERROR_EVENT(r_guest_sshkey, 'failed to get SSH key')
-
-            _undo_snapshot_restore()
-            return
-
-        guest_sshkey = r_guest_sshkey.unwrap()
-
-        r_guest = pool.guest_factory(guest_request, ssh_key=guest_sshkey)
-        if r_guest.is_error:
-            ERROR_EVENT(r_guest, 'failed to load guest')
-
-            _undo_snapshot_restore()
-            return
-
-        guest = r_guest.unwrap()
-
-        if _cancel_task_if(logger, cancel, undo=_undo_snapshot_restore):
-            return
-
-        r_restore = pool.restore_snapshot(snapshot_request, guest)
-
-        if r_restore.is_error:
-            _undo_snapshot_restore()
-
-            error = r_restore.unwrap_error()
-
-            ERROR_EVENT(
-                r_restore,
-                'failed to restore snapshot: {}'.format(error.message),
-                environment=error.details.get('environment'),
-                hook_error=error.details.get('hook_error')
-            )
-
-            raise Exception(error)
-
-        if _update_snapshot_state(
-            logger,
-            session,
-            snapshotname,
-            snapshot_request.guestname,
-            artemis.guest.GuestState.PROCESSING,
-            artemis.guest.GuestState.READY
-        ):
-            logger.info('restored sucessfully')
-            return
-
-        # Failed to change the state means somebody else already did the provisioning. Or even canceled the request.
-        # Again, we must undo and forget about the guest request.
-        _undo_snapshot_restore()
+    return SUCCESS
 
 
 @dramatiq.actor(**actor_kwargs('RESTORE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1738,5 +2006,5 @@ def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_restore_snapshot_request,
         logger=get_snapshot_logger('restore-snapshot', root_logger, guestname, snapshotname),
-        doer_args=(snapshotname,)
+        doer_args=(guestname, snapshotname)
     )
