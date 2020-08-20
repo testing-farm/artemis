@@ -1170,10 +1170,13 @@ def do_release_snapshot_request(
 ) -> None:
     with db.get_session() as session:
         def _undo_snapshot_in_removing() -> None:
-            if _update_guest_state(
+            # snapshot_request can't be None at this moment
+            assert snapshot_request
+            if _update_snapshot_state(
                 logger,
                 session,
                 snapshotname,
+                snapshot_request.guestname,
                 artemis.guest.GuestState.RELEASING,
                 artemis.guest.GuestState.CONDEMNED
             ):
@@ -1510,10 +1513,13 @@ def do_route_snapshot_request(
 ) -> None:
     with db.get_session() as session:
         def _undo_snapshot_in_creating() -> None:
-            if _update_guest_state(
+            # snapshot can't be None at this moment
+            assert snapshot
+            if _update_snapshot_state(
                 logger,
                 session,
                 snapshotname,
+                snapshot.guestname,
                 artemis.guest.GuestState.PROVISIONING,
                 artemis.guest.GuestState.ROUTING
             ):
@@ -1614,10 +1620,13 @@ def do_restore_snapshot_request(
 ) -> None:
     with db.get_session() as session:
         def _undo_snapshot_restore() -> None:
-            if _update_guest_state(
+            # snapshot_request can't be None at this moment
+            assert snapshot_request
+            if _update_snapshot_state(
                 logger,
                 session,
                 snapshotname,
+                snapshot_request.guestname,
                 artemis.guest.GuestState.PROCESSING,
                 artemis.guest.GuestState.RESTORING
             ):
