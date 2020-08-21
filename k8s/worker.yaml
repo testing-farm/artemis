@@ -46,6 +46,8 @@ spec:
               value: "no"
             - name: ARTEMIS_LOG_DB_POOL
               value: "no"
+            - name: ARTEMIS_LOG_DB_QUERIES
+              value: "yes"
             - name: ARTEMIS_VAULT_PASSWORD_FILE
               value: /configuration/.vault_pass
             - name: ARTEMIS_ACTOR_DEFAULT_RETRIES
