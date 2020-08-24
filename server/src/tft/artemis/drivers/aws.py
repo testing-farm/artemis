@@ -1,6 +1,5 @@
 import base64
 import dataclasses
-import re
 import threading
 
 from typing import Any, Dict, List, Optional
@@ -22,12 +21,6 @@ from ..script import hook_engine
 #
 BlockDeviceMappingsType = List[Dict[str, Any]]
 
-#
-# All these defautls should go to configuration later
-#
-AWS_PRODUCT_DESC_RHEL = 'Red Hat Enterprise Linux'
-AWS_PRODUCT_DESC_LINUX = 'Linux/UNIX'
-AWS_SPOT_PRICE_BID_PERCENTAGE = 10  # how much % to bid to the spot price
 
 AWS_INSTANCE_SPECIFICATION = Template("""
 {
@@ -227,16 +220,13 @@ class AWSDriver(PoolDriver):
         image: Dict[str, str]
     ) -> Result[float, Failure]:
 
-        # We guess the product description from image name currently. The product description influences
-        # the spot instance price. For Fedora the instances are 10x cheaper then for RHEL ...
-        product_description = AWS_PRODUCT_DESC_RHEL if re.search('(?i)rhel', image['Name']) else AWS_PRODUCT_DESC_LINUX
         availability_zone = self.pool_config['availability-zone']
 
         r_spot_price = self._aws_command([
             'ec2', 'describe-spot-price-history',
             '--instance-types={}'.format(instance_type),
             '--availability-zone={}'.format(availability_zone),
-            '--product-descriptions={}'.format(product_description),
+            '--product-descriptions={}'.format(image['PlatformDetails']),
             '--max-items=1'
         ], key='SpotPriceHistory')
 
@@ -261,7 +251,7 @@ class AWSDriver(PoolDriver):
             'availability zone': self.pool_config['availability-zone'],
             'current price': current_price,
             'instance type': instance_type,
-            'product description': product_description,
+            'product description': image['PlatformDetails'],
             'bid': '{}%'.format(spot_price_bid_percentage)
         })
 
