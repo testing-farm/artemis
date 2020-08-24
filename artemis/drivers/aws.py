@@ -14,12 +14,6 @@ from artemis import Failure
 import artemis.db
 import artemis.drivers
 
-#
-# All these defautls should go to configuration later
-#
-AWS_PRODUCT_DESC_RHEL = 'Red Hat Enterprise Linux'
-AWS_PRODUCT_DESC_LINUX = 'Linux/UNIX'
-AWS_SPOT_PRICE_BID_PERCENTAGE = 10  # how much % to bid to the spot price
 
 AWS_INSTANCE_SPECIFICATION = """
 {{
@@ -100,7 +94,8 @@ class AWSDriver(artemis.drivers.PoolDriver):
             'master-key-name',
             'security-group',
             'subnet-id',
-            'spot-price-bid-percentage'
+            'spot-price-bid-percentage',
+            'product-description'
         ]
 
         for variable in required_variables:
@@ -227,7 +222,10 @@ class AWSDriver(artemis.drivers.PoolDriver):
 
         # We guess the product description from image name currently. The product description influences
         # the spot instance price. For Fedora the instances are 10x cheaper then for RHEL ...
-        product_description = AWS_PRODUCT_DESC_RHEL if re.search('(?i)rhel', image['Name']) else AWS_PRODUCT_DESC_LINUX
+        if re.search('(?i)rhel', image['Name']):
+            product_description = self.pool_config['product-description']['rhel']
+        else:
+            product_description = self.pool_config['product-description']['fedora']
         availability_zone = self.pool_config['availability-zone']
 
         r_spot_price = self._aws_command([
