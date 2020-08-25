@@ -1,5 +1,6 @@
 import argparse
 import dataclasses
+import threading
 import sqlalchemy
 
 import gluetool.log
@@ -12,8 +13,7 @@ from artemis.guest import Guest, GuestState
 import artemis.snapshot
 
 # Type annotations
-from typing import Any, List, Dict, Optional, cast
-import threading
+from typing import cast, Any, List, Dict, Optional, Tuple
 
 
 class PoolCapabilities(argparse.Namespace):
@@ -21,10 +21,26 @@ class PoolCapabilities(argparse.Namespace):
 
 
 @dataclasses.dataclass
+class PoolResources:
+    instances: Optional[int] = None
+    cores: Optional[int] = None
+    memory: Optional[int] = None
+    diskspace: Optional[int] = None
+    snapshots: Optional[int] = None
+
+
+PoolResourceUsage = PoolResources
+PoolResourceLimits = PoolResources
+
+
+@dataclasses.dataclass
 class PoolMetrics:
     current_guest_request_count: int = 0
     current_guest_request_count_per_state: Dict[artemis.guest.GuestState, int] = \
         dataclasses.field(default_factory=dict)
+
+    resource_limits: PoolResourceLimits = dataclasses.field(default_factory=PoolResourceLimits)
+    resource_usage: PoolResourceUsage = dataclasses.field(default_factory=PoolResourceUsage)
 
 
 class PoolDriver(gluetool.log.LoggerMixin):
@@ -38,6 +54,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         self.pool_config = pool_config
         self.poolname = poolname
+
+        self._pool_resource_metrics: Optional[Tuple[PoolResourceLimits, PoolResourceUsage]] = None
+
+    def __repr__(self) -> str:
+        return '<{}: {}>'.format(self.__class__.__name__, self.poolname)
 
     def guest_factory(
         self,
@@ -199,12 +220,15 @@ class PoolDriver(gluetool.log.LoggerMixin):
                     .filter(artemis.db.GuestRequest.poolname == self.poolname)
                     .all())
 
+    def get_pool_resource_metrics(self) -> Result[Tuple[PoolResourceLimits, PoolResourceUsage], Failure]:
+        return Ok((PoolResourceLimits(), PoolResourceUsage()))
+
     def metrics(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session
     ) -> PoolMetrics:
-        """ Provide Promethues metrics about current pool state. """
+        """ Provide Prometheus metrics about current pool state. """
 
         assert self.poolname
         metrics = PoolMetrics()
@@ -215,5 +239,19 @@ class PoolDriver(gluetool.log.LoggerMixin):
         for state in GuestState:
             current_guest_count = len([guest for guest in current_guests if guest.state == state.value])
             metrics.current_guest_request_count_per_state[state] = current_guest_count
+
+        if not self._pool_resource_metrics:
+            r_resource_metrics = self.get_pool_resource_metrics()
+
+            if r_resource_metrics.is_error:
+                logger.warning('failed to fetch pool resource metrics')
+
+            else:
+                self._pool_resource_metrics = r_resource_metrics.unwrap()
+
+                metrics.resource_limits, metrics.resource_usage = self._pool_resource_metrics
+
+        else:
+            metrics.resource_limits, metrics.resource_usage = self._pool_resource_metrics
 
         return metrics

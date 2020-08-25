@@ -13,9 +13,11 @@ import artemis
 import artemis.db
 import artemis.drivers
 import artemis.snapshot
-from artemis import Failure
 
-from typing import Any, Dict, List, Optional, Union
+from artemis import Failure
+from artemis.drivers import PoolResourceLimits, PoolResourceUsage
+
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 # Temeout for wait function in _stop_guest and _start_guest events
@@ -743,3 +745,52 @@ class OpenStackDriver(artemis.drivers.PoolDriver):
         capabilities.supports_snapshots = True
 
         return Ok(capabilities)
+
+    def get_pool_resource_metrics(self) -> Result[Tuple[PoolResourceLimits, PoolResourceUsage], Failure]:
+        r_query_limits = self._run_os(
+            ['limits', 'show', '--absolute', '--reserved'],
+            json_format=True
+        )
+
+        if r_query_limits.is_error:
+            return Error(r_query_limits.unwrap_error())
+
+        raw_limits_container = r_query_limits.unwrap()
+
+        if not isinstance(raw_limits_container, list):
+            return Error(Failure('Invalid format of OpenStack limits report'))
+
+        limits, usage = PoolResourceLimits(), PoolResourceUsage()
+
+        for entry in raw_limits_container:
+            name, value = entry.get('Name'), entry.get('Value')
+
+            if not isinstance(entry, dict) or 'Name' not in entry or 'Value' not in entry:
+                return Error(Failure('Invalid format of OpenStack limits report'))
+
+            if name == 'totalCoresUsed':
+                usage.cores = int(value)
+
+            elif name == 'totalRAMUsed':
+                usage.memory = int(value) * 1048576
+
+            elif name == 'totalInstancesUsed':
+                usage.instances = int(value)
+
+            elif name == 'totalSnapshotsUsed':
+                usage.snapshots = int(value)
+
+            elif name == 'maxTotalCores':
+                limits.cores = int(value)
+
+            elif name == 'maxTotalInstances':
+                limits.instances = int(value)
+
+            elif name == 'maxTotalRAMSize':
+                # RAM size/usage is reported in megabytes
+                limits.memory = int(value) * 1048576
+
+            elif name == 'maxTotalSnapshots':
+                limits.snapshots = int(value)
+
+        return Ok((limits, usage))
