@@ -2,9 +2,10 @@ import json
 import re
 import threading
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import gluetool.log
+from gluetool.glue import GlueError, GlueCommandError
 from gluetool.log import log_dict
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import Command, wait
@@ -54,7 +55,7 @@ class AWSGuest(artemis.guest.Guest):
         self,
         guestname: str,
         instance_id: str,
-        spot_request_id: str,
+        spot_request_id: Optional[str] = None,
         address: Optional[str] = None,
         ssh_info: Optional[artemis.guest.SSHInfo] = None
     ) -> None:
@@ -65,7 +66,7 @@ class AWSGuest(artemis.guest.Guest):
     def __repr__(self) -> str:
         return '<AWSGuest: id={}, spot_request_id={}, address={}, ssh_info={}>'.format(
             self._instance_id,
-            self._spot_request_id,
+            self._spot_request_id if self._spot_request_id else '<not a spot request>',
             self.address,
             self.ssh_info
         )
@@ -73,7 +74,7 @@ class AWSGuest(artemis.guest.Guest):
     def pool_data_to_db(self) -> str:
         return json.dumps({
             'instance_id': str(self._instance_id),
-            'spot_request_id': str(self._spot_request_id)
+            'spot_request_id': str(self._spot_request_id) if self._spot_request_id else ''
         })
 
 
@@ -92,15 +93,23 @@ class AWSDriver(artemis.drivers.PoolDriver):
             'command',
             'default-instance-type',
             'master-key-name',
+        ]
+
+        required_spot_request_variables = [
             'security-group',
             'subnet-id',
             'spot-price-bid-percentage',
-            'product-description'
+            'product-description',
         ]
 
         for variable in required_variables:
             if variable not in self.pool_config:
                 return Error(Failure("Required variable '{}' not found in pool configuration".format(variable)))
+
+        if 'use-spot-request' in self.pool_config:
+            for variable in required_spot_request_variables:
+                if variable not in self.pool_config:
+                    return Error(Failure("Required variable '{}' not found in pool configuration".format(variable)))
 
         return Ok(True)
 
@@ -130,13 +139,13 @@ class AWSDriver(artemis.drivers.PoolDriver):
         try:
             instance = result.unwrap()[0]['Instances'][0]
         except (KeyError, IndexError):
-            return Error(Failure('no instance found'))
+            return Error(Failure('no InstanceId found in AWS output'))
 
         return Ok(
             AWSGuest(
                 guest_request.guestname,
                 pool_data['instance_id'],
-                pool_data['spot_request_id'],
+                pool_data['spot_request_id'] if pool_data['spot_request_id'] else None,
                 instance['PrivateIpAddress'],
                 artemis.guest.SSHInfo(
                     port=guest_request.ssh_port,
@@ -197,7 +206,7 @@ class AWSDriver(artemis.drivers.PoolDriver):
 
         try:
             output = Command(command).run()
-        except gluetool.glue.GlueCommandError as exc:
+        except GlueCommandError as exc:
             return Error(Failure.from_exc(
                 "Error running aws command",
                 exc,
@@ -211,7 +220,12 @@ class AWSDriver(artemis.drivers.PoolDriver):
         try:
             return Ok(json[key] if key else json)
         except KeyError:
-            return Error(Failure("Key '{}' not found in aws command '{}' json output".format(key, command)))
+            return Error(
+                Failure(
+                    "Key '{}' not found in aws command '{}' json output".format(key, command),
+                    command_output=output
+                )
+            )
 
     def _get_spot_price(
         self,
@@ -262,6 +276,54 @@ class AWSDriver(artemis.drivers.PoolDriver):
         })
 
         return Ok(price)
+
+    def _wait_for_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        instance_id: str
+    ) -> Result[Tuple[Dict[str, Any], str], Failure]:
+
+        # wait until instance running
+        def _check_instance_running() -> Result[Any, Failure]:
+            # wait for request to be fulfilled
+            r_instance = self._aws_command([
+                'ec2', 'describe-instances',
+                '--instance-id={}'.format(instance_id)
+            ], key='Reservations')
+
+            # command returned an unxpected result, not worth to continue
+            if r_instance.is_error:
+                return Ok(r_instance.unwrap_error())
+
+            instance = r_instance.unwrap()[0]['Instances'][0]
+            owner = r_instance.unwrap()[0]['OwnerId']
+
+            # return an instance if it became 'running'
+            if instance['State']['Name'] == 'running':
+                return Ok((instance, owner))
+
+            return Error(Failure('Instance in state {}'.format(instance['State']['Name'])))
+
+        logger.info('waiting for instance to be running for {}s, tick each {}s'.format(
+            self.pool_config['instance-running-timeout'], self.pool_config['instance-running-tick']
+        ))
+
+        try:
+            # Note that wait unwraps the result
+            instance_owner = wait(
+                'wait for for instance to be running', _check_instance_running,
+                timeout=int(self.pool_config['instance-running-timeout']),
+                tick=int(self.pool_config['instance-running-tick'])
+            )
+
+            if isinstance(instance_owner, Failure):
+                return Error(instance_owner)
+
+            return Ok(instance_owner)
+
+        # In case of timeout gluetool.utils.wait tracebacks
+        except GlueError:
+            return Error(Failure('Timeout while waiting for instance to be ready'))
 
     def _request_spot_instance(
         self,
@@ -334,41 +396,12 @@ class AWSDriver(artemis.drivers.PoolDriver):
 
         logger.info("instance id '{}'".format(instance_id))
 
-        # wait until instance running
-        def _check_instance_running() -> Result[Any, Failure]:
-            # wait for request to be fulfilled
-            r_instance = self._aws_command([
-                'ec2', 'describe-instances',
-                '--instance-id={}'.format(instance_id)
-            ], key='Reservations')
+        r_wait_instance = self._wait_for_instance(logger, instance_id)
 
-            # command returned an unxpected result
-            if r_instance.is_error:
-                r_instance.unwrap_error().log(logger.error, label='provisioning failed')
-                return Ok(None)
+        if r_wait_instance.is_error:
+            return Error(r_wait_instance.unwrap_error())
 
-            instance = r_instance.unwrap()[0]['Instances'][0]
-            owner = r_instance.unwrap()[0]['OwnerId']
-
-            # return an instance if it became 'running'
-            if instance['State']['Name'] == 'running':
-                return Ok((instance, owner))
-
-            return Error(Failure('Instance in state {}'.format(instance['State']['Name'])))
-
-        logger.info('waiting for instance to be running for {}s, tick each {}s'.format(
-            self.pool_config['instance-running-timeout'], self.pool_config['instance-running-tick']
-        ))
-        r_wait_instance = wait(
-            'wait for for instance to be running', _check_instance_running,
-            timeout=int(self.pool_config['instance-running-timeout']),
-            tick=int(self.pool_config['instance-running-tick'])
-        )
-
-        if r_wait_instance is None:
-            return Error(FailedSpotRequest('Failed to get spot instance state', spot_request_id))
-
-        instance, owner = r_wait_instance
+        instance, owner = r_wait_instance.unwrap()
 
         self.info('instance succesfully provisioned and it has become running')
 
@@ -385,6 +418,58 @@ class AWSDriver(artemis.drivers.PoolDriver):
                 instance['InstanceId'],
                 spot_request_id,
                 instance['PrivateIpAddress'],
+                ssh_info=None
+            )
+        )
+
+    def _request_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        instance_type: str,
+        image: Dict[str, str],
+        guestname: str
+    ) -> Result[artemis.guest.Guest, Failure]:
+
+        r_instance_request = self._aws_command([
+            'ec2', 'run-instances',
+            '--image-id', image['ImageId'],
+            '--key-name', self.pool_config['master-key-name'],
+            '--instance-type', instance_type
+        ], key='Instances')
+
+        if r_instance_request.is_error:
+            return r_instance_request
+
+        instance_request = r_instance_request.unwrap()
+
+        try:
+            instance_id = instance_request[0]['InstanceId']
+        except (KeyError, IndexError):
+            return Error(Failure('Failed to find InstanceID in aws output', output=instance_request))
+
+        logger.info("instance id '{}'".format(instance_id))
+
+        r_wait_instance = self._wait_for_instance(logger, instance_id)
+
+        if r_wait_instance.is_error:
+            return Error(r_wait_instance.unwrap_error())
+
+        instance, owner = r_wait_instance.unwrap()
+
+        self.info('instance succesfully provisioned and it has become running')
+
+        # tag the instance if requested
+        self._tag_instance(instance, owner, tags={
+            'Name': '{}::{}'.format(instance['PrivateIpAddress'], image['Name']),
+            'ArtemisGuestName': guestname,
+        })
+
+        return Ok(
+            AWSGuest(
+                guestname,
+                instance['InstanceId'],
+                spot_request_id=None,
+                address=instance['PrivateIpAddress'],
                 ssh_info=None
             )
         )
@@ -470,25 +555,35 @@ class AWSDriver(artemis.drivers.PoolDriver):
 
         image = r_image.unwrap()
 
-        # request a spot instance and wait for it's full fillment
-        r_spot_instance = self._request_spot_instance(logger, instance_type, image, guest_request.guestname)
+        # Spot requests require special handling
+        if 'use-spot-request' in self.pool_config:
 
-        if r_spot_instance.is_error:
-            # cleanup the spot request if needed
-            if isinstance(r_spot_instance.error, FailedSpotRequest):
-                self._aws_command([
-                    'ec2', 'cancel-spot-instance-requests',
-                    '--spot-instance-request-ids={}'.format(r_spot_instance.error.spot_request_id)
-                ])
+            # request a spot instance and wait for it's full fillment
+            r_instance = self._request_spot_instance(logger, instance_type, image, guest_request.guestname)
 
-                return Error(Failure(r_spot_instance.error.message))
+            if r_instance.is_error:
+                # cleanup the spot request if needed
+                if isinstance(r_instance.error, FailedSpotRequest):
+                    self._aws_command([
+                        'ec2', 'cancel-spot-instance-requests',
+                        '--spot-instance-request-ids={}'.format(r_instance.error.spot_request_id)
+                    ])
 
-            # just return the error, no cleanup required
-            return r_spot_instance
+                    return Error(Failure(r_instance.error.message))
 
-        guest = r_spot_instance.unwrap()
+                # just return the error, no cleanup required
+                return r_instance
 
-        return Ok(guest)
+        # Non-spot request
+        else:
+            # request a spot instance and wait for it's full fillment
+            r_instance = self._request_instance(logger, instance_type, image, guest_request.guestname)
+
+            if r_instance.is_error:
+                # just return the error, no cleanup required, we did not create any instance
+                return r_instance
+
+        return Ok(r_instance.unwrap())
 
     def release_guest(self, guest: artemis.guest.Guest) -> Result[bool, Failure]:
         """
@@ -504,16 +599,17 @@ class AWSDriver(artemis.drivers.PoolDriver):
         # required for type checking
         assert isinstance(guest, AWSGuest)
 
-        if guest._instance_id is None or guest._spot_request_id is None:
+        if guest._instance_id is None:
             return Error(Failure('guest has no identification'))
 
-        r_cancel_request = self._aws_command([
-            'ec2', 'cancel-spot-instance-requests',
-            '--spot-instance-request-ids={}'.format(guest._spot_request_id)
-        ])
+        if guest._spot_request_id:
+            r_cancel_request = self._aws_command([
+                'ec2', 'cancel-spot-instance-requests',
+                '--spot-instance-request-ids={}'.format(guest._spot_request_id)
+            ])
 
-        if r_cancel_request.is_error:
-            return r_cancel_request
+            if r_cancel_request.is_error:
+                return r_cancel_request
 
         r_terminate_instance = self._aws_command([
             'ec2', 'terminate-instances',
