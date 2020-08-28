@@ -26,6 +26,8 @@ ENV HOME=/tmp
 # default kerberos ccache file
 ENV KRB_CCACHE=/dev/shm/ccache
 
+ENV PATH="/tmp/.poetry/bin:$PATH"
+
 #
 # Prepare virtual environment and install all required dependencies
 #
@@ -46,11 +48,9 @@ RUN    apk add --no-cache bash \
                           python3-dev \
     && if [ ! -e /usr/bin/python ]; then ln -sf python3 /usr/bin/python ; fi \
     && python3 -m ensurepip \
-    && rm -r /usr/lib/python*/ensurepip \
-    && pip3 install --no-cache --upgrade pip setuptools wheel \
+    && pip3 install --no-cache --upgrade pip setuptools virtualenv wheel \
     && if [ ! -e /usr/bin/pip ]; then ln -s pip3 /usr/bin/pip ; fi \
-    && pip3 install -U virtualenv \
-    && virtualenv -p /usr/bin/python3 /APP \
+    && curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python3 \
     && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
 
 #
@@ -72,23 +72,11 @@ RUN    mkdir -p /etc/beaker \
     && ln -s $CONFIGURATION/beaker-client-config /etc/beaker/client.conf
 
 #
-# Add setup.py and install all requirements
-# Note: we do this first to avoid reinstalling of all requirements
-#       for local development#
-COPY setup.py /APP_SOURCE/
-RUN    source /APP/bin/activate \
-    && cd /APP_SOURCE \
-    && python setup.py egg_info || true \
-    && pip install -r artemis.egg-info/requires.txt
-
+# Copy Artemis sources and install it
 #
-# Copy artemis source and install artemis from it
-#
-COPY artemis /APP_SOURCE/artemis/
-RUN    source /APP/bin/activate \
-    && cd /APP_SOURCE \
-    && pip install . \
-    && rm -rf /APP_SOURCE
+COPY server /APP/
+RUN    cd /APP \
+    && poetry install --no-dev
 
 #
 # Add entrypoint
@@ -112,7 +100,7 @@ RUN chmod +x /wait-for-postgres.sh /wait-for-rabbitmq.sh /wait-for-api.sh
 #
 # Make sure we can edit /etc/passwd
 #
-RUN chmod g+w /etc/passwd
+RUN chmod -R g+rwX /etc/passwd /tmp/.poetry
 
 #
 # Entrypoint for all artemis apps

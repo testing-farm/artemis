@@ -1,5 +1,7 @@
 = Artemis
 
+*TODO:* server-specific readme belongs here.
+
 *Artemis* is a machine provisioning service. Its goal is to provision a machine - using a set of preconfigured providers as backends - which would satisfy the given hardware and software requirements.
 
 Using REST API, users request provisioning of *guests*, describing the desired hardware and software configuration of each guest. Requests are matched with one or more *pools* - each pool represents one provisioning service like AWS, Azure or private OpenStack instance, each with its own set of available machine setups it can provide - and a machine is acquired from the most suitable pool.
@@ -39,7 +41,7 @@ Specification of API is available at https://artemis6.docs.apiary.io/#reference.
 == Local development environment
 
 The development environment runs Artemis in https://docs.okd.io/latest/minishift[Minishift] via https://skaffold.dev[Skaffold]. Currently the development environment requires Docker to be installed on the machine, as skaffold uses docker API for building the container images.
-
+Skaffold will redeploy artemis uppon code changes automatically.
 Currently, Artemis is not working with latest skaffold, install https://storage.googleapis.com/skaffold/releases/v1.5.0/skaffold-linux-amd6[version 1.5].
 
 === Install requirements
@@ -83,15 +85,6 @@ To install them follow the following guide: https://docs.okd.io/1.5/cli_referenc
 
 Create the Artemis development configuration in the directory 'configuration/' in the project root. Note that the configuration must have a flat
 structure without any subdirectories currently.
-
-You can use samples and gen.sh script from configuration/ directory that will setup Artemis to use your existing openstack project.
-
-1. `cp configuration/env.yml.sample configuration/env.yml`
-2. Populate `env.yml` file with details of your openstack tenant and ssh key pair to be used by Artemis as master-key.
-3. Create an openstack keypair with Artemis public ssh key with selected `openstack_key_name` from `env.yml`. For example,
-if `openstack_key_name` is `artemis`:
-
-`openstack keypair create --public-key path/to/artemis.pub artemis`
 
 === Start the development environment
 
@@ -138,19 +131,19 @@ Make sure you have sourced the `develop.sh` script with `-s` option before inter
 ====
 
 * RabbitMQ Management Console
-** hostname: `oc get route artemis-api`
-** user: guest
-** password: guest
+  * hostname: `oc get route artemis-api`
+  * user: guest
+  * password: guest
 
 * RabbitMQ Management Console
-** hostname: `oc get route artemis-rabbitmq-management`
-** user: guest
-** password: guest
+  * hostname: `oc get route artemis-rabbitmq-management`
+  * user: guest
+  * password: guest
 
 * PostgreSQL:
-** user: artemis
-** password: artemis
-** database: artemis
+  * user: artemis
+  * password: artemis
+  * database: artemis
 
 [NOTE]
 ====
@@ -159,47 +152,6 @@ If Artemis is killed (e.g. CTRL+C), wait for all pods to be terminated before so
 ====
 
 
-== Local development environment without minishift
-
-That is the most lightweight development setup. It spawns rabbitmq, postgresql and redis in docker containers on your
-local machine, while Artemis services (API server, dispatcher and workers) are launched as daemons by `nominishift-develop.sh`.
-
-[NOTE]
-====
-Artemis server and its CLI tool, `artemis-cli`, exist as separate projects in this repository. Each has its own requriements, and you have to install them as such. We are using https://python-poetry.org/[Poetry] to manage installations.
-====
-
-* Artemis service lives in `server` directory:
-+
-[source,shell]
-....
-$ cd server/
-....
-+
-* create a local installation of Artemis:
-+
-[source,shell]
-....
-$ poetry install
-....
-+
-Poetry will take care fo creating a dedicated virtual environment, installing requirements, and make it accessible via `poetry run` or `poetry shell`.
-+
-* the configurations step is identical to the general instruction.
-* launch rabbitmq, postgresql and redis containers via `docker-compose`:
-+
-[source,shell]
-....
-$ docker-compose up
-....
-+
-* start Artemis:
-+
-[source,shell]
-....
-$ bash nominishift-develop.sh
-....
-
 == How to provision a machine
 
 * the best way is to use artemis-cli
@@ -207,10 +159,3 @@ $ bash nominishift-develop.sh
   * find out API url:`minishift openshift service --url artemis-api`
   * add '_docs' to url and open in browser
 
-[NOTE]
-====
-If you can't access the provisioned machine by ssh, please check that the security group allows ssh traffic.
-
-(Openstack) To access the vm please use the ssh key you registered as the keypair in your project:
-`ssh -i path/to/artemis_private_key user@vm_ip`
-====

@@ -22,9 +22,6 @@ terminate() {
 # trap is needed to correctly propagate SIGTERM from container
 trap terminate TERM INT
 
-# activate virtualenv
-. /APP/bin/activate
-
 # name of the Artemis application to start
 APP=$1
 
@@ -68,22 +65,24 @@ if [ "$ARTEMIS_WORKER_QUEUES" != "" ]; then
     ARTEMIS_WORKER_OPTIONS="-Q \"${ARTEMIS_WORKER_QUEUES}\" ${ARTEMIS_WORKER_OPTIONS}"
 fi
 
+cd /APP
+
 case $APP in
     api)
-        COMMAND="artemis-api-server"
+        COMMAND="poetry run artemis-api-server"
         ;;
     dispatcher)
-        COMMAND="artemis-dispatcher"
+        COMMAND="poetry run artemis-dispatcher"
         ;;
     initdb)
         # Ignore any errors for now here, we run the schema initialization at each API initialization.
         # We will soon replace this with alembic.
-        artemis-init-postgres-schema
+        poetry run artemis-init-postgres-schema
         exit 0
         ;;
     worker)
         expose_hooks
-        COMMAND="dramatiq $ARTEMIS_WORKER_OPTIONS artemis.tasks"
+        COMMAND="poetry run dramatiq $ARTEMIS_WORKER_OPTIONS tft.artemis.tasks"
         ;;
     *)
         echo "Unknown application '$APP'"

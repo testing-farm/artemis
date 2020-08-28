@@ -3,11 +3,12 @@
 .vault_pass
 .vscode
 .nvimrc
+.venv
 .vimrc
 
-configuration
-
 __pycache__
-artemis.egg-info
+
+*.egg-info
+dist
 
 *~

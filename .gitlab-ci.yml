@@ -5,22 +5,16 @@ stages:
   - test
   - deploy
 
-unit-tests:
+tests:
   stage: test
   script:
-    - IN_TEST=yes tox -v -e py36-unit-tests
-    - IN_TEST=yes tox -v -e py37-unit-tests
+    - wget -O - https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python3
+    - source $HOME/.poetry/env
+    # Force poetry to create its virtualenvs inside project directory, to avoid complications
+    # when trying to leave our current directory when running in Gitlab.
+    - poetry config virtualenvs.in-project true
 
-static-analysis:
-  stage: test
-  script:
-    - IN_TEST=yes tox -v -e py36-static-analysis
-    - IN_TEST=yes tox -v -e py37-static-analysis
-
-type-check:
-  stage: test
-  script:
-    - tox -v -e type-check
+    - cd server && IN_TEST=yes tox -v -e py37
 
 publish_apiary:
   image: "ruby:2.4"
