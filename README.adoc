@@ -285,10 +285,85 @@ $ bash nominishift-develop.sh
   * find out API url:`minishift openshift service --url artemis-api`
   * add '_docs' to url and open in browser
 
+=== Example using artemis-cli
+Simple workflow example:
+
+* request Fedora-Rawhide, without any specific requirements except for architecture limitation using `artemis-cli guest create`
++
+[source,shell]
+....
+$ artemis-cli guest create --keyname ci-key --arch x86_64 --compose Fedora-Rawhide
+{
+    "address": null,
+    "environment": {
+        "arch": "x86_64",
+        "compose": {
+            "id": "Fedora-Rawhide"
+        }
+    },
+    "guestname": "4264a144-6e1c-4c20-b37a-6d03e2d79b82",
+    "owner": "artemis",
+    "ssh": {
+        "keyname": "ci-key",
+        "port": 22,
+        "username": "root"
+    },
+    "state": "pending",
+    "user_data": {}
+}
+....
++
+* guestname from create request is used in all consequent `artemis-cli guest` commands
++
+[source,shell]
+....
+"guestname": "4264a144-6e1c-4c20-b37a-6d03e2d79b82",
+....
++
+* periodicaly call `artemis-cli guest inspect` to get status, wait for `state == 'ready'`
++
+[source,shell]
+....
+$ watch artemis-cli guest inspect 4264a144-6e1c-4c20-b37a-6d03e2d79b82
+{
+    "address": "10.0.141.183",
+    "environment": {
+        "arch": "x86_64",
+        "compose": {
+            "id": "Fedora-Rawhide"
+        }
+    },
+    "guestname": "4264a144-6e1c-4c20-b37a-6d03e2d79b82",
+    "owner": "artemis",
+    "ssh": {
+        "keyname": "ci-key",
+        "port": 22,
+        "username": "root"
+    },
+    "state": "ready",
+    "user_data": {}
+}
+....
++
+* do your task on provisioned machine, connection parameters are part of response from `artemis-cli inspect`
++
+
+[NOTE]
+====
+`artemis-cli guest events` is usefull for investigation of provisioning issues
+====
++
 [NOTE]
 ====
 If you can't access the provisioned machine by ssh, please check that the security group allows ssh traffic.
 
-(Openstack) To access the vm please use the ssh key you registered as the keypair in your project:
+To access the vm please use the ssh key you registered as the keypair in your project:
 `ssh -i path/to/artemis_private_key user@vm_ip`
 ====
++
+* return provisioned resources by running `artemis-cli guest cancel`
+[source,shell]
+....
+$ artemis-cli guest cancel 4264a144-6e1c-4c20-b37a-6d03e2d79b82
+guest "4264a144-6e1c-4c20-b37a-6d03e2d79b82" has been canceled
+....
