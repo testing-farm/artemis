@@ -1,97 +1,38 @@
-import os.path
-import requests
-import sys
-import tempfile
-import shutil
-import json
-
 import click
-import click_completion
-import stackprinter
+import tft.praxis
+import tft.praxis.environment
+import tft.praxis.root
+
+from . import Configuration, Logger, artemis_create, artemis_inspect, artemis_delete
 
 from typing import Optional
-from tft import artemis_cli
-from . import Logger, Configuration, fetch_remote, NL, GREEN, RED, YELLOW, WHITE, prettify_json, \
-              artemis_inspect, artemis_create, artemis_delete, prompt, confirm
+# from . import Logger, Configuration, NL, GREEN, RED, YELLOW, WHITE, prettify_json, \
+#              artemis_inspect, artemis_create, artemis_delete, prompt, confirm
 
-from typing import cast, Any
+# from typing import cast, Any
 
 # to prevent infinite loop in pagination support
-PAGINATION_MAX_COUNT=10000
-
-stackprinter.set_excepthook(
-    style='darkbg2',
-    source_lines=7,
-    show_signature=True,
-    show_vals='all',
-    reverse=False,
-    add_summary=False
-)
-
-click_completion.init()
+PAGINATION_MAX_COUNT = 10000
 
 
-@click.group()
-@click.pass_context
-@click.option('--config', type=str, default=click.get_app_dir('artemis-cli'), help='Path to the configuration directory')
-def cli_root(ctx: Any, config: str) -> None:
-    ctx.ensure_object(Configuration)
-
-    cfg = cast(
-        Configuration,
-        ctx.obj
-    )
-
-    cfg.logger = Logger()
-    cfg.config_dirpath = os.path.expanduser(config)
-    cfg.config_filepath = os.path.join(cfg.config_dirpath, 'config.yaml')
-
-    if not os.path.exists(cfg.config_dirpath) or not os.path.exists(cfg.config_filepath):
-        if ctx.invoked_subcommand != 'init':
-            click.echo(RED(
-                'Config file {} does not exists, running configuration wizard'.format(cfg.config_filepath),
-            ))
-
-        ctx.invoke(cmd_init)
-        sys.exit(0)
-
-    cfg.raw_config = artemis_cli.load_yaml(cfg.config_filepath)
-
-    validation = artemis_cli.validate_struct(cfg.raw_config, 'config')
-
-    if not validation.result or cfg.raw_config is None:
-
-        click.echo(RED(
-            'Config file {} must be updated, found following validation errors:'.format(cfg.config_filepath),
-        ))
-
-        for error in validation.errors:
-            NL()
-            click.echo(RED(
-                '  * {}'.format(error.message)
-            ))
-            NL()
-        if cfg.raw_config is None:
-            NL()
-            click.echo(RED('Empty configuration file'))
-            NL()
+cli_root = tft.praxis.root.create_cli_root(entry_points=['artemis_cli.command_plugins'])
 
 
-        click.echo(YELLOW(
-            'Running configuration wizard'
-        ))
+class ArtemisDeployment(tft.praxis.environment.EnvironmentDimension):
+    name = 'artemis'
+    label = 'Artemis deployment'
+    command_name = 'artemis'
+    metavar = 'NAME'
 
-        ctx.invoke(cmd_init)
-        sys.exit(0)
 
-    cfg.artemis_api_url = cfg.raw_config['artemis_api_url']
-    assert cfg.artemis_api_url is not None
+cmd_env = ArtemisDeployment.create_root_command()
 
 
 @cli_root.group(name='guest', short_help='Guest related commands')
 @click.pass_obj
 def cmd_guest(cfg: Configuration) -> None:
     pass
+
 
 @cmd_guest.command(name='create', short_help='Create provisioning request')
 @click.option('--keyname', required=True, help='name of ssh key')
@@ -105,20 +46,22 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.pass_obj
 def cmd_guest_create(
         cfg: Configuration,
-        keyname: str = None,
-        arch: str = None,
-        compose = None,
-        beaker_distro = None,
-        openstack_image = None,
-        aws_image = None,
-        snapshots = False,
-        priority_group = None
+        keyname: Optional[str] = None,
+        arch: Optional[str] = None,
+        compose: Optional[str] = None,
+        beaker_distro: Optional[str] = None,
+        openstack_image: Optional[str] = None,
+        aws_image: Optional[str] = None,
+        snapshots: bool = False,
+        priority_group: Optional[str] = None
 ) -> None:
-    num_of_options = sum([ int(bool(o)) for o in [compose, beaker_distro, openstack_image, aws_image ]])
+    num_of_options = sum([int(bool(o)) for o in [compose, beaker_distro, openstack_image, aws_image]])
     if num_of_options != 1:
-        Logger().error('Exactly one of these options is needed:\n'
-                       '  --compose OR --beaker-distro OR --openstack-image --OR aws-image\n'
-                       'provided: {}'.format(num_of_options))
+        Logger().error("""
+Exactly one of these options is needed:
+
+--compose OR --beaker-distro OR --openstack-image --OR aws-image
+""")
 
     environment = {}
     environment['arch'] = arch
@@ -133,7 +76,6 @@ def cmd_guest_create(
     if snapshots:
         environment['snapshots'] = True
 
-
     data = {
             'environment': environment,
             'keyname': keyname,
@@ -141,33 +83,33 @@ def cmd_guest_create(
             }
 
     response = artemis_create(cfg, 'guests/', data)
-    print(prettify_json(True, response.json()))
+    print(tft.praxis.prettify_json(response.json()))
 
 
 @cmd_guest.command(name='inspect', short_help='Inspect provisioning request')
 @click.argument('guestname', metavar='ID', default=None,)
 @click.pass_obj
-#def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
 def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
     response = artemis_inspect(cfg, 'guests', guestname)
-    print(prettify_json(True, response.json()))
+    print(tft.praxis.prettify_json(response.json()))
 
 
 @cmd_guest.command(name='cancel', short_help='Cancel provisioning request')
 @click.argument('guestname', metavar='ID', default=None,)
 @click.pass_obj
 def cmd_cancel(cfg: Configuration, guestname: str) -> None:
-    logger=Logger()
+    logger = Logger()
     response = artemis_delete(cfg, 'guests', guestname, logger=logger)
     if response.ok:
-        logger.info('guest "{}" has been canceled'.format(guestname))
+        logger.info(f'guest "{guestname}" has been canceled')
 
 
 @cmd_guest.command(name='list', short_help='List provisioning requests')
 @click.pass_obj
 def cmd_guest_list(cfg: Configuration) -> None:
     response = artemis_inspect(cfg, 'guests', '')
-    print(prettify_json(True, response.json()))
+    print(tft.praxis.prettify_json(True, response.json()))
+
 
 @cmd_guest.command(name='events', short_help='List event log')
 @click.argument('guestname', metavar='ID', required=False, default=None)
@@ -187,7 +129,7 @@ def cmd_guest_events(
         until: Optional[str],
         first: Optional[int],
         last: Optional[int]
-)-> None:
+) -> None:
     """
     Prints event log
 
@@ -222,36 +164,36 @@ def cmd_guest_events(
 
     if guestname:
         # get events for given guest
-        rid = '{}/events'.format(guestname)
+        rid = f'{guestname}/events'
     else:
         # get all events
         rid = 'events'
 
     if page or first or last:
         # request for specific page
-        response = artemis_inspect(cfg, 'guests', rid , params=params)
+        response = artemis_inspect(cfg, 'guests', rid, params=params)
         results_json = response.json()
     else:
         # get all pages
         results_json = []
         for page in range(1, PAGINATION_MAX_COUNT):
             params['page'] = page
-            response = artemis_inspect(cfg, 'guests', rid , params=params)
+            response = artemis_inspect(cfg, 'guests', rid, params=params)
             results_json = results_json + response.json()
             if len(response.json()) < page_size:
                 # last page, result is complete
                 break
         else:
-            Logger().error('Pagination: reached limit {} pages'.format(PAGINATION_MAX_COUNT))
+            Logger().error(f'Pagination: reached limit {PAGINATION_MAX_COUNT} pages')
 
     if last:
         # for --last, sorting has opposit order, need to reverse here
         results_json.reverse()
 
-    print(prettify_json(True, results_json))
+    print(tft.praxis.prettify_json(True, results_json))
 
 
-@cli_root.command(name='init', short_help='Initialize configuration file.')
+@click.command(name='init', short_help='Initialize configuration file.')
 @click.pass_obj
 def cmd_init(cfg: Configuration) -> None:
     """
@@ -259,89 +201,44 @@ def cmd_init(cfg: Configuration) -> None:
     other bits must be explicitly provided by the user.
     """
 
-    # We try to use one way to do the same thing, including "printing to terminal". For that purpose,
-    # we have Logger class and cfg.logger and so on. But in this particular function, we want to print
-    # large pile of text, with colors, and that's more readable without logger. So, here's the exception...
+    import tft.praxis.commands.init
 
-    # Oh God, how I miss the preprocessor ...
-    def TITLE(s: str) -> None:
-        click.echo(YELLOW(s))
+    class ConfigInitializer(tft.praxis.commands.init.ConfigInitializer):
+        def init_config(self) -> None:
+            self.config = {
+                'environment-dimensions': {
+                    'artemis-deployment': {
+                        'known-items': [
+                            'default'
+                        ],
+                        'default': {
+                            'api-url': None
+                        }
+                    }
+                }
+            }
 
-    def TEXT(s: str) -> None:
-        click.echo(WHITE(s))
-
-    def ERROR(s: str) -> None:
-        click.echo(RED(s))
-
-    def WARN(s: str) -> None:
-        click.echo(GREEN(s))
-
-    def SUCCESS(s: str) -> None:
-        click.echo(GREEN(s))
-
-    def QUESTION(s: str) -> str:
-        return YELLOW(s)
-
-    TEXT("""
+        def ask(self) -> None:
+            self.TEXT("""
 Hi! Following sequence of questions will help you setup configuration for this tool.
 
 Feel free to interrupt it anytime, nothing is saved until the very last step.
 """)
 
-    #
-    # Artemis API
-    #
-    TITLE('** Artemis API URL **')
-    TEXT("""
-URL of Artemis API, for example 'http://artemis.example.com'
-Currently artemis-cli needs just this URL.
+            # TODO: query and the actual distinct deployments
+
+            #
+            # Artemis API
+            #
+            self.TITLE('** Artemis API URL **')
+            self.TEXT("""
+URL of Artemis API, for example 'http://artemis.example.com'. Currently artemis-cli needs just this URL.
 """)
 
-    artemis_api_url = prompt(
-        cfg,
-        QUESTION('Enter URL of Artemis API'),
-        type=str,
-        default=None
-    )
+            self.config['environment-dimensions']['artemis-deployments']['default']['api-url'] = self.prompt(
+                'Enter URL of Artemis API',
+                type=str,
+                default=None
+            )
 
-    NL()
-
-    tmp_config_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
-
-    with tmp_config_file:
-        print("""---
-
-artemis_api_url: {artemis_api_url}
-""".format(**locals()), file=tmp_config_file)
-
-        tmp_config_file.flush()
-
-    if confirm(
-        cfg,
-        QUESTION('Do you wish to check the configuration file, possibly modifying it?'),
-        False,
-        default=True
-    ):
-        click.edit(filename=tmp_config_file.name)
-
-    if confirm(
-        cfg,
-        QUESTION('Do you wish to save this as your configuration file?'),
-        False,
-        default=False
-    ):
-        assert cfg.config_dirpath is not None
-        assert cfg.config_filepath is not None
-
-        os.makedirs(cfg.config_dirpath, exist_ok=True)
-
-        if os.path.exists(cfg.config_filepath):
-            os.unlink(cfg.config_filepath)
-
-        shutil.copy(tmp_config_file.name, cfg.config_filepath)
-
-        SUCCESS('Saved, your config file has been updated')
-
-    else:
-        WARN('Ok, your answers were thrown away.')
-
+            self.NL()
