@@ -435,6 +435,31 @@ def _dispatch_task(
     ))
 
 
+def _get_guest_request(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    guestname: str
+) -> Result[Optional[artemis.db.GuestRequest], Failure]:
+    query = session \
+            .query(GuestRequest) \
+            .filter(GuestRequest.guestname == guestname)
+
+    r_query = cast(
+        Result[artemis.db.GuestRequest, Failure],
+        safe_call(query.one)
+    )
+
+    if r_query.is_ok:
+        return Ok(r_query.unwrap())
+
+    failure = r_query.unwrap_error()
+
+    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
+        return Ok(None)
+
+    return Error(failure)
+
+
 def _get_guest_by_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -779,7 +804,7 @@ class Workspace:
         self.guest: Optional[artemis.guest.Guest] = None
         self.snapshot: Optional[artemis.snapshot.Snapshot] = None
 
-    def load_guest_request(self, guestname: str, state: artemis.guest.GuestState) -> None:
+    def load_guest_request(self, guestname: str, state: Optional[artemis.guest.GuestState] = None) -> None:
         """
         Load a guest request from a database, as long as it is in a given state.
 
@@ -800,7 +825,11 @@ class Workspace:
 
         self.guestname = guestname
 
-        r = _get_guest_by_state(self.logger, self.session, guestname, state)
+        if state is None:
+            r = _get_guest_request(self.logger, self.session, guestname)
+
+        else:
+            r = _get_guest_by_state(self.logger, self.session, guestname, state)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to load guest request')
@@ -1238,7 +1267,7 @@ def do_release_guest_request(
     handle_success('enter-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
-    workspace.load_guest_request(guestname, artemis.guest.GuestState.CONDEMNED)
+    workspace.load_guest_request(guestname, state=artemis.guest.GuestState.CONDEMNED)
     workspace.grab_guest_request(artemis.guest.GuestState.CONDEMNED, artemis.guest.GuestState.RELEASING)
 
     if workspace.result:
@@ -1323,7 +1352,7 @@ def do_update_guest(
     handle_success('enter-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
-    workspace.load_guest_request(guestname, artemis.guest.GuestState.PROMISED)
+    workspace.load_guest_request(guestname, state=artemis.guest.GuestState.PROMISED)
     workspace.load_ssh_key()
     workspace.load_gr_pool()
     workspace.load_guest()
@@ -1429,7 +1458,7 @@ def do_acquire_guest(
     handle_success('enter-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
-    workspace.load_guest_request(guestname, artemis.guest.GuestState.PROVISIONING)
+    workspace.load_guest_request(guestname, state=artemis.guest.GuestState.PROVISIONING)
     workspace.load_ssh_key()
     workspace.load_gr_pool()
 
@@ -1538,7 +1567,7 @@ def do_route_guest_request(
 
     # First, pick up our assigned guest request. Make sure it hasn't been
     # processed yet.
-    workspace.load_guest_request(guestname, artemis.guest.GuestState.ROUTING)
+    workspace.load_guest_request(guestname, state=artemis.guest.GuestState.ROUTING)
 
     if workspace.result:
         return workspace.result
@@ -1629,6 +1658,7 @@ def do_release_snapshot_request(
     handle_success('enter-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname)
     workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.CONDEMNED)
     workspace.grab_snapshot_request(artemis.guest.GuestState.CONDEMNED, artemis.guest.GuestState.RELEASING)
 
@@ -1704,7 +1734,7 @@ def do_update_snapshot(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.PROMISED)
-    workspace.load_guest_request(guestname, artemis.guest.GuestState.READY)
+    workspace.load_guest_request(guestname, state=artemis.guest.GuestState.READY)
     workspace.load_sr_pool()
     workspace.load_ssh_key()
     workspace.load_guest()
@@ -1800,7 +1830,7 @@ def do_create_snapshot(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.CREATING)
-    workspace.load_guest_request(guestname, artemis.guest.GuestState.READY)
+    workspace.load_guest_request(guestname, state=artemis.guest.GuestState.READY)
 
     if workspace.result:
         return workspace.result
@@ -1901,7 +1931,7 @@ def do_route_snapshot_request(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.ROUTING)
-    workspace.load_guest_request(guestname, artemis.guest.GuestState.READY)
+    workspace.load_guest_request(guestname, state=artemis.guest.GuestState.READY)
 
     if workspace.result:
         return workspace.result
@@ -1960,7 +1990,7 @@ def do_restore_snapshot_request(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, artemis.guest.GuestState.RESTORING)
-    workspace.load_guest_request(guestname, artemis.guest.GuestState.READY)
+    workspace.load_guest_request(guestname, state=artemis.guest.GuestState.READY)
     workspace.grab_snapshot_request(artemis.guest.GuestState.RESTORING, artemis.guest.GuestState.PROCESSING)
 
     if workspace.result:
