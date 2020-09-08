@@ -9,7 +9,7 @@ from gluetool.glue import GlueCommandError
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import Command, wait, normalize_bool_option
 
-from . import PoolDriver, PoolCapabilities, PoolResourceLimits, PoolResourceUsage
+from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics
 from .. import Failure
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -17,7 +17,7 @@ from ..guest import Guest, SSHInfo
 from ..script import hook_engine
 from ..snapshot import Snapshot
 
-from typing import cast, Any, Dict, List, Optional, Tuple, Union
+from typing import cast, Any, Dict, List, Optional, Union
 
 
 # Temeout for wait function in _stop_guest and _start_guest events
@@ -748,7 +748,10 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(capabilities)
 
-    def get_pool_resource_metrics(self) -> Result[Tuple[PoolResourceLimits, PoolResourceUsage], Failure]:
+    def fetch_pool_resources_metrics(
+        self,
+        logger: gluetool.log.ContextAdapter
+    ) -> Result[PoolResourcesMetrics, Failure]:
         r_query_limits = self._run_os(
             ['limits', 'show', '--absolute', '--reserved'],
             json_format=True
@@ -762,7 +765,7 @@ class OpenStackDriver(PoolDriver):
         if not isinstance(raw_limits_container, list):
             return Error(Failure('Invalid format of OpenStack limits report'))
 
-        limits, usage = PoolResourceLimits(), PoolResourceUsage()
+        resources = PoolResourcesMetrics()
 
         for entry in raw_limits_container:
             name, value = entry.get('Name'), entry.get('Value')
@@ -771,28 +774,28 @@ class OpenStackDriver(PoolDriver):
                 return Error(Failure('Invalid format of OpenStack limits report'))
 
             if name == 'totalCoresUsed':
-                usage.cores = int(value)
+                resources.usage.cores = int(value)
 
             elif name == 'totalRAMUsed':
-                usage.memory = int(value) * 1048576
+                resources.usage.memory = int(value) * 1048576
 
             elif name == 'totalInstancesUsed':
-                usage.instances = int(value)
+                resources.usage.instances = int(value)
 
             elif name == 'totalSnapshotsUsed':
-                usage.snapshots = int(value)
+                resources.usage.snapshots = int(value)
 
             elif name == 'maxTotalCores':
-                limits.cores = int(value)
+                resources.limits.cores = int(value)
 
             elif name == 'maxTotalInstances':
-                limits.instances = int(value)
+                resources.limits.instances = int(value)
 
             elif name == 'maxTotalRAMSize':
                 # RAM size/usage is reported in megabytes
-                limits.memory = int(value) * 1048576
+                resources.limits.memory = int(value) * 1048576
 
             elif name == 'maxTotalSnapshots':
-                limits.snapshots = int(value)
+                resources.limits.snapshots = int(value)
 
-        return Ok((limits, usage))
+        return Ok(resources)

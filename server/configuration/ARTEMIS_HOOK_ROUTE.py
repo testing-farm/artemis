@@ -10,14 +10,13 @@ When choosing the pools, following policies are followed:
 3. Least crowded pool (i.e. pool with lowest number of requests on this instance) is returned.
 """
 
-import dataclasses
 import datetime
 import json
 import os
 
 from tft.artemis import Failure, get_logger, get_db
 from tft.artemis.api import GuestEventManager, GuestEvent
-from tft.artemis.drivers import PoolDriver, PoolMetrics, PoolResources
+from tft.artemis.drivers import PoolDriver, PoolMetrics
 from tft.artemis.environment import Environment
 from tft.artemis.db import GuestRequest
 
@@ -152,28 +151,33 @@ def _policy_enough_resources(
 
     gluetool.log.log_dict(logger.info, 'pools metrics', pool_metrics)
 
-    def _has_enough_resources(pool: PoolDriver, pool_metrics: PoolMetrics) -> bool:
-        limits = dataclasses.asdict(pool_metrics.resource_limits)
-        usages = dataclasses.asdict(pool_metrics.resource_usage)
-
-        for field in dataclasses.fields(PoolResources):
-            # Skip undefined values: if left undefined, pool does not care about this dimension.
-            limit, usage = limits[field.name], usages[field.name]
-
-            if not limit or not usage:
-                continue
-
+    def has_enough(pool: PoolDriver, metrics: PoolMetrics) -> bool:
+        def is_enough(metric_name: str, limit: int, usage: int) -> bool:
             # Very crude trim. We could be smarter, but this should be enough to not hit the limit.
             usage_level = usage / limit
 
-            if usage_level >= DEFAULT_POOL_RESOURCE_THRESHOLD:
-                logger.warning('{}: "{}" depleted: {} used, {} limit'.format(pool.poolname, field.name, usage, limit))
+            return usage_level < DEFAULT_POOL_RESOURCE_THRESHOLD
 
-                return False
+        resources_depletion = metrics.resources.get_depletion(is_enough)
 
-        return True
+        if not resources_depletion.is_depleted():
+            return True
 
-    suitable_pools = [pool for pool, metrics in pool_metrics if _has_enough_resources(pool, metrics)]
+        for metric_name in sorted(resources_depletion.depleted_resources()):
+            logger.warning('{}: "{}" depleted: {} used, {} limit'.format(
+                pool.poolname,
+                metric_name,
+                getattr(metrics.resources.usage, metric_name),
+                getattr(metrics.resources.limits, metric_name)
+            ))
+
+        return False
+
+    suitable_pools = [
+        pool
+        for pool, metrics in pool_metrics
+        if has_enough(pool, metrics)
+    ]
 
     gluetool.log.log_dict(logger.info, 'allowed pools', suitable_pools)
 
