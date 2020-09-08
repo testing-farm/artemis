@@ -1,0 +1,10 @@
+---
+#
+# The mapping file maps compose names to openstack tenant images, use the following format
+#
+# - 'compose-name' : 'openstack-image-name'
+#
+- 'RHEL-7.9.0': 'rhel-7.9-server-x86_64-latest'
+- 'RHEL-8.3.0': 'rhel-8.3.0-x86_64-nightly'
+- 'RHEL-8.4.0': 'RHEL-8.4.0-x86_64-nightly-latest'
+- 'Fedora-32': 'Fedora-Cloud-Base-32'

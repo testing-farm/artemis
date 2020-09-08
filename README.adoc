@@ -84,6 +84,15 @@ To install them follow the following guide: https://docs.okd.io/1.5/cli_referenc
 Create the Artemis development configuration in the directory 'configuration/' in the project root. Note that the configuration must have a flat
 structure without any subdirectories currently.
 
+You can use samples and gen.sh script from configuration/ directory that will setup Artemis to use your existing openstack project.
+
+1. `cp configuration/env.yml.sample configuration/env.yml`
+2. Populate `env.yml` file with details of your openstack tenant and ssh key pair to be used by Artemis as master-key.
+3. Create an openstack keypair with Artemis public ssh key with selected `openstack_key_name` from `env.yml`. For example,
+if `openstack_key_name` is `artemis`:
+
+`openstack keypair create --public-key path/to/artemis.pub artemis`
+
 === Start the development environment
 
 Start the development environment by sourcing the develop.sh script
@@ -150,6 +159,27 @@ If Artemis is killed (e.g. CTRL+C), wait for all pods to be terminated before so
 ====
 
 
+== Local development environment without minishift
+
+That is the most lightweight development setup. It spawns rabbitmq, postgresql and redis in docker containers on your
+local machine, while Artemis services (api-server, dispatcher and tasks) are launched as daemons by `nominishift-develop.sh`.
+
+[NOTE]
+====
+You may need to create a separate virtual environment for artemis-cli in case of dependency issues.
+====
+
+1. Create virtualenv, activate it and install artemis via pip:
+`source .venv/bin/activate && pip install .`
+
+2. The configurations step is identical to the general instruction.
+
+3. Launch rabbitmq, postgresql and redis containers via docker-compose:
+`docker-compose up`
+
+4. Start Artemis:
+`bash nominishift-develop.sh`
+
 == How to provision a machine
 
 * the best way is to use artemis-cli
@@ -157,3 +187,10 @@ If Artemis is killed (e.g. CTRL+C), wait for all pods to be terminated before so
   * find out API url:`minishift openshift service --url artemis-api`
   * add '_docs' to url and open in browser
 
+[NOTE]
+====
+If you can't access the provisioned machine by ssh, please check that the security group allows ssh traffic.
+
+(Openstack) To access the vm please use the ssh key you registered as the keypair in your project:
+`ssh -i path/to/artemis_private_key user@vm_ip`
+====

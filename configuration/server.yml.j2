@@ -1,0 +1,31 @@
+---
+
+users:
+  - name: artemis
+
+ssh-keys:
+  - name: master-key
+    owner: artemis
+    file: /configuration/master-key.yaml
+
+priority-groups:
+  - name: default-priority
+
+pools:
+  - name: openstack
+    driver: openstack
+    parameters:
+      username: "{{ credentials.username }}"
+      password: "{{ credentials.password }}"
+      auth-url: "{{ credentials.auth_url }}"
+      project-name: "{{ credentials.project_name }}"
+      project-domain-name: "{{ credentials.project_domain_name }}"
+      user-domain-name: "{{ credentials.user_domain_name }}"
+      api-version: "{{ credentials.identity_api_version }}"
+      master-key-name: "{{ keys.openstack_key_name }}"
+
+      default-flavor: "{{ vms.default_flavor }}"
+      network-regex: "{{ vms.network_regex }}"
+      ip-version: "4"
+
+      snapshots: true
