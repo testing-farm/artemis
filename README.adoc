@@ -39,7 +39,7 @@ Specification of API is available at https://artemis6.docs.apiary.io/#reference.
 == Local development environment
 
 The development environment runs Artemis in https://docs.okd.io/latest/minishift[Minishift] via https://skaffold.dev[Skaffold]. Currently the development environment requires Docker to be installed on the machine, as skaffold uses docker API for building the container images.
-Skaffold will redeploy artemis uppon code changes automatically.
+
 Currently, Artemis is not working with latest skaffold, install https://storage.googleapis.com/skaffold/releases/v1.5.0/skaffold-linux-amd6[version 1.5].
 
 === Install requirements
