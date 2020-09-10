@@ -97,46 +97,28 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--keyname', required=True, help='name of ssh key')
 @click.option('--priority-group', help='name of priority group')
 @click.option('--arch', required=True, help='architecture')
-@click.option('--compose', help='compose id')
-@click.option('--beaker-distro', help='name of beaker distro')
-@click.option('--openstack-image', help='name of openstack image')
-@click.option('--aws-image', help='name of aws image')
-@click.option('--azure-image', help='name of azure image')
+@click.option('--compose', required=True, help='compose id')
+@click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
 @click.pass_obj
 def cmd_guest_create(
         cfg: Configuration,
         keyname: str = None,
         arch: str = None,
-        compose = None,
-        beaker_distro = None,
-        openstack_image = None,
-        aws_image = None,
-        azure_image = None,
+        compose: str = None,
+        pool: str = None,
         snapshots = False,
         priority_group = None
 ) -> None:
-    num_of_options = sum([ int(bool(o)) for o in [compose, beaker_distro, openstack_image, aws_image, azure_image ]])
-    if num_of_options != 1:
-        Logger().error('Exactly one of these options is needed:\n'
-                       '  --compose OR --beaker-distro OR --openstack-image OR --aws-image OR --azure-image\n'
-                       'provided: {}'.format(num_of_options))
-
     environment = {}
     environment['arch'] = arch
-    if compose:
-        environment['compose'] = {'id': compose}
-    elif beaker_distro:
-        environment['compose'] = {'beaker': {'distro': beaker_distro}}
-    elif openstack_image:
-        environment['compose'] = {'openstack': {'image': openstack_image}}
-    elif aws_image:
-        environment['compose'] = {'aws': {'image': aws_image}}
-    elif azure_image:
-        environment['compose'] = {'azure': {'image': azure_image}}
+    environment['os'] = {'compose': compose}
+
+    if pool:
+        environment['pool'] = pool
+
     if snapshots:
         environment['snapshots'] = True
-
 
     data = {
             'environment': environment,

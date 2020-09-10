@@ -210,16 +210,8 @@ def hook_ROUTE(
     env_as_dict = json.loads(guest_request.environment)
     env = Environment.unserialize_from_json(env_as_dict)
 
-    if env.compose.is_aws:
-        suitable_pools = [pool for pool in pools if pool.__class__.__name__ == 'AWSDriver']
-
-    elif env.compose.is_openstack:
-        suitable_pools = [pool for pool in pools if pool.__class__.__name__ == 'OpenStackDriver']
-
-    elif env.compose.is_azure:
-        suitable_pools = [pool for pool in pools if pool.__class__.__name__ == 'AzureDriver']
-
-    # NOTE: beaker should be added here later, if Artemis will properly support it
+    if env.pool:
+        suitable_pools = [pool for pool in pools if pool.poolname == env.pool]
 
     elif env.snapshots:
         pool_capabilities = [

@@ -364,9 +364,8 @@ class AzureDriver(PoolDriver):
         name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
 
         # XXX FIXME not using hooks for the moment, transfer to a hook some time later
-        if environment.compose.is_azure:
-            assert environment.compose.azure is not None
-            image = environment.compose.azure.image
+        if environment.pool:
+            image = environment.os.compose
         else:
             raise NotImplementedError("Compose mapping not implemented for azure yet")
 

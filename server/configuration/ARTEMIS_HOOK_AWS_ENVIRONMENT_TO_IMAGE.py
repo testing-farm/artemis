@@ -75,24 +75,14 @@ def hook_AWS_ENVIRONMENT_TO_IMAGE(
     try:
         logger.info('deciding image for {}'.format(environment))
 
-        if environment.compose.is_aws:
-            # Use specified image
+        # Convert compose to image name
 
-            assert environment.compose.aws is not None
+        r_image_name = _map_compose_to_name(logger, environment.os.compose)
 
-            image_name = environment.compose.aws.image
+        if r_image_name.is_error:
+            return r_image_name
 
-        else:
-            # Convert compose to image name
-
-            assert environment.compose.id is not None
-
-            r_image_name = _map_compose_to_name(logger, environment.compose.id)
-
-            if r_image_name.is_error:
-                return r_image_name
-
-            image_name = r_image_name.unwrap()
+        image_name = r_image_name.unwrap()
 
         if image_name is None:
             raise Exception

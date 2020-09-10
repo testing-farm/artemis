@@ -5,48 +5,8 @@ from typing import Any, Dict, Optional
 
 
 @dataclasses.dataclass
-class BeakerCompose:
-    distro: str
-
-
-@dataclasses.dataclass
-class OpenstackCompose:
-    image: str
-
-
-@dataclasses.dataclass
-class AWSCompose:
-    image: str
-
-
-@dataclasses.dataclass
-class AzureCompose:
-    image: str
-
-
-@dataclasses.dataclass
-class Compose:
-    id: Optional[str]
-    beaker: Optional[BeakerCompose]
-    openstack: Optional[OpenstackCompose]
-    aws: Optional[AWSCompose]
-    azure: Optional[AzureCompose]
-
-    @property
-    def is_beaker(self) -> bool:
-        return self.id is None and self.beaker is not None
-
-    @property
-    def is_openstack(self) -> bool:
-        return self.id is None and self.openstack is not None
-
-    @property
-    def is_aws(self) -> bool:
-        return self.id is None and self.aws is not None
-
-    @property
-    def is_azure(self) -> bool:
-        return self.id is None and self.azure is not None
+class Os:
+    compose: str
 
 
 @dataclasses.dataclass
@@ -60,7 +20,8 @@ class Environment:
     """
 
     arch: str
-    compose: Compose
+    os: Os
+    pool: Optional[str] = None
     snapshots: bool = False
 
     def __repr__(self) -> str:
@@ -82,27 +43,8 @@ class Environment:
 
         env = Environment(**serialized)
 
-        env.compose = Compose(
-            id=None,
-            beaker=None,
-            openstack=None,
-            aws=None,
-            azure=None
+        env.os = Os(
+            compose=serialized['os']['compose']
         )
-
-        if 'compose' in serialized:
-            env.compose.id = serialized['compose'].get('id', None)
-
-            def _add_complex_container(field: str, klass: object) -> None:
-                if field not in serialized['compose']:
-                    return
-
-                container = klass(**serialized['compose'][field])  # type: ignore
-                setattr(env.compose, field, container)
-
-            _add_complex_container('beaker', BeakerCompose)
-            _add_complex_container('openstack', OpenstackCompose)
-            _add_complex_container('aws', AWSCompose)
-            _add_complex_container('azure', AzureCompose)
 
         return env

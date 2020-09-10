@@ -74,23 +74,13 @@ def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(
     try:
         logger.info('deciding image for {}'.format(environment))
 
-        if environment.compose.is_openstack:
-            # Use specified image
+        # Convert compose to image name
 
-            assert environment.compose.openstack is not None
+        r_image_name = _map_compose_to_name(logger, environment.os.compose)
+        if r_image_name.is_error:
+            return r_image_name
 
-            image_name = environment.compose.openstack.image
-
-        else:
-            # Convert compose to image name
-
-            assert environment.compose.id is not None
-
-            r_image_name = _map_compose_to_name(logger, environment.compose.id)
-            if r_image_name.is_error:
-                return r_image_name
-
-            image_name = r_image_name.unwrap()
+        image_name = r_image_name.unwrap()
 
         if image_name is None:
             raise Exception
