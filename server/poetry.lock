@@ -12,7 +12,7 @@ description = "A database migration tool for SQLAlchemy."
 name = "alembic"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
-version = "1.4.2"
+version = "1.4.3"
 
 [package.dependencies]
 Mako = "*"
@@ -62,7 +62,6 @@ version = "0.26.2"
 [[package]]
 category = "dev"
 description = "Atomic file writes."
-marker = "sys_platform == \"win32\""
 name = "atomicwrites"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
@@ -74,12 +73,13 @@ description = "Classes Without Boilerplate"
 name = "attrs"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
-version = "20.1.0"
+version = "20.2.0"
 
 [package.extras]
 dev = ["coverage (>=5.0.2)", "hypothesis", "pympler", "pytest (>=4.3.0)", "six", "zope.interface", "sphinx", "sphinx-rtd-theme", "pre-commit"]
 docs = ["sphinx", "sphinx-rtd-theme", "zope.interface"]
 tests = ["coverage (>=5.0.2)", "hypothesis", "pympler", "pytest (>=4.3.0)", "six", "zope.interface"]
+tests_no_zope = ["coverage (>=5.0.2)", "hypothesis", "pympler", "pytest (>=4.3.0)", "six"]
 
 [[package]]
 category = "main"
@@ -87,24 +87,15 @@ description = "Universal Command Line Environment for AWS."
 name = "awscli"
 optional = false
 python-versions = "*"
-version = "1.18.130"
+version = "1.18.136"
 
 [package.dependencies]
-botocore = "1.17.53"
+botocore = "1.17.59"
 docutils = ">=0.10,<0.16"
 s3transfer = ">=0.3.0,<0.4.0"
-
-[package.dependencies.PyYAML]
-python = "<3.4.0 || >=3.5.0"
-version = ">=3.10,<5.4"
-
-[package.dependencies.colorama]
-python = "<3.4.0 || >=3.5.0"
-version = ">=0.2.5,<0.4.4"
-
-[package.dependencies.rsa]
-python = "<3.4.0 || >=3.5.0"
-version = ">=3.1.2,<=4.5.0"
+PyYAML = {version = ">=3.10,<5.4", markers = "python_version != \"3.4\""}
+colorama = {version = ">=0.2.5,<0.4.4", markers = "python_version != \"3.4\""}
+rsa = {version = ">=3.1.2,<=4.5.0", markers = "python_version != \"3.4\""}
 
 [[package]]
 category = "main"
@@ -160,16 +151,13 @@ description = "Low-level, data-driven core of boto 3."
 name = "botocore"
 optional = false
 python-versions = "*"
-version = "1.17.53"
+version = "1.17.59"
 
 [package.dependencies]
 docutils = ">=0.10,<0.16"
 jmespath = ">=0.7.1,<1.0.0"
 python-dateutil = ">=2.1,<3.0.0"
-
-[package.dependencies.urllib3]
-python = "<3.4.0 || >=3.5.0"
-version = ">=1.20,<1.26"
+urllib3 = {version = ">=1.20,<1.26", markers = "python_version != \"3.4\""}
 
 [[package]]
 category = "main"
@@ -221,19 +209,15 @@ description = "cmd2 - quickly build feature-rich and user-friendly interactive c
 name = "cmd2"
 optional = false
 python-versions = ">=3.5"
-version = "1.3.8"
+version = "1.3.9"
 
 [package.dependencies]
 attrs = ">=16.3.0"
 colorama = ">=0.3.7"
 pyperclip = ">=1.6"
-pyreadline = "*"
-setuptools = ">=34.4"
 wcwidth = ">=0.1.7"
-
-[package.dependencies.importlib-metadata]
-python = "<3.8"
-version = ">=1.6.0"
+importlib-metadata = {version = ">=1.6.0", markers = "python_version < \"3.8\""}
+pyreadline = {version = "*", markers = "sys_platform == \"win32\""}
 
 [package.extras]
 dev = ["pytest (>=4.6)", "codecov", "pytest-cov", "pytest-mock", "flake8", "sphinx", "sphinx-rtd-theme", "sphinx-autobuild", "doc8", "invoke", "twine (>=1.11)", "mock", "nox (2019.11.9)", "nox"]
@@ -317,18 +301,9 @@ version = "1.9.0"
 
 [package.dependencies]
 prometheus-client = ">=0.2"
-
-[package.dependencies.pika]
-optional = true
-version = ">=1.0,<2.0"
-
-[package.dependencies.watchdog]
-optional = true
-version = ">=0.8,<0.9"
-
-[package.dependencies.watchdog-gevent]
-optional = true
-version = "0.1"
+pika = {version = ">=1.0,<2.0", optional = true, markers = "extra == \"rabbitmq\""}
+watchdog = {version = ">=0.8,<0.9", optional = true, markers = "extra == \"watch\""}
+watchdog-gevent = {version = "0.1", optional = true, markers = "extra == \"watch\""}
 
 [package.extras]
 all = ["watchdog-gevent (0.1)", "watchdog (>=0.8,<0.9)", "pylibmc (>=1.5,<2.0)", "pika (>=1.0,<2.0)", "redis (>=2.0,<4.0)"]
@@ -350,10 +325,7 @@ version = "3.8.3"
 mccabe = ">=0.6.0,<0.7.0"
 pycodestyle = ">=2.6.0a1,<2.7.0"
 pyflakes = ">=2.2.0,<2.3.0"
-
-[package.dependencies.importlib-metadata]
-python = "<3.8"
-version = "*"
+importlib-metadata = {version = "*", markers = "python_version < \"3.8\""}
 
 [[package]]
 category = "main"
@@ -372,11 +344,10 @@ python-versions = ">=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*"
 version = "20.6.2"
 
 [package.dependencies]
-cffi = ">=1.12.2"
-greenlet = ">=0.4.16"
-setuptools = "*"
 "zope.event" = "*"
 "zope.interface" = "*"
+cffi = {version = ">=1.12.2", markers = "platform_python_implementation == \"CPython\" and sys_platform == \"win32\""}
+greenlet = {version = ">=0.4.16", markers = "platform_python_implementation == \"CPython\""}
 
 [package.extras]
 dnspython = ["dnspython (>=1.16.0)", "idna"]
@@ -391,7 +362,7 @@ description = "Python framework for constructing command-line pipelines"
 name = "gluetool"
 optional = false
 python-versions = "*"
-version = "1.22"
+version = "1.23"
 
 [package.dependencies]
 Jinja2 = "2.10"
@@ -413,14 +384,12 @@ requests-toolbelt = "0.8.0"
 six = "1.12.0"
 sphinx-rtd-theme = "0.4.1"
 tabulate = "0.8.2"
-typing = "3.7.4"
 typing-extensions = "3.7.4"
 urlnormalizer = "1.2.0"
 
 [[package]]
 category = "main"
 description = "Lightweight in-process concurrent programming"
-marker = "platform_python_implementation == \"CPython\""
 name = "greenlet"
 optional = false
 python-versions = "*"
@@ -470,7 +439,6 @@ version = "1.2.0"
 [[package]]
 category = "main"
 description = "Read metadata from Python packages"
-marker = "python_version < \"3.8\""
 name = "importlib-metadata"
 optional = false
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,>=2.7"
@@ -668,7 +636,7 @@ version = "2.5.0"
 six = "*"
 
 [package.extras]
-testing = ["pytest", "coverage", "astroid (>=1.5.3,<1.6.0)", "pylint (>=1.7.2,<1.8.0)", "astroid (>=2.0)", "pylint (>=2.3.1,<2.4.0)"]
+testing = ["pytest", "coverage", "astroid (>=2.0)"]
 yaml = ["PyYAML (>=5.1.0)"]
 
 [[package]]
@@ -717,7 +685,7 @@ description = "An SDK for building applications to work with OpenStack"
 name = "openstacksdk"
 optional = false
 python-versions = ">=3.6"
-version = "0.48.0"
+version = "0.49.0"
 
 [package.dependencies]
 PyYAML = ">=3.12"
@@ -734,6 +702,7 @@ netifaces = ">=0.10.4"
 os-service-types = ">=1.7.0"
 pbr = ">=2.0.0,<2.1.0 || >2.1.0"
 requestsexceptions = ">=1.2.0"
+importlib-metadata = {version = ">=1.7.0", markers = "python_version < \"3.8\""}
 
 [[package]]
 category = "main"
@@ -752,7 +721,7 @@ description = "OpenStackClient Library"
 name = "osc-lib"
 optional = false
 python-versions = ">=3.6"
-version = "2.2.0"
+version = "2.2.1"
 
 [package.dependencies]
 cliff = ">=3.2.0"
@@ -780,10 +749,7 @@ netaddr = ">=0.7.18"
 requests = ">=2.18.0"
 rfc3986 = ">=1.2.0"
 stevedore = ">=1.20.0"
-
-[package.dependencies.importlib-metadata]
-python = "<3.8"
-version = ">=1.7.0"
+importlib-metadata = {version = ">=1.7.0", markers = "python_version < \"3.8\""}
 
 [[package]]
 category = "main"
@@ -879,9 +845,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 version = "0.13.1"
 
 [package.dependencies]
-[package.dependencies.importlib-metadata]
-python = "<3.8"
-version = ">=0.12"
+importlib-metadata = {version = ">=0.12", markers = "python_version < \"3.8\""}
 
 [package.extras]
 dev = ["pre-commit", "tox"]
@@ -924,7 +888,6 @@ version = "1.9.0"
 [[package]]
 category = "main"
 description = "ASN.1 types and codecs"
-marker = "python_version != \"3.4\""
 name = "pyasn1"
 optional = false
 python-versions = "*"
@@ -981,7 +944,6 @@ version = "1.8.0"
 [[package]]
 category = "main"
 description = "A python implmementation of GNU readline."
-marker = "sys_platform == \"win32\""
 name = "pyreadline"
 optional = false
 python-versions = "*"
@@ -996,19 +958,16 @@ python-versions = ">=3.5"
 version = "6.0.1"
 
 [package.dependencies]
-atomicwrites = ">=1.0"
 attrs = ">=17.4.0"
-colorama = "*"
 iniconfig = "*"
 more-itertools = ">=4.0.0"
 packaging = "*"
 pluggy = ">=0.12,<1.0"
 py = ">=1.8.2"
 toml = "*"
-
-[package.dependencies.importlib-metadata]
-python = "<3.8"
-version = ">=0.12"
+atomicwrites = {version = ">=1.0", markers = "sys_platform == \"win32\""}
+colorama = {version = "*", markers = "sys_platform == \"win32\""}
+importlib-metadata = {version = ">=0.12", markers = "python_version < \"3.8\""}
 
 [package.extras]
 checkqa_mypy = ["mypy (0.780)"]
@@ -1103,7 +1062,7 @@ description = "Client library for OpenStack Compute API"
 name = "python-novaclient"
 optional = false
 python-versions = ">=3.6"
-version = "17.2.0"
+version = "17.2.1"
 
 [package.dependencies]
 PrettyTable = ">=0.7.2,<0.8"
@@ -1150,7 +1109,7 @@ category = "main"
 description = "YAML parser and emitter for Python"
 name = "pyyaml"
 optional = false
-python-versions = "*"
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 version = "5.3.1"
 
 [[package]]
@@ -1216,7 +1175,6 @@ idna2008 = ["idna"]
 [[package]]
 category = "main"
 description = "Pure-Python RSA implementation"
-marker = "python_version != \"3.4\""
 name = "rsa"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, <4"
@@ -1285,12 +1243,12 @@ Jinja2 = ">=2.3"
 Pygments = ">=2.0"
 alabaster = ">=0.7,<0.8"
 babel = ">=1.3,<2.0 || >2.0"
-colorama = ">=0.3.5"
 docutils = ">=0.11"
 imagesize = "*"
 requests = ">=2.4.0"
 six = ">=1.5"
 snowballstemmer = ">=1.1"
+colorama = {version = ">=0.3.5", markers = "sys_platform == \"win32\""}
 
 [package.extras]
 test = ["html5lib", "mock", "nose", "simplejson"]
@@ -1357,10 +1315,7 @@ version = "3.2.1"
 
 [package.dependencies]
 pbr = ">=2.0.0,<2.1.0 || >2.1.0"
-
-[package.dependencies.importlib-metadata]
-python = "<3.8"
-version = ">=1.7.0"
+importlib-metadata = {version = ">=1.7.0", markers = "python_version < \"3.8\""}
 
 [[package]]
 category = "main"
@@ -1394,8 +1349,8 @@ category = "main"
 description = "Type Hints for Python"
 name = "typing"
 optional = false
-python-versions = "*"
-version = "3.7.4"
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
+version = "3.7.4.3"
 
 [[package]]
 category = "main"
@@ -1487,7 +1442,6 @@ version = "1.12.1"
 [[package]]
 category = "main"
 description = "Backport of pathlib-compatible object wrapper for zip files"
-marker = "python_version < \"3.8\""
 name = "zipp"
 optional = false
 python-versions = ">=3.6"
@@ -1505,9 +1459,6 @@ optional = false
 python-versions = "*"
 version = "4.4"
 
-[package.dependencies]
-setuptools = "*"
-
 [package.extras]
 docs = ["sphinx"]
 test = ["zope.testrunner"]
@@ -1520,16 +1471,14 @@ optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 version = "5.1.0"
 
-[package.dependencies]
-setuptools = "*"
-
 [package.extras]
 docs = ["sphinx", "repoze.sphinx.autointerface"]
 test = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 
 [metadata]
-content-hash = "a368af2bc6b164e93cf31be750d05b17eb410c7c69c51c4ac5f634563a489aef"
+content-hash = "a11b7d26eb72d47b08b86fa2feb83defe72bfb85719aebb7ab6a18b1c7cde192"
+lock-version = "1.1"
 python-versions = "^3.7"
 
 [metadata.files]
@@ -1538,7 +1487,7 @@ alabaster = [
     {file = "alabaster-0.7.12.tar.gz", hash = "sha256:a661d72d58e6ea8a57f7a86e37d86716863ee5e92788398526d58b26a4e4dc02"},
 ]
 alembic = [
-    {file = "alembic-1.4.2.tar.gz", hash = "sha256:035ab00497217628bf5d0be82d664d8713ab13d37b630084da8e1f98facf4dbf"},
+    {file = "alembic-1.4.3.tar.gz", hash = "sha256:5334f32314fb2a56d86b4c4dd1ae34b08c03cae4cb888bc699942104d66bc245"},
 ]
 ansible = [
     {file = "ansible-2.9.13.tar.gz", hash = "sha256:3ab21588992fbfe9de3173aefd63da1267dc12892a60f5cfdc055fe19c549644"},
@@ -1559,12 +1508,12 @@ atomicwrites = [
     {file = "atomicwrites-1.4.0.tar.gz", hash = "sha256:ae70396ad1a434f9c7046fd2dd196fc04b12f9e91ffb859164193be8b6168a7a"},
 ]
 attrs = [
-    {file = "attrs-20.1.0-py2.py3-none-any.whl", hash = "sha256:2867b7b9f8326499ab5b0e2d12801fa5c98842d2cbd22b35112ae04bf85b4dff"},
-    {file = "attrs-20.1.0.tar.gz", hash = "sha256:0ef97238856430dcf9228e07f316aefc17e8939fc8507e18c6501b761ef1a42a"},
+    {file = "attrs-20.2.0-py2.py3-none-any.whl", hash = "sha256:fce7fc47dfc976152e82d53ff92fa0407700c21acd20886a13777a0d20e655dc"},
+    {file = "attrs-20.2.0.tar.gz", hash = "sha256:26b54ddbbb9ee1d34d5d3668dd37d6cf74990ab23c828c2888dccdceee395594"},
 ]
 awscli = [
-    {file = "awscli-1.18.130-py2.py3-none-any.whl", hash = "sha256:b48007dcc2efe796a1d8dc59a131e13c42b67f53349e9c5380e366b9904cc3d4"},
-    {file = "awscli-1.18.130.tar.gz", hash = "sha256:066fe7a5cd76d663357579dfc2e20f361d4c9b92ac6db0554e4c9b5cf8857f59"},
+    {file = "awscli-1.18.136-py2.py3-none-any.whl", hash = "sha256:4b4282bc966865e2bd8e9b37fa6b132a61149c81ca11caf03fc904cefcd81bf5"},
+    {file = "awscli-1.18.136.tar.gz", hash = "sha256:b82de7dbabecc5d40dc8e881aeb683aa24f490f0a285a1e29908d6dc3b06efcb"},
 ]
 babel = [
     {file = "Babel-2.8.0-py2.py3-none-any.whl", hash = "sha256:d670ea0b10f8b723672d3a6abeb87b565b244da220d76b4dba1b66269ec152d4"},
@@ -1584,8 +1533,8 @@ beautifulsoup4 = [
     {file = "beautifulsoup4-4.6.3.tar.gz", hash = "sha256:90f8e61121d6ae58362ce3bed8cd997efb00c914eae0ff3d363c32f9a9822d10"},
 ]
 botocore = [
-    {file = "botocore-1.17.53-py2.py3-none-any.whl", hash = "sha256:7e0272ceeb7747ed259a392e8d7b624cfd037085a8c59ef2b9f8916e7c556267"},
-    {file = "botocore-1.17.53.tar.gz", hash = "sha256:d37a83ac23257c85c48b74ab81173980234f8fc078e7a9d312d0ee7d057f90e6"},
+    {file = "botocore-1.17.59-py2.py3-none-any.whl", hash = "sha256:9736ff0c2a27e800864953c812be2f41fb9a6247350db4f052ef5e5b200a1ac4"},
+    {file = "botocore-1.17.59.tar.gz", hash = "sha256:47aa4683597b5b20bbaeee31f583d9ad701a6dd51ed56e1b61708a2057bbb1ae"},
 ]
 certifi = [
     {file = "certifi-2020.6.20-py2.py3-none-any.whl", hash = "sha256:8fc0819f1f30ba15bdb34cceffb9ef04d99f420f68eb75d901e9560b8749fc41"},
@@ -1630,8 +1579,8 @@ cliff = [
     {file = "cliff-3.4.0.tar.gz", hash = "sha256:49be854582ec4a74240cb72f287846f823cd8cbd2e25f924541d12f27104bda3"},
 ]
 cmd2 = [
-    {file = "cmd2-1.3.8-py3-none-any.whl", hash = "sha256:a0a8705dfd7443cc4a371c8f84608b2f8119bb6693976e6442d2c7099474b270"},
-    {file = "cmd2-1.3.8.tar.gz", hash = "sha256:b6f6254def8ba479088702f97bca1b999c12e0c38ac5d82dc50a44db93c7108c"},
+    {file = "cmd2-1.3.9-py3-none-any.whl", hash = "sha256:bc2b5e445b005ccc8644185701024e4cbce3c2d7ae5b1ab1e0b9154ad9fe8de1"},
+    {file = "cmd2-1.3.9.tar.gz", hash = "sha256:7f8035faafda15d26098bf2ffe16aaba1c78511ce13e0815d2efe58ba392b501"},
 ]
 colorama = [
     {file = "colorama-0.3.9-py2.py3-none-any.whl", hash = "sha256:463f8483208e921368c9f306094eb6f725c6ca42b0f97e313cb5d5512459feda"},
@@ -1719,8 +1668,8 @@ gevent = [
     {file = "gevent-20.6.2.tar.gz", hash = "sha256:a23c2abf08e851c988723f6a2996d495f513a2c0dc70f9956af03af8debdb5d1"},
 ]
 gluetool = [
-    {file = "gluetool-1.22-py2-none-any.whl", hash = "sha256:110d7e84b1dfda4d0b55fbca8da05201251f1eb810a6927a7fa603b6e59c9d18"},
-    {file = "gluetool-1.22.tar.gz", hash = "sha256:e3521858bdbb062232f0f343791d48a03da3c4ef3cdb149e48e9ceeb6039f88f"},
+    {file = "gluetool-1.23-py2-none-any.whl", hash = "sha256:6db50ba784618c673bd4bdf5ed42c862a7b57b388f97b2a782fce9daa33eb071"},
+    {file = "gluetool-1.23.tar.gz", hash = "sha256:5e4eee06226e0687a9ea35425d44da70b2aed140a30eb275e72e9979f833e6d6"},
 ]
 greenlet = [
     {file = "greenlet-0.4.16-cp27-cp27m-manylinux1_x86_64.whl", hash = "sha256:80cb0380838bf4e48da6adedb0c7cd060c187bb4a75f67a5aa9ec33689b84872"},
@@ -1944,16 +1893,16 @@ netifaces = [
     {file = "netifaces-0.10.9.tar.gz", hash = "sha256:2dee9ffdd16292878336a58d04a20f0ffe95555465fee7c9bd23b3490ef2abf3"},
 ]
 openstacksdk = [
-    {file = "openstacksdk-0.48.0-py3-none-any.whl", hash = "sha256:fd785455633a3e054fcd30886ca44da6047792833e4624a449b5f94c61ede189"},
-    {file = "openstacksdk-0.48.0.tar.gz", hash = "sha256:8652664a30041325a980d03a37c92ca546ed923d26c246a2bb3c92fc5f24243c"},
+    {file = "openstacksdk-0.49.0-py3-none-any.whl", hash = "sha256:ed40145708bdefaf00b5fcdb125be2886e988a47015fdb13487174e66973fa0d"},
+    {file = "openstacksdk-0.49.0.tar.gz", hash = "sha256:d28c5ef590a3bb3b4b893148fc9986c25b90a33f7f07de918525535eec0db333"},
 ]
 os-service-types = [
     {file = "os-service-types-1.7.0.tar.gz", hash = "sha256:31800299a82239363995b91f1ebf9106ac7758542a1e4ef6dc737a5932878c6c"},
     {file = "os_service_types-1.7.0-py2.py3-none-any.whl", hash = "sha256:0505c72205690910077fb72b88f2a1f07533c8d39f2fe75b29583481764965d6"},
 ]
 osc-lib = [
-    {file = "osc-lib-2.2.0.tar.gz", hash = "sha256:fcfce4d63a633c3161e2a6666764446e3f32668e814a94ab98da12e3908ee1d6"},
-    {file = "osc_lib-2.2.0-py3-none-any.whl", hash = "sha256:b68a8883e74ee00436fa1799b02ee1a62df54c73352bf3170e4b212d97c70a63"},
+    {file = "osc-lib-2.2.1.tar.gz", hash = "sha256:d969891040de0804b5126fa4c476ec1f4ec1475096907096971fd40d989e0ad2"},
+    {file = "osc_lib-2.2.1-py3-none-any.whl", hash = "sha256:8571b081a4ac408e3880181ad856a5e7b6c0f29f9c8061c9dad05c7c28f476f5"},
 ]
 "oslo.config" = [
     {file = "oslo.config-8.3.1-py3-none-any.whl", hash = "sha256:5ef9382983e7be5d44a2bc05b87c858dc9d8c8c409f8856eeeb6d4933a17bc20"},
@@ -2093,8 +2042,8 @@ python-keystoneclient = [
     {file = "python_keystoneclient-4.1.0-py3-none-any.whl", hash = "sha256:c96c40fea2c12df7fce64a8d2c233ef981f4453df6ea6b1f8d27c10ee4ea7286"},
 ]
 python-novaclient = [
-    {file = "python-novaclient-17.2.0.tar.gz", hash = "sha256:cda999e2254787b962e14859f6ca71de640963f3b35c1685fb51ce3a7a0a8958"},
-    {file = "python_novaclient-17.2.0-py3-none-any.whl", hash = "sha256:42552aa6f40254b1cbc933418903928bce848288bae116b5ee294c22f8c7f9a6"},
+    {file = "python-novaclient-17.2.1.tar.gz", hash = "sha256:3f5ced712235f069d4d9fcde994c71a37916b7c307a1c1332b832be1493930bf"},
+    {file = "python_novaclient-17.2.1-py3-none-any.whl", hash = "sha256:f4a5fda834d951afb85638087508f0e9d25827478699cc3666030cebd993f832"},
 ]
 python-openstackclient = [
     {file = "python-openstackclient-5.3.1.tar.gz", hash = "sha256:dcbdc95f6f577f621fc2b3862a3e1143dedd7d8a95e6ed08bd953d95aa24a1cf"},
@@ -2309,9 +2258,8 @@ typed-ast = [
     {file = "typed_ast-1.4.1.tar.gz", hash = "sha256:8c8aaad94455178e3187ab22c8b01a3837f8ee50e09cf31f1ba129eb293ec30b"},
 ]
 typing = [
-    {file = "typing-3.7.4-py2-none-any.whl", hash = "sha256:38566c558a0a94d6531012c8e917b1b8518a41e418f7f15f00e129cc80162ad3"},
-    {file = "typing-3.7.4-py3-none-any.whl", hash = "sha256:84698954b4e6719e912ef9a42a2431407fe3755590831699debda6fba92aac55"},
-    {file = "typing-3.7.4.tar.gz", hash = "sha256:53765ec4f83a2b720214727e319607879fec4acde22c4fbb54fa2604e79e44ce"},
+    {file = "typing-3.7.4.3-py2-none-any.whl", hash = "sha256:283d868f5071ab9ad873e5e52268d611e851c870a2ba354193026f2dfb29d8b5"},
+    {file = "typing-3.7.4.3.tar.gz", hash = "sha256:1187fb9c82fd670d10aa07bbb6cfcfe4bdda42d6fab8d5134f04e8c4d0b71cc9"},
 ]
 typing-extensions = [
     {file = "typing_extensions-3.7.4-py2-none-any.whl", hash = "sha256:b1edbbf0652660e32ae780ac9433f4231e7339c7f9a8057d0f042fcbcea49b87"},
