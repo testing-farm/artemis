@@ -441,7 +441,16 @@ class SnapshotRequest(Base):
 class Metrics(Base):
     __tablename__ = 'metrics'
 
-    _id = Column(Integer, primary_key=True)
+    metric = Column(String(250), primary_key=True, nullable=False)
+    count = Column(Integer, default=0)
+    updated = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class MetricsFailover(Base):
+    __tablename__ = 'metrics_failover'
+
+    from_pool = Column(String(250), ForeignKey('pools.poolname'), primary_key=True)
+    to_pool = Column(String(250), ForeignKey('pools.poolname'), primary_key=True)
     count = Column(Integer, default=0)
     updated = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -701,9 +710,6 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
                     parameters=json.dumps(pool_parameters)
                 )
             )
-
-        logger.info('Adding metrics counter')
-        session.add(Metrics())
 
 
 def init_postgres() -> None:

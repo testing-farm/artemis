@@ -1,19 +1,21 @@
 import dataclasses
+import sqlalchemy
 import threading
 
 from prometheus_client import Gauge, CollectorRegistry, generate_latest
 
 
 import gluetool.log
+from gluetool.result import Result, Ok
 import sqlalchemy.orm.session
 import sqlalchemy.sql.schema
 
-from . import get_db, get_logger
+from . import get_db, get_logger, Failure
 from . import db as artemis_db
 from . import tasks as artemis_tasks
 from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 
-from typing import cast, Any, Dict, Optional, Type
+from typing import cast, Any, Dict, Optional, Tuple, Type
 
 _registry_lock = threading.Lock()
 
@@ -46,6 +48,15 @@ OVERALL_GUEST_REQUEST_COUNT_TOTAL = Gauge(
     'overall_guest_request_count_total',
     'Number of overall guest requests'
 )
+PROVISION_OK_GUEST_REQUEST_COUNT_TOTAL = Gauge(
+    'success_guest_request_count_total',
+    'Number of succssessfully provisioned guest requests'
+)
+PROVISION_FAILOVER_GUEST_REQUEST_COUNT = Gauge(
+    'provision_failover_guest_request_count',
+    'Number of provisioned guest requests which were provisioned with failover',
+    ['from_pool', 'to_pool']
+)
 CURRENT_GUEST_REQUEST_COUNT_TOTAL = Gauge(
     'current_guest_request_count_total',
     'Number of current guest requests'
@@ -76,12 +87,13 @@ def upsert_metric(
     and one column called `count` we want to modify.
     """
 
+    # TODO: actually check if result of upsert was sucessful
     artemis_db.upsert(
         session,
         model,
         primary_keys,
         insert_data={getattr(model, 'count'): 1},
-        update_data={getattr(model, 'count'): getattr(model, 'count') + change}
+        update_data={'count': getattr(model, 'count') + change}
     )
 
 
@@ -110,11 +122,47 @@ def upsert_dec_metric(
 
 
 @dataclasses.dataclass
+class ProvisioningMetrics:
+    requested: int = 0
+    success: int = 0
+    failover: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+
+    @staticmethod
+    def inc_requested(
+        session: sqlalchemy.orm.session.Session
+    ) -> Result[None, Failure]:
+        upsert_inc_metric(session, artemis_db.Metrics, {artemis_db.Metrics.metric: 'requested'})
+        return Ok(None)
+
+    @staticmethod
+    def inc_success(
+        session: sqlalchemy.orm.session.Session
+    ) -> Result[None, Failure]:
+        upsert_inc_metric(session, artemis_db.Metrics, {artemis_db.Metrics.metric: 'success'})
+        return Ok(None)
+
+    @staticmethod
+    def inc_failover(
+        session: sqlalchemy.orm.session.Session,
+        from_pool: str,
+        to_pool: str
+    ) -> Result[None, Failure]:
+        upsert_inc_metric(
+            session,
+            artemis_db.MetricsFailover,
+            {
+                artemis_db.MetricsFailover.from_pool: from_pool,
+                artemis_db.MetricsFailover.to_pool: to_pool
+            }
+        )
+        return Ok(None)
+
+
+@dataclasses.dataclass
 class Metrics:
     ''' Class for storing global, non pool-specific metrics '''
     current_guest_request_count_total: int = 0
-    overall_guest_request_count_total: int = 0
-
+    provisioning: ProvisioningMetrics = dataclasses.field(default_factory=ProvisioningMetrics)
     db_pool: artemis_db.DBPoolMetrics = artemis_db.DBPoolMetrics()
 
 
@@ -126,11 +174,15 @@ def get_global_metrics(
     global_metrics = Metrics()
 
     with db.get_session() as session:
-        current_count = len(session.query(artemis_db.GuestRequest).all())
-        overall_count = session.query(artemis_db.Metrics).get(1).count
-
-    global_metrics.current_guest_request_count_total = current_count
-    global_metrics.overall_guest_request_count_total = overall_count
+        global_metrics.current_guest_request_count_total = len(session.query(artemis_db.GuestRequest).all())
+        requested = session.query(artemis_db.Metrics).get('requested')
+        global_metrics.provisioning.requested = requested.count if requested else 0
+        provisioned_ok = session.query(artemis_db.Metrics).get('success')
+        global_metrics.provisioning.success = provisioned_ok.count if provisioned_ok else 0
+        global_metrics.provisioning.failover = {
+            (record.from_pool, record.to_pool): record.count
+            for record in session.query(artemis_db.MetricsFailover).all()
+        }
 
     global_metrics.db_pool = db.pool_metrics()
 
@@ -147,6 +199,8 @@ def generate_metrics() -> bytes:
         registry.register(REQUEST_COUNT)
         registry.register(REQUESTS_INPROGRESS)
         registry.register(OVERALL_GUEST_REQUEST_COUNT_TOTAL)
+        registry.register(PROVISION_OK_GUEST_REQUEST_COUNT_TOTAL)
+        registry.register(PROVISION_FAILOVER_GUEST_REQUEST_COUNT)
         registry.register(CURRENT_GUEST_REQUEST_COUNT_TOTAL)
         registry.register(CURRENT_GUEST_REQUEST_COUNT)
         registry.register(DB_POOL_SIZE)
@@ -162,7 +216,7 @@ def generate_metrics() -> bytes:
                 pool_metrics = pool.metrics(logger, session)
 
                 for state in pool_metrics.current_guest_request_count_per_state:
-                    CURRENT_GUEST_REQUEST_COUNT.labels(pool.poolname, state.value) \
+                    CURRENT_GUEST_REQUEST_COUNT.labels(pool=pool.poolname, state=state.value) \
                         .set(pool_metrics.current_guest_request_count_per_state[state])
 
                 for metric_instance, metric_name in [
@@ -187,8 +241,12 @@ def generate_metrics() -> bytes:
             global_metrics = get_global_metrics(logger, db)
 
             CURRENT_GUEST_REQUEST_COUNT_TOTAL.set(global_metrics.current_guest_request_count_total)
-            OVERALL_GUEST_REQUEST_COUNT_TOTAL.set(global_metrics.overall_guest_request_count_total)
-
+            OVERALL_GUEST_REQUEST_COUNT_TOTAL.set(global_metrics.provisioning.requested)
+            PROVISION_OK_GUEST_REQUEST_COUNT_TOTAL.set(global_metrics.provisioning.success)
+            for from_pool, to_pool in global_metrics.provisioning.failover:
+                PROVISION_FAILOVER_GUEST_REQUEST_COUNT \
+                    .labels(from_pool=from_pool, to_pool=to_pool) \
+                    .set(global_metrics.provisioning.failover[(from_pool, to_pool)])
             DB_POOL_SIZE.set(global_metrics.db_pool.size)
             DB_POOL_CHECKED_IN.set(global_metrics.db_pool.checked_in_connections)
             DB_POOL_CHECKED_OUT.set(global_metrics.db_pool.checked_out_connections)

@@ -20,10 +20,10 @@ from gluetool.log import log_dict
 
 from . import errors, handlers
 from .middleware import error_handler_middleware, prometheus_middleware
-from .. import get_logger, get_db, safe_call, safe_db_execute, log_guest_event
+from .. import get_logger, get_db, safe_db_execute, log_guest_event
 from .. import db as artemis_db
+from .. import metrics
 from ..guest import GuestState
-from ..metrics import generate_metrics
 
 from typing import Any, Dict, List, NoReturn, Optional, Union
 
@@ -299,13 +299,8 @@ class GuestRequestManager:
                 )
             )
 
-            # update metrics table counter
-            query = sqlalchemy \
-                .update(artemis_db.Metrics.__table__) \
-                .values({artemis_db.Metrics.count: artemis_db.Metrics.count + 1,
-                         artemis_db.Metrics.updated: datetime.datetime.now()})
-
-            safe_call(session.execute, query)
+            # update metrics counter for total guest requests
+            metrics.ProvisioningMetrics.inc_requested(session)
 
         gr = self.get_by_guestname(guestname)
 
@@ -588,7 +583,7 @@ def get_guest_events(guestname: str, request: Request, manager: GuestEventManage
 
 
 def get_metrics(request: Request) -> APIResponse:
-    return APIResponse(stream=generate_metrics(), request=request)
+    return APIResponse(stream=metrics.generate_metrics(), request=request)
 
 
 def get_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:

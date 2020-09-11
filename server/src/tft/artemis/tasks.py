@@ -16,6 +16,7 @@ from gluetool.utils import normalize_bool_option
 
 from . import Failure, get_db, get_logger, get_broker, safe_call, safe_db_execute, log_guest_event, \
     log_error_guest_event
+from . import metrics
 from .db import DB, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
 from .drivers import PoolDriver, PoolLogger
 from .environment import Environment
@@ -812,7 +813,7 @@ class Workspace:
     way.
 
     Workspace takes care of executing given operation, evaluating the returned promise, handling failure
-    and so on. The biggest advatage is that this outcome is stored in the workspace, and any consecutive
+    and so on. The biggest advantage is that this outcome is stored in the workspace, and any consecutive
     operation called will become no-op if any previous operation outcome wasn't a success.
 
     This allows for chaining of calls, checking the result once at the end:
@@ -1481,6 +1482,9 @@ def do_update_guest(
 
     logger.info('successfully acquired')
 
+    # update metrics counter for successfully provisioned guest requests
+    metrics.ProvisioningMetrics.inc_success(session)
+
     return SUCCESS
 
 
@@ -1650,6 +1654,10 @@ def do_route_guest_request(
     if not pool:
         return RESCHEDULE
 
+    assert workspace.gr
+    new_pool = pool.poolname
+    current_pool = workspace.gr.poolname
+
     if _cancel_task_if(logger, cancel):
         return RESCHEDULE
 
@@ -1680,6 +1688,11 @@ def do_route_guest_request(
         return workspace.result
 
     logger.info('scheduled provisioning')
+
+    # New pool was chosen - log failover
+    if workspace.gr and current_pool and new_pool != current_pool:
+        logger.warning('failover - trying {} pool instead of {}'.format(new_pool, current_pool))
+        metrics.ProvisioningMetrics.inc_failover(session=session, from_pool=current_pool, to_pool=new_pool)
 
     return SUCCESS
 
