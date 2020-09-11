@@ -17,11 +17,12 @@ packages = [
 [tool.poetry.dependencies]
 python = "^3.7"
 ansible-vault = "^1.2.0"
+alembic = "^1.4.2"
 awscli = "^1.16.298"
 beaker-client = "^27.0"
 beautifulsoup4 = "^4.6.3"
 dramatiq = { version = "^1.7.0", extras = ["rabbitmq", "watch"] }
-gluetool = "^1.22"
+gluetool = "^1.23"
 gunicorn = "19.9.0"
 molten = "^0.7.4"
 psycopg2 = "2.8.4"

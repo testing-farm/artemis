@@ -322,8 +322,6 @@ class DB:
 
 
 def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
-    Base.metadata.create_all(db._engine)
-
     with db.get_session() as session:
         for user_config in server_config.get('users', []):
             logger.info('Adding user "{}"'.format(user_config['name']))

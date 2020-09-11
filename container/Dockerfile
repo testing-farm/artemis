@@ -72,7 +72,7 @@ RUN    mkdir -p /etc/beaker \
     && ln -s $CONFIGURATION/beaker-client-config /etc/beaker/client.conf
 
 #
-# Copy Artemis sources and install it
+# Copy Artemis sources and Alembic data and install Artemis
 #
 COPY server /APP/
 RUN    cd /APP \
