@@ -7,13 +7,13 @@ import gluetool.log
 from gluetool.result import Result, Ok
 
 from .. import Failure
-from ..db import GuestRequest, SnapshotRequest, SSHKey
+from ..db import GuestRequest, SnapshotRequest, SSHKey, Query
 from ..environment import Environment
 from ..guest import Guest, GuestState
 from ..snapshot import Snapshot
 
 # Type annotations
-from typing import cast, Any, List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Tuple
 
 
 class PoolCapabilities(argparse.Namespace):
@@ -215,10 +215,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return Result.Ok(PoolCapabilities())
 
     def current_guests_in_pool(self, session: sqlalchemy.orm.session.Session) -> List[GuestRequest]:
-        return cast(List[GuestRequest],
-                    session.query(GuestRequest)
-                    .filter(GuestRequest.poolname == self.poolname)
-                    .all())
+        return Query.from_session(session, GuestRequest) \
+            .filter(GuestRequest.poolname == self.poolname) \
+            .all()
 
     def get_pool_resource_metrics(self) -> Result[Tuple[PoolResourceLimits, PoolResourceUsage], Failure]:
         return Ok((PoolResourceLimits(), PoolResourceUsage()))

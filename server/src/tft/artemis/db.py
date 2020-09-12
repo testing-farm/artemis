@@ -11,9 +11,81 @@ import sqlalchemy
 import sqlalchemy.ext.declarative
 from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer, DateTime
 from sqlalchemy.orm import relationship
+from sqlalchemy.orm.query import Query as _Query
 
-from typing import cast, Any, Callable, Dict, Iterator, List, Optional, Union
+from typing import cast, Any, Callable, Dict, Generic, Iterator, List, Optional, Type, TypeVar, Union
 import gluetool.log
+
+
+Base = sqlalchemy.ext.declarative.declarative_base()
+
+
+# SQLalchemy stubs are missing types for Query methods, and allowing untyped calls globally
+# is not a good practice. Therefore, we wrap original Query instances with our wrapper which
+# provides all methods we need but applies cast() as needed.
+#
+# https://github.com/dropbox/sqlalchemy-stubs/pull/81
+T = TypeVar('T')
+
+
+class Query(Generic[T]):
+    def __init__(self, query: _Query) -> None:
+        self.query = query
+
+    @staticmethod
+    def from_session(session: sqlalchemy.orm.session.Session, klass: Type[T]) -> 'Query[T]':
+        query_proxy: Query[T] = Query(
+            cast(
+                Callable[[Type[T]], _Query],
+                session.query
+            )(klass)
+        )
+
+        return query_proxy
+
+    def filter(self, *args: Any) -> 'Query[T]':
+        self.query = cast(
+            Callable[..., _Query],
+            self.query.filter
+        )(*args)
+
+        return self
+
+    def order_by(self, *args: Any) -> 'Query[T]':
+        self.query = cast(
+            Callable[..., _Query],
+            self.query.order_by
+        )(*args)
+
+        return self
+
+    def limit(self, limit: Optional[int] = None) -> 'Query[T]':
+        self.query = cast(
+            Callable[[Optional[int]], _Query],
+            self.query.limit
+        )(limit)
+
+        return self
+
+    def offset(self, offset: Optional[int] = None) -> 'Query[T]':
+        self.query = cast(
+            Callable[[Optional[int]], _Query],
+            self.query.offset
+        )(offset)
+
+        return self
+
+    def one(self) -> T:
+        return cast(
+            Callable[[], T],
+            self.query.one
+        )()
+
+    def all(self) -> List[T]:
+        return cast(
+            Callable[[], List[T]],
+            self.query.all
+        )()
 
 
 @dataclasses.dataclass
@@ -28,8 +100,6 @@ class DBPoolMetrics:
 # SQLAlchemy defaults
 DEFAULT_SQLALCHEMY_POOL_SIZE = 20
 DEFAULT_SQLALCHEMY_MAX_OVERFLOW = 10
-
-Base = sqlalchemy.ext.declarative.declarative_base()
 
 
 class User(Base):
@@ -166,11 +236,13 @@ class GuestEvent(Base):
         **kwargs: Optional[Dict[str, Any]]
     ) -> List['GuestEvent']:
 
+        query_proxy: Query['GuestEvent'] = Query(query)
+
         if since:
-            query = query.filter(cls.updated >= since)
+            query_proxy = query_proxy.filter(cls.updated >= since)
 
         if until:
-            query = query.filter(cls.updated <= until)
+            query_proxy = query_proxy.filter(cls.updated <= until)
 
         try:
             _sort_by = getattr(cls, sort_field)
@@ -181,10 +253,11 @@ class GuestEvent(Base):
 
             raise BadRequestError()
 
-        events = query.order_by(_sort) \
+        events: List['GuestEvent'] = query_proxy \
+            .order_by(_sort) \
             .limit(page_size) \
-            .offset((page-1) * page_size) \
-            .all()  # type: List['GuestEvent']
+            .offset((page - 1) * page_size) \
+            .all()
 
         return events
 

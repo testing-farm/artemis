@@ -15,7 +15,7 @@ from gluetool.result import Result, Ok, Error
 from . import Failure, get_db, get_logger, get_broker, safe_call, safe_db_execute, log_guest_event, \
     log_error_guest_event
 from . import handle_failure as main_handle_failure
-from .db import DB, GuestRequest, Pool, SnapshotRequest, SSHKey
+from .db import DB, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
 from .drivers import PoolDriver
 from .environment import Environment
 from .guest import Guest, GuestLogger, GuestState, GuestPoolDataType
@@ -441,13 +441,12 @@ def _get_guest_request(
     session: sqlalchemy.orm.session.Session,
     guestname: str
 ) -> Result[Optional[GuestRequest], Failure]:
-    query = session \
-            .query(GuestRequest) \
-            .filter(GuestRequest.guestname == guestname)
+    query_proxy = Query.from_session(session, GuestRequest) \
+        .filter(GuestRequest.guestname == guestname)
 
     r_query = cast(
         Result[GuestRequest, Failure],
-        safe_call(query.one)
+        safe_call(query_proxy.one)
     )
 
     if r_query.is_ok:
@@ -467,14 +466,13 @@ def _get_guest_by_state(
     guestname: str,
     state: GuestState
 ) -> Result[Optional[GuestRequest], Failure]:
-    query = session \
-            .query(GuestRequest) \
-            .filter(GuestRequest.guestname == guestname) \
-            .filter(GuestRequest.state == state.value)
+    query_proxy = Query.from_session(session, GuestRequest) \
+        .filter(GuestRequest.guestname == guestname) \
+        .filter(GuestRequest.state == state.value)
 
     r_query = cast(
         Result[GuestRequest, Failure],
-        safe_call(query.one)
+        safe_call(query_proxy.one)
     )
 
     if r_query.is_ok:
@@ -495,14 +493,13 @@ def _get_snapshot_by_state(
     snapshotname: str,
     state: GuestState
 ) -> Result[Optional[SnapshotRequest], Failure]:
-    query = session \
-            .query(SnapshotRequest) \
-            .filter(SnapshotRequest.snapshotname == snapshotname) \
-            .filter(SnapshotRequest.state == state.value)
+    query_proxy = Query.from_session(session, SnapshotRequest) \
+        .filter(SnapshotRequest.snapshotname == snapshotname) \
+        .filter(SnapshotRequest.state == state.value)
 
     r_query = cast(
         Result[SnapshotRequest, Failure],
-        safe_call(query.one)
+        safe_call(query_proxy.one)
     )
 
     if r_query.is_ok:
@@ -663,10 +660,9 @@ def _get_pool(
     poolname: str
 ) -> Result[PoolDriver, Failure]:
     try:
-        pool_record = session \
-                    .query(Pool) \
-                    .filter(Pool.poolname == poolname) \
-                    .one()
+        pool_record = Query.from_session(session, Pool) \
+            .filter(Pool.poolname == poolname) \
+            .one()
 
     except sqlalchemy.orm.exc.NoResultFound:
         raise Exception('no such pool "{}"'.format(poolname))
@@ -688,7 +684,7 @@ def get_pools(
 ) -> List[PoolDriver]:
     pools: List[PoolDriver] = []
 
-    for pool_record in session.query(Pool).all():
+    for pool_record in Query.from_session(session, Pool).all():
         pool_driver_class = POOL_DRIVERS[pool_record.driver]
 
         pools += [
@@ -706,13 +702,12 @@ def _get_ssh_key(
 ) -> Result[SSHKey, Failure]:
     try:
         return Ok(
-            cast(
-                SSHKey,
-                session.query(SSHKey).filter(
-                    SSHKey.ownername == ownername,
-                    SSHKey.keyname == keyname
-                ).one()
+            Query.from_session(session, SSHKey)
+            .filter(
+                SSHKey.ownername == ownername,
+                SSHKey.keyname == keyname
             )
+            .one()
         )
 
     except sqlalchemy.orm.exc.NoResultFound:

@@ -1,17 +1,17 @@
 import os
-import re
 
 from tft.artemis import Failure
 from tft.artemis.drivers.openstack import OpenStackDriver
 from tft.artemis.environment import Environment
 
+import gluetool.glue
 import gluetool.log
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import PatternMap
 
 import stackprinter
 
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 
 def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -> Result[str, Failure]:
@@ -21,15 +21,16 @@ def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -
 
     pattern_map = PatternMap(compose_image_map, allow_variables=True, logger=logger)
 
-    image_name = pattern_map.match(compose_id)
+    try:
+        image_name = pattern_map.match(compose_id)
 
-    if image_name:
-        return Ok(image_name)
+    except gluetool.glue.GlueError:
+        error = 'cannot map compose {} to image name'.format(compose_id)
+        logger.error(error)
 
-    error = 'cannot map compose {} to image name'.format(compose_id)
-    logger.error(error)
+        return Error(Failure(error))
 
-    return Error(Failure(error))
+    return Ok(image_name[0] if isinstance(image_name, list) else image_name)
 
 
 def _image_by_name(

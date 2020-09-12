@@ -1,16 +1,15 @@
-import re
-
 from tft.artemis import Failure
 from tft.artemis.drivers.aws import AWSDriver
 from tft.artemis.environment import Environment
 
+import gluetool.glue
 import gluetool.log
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import PatternMap
 
 import stackprinter
 
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 
 def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -> Result[str, Failure]:
@@ -20,13 +19,13 @@ def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -
     try:
         image_name = pattern_map.match(compose_id)
 
-    except gluetool.GlueError:
+    except gluetool.glue.GlueError:
         error = 'cannot map compose {} to image name'.format(compose_id)
         logger.error(error)
 
         return Error(Failure(error))
 
-    return Ok(image_name)
+    return Ok(image_name[0] if isinstance(image_name, list) else image_name)
 
 
 def _image_by_name(
@@ -36,7 +35,7 @@ def _image_by_name(
 
     if result.is_error:
         logger.error("failed to run aws command")
-        logger.error(result.error.message)
+        logger.error(result.unwrap_error().message)
         return result
 
     images = result.unwrap()

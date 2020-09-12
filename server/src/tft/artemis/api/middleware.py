@@ -2,7 +2,9 @@ import json
 import re
 
 from molten import Headers, Request, Response
-from molten.contrib.prometheus import REQUEST_COUNT, REQUESTS_INPROGRESS
+# To make mypy happy when others try `from api.middleware import REQUEST_COUNT`, explicit re-export is needed.
+# See https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-no-implicit-reexport
+from molten.contrib.prometheus import REQUEST_COUNT as REQUEST_COUNT, REQUESTS_INPROGRESS as REQUESTS_INPROGRESS
 
 from . import errors
 
