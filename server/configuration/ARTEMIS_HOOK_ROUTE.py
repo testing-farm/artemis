@@ -215,7 +215,16 @@ def hook_ROUTE(
     # NOTE: beaker should be added here later, if Artemis will properly support it
 
     elif env.snapshots:
-        suitable_pools = [pool for pool in pools if pool.pool_config.get('snapshots')]
+        pool_capabilities = [
+            (pool, pool.capabilities())
+            for pool in pools
+        ]
+
+        suitable_pools = [
+            pool
+            for pool, r_capabilities in pool_capabilities
+            if r_capabilities.is_ok and r_capabilities.unwrap().supports_snapshots is True
+        ]
 
     gluetool.log.log_dict(logger.info, 'suitable pools', [pool.poolname for pool in suitable_pools])
 

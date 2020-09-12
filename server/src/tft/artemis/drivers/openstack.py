@@ -7,7 +7,7 @@ from datetime import datetime
 import gluetool.log
 from gluetool.glue import GlueCommandError
 from gluetool.result import Result, Ok, Error
-from gluetool.utils import Command, wait
+from gluetool.utils import Command, wait, normalize_bool_option
 
 from . import PoolDriver, PoolCapabilities, PoolResourceLimits, PoolResourceUsage
 from .. import Failure
@@ -17,7 +17,7 @@ from ..guest import Guest, SSHInfo
 from ..script import hook_engine
 from ..snapshot import Snapshot
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import cast, Any, Dict, List, Optional, Tuple, Union
 
 
 # Temeout for wait function in _stop_guest and _start_guest events
@@ -742,7 +742,9 @@ class OpenStackDriver(PoolDriver):
             return result
 
         capabilities = result.unwrap()
-        capabilities.supports_snapshots = True
+
+        # And to handle str -> bool conversions, we have tried and tested tools in gluetool's utils.
+        capabilities.supports_snapshots = normalize_bool_option(cast(str, self.pool_config.get('snapshots')))
 
         return Ok(capabilities)
 
