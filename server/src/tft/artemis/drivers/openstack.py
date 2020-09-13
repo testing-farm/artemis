@@ -74,8 +74,6 @@ class OpenStackDriver(PoolDriver):
     ) -> None:
         super(OpenStackDriver, self).__init__(logger, pool_config, poolname=poolname)
 
-        self.pool_config = pool_config
-
     def _run_os(self, options: List[str], json_format: bool = True) -> Result[Any, Failure]:
         """
         Run os command with additional options and return output in json format
