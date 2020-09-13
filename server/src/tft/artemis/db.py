@@ -579,11 +579,21 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
         for pool_config in server_config.get('pools', []):
             logger.info('Adding pool "{}"'.format(pool_config['name']))
 
+            pool_parameters = pool_config.get('parameters', {})
+
+            if pool_config['driver'] == 'openstack':
+                if 'project-domain-name' in pool_parameters and 'project-domain-id' in pool_parameters:
+                    from . import Failure
+
+                    Failure('Pool "{}" uses both project-domain-name and project-domain-id, name will be used'.format(
+                        pool_config['name']
+                    )).handle(logger)
+
             session.add(
                 Pool(
                     poolname=pool_config['name'],
                     driver=pool_config['driver'],
-                    parameters=json.dumps(pool_config.get('parameters', {}))
+                    parameters=json.dumps(pool_parameters)
                 )
             )
 

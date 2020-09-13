@@ -74,6 +74,26 @@ class OpenStackDriver(PoolDriver):
     ) -> None:
         super(OpenStackDriver, self).__init__(logger, poolname, pool_config)
 
+        self._os_cmd_base = [
+            'openstack',
+            '--os-auth-url', self.pool_config['auth-url'],
+            '--os-identity-api-version', self.pool_config['api-version'],
+            '--os-user-domain-name', self.pool_config['user-domain-name'],
+            '--os-project-name', self.pool_config['project-name'],
+            '--os-username', self.pool_config['username'],
+            '--os-password', self.pool_config['password']
+        ]
+
+        if self.pool_config.get('project-domain-name'):
+            self._os_cmd_base += [
+                '--os-project-domain-name', self.pool_config['project-domain-name']
+            ]
+
+        elif self.pool_config.get('project-domain-id'):
+            self._os_cmd_base += [
+                '--os-project-domain-id', self.pool_config['project-domain-id']
+            ]
+
     def _run_os(self, options: List[str], json_format: bool = True) -> Result[Any, Failure]:
         """
         Run os command with additional options and return output in json format
@@ -83,16 +103,9 @@ class OpenStackDriver(PoolDriver):
         :rtype: result.Result[str, Failure]
         :returns: :py:class:`result.Result` with output, or specification of error.
         """
-        os_base = [
-            'openstack',
-            '--os-auth-url', self.pool_config['auth-url'],
-            '--os-identity-api-version', self.pool_config['api-version'],
-            '--os-user-domain-name', self.pool_config['user-domain-name'],
-            '--os-project-domain-name', self.pool_config['project-domain-name'],
-            '--os-project-name', self.pool_config['project-name'],
-            '--os-username', self.pool_config['username'],
-            '--os-password', self.pool_config['password']
-        ]
+
+        # Copy the command base, we don't want to spoil it for others.
+        os_base = self._os_cmd_base[:]
 
         # -f(format) option must be placed after a command
         if json_format:
