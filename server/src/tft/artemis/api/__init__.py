@@ -377,10 +377,18 @@ class GuestEventManager:
         **kwargs: Optional[Dict[str, Any]]
     ) -> List[GuestEvent]:
         with self.db.get_session() as session:
-            query = session.query(artemis_db.GuestEvent)
-            events = artemis_db.GuestEvent.sort(query, page, page_size, sort_field, sort_by, since, until)
-            guest_events = [GuestEvent.from_db(event) for event in events]
-            return guest_events
+            return [
+                GuestEvent.from_db(event_record)
+                for event_record in artemis_db.GuestEvent.fetch(
+                    session,
+                    page=page,
+                    page_size=page_size,
+                    sort_field=sort_field,
+                    sort_direction=sort_by,
+                    since=since,
+                    until=until
+                )
+            ]
 
     def get_events_by_guestname(
         self,
@@ -394,11 +402,19 @@ class GuestEventManager:
         **kwargs: Optional[Dict[str, Any]]
     ) -> List[GuestEvent]:
         with self.db.get_session() as session:
-            query = session.query(artemis_db.GuestEvent) \
-                .filter(artemis_db.GuestEvent.guestname == guestname)
-            events = artemis_db.GuestEvent.sort(query, page, page_size, sort_field, sort_by, since, until)
-            guest_events = [GuestEvent.from_db(event) for event in events]
-            return guest_events
+            return [
+                GuestEvent.from_db(event_record)
+                for event_record in artemis_db.GuestEvent.fetch(
+                    session,
+                    guestname=guestname,
+                    page=page,
+                    page_size=page_size,
+                    sort_field=sort_field,
+                    sort_direction=sort_by,
+                    since=since,
+                    until=until
+                )
+            ]
 
 
 class GuestRequestManagerComponent:

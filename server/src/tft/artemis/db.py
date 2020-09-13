@@ -10,6 +10,7 @@ import threading
 
 from contextlib import contextmanager
 
+import gluetool.glue
 import sqlalchemy
 import sqlalchemy.ext.declarative
 from sqlalchemy import BigInteger, Column, ForeignKey, String, Boolean, Enum, Text, Integer, DateTime
@@ -302,42 +303,45 @@ class GuestEvent(Base):
         self.details = json.dumps(details)
 
     @classmethod
-    def sort(
+    def fetch(
         cls,
-        query: sqlalchemy.orm.query.Query,
-        page: int,
-        page_size: int,
-        sort_field: str,
-        sort_order: str,
-        since: Optional[str],
-        until: Optional[str],
-        **kwargs: Optional[Dict[str, Any]]
+        session: sqlalchemy.orm.session.Session,
+        guestname: Optional[str] = None,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        sort_field: str = 'updated',
+        sort_direction: str = 'desc',
+        since: Optional[str] = None,
+        until: Optional[str] = None
     ) -> List['GuestEvent']:
+        query = Query.from_session(session, GuestEvent)
 
-        query_proxy: Query['GuestEvent'] = Query(query)
+        if guestname is not None:
+            query = query.filter(cls.guestname == guestname)
 
         if since:
-            query_proxy = query_proxy.filter(cls.updated >= since)
+            query = query.filter(cls.updated >= since)
 
         if until:
-            query_proxy = query_proxy.filter(cls.updated <= until)
+            query = query.filter(cls.updated <= until)
 
         try:
-            _sort_by = getattr(cls, sort_field)
-            _sort = getattr(_sort_by, sort_order)()
+            sort_field_column = getattr(cls, sort_field)
+            sort_field_direction = getattr(sort_field_column, sort_direction)
 
         except AttributeError:
-            from .api.errors import BadRequestError
+            raise gluetool.glue.GlueError('Cannot sort by {}/{}'.format(sort_field, sort_direction))
 
-            raise BadRequestError()
+        # E.g. order_by(GuestEvent.updated.desc())
+        query = query.order_by(sort_field_direction())
 
-        events: List['GuestEvent'] = query_proxy \
-            .order_by(_sort) \
-            .limit(page_size) \
-            .offset((page - 1) * page_size) \
-            .all()
+        if page_size is not None:
+            query = query.limit(page_size)
 
-        return events
+            if page is not None:
+                query = query.offset((page - 1) * page_size)
+
+        return query.all()
 
 
 class SnapshotRequest(Base):
