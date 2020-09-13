@@ -1,19 +1,26 @@
 import dataclasses
 import datetime
+import enum
+import hashlib
 import json
 import logging
 import os
+import secrets
 import threading
 
 from contextlib import contextmanager
 
 import sqlalchemy
 import sqlalchemy.ext.declarative
-from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer, DateTime
+from sqlalchemy import Column, ForeignKey, String, Boolean, Text, Integer, DateTime, Enum
 from sqlalchemy.orm import relationship
 
-from typing import cast, Any, Callable, Dict, Iterator, List, Optional, Union
+from typing import cast, Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 import gluetool.log
+
+
+# "A reasonable default"...
+TOKEN_SIZE = 32
 
 
 @dataclasses.dataclass
@@ -32,13 +39,49 @@ DEFAULT_SQLALCHEMY_MAX_OVERFLOW = 10
 Base = sqlalchemy.ext.declarative.declarative_base()
 
 
+class UserRoles(enum.Enum):
+    USER = 'USER'
+    ADMIN = 'ADMIN'
+
+
 class User(Base):
     __tablename__ = 'users'
 
     username = Column(String(250), primary_key=True, nullable=False)
+    role = Column(Enum(UserRoles), nullable=False, server_default=UserRoles.USER.value)
+
+    admin_token = Column(String(TOKEN_SIZE), nullable=False, server_default='undefined')
+    provisioning_token = Column(String(TOKEN_SIZE), nullable=False, server_default='undefined')
 
     sshkeys = relationship('SSHKey', back_populates='owner')
     guests = relationship('GuestRequest', back_populates='owner')
+
+    @staticmethod
+    def hash_token(token: str) -> str:
+        m = hashlib.sha256()
+        m.update(token.encode())
+
+        return m.hexdigest()
+
+    @staticmethod
+    def generate_token() -> Tuple[str, str]:
+        token = secrets.token_hex(TOKEN_SIZE)
+
+        return token, User.hash_token(token)
+
+    @classmethod
+    def create(cls, username: str, role: UserRoles) -> 'User':
+        return cls(
+            username=username,
+            role=role.value
+        )
+
+    @classmethod
+    def fetch_by_username(cls, session: sqlalchemy.orm.session.Session, username: str) -> Optional['User']:
+        return session \
+               .query(User) \
+               .filter(User.username == username) \
+               .one_or_none()
 
 
 class SSHKey(Base):
@@ -324,11 +367,25 @@ class DB:
 def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
     with db.get_session() as session:
         for user_config in server_config.get('users', []):
-            logger.info('Adding user "{}"'.format(user_config['name']))
+            role = UserRoles[user_config.get('role', UserRoles.USER.value).upper()]
 
-            session.add(
-                User(username=user_config['name'])
-            )
+            logger.info('Adding user "{}" with role "{}"'.format(user_config['name'], role.name))
+
+            user = User.create(user_config['name'], role)
+            session.add(user)
+
+            admin_token, user.admin_token = User.generate_token()
+            provisioning_token, user.provisioning_token = User.generate_token()
+
+            logger.info('Default admin token for user "{}" is "{}"'.format(
+                user.username,
+                admin_token
+            ))
+
+            logger.info('Default provisioning token for user "{}" is "{}"'.format(
+                user.username,
+                provisioning_token
+            ))
 
         for key_config in server_config.get('ssh-keys', []):
             logger.info('Adding SSH key "{}", owner by {}'.format(

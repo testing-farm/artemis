@@ -1,4 +1,5 @@
 import datetime
+import enum
 import json
 import io
 import os
@@ -19,7 +20,7 @@ from molten.typing import Middleware
 from gluetool.log import log_dict
 
 from . import errors, handlers
-from .middleware import error_handler_middleware, prometheus_middleware
+from .middleware import error_handler_middleware, prometheus_middleware, authorization_middleware
 from .. import get_logger, get_db, safe_call, safe_db_execute, log_guest_event
 from .. import db as artemis_db
 from ..guest import GuestState
@@ -29,8 +30,6 @@ from typing import Any, Dict, List, NoReturn, Optional, Union
 
 from inspect import Parameter
 
-
-DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
 
 DEFAULT_SSH_PORT = 22
 DEFAULT_SSH_USERNAME = 'root'
@@ -53,6 +52,41 @@ class DBComponent:
 
     def resolve(self) -> artemis_db.DB:
         return self.db
+
+
+@molten.schema
+class UserRequest:
+    username: str
+    role: str
+
+
+@molten.schema
+class UserResponse:
+    username: str
+    role: str
+    provisioning_token: str
+    admin_token: str
+
+    def __init__(
+        self,
+        username: str,
+        role: str,
+        provisioning_token: str,
+        admin_token: str
+    ) -> None:
+        self.username = username
+        self.role = role
+        self.provisioning_token = provisioning_token
+        self.admin_token = admin_token
+
+    @classmethod
+    def from_db(cls, user: artemis_db.User) -> 'UserResponse':
+        return cls(
+            username=user.username,
+            role=user.role,
+            provisioning_token=user.provisioning_token,
+            admin_token=user.admin_token
+        )
 
 
 @molten.schema
@@ -233,6 +267,9 @@ class APIResponse(Response):  # type: ignore
             if isinstance(value, datetime.datetime):
                 return str(value)
 
+            if isinstance(value, enum.Enum):
+                return value.name
+
             return value.__dict__
 
         if obj is not None:
@@ -265,6 +302,95 @@ class APIResponse(Response):  # type: ignore
                                           encoding=encoding)
 
 
+class UserManager:
+    def __init__(self, db: artemis_db.DB) -> None:
+        self.db = db
+
+    @staticmethod
+    def entry_get_users(manager: 'UserManager', request: Request) -> APIResponse:
+        return APIResponse(manager.get_users(), request=request)
+
+    @staticmethod
+    def entry_get_user(manager: 'UserManager', request: Request, username: str) -> APIResponse:
+        user_response = manager.get_user(username)
+
+        if not user_response:
+            raise errors.NoSuchEntityError(request=request)
+
+        return APIResponse(user_response)
+
+    @staticmethod
+    def entry_create_user(manager: 'UserManager', request: Request, user_request: UserRequest) -> APIResponse:
+        return APIResponse(manager.create_user(user_request), request=request, status=HTTP_201)
+
+    def get_users(self) -> List[UserResponse]:
+        with self.db.get_session() as session:
+            return [
+                UserResponse.from_db(user)
+                for user in session.query(artemis_db.User).all()
+            ]
+
+    def get_user(self, username: str) -> Optional[UserResponse]:
+        with self.db.get_session() as session:
+            user_record = session \
+                .query(artemis_db.User) \
+                .filter(artemis_db.User.username == username) \
+                .one_or_none()
+
+            if not user_record:
+                return None
+
+            return UserResponse.from_db(user_record)
+
+    def create_user(self, user_request: UserRequest) -> UserResponse:
+        with self.db.get_session() as session:
+            try:
+                role = artemis_db.UserRoles[user_request.role.upper()]
+
+            except IndexError:
+                raise errors.BadRequestError()
+
+            session.add(artemis_db.User.create(user_request.username, role))
+
+        with self.db.get_session() as session:
+            user_record = artemis_db.User.fetch_by_username(session, user_request.username)
+
+            assert user_record
+
+            return UserResponse.from_db(user_record)
+
+    def delete_by_guestname(self, guestname: str, request: Request) -> None:
+        with self.db.get_session() as session:
+            query = sqlalchemy \
+                    .update(artemis_db.GuestRequest.__table__) \
+                    .where(artemis_db.GuestRequest.guestname == guestname) \
+                    .values(state=GuestState.CONDEMNED.value)
+
+            logger = get_logger()
+            if safe_db_execute(logger, session, query):
+                # add guest event
+                log_guest_event(
+                    logger,
+                    session,
+                    guestname,
+                    'condemned'
+                )
+                return
+
+            raise errors.GenericError(request=request)
+
+
+class UserManagerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is UserManager or parameter.annotation == 'UserManager'
+
+    def resolve(self, db: artemis_db.DB) -> UserManager:
+        return UserManager(db)
+
+
 class GuestRequestManager:
     def __init__(self, db: artemis_db.DB) -> None:
         self.db = db
@@ -283,11 +409,19 @@ class GuestRequestManager:
         guestname = str(uuid.uuid4())
 
         with self.db.get_session() as session:
+            owner = session \
+                    .query(artemis_db.User) \
+                    .filter(artemis_db.User.username == guest_request.ownername) \
+                    .one_or_none()
+
+            if not owner:
+                raise errors.NotAuthorizedError()
+
             session.add(
                 artemis_db.GuestRequest(
                     guestname=guestname,
                     environment=json.dumps(guest_request.environment),
-                    ownername=DEFAULT_GUEST_REQUEST_OWNER,
+                    ownername=owner.username,
                     ssh_keyname=guest_request.keyname,
                     ssh_port=DEFAULT_SSH_PORT,
                     ssh_username=DEFAULT_SSH_USERNAME,
@@ -514,6 +648,7 @@ def get_guest_requests(manager: GuestRequestManager, request: Request) -> APIRes
 
 
 def create_guest_request(guest_request: GuestRequest, manager: GuestRequestManager, request: Request) -> APIResponse:
+    # TODO: extract username from the request
     return APIResponse(manager.create(guest_request), request=request, status=HTTP_201)
 
 
@@ -612,17 +747,17 @@ def run_app() -> molten.app.App:
             })
         ),
         DBComponent(db),
+        UserManagerComponent(),
         GuestRequestManagerComponent(),
         GuestEventManagerComponent(),
         SnapshotRequestManagerComponent()
     ]
 
-# TODO: uncomment when registration is done
     mw: List[Middleware] = [
-        # middleware.AuthorizationMiddleware,
         ResponseRendererMiddleware(),
         error_handler_middleware,
-        prometheus_middleware
+        authorization_middleware,
+        prometheus_middleware,
     ]
 
     get_docs = molten.openapi.handlers.OpenAPIUIHandler()
@@ -649,6 +784,11 @@ def run_app() -> molten.app.App:
             Route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
             Route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
             Route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
+        ]),
+        Include('/users', [
+            Route('/', UserManager.entry_get_users, method='GET'),
+            Route('/', UserManager.entry_create_user, method='POST'),
+            Route('/{username}', UserManager.entry_get_user, method='GET')
         ]),
         Route('/metrics', get_metrics),
         Route('/_docs', get_docs),
