@@ -8,13 +8,14 @@ stages:
 tests:
   stage: test
   script:
+    - apt-get update && apt-get install -y libxml2-dev libxslt1-dev
     - wget -O - https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python3
     - source $HOME/.poetry/env
     # Force poetry to create its virtualenvs inside project directory, to avoid complications
     # when trying to leave our current directory when running in Gitlab.
     - poetry config virtualenvs.in-project true
 
-    - cd server && IN_TEST=yes tox -v -e py37
+    - cd server && IN_TEST=yes tox -v
 
 publish_apiary:
   image: "ruby:2.4"

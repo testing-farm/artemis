@@ -1,7 +1,12 @@
+import logging
+
 from logging.config import fileConfig
+from typing import Any, List
+
 from alembic import context  # type: ignore  # module has no attribute, but it does.
 
 from tft.artemis import db, get_db, get_logger
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -56,11 +61,20 @@ def run_migrations_online() -> None:
     """
     connectable = get_db(get_logger())._engine
 
+    # This trick should result in not generating a revision if there are no changes to schema.
+    def process_revision_directives(context: str, revision: str, directives: List[Any]) -> None:
+        if config.cmd_opts.autogenerate:
+            script = directives[0]
+            if script.upgrade_ops.is_empty():
+                directives[:] = []
+                logging.getLogger('alembic').info('No changes to schema detected')
+
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            render_as_batch=True
+            render_as_batch=True,
+            process_revision_directives=process_revision_directives
         )
 
         with context.begin_transaction():
