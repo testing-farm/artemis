@@ -47,13 +47,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
-        pool_config: Dict[str, Any],
-        poolname: Optional[str] = None
+        poolname: str,
+        pool_config: Dict[str, Any]
     ) -> None:
         super(PoolDriver, self).__init__(logger)
 
-        self.pool_config = pool_config
         self.poolname = poolname
+        self.pool_config = pool_config
 
         self._pool_resource_metrics: Optional[Tuple[PoolResourceLimits, PoolResourceUsage]] = None
 

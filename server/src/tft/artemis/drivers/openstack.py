@@ -69,10 +69,10 @@ class OpenStackDriver(PoolDriver):
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
-        pool_config: Dict[str, Any],
-        poolname: Optional[str] = None
+        poolname: str,
+        pool_config: Dict[str, Any]
     ) -> None:
-        super(OpenStackDriver, self).__init__(logger, pool_config, poolname=poolname)
+        super(OpenStackDriver, self).__init__(logger, poolname, pool_config)
 
     def _run_os(self, options: List[str], json_format: bool = True) -> Result[Any, Failure]:
         """

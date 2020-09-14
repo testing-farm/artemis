@@ -668,7 +668,7 @@ def _get_pool(
         raise Exception('no such pool "{}"'.format(poolname))
 
     pool_driver_class = POOL_DRIVERS[pool_record.driver]
-    driver = pool_driver_class(logger, json.loads(pool_record.parameters))
+    driver = pool_driver_class(logger, poolname, json.loads(pool_record.parameters))
 
     r_sanity = driver.sanity()
 
@@ -688,7 +688,7 @@ def get_pools(
         pool_driver_class = POOL_DRIVERS[pool_record.driver]
 
         pools += [
-            pool_driver_class(logger, json.loads(pool_record.parameters), poolname=pool_record.poolname)
+            pool_driver_class(logger, pool_record.poolname, json.loads(pool_record.parameters))
         ]
 
     return pools

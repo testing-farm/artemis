@@ -91,10 +91,10 @@ class AWSDriver(PoolDriver):
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
-        pool_config: Dict[str, Any],
-        poolname: Optional[str] = None
+        poolname: str,
+        pool_config: Dict[str, Any]
     ) -> None:
-        super(AWSDriver, self).__init__(logger, pool_config, poolname=poolname)
+        super(AWSDriver, self).__init__(logger, poolname, pool_config)
 
     def sanity(self) -> Result[bool, Failure]:
         required_variables = [
