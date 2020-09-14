@@ -81,6 +81,12 @@ class Query(Generic[T]):
             self.query.one
         )()
 
+    def one_or_none(self) -> Optional[T]:
+        return cast(
+            Callable[[], T],
+            self.query.one_or_none
+        )()
+
     def all(self) -> List[T]:
         return cast(
             Callable[[], List[T]],
