@@ -1786,6 +1786,82 @@ def release_snapshot_request(guestname: str, snapshotname: str) -> None:
     )
 
 
+def do_create_snapshot_start_guest(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    snapshotname: str
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='create-snapshot-stop-guest',
+        snapshotname=snapshotname
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_snapshot_request(snapshotname, GuestState.READY)
+    workspace.load_guest_request(guestname, state=GuestState.STARTING)
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.sr
+    assert workspace.gr
+
+    workspace.load_sr_pool()
+    workspace.load_ssh_key()
+    workspace.load_guest()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.pool
+    assert workspace.ssh_key
+    assert workspace.guest
+
+    r_started = workspace.pool.is_guest_running(workspace.guest)
+
+    if r_started.is_error:
+        return handle_failure(r_started, 'failed to check if guest is started')
+
+    started = r_started.unwrap()
+
+    if not started:
+        workspace.dispatch_task(create_snapshot_start_guest, guestname, snapshotname)
+
+        if workspace.result:
+            return workspace.result
+
+        return SUCCESS
+
+    workspace.update_guest_state(
+        GuestState.STARTING,
+        GuestState.READY,
+    )
+
+    if workspace.result:
+        return workspace.result
+
+    logger.info('successfully started')
+
+    return SUCCESS
+
+
+@dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_START_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
+def create_snapshot_start_guest(guestname: str, snapshotname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_create_snapshot_start_guest,
+        logger=get_snapshot_logger('create-snapshot-start-guest', root_logger, guestname, snapshotname),
+        doer_args=(guestname, snapshotname)
+    )
+
+
 def do_update_snapshot(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -1806,7 +1882,7 @@ def do_update_snapshot(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.PROMISED)
-    workspace.load_guest_request(guestname, state=GuestState.READY)
+    workspace.load_guest_request(guestname, state=GuestState.STOPPED)
     workspace.load_sr_pool()
     workspace.load_ssh_key()
     workspace.load_guest()
@@ -1864,11 +1940,32 @@ def do_update_snapshot(
     )
 
     if workspace.result:
+        return workspace.result
+
+    if not workspace.sr.start_again:
+        return SUCCESS
+
+    r_start = workspace.pool.start_guest(logger, workspace.guest)
+
+    if r_start.is_error:
+        return handle_failure(r_start, 'failed to start guest')
+
+    workspace.update_guest_state(
+        GuestState.STOPPED,
+        GuestState.STARTING
+    )
+
+    if workspace.result:
         _undo_snapshot_update(snapshot)
 
         return workspace.result
 
-    logger.info('successfully created')
+    workspace.dispatch_task(create_snapshot_start_guest, guestname, snapshotname)
+
+    if workspace.result:
+        _undo_snapshot_update(snapshot)
+
+        return workspace.result
 
     return SUCCESS
 
@@ -1882,7 +1979,7 @@ def update_snapshot(guestname: str, snapshotname: str) -> None:
     )
 
 
-def do_create_snapshot(
+def do_create_snapshot_create(
     logger: gluetool.log.ContextAdapter,
     db: DB,
     session: sqlalchemy.orm.session.Session,
@@ -1894,7 +1991,7 @@ def do_create_snapshot(
         logger,
         session,
         guestname=guestname,
-        task='create-snapshot',
+        task='create-snapshot-create',
         snapshotname=snapshotname
     )
 
@@ -1902,17 +1999,13 @@ def do_create_snapshot(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
-    workspace.load_guest_request(guestname, state=GuestState.READY)
+    workspace.load_guest_request(guestname, state=GuestState.STOPPED)
 
     if workspace.result:
         return workspace.result
 
     assert workspace.sr
     assert workspace.gr
-
-    # When can this happen?
-    if not workspace.sr.poolname:
-        return RESCHEDULE
 
     workspace.load_sr_pool()
     workspace.load_ssh_key()
@@ -1965,6 +2058,29 @@ def do_create_snapshot(
     )
 
     if workspace.result:
+        return workspace.result
+
+    if not workspace.sr.start_again:
+        return SUCCESS
+
+    r_start = workspace.pool.start_guest(logger, workspace.guest)
+
+    if r_start.is_error:
+        return handle_failure(r_start, 'failed to start guest')
+
+    workspace.update_guest_state(
+        GuestState.STOPPED,
+        GuestState.STARTING
+    )
+
+    if workspace.result:
+        _undo_snapshot_create()
+
+        return workspace.result
+
+    workspace.dispatch_task(create_snapshot_start_guest, guestname, snapshotname)
+
+    if workspace.result:
         _undo_snapshot_create()
 
         return workspace.result
@@ -1974,11 +2090,185 @@ def do_create_snapshot(
     return SUCCESS
 
 
+@dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_CREATE_REQUEST'))  # type: ignore  # Untyped decorator
+def create_snapshot_create(guestname: str, snapshotname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_create_snapshot_create,
+        logger=get_snapshot_logger('create-snapshot-create', root_logger, guestname, snapshotname),
+        doer_args=(guestname, snapshotname)
+    )
+
+
+def do_create_snapshot_stop_guest(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    snapshotname: str
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='create-snapshot-stop-guest',
+        snapshotname=snapshotname
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
+    workspace.load_guest_request(guestname, state=GuestState.STOPPING)
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.sr
+    assert workspace.gr
+
+    workspace.load_sr_pool()
+    workspace.load_ssh_key()
+    workspace.load_guest()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.pool
+    assert workspace.ssh_key
+    assert workspace.guest
+
+    r_stopped = workspace.pool.is_guest_stopped(workspace.guest)
+
+    if r_stopped.is_error:
+        return handle_failure(r_stopped, 'failed to check if guest is stopped')
+
+    stopped = r_stopped.unwrap()
+
+    if not stopped:
+        workspace.dispatch_task(create_snapshot_stop_guest, guestname, snapshotname)
+
+        if workspace.result:
+            return workspace.result
+
+        logger.info('scheduled create-snapshot-stop-guest')
+
+        return SUCCESS
+
+    workspace.update_guest_state(
+        GuestState.STOPPING,
+        GuestState.STOPPED,
+    )
+
+    if workspace.result:
+        return workspace.result
+
+    workspace.dispatch_task(create_snapshot_create, guestname, snapshotname)
+
+    if workspace.result:
+        return workspace.result
+
+    logger.info('scheduled create-snapshot-create-snapshot')
+
+    return SUCCESS
+
+
+@dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_STOP_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
+def create_snapshot_stop_guest(guestname: str, snapshotname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_create_snapshot_stop_guest,
+        logger=get_snapshot_logger('create-snapshot-stop-guest', root_logger, guestname, snapshotname),
+        doer_args=(guestname, snapshotname)
+    )
+
+
+def do_create_snapshot(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    snapshotname: str
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='create-snapshot',
+        snapshotname=snapshotname
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
+    workspace.load_guest_request(guestname, state=GuestState.READY)
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.sr
+    assert workspace.gr
+
+    workspace.load_sr_pool()
+    workspace.load_ssh_key()
+    workspace.load_guest()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.pool
+    assert workspace.ssh_key
+    assert workspace.guest
+
+    r_stop = workspace.pool.stop_guest(logger, workspace.guest)
+
+    if r_stop.is_error:
+        return handle_failure(r_stop, 'failed to stop guest')
+
+    def _undo_snapshot_create() -> None:
+        assert workspace.pool
+        assert workspace.guest
+
+        r = workspace.pool.start_guest(logger, workspace.guest)
+
+        if r.is_ok:
+            return
+
+        workspace.update_guest_state(
+            GuestState.STOPPING,
+            GuestState.STARTING,
+        )
+
+        workspace.dispatch_task(create_snapshot_start_guest, guestname, snapshotname)
+
+        handle_failure(r, 'failed to undo snapshot create')
+
+    workspace.update_guest_state(
+        GuestState.READY,
+        GuestState.STOPPING,
+    )
+
+    if workspace.result:
+        return workspace.result
+
+    workspace.dispatch_task(create_snapshot_stop_guest, guestname, snapshotname)
+
+    if workspace.result:
+        _undo_snapshot_create()
+
+        return workspace.result
+
+    logger.info('scheduled create-snapshot-stop-guest')
+
+    return SUCCESS
+
+
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
 def create_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot,
-        logger=get_snapshot_logger('acquire-snapshot', root_logger, guestname, snapshotname),
+        logger=get_snapshot_logger('create-snapshot', root_logger, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
