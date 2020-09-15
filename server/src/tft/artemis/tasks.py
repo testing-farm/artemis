@@ -136,10 +136,19 @@ class DoerType(Protocol):
 
 # Task actor type.
 class Actor(Protocol):
+    actor_name: str
+
     def send(
         self,
-        *args: Any,
-        **kwargs: Any
+        *args: Any
+    ) -> None: ...
+
+    def send_with_options(
+        self,
+        args: Optional[Tuple[Any, ...]] = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+        delay: Optional[int] = None,
+        **options: Any
     ) -> None: ...
 
 
@@ -418,21 +427,37 @@ def _dispatch_task(
     logger: gluetool.log.ContextAdapter,
     task: Actor,
     *args: Any,
-    **kwargs: Any
+    delay: Optional[int] = None
 ) -> Result[None, Failure]:
-    r = safe_call(task.send, *args, **kwargs)
+    if delay is None:
+        r = safe_call(task.send, *args)
+
+    else:
+        r = safe_call(task.send_with_options, args=args, delay=delay)
 
     if r.is_ok:
-        return Ok(None)
+        formatted_args = [
+            str(arg) for arg in args
+        ]
 
-    exc_info = r.error.exc_info if r.error else None
+        if delay is not None:
+            formatted_args += [
+                'delay={}'.format(delay)
+            ]
+
+        logger.info('scheduled task {}({})'.format(
+            task.actor_name,
+            ', '.join(formatted_args)
+        ))
+
+        return Ok(None)
 
     return Error(Failure(
         'failed to dispatch task',
-        exc_info=exc_info,
-        task_name=str(task),
+        caused_by=r.unwrap_error(),
+        task_name=task.actor_name,
         task_args=args,
-        task_kwargs=kwargs
+        task_delay=delay
     ))
 
 
