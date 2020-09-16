@@ -208,7 +208,7 @@ class PoolResourcesMetrics:
             if not limit or not usage:
                 continue
 
-            setattr(delta, field.name, is_enough(field.name, limit, usage))
+            setattr(delta, field.name, not is_enough(field.name, limit, usage))
 
         return delta
 
