@@ -543,12 +543,37 @@ class DB:
 
 def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
     with db.get_session() as session:
-        for user_config in server_config.get('users', []):
-            logger.info('Adding user "{}"'.format(user_config['name']))
+        # Insert our bootstrap users.
+        def _add_user(username: str, role: UserRoles) -> None:
+            logger.info('Adding user "{}" with role "{}"'.format(username, role.name))
 
-            session.add(
-                User(username=user_config['name'])
-            )
+            user = User.create(username, role)
+            session.add(user)
+
+            admin_token, user.admin_token = User.generate_token()
+            provisioning_token, user.provisioning_token = User.generate_token()
+
+            logger.info('Default admin token for user "{}" is "{}"'.format(username, admin_token))
+            logger.info('Default provisioning token for user "{}" is "{}"'.format(username, provisioning_token))
+
+        # In one of the future patches, this will get few changes:
+        #
+        # * create just the admin user - artemis-cli should be used to create other users
+        # * accept username and token from env variables, instead of the config file
+        for user_config in server_config.get('users', []):
+            username = user_config['name']
+
+            if 'role' in user_config:
+                try:
+                    role = UserRoles[user_config['role'].upper()]
+
+                except KeyError:
+                    raise Exception('Unknown role "{}" of user "{}"'.format(user_config['role'], username))
+
+            else:
+                role = UserRoles.USER
+
+            _add_user(username, role)
 
         for key_config in server_config.get('ssh-keys', []):
             logger.info('Adding SSH key "{}", owner by {}'.format(
