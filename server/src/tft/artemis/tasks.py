@@ -16,7 +16,7 @@ from . import Failure, get_db, get_logger, get_broker, safe_call, safe_db_execut
     log_error_guest_event
 from . import handle_failure as main_handle_failure
 from .db import DB, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
-from .drivers import PoolDriver
+from .drivers import PoolDriver, PoolLogger
 from .environment import Environment
 from .guest import Guest, GuestLogger, GuestState, GuestPoolDataType
 from .script import hook_engine
@@ -29,8 +29,11 @@ from .drivers import openstack as openstack_driver
 from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Union
 from typing_extensions import Protocol
 
+DEFAULT_RETRIES = 5
 DEFAULT_MIN_BACKOFF_SECONDS = 15
 DEFAULT_MAX_BACKOFF_SECONDS = 60
+
+DEFAULT_POOL_RESOURCES_METRICS_REFRESH_TICK = 60
 
 # There is a very basic thing we must be aware of: a task - the Python function below - can run multiple times,
 # sequentialy or in parallel. It's like multithreading application above a database, without any locks available.
@@ -243,24 +246,27 @@ def create_event_handlers(
     return handle_success, handle_failure, spice_details
 
 
-def actor_kwargs(actor_name: str) -> Dict[str, Any]:
-    def _get(var_name: str, default: Any) -> Any:
-        var_value = os.getenv(
-            'ARTEMIS_ACTOR_{}_{}'.format(actor_name.upper(), var_name),
-            default
-        )
-        # We don't bother about milliseconds in backoff values. For a sake of simplicity
-        # variables stores value in seconds and here we convert it back to milliseconds
-        if 'backoff' in var_name.lower():
-            var_value = int(var_value) * 1000
-        return var_value
+def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:
+    var_value = os.getenv(
+        'ARTEMIS_ACTOR_{}_{}'.format(actor_name.upper(), var_name),
+        default
+    )
 
-    default_retries = os.getenv('ARTEMIS_ACTOR_DEFAULT_RETRIES', 5)
+    # We don't bother about milliseconds in backoff values. For a sake of simplicity
+    # variables stores value in seconds and here we convert it back to milliseconds
+    if 'backoff' in var_name.lower() or 'tick' in var_name.lower():
+        var_value = int(var_value) * 1000
+
+    return var_value
+
+
+def actor_kwargs(actor_name: str) -> Dict[str, Any]:
+    default_retries = int(os.getenv('ARTEMIS_ACTOR_DEFAULT_RETRIES', 5))
 
     return {
-        'max_retries': int(_get('RETRIES', default_retries)),
-        'min_backoff': int(_get('MIN_BACKOFF', DEFAULT_MIN_BACKOFF_SECONDS)),
-        'max_backoff': int(_get('MAX_BACKOFF', DEFAULT_MAX_BACKOFF_SECONDS))
+        'max_retries': int(actor_control_value(actor_name, 'RETRIES', default_retries)),
+        'min_backoff': int(actor_control_value(actor_name, 'MIN_BACKOFF', DEFAULT_MIN_BACKOFF_SECONDS)),
+        'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', DEFAULT_MAX_BACKOFF_SECONDS))
     }
 
 
@@ -744,6 +750,17 @@ def _get_master_key(
     session: sqlalchemy.orm.session.Session
 ) -> Result[SSHKey, Failure]:
     return _get_ssh_key(logger, session, 'artemis', 'master-key')
+
+
+def get_pool_logger(
+    task_name: str,
+    root_logger: gluetool.log.ContextAdapter,
+    poolname: str
+) -> TaskLogger:
+    return TaskLogger(
+        PoolLogger(root_logger, poolname),
+        task_name
+    )
 
 
 def get_guest_logger(
@@ -2058,4 +2075,74 @@ def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
         do_restore_snapshot_request,
         logger=get_snapshot_logger('restore-snapshot', root_logger, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
+    )
+
+
+def schedule_pool_resources_metrics_update(
+    logger: gluetool.log.ContextAdapter,
+    poolname: str,
+    immediately: bool = False
+) -> Result[None, Failure]:
+    return _dispatch_task(
+        logger,
+        refresh_pool_resources_metrics,
+        poolname,
+        delay=actor_control_value(
+            'refresh_pool_resources_metrics',
+            'TICK',
+            DEFAULT_POOL_RESOURCES_METRICS_REFRESH_TICK
+        ) if not immediately else None
+    )
+
+
+def do_refresh_pool_resources_metrics(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    poolname: str
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        task='refresh-pool-metrics'
+    )
+
+    handle_success('enter-task')
+
+    # Handling errors is slightly different in this task. While we fully use `handle_failure()`,
+    # we do not return `RESCHEDULE` or `Error()` from this doer. This particular task is being
+    # rescheduled regularly anyway, and we probably do not want exponential delays, because
+    # they would make metrics less accurate when we'd finally succeed talking to the pool.
+    #
+    # On the other hand, we schedule next iteration of this task here, and it seems to make sense
+    # to retry if we fail to schedule it - without this, the "it will run once again anyway" concept
+    # breaks down.
+    r_pool = _get_pool(logger, session, poolname)
+
+    if r_pool.is_error:
+        handle_failure(r_pool, 'failed to load pool')
+
+    else:
+        pool = r_pool.unwrap()
+
+        r_refresh = pool.refresh_pool_resources_metrics(logger, session)
+
+        if r_refresh.is_error:
+            handle_failure(r_refresh, 'failed to refresh pool resources metrics')
+
+    r_dispatch = schedule_pool_resources_metrics_update(logger, poolname)
+
+    if r_dispatch.is_error:
+        return handle_failure(r_dispatch, 'failed to schedule pool resources metrics refresh')
+
+    return SUCCESS
+
+
+@dramatiq.actor(**actor_kwargs('REFRESH_POOL_RESOURCES_METRICS'))  # type: ignore  # Untyped decorator
+def refresh_pool_resources_metrics(poolname: str) -> None:
+    task_core(  # type: ignore # Argument 1 has incompatible type
+        do_refresh_pool_resources_metrics,
+        logger=get_pool_logger('refresh-pool-resources-metrics', root_logger, poolname),
+        doer_args=(poolname,)
     )
