@@ -11,9 +11,18 @@ from . import db as artemis_db
 from . import tasks as artemis_tasks
 from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 
-from typing import cast
+from typing import cast, Optional
 
 _registry_lock = threading.Lock()
+
+
+def _create_pool_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
+    return Gauge(
+        'pool_resources_{}{}'.format(name, '_{}'.format(unit) if unit else ''),
+        'Limits and usage of pool {}'.format(name),
+        ['pool', 'dimension']
+    )
+
 
 DB_POOL_SIZE = Gauge(
     'db_pool_size',
@@ -44,6 +53,12 @@ CURRENT_GUEST_REQUEST_COUNT = Gauge(
     'Number of current guest requests in pool',
     ['pool', 'state']
 )
+
+POOL_RESOURCES_INSTANCES = _create_pool_resource_metric('instances')
+POOL_RESOURCES_CORES = _create_pool_resource_metric('cores')
+POOL_RESOURCES_MEMORY = _create_pool_resource_metric('memory', unit='bytes')
+POOL_RESOURCES_DISKSPACE = _create_pool_resource_metric('diskspace', unit='bytes')
+POOL_RESOURCES_SNAPSHOTS = _create_pool_resource_metric('snapshot')
 
 
 @dataclasses.dataclass
@@ -94,11 +109,31 @@ def generate_metrics() -> bytes:
         # add pool-specific metrics
         with db.get_session() as session:
             pools = artemis_tasks.get_pools(logger, session)
+
             for pool in pools:
                 pool_metrics = pool.metrics(logger, session)
+
                 for state in pool_metrics.current_guest_request_count_per_state:
                     CURRENT_GUEST_REQUEST_COUNT.labels(pool.poolname, state.value) \
                         .set(pool_metrics.current_guest_request_count_per_state[state])
+
+                for metric_instance, metric_name in [
+                    (POOL_RESOURCES_INSTANCES, 'instances'),
+                    (POOL_RESOURCES_CORES, 'cores'),
+                    (POOL_RESOURCES_MEMORY, 'memory'),
+                    (POOL_RESOURCES_DISKSPACE, 'diskspace'),
+                    (POOL_RESOURCES_SNAPSHOTS, 'snapshots')
+                ]:
+                    limit = getattr(pool_metrics.resources.limits, metric_name)
+                    usage = getattr(pool_metrics.resources.usage, metric_name)
+
+                    metric_instance \
+                        .labels(pool=pool.poolname, dimension='limit') \
+                        .set(limit if limit is not None else float('NaN'))
+
+                    metric_instance \
+                        .labels(pool=pool.poolname, dimension='usage') \
+                        .set(usage if usage is not None else float('NaN'))
 
             # add all guest request count (both current and overall)
             global_metrics = get_global_metrics(logger, db)
