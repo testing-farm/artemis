@@ -203,6 +203,7 @@ class AuthContext:
         if token_type == 'admin' and user.admin_token == self.token:
             self.user = user
             self.is_authenticated = True
+            return
 
     def verify_auth(self) -> None:
         if matches_path(self.request, NO_AUTH):
