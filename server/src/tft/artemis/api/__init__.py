@@ -19,7 +19,7 @@ from molten.typing import Middleware
 from gluetool.log import log_dict
 
 from . import errors, handlers
-from .middleware import error_handler_middleware, prometheus_middleware
+from .middleware import error_handler_middleware, prometheus_middleware, authorization_middleware
 from .. import get_logger, get_db, safe_db_execute, log_guest_event
 from .. import db as artemis_db
 from .. import metrics
@@ -642,6 +642,7 @@ def run_app() -> molten.app.App:
         # middleware.AuthorizationMiddleware,
         ResponseRendererMiddleware(),
         error_handler_middleware,
+        authorization_middleware,
         prometheus_middleware
     ]
 
