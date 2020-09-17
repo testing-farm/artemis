@@ -474,9 +474,8 @@ def test_auth_context_verify_auth_provisioning(db, monkeypatch, auth_context: Au
     assert auth_context.token is None
     assert auth_context.user is mock_user
 
-@pytest.mark.skip('Enable once we add some paths to the list of admin endpoints (patch pending)')
 def test_auth_context_verify_auth_admin(db, monkeypatch, auth_context: AuthContext):
-    auth_context.request.path = '/knobs/foo'
+    auth_context.request.path = '/users/foo'
 
     mock_user = MagicMock(
         name='user<mock>',
@@ -502,9 +501,8 @@ def test_auth_context_verify_auth_admin(db, monkeypatch, auth_context: AuthConte
     assert auth_context.user is mock_user
 
 
-@pytest.mark.skip('Enable once we add some paths to the list of admin endpoints (patch pending)')
 def test_auth_context_verify_auth_admin_with_user_role(db, monkeypatch, auth_context: AuthContext):
-    auth_context.request.path = '/knobs/foo'
+    auth_context.request.path = '/users/foo'
 
     mock_user = MagicMock(
         name='user<mock>',

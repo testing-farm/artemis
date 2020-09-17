@@ -17,6 +17,7 @@ import molten
 import molten.dependency_injection
 import molten.openapi
 import sqlalchemy
+import sqlalchemy.exc
 import sqlalchemy.orm.exc
 from molten import HTTP_200, HTTP_201, HTTP_202, HTTP_204, Include, Request, Response, Route
 from molten.app import BaseApp
@@ -168,6 +169,11 @@ class LoggerComponent:
 
     def resolve(self) -> gluetool.log.ContextAdapter:
         return self.logger
+
+
+class TokenTypes(enum.Enum):
+    PROVISIONING = 'provisioning'
+    ADMIN = 'admin'
 
 
 class DBComponent:
@@ -468,6 +474,45 @@ class EventSearchParameters:
             raise errors.BadRequestError(request=request)
 
         return params
+
+
+@molten.schema
+@dataclasses.dataclass
+class CreateUserRequest:
+    """
+    Schema describing a request to create a new user account.
+    """
+
+    role: artemis_db.UserRoles
+
+
+@molten.schema
+@dataclasses.dataclass
+class UserResponse:
+    """
+    Schema describing a response to "inspect user" queries.
+    """
+
+    username: str
+    role: artemis_db.UserRoles
+
+    @classmethod
+    def from_db(cls, user: artemis_db.User) -> 'UserResponse':
+        return cls(
+            username=user.username,
+            role=artemis_db.UserRoles[user.role],
+        )
+
+
+@molten.schema
+@dataclasses.dataclass
+class TokenResetResponse:
+    """
+    Schema describing a response to "reset token" requests.
+    """
+
+    tokentype: TokenTypes
+    token: str
 
 
 class GuestRequestManager:
@@ -1239,6 +1284,184 @@ class CacheManager:
         return self._get_pool_object_infos(logger, poolname, 'get_cached_pool_flavor_infos')
 
 
+class UserManager:
+    """
+    Manager class for operations involving management of user accounts.
+    """
+
+    def __init__(self, db: artemis_db.DB) -> None:
+        self.db = db
+
+    @staticmethod
+    def entry_get_users(manager: 'UserManager') -> List[UserResponse]:
+        return [
+            UserResponse.from_db(user)
+            for user in manager.get_users()
+        ]
+
+    @staticmethod
+    def entry_get_user(manager: 'UserManager', username: str) -> UserResponse:
+        return UserResponse.from_db(manager.get_user(username))
+
+    @staticmethod
+    def entry_create_user(
+        manager: 'UserManager',
+        logger: gluetool.log.ContextAdapter,
+        username: str,
+        user_request: CreateUserRequest
+    ) -> Tuple[str, UserResponse]:
+        manager.create_user(logger, username, user_request)
+
+        return HTTP_201, UserResponse.from_db(manager.get_user(username))
+
+    @staticmethod
+    def entry_delete_user(
+        manager: 'UserManager',
+        logger: gluetool.log.ContextAdapter,
+        username: str
+    ) -> Tuple[str, None]:
+        manager.delete_user(logger, username)
+
+        return HTTP_204, None
+
+    @staticmethod
+    def entry_reset_token(
+        manager: 'UserManager',
+        logger: gluetool.log.ContextAdapter,
+        username: str,
+        tokentype: str
+    ) -> Tuple[str, TokenResetResponse]:
+        try:
+            actual_tokentype = TokenTypes(tokentype)
+
+        except ValueError:
+            raise errors.BadRequestError(
+                failure_details={
+                    'username': username,
+                    'tokentype': tokentype
+                }
+            )
+
+        return HTTP_201, manager.reset_token(logger, username, actual_tokentype)
+
+    #
+    # Actual API workers
+    #
+    def get_users(self) -> List[artemis_db.User]:
+        with self.db.get_session() as session:
+            r_users = artemis_db.SafeQuery.from_session(session, artemis_db.User).all()
+
+            if r_users.is_error:
+                raise errors.InternalServerError(caused_by=r_users.unwrap_error())
+
+            return r_users.unwrap()
+
+    def get_user(
+        self,
+        username: str,
+        session: Optional[sqlalchemy.orm.session.Session] = None
+    ) -> artemis_db.User:
+        def _get_user(session: sqlalchemy.orm.session.Session) -> artemis_db.User:
+            r_user = artemis_db.SafeQuery.from_session(session, artemis_db.User) \
+                .filter(artemis_db.User.username == username) \
+                .one_or_none()
+
+            if r_user.is_error:
+                raise errors.InternalServerError(caused_by=r_user.unwrap_error())
+
+            user = r_user.unwrap()
+
+            if not user:
+                raise errors.NoSuchEntityError()
+
+            return user
+
+        if session is not None:
+            return _get_user(session)
+
+        with self.db.get_session() as session:
+            return _get_user(session)
+
+    def create_user(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        username: str,
+        user_request: CreateUserRequest
+    ) -> None:
+        with self.db.get_session() as session:
+            perform_safe_db_change(
+                logger,
+                session,
+                sqlalchemy.insert(artemis_db.User.__table__).values(
+                    username=username,
+                    role=user_request.role.value
+                )
+            )
+
+    def delete_user(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        username: str
+    ) -> None:
+        with self.db.get_session() as session:
+            # Provides nicer error when the user does not exist
+            _ = self.get_user(username, session=session)
+
+            perform_safe_db_change(
+                logger,
+                session,
+                sqlalchemy.delete(artemis_db.User.__table__).where(
+                    artemis_db.User.username == username
+                ),
+                failure_details={
+                    'username': username
+                }
+            )
+
+    def reset_token(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        username: str,
+        tokentype: TokenTypes
+    ) -> TokenResetResponse:
+        with self.db.get_session() as session:
+            # Provides nicer error when the user does not exist
+            user = self.get_user(username, session=session)
+
+            token, token_hash = artemis_db.User.generate_token()
+
+            query = sqlalchemy.update(artemis_db.User.__table__) \
+                .where(artemis_db.User.username == username)
+
+            if tokentype == TokenTypes.ADMIN:
+                query = query \
+                    .where(artemis_db.User.admin_token == user.admin_token) \
+                    .values(admin_token=token_hash)
+
+            elif tokentype == TokenTypes.PROVISIONING:
+                query = query \
+                    .where(artemis_db.User.provisioning_token == user.provisioning_token) \
+                    .values(provisioning_token=token_hash)
+
+            else:
+                assert False, 'Unreachable'
+
+            perform_safe_db_change(
+                logger,
+                session,
+                query,
+                failure_details={
+                    'username': username,
+                    'tokentype': tokentype.value
+                }
+            )
+
+        return TokenResetResponse(
+            tokentype=tokentype,
+            token=token
+        )
+
+
 class CacheManagerComponent:
     is_cacheable = True
     is_singleton = True
@@ -1248,6 +1471,17 @@ class CacheManagerComponent:
 
     def resolve(self, db: artemis_db.DB) -> CacheManager:
         return CacheManager(db)
+
+
+class UserManagerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is UserManager or parameter.annotation == 'UserManager'
+
+    def resolve(self, db: artemis_db.DB) -> UserManager:
+        return UserManager(db)
 
 
 #
@@ -1730,6 +1964,54 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
     return wrapper
 
 
+# NEW: user management
+@route_generator
+def generate_routes_v0_0_21(
+    create_route: CreateRouteCallbackType,
+    name_prefix: str,
+    metadata: Any
+) -> List[Union[Route, Include]]:
+    return [
+        Include('/guests', [
+            create_route('/', get_guest_requests, method='GET'),
+            create_route('/', create_guest_request_v0_0_20, method='POST'),
+            create_route('/{guestname}', get_guest_request),
+            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/events', get_events),
+            create_route('/{guestname}/events', get_guest_events),
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')
+        ]),
+        Include('/knobs', [
+            create_route('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+        ]),
+        Include('/users', [
+            create_route('/', UserManager.entry_get_users, method='GET'),
+            create_route('/{username}', UserManager.entry_get_user, method='GET'),
+            create_route('/{username}', UserManager.entry_create_user, method='POST'),
+            create_route('/{username}', UserManager.entry_delete_user, method='DELETE'),
+            create_route('/{username}/{tokenname}/reset', UserManager.entry_reset_token, method='POST')
+        ]),
+        create_route('/metrics', get_metrics),
+        create_route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [
+                create_route('/image-info', CacheManager.entry_pool_image_info),
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
+            ])
+        ]),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+        create_route('/_schema', OpenAPIHandler(metadata=metadata))
+    ]
+
+
 # NEW: guest logs
 @route_generator
 def generate_routes_v0_0_20(
@@ -1893,8 +2175,8 @@ def generate_routes_v0_0_17(
 #: API versions. Based on this list, routes are created with proper endpoints, and possibly redirected
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
-    # NEW: guest logs
-    ('v0.0.20', generate_routes_v0_0_20, [
+    # NEW: user management
+    ('v0.0.21', generate_routes_v0_0_21, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
         'current',
@@ -1903,6 +2185,8 @@ API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
         # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
         'toplevel'
     ]),
+    # NEW: guest logs
+    ('v0.0.20', generate_routes_v0_0_20, []),
     # NEW: environment.hw opens
     ('v0.0.19', generate_routes_v0_0_19, []),
     # NEW: /guest/$GUESTNAME/console/url

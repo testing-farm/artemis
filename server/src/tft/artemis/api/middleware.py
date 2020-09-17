@@ -37,7 +37,9 @@ PROVISIONING_AUTH = [
     re.compile(r'/guests(?:/.+)?')
 ]
 
-ADMIN_AUTH: List[Pattern[str]] = []
+ADMIN_AUTH = [
+    re.compile(r'/users(?:/.+)?')
+]
 
 
 # A feature switches for authentication and authorization, disabled by default.
