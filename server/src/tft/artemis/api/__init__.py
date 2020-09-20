@@ -1,17 +1,19 @@
 import datetime
+import enum
 import json
 import io
 import os
 import shutil
 import sys
 import sqlalchemy
+import sqlalchemy.exc
 import sqlalchemy.orm.exc
 import uuid
 
 import molten
 import molten.dependency_injection
 import molten.openapi
-from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, Response, Request, Field
+from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, Response, Request, Field, field
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
@@ -40,6 +42,11 @@ DEFAULT_EVENTS_PAGE = 1
 DEFAULT_EVENTS_PAGE_SIZE = 20
 DEFAULT_EVENTS_SORT_FIELD = 'updated'
 DEFAULT_EVENTS_SORT_BY = 'desc'
+
+
+class TokenNames(enum.Enum):
+    PROVISIONING = 'provisioning'
+    ADMIN = 'admin'
 
 
 class DBComponent:
@@ -258,6 +265,50 @@ class SnapshotResponse:
             guestname=snapshot_request.guestname,
             state=GuestState(snapshot_request.state)
         )
+
+
+@molten.schema
+class CreateUserRequest:
+    """
+    Schema describing a request to create a new user account.
+    """
+
+    username: str
+    role: str = field(choices=artemis_db.UserRoles.__members__.keys())
+
+
+@molten.schema
+class UserResponse:
+    """
+    Schema describing a response to "inspect user" queries.
+    """
+
+    username: str
+    role: str = field(choices=artemis_db.UserRoles.__members__.keys())
+
+    def __init__(
+        self,
+        username: str,
+        role: artemis_db.UserRoles,
+    ) -> None:
+        self.username = username
+        self.role = role.value
+
+    @classmethod
+    def from_db(cls, user: artemis_db.User) -> 'UserResponse':
+        return cls(
+            username=user.username,
+            role=artemis_db.UserRoles[user.role],
+        )
+
+
+@molten.schema
+class TokenResetResponse:
+    """
+    Schema describing a response to "reset token" requests.
+    """
+
+    token: str
 
 
 class APIResponse(Response):  # type: ignore
@@ -573,6 +624,141 @@ class SnapshotRequestManagerComponent:
         return SnapshotRequestManager(db)
 
 
+class UserManager:
+    """
+    Manager class for operations involving management of user accounts.
+    """
+
+    def __init__(self, db: artemis_db.DB) -> None:
+        self.db = db
+
+    #
+    # Entry points hooked to routes
+    #
+    @staticmethod
+    def entry_get_users(manager: 'UserManager', request: Request, auth: AuthContext) -> APIResponse:
+        return APIResponse(manager.get_users(), request=request)
+
+    @staticmethod
+    def entry_get_user(manager: 'UserManager', request: Request, auth: AuthContext, username: str) -> APIResponse:
+        return APIResponse(manager.get_user(username), request=request)
+
+    @staticmethod
+    def entry_create_user(
+        manager: 'UserManager',
+        request: Request,
+        auth: AuthContext,
+        user_request: CreateUserRequest
+    ) -> APIResponse:
+        return APIResponse(manager.create_user(user_request), request=request, status=HTTP_201)
+
+    @staticmethod
+    def entry_delete_user(manager: 'UserManager', request: Request, auth: AuthContext, username: str) -> APIResponse:
+        manager.delete_user(username)
+
+        return APIResponse(request=request, status=HTTP_200)
+
+    @staticmethod
+    def entry_reset_token(
+        manager: 'UserManager',
+        request: Request,
+        auth: AuthContext,
+        username: str,
+        tokenname: str
+    ) -> APIResponse:
+        if tokenname not in TokenNames.__members__:
+            raise errors.SchemaValidationError()
+
+        return APIResponse(
+            manager.reset_token(username, TokenNames[tokenname]),
+            request=request,
+            status=HTTP_200
+        )
+
+    #
+    # Actual API workers
+    #
+    def get_users(self) -> List[UserResponse]:
+        with self.db.get_session() as session:
+            return [
+                UserResponse.from_db(user)
+                for user in artemis_db.Query.from_session(session, artemis_db.User).all()
+            ]
+
+    def get_user(self, username: str) -> Optional[UserResponse]:
+        with self.db.get_session() as session:
+            user_record = artemis_db.User.fetch_by_username(session, username)
+
+            if not user_record:
+                raise errors.NoSuchEntityError()
+
+            return UserResponse.from_db(user_record)
+
+    def create_user(self, user_request: CreateUserRequest) -> UserResponse:
+        with self.db.get_session() as session:
+            try:
+                role = artemis_db.UserRoles[user_request.role]
+
+            except IndexError:
+                raise errors.BadRequestError()
+
+            session.add(artemis_db.User.create(user_request.username, role))
+
+        with self.db.get_session() as session:
+            user_record = artemis_db.User.fetch_by_username(session, user_request.username)
+
+            assert user_record
+
+            return UserResponse.from_db(user_record)
+
+    def delete_user(self, username: str) -> None:
+        with self.db.get_session() as session:
+            user_record = artemis_db.User.fetch_by_username(session, username)
+
+            if not user_record:
+                raise errors.NoSuchEntityError()
+
+            try:
+                session.delete(user_record)
+
+            except sqlalchemy.exc.IntegrityError:
+                raise errors.ConflictError()
+
+    def reset_token(self, username: str, tokenname: TokenNames) -> TokenResetResponse:
+        with self.db.get_session() as session:
+            user_record = artemis_db.User.fetch_by_username(session, username)
+
+            if not user_record:
+                raise errors.NoSuchEntityError()
+
+            token, token_hash = artemis_db.User.generate_token()
+
+            if tokenname == TokenNames.ADMIN:
+                user_record.admin_token = token_hash
+
+            elif tokenname == TokenNames.PROVISIONING:
+                user_record.provisioning_token = token_hash
+
+            else:
+                assert False, 'Unreachable'
+
+        response = TokenResetResponse()
+        response.token = token
+
+        return response
+
+
+class UserManagerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is UserManager or parameter.annotation == 'UserManager'
+
+    def resolve(self, db: artemis_db.DB) -> UserManager:
+        return UserManager(db)
+
+
 #
 # Routes
 #
@@ -742,6 +928,17 @@ def run_app() -> molten.app.App:
             Route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
             Route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
             Route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
+        ]),
+        Include('/users', [
+            Route('/', UserManager.entry_get_users, method='GET'),
+            Route('/', UserManager.entry_create_user, method='POST'),
+            Route('/{username}', UserManager.entry_get_user, method='GET'),
+            Route('/{username}', UserManager.entry_delete_user, method='DELETE'),
+            Include('/{username}', [
+                Include('/{tokenname}', [
+                    Route('/reset', UserManager.entry_reset_token, method='POST')
+                ])
+            ])
         ]),
         Route('/metrics', get_metrics),
         Route('/_docs', get_docs),

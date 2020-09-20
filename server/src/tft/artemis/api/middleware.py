@@ -6,7 +6,6 @@ import urllib.parse
 
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import normalize_bool_option
-from gluetool.result import Result, Ok, Error
 import sqlalchemy.orm.session
 from molten import Request, Response
 # To make mypy happy when others try `from api.middleware import REQUEST_COUNT`, explicit re-export is needed.
@@ -30,7 +29,9 @@ PROVISIONING_AUTH = [
     re.compile(r'/guests(?:/.+)?')
 ]
 
-ADMIN_AUTH: List[Pattern[str]] = []
+ADMIN_AUTH = [
+    re.compile(r'/users(?:/.+)?')
+]
 
 
 # A feature switches for authentication and authorization, disabled by default.

@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional
-from molten import HTTP_409, HTTP_404, HTTP_401, HTTP_403, HTTP_400, HTTP_500, Request
+from molten import HTTP_409, HTTP_404, HTTP_401, HTTP_403, HTTP_400, HTTP_500, Request, Headers
 from molten.errors import HTTPError
 
 from .. import gluetool_sentry
@@ -119,3 +119,15 @@ class ForbiddenError(ArtemisHTTPError):
                          response={"message": "Not authorized to perform this action"},
                          headers=headers,
                          request=request)
+
+
+class ConflictError(ArtemisHTTPError):
+    def __init__(self, headers: Optional[Headers] = None, request: Optional[Request] = None) -> None:
+        super().__init__(
+            status=HTTP_409,
+            response={
+                'message': 'This entity cannot be removed because it is being used by others'
+            },
+            headers=headers,
+            request=request
+        )
