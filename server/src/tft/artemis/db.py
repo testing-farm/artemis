@@ -22,8 +22,10 @@ import gluetool.log
 
 
 # "A reasonable default" size of tokens. There's no need to tweak it in runtime, but we don't want
-# magic numbers spreading through our code.
+# magic numbers spreading through our code. Note that we do't store the token itself, but rather its
+# SHA256 hash.
 TOKEN_SIZE = 32
+TOKEN_HASH_SIZE = 64
 
 
 Base = sqlalchemy.ext.declarative.declarative_base()
@@ -140,13 +142,13 @@ class User(Base):
     # in the database, only their SHA256 hashes, and there's no possible token whose hash would be "undefined".
     # This makes newly created users safe from leaking any tokens by accident, user's tokens must be explicitly
     # initialized by ADMIN-level account first.
-    admin_token = Column(String(TOKEN_SIZE), nullable=False, server_default='undefined')
+    admin_token = Column(String(TOKEN_HASH_SIZE), nullable=False, server_default='undefined')
     """
     Token used to authenticate actions not related to guests and provisioning. Stored as a SHA256
     hash of the actual token.
     """
 
-    provisioning_token = Column(String(TOKEN_SIZE), nullable=False, server_default='undefined')
+    provisioning_token = Column(String(TOKEN_HASH_SIZE), nullable=False, server_default='undefined')
     """
     Token used to authenticate actions related to guests and provisioning. Stored as a SHA256
     hash of the actual token.
