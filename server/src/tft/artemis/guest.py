@@ -48,6 +48,15 @@ class GuestState(enum.Enum):
     #: A pool has been assigned to fulfill the request. A provisioning task exists for this guest request.
     CREATING = 'creating'
 
+    #: A pool was requested to stop a guest. A stopping task exists for this guest request.
+    STOPPING = 'stopping'
+
+    #: Guest was stopped and no SSH connection is available anymore.
+    STOPPED = 'stopped'
+
+    #: A pool has been assigned to fulfill the request. A starting task exists for this guest request.
+    STARTING = 'starting'
+
 
 class GuestLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, guestname: str) -> None:
