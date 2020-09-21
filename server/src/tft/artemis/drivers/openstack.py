@@ -7,7 +7,7 @@ from datetime import datetime
 import gluetool.log
 from gluetool.glue import GlueCommandError
 from gluetool.result import Result, Ok, Error
-from gluetool.utils import Command, wait, normalize_bool_option
+from gluetool.utils import Command, normalize_bool_option
 
 from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics
 from .. import Failure
@@ -17,7 +17,7 @@ from ..guest import Guest, SSHInfo
 from ..script import hook_engine
 from ..snapshot import Snapshot
 
-from typing import cast, Any, Dict, List, Optional, Union
+from typing import cast, Any, Dict, List, Optional
 
 
 # Temeout for wait function in _stop_guest and _start_guest events
@@ -276,105 +276,6 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(r_output.unwrap())
 
-    def _is_guest_stopped(
-        self,
-        instance_id: str,
-    ) -> Result[bool, Failure]:
-        r_output = self._show_guest(instance_id)
-
-        if r_output.is_error:
-            return Error(r_output.value)
-
-        output = r_output.unwrap()
-
-        if output['status'] == 'SHUTOFF':
-            return Ok(True)
-        return Ok(False)
-
-    def _stop_guest(
-        self,
-        instance_id: str,
-    ) -> Result[bool, Failure]:
-        # Do nothing if guest is already stopped
-        r_stopped = self._is_guest_stopped(instance_id)
-
-        if r_stopped.is_error:
-            return Error(r_stopped.unwrap_error())
-
-        if r_stopped.unwrap():
-            return Ok(True)
-
-        self.logger.info('stoping the guest instance')
-        os_options = ['server', 'stop', instance_id]
-        r_stop = self._run_os(os_options, json_format=False)
-
-        if r_stop.is_error:
-            return Error(r_stop.value)
-
-        # TODO: dirty fix for now, will be implemented as a task ASAP
-        def _wait_is_guest_stopped() -> Result[bool, Union[bool, Failure]]:
-
-            r_stopped = self._is_guest_stopped(instance_id)
-
-            if r_stopped.is_error:
-                return Error(r_stopped.unwrap_error())
-
-            if r_stopped.unwrap():
-                return Ok(True)
-
-            return Error(False)
-
-        # Wait until guest will be stopped
-        try:
-            wait('wait for guest been stopped', _wait_is_guest_stopped, timeout=WAIT_TIMEOUT, logger=self.logger)
-
-        except Exception as exc:
-            return Error(Failure.from_exc('failed while waiting for guest been stopped', exc))
-
-        return Ok(True)
-
-    def _start_guest(
-        self,
-        instance_id: str,
-    ) -> Result[bool, Failure]:
-        # Do nothing if guest is not stopped
-        r_stopped = self._is_guest_stopped(instance_id)
-
-        if r_stopped.is_error:
-            return Error(r_stopped.unwrap_error())
-
-        if not r_stopped.unwrap():
-            return Ok(True)
-
-        self.logger.info('starting the guest instance')
-        os_options = ['server', 'start', instance_id]
-        r_stop = self._run_os(os_options, json_format=False)
-
-        if r_stop.is_error:
-            return Error(r_stop.value)
-
-        # TODO: dirty fix for now, will be implemented as a task ASAP
-        def _wait_is_guest_started() -> Result[bool, Union[bool, Failure]]:
-
-            r_stopped = self._is_guest_stopped(instance_id)
-
-            if r_stopped.is_error:
-                return Error(r_stopped.unwrap_error())
-
-            if not r_stopped.unwrap():
-                return Ok(True)
-
-            return Error(False)
-
-        # Wait until guest will be started
-        try:
-            wait('wait for guest been stopped', _wait_is_guest_started, timeout=WAIT_TIMEOUT, logger=self.logger)
-
-        except Exception as exc:
-            return Error(Failure.from_exc('failed while waiting for guest been started', exc))
-
-        return Ok(True)
-
     def _output_to_ip(self, output: Any) -> Result[Optional[str], Failure]:
         if not output['addresses']:
             # It's ok! That means the instance is not ready yet. We need to wait a bit for ip address.
@@ -456,6 +357,83 @@ class OpenStackDriver(PoolDriver):
             )
         )
 
+    def _get_guest_status(
+        self,
+        guest: Guest
+    ) -> Result[str, Failure]:
+        if not isinstance(guest, OpenStackGuest):
+            return Error(Failure('guest is not an OpenStack guest'))
+        assert isinstance(guest, OpenStackGuest)
+
+        r_show = self._show_guest(guest.instance_id)
+
+        if r_show.is_error:
+            return Error(r_show.unwrap_error())
+
+        output = r_show.unwrap()
+
+        return Ok(output['status'].lower())
+
+    def is_guest_stopped(
+        self,
+        guest: Guest
+    ) -> Result[bool, Failure]:
+        r_status = self._get_guest_status(guest)
+
+        if r_status.is_error:
+            return Error(r_status.unwrap_error())
+        status = r_status.unwrap()
+
+        return Ok(status == 'shutoff')
+
+    def is_guest_running(
+        self,
+        guest: Guest
+    ) -> Result[bool, Failure]:
+        r_status = self._get_guest_status(guest)
+
+        if r_status.is_error:
+            return Error(r_status.unwrap_error())
+        status = r_status.unwrap()
+
+        return Ok(status == 'active')
+
+    def stop_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest: Guest
+    ) -> Result[bool, Failure]:
+        if not isinstance(guest, OpenStackGuest):
+            return Error(Failure('guest is not an OpenStack guest'))
+        assert isinstance(guest, OpenStackGuest)
+
+        logger.info('stoping the guest instance')
+        os_options = ['server', 'stop', guest.instance_id]
+        r_stop = self._run_os(os_options, json_format=False)
+
+        if r_stop.is_error:
+            return Error(r_stop.value)
+
+        return Ok(True)
+
+    def start_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest: Guest
+    ) -> Result[bool, Failure]:
+        if not isinstance(guest, OpenStackGuest):
+            return Error(Failure('guest is not an OpenStack guest'))
+        assert isinstance(guest, OpenStackGuest)
+
+        logger.info('starting the guest instance')
+        os_options = ['server', 'start', guest.instance_id]
+        r_start = self._run_os(os_options, json_format=False)
+
+        if r_start.is_error:
+            return Error(r_start.value)
+
+        return Ok(True)
+
     def can_acquire(self, environment: Environment) -> Result[bool, Failure]:
         if environment.arch not in self.pool_config['available-arches']:
             return Ok(False)
@@ -528,11 +506,6 @@ class OpenStackDriver(PoolDriver):
 
         assert isinstance(guest, OpenStackGuest)
 
-        r_stop = self._stop_guest(guest.instance_id)
-
-        if r_stop.is_error:
-            return Error(r_stop.unwrap_error())
-
         os_options = [
             'server', 'image', 'create',
             '--name', snapshot_request.snapshotname,
@@ -549,13 +522,6 @@ class OpenStackDriver(PoolDriver):
 
         if output:
             status = output['status']
-
-        # If snapshot is active, we can turn on the guest if start_again is True
-        if status == 'active' and snapshot_request.start_again:
-            r_start = self._start_guest(guest.instance_id)
-
-            if r_start.is_error:
-                return Error(r_start.unwrap_error())
 
         return Ok(OpenStackSnapshot(
             snapshot_request.snapshotname,
@@ -596,13 +562,6 @@ class OpenStackDriver(PoolDriver):
 
         if status != 'active':
             return Ok(snapshot)
-
-        # If snapshot is active and start_again is True, we can turn on the guest
-        if start_again:
-            r_start = self._start_guest(guest.instance_id)
-
-            if r_start.is_error:
-                return Error(r_start.unwrap_error())
 
         snapshot.status = status
         return Ok(snapshot)

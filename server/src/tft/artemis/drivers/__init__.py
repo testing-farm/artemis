@@ -311,6 +311,54 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError()
 
+    def stop_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest: Guest
+    ) -> Result[bool, Failure]:
+        """
+        Instructs a guest to stop.
+
+        :param Guest guest: a guest to be stopped
+        :rtype: result.Result[bool, Failure]
+        """
+
+        raise NotImplementedError()
+
+    def start_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest: Guest
+    ) -> Result[bool, Failure]:
+        """
+        Instructs a guest to stop.
+
+        :param Guest guest: a guest to be started
+        :rtype: result.Result[bool, Failure]
+        """
+
+        raise NotImplementedError()
+
+    def is_guest_stopped(self, guest: Guest) -> Result[bool, Failure]:
+        """
+        Check if a guest is stopped
+
+        :param Guest guest: a guest to be checked
+        :rtype: result.Result[bool, Failure]
+        """
+
+        raise NotImplementedError()
+
+    def is_guest_running(self, guest: Guest) -> Result[bool, Failure]:
+        """
+        Check if a guest is running
+
+        :param Guest guest: a guest to be checked
+        :rtype: result.Result[bool, Failure]
+        """
+
+        raise NotImplementedError()
+
     def release_guest(self, guest: Guest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
