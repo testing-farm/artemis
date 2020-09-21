@@ -14,7 +14,6 @@ from gluetool.result import Result, Ok, Error
 
 from . import Failure, get_db, get_logger, get_broker, safe_call, safe_db_execute, log_guest_event, \
     log_error_guest_event
-from . import handle_failure as main_handle_failure
 from .db import DB, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
 from .drivers import PoolDriver, PoolLogger
 from .environment import Environment
@@ -230,7 +229,7 @@ def create_event_handlers(
     ) -> DoerReturnType:
         failure = result.unwrap_error()
 
-        main_handle_failure(logger, result, label, sentry=sentry, **spice_details)
+        failure.handle(logger, label=label, sentry=sentry, **spice_details)
 
         if guestname:
             log_error_guest_event(

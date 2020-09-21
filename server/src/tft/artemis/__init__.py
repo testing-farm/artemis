@@ -256,7 +256,7 @@ class Failure:
     def log(
         self,
         log_fn: gluetool.log.LoggingFunctionType,
-        label: str = Optional[None]
+        label: Optional[str] = None
     ) -> None:
         exc_info = self.exc_info if self.exc_info else (None, None, None)
 
@@ -300,6 +300,26 @@ class Failure:
             raise self.exception
 
         raise Exception('Cannot reraise undefined exception')
+
+    def handle(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        label: Optional[str] = None,
+        sentry: bool = True,
+        **details: Any
+    ) -> None:
+        self.details.update(details)
+
+        self.log(logger.error, label=label)
+
+        if sentry:
+            self.submit_to_sentry()
+
+            if self.sentry_event_url:
+                logger.warning('submitted to Sentry as {}'.format(self.sentry_event_url))
+
+            else:
+                logger.warning('not submitted to Sentry')
 
 
 def get_logger() -> gluetool.log.ContextAdapter:
@@ -444,31 +464,6 @@ def safe_db_execute(
     )
 
 
-def handle_failure(
-    logger: gluetool.log.ContextAdapter,
-    result: Result[Any, Failure],
-    label: str,
-    sentry: bool = True,
-    **details: Any
-) -> None:
-    assert result.is_error
-
-    failure = result.unwrap_error()
-
-    failure.details.update(details)
-
-    failure.log(logger.error, label=label)
-
-    if sentry:
-        failure.submit_to_sentry()
-
-        if failure.sentry_event_url:
-            logger.warning('submitted to Sentry as {}'.format(failure.sentry_event_url))
-
-        else:
-            logger.warning('not submitted to Sentry')
-
-
 def log_guest_event(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -489,11 +484,9 @@ def log_guest_event(
     r = safe_call(session.commit)
 
     if r.is_error:
-        handle_failure(
+        r.unwrap_error().handle(
             logger,
-            r,
-            'failed to store guest event',
-            sentry=True,
+            label='failed to store guest event',
             guestname=guestname,
             eventname=eventname
         )
