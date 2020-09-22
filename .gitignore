@@ -13,3 +13,5 @@ dist
 
 *~
 *.pyc
+
+docs/public/*

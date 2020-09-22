@@ -1,0 +1,21 @@
+baseURL = "/artemis"
+languageCode = "en-us"
+title = "Documentation for Artemis provisioning service"
+theme = "learn"
+
+[params]
+  editURL = "https://gitlab.com/testing-farm/artemis/edit/master/docs/content/"
+  themeVariant = "mine"
+  showVisitedLinks = true
+  disableBreadcrumb = false
+
+[[menu.shortcuts]]
+name = "<i class='fas fa-tags'></i> Tags"
+url = "/tags"
+weight = 10
+
+[[menu.shortcuts]]
+name = "<i class='fab fa-github'></i> Github repo"
+identifier = "ds"
+url = "https://gitlab.com/testing-farm/artemis"
+weight = 30

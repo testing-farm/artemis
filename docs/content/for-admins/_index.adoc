@@ -1,0 +1,10 @@
+---
+title: "For Administrators"
+date: 2020-09-23T15:47:03+02:00
+draft: false
+chapter: true
+---
+:sectlinks:
+:showtitle:
+
+= For administrators

@@ -1,0 +1,15 @@
+---
+title: "Artemis"
+date: 2020-09-22T15:20:27+02:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+= Artemis
+
+*Artemis* is a machine provisioning service. Given power over existing clouds, e.g. OpenStack or AWS, *Artemis* tries to provision machines to satisfy user requests that describe hardware constraints, like minimal amount of RAM or number of CPU cores.
+
+Users request provisioning of *guests* via REST API, describing the desired hardware and software configuration in each request. Requests are then matched with one or more *pools* - each pool represents one provisioning service like AWS, Azure or private OpenStack instance, each with its own set of available machine setups it can provide - and a machine is acquired from the most suitable pool and presented to the user.
+
+Each provisioning request is asynchronous by its nature: user submits a *guest request* and receives an ID, *guest name*. User then periodically checks status of the request, using the provided ID, until the request becomes ready. From that moment on, the guest is available and reserved for the user. The request can be cancelled at any time, causing release of its resources.
