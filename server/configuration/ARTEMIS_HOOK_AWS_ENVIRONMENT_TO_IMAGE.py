@@ -1,3 +1,5 @@
+import os
+
 from tft.artemis import Failure
 from tft.artemis.drivers.aws import AWSDriver
 from tft.artemis.environment import Environment
@@ -14,7 +16,13 @@ from typing import Any, Optional
 
 def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -> Result[str, Failure]:
 
-    pattern_map = PatternMap('/configuration/artemis-image-map-aws.yaml', allow_variables=True, logger=logger)
+    configuration_dir = os.getenv('ARTEMIS_CONFIG_DIR', '/configuration')
+    compose_image_map = os.path.join(configuration_dir, 'artemis-image-map-aws.yaml')
+
+    if not os.path.isfile(compose_image_map):
+        return Error(Failure('Can not find an image map file {}'.format(compose_image_map)))
+
+    pattern_map = PatternMap(compose_image_map, allow_variables=True, logger=logger)
 
     try:
         image_name = pattern_map.match(compose_id)

@@ -15,7 +15,10 @@ from typing import Any, Optional
 
 
 def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -> Result[str, Failure]:
-    compose_image_map = '/configuration/artemis-image-map-openstack.yaml'
+
+    configuration_dir = os.getenv('ARTEMIS_CONFIG_DIR', '/configuration')
+    compose_image_map = os.path.join(configuration_dir, 'artemis-image-map-openstack.yaml')
+
     if not os.path.isfile(compose_image_map):
         return Error(Failure('Can not find an image map file {}'.format(compose_image_map)))
 
