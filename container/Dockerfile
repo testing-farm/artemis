@@ -7,6 +7,7 @@
 #   * dispatcher
 #   * wait-for-postgresql
 #   * wait-for-rabbitmq
+#   * scheduler
 #   * worker
 #
 

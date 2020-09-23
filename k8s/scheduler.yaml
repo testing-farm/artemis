@@ -1,0 +1,67 @@
+---
+#
+# Artemis scheduler
+#
+# Waits for artemis api to be available.
+#
+# For local development only!
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artemis-scheduler
+spec:
+  selector:
+    matchLabels:
+      service: artemis-scheduler
+  template:
+    metadata:
+      labels:
+        service: artemis-scheduler
+    spec:
+      initContainers:
+        - name: wait-for-api
+          image: artemis
+          command:
+            - /wait-for-api.sh
+          env:
+            - name: API_HOSTNAME
+              value: artemis-api
+            - name: API_PORT
+              value: "80"
+      containers:
+        - name: scheduler
+          image: artemis
+          command:
+            - /entrypoint.sh
+            - scheduler
+          env:
+            - name: ARTEMIS_BROKER_URL
+              value: amqp://guest:guest@artemis-rabbitmq:5672
+            - name: ARTEMIS_CONFIG_DIR
+              value: /configuration
+            - name: ARTEMIS_DB_URL
+              value: postgres://artemis:artemis@artemis-postgres:5432/artemis
+            - name: ARTEMIS_LOG_JSON
+              value: "no"
+            - name: ARTEMIS_LOG_DB_POOL
+              value: "no"
+            - name: ARTEMIS_LOG_DB_QUERIES
+              value: "yes"
+            - name: ARTEMIS_VAULT_PASSWORD_FILE
+              value: /configuration/.vault_pass
+            - name: ARTEMIS_ACTOR_DEFAULT_RETRIES
+              value: "2"
+            - name: ARTEMIS_WORKER_PROCESSES
+              value: "2"
+            - name: ARTEMIS_WORKER_THREADS
+              value: "4"
+            - name: ARTEMIS_WORKER_OPTIONS
+              value: "--verbose"
+          volumeMounts:
+            - name: artemis-configuration
+              mountPath: /configuration
+      volumes:
+        - name: artemis-configuration
+          configMap:
+            name: artemis-configuration

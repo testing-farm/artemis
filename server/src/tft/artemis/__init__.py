@@ -17,6 +17,7 @@ from gluetool.result import Result, Ok, Error
 import ruamel.yaml
 import ruamel.yaml.compat
 import sqlalchemy.orm.session
+import periodiq
 
 
 from . import db as artemis_db
@@ -360,7 +361,8 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
             dramatiq.middleware.time_limit.TimeLimit(),
             dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
             dramatiq.middleware.callbacks.Callbacks(),
-            artemis_middleware.Retries()
+            artemis_middleware.Retries(),
+            periodiq.PeriodiqMiddleware()
         ])
 
     else:
@@ -380,7 +382,8 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
                 dramatiq.middleware.time_limit.TimeLimit(),
                 dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
                 dramatiq.middleware.callbacks.Callbacks(),
-                artemis_middleware.Retries()
+                artemis_middleware.Retries(),
+                periodiq.PeriodiqMiddleware()
             ],
             parameters=[{
                 'host': parsed_url.hostname,

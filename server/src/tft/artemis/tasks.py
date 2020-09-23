@@ -5,6 +5,7 @@ import threading
 
 import dramatiq
 import gluetool.log
+import periodiq
 import sqlalchemy
 import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
@@ -2093,23 +2094,6 @@ def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
     )
 
 
-def schedule_pool_resources_metrics_update(
-    logger: gluetool.log.ContextAdapter,
-    poolname: str,
-    immediately: bool = False
-) -> Result[None, Failure]:
-    return dispatch_task(
-        logger,
-        refresh_pool_resources_metrics,
-        poolname,
-        delay=actor_control_value(
-            'refresh_pool_resources_metrics',
-            'TICK',
-            DEFAULT_POOL_RESOURCES_METRICS_REFRESH_TICK
-        ) if not immediately else None
-    )
-
-
 def do_refresh_pool_resources_metrics(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -2146,11 +2130,6 @@ def do_refresh_pool_resources_metrics(
         if r_refresh.is_error:
             handle_failure(r_refresh, 'failed to refresh pool resources metrics')
 
-    r_dispatch = schedule_pool_resources_metrics_update(logger, poolname)
-
-    if r_dispatch.is_error:
-        return handle_failure(r_dispatch, 'failed to schedule pool resources metrics refresh')
-
     return SUCCESS
 
 
@@ -2160,4 +2139,54 @@ def refresh_pool_resources_metrics(poolname: str) -> None:
         do_refresh_pool_resources_metrics,
         logger=get_pool_logger('refresh-pool-resources-metrics', root_logger, poolname),
         doer_args=(poolname,)
+    )
+
+
+def do_refresh_pool_resources_metrics_dispatcher(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event
+) -> DoerReturnType:
+    handle_success, _, _ = create_event_handlers(
+        logger,
+        session,
+        task='refresh-pool-metrics-dispatcher'
+    )
+
+    handle_success('enter-task')
+
+    logger.info('scheduling pool metrics refresh')
+
+    for pool in get_pools(root_logger, session):
+        dispatch_task(
+            get_pool_logger('refresh-pool-resources-metrics-dispatcher', root_logger, pool.poolname),
+            refresh_pool_resources_metrics,
+            pool.poolname
+        )
+
+    return SUCCESS
+
+
+@dramatiq.actor(  # type: ignore  # Untyped decorator
+    periodic=periodiq.cron('* * * * *'),
+    **actor_kwargs('REFRESH_POOL_RESOURCES_METRICS')
+)
+def refresh_pool_resources_metrics_dispatcher() -> None:
+    """
+    Dispatcher-like task for pool resources metrics refresh. It is being scheduled periodically (by Periodiq),
+    and it refreshes nothing on its own - instead, it gets a list of pools, and dispatches the actual refresh
+    task for each pool.
+
+    This way, we can use Periodiq (or similar package), which makes it much simpler to run tasks in
+    a cron-like fashion, to schedule the task. It does not support this kind of scheduling with different
+    parameters, so we have this task that picks parameters for its kids.
+
+    We don't care about rescheduling or retries - this task would be executed again very soon, exponential
+    retries would make the metrics more outdated.
+    """
+
+    task_core(  # type: ignore # Argument 1 has incompatible type
+        do_refresh_pool_resources_metrics_dispatcher,
+        logger=TaskLogger(root_logger, 'refresh-pool-resources-dispatcher')
     )

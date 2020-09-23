@@ -6,11 +6,10 @@ import sqlalchemy.orm.session
 from . import get_logger, get_db
 from .db import GuestRequest, SnapshotRequest
 from .guest import GuestState
-from .tasks import get_guest_logger, get_snapshot_logger, get_pools, dispatch_task
+from .tasks import get_guest_logger, get_snapshot_logger, dispatch_task
 from .tasks import route_guest_request, release_guest_request, _update_guest_state
 from .tasks import route_snapshot_request, release_snapshot_request, restore_snapshot_request
 from .tasks import _update_snapshot_state
-from .tasks import schedule_pool_resources_metrics_update
 
 
 def _dispatch_guest_request(
@@ -120,16 +119,6 @@ def main() -> None:
 
     # Spawn HTTP server to provide metrics for Prometheus
     # ...
-
-    root_logger.info('scheduling pool metrics refresh')
-
-    with db.get_session() as session:
-        for pool in get_pools(root_logger, session):
-            schedule_pool_resources_metrics_update(
-                root_logger,
-                pool.poolname,
-                immediately=True
-            )
 
     while True:
         root_logger.info('tick...')

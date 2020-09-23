@@ -81,6 +81,10 @@ case $APP in
         poetry run artemis-init-postgres-schema
         exit 0
         ;;
+    scheduler)
+        expose_hooks
+        COMMAND="poetry run periodiq tft.artemis.tasks"
+        ;;
     worker)
         expose_hooks
         COMMAND="poetry run dramatiq $ARTEMIS_WORKER_OPTIONS tft.artemis.tasks"
