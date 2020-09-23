@@ -42,7 +42,14 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
                 # Somebody already did our job, the guest request is not in expected state anymore.
                 return
 
-            route_guest_request.send(guestname)
+            # Avoid circular imports
+            from .tasks import dispatch_task
+
+            dispatch_task(
+                self.logger,
+                route_guest_request,
+                guestname
+            )
 
             logger.info('returned back to routing')
 

@@ -6,7 +6,7 @@ import sqlalchemy.orm.session
 from . import get_logger, get_db
 from .db import GuestRequest, SnapshotRequest
 from .guest import GuestState
-from .tasks import get_guest_logger, get_snapshot_logger, get_pools
+from .tasks import get_guest_logger, get_snapshot_logger, get_pools, dispatch_task
 from .tasks import route_guest_request, release_guest_request, _update_guest_state
 from .tasks import route_snapshot_request, release_snapshot_request, restore_snapshot_request
 from .tasks import _update_snapshot_state
@@ -36,7 +36,7 @@ def _dispatch_guest_request(
         return
 
     # Kick of the task chain for this request.
-    route_guest_request.send(guest.guestname)
+    dispatch_task(logger, route_guest_request, guest.guestname)
 
     logger.finished()
 
@@ -51,7 +51,7 @@ def _release_guest_request(
     logger.begin()
 
     # Schedule task to release the given guest request.
-    release_guest_request.send(guest.guestname)
+    dispatch_task(logger, release_guest_request, guest.guestname)
 
     logger.finished()
 
@@ -79,7 +79,7 @@ def _dispatch_snapshot_request(
         logger.finished()
         return
 
-    route_snapshot_request.send(snapshot.guestname, snapshot.snapshotname)
+    dispatch_task(logger, route_snapshot_request, snapshot.guestname, snapshot.snapshotname)
 
     logger.finished()
 
@@ -94,7 +94,7 @@ def _release_snapshot_request(
     logger.begin()
 
     # Schedule task to remove the given snapshot request.
-    release_snapshot_request.send(snapshot.guestname, snapshot.snapshotname)
+    dispatch_task(logger, release_snapshot_request, snapshot.guestname, snapshot.snapshotname)
 
     logger.finished()
 
@@ -109,7 +109,7 @@ def _restore_snapshot_request(
     logger.begin()
 
     # Schedule task to remove the given snapshot equest.
-    restore_snapshot_request.send(snapshot.guestname, snapshot.snapshotname)
+    dispatch_task(logger, restore_snapshot_request, snapshot.guestname, snapshot.snapshotname)
 
     logger.finished()
 

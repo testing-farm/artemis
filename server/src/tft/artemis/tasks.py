@@ -11,6 +11,7 @@ import sqlalchemy.orm.session
 import stackprinter
 
 from gluetool.result import Result, Ok, Error
+from gluetool.utils import normalize_bool_option
 
 from . import Failure, get_db, get_logger, get_broker, safe_call, safe_db_execute, log_guest_event, \
     log_error_guest_event
@@ -90,7 +91,10 @@ root_logger = get_logger()
 db = get_db(root_logger)
 
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
-_ = get_broker()
+BROKER = get_broker()
+
+
+_CLOSE_AFTER_DISPATCH = normalize_bool_option(os.getenv('ARTEMIS_CLOSE_AFTER_DISPATCH', 'no'))
 
 
 POOL_DRIVERS = {
@@ -428,7 +432,7 @@ def _cancel_task_if(
     return True
 
 
-def _dispatch_task(
+def dispatch_task(
     logger: gluetool.log.ContextAdapter,
     task: Actor,
     *args: Any,
@@ -454,6 +458,11 @@ def _dispatch_task(
             task.actor_name,
             ', '.join(formatted_args)
         ))
+
+        if _CLOSE_AFTER_DISPATCH:
+            logger.debug('closing broker connection as requested')
+
+            BROKER.connection.close()
 
         return Ok(None)
 
@@ -1259,7 +1268,7 @@ class Workspace:
         if self.result:
             return
 
-        r = _dispatch_task(self.logger, task, *args)
+        r = dispatch_task(self.logger, task, *args)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to dispatch update task')
@@ -2082,7 +2091,7 @@ def schedule_pool_resources_metrics_update(
     poolname: str,
     immediately: bool = False
 ) -> Result[None, Failure]:
-    return _dispatch_task(
+    return dispatch_task(
         logger,
         refresh_pool_resources_metrics,
         poolname,

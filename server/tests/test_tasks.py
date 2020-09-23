@@ -74,7 +74,7 @@ def test_dispatch_task(logger, monkeypatch):
 
     monkeypatch.setattr(tft.artemis.tasks, 'safe_call', mock_safe_call)
 
-    r = tft.artemis.tasks._dispatch_task(logger, mock_fn, 79)
+    r = tft.artemis.tasks.dispatch_task(logger, mock_fn, 79)
 
     assert r.is_ok
     mock_safe_call.assert_called_once_with(mock_fn.send, 79)
@@ -93,7 +93,7 @@ def test_dispatcher_task_exception(logger, monkeypatch):
 
     monkeypatch.setattr(tft.artemis.tasks, 'safe_call', mock_safe_call)
 
-    r = tft.artemis.tasks._dispatch_task(logger, mock_fn)
+    r = tft.artemis.tasks.dispatch_task(logger, mock_fn)
 
     assert r.is_error
     assert isinstance(r.error, tft.artemis.Failure)
