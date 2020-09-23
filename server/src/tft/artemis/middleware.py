@@ -28,10 +28,11 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         current_state: GuestState
     ) -> None:
         # we need to import late, because middleware is called initialized in __init__
+        from . import get_db
         from .tasks import _update_guest_state, route_guest_request
 
         # try to move from given state to ROUTING
-        with (self.logger).get_session() as session:
+        with get_db(self.logger).get_session() as session:
             if not _update_guest_state(
                 self.logger,
                 session,
