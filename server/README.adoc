@@ -29,6 +29,8 @@ These environment variables provide some defaults but can be overridden:
 * `ARTEMIS_SQLALCHEMY_MAX_OVERFLOW` - Maximum size of connection pool overflow, by default `10`
 * `ARTEMIS_VAULT_PASSWORD_FILE` - Password file with Ansible Vault secret, used for decryption
 * `ARTEMIS_CLOSE_AFTER_DISPATCH` - when set to `yes`, broker connection will be closed after every message dispatch.
+* `ARTEMIS_BROKER_HEARTBEAT_TIMEOUT` - RabbitMQ client should ping the server over established connection to keep both parties aware the connection should be kept alive. After this many seconds, the connection is considered dead.
+
 
 == SSH keys
 
