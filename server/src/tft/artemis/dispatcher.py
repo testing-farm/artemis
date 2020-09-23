@@ -6,11 +6,20 @@ import sqlalchemy.orm.session
 from . import get_logger, get_db
 from .db import GuestRequest, SnapshotRequest
 from .guest import GuestState
+from .knobs import Knob
 from .tasks import get_guest_logger, get_snapshot_logger, get_pools
 from .tasks import route_guest_request, release_guest_request, _update_guest_state
 from .tasks import route_snapshot_request, release_snapshot_request, restore_snapshot_request
 from .tasks import _update_snapshot_state
 from .tasks import schedule_pool_resources_metrics_update
+
+
+KNOB_DISPATCHER_TICK: Knob[int] = Knob(
+    'dispatcher.tick',
+    envvar='ARTEMIS_DISPATCHER_TICK',
+    envvar_cast=int,
+    default=10
+)
 
 
 def _dispatch_guest_request(
@@ -176,7 +185,7 @@ def main() -> None:
             for snapshot in snapshot_requests:
                 _restore_snapshot_request(root_logger, session, snapshot)
 
-        time.sleep(10)
+        time.sleep(KNOB_DISPATCHER_TICK.value)
 
 
 if __name__ == '__main__':

@@ -19,6 +19,9 @@ from sqlalchemy.orm.query import Query as _Query
 
 from typing import cast, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, Union
 import gluetool.log
+import gluetool.utils
+
+from .knobs import Knob as _Knob
 
 
 # "A reasonable default" size of tokens. There's no need to tweak it in runtime, but we don't want
@@ -26,6 +29,39 @@ import gluetool.log
 # SHA256 hash.
 TOKEN_SIZE = 32
 TOKEN_HASH_SIZE = 64
+
+
+KNOB_DB_LOGGING_QUERIES: _Knob[bool] = _Knob(
+    'db.logging.queries',
+    has_db=False,
+    envvar='ARTEMIS_LOG_DB_QUERIES',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+KNOB_DB_LOGGING_POOL: _Knob[str] = _Knob(
+    'db.logging.pool',
+    has_db=False,
+    envvar='ARTEMIS_LOG_DB_POOL',
+    envvar_cast=str,
+    default='no'
+)
+
+KNOB_DB_SQLALCHEMY_POOL_SIZE: _Knob[int] = _Knob(
+    'db.sqlalchemy.pool.size',
+    has_db=False,
+    envvar='ARTEMIS_SQLALCHEMY_POOL_SIZE',
+    envvar_cast=int,
+    default=20
+)
+
+KNOB_DB_SQLALCHEMY_MAX_OVERFLOW: _Knob[int] = _Knob(
+    'db.sqlalchemy.pool.max_overflow',
+    has_db=False,
+    envvar='ARTEMIS_SQLALCHEMY_MAX_OVERFLOW',
+    envvar_cast=int,
+    default=10
+)
 
 
 Base = sqlalchemy.ext.declarative.declarative_base()
@@ -112,11 +148,6 @@ class DBPoolMetrics:
     checked_in_connections: int = 0
     checked_out_connections: int = 0
     current_overflow: int = 0
-
-
-# SQLAlchemy defaults
-DEFAULT_SQLALCHEMY_POOL_SIZE = 20
-DEFAULT_SQLALCHEMY_MAX_OVERFLOW = 10
 
 
 class UserRoles(enum.Enum):
@@ -429,6 +460,13 @@ class PoolResourcesMetrics(Base):
         return cls.get_by_pool(session, poolname, PoolResourcesMetricsDimensions.USAGE)
 
 
+class Knob(Base):
+    __tablename__ = 'knobs'
+
+    knobname = Column(String(), primary_key=True, nullable=False)
+    value = Column(String(), nullable=False)
+
+
 class DB:
     instance: 'Optional[__DB]' = None
     _lock = threading.RLock()
@@ -443,21 +481,21 @@ class DB:
 
             logger.info('connecting to db {}'.format(url))
 
-            if os.getenv('ARTEMIS_LOG_DB_QUERIES', None) == 'yes':
+            if KNOB_DB_LOGGING_QUERIES.value:
                 gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
 
             self._echo_pool: Union[str, bool] = False
-            if 'ARTEMIS_LOG_DB_POOL' in os.environ:
-                if os.environ['ARTEMIS_LOG_DB_POOL'].lower() == 'debug':
-                    self._echo_pool = 'debug'
 
-                elif os.environ['ARTEMIS_LOG_DB_POOL'].lower() == 'yes':
-                    self._echo_pool = gluetool.utils.normalize_bool_option(os.environ['ARTEMIS_LOG_DB_POOL'])
+            if KNOB_DB_LOGGING_POOL.value == 'debug':
+                self._echo_pool = 'debug'
+
+            elif KNOB_DB_LOGGING_POOL.value == 'yes':
+                self._echo_pool = True
 
             # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
             if url.startswith('postgresql://'):
-                pool_size = os.getenv('ARTEMIS_SQLALCHEMY_POOL_SIZE', DEFAULT_SQLALCHEMY_POOL_SIZE)
-                max_overflow = os.getenv('ARTEMIS_SQLALCHEMY_MAX_OVERFLOW', DEFAULT_SQLALCHEMY_MAX_OVERFLOW)
+                pool_size = KNOB_DB_SQLALCHEMY_POOL_SIZE.value
+                max_overflow = KNOB_DB_SQLALCHEMY_MAX_OVERFLOW.value
 
                 gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
                     'echo_pool': self._echo_pool,

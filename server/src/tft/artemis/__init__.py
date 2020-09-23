@@ -21,6 +21,7 @@ import sqlalchemy.orm.session
 from . import db as artemis_db
 from . import vault as artemis_vault
 from . import middleware as artemis_middleware
+from .knobs import Knob
 
 from typing import cast, Any, Callable, Dict, List, NoReturn, Optional, Tuple, TypeVar, Union
 from types import TracebackType
@@ -59,10 +60,53 @@ T = TypeVar('T')
 FailureDetailsType = Dict[str, Any]
 
 
-DEFAULT_CONFIG_DIR = os.getcwd()
-DEFAULT_BROKER_URL = 'amqp://guest:guest@127.0.0.1:5672'
-DEFAULT_DB_URL = 'sqlite:///test.db'
-DEFAULT_VAULT_PASSWORD_FILE = '~/.vault_password'
+KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
+    'config.dirpath',
+    has_db=False,
+    envvar='ARTEMIS_CONFIG_DIR',
+    envvar_cast=str,
+    default=os.getcwd()
+)
+
+KNOB_BROKER_URL: Knob[str] = Knob(
+    'broker.url',
+    has_db=False,
+    envvar='ARTEMIS_BROKER_URL',
+    envvar_cast=str,
+    default='amqp://guest:guest@127.0.0.1:5672'
+)
+
+KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
+    'vault.password.filepath',
+    has_db=False,
+    envvar='ARTEMIS_VAULT_PASSWORD_FILE',
+    envvar_cast=str,
+    default='~/.vault_password'
+)
+
+KNOB_LOGGING_LEVEL: Knob[str] = Knob(
+    'logging.level',
+    has_db=False,
+    envvar='ARTEMIS_LOG_LEVEL',
+    envvar_cast=str,
+    default='INFO'
+)
+
+KNOB_LOGGING_JSON: Knob[bool] = Knob(
+    'logging.json',
+    has_db=False,
+    envvar='ARTEMIS_LOG_JSON',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=True
+)
+
+KNOB_DB_URL: Knob[str] = Knob(
+    'db.url',
+    has_db=False,
+    envvar='ARTEMIS_DB_URL',
+    envvar_cast=str,
+    default='sqlite:///test.db'
+)
 
 # Gluetool Sentry instance
 gluetool_sentry = gluetool.sentry.Sentry()
@@ -322,18 +366,26 @@ class Failure:
                 logger.warning('not submitted to Sentry')
 
 
+def get_basic_logger() -> gluetool.log.ContextAdapter:
+    return gluetool.log.Logging.setup_logger(
+        level=logging.INFO,
+        json_output=False,
+        sentry=gluetool_sentry
+    )
+
+
 def get_logger() -> gluetool.log.ContextAdapter:
     gluetool.color.switch(True)
 
     return gluetool.log.Logging.setup_logger(
-        level=getattr(logging, os.getenv('ARTEMIS_LOG_LEVEL', 'INFO')),
-        json_output=gluetool.utils.normalize_bool_option(os.getenv('ARTEMIS_LOG_JSON', 'yes')),
+        level=getattr(logging, KNOB_LOGGING_LEVEL.value),
+        json_output=KNOB_LOGGING_JSON.value,
         sentry=gluetool_sentry
     )
 
 
 def get_config() -> Dict[str, Any]:
-    config_dir = os.path.expanduser(os.getenv('ARTEMIS_CONFIG_DIR', DEFAULT_CONFIG_DIR))
+    config_dir = os.path.expanduser(KNOB_CONFIG_DIRPATH.value)
 
     return cast(
         Dict[str, Any],
@@ -356,7 +408,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
 
     else:
         broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
-            url=os.getenv('ARTEMIS_BROKER_URL', DEFAULT_BROKER_URL),
+            url=KNOB_BROKER_URL.value,
             middleware=[
                 dramatiq.middleware.age_limit.AgeLimit(),
                 dramatiq.middleware.time_limit.TimeLimit(),
@@ -372,7 +424,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
 
 
 def get_db_url() -> str:
-    return os.getenv('ARTEMIS_DB_URL', DEFAULT_DB_URL)
+    return KNOB_DB_URL.value
 
 
 def get_db(logger: gluetool.log.ContextAdapter) -> artemis_db.DB:
@@ -383,9 +435,7 @@ def get_db(logger: gluetool.log.ContextAdapter) -> artemis_db.DB:
 
 
 def get_vault() -> artemis_vault.Vault:
-    password_filepath = os.path.expanduser(
-        os.getenv('ARTEMIS_VAULT_PASSWORD_FILE', DEFAULT_VAULT_PASSWORD_FILE)
-    )
+    password_filepath = os.path.expanduser(KNOB_VAULT_PASSWORD_FILEPATH.value)
 
     with open(password_filepath, 'r') as f:
         return artemis_vault.Vault(f.read())

@@ -1,4 +1,3 @@
-import os
 import json
 import re
 import threading
@@ -11,6 +10,7 @@ from gluetool.utils import Command, wait, normalize_bool_option
 
 from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics
 from .. import Failure
+from ..knobs import Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..guest import Guest, SSHInfo
@@ -20,8 +20,13 @@ from ..snapshot import Snapshot
 from typing import cast, Any, Dict, List, Optional, Union
 
 
-# Temeout for wait function in _stop_guest and _start_guest events
-WAIT_TIMEOUT = int(os.getenv('ARTEMIS_OPENSTACK_WAIT_TIMEOUT', 180))
+KNOB_WAIT_TIMEOUT: Knob[int] = Knob(
+    'openstack.wait-timeout',
+    has_db=False,
+    envvar='ARTEMIS_OPENSTACK_WAIT_TIMEOUT',
+    envvar_cast=int,
+    default=180
+)
 
 
 class OpenStackGuest(Guest):
@@ -313,7 +318,12 @@ class OpenStackDriver(PoolDriver):
 
         # Wait until guest will be stopped
         try:
-            wait('wait for guest been stopped', _wait_is_guest_stopped, timeout=WAIT_TIMEOUT, logger=self.logger)
+            wait(
+                'wait for guest been stopped',
+                _wait_is_guest_stopped,
+                timeout=KNOB_WAIT_TIMEOUT.value,
+                logger=self.logger
+            )
 
         except Exception as exc:
             return Error(Failure.from_exc('failed while waiting for guest been stopped', exc))
@@ -355,7 +365,12 @@ class OpenStackDriver(PoolDriver):
 
         # Wait until guest will be started
         try:
-            wait('wait for guest been stopped', _wait_is_guest_started, timeout=WAIT_TIMEOUT, logger=self.logger)
+            wait(
+                'wait for guest been stopped',
+                _wait_is_guest_started,
+                timeout=KNOB_WAIT_TIMEOUT.value,
+                logger=self.logger
+            )
 
         except Exception as exc:
             return Error(Failure.from_exc('failed while waiting for guest been started', exc))
