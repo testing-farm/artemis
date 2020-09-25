@@ -5,13 +5,15 @@ from prometheus_client import Gauge, CollectorRegistry, generate_latest
 
 
 import gluetool.log
+import sqlalchemy.orm.session
+import sqlalchemy.sql.schema
 
 from . import get_db, get_logger
 from . import db as artemis_db
 from . import tasks as artemis_tasks
 from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 
-from typing import cast, Optional
+from typing import cast, Any, Dict, Optional, Type
 
 _registry_lock = threading.Lock()
 
@@ -59,6 +61,52 @@ POOL_RESOURCES_CORES = _create_pool_resource_metric('cores')
 POOL_RESOURCES_MEMORY = _create_pool_resource_metric('memory', unit='bytes')
 POOL_RESOURCES_DISKSPACE = _create_pool_resource_metric('diskspace', unit='bytes')
 POOL_RESOURCES_SNAPSHOTS = _create_pool_resource_metric('snapshot')
+
+
+def upsert_metric(
+    session: sqlalchemy.orm.session.Session,
+    model: Type[artemis_db.Base],
+    primary_keys: Dict[Any, Any],
+    change: int
+) -> None:
+    """
+    Wrapper around :py:func:`tft.artemis.db.upsert` to simplify its use when it comes to metrics.
+
+    With metrics, the situation is simpler: we expect the given table has some primary key columns,
+    and one column called `count` we want to modify.
+    """
+
+    artemis_db.upsert(
+        session,
+        model,
+        primary_keys,
+        insert_data={getattr(model, 'count'): 1},
+        update_data={getattr(model, 'count'): getattr(model, 'count') + change}
+    )
+
+
+def upsert_inc_metric(
+    session: sqlalchemy.orm.session.Session,
+    model: Type[artemis_db.Base],
+    primary_keys: Dict[Any, Any]
+) -> None:
+    """
+    Increment a metric counter in DB by 1.
+    """
+
+    upsert_metric(session, model, primary_keys, 1)
+
+
+def upsert_dec_metric(
+    session: sqlalchemy.orm.session.Session,
+    model: Type[artemis_db.Base],
+    primary_keys: Dict[Any, Any]
+) -> None:
+    """
+    Decrement a metric counter in DB by 1.
+    """
+
+    upsert_metric(session, model, primary_keys, -1)
 
 
 @dataclasses.dataclass

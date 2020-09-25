@@ -16,6 +16,7 @@ import sqlalchemy.ext.declarative
 from sqlalchemy import BigInteger, Column, ForeignKey, String, Boolean, Enum, Text, Integer, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
+import sqlalchemy.sql.expression
 
 from typing import cast, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, Union
 import gluetool.log
@@ -103,6 +104,85 @@ class Query(Generic[T]):
             Callable[[], List[T]],
             self.query.all
         )()
+
+
+def upsert(
+    session: sqlalchemy.orm.session.Session,
+    model: Type[Base],
+    primary_keys: Dict[Any, Any],
+    *,
+    update_data: Dict[Any, Any],
+    insert_data: Optional[Dict[Any, Any]] = None
+) -> None:
+    """
+    Provide "INSERT ... ON CONFLICT UPDATE ..." primitive, also known as "UPSERT". Using primary key as a constraint,
+    if the given row already exists, an UPDATE clause is applied.
+
+    .. note::
+
+       While the UPSERT statement is generated and sent to the DB, it may remain unapplied, staying in the transaction
+       buffer, until a commit is performed. Luckily, consecutive UPSERTs should merge nicely into consistent result.
+
+    This helper is designed to update - for example increment - columns without the necessity of first creating
+    the records.
+
+    .. note::
+
+       So far, only PostgreSQL support is available. Other dialects may get support later when needed.
+
+    :param session: SQL session to use.
+    :param model: a table to work with, in the form of a ORM model class.
+    :param primary_keys: mapping of primary keys and their desired values. These are used:
+        * when the record does not exist yet - the caller has to specify what values should these columns have;
+        * when the record does exist - the values are used to limit the UPDATE clause to just this particular
+        record.
+    :param update_data: mapping of columns and update actions applied when the record does exist.
+    :param insert_data: mapping of columns and initial values applied when the record is created.
+    """
+
+    if session.bind.dialect.name != 'postgresql':
+        raise gluetool.glue.GlueError('UPSERT is not support for dialect "{}"'.format(session.bind.dialect.name))
+
+    from sqlalchemy.dialects.postgresql import insert
+
+    # Prepare condition for `WHERE` statement. Basically, we focus on given primary keys and their values. If we
+    # were given multiple columns, we need to join them via `AND` so we could present just one value to `where`
+    # parameter of the `on_conflict_update` clause.
+    if len(primary_keys) > 1:
+        where = sqlalchemy.sql.expression.and_(*[
+                column == value
+                for column, value in primary_keys.items()
+            ])
+
+    else:
+        column, value = list(primary_keys.items())[0]
+
+        where = (column == value)
+
+    # `values()` accepts only string as argument names, we cant pass a `Column` instance to it.
+    # But columns are easier to pass and type-check, which means we need to convert comments
+    # to their names. Also, since `values()` applies when inserting new record, we shouldn't
+    # forget the primary key columns neither.
+    statement = insert(model) \
+        .values(
+            **{
+                **{
+                    column.name: value
+                    for column, value in primary_keys.items()
+                },
+                **{
+                    column.name: value
+                    for column, value in (insert_data or {}).items()
+                }
+            }
+        ) \
+        .on_conflict_do_update(
+            constraint=model.__table__.primary_key,  # type: ignore
+            set_=update_data,
+            where=where
+        )
+
+    session.execute(statement)
 
 
 @dataclasses.dataclass
