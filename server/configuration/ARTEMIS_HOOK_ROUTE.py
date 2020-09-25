@@ -216,6 +216,9 @@ def hook_ROUTE(
     elif env.compose.is_openstack:
         suitable_pools = [pool for pool in pools if pool.__class__.__name__ == 'OpenStackDriver']
 
+    elif env.compose.is_azure:
+        suitable_pools = [pool for pool in pools if pool.__class__.__name__ == 'AzureDriver']
+
     # NOTE: beaker should be added here later, if Artemis will properly support it
 
     elif env.snapshots:

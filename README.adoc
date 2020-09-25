@@ -166,8 +166,8 @@ You can use samples and gen.sh script from configuration/ directory that will se
 
 1. `cp configuration/env.yml.sample configuration/env.yml`
 2. Populate `env.yml` file with details of your openstack tenant and ssh key pair to be used by Artemis as master-key.
-3. Create an openstack keypair with Artemis public ssh key with selected `openstack_key_name` from `env.yml`. For example,
-if `openstack_key_name` is `artemis`:
+3. Create an openstack keypair with Artemis public ssh key with selected `openstack.vms.keyname` from `env.yml`. For example,
+if `openstack.vms.keyname` is `artemis`:
 
 `openstack keypair create --public-key path/to/artemis.pub artemis`
 

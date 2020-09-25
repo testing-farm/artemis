@@ -101,6 +101,7 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--beaker-distro', help='name of beaker distro')
 @click.option('--openstack-image', help='name of openstack image')
 @click.option('--aws-image', help='name of aws image')
+@click.option('--azure-image', help='name of azure image')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
 @click.pass_obj
 def cmd_guest_create(
@@ -111,13 +112,14 @@ def cmd_guest_create(
         beaker_distro = None,
         openstack_image = None,
         aws_image = None,
+        azure_image = None,
         snapshots = False,
         priority_group = None
 ) -> None:
-    num_of_options = sum([ int(bool(o)) for o in [compose, beaker_distro, openstack_image, aws_image ]])
+    num_of_options = sum([ int(bool(o)) for o in [compose, beaker_distro, openstack_image, aws_image, azure_image ]])
     if num_of_options != 1:
         Logger().error('Exactly one of these options is needed:\n'
-                       '  --compose OR --beaker-distro OR --openstack-image --OR aws-image\n'
+                       '  --compose OR --beaker-distro OR --openstack-image OR --aws-image OR --azure-image\n'
                        'provided: {}'.format(num_of_options))
 
     environment = {}
@@ -130,6 +132,8 @@ def cmd_guest_create(
         environment['compose'] = {'openstack': {'image': openstack_image}}
     elif aws_image:
         environment['compose'] = {'aws': {'image': aws_image}}
+    elif azure_image:
+        environment['compose'] = {'azure': {'image': azure_image}}
     if snapshots:
         environment['snapshots'] = True
 

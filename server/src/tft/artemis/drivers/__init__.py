@@ -1,6 +1,7 @@
 import argparse
 import dataclasses
 import threading
+import re
 import sqlalchemy
 import sqlalchemy.orm.session
 
@@ -554,3 +555,27 @@ class PoolDriver(gluetool.log.LoggerMixin):
             metrics.resources = self._pool_resources_metrics
 
         return metrics
+
+
+def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Failure]:
+    if not output[key]:
+        # It's ok! That means the instance is not ready yet. We need to wait a bit for ip address.
+        return Ok(None)
+
+    match_obj = re.match(regex, output[key])
+    if not match_obj:
+        return Error(Failure('Failed to get an ip'))
+
+    return Ok(match_obj.group(1))
+
+
+def stdout_to_str(output: Any) -> str:
+    if output.stdout:
+        if isinstance(output.stdout, str):
+            cmd_out = output.stdout
+        else:
+            cmd_out = output.stdout.decode('utf-8')
+
+        assert isinstance(cmd_out, str)
+        return cmd_out
+    return ""

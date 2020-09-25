@@ -25,6 +25,7 @@ from .snapshot import Snapshot, SnapshotLogger
 from .drivers import aws as aws_driver
 from .drivers import beaker as beaker_driver
 from .drivers import openstack as openstack_driver
+from .drivers import azure as azure_driver
 
 from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Union
 from typing_extensions import Protocol
@@ -100,7 +101,8 @@ _CLOSE_AFTER_DISPATCH = normalize_bool_option(os.getenv('ARTEMIS_CLOSE_AFTER_DIS
 POOL_DRIVERS = {
     'aws': aws_driver.AWSDriver,
     'beaker': beaker_driver.BeakerDriver,
-    'openstack': openstack_driver.OpenStackDriver
+    'openstack': openstack_driver.OpenStackDriver,
+    'azure': azure_driver.AzureDriver,
 }
 
 
@@ -729,6 +731,11 @@ def get_pools(
         pools += [
             pool_driver_class(logger, pool_record.poolname, json.loads(pool_record.parameters))
         ]
+
+    # NOTE(ivasilev) Currently Azure driver can't guarantee proper authentication in case of more than one Azure
+    # pools, so need to warn the user about this.
+    if len([d for d in pools if isinstance(d, azure_driver.AzureDriver)]) > 1:
+        logger.warning('Multiple Azure pools are not supported at the moment, authentication may fail.')
 
     return pools
 

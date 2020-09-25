@@ -20,11 +20,17 @@ class AWSCompose:
 
 
 @dataclasses.dataclass
+class AzureCompose:
+    image: str
+
+
+@dataclasses.dataclass
 class Compose:
     id: Optional[str]
     beaker: Optional[BeakerCompose]
     openstack: Optional[OpenstackCompose]
     aws: Optional[AWSCompose]
+    azure: Optional[AzureCompose]
 
     @property
     def is_beaker(self) -> bool:
@@ -37,6 +43,10 @@ class Compose:
     @property
     def is_aws(self) -> bool:
         return self.id is None and self.aws is not None
+
+    @property
+    def is_azure(self) -> bool:
+        return self.id is None and self.azure is not None
 
 
 @dataclasses.dataclass
@@ -76,7 +86,8 @@ class Environment:
             id=None,
             beaker=None,
             openstack=None,
-            aws=None
+            aws=None,
+            azure=None
         )
 
         if 'compose' in serialized:
@@ -92,5 +103,6 @@ class Environment:
             _add_complex_container('beaker', BeakerCompose)
             _add_complex_container('openstack', OpenstackCompose)
             _add_complex_container('aws', AWSCompose)
+            _add_complex_container('azure', AzureCompose)
 
         return env

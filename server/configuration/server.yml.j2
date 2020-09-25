@@ -15,18 +15,30 @@ pools:
   - name: openstack
     driver: openstack
     parameters:
-      username: "{{ credentials.username }}"
-      password: "{{ credentials.password }}"
-      auth-url: "{{ credentials.auth_url }}"
-      project-name: "{{ credentials.project_name }}"
-      project-domain-name: "{{ credentials.project_domain_name }}"
-      project-domain-id: "{{ credentials.project_domain_id }}"
-      user-domain-name: "{{ credentials.user_domain_name }}"
-      api-version: "{{ credentials.identity_api_version }}"
-      master-key-name: "{{ keys.openstack_key_name }}"
+      username: "{{ openstack.credentials.username }}"
+      password: "{{ openstack.credentials.password }}"
+      auth-url: "{{ openstack.credentials.auth_url }}"
+      project-name: "{{ openstack.credentials.project_name }}"
+      {% if openstack.credentials.project_domain_id is defined and openstack.credentials.project_domain_id != "" %}
+      project-domain-id: "{{ openstack.credentials.project_domain_id }}"
+      {% else %}
+      project-domain-name: "{{ openstack.credentials.project_domain_name }}"
+      {% endif %}
+      user-domain-name: "{{ openstack.credentials.user_domain_name }}"
+      api-version: "{{ openstack.credentials.identity_api_version }}"
+      master-key-name: "{{ openstack.vms.keyname }}"
 
-      default-flavor: "{{ vms.default_flavor }}"
-      network-regex: "{{ vms.network_regex }}"
+      default-flavor: "{{ openstack.vms.default_flavor }}"
+      network-regex: '{{ openstack.vms.network_regex }}'
       ip-version: "4"
 
       snapshots: true
+
+  - name: azure
+    driver: azure
+    parameters:
+      username: "{{ azure.credentials.username }}"
+      password: "{{ azure.credentials.password }}"
+      resource-group: "{{ azure.vms.resource_group }}"
+      # snapshot feature is not yet implemented for Azure driver
+      snapshots: false
