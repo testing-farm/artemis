@@ -152,20 +152,20 @@ class AzureDriver(PoolDriver):
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
         cmd = ['resource', 'list', '--tag', 'uid={}'.format(guest.instance_name)]
-        resources_by_tag = self._run_cmd(cmd).unwrap()
+        resources_by_tag = self._run_cmd_with_auth(cmd).unwrap()
 
         def _delete_resource(res_id: str) -> Any:
             options = ['resource', 'delete', '--ids', res_id]
-            return self._run_cmd(options, json_format=False)
+            return self._run_cmd_with_auth(options, json_format=False)
 
         # delete vm first, resources second
         del_output = [_delete_resource(guest.instance_id)]
         for res in [r for r in resources_by_tag if r["type"] != "Microsoft.Compute/virtualMachines"]:
             del_output.append(_delete_resource(res['id']))
-        del_errors = [x for x in del_output if x.is_error]
+        del_errors = [x._value.details['command_output'].stderr for x in del_output if x.is_error]
         if del_errors:
             return Error(Failure('The following resources were not cleaned up: {}'.format(
-                '\n'.join([x.value for x in del_errors]))))
+                b'\n'.join(del_errors))))
 
         return Ok(True)
 
@@ -322,6 +322,14 @@ class AzureDriver(PoolDriver):
             return Error(Failure.from_exc(
                 "Failed to parse output of 'az {}' to json".format(' '.join(options)), exc))
 
+    def _run_cmd_with_auth(self, options: List[str], json_format: bool = True,
+                           login: bool = True) -> Result[Any, Failure]:
+        if login:
+            login_output = self._login()
+            if login_output.is_error:
+                return Error(login_output.value)
+        return self._run_cmd(options, json_format)
+
     def _login(self) -> Result[Any, Failure]:
         # login if credentials have been passed -> try to login
         if self.pool_config['username'] and self.pool_config['password']:
@@ -339,7 +347,7 @@ class AzureDriver(PoolDriver):
         login_output = self._login()
         if login_output.is_error:
             return Error(login_output.value)
-        r_output = self._run_cmd(['vm', 'show', '-d', '--ids', instance_id])
+        r_output = self._run_cmd_with_auth(['vm', 'show', '-d', '--ids', instance_id])
         if r_output.is_error:
             return Error(r_output.value)
         return Ok(r_output.unwrap())
@@ -370,20 +378,15 @@ class AzureDriver(PoolDriver):
             '--name', name,
             '--tags', 'uid={}'.format(name)
         ]
-
-        r_output = self._run_cmd(az_options)
-
+        r_output = self._run_cmd_with_auth(az_options)
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
         output = r_output.unwrap()
-
         if not output['id']:
             return Error(Failure('Instance id not found'))
-        instance_id = output['id']
 
         status = output['powerState'].lower()
-
         self.logger.info('instance status is {}'.format(status))
 
         # There is no chance that the guest will be ready in this step
@@ -391,7 +394,7 @@ class AzureDriver(PoolDriver):
         return Ok(
             AzureGuest(
                 guest_request.guestname,
-                instance_id,
+                output['id'],
                 name,
                 self.pool_config['resource-group'],
                 address=None,
