@@ -1,5 +1,5 @@
-# source: https://gitlab.com/testing-farm/images/tree/master/python-ci-image
-image: quay.io/testing-farm/python-ci-image
+# source: https://gitlab.com/testing-farm/artemis/tree/master/container/Dockerfile.gitlab-ci
+image: quay.io/testing-farm/gitlab-ci-artemis
 
 stages:
   - test
@@ -8,7 +8,6 @@ stages:
 tests:
   stage: test
   script:
-    - apt-get update && apt-get install -y libxml2-dev libxslt1-dev
     - wget -O - https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python3
     - source $HOME/.poetry/env
     # Force poetry to create its virtualenvs inside project directory, to avoid complications
