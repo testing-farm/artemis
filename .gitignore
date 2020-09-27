@@ -15,5 +15,12 @@ dist
 *~
 *.pyc
 
+
+# Generated docs and their sources
+server/autodocs/source/tft.artemis.rst
+server/autodocs/source/tft.artemis.*.rst
+server/autodocs/build/*
 docs/public/*
+
+# Coverage HTML report
 htmlcov
