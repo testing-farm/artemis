@@ -518,6 +518,13 @@ class PoolResourcesMetrics(Base):
         return cls.get_by_pool(session, poolname, PoolResourcesMetricsDimensions.USAGE)
 
 
+class Knob(Base):
+    __tablename__ = 'knobs'
+
+    knobname = Column(String(), primary_key=True, nullable=False)
+    value = Column(String(), nullable=False)
+
+
 class DB:
     instance: 'Optional[__DB]' = None
     _lock = threading.RLock()

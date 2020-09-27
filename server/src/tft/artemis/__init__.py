@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import traceback as _traceback
@@ -17,14 +18,15 @@ from gluetool.result import Result, Ok, Error
 import ruamel.yaml
 import ruamel.yaml.compat
 import sqlalchemy.orm.session
-import periodiq
+from sqlalchemy.orm.session import Session
 
+import periodiq
 
 from . import db as artemis_db
 from . import vault as artemis_vault
 from . import middleware as artemis_middleware
 
-from typing import cast, Any, Callable, Dict, List, NoReturn, Optional, Tuple, TypeVar, Union
+from typing import cast, Any, Callable, Dict, Generic, List, NoReturn, Optional, Tuple, TypeVar, Union
 from types import TracebackType
 
 import stackprinter
@@ -330,6 +332,284 @@ class Failure:
 
             else:
                 logger.warning('not submitted to Sentry')
+
+
+class KnobSource(Generic[T]):
+    """
+    Represents one of the possible sources of a knob value. Child classes implement the actual
+    "get the value" process.
+
+    :param knob: parent knob instance.
+    """
+
+    def __init__(self, knob: 'Knob[T]') -> None:
+        self.knob = knob
+
+    def get_value(self, *args: Any) -> Result[Optional[T], Failure]:
+        """
+        Acquires and returns the knob value, or ``None`` if the value does not exist. If it may exist but the process
+        failed with an error, returns a :py:class:`Failure` describing the error.
+        """
+
+        raise NotImplementedError()
+
+    def to_repr(self) -> List[str]:
+        """
+        Return list of string that shall be added to knob's ``repr()`` representation.
+        """
+
+        raise NotImplementedError()
+
+
+class KnobSourceEnv(KnobSource[T]):
+    """
+    Read knob value from an environment variable.
+
+    :param envvar: name of the environment variable.
+    :param type_cast: a callback used to cast the raw string to the correct type.
+    """
+
+    def __init__(self, knob: 'Knob[T]', envvar: str, type_cast: Callable[[str], T]) -> None:
+        super(KnobSourceEnv, self).__init__(knob)
+
+        self.envvar = envvar
+        self.type_cast = type_cast
+
+    def get_value(self, *args: Any) -> Result[Optional[T], Failure]:
+        if self.envvar not in os.environ:
+            return Ok(None)
+
+        return Ok(
+            self.type_cast(os.environ[self.envvar])
+        )
+
+    def to_repr(self) -> List[str]:
+        return [
+            'envvar="{}"'.format(self.envvar),
+            'envvar-type-cast={}'.format(self.type_cast.__name__)
+        ]
+
+
+class KnobSourceDefault(KnobSource[T]):
+    """
+    Use the given default value as the actual value of the knob.
+
+    :param default: the value to be presented as the knob value.
+    """
+
+    def __init__(self, knob: 'Knob[T]', default: T) -> None:
+        super(KnobSourceDefault, self).__init__(knob)
+
+        self.default = default
+
+    def get_value(self, *args: Any) -> Result[Optional[T], Failure]:
+        return Ok(self.default)
+
+    def to_repr(self) -> List[str]:
+        return [
+            'default="{}"'.format(self.default)
+        ]
+
+
+class KnobSourceDB(KnobSource[T]):
+    """
+    Read knob value from a database.
+
+    Values are stored as JSON blobs, to preserve their types.
+    """
+
+    def get_value(self, session: Session, *args) -> Result[Optional[T], Failure]:  # type: ignore  # match parent
+        from .db import Query, Knob as KnobRecord
+
+        knob = Query.from_session(session, KnobRecord) \
+            .filter(KnobRecord.knobname == self.knob.knobname) \
+            .one_or_none()
+
+        if not knob:
+            return Ok(None)
+
+        try:
+            return Ok(cast(T, json.loads(knob.value)))
+
+        except json.JSONDecodeError as exc:
+            from . import Failure
+
+            return Error(Failure.from_exc('Cannot decode knob value', exc))
+
+    def to_repr(self) -> List[str]:
+        return [
+            'has-db=yes'
+        ]
+
+
+class KnobError(ValueError):
+    def __init__(self, knob: 'Knob[T]', message: str, failure: Optional[Failure] = None) -> None:
+        super(KnobError, self).__init__('Badly configured knob: {}'.format(message))
+
+        self.knobname = knob.knobname
+        self.failure = failure
+
+
+class Knob(Generic[T]):
+    """
+    A "knob" represents a - possibly tweakable - parameter of Artemis or one of its parts. Knobs:
+
+    * are typed values,
+    * may have a default value,
+    * may be given via environment variable,
+    * may be stored in a database.
+
+    Some of the knobs are not backed by a database, especially knobs needed by code establishing the database
+    connections.
+
+    The resolution order in which possible sources are checked when knob value is needed:
+
+    1. the database, if the knob declaration specifies the database may be used.
+    2. the environment variable.
+    3. the default value.
+
+    A typical knob may look like this:
+
+    .. code-block:: python3
+
+       # As a two-state knob, `bool` is the best choice here.
+       KNOB_LOGGING_JSON: Knob[bool] = Knob(
+           # A knob name.
+           'logging.json',
+
+           # This knob is not backed by a database.
+           has_db=False,
+
+           # This knob gets its value from the following environment variable. It is necessary to provide
+           # a callback that casts the raw string value to the proper type.
+           envvar='ARTEMIS_LOG_JSON',
+           envvar_cast=gluetool.utils.normalize_bool_option,
+
+           # The default value - note that it is properly typed.
+           default=True
+       )
+
+    The knob can be used in a following way:
+
+    .. code-block:: python3
+
+       >>> print(KNOB_LOGGING_JSON.get_value())
+       True
+       >>>
+
+    In the case of knobs not backed by the database, the value can be deduced when the knob is declared, and it is then
+    possible to use a shorter form:
+
+    .. code-block:: python3
+
+       >>> print(KNOB_LOGGING_JSON.value)
+       True
+       >>>
+
+    :param knobname: name of the knob. It is used for presentation and as a key when the database is involved.
+    :param has_db: if set, the value may also be stored in the database.
+    :param envvar: if set, it is the name of the environment variable providing the value.
+    :param envvar_cast: a callback used to cast the raw environment variable content to the correct type.
+        Required when ``envvar`` is set.
+    :param default: if set, it is used as a default value.
+    """
+
+    def __init__(
+        self,
+        knobname: str,
+        has_db: bool = True,
+        envvar: Optional[str] = None,
+        envvar_cast: Optional[Callable[[str], T]] = None,
+        default: Optional[T] = None,
+    ) -> None:
+        self.knobname = knobname
+        self._sources: List[KnobSource[T]] = []
+
+        if has_db:
+            self._sources.append(KnobSourceDB(self))
+
+        if envvar is not None:
+            if not envvar_cast:
+                raise Exception('Knob {} defined with envvar but no envvar_cast'.format(knobname))
+
+            self._sources.append(KnobSourceEnv(self, envvar, envvar_cast))
+
+        if default is not None:
+            self._sources.append(KnobSourceDefault(self, default))
+
+        if not self._sources:
+            raise KnobError(
+                self,
+                'no source specified - no DB, envvar nor default value.'
+            )
+
+        # If the knob isn't backed by a database, it should be possible to deduce its value *now*,
+        # as it depends on envvar or the default value. For such knobs, we provide a shortcut,
+        # easy-to-use `value` attribute - no `Result`, no `unwrap()` - given the possible sources,
+        # it should never fail to get a value from such sources.
+        if not has_db:
+            value, failure = self._get_value()
+
+            # If we fail to get value from envvar/default sources, then something is wrong. Maybe there's
+            # just the envvar source, no default one, and environment variable is not set? In any case,
+            # this sounds like a serious bug.
+            if value is None:
+                raise KnobError(
+                    self,
+                    'no DB, yet other sources do not provide value! To fix, add an envvar source, or a default value.',
+                    failure=failure
+                )
+
+            self.value = value
+
+    def __repr__(self) -> str:
+        return '<Knob: {}: {}>'.format(
+            self.knobname,
+            ', '.join(sum([source.to_repr() for source in self._sources], []))
+        )
+
+    def _get_value(self, *args: Any) -> Tuple[Optional[T], Optional[Failure]]:
+        """
+        The core method for getting the knob value. Returns two items:
+
+        * the value, or ``None`` if the value was not found.
+        * optional :py:class:`Failure` instance if the process failed because of an error.
+        """
+
+        for source in self._sources:
+            r = source.get_value(*args)
+
+            if r.is_error:
+                return None, r.unwrap_error()
+
+            value = r.unwrap()
+
+            if value is None:
+                continue
+
+            return value, None
+
+        return None, None
+
+    def get_value(self, *args: Any) -> Result[T, Failure]:
+        """
+        Returns either the knob value, of :py:class:`Failure` instance describing the error encountered, including
+        the "value does not exist" state.
+
+        All positional arguments are passed down to code handling each different sources.
+        """
+
+        value, failure = self._get_value(*args)
+
+        if value is not None:
+            return Ok(value)
+
+        if failure:
+            return Error(failure)
+
+        from . import Failure
+
+        return Error(Failure('Cannot fetch knob value'))
 
 
 def get_logger() -> gluetool.log.ContextAdapter:
