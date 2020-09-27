@@ -759,6 +759,8 @@ KNOB_BROKER_URL: Knob[str] = Knob(
     default='amqp://guest:guest@127.0.0.1:5672'
 )
 
+#: RabbitMQ client should ping the server over established connection to keep both parties
+#: aware the connection should be kept alive.
 KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
     'broker.heartbeat-timeout',
     has_db=False,
@@ -766,10 +768,6 @@ KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
     envvar_cast=int,
     default=60
 )
-"""
-RabbitMQ client should ping the server over established connection to keep both parties
-aware the connection should be kept alive.
-"""
 
 KNOB_BROKER_BLOCKED_TIMEOUT: Knob[int] = Knob(
     'broker.blocked-timeout',

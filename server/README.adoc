@@ -161,4 +161,3 @@ If Artemis is killed (e.g. CTRL+C), wait for all pods to be terminated before so
 * alternatively execute API call via web browser
   * find out API url:`minishift openshift service --url artemis-api`
   * add '_docs' to url and open in browser
-

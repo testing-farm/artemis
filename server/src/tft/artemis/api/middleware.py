@@ -53,19 +53,17 @@ KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
     default=False
 )
 
+#: This header is added by our authorization middleware, to transport an auth context to route handlers.
+#:
+#: Note that user may specify its own value, but that shouldn't matter, because our middleware
+#: overwrites the provided value with our own string, throwing whatever user tried to sneak in away.
+#: Before every request, the middleware does its own tests, based entirely on provided credentials.
+#:
+#: This solution is far from being perfect, but I do not know how to transport the auth context
+#: down to handlers, in a Molten way, e.g. using dependency injection. Looking at things, I always
+#: get down to the fact that I need to attach something to a request, and ``Request`` class is using
+#: ``__slots__`` which means I cannot add any new attributes.
 AUTH_CTX_HEADER = 'x-auth-ctx'
-"""
-This header is added by our authorization middleware, to transport an auth context to route handlers.
-
-Note that user may specify its own value, but that shouldn't matter, because our middleware
-overwrites the provided value with our own string, throwing whatever user tried to sneak in away.
-Before every request, the middleware does its own tests, based entirely on provided credentials.
-
-This solution is far from being perfect, but I do not know how to transport the auth context
-down to handlers, in a Molten way, e.g. using dependency injection. Looking at things, I always
-get down to the fact that I need to attach something to a request, and ``Request`` class is using
-``__slots__`` which means I cannot add any new attributes.
-"""
 
 
 def matches_path(request: Request, patterns: List[Pattern[str]]) -> bool:
