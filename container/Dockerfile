@@ -47,6 +47,9 @@ RUN    apk add --no-cache bash \
                           postgresql-dev \
                           python3 \
                           python3-dev \
+                          tzdata \
+    && cp /usr/share/zoneinfo/Universal /etc/localtime \
+    && echo "Universal" > /etc/timezone \
     && if [ ! -e /usr/bin/python ]; then ln -sf python3 /usr/bin/python ; fi \
     && python3 -m ensurepip \
     && pip3 install --no-cache --upgrade pip setuptools virtualenv wheel \
