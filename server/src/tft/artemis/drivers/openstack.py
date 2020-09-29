@@ -328,6 +328,7 @@ class OpenStackDriver(PoolDriver):
             '--network', network,
             '--key-name', self.pool_config['master-key-name'],
             '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
+            '--security-group', self.pool_config.get('security-group', 'default'),
             name
         ]
 
