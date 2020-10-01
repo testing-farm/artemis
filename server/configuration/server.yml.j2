@@ -30,7 +30,7 @@ pools:
       user-domain-name: "{{ openstack.credentials.user_domain_name }}"
       api-version: "{{ openstack.credentials.identity_api_version }}"
       master-key-name: "{{ openstack.vms.keyname }}"
-      security-group: "{{ openstack.credentials.security_group }}"
+      security-group: "{{ openstack.vms.security_group }}"
 
       default-flavor: "{{ openstack.vms.default_flavor }}"
       network-regex: '{{ openstack.vms.network_regex }}'
