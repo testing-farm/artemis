@@ -554,7 +554,7 @@ class DB:
                     'max_overflow': max_overflow
                 })
 
-                self._engine = sqlalchemy.create_engine(
+                self.engine = sqlalchemy.create_engine(
                     url,
                     echo_pool=self._echo_pool,
                     pool_size=pool_size,
@@ -563,20 +563,20 @@ class DB:
 
             # SQLite does not support altering pool size nor max overflow
             else:
-                self._engine = sqlalchemy.create_engine(url)
+                self.engine = sqlalchemy.create_engine(url)
 
-            self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self._engine)
+            self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self.engine)
 
         def pool_metrics(self) -> DBPoolMetrics:
             with DB._lock:
                 # Some pools, like NullPool, don't really pool connections, therefore they have no concept
                 # of these metrics.
-                if hasattr(self._engine.pool, 'size'):
+                if hasattr(self.engine.pool, 'size'):
                     return DBPoolMetrics(
-                        size=self._engine.pool.size(),
-                        checked_in_connections=self._engine.pool.checkedin(),
-                        checked_out_connections=self._engine.pool.checkedout(),
-                        current_overflow=self._engine.pool.overflow()
+                        size=self.engine.pool.size(),
+                        checked_in_connections=self.engine.pool.checkedin(),
+                        checked_out_connections=self.engine.pool.checkedout(),
+                        current_overflow=self.engine.pool.overflow()
                     )
 
                 else:
@@ -625,7 +625,7 @@ class DB:
                 # those attributes should never be used, use instance attributes only
                 cls.get_session = DB.instance.get_session  # type: Callable[[], Any]
                 cls.pool_metrics = DB.instance.pool_metrics  # type: Callable[[], DBPoolMetrics]
-                cls._engine = DB.instance._engine  # type: sqlalchemy.engine.Engine
+                cls.engine = DB.instance.engine  # type: sqlalchemy.engine.Engine
 
             return DB.instance
 

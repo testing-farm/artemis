@@ -59,7 +59,7 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = get_db(get_logger())._engine
+    connectable = get_db(get_logger()).engine
 
     # This trick should result in not generating a revision if there are no changes to schema.
     def process_revision_directives(context: str, revision: str, directives: List[Any]) -> None:
