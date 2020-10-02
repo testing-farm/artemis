@@ -586,7 +586,13 @@ def get_guest_events(guestname: str, request: Request, manager: GuestEventManage
 
 
 def get_metrics(request: Request) -> APIResponse:
-    return APIResponse(stream=metrics.generate_metrics(), request=request)
+    logger = get_logger()
+    db = get_db(logger)
+
+    return APIResponse(
+        stream=metrics.Metrics.render_prometheus_metrics(logger, db),
+        request=request
+    )
 
 
 def get_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:

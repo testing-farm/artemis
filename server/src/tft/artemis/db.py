@@ -1,4 +1,3 @@
-import dataclasses
 import datetime
 import enum
 import hashlib
@@ -183,15 +182,6 @@ def upsert(
         )
 
     session.execute(statement)
-
-
-@dataclasses.dataclass
-class DBPoolMetrics:
-    ''' Class for storing DB pool metrics '''
-    size: int = 0
-    checked_in_connections: int = 0
-    checked_out_connections: int = 0
-    current_overflow: int = 0
 
 
 class UserRoles(enum.Enum):
@@ -572,37 +562,19 @@ class DB:
 
             self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self.engine)
 
-        def pool_metrics(self) -> DBPoolMetrics:
-            with DB._lock:
-                # Some pools, like NullPool, don't really pool connections, therefore they have no concept
-                # of these metrics.
-                if hasattr(self.engine.pool, 'size'):
-                    return DBPoolMetrics(
-                        size=self.engine.pool.size(),
-                        checked_in_connections=self.engine.pool.checkedin(),
-                        checked_out_connections=self.engine.pool.checkedout(),
-                        current_overflow=self.engine.pool.overflow()
-                    )
-
-                else:
-                    return DBPoolMetrics(
-                        size=-1,
-                        checked_in_connections=-1,
-                        checked_out_connections=-1,
-                        current_overflow=-1
-                    )
-
         @contextmanager
         def get_session(self) -> Iterator[sqlalchemy.orm.session.Session]:
             with DB._lock:
+                session = self._sessionmaker()
+
                 if self._echo_pool:
+                    from .metrics import DBPoolMetrics
+
                     gluetool.log.log_dict(
                         self.logger.info,
                         'pool metrics',
-                        self.pool_metrics()
+                        DBPoolMetrics.load(self.logger, self, session)  # type: ignore
                     )
-
-                session = self._sessionmaker()
 
             try:
                 yield session
@@ -629,7 +601,6 @@ class DB:
                 # declared as class attributes only to avoid typing errors ("DB has no attribute" ...)
                 # those attributes should never be used, use instance attributes only
                 cls.get_session = DB.instance.get_session  # type: Callable[[], Any]
-                cls.pool_metrics = DB.instance.pool_metrics  # type: Callable[[], DBPoolMetrics]
                 cls.engine = DB.instance.engine  # type: sqlalchemy.engine.Engine
 
             return DB.instance
