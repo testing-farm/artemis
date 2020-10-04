@@ -194,11 +194,6 @@ class DBPoolMetrics:
     current_overflow: int = 0
 
 
-# SQLAlchemy defaults
-DEFAULT_SQLALCHEMY_POOL_SIZE = 20
-DEFAULT_SQLALCHEMY_MAX_OVERFLOW = 10
-
-
 class UserRoles(enum.Enum):
     """
     Possible user roles.
@@ -535,25 +530,28 @@ class DB:
             logger: gluetool.log.ContextAdapter,
             url: str
         ) -> None:
+            from . import KNOB_LOGGING_DB_QUERIES, KNOB_LOGGING_DB_POOL, KNOB_DB_SQLALCHEMY_POOL_OVERFLOW, \
+                KNOB_DB_SQLALCHEMY_POOL_SIZE
+
             self.logger = logger
 
             logger.info('connecting to db {}'.format(url))
 
-            if os.getenv('ARTEMIS_LOG_DB_QUERIES', None) == 'yes':
+            if KNOB_LOGGING_DB_QUERIES.value:
                 gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
 
             self._echo_pool: Union[str, bool] = False
-            if 'ARTEMIS_LOG_DB_POOL' in os.environ:
-                if os.environ['ARTEMIS_LOG_DB_POOL'].lower() == 'debug':
-                    self._echo_pool = 'debug'
 
-                elif os.environ['ARTEMIS_LOG_DB_POOL'].lower() == 'yes':
-                    self._echo_pool = gluetool.utils.normalize_bool_option(os.environ['ARTEMIS_LOG_DB_POOL'])
+            if KNOB_LOGGING_DB_POOL.value == 'debug':
+                self._echo_pool = 'debug'
+
+            else:
+                self._echo_pool = gluetool.utils.normalize_bool_option(KNOB_LOGGING_DB_POOL.value)
 
             # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
             if url.startswith('postgresql://'):
-                pool_size = os.getenv('ARTEMIS_SQLALCHEMY_POOL_SIZE', DEFAULT_SQLALCHEMY_POOL_SIZE)
-                max_overflow = os.getenv('ARTEMIS_SQLALCHEMY_MAX_OVERFLOW', DEFAULT_SQLALCHEMY_MAX_OVERFLOW)
+                pool_size = KNOB_DB_SQLALCHEMY_POOL_SIZE.value
+                max_overflow = KNOB_DB_SQLALCHEMY_POOL_OVERFLOW.value
 
                 gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
                     'echo_pool': self._echo_pool,
@@ -721,14 +719,12 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
 
 def init_postgres() -> None:
     # `artemis` imports `artemis.db`, therefore `artemis.db` cannot import artemis on module-level.
-    from . import get_logger, get_config, get_db_url, get_db
+    from . import get_logger, get_config, get_db, KNOB_DB_URL
 
     logger = get_logger()
     server_config = get_config()
 
-    db_url = get_db_url()
-
-    assert db_url.startswith('postgresql://')
+    assert KNOB_DB_URL.value.startswith('postgresql://')
 
     db = get_db(logger)
 
@@ -737,16 +733,14 @@ def init_postgres() -> None:
 
 def init_sqlite() -> None:
     # `artemis` imports `artemis.db`, therefore `artemis.db` cannot import artemis on module-level.
-    from . import get_logger, get_config, get_db_url, get_db
+    from . import get_logger, get_config, get_db, KNOB_DB_URL
 
     logger = get_logger()
     server_config = get_config()
 
-    db_url = get_db_url()
+    assert KNOB_DB_URL.value.startswith('sqlite:///')
 
-    assert db_url.startswith('sqlite:///')
-
-    db_filepath = db_url[10:]
+    db_filepath = KNOB_DB_URL.value[10:]
 
     try:
         os.unlink(db_filepath)

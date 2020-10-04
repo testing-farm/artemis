@@ -1,4 +1,3 @@
-import os
 import json
 import re
 import threading
@@ -10,7 +9,7 @@ from gluetool.result import Result, Ok, Error
 from gluetool.utils import Command, normalize_bool_option
 
 from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics
-from .. import Failure
+from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..guest import Guest, SSHInfo
@@ -21,7 +20,12 @@ from typing import cast, Any, Dict, List, Optional
 
 
 # Temeout for wait function in _stop_guest and _start_guest events
-WAIT_TIMEOUT = int(os.getenv('ARTEMIS_OPENSTACK_WAIT_TIMEOUT', 180))
+KNOB_WAIT_TIMEOUT: Knob[int] = Knob(
+    'openstack.wait-timeout',
+    envvar='ARTEMIS_OPENSTACK_WAIT_TIMEOUT',
+    envvar_cast=int,
+    default=180
+)
 
 
 class OpenStackGuest(Guest):
