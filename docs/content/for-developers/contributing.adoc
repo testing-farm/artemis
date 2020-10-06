@@ -1,0 +1,237 @@
+---
+title: "Contributing"
+date: 2020-10-05T17:09:42+02:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+First of all, thank you considering contributing to Artemis! We welcome any kinds of contributions making Artemis better project for all its users.
+
+You can contribute in many ways:
+
+* improving the documentation: from fixing typos to rewriting paragraphs for better clarity and even whole pages describing important topic, best practices, HOWTOs or examples.
+* extending the test coverage: new unit tests, extending static analysis to areas left unchecked so far, or even bringing new tools to improve quality of this project.
+* adding the source code: bug fixes, drivers for yet unsupported cloud platforms, or diving deep into the core and pointing out things that could be done better? We couldn't be happier!
+
+#TODO: Explain contributions you are NOT looking for (if any).#
+
+[source,markdown]
+....
+Again, defining this up front means less work for you. If someone ignores your guide and submits something you don’t want, you can simply close it and point to your policy.
+
+> Please, don't use the issue tracker for [support questions]. Check whether the #pocoo IRC channel on Freenode can help with your issue. If your problem is not strictly Werkzeug or Flask specific, #python is generally more active. Stack Overflow is also worth considering.
+
+[source: [Flask](https://github.com/pallets/flask/blob/master/CONTRIBUTING.rst)] **Need more inspiration?** [1] [cucumber-ruby](https://github.com/cucumber/cucumber-ruby/blob/master/CONTRIBUTING.md#about-to-create-a-new-github-issue) [2] [Read the Docs](http://read-the-docs.readthedocs.org/en/latest/open-source-philosophy.html#unsupported)
+....
+
+== Ground Rules
+
+#TODO: shall we add some sort of Code of conduct? Started with Python's very own.#
+
+* In every moment, behave like a decent human being, be open, considerate, and respectful. Discuss the problem, not the person. We recommend https://www.python.org/psf/conduct/[Python Community Code of Conduct] for more details.
+* Be aware that the pull request review process is not immediate, and is generally proportional to the size of the pull request.
+* Each pull request should implement *ONE* feature or bugfix. If you want to add or fix more than one thing, submit more than one pull request.
+* Do not commit changes to files that are irrelevant to your feature or bugfix (eg: `.gitignore`).
+* Do not add unnecessary requirements.
+* Tests - and CI pipeline for your pull request - must succeed before your changes can get merged. Tools we use for testing the project can be found below.
+* Create issues for any major changes and enhancements you wish to make. Discuss things transparently and get community feedback.
+* Be willing to accept criticism and work on improving your code.
+* If your pull request is merged, please do not ask for an immediate release. There are many factors contributing to when releases occur.
+
+
+== Your First Contribution
+
+As a newcomer on a large project, it’s easy to experience frustration. Here’s some advice to help you begin.
+
+* Pick a subject area that you care about, that you are familiar with, or that you want to learn about. You don’t already have to be an expert on the area you want to work on; you become an expert through your ongoing contributions to the code while building a solution for your use case.
+* Start small. It’s easier to get feedback on a little issue than on a big one.
+* If you’re going to engage in a big task, make sure that your idea has support first. This means getting someone else to confirm that a bug is real before you fix the issue, and ensuring that there’s consensus on a proposed feature before you go implementing it.
+* Leave feedback. Sometimes it can be scary to put your opinion out to the world and say “this ticket is correct” or “this patch needs work”, but it’s the only way the project moves forward.
+* Wait for feedback, and respond to feedback that you receive. Focus on a few tickets, see them through from start to finish, and repeat. The shotgun approach of taking on lots of tickets and letting some fall by the wayside ends up doing more harm than good.
+* Be rigorous. When we say “tests must succeed", we mean it. If a patch makes docs obsolete, there had better be a good reason. Even better one if applied to tests.
+
+Some of our issues have been picked as good first issues, if you conteplate contributing and not sure about where to start, https://gitlab.com/testing-farm/artemis/-/issues?scope=all&utf8=%E2%9C%93&state=opened&label_name[]=Good%20First%20Issue[this search] may get you started.
+
+If this would be your first contribution to an Open Source project, there's a couple of tutorials to help you feel more comfortable with workflows involved:
+
+* http://makeapullrequest.com/
+* http://www.firsttimersonly.com/
+* https://egghead.io/series/how-to-contribute-to-an-open-source-project-on-github
+
+#TODO: do we want to require tests and docs with all submissions?#
+
+== How to report a bug
+
+=== Security issues
+
+If you find a security vulnerability, do NOT open an issue. Email XXXX instead. In order to determine whether you are dealing with a security issue, ask yourself these two questions:
+
+* Can I access something that's not mine, or something I shouldn't have access to?
+* Can I disable something for other people?
+
+If the answer to either of those two questions are "yes", then you're probably dealing with a security issue. Note that even if you answer "no" to both questions, you may still be dealing with a security issue, so if you're unsure, just email us at XXXX.
+
+#TODO: what e-mail(s) do we have? If any...#
+
+=== Other bugs
+
+When reporting a bug, please:
+
+* use the template provided below. Copy and paste it into Gitlab's "New Issue" form, and fill in the blanks. The template should guide you through steps needed to share every important piece of information.
+* check whether the similar bug has been reported in the past: link:++https://gitlab.com/testing-farm/artemis/-/issues?scope=all&utf8=%E2%9C%93&state=opened&label_name[]=Bug++[open bugs] and link:++https://gitlab.com/testing-farm/artemis/-/issues?scope=all&utf8=%E2%9C%93&state=closed&label_name[]=Bug++[closed bugs]. If you find out the bug was reported and closed, please, do *not* reopen the closed bug - file a new one, and reference the closed issue in your report.
+* feel free to add `User Request` and `Bug` labels right away.
+
+#TODO: what else we want the reporter to do before reporting a bug? Anything else to check?#
+
+[source]
+....
+## Prerequisites
+
+* [ ] Put an `X` between the brackets on this line if you have done all of the following:
+    * Checked that the issue isn't already filed
+
+## Description
+
+<!-- Description of the issue -->
+
+## Steps to Reproduce
+
+1. <!-- First step... -->
+2. <!-- Second step... -->
+3. <!-- and so on... -->
+
+**Expected behavior:**
+
+<!-- What you expect to happen. -->
+
+**Actual behavior:**
+
+<!-- What actually happens. Include error messages, tracebacks and other information that may help identify the issue. -->
+
+**Reproduces how often:**
+
+<!-- What percentage of the time does it reproduce? Is it reproducible every time you try? -->
+
+## Versions
+
+<!-- List versions of Artemis packages, or, if you are working with the sources, list commit IDs. -->
+
+## Additional Information
+
+<!-- Any additional information, configuration or data that might be necessary to reproduce the issue. -->
+....
+
+[source,markdown]
+....
+# How to suggest a feature or enhancement
+### If you have a particular roadmap, goals, or philosophy for development, share it here.
+This information will give contributors context before they make suggestions that may not align with the project’s needs.
+
+> The Express philosophy is to provide small, robust tooling for HTTP servers, making it a great solution for single page applications, web sites, hybrids, or public HTTP APIs.
+>
+> Express does not force you to use any specific ORM or template engine. With support for over 14 template engines via Consolidate.js, you can quickly craft your perfect framework.
+
+[source: [Express](https://github.com/expressjs/express#philosophy)] **Need more inspiration?** [Active Admin](https://github.com/activeadmin/activeadmin#goals)
+....
+
+=== Requests for features
+
+If you find wishing for a feature that does not exist in Artemis yet, feel free to file an issue. In this issue, please, describe the feature: its scope, how it should work, what is the goal of it, the use case you are trying to solve.
+
+This is especially helpful if the scope of your feature is bigger than a several lines of documentation or a bug fix. You can get early review of your proposal from developers and community - large changesets tend to have complex relations with existing code and use cases, and it is wise to deal with possible troubles before one dives into writing code.
+
+#TODO: point to what Artemis tries to solve and what use cases are outside of its scope (don't have the page yet). It should help users when thinking about their RFEs.#
+
+== Code review process
+
+Each and every merge request must be reviewed by project core developers, and approved by project maintainers. It is common to get the first round of reviews within a week.
+
+* smaller merge requests tend to be easier to review.
+* in the case of bigger feature, consider splitting it into a series of patches, building the feature in steps that are easier to review.
+
+#TODO: any more tips?...#
+
+== Community
+
+#TODO: do we have any public channels?#
+
+[source,markdown]
+....
+# Community
+If there are other channels you use besides GitHub to discuss contributions, mention them here. You can also list the author, maintainers, and/or contributors here, or set expectations for response time.
+
+> You can chat with the core team on https://gitter.im/cucumber/cucumber. We try to have office hours on Fridays.
+
+[source: [cucumber-ruby](https://github.com/cucumber/cucumber-ruby/blob/master/CONTRIBUTING.md#talking-with-other-devs)] **Need more inspiration?**
+ [1] [Chef](https://github.com/chef/chef/blob/master/CONTRIBUTING.md#-developer-office-hours) [2] [Cookiecutter](https://github.com/audreyr/cookiecutter#community)
+....
+
+== Code style
+
+=== Formatting
+
+We employ the common Python checkers, including https://flake8.pycqa.org/en/latest/[Flake8], which in turns mean all accepted code needs to pass this PEP8-ish check. Our only modification of its default rules is the length of line, which can reach *120* characters.
+
+#TODO: what else should be mentioned here? Black does exist, but I don't really like it, it may not land in our lands...#
+
+=== Commit messages
+
+Good commit messages matter, even more when multiple developers have to cooperate. Commit message should be the "source of truth" when it comes to why things changed:
+
+> A diff will tell you what changed, but only the commit message can properly tell you why. Peter Hutterer makes this point well:
+>
+> > Re-establishing the context of a piece of code is wasteful. We can’t avoid it completely, so our efforts should go to reducing it [as much] as possible. Commit messages can do exactly that and as a result, a commit message shows whether a developer is a good collaborator.
+
+A good commit message, describing the context of the change, the intentions, answering _why?_ question, will help all involved parties to get into the picture quicker, easier, saving more power for solving the actual problems. In general, we follow these rules:
+
+* Separate subject from body with a blank line
+* Limit the subject line to 50 characters
+* Capitalize the subject line
+* Do not end the subject line with a period
+* Wrap the body at 72 characters
+* Use the body to explain _what_ and _why_ vs. _how_
+* Use the imperative mood in the subject line
++
+_Imperative mood_ just means "spoken or written as if giving a command or instruction". A properly formed Git commit subject line should always be able to complete the following sentence:
++
+*If applied, this commit will* (your subject line here)
++
+For example:
++
+** If applied, this commit will _refactor subsystem X for readability_
+** If applied, this commit will _update getting started documentation_
+
+These are based on a condensed wisdom, gathered by generations of Git users. For more reading, we recommend starting with https://chris.beams.io/posts/git-commit/[How to Write a Git Commit Message] article which contains many good examples, and also links to many similar articles written before this one.
+
+=== Issue and pull request labels
+
+We are using label scheme based on https://github.com/wagenet/StandardIssueLabels#standardissuelabels[StandardIssueLabels]. See https://gitlab.com/testing-farm/artemis/-/labels[this page] for the full list - each label has its own description shedding a light on its purpose and use.
+
+The labels are usually applied by maintainers during triage process. Feel free to apply `Bug`, `RFE` and `User Request` labels to give maintainers better idea what to expect.
+
+[NOTE]
+====
+Labels assigned to your issue or pull request may, and often will, change over time: as it often happens, the original proposal may evolve into taking different approach and solutions, which should be reflected by updating labels.
+====
+
+=== Related issues and merge requests
+
+If your patch aims to solve a particular issue, mention it in the commit message. Gitlab supports wide variety of options, e.g. all following lines will tell Gitlab that once your patch is merged, Gitlab should close issue #79:
+
+[source,markdown]
+....
+Closes #79
+Fixes #79
+Resolves #79
+Implements #79
+....
+
+For full list of supported formats, see https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#default-closing-pattern[Default closing pattern] section of Gitlab documentation.
+
+If your merge request -or issue - is a part of bigger series of patches, to make things easier for reviewer, please add the following line to the commit message or comment:
+
+[source,markdown]
+....
+Related to #79
+....
