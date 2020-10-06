@@ -1,0 +1,16 @@
+/*
+ * Get nicer icons for admonition blocks. See https://blog.anoff.io/2019-02-17-hugo-render-asciidoc/
+ * for more details.
+ */
+
+.admonitionblock td.icon .icon-note:before {
+    content: "\f05a";
+    color: #19407c;
+}
+
+.admonitionblock td.icon .icon-warning:before {
+    content: "\f071";
+    color: #f38200;
+}
+
+// TODO: more icons - tip, important, caution
