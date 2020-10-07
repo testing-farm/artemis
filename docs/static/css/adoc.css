@@ -1,16 +1,25 @@
 /*
- * Get nicer icons for admonition blocks. See https://blog.anoff.io/2019-02-17-hugo-render-asciidoc/
- * for more details.
+ * Get nicer look for admonition blocks.
+ *
+ * See https://blog.anoff.io/2019-02-17-hugo-render-asciidoc/ for more details why they turn out to be ugly,
+ * and https://github.com/asciidoctor/asciidoctor/blob/master/data/stylesheets/asciidoctor-default.css
+ * for the default CSS used by asciidoctor - code below is extracted from this file, with `font-family` removed
+ * because that's controlled by the theme, the rest looks safe enough for inclusion in our CSS as-is.
  */
 
-.admonitionblock td.icon .icon-note:before {
-    content: "\f05a";
-    color: #19407c;
-}
+.admonitionblock td.content>.title {line-height:1.45;color:#7a2518;font-weight:400;margin-top:0;margin-bottom:.25em}
+.admonitionblock td.content>.title {text-rendering:optimizeLegibility;text-align:left;font-size:1rem;font-style:italic}
 
-.admonitionblock td.icon .icon-warning:before {
-    content: "\f071";
-    color: #f38200;
-}
+.admonitionblock>table {border-collapse:separate;border:0;background:none;width:100%}
+.admonitionblock>table td.icon{text-align:center;width:80px}
+.admonitionblock>table td.icon img {max-width:none}
+.admonitionblock>table td.icon .title {font-weight:bold;text-transform:uppercase}
+.admonitionblock>table td.content {padding-left:1.125em;padding-right:1.25em;border-left:1px solid #dddddf;color:rgba(0,0,0,.6)}
+.admonitionblock>table td.content>:last-child>:last-child {margin-bottom:0}
 
-// TODO: more icons - tip, important, caution
+.admonitionblock td.icon [class^="fa icon-"] {font-size:2.5em;text-shadow:1px 1px 2px rgba(0,0,0,.5);cursor:default}
+.admonitionblock td.icon .icon-note::before {content:"\f05a";color:#19407c}
+.admonitionblock td.icon .icon-tip::before {content:"\f0eb";text-shadow:1px 1px 2px rgba(155,155,0,.8);color:#111}
+.admonitionblock td.icon .icon-warning::before {content:"\f071";color:#bf6900}
+.admonitionblock td.icon .icon-caution::before {content:"\f06d";color:#bf3400}
+.admonitionblock td.icon .icon-important::before {content:"\f06a";color:#bf0000}
