@@ -214,9 +214,39 @@ Poetry will take care of creating a dedicated virtual environment, installing re
 $ docker-compose up
 ....
 +
+[TIP]
+====
+Add `-d` option to run containers in _detached_ mode, i.e. on the background:
+
+[source,shell]
+....
+$ docker-compose up -d
+....
+====
++
 * start Artemis:
 +
 [source,shell]
 ....
 $ bash nominishift-develop.sh
 ....
++
+* To stop Artemis, use a well-known `Ctrl+C` combination.
+* To stop the RabbitMQ, PostgreSQL and Redis containers, either use `Ctrl+C` as well, or, if you started them in a detached mode, use `docker-compose`:
++
+[source,shell]
+....
+$ docker-compose down
+....
++
+[TIP]
+====
+In case you want to remove the persistent storage of PostgreSQL and RabbitMQ containers, use the `-v` option:
+
+[source,shell]
+....
+$ docker-compose down -v
+....
+
+This instructs Docker to remove volumes associated with the containers.
+====
