@@ -31,6 +31,15 @@ class PoolLogger(gluetool.log.ContextAdapter):
         })
 
 
+@dataclasses.dataclass
+class PoolImageInfoType:
+    #: Human-readable name of the image
+    name: str
+
+    #: Internal ID of the image. May be the same as the ``name``.
+    id: str
+
+
 class PoolCapabilities(argparse.Namespace):
     supports_snapshots = False
 
@@ -272,6 +281,17 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
+        """
+
+        raise NotImplementedError()
+
+    def image_info_by_name(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        imagename: str
+    ) -> Result[PoolImageInfoType, Failure]:
+        """
+        Search pool resources, and find a pool-specific information of image, given by its name.
         """
 
         raise NotImplementedError()

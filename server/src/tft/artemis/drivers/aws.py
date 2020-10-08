@@ -3,20 +3,20 @@ import json
 import re
 import threading
 
-from typing import Any, Dict, List, Optional
-
 import gluetool.log
 from gluetool.log import log_blob, log_dict
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import wait
 from jinja2 import Template
 
-from . import PoolDriver, PoolCapabilities, run_cli_tool
+from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolImageInfoType
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..guest import Guest, SSHInfo
 from ..script import hook_engine
+
+from typing import Any, Dict, List, Optional
 
 #
 # Custom typing types
@@ -171,6 +171,41 @@ class AWSDriver(PoolDriver):
 
         return Ok(True)
 
+    def image_info_by_name(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        imagename: str
+    ) -> Result[PoolImageInfoType, Failure]:
+        r_images = self._aws_command(['ec2', 'describe-images', '--owner=self'], key='Images')
+
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
+
+        images = r_images.unwrap()
+
+        suitable_images = [image for image in images if image['Name'] == imagename]
+
+        if suitable_images:
+            try:
+                return Ok(PoolImageInfoType(
+                    name=imagename,
+                    id=suitable_images[0]['ImageId']
+                ))
+
+            except KeyError as exc:
+                return Error(Failure.from_exc(
+                    'malformed image description',
+                    exc,
+                    imagename=imagename,
+                    image_info=suitable_images[0]
+                ))
+
+        return Error(Failure(
+            'cannot find image by name',
+            imagename=imagename,
+            available_images=[image['Name'] for image in images]
+        ))
+
     def _env_to_instance_type(self, environment: Environment) -> Result[Any, Failure]:
         # TODO: in the future we will here translate the environment into an instance type
         return Ok(self.pool_config['default-instance-type'])
@@ -179,7 +214,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[Any, Failure]:
+    ) -> Result[PoolImageInfoType, Failure]:
         r_engine = hook_engine('AWS_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
@@ -187,12 +222,12 @@ class AWSDriver(PoolDriver):
 
         engine = r_engine.unwrap()
 
-        r_image = engine.run_hook(
+        r_image: Result[PoolImageInfoType, Failure] = engine.run_hook(
             'AWS_ENVIRONMENT_TO_IMAGE',
             logger=logger,
             pool=self,
             environment=environment
-        )  # type: Result[Any, Failure]
+        )
 
         if r_image.is_error:
             return Error(
@@ -240,12 +275,12 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         instance_type: str,
-        image: Dict[str, str]
+        image: PoolImageInfoType
     ) -> Result[float, Failure]:
 
         # We guess the product description from image name currently. The product description influences
         # the spot instance price. For Fedora the instances are 10x cheaper then for RHEL ...
-        product_description = AWS_PRODUCT_DESC_RHEL if re.search('(?i)rhel', image['Name']) else AWS_PRODUCT_DESC_LINUX
+        product_description = AWS_PRODUCT_DESC_RHEL if re.search('(?i)rhel', image.name) else AWS_PRODUCT_DESC_LINUX
         availability_zone = self.pool_config['availability-zone']
 
         r_spot_price = self._aws_command([
@@ -334,13 +369,12 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         instance_type: str,
-        image: Dict[str, str],
+        image: PoolImageInfoType,
         guestname: str,
         post_install_script: Optional[str] = None
     ) -> Result[Guest, Failure]:
 
         block_device_mappings: Optional[BlockDeviceMappingsType] = None
-        image_id = image['ImageId']
 
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)
@@ -365,7 +399,7 @@ class AWSDriver(PoolDriver):
 
         if 'default-root-disk-size' in self.pool_config:
 
-            r_block_device_mappings = self._get_block_device_mappings(image_id=image_id)
+            r_block_device_mappings = self._get_block_device_mappings(image_id=image.id)
 
             if r_block_device_mappings.is_error:
                 return Error(r_block_device_mappings.unwrap_error())
@@ -378,7 +412,7 @@ class AWSDriver(PoolDriver):
             block_device_mappings = r_block_device_mappings.unwrap()
 
         specification = AWS_INSTANCE_SPECIFICATION.render(
-            ami_id=image_id,
+            ami_id=image.id,
             key_name=self.pool_config['master-key-name'],
             instance_type=instance_type,
             availability_zone=self.pool_config['availability-zone'],
@@ -476,7 +510,7 @@ class AWSDriver(PoolDriver):
 
         # tag the instance if requested
         self._tag_instance(instance, owner, tags={
-            'Name': '{}::{}'.format(instance['PrivateIpAddress'], image['Name']),
+            'Name': '{}::{}'.format(instance['PrivateIpAddress'], image.name),
             'SpotRequestId': spot_request_id,
             'ArtemisGuestName': guestname,
         })
@@ -568,7 +602,7 @@ class AWSDriver(PoolDriver):
             raise exc
 
         if r_image.is_error:
-            return r_image
+            return Error(r_image.unwrap_error())
 
         image = r_image.unwrap()
 
