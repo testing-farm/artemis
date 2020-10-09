@@ -19,17 +19,27 @@ import ruamel.yaml
 import ruamel.yaml.compat
 import sqlalchemy.orm.session
 from sqlalchemy.orm.session import Session
+import jinja2.defaults
+import jinja2_ansible_filters.core_filters
 
 import periodiq
-
-from . import db as artemis_db
-from . import vault as artemis_vault
-from . import middleware as artemis_middleware
+import stackprinter
 
 from typing import cast, Any, Callable, Dict, Generic, List, NoReturn, Optional, Tuple, TypeVar, Union
 from types import TracebackType
 
-import stackprinter
+# Install additional Jinja2 filters. This must be done before we call `render_template` for the first
+# time, because Jinja2 reuses anonymous environments.
+
+jinja2.defaults.DEFAULT_FILTERS.update(
+    jinja2_ansible_filters.core_filters.FilterModule().filters()
+)
+
+# Now we can import our stuff without any fear we'd miss DEFAULT_FILTERS update
+from . import db as artemis_db  # noqa: E402
+from . import vault as artemis_vault  # noqa: E402
+from . import middleware as artemis_middleware  # noqa: E402
+
 
 stackprinter.set_excepthook(
     style='darkbg2',
