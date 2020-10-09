@@ -1,0 +1,169 @@
+---
+title: "Local development environment"
+date: 2020-10-05T17:09:42+02:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+The development environment runs Artemis in https://docs.okd.io/latest/minishift[Minishift] via https://skaffold.dev[Skaffold]. Currently the development environment requires Docker to be installed on the machine, as skaffold uses docker API for building the container images.
+
+Currently, Artemis is not working with latest skaffold, install https://storage.googleapis.com/skaffold/releases/v1.5.0/skaffold-linux-amd6[version 1.5].
+
+== Install requirements
+
+=== Install Docker
+
+Currently docker is required to run the development environment. Hopefully we can get this workflow working with Podman soon.
+
+[NOTE]
+====
+If you are running Fedora 31+, where docker does not work out of box, follow this guide to get it working - https://linuxconfig.org/how-to-install-docker-on-fedora-31
+====
+
+Follow this guide to install Docker CE on Fedora: https://docs.docker.com/install/linux/docker-ce/fedora/
+
+=== Install Skaffold
+
+Skaffold is a development tool for local Kubernetes development.
+
+To install it follow the following guide: https://skaffold.dev/docs/install/
+
+=== Install Minishift
+
+Minishift is a local Openshift run in a kvm VM on your localhost.
+
+Currently, new version of minishift is not working properly in this use case. Install MiniShift v1.29.0 which is tested.
+
+To install it follow the following guide: https://docs.okd.io/latest/minishift/getting-started/installing.html#installing-manually
+
+To set up the virtualization environment follow the following guide: https://docs.okd.io/latest/minishift/getting-started/setting-up-virtualization-environment.html#setting-up-kvm-driver
+
+Minishift makes requests to the GitHub API to download an image. Sometimes, the GitHub limits the request from IP addresses. To solve this, follow the following guide: https://github.com/minishift/minishift/blob/master/docs/source/troubleshooting/troubleshooting-getting-started.adoc#github-api-rate-limit-exceeded
+
+=== Install Openshift Client Tools
+
+Openshift Client Tools are required to interact with Minishift cluster.
+
+To install them follow the following guide: https://docs.okd.io/1.5/cli_reference/get_started_cli.html#cli-linux
+
+== Create configuration
+
+Create the Artemis development configuration in the directory 'configuration/' in the project root. Note that the configuration must have a flat
+structure without any subdirectories currently.
+
+You can use samples and gen.sh script from configuration/ directory that will setup Artemis to use your existing openstack project.
+
+1. `cp configuration/env.yml.sample configuration/env.yml`
+2. Populate `env.yml` file with details of your openstack tenant and ssh key pair to be used by Artemis as master-key.
+3. Create an openstack keypair with Artemis public ssh key with selected `openstack.vms.keyname` from `env.yml`. For example,
+if `openstack.vms.keyname` is `artemis`:
+
+`openstack keypair create --public-key path/to/artemis.pub artemis`
+
+== Start the development environment
+
+Start the development environment by sourcing the develop.sh script
++
+[source,shell]
+....
+$ source develop.sh
+....
++
+The first execution of the script will take some time, as it needs to start Minishift and initially build Artemis.
+
+[NOTE]
+====
+For change of logging level, use env variable `DEBUG`, for example:
++
+[source,shell]
+....
+$ DEBUG=3 source develop.sh
+....
++
+====
+
+== Enable development environment
+
+If you want to interact with minishift where artemis is deployed, you can use the `-s` option while sourcing the `develop.sh` script.
++
+[source,shell]
+....
+$ source develop.sh -s
+....
++
+This is required only once per terminal session.
+
+== How to trigger redeployment
+
+If you want to redeploy artemis in the local environment after you made some changes, in the terminal where the `develop.sh` script is sourced press the `enter` key. This is called `manual` deployment trigger and is a bit more sane then the default trigger which redeploys automatically if any of the files changed.
+
+== Details of local development services
+
+[NOTE]
+====
+Make sure you have sourced the `develop.sh` script with `-s` option before interacting with minishift via `oc` command.
+====
+
+* RabbitMQ Management Console
+** hostname: `oc get route artemis-api`
+** user: guest
+** password: guest
+
+* RabbitMQ Management Console
+** hostname: `oc get route artemis-rabbitmq-management`
+** user: guest
+** password: guest
+
+* PostgreSQL:
+** user: artemis
+** password: artemis
+** database: artemis
+
+[NOTE]
+====
+If Artemis is killed (e.g. CTRL+C), wait for all pods to be terminated before sourcing develop.sh again.
+`oc get pods`
+====
+
+
+== Local development environment without minishift
+
+That is the most lightweight development setup. It spawns rabbitmq, postgresql and redis in docker containers on your
+local machine, while Artemis services (API server, dispatcher and workers) are launched as daemons by `nominishift-develop.sh`.
+
+[NOTE]
+====
+Artemis server and its CLI tool, `artemis-cli`, exist as separate projects in this repository. Each has its own requriements, and you have to install them as such. We are using https://python-poetry.org/[Poetry] to manage installations.
+====
+
+* Artemis service lives in `server` directory:
++
+[source,shell]
+....
+$ cd server/
+....
++
+* create a local installation of Artemis:
++
+[source,shell]
+....
+$ poetry install
+....
++
+Poetry will take care fo creating a dedicated virtual environment, installing requirements, and make it accessible via `poetry run` or `poetry shell`.
++
+* the configurations step is identical to the general instruction.
+* launch rabbitmq, postgresql and redis containers via `docker-compose`:
++
+[source,shell]
+....
+$ docker-compose up
+....
++
+* start Artemis:
++
+[source,shell]
+....
+$ bash nominishift-develop.sh
+....
