@@ -2,11 +2,11 @@
 image: quay.io/testing-farm/gitlab-ci-artemis
 
 stages:
-  - test
+  - test_stage
   - deploy
 
 tests:
-  stage: test
+  stage: test_stage
   script:
     - wget -O - https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python3
     - source $HOME/.poetry/env
@@ -40,7 +40,10 @@ tests:
 
     # Now it's time to generate docs.
     - cd docs
-    - hugo
+
+    # Base URL is set by derived jobs. It's either the public one, when we're generating docs from `master` branch,
+    # or it is a base URL of URL Gitlab uses when letting us browse artifacts job saved.
+    - hugo --baseURL="$BASE_URL"
 
     # TODO: here we should generate developer docs from sources, for both client and server.
     # We'd use Sphinx for that, and we'd need to store the output in - now empty - directories,
@@ -60,15 +63,60 @@ pages:
   extends: .docs
   only:
     - master
-    - bootstrap-docs
 
-# And this one's for uploading built docs for a preview.
-pages-preview:
+  variables:
+    BASE_URL: "https://${CI_PROJECT_NAMESPACE}.gitlab.io/${CI_PROJECT_NAME}"
+
+  # This tells Gitlab to create an environment (under https://gitlab.com/testing-farm/artemis/-/environments) where
+  # this particular job would be available. It is a common "Gitlab pages" environment, nothing special.
+  environment:
+    name: production/${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}
+    url: https://${CI_PROJECT_NAMESPACE}.gitlab.io/${CI_PROJECT_NAME}
+
+# This job's for uploading built docs for a preview: into their own Gitlab environment. Note the `environment.url`
+# value, which is different that the one for `master` branch - it is actually URL Gitlab uses when job saves
+# its artifacts, and Gitlab lets us browse them.
+pages:preview:
   stage: deploy
   extends: .docs
   except:
     - master
-#    - bootstrap-docs
+
+  variables:
+    # Note that this URL matches the environment URL below - this lets us easily to get from the environment
+    # we have in our MR to the actual pages.
+    BASE_URL: "https://${CI_PROJECT_NAMESPACE}.gitlab.io/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts/public"
+
+    # By default, Hugo generates "nice" URLs: `content/foo.adoc` becomes `/foo/index.html`, and people
+    # can then link to `/foo` because webservers will take care of providing the "index: of this directory,
+    # `index.html`. This does not work with previews, though, as Gitlab pages preview won't supply that
+    # directory index. To workaround this, we therefore enable "ugly" URLs: `content/foo.adoc` becomes
+    # `/foo.html`, and all links point to `/foo.html` instead of `/foo/`.
+    #
+    # Note that this workaround does build site in a slightly different way that the actual public version,
+    # and although highly unlikely, it *may* affect how the site works - Hugo is smart enough to take care
+    # of this URL switching, and pages just work, but be aware the preview is not exactly the same as the final
+    # site in this regard. For example, never link to internal pages directly using their rendered names like
+    # `/foo.html`.
+    HUGO_UGLYURLS: "true"
+
+  environment:
+    name: preview/${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}
+    url: https://${CI_PROJECT_NAMESPACE}.gitlab.io/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts/public/index.html
+    on_stop: pages:preview:stop
+
+# And final step: when our parent MR is merged, this job takes care of removing the Gitlab environment \o/
+pages:preview:stop:
+  stage: deploy
+  except:
+    - master
+  when: manual
+  allow_failure: true
+  environment:
+    name: preview/${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}
+    action: stop
+  script:
+    - echo "bye"
 
 publish_apiary:
   image: "ruby:2.4"
