@@ -1297,11 +1297,15 @@ class Workspace:
 
         engine = r_engine.unwrap()
 
-        r = engine.run_hook(
-            hook_name,
-            logger=self.logger,
-            **kwargs
-        )
+        try:
+            r = engine.run_hook(
+                hook_name,
+                logger=self.logger,
+                **kwargs
+            )
+
+        except Exception as exc:
+            r = Error(Failure.from_exc('unhandled hook error', exc))
 
         if r.is_error:
             self.result = self.handle_failure(r, 'hook failed')
