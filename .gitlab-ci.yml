@@ -16,6 +16,12 @@ tests:
 
     - cd server && IN_TEST=yes tox -v
 
+container:
+  stage: test_stage
+  image: quay.io/buildah/stable:latest
+  script:
+    - buildah bud -f container/Dockerfile .
+
 .docs:
   image: registry.gitlab.com/pages/hugo:latest
 
