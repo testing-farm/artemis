@@ -270,9 +270,10 @@ def cmd_init(cfg: Configuration) -> None:
 
     TEXT("""
 Hi! Following sequence of questions will help you setup configuration for this tool.
+Configuration file is placed at {}
 
 Feel free to interrupt it anytime, nothing is saved until the very last step.
-""")
+""". format(cfg.config_filepath))
 
     #
     # Artemis API
