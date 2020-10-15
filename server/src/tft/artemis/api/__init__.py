@@ -11,7 +11,7 @@ import uuid
 import molten
 import molten.dependency_injection
 import molten.openapi
-from molten import HTTP_201, HTTP_200, HTTP_400, Response, Request
+from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, Response, Request
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
@@ -538,6 +538,9 @@ def get_guest_request(guestname: str, manager: GuestRequestManager, request: Req
 
 
 def delete_guest(guestname: str, request: Request, manager: GuestRequestManager) -> APIResponse:
+    if not manager.get_by_guestname(guestname):
+        return APIResponse(request=request, status=HTTP_404)
+
     manager.delete_by_guestname(guestname, request=request)
     return APIResponse(request=request)
 
