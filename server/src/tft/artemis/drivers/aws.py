@@ -430,6 +430,28 @@ class AWSDriver(PoolDriver):
             )
         )
 
+    def _get_block_device_mappings(self, image_id: str, root_disk_size: Optional[int] = None):
+
+        # get image block device mappings
+        command = [
+            'ec2', 'describe-images',
+            '--image-id', image_id,
+        ]
+
+        r_image = self._aws_command(command, key='Images')
+
+        if r_image.is_error:
+            return r_image
+
+        image = r_image.unwrap()
+
+        block_device_mappings = image[0]['BlockDeviceMappings']
+
+        if root_disk_size:
+            block_device_mappings[0]['Ebs']['VolumeSize'] = root_disk_size
+
+        return Ok(block_device_mappings)
+
     def _request_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -438,9 +460,11 @@ class AWSDriver(PoolDriver):
         guestname: str
     ) -> Result[Guest, Failure]:
 
+        image_id = image['ImageId']
+
         command = [
             'ec2', 'run-instances',
-            '--image-id', image['ImageId'],
+            '--image-id', image_id,
             '--key-name', self.pool_config['master-key-name'],
             '--instance-type', instance_type
         ]
@@ -450,6 +474,19 @@ class AWSDriver(PoolDriver):
 
         if 'security-group' in self.pool_config:
             command.extend(['--security-group-ids', self.pool_config['security-group']])
+
+        if 'default-root-disk-size' in self.pool_config:
+
+            r_block_device_mappings = self._get_block_device_mappings(
+                image_id=image_id,
+                root_disk_size=self.pool_config['default-root-disk-size']
+            )
+
+            if r_block_device_mappings.is_error:
+                return r_block_device_mappings
+
+            block_device_mappings = r_block_device_mappings.unwrap()
+            command.append("--block-device-mappings={}".format(json.dumps(block_device_mappings)))
 
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
