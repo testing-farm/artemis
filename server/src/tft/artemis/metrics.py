@@ -2,7 +2,7 @@ import dataclasses
 import sqlalchemy
 import threading
 
-from prometheus_client import Gauge, CollectorRegistry, generate_latest
+from prometheus_client import Counter, Gauge, CollectorRegistry, generate_latest
 
 
 import gluetool.log
@@ -44,15 +44,15 @@ DB_POOL_OVERFLOW = Gauge(
     'db_pool_overflow',
     'Current overflow of connections'
 )
-OVERALL_GUEST_REQUEST_COUNT_TOTAL = Gauge(
+OVERALL_GUEST_REQUEST_COUNT_TOTAL = Counter(
     'overall_guest_request_count_total',
     'Number of overall guest requests'
 )
-PROVISION_OK_GUEST_REQUEST_COUNT_TOTAL = Gauge(
+PROVISION_OK_GUEST_REQUEST_COUNT_TOTAL = Counter(
     'success_guest_request_count_total',
     'Number of succssessfully provisioned guest requests'
 )
-PROVISION_FAILOVER_GUEST_REQUEST_COUNT = Gauge(
+PROVISION_FAILOVER_GUEST_REQUEST_COUNT = Counter(
     'provision_failover_guest_request_count',
     'Number of provisioned guest requests which were provisioned with failover',
     ['from_pool', 'to_pool']
