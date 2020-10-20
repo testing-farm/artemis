@@ -198,8 +198,12 @@ def fetch_remote(
     spinner: bool = False,
     method: str = 'get',
     request_kwargs: Optional[Dict[str, Any]] = None,
-    on_error: Optional[Callable[[requests.Response], None]] = None
+    on_error: Optional[Callable[[requests.Response], None]] = None,
+    allow_statuses: Optional[List[int]] = None
 ) -> requests.Response:
+
+    allow_statuses = allow_statuses or [200, 201]
+
     logger = logger or Logger()
     request_kwargs = request_kwargs or {}
 
@@ -215,7 +219,7 @@ def fetch_remote(
         elif method == 'delete':
             res = requests.delete(url, **request_kwargs)
 
-    if res.status_code not in [200, 201]:
+    if res.status_code not in allow_statuses:
         if on_error:
             on_error(res, request_kwargs)
 
@@ -226,7 +230,14 @@ def fetch_remote(
 
     return res
 
-def fetch_artemis(cfg, endpoint, method='get', request_kwargs=None, logger=None):
+def fetch_artemis(
+    cfg,
+    endpoint,
+    method='get',
+    request_kwargs=None,
+    logger=None,
+    allow_statuses=None
+):
     assert cfg.artemis_api_url is not None
     if not logger:
         logger = Logger()
@@ -238,7 +249,14 @@ def fetch_artemis(cfg, endpoint, method='get', request_kwargs=None, logger=None)
                 '\nRequest:\n{}\n{}'.format(res.status_code, res.reason, res.request.url, request_kwargs)
         )
 
-    return fetch_remote('{}/{}'.format(cfg.artemis_api_url, endpoint), logger, method=method, request_kwargs=request_kwargs, on_error=_error_callback)
+    return fetch_remote(
+        '{}/{}'.format(cfg.artemis_api_url, endpoint),
+        logger,
+        method=method,
+        request_kwargs=request_kwargs,
+        on_error=_error_callback,
+        allow_statuses=allow_statuses
+    )
 
 def artemis_inspect(cfg, resource, rid, params=None, data=None, logger=None):
     return fetch_artemis(cfg, '/{}/{}'.format(resource, rid), request_kwargs={'json': data, 'params': params}, logger=None)
@@ -247,7 +265,7 @@ def artemis_create(cfg, resource, data, logger=None):
     return fetch_artemis(cfg, '/{}'.format(resource), method='post', request_kwargs={'json':data}, logger=None)
 
 def artemis_delete(cfg, resource, rid, logger=None):
-    return fetch_artemis(cfg, '{}/{}'.format(resource, rid), method='delete', logger=None)
+    return fetch_artemis(cfg, '{}/{}'.format(resource, rid), method='delete', logger=None, allow_statuses=[200, 201, 404])
 
 def confirm(
     cfg: Configuration,
