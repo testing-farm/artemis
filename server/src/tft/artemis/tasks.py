@@ -2097,6 +2097,13 @@ def do_restore_snapshot_request(
 
     return SUCCESS
 
+#
+# Handling of errors is slightly different in the following tasks. While we fully use `handle_failure()`,
+# we do not return `RESCHEDULE` or `Error()` from the doers. All those tasks are scheduled periodically,
+# they will run again in the future, and we probably don't want exponential delays as they wouldn't help
+# avoid errors.
+#
+
 
 @dramatiq.actor(**actor_kwargs('RESTORE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
 def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
@@ -2122,14 +2129,6 @@ def do_refresh_pool_resources_metrics(
 
     handle_success('enter-task')
 
-    # Handling errors is slightly different in this task. While we fully use `handle_failure()`,
-    # we do not return `RESCHEDULE` or `Error()` from this doer. This particular task is being
-    # rescheduled regularly anyway, and we probably do not want exponential delays, because
-    # they would make metrics less accurate when we'd finally succeed talking to the pool.
-    #
-    # On the other hand, we schedule next iteration of this task here, and it seems to make sense
-    # to retry if we fail to schedule it - without this, the "it will run once again anyway" concept
-    # breaks down.
     r_pool = _get_pool(logger, session, poolname)
 
     if r_pool.is_error:
@@ -2202,4 +2201,185 @@ def refresh_pool_resources_metrics_dispatcher() -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_refresh_pool_resources_metrics_dispatcher,
         logger=TaskLogger(root_logger, 'refresh-pool-resources-dispatcher')
+    )
+
+
+def do_dispatch_guest_requests(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        task='dispatch-guest-requests'
+    )
+
+    handle_success('enter-task')
+
+    # A bit of syntax sugar: helper function focusing on just one guest request. It allows writing
+    # streamlined code, without diving into nested ifs when handling errors.
+    def _do_dispatch_guest_request(
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> None:
+        handle_success, handle_failure, _ = create_event_handlers(
+            logger,
+            session,
+            task='dispatch-guest-requests',
+            guestname=guest_request.guestname
+        )
+
+        handle_success('enter-task')
+
+        # Release the guest to the next stage. If this succeeds, dispatcher will no longer have any power
+        # over the guest, and completion of the request would be taken over by a set of tasks.
+        r_state = _update_guest_state(
+            logger,
+            session,
+            guest_request.guestname,
+            GuestState.PENDING,
+            GuestState.ROUTING
+        )
+
+        if r_state.is_error:
+            # Now, what to do here? We don't want to retry the task, because it will be rescheduled
+            # once again in a very close future. But we cannot let this state update failure unnoticed.
+            handle_failure(r_state, 'failed to change guest request state')
+            return
+
+        if r_state.value is False:
+            # Somebody already did our job for us, nothing left to do.
+            handle_success('no-op')
+            return
+
+        r_dispatch = dispatch_task(logger, route_guest_request, guest_request.guestname)
+
+        if r_dispatch.is_ok:
+            handle_success('dispatched')
+            return
+
+        handle_failure(r_dispatch, 'failed to dispatch routing task')
+
+        # We have to undo the state change, otherwise our next attempt would ignore it because it's no longer
+        # in PENDING state.
+        r_state = _update_guest_state(
+            logger,
+            session,
+            guest_request.guestname,
+            GuestState.ROUTING,
+            GuestState.PENDING
+        )
+
+        if r_state.is_ok:
+            return
+
+        # Now this one's bad: we grabed guest request for provisioning, we failed to start the provisioning
+        # chain of tasks, and we failed to undo and make the guest request available next time we try again.
+        # Not much we could do here, just hope our human overlords will notice the error.
+        handle_failure(r_state, 'failed to change guest state')
+
+    for guest_request in Query.from_session(session, GuestRequest) \
+            .filter(GuestRequest.state == GuestState.PENDING.value) \
+            .all():
+
+        guest_logger = get_guest_logger('dispatch-guest-requests', logger, guest_request.guestname)
+        guest_logger.begin()
+
+        _do_dispatch_guest_request(
+            guest_logger,
+            guest_request
+        )
+
+        guest_logger.finished()
+
+    return SUCCESS
+
+
+@dramatiq.actor(  # type: ignore  # Untyped decorator
+    periodic=periodiq.cron('* * * * *'),
+    **actor_kwargs('DISPATCH_GUEST_REQUESTS')
+)
+def dispatch_guest_requests() -> None:
+    """
+    Dispatcher-like task for newly arrived guest requests. Picks them up from the database, and starts
+    the provisioning chain.
+
+    We don't care about rescheduling or retries - this task would be executed again very soon anyway.
+    """
+
+    task_core(  # type: ignore # Argument 1 has incompatible type
+        do_dispatch_guest_requests,
+        logger=TaskLogger(root_logger, 'dipatch-guest-requests')
+    )
+
+
+def do_release_guest_requests(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        task='release-guest-requests'
+    )
+
+    handle_success('enter-task')
+
+    def _do_release_guest_request(
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> None:
+        handle_success, handle_failure, _ = create_event_handlers(
+            logger,
+            session,
+            task='release-guest-requests',
+            guestname=guest_request.guestname
+        )
+
+        handle_success('enter-task')
+
+        r_dispatch = dispatch_task(logger, release_guest_request, guest_request.guestname)
+
+        if r_dispatch.is_ok:
+            handle_success('dispatched')
+            return
+
+        handle_failure(r_dispatch, 'failed to dispatch release task')
+
+    for guest_request in Query.from_session(session, GuestRequest) \
+            .filter(GuestRequest.state == GuestState.CONDEMNED.value) \
+            .all():
+
+        guest_logger = get_guest_logger('release-guest-requests', logger, guest_request.guestname)
+        guest_logger.begin()
+
+        _do_release_guest_request(
+            guest_logger,
+            guest_request
+        )
+
+        guest_logger.finished()
+
+    return SUCCESS
+
+
+@dramatiq.actor(  # type: ignore  # Untyped decorator
+    periodic=periodiq.cron('* * * * *'),
+    **actor_kwargs('RELEASE_GUEST_REQUESTS')
+)
+def release_guest_requests() -> None:
+    """
+    Dispatcher-like task for condemned guest requests. Picks them up from the database, and starts
+    the release chain.
+
+    We don't care about rescheduling or retries - this task would be executed again very soon anyway.
+    """
+
+    task_core(  # type: ignore # Argument 1 has incompatible type
+        do_release_guest_requests,
+        logger=TaskLogger(root_logger, 'dipatch-guest-requests')
     )
