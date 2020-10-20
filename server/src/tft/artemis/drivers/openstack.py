@@ -4,11 +4,10 @@ import threading
 from datetime import datetime
 
 import gluetool.log
-from gluetool.glue import GlueCommandError
 from gluetool.result import Result, Ok, Error
-from gluetool.utils import Command, normalize_bool_option
+from gluetool.utils import normalize_bool_option
 
-from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics, create_tempfile
+from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics, create_tempfile, run_cli_tool
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -115,42 +114,24 @@ class OpenStackDriver(PoolDriver):
         if json_format:
             options += ['-f', 'json']
 
-        try:
-            output = Command(os_base, options=options, logger=self.logger).run()
+        r_run = run_cli_tool(
+            self.logger,
+            os_base + options,
+            json_output=json_format,
+            command_scrubber=lambda cmd: (['openstack'] + options)
+        )
 
-        except GlueCommandError as exc:
+        if r_run.is_error:
+            return Error(r_run.unwrap_error())
 
-            # The command has sensitive data which we don't want to expose in logs
-            # scrubbed_command is free of sensitive data
-            scrubbed_command = ['openstack'] + options
+        if json_format:
+            json_output, _ = r_run.unwrap()
 
-            return Error(Failure.from_exc(
-                "Error running openstack command",
-                exc,
-                command_output=exc.output,
-                scrubbed_command=scrubbed_command
-            ))
+            return Ok(json_output)
 
-        if output.stdout:
-            if isinstance(output.stdout, str):
-                cmd_out = output.stdout
-            else:
-                cmd_out = output.stdout.decode('utf-8')
+        raw_output, _ = r_run.unwrap()
 
-            assert isinstance(cmd_out, str)
-
-            if not json_format:
-                return Ok(cmd_out)
-
-            try:
-                json_out = json.loads(cmd_out)
-            except json.JSONDecodeError as exc:
-                return Error(Failure.from_exc(
-                    "Failed to parse output of 'os {}' to json".format(' '.join(options)), exc))
-
-            return Ok(json_out)
-
-        return Ok(True)
+        return Ok(raw_output)
 
     def _env_to_flavor(self, environment: Environment) -> Result[Any, Failure]:
         r_flavors = self._run_os(['flavor', 'list'])

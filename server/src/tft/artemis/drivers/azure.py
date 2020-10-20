@@ -2,12 +2,10 @@ from datetime import datetime
 import json
 import threading
 
-from gluetool.glue import GlueCommandError
 import gluetool.log
 from gluetool.result import Result, Error, Ok
-from gluetool.utils import Command
 
-from . import PoolDriver, stdout_to_str, vm_info_to_ip, create_tempfile
+from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool
 from .. import Failure
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -296,31 +294,24 @@ class AzureDriver(PoolDriver):
         )
 
     def _run_cmd(self, options: List[str], json_format: bool = True) -> Result[Any, Failure]:
-        try:
-            output = Command(["az"], options=options, logger=self.logger).run()
-        except GlueCommandError as exc:
+        r_run = run_cli_tool(
+            self.logger,
+            ['az'] + options,
+            json_output=json_format,
+            command_scrubber=lambda cmd: (['azure'] + options)
+        )
 
-            # The command has sensitive data which we don't want to expose in logs
-            # scrubbed_command is free of sensitive data
-            scrubbed_command = ['azure'] + options
+        if r_run.is_error:
+            return Error(r_run.unwrap_error())
 
-            return Error(Failure.from_exc(
-                "Error running azure command",
-                exc,
-                command_output=exc.output,
-                scrubbed_command=scrubbed_command
-            ))
+        if json_format:
+            json_output, _ = r_run.unwrap()
 
-        cmd_out = stdout_to_str(output)
-        if not json_format:
-            return Ok(cmd_out)
+            return Ok(json_output)
 
-        try:
-            json_out = json.loads(cmd_out)
-            return Ok(json_out)
-        except json.JSONDecodeError as exc:
-            return Error(Failure.from_exc(
-                "Failed to parse output of 'az {}' to json".format(' '.join(options)), exc))
+        output_stdout, _ = r_run.unwrap()
+
+        return Ok(output_stdout)
 
     def _run_cmd_with_auth(self, options: List[str], json_format: bool = True,
                            login: bool = True) -> Result[Any, Failure]:

@@ -8,9 +8,9 @@ from typing import Any, Dict, List, Optional
 import gluetool.log
 from gluetool.log import log_dict
 from gluetool.result import Result, Ok, Error
-from gluetool.utils import Command, wait
+from gluetool.utils import wait
 
-from . import PoolDriver, PoolCapabilities
+from . import PoolDriver, PoolCapabilities, run_cli_tool
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
@@ -204,26 +204,29 @@ class AWSDriver(PoolDriver):
         :param list(str) args: Arguments for aws.
         :param str key: Optional key to return.
         """
+
         command = [self.pool_config['command']] + args
 
-        try:
-            output = Command(command).run()
+        r_run = run_cli_tool(
+            self.logger,
+            command,
+            json_output=True
+        )
 
-        except gluetool.glue.GlueCommandError as exc:
-            return Error(Failure.from_exc(
-                "Error running aws command",
-                exc,
-                command_output=exc.output,
-                scrubbed_command=exc.output.cmd
-            ))
+        if r_run.is_error:
+            return Error(r_run.unwrap_error())
 
-        assert output.stdout  # required to make typing happy
-        json = gluetool.utils.from_json(output.stdout)
+        json_output, output = r_run.unwrap()
 
         try:
-            return Ok(json[key] if key else json)
+            return Ok(json_output[key] if key else json_output)
+
         except KeyError:
-            return Error(Failure("Key '{}' not found in aws command '{}' json output".format(key, command)))
+            return Error(Failure(
+                "key '{}' not found in CLI output".format(key),
+                command_output=output,
+                scrubbed_command=command
+            ))
 
     def _get_spot_price(
         self,

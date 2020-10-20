@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import dataclasses
+import json
 import threading
 import os
 import re
@@ -8,10 +9,11 @@ import sqlalchemy
 import sqlalchemy.orm.session
 import tempfile
 
+import gluetool
 import gluetool.log
 from gluetool.result import Result, Ok, Error
 
-from .. import Failure
+from .. import Failure, process_output_to_str
 from ..db import GuestRequest, SnapshotRequest, SSHKey, Query
 from ..db import PoolResourcesMetrics as PoolResourcesMetricsRecord, PoolResourcesMetricsDimensions
 from ..environment import Environment
@@ -19,7 +21,7 @@ from ..guest import Guest, GuestState
 from ..snapshot import Snapshot
 
 # Type annotations
-from typing import cast, Any, Callable, Iterator, List, Dict, Optional
+from typing import cast, Any, Callable, Iterator, List, Dict, Optional, Tuple
 
 
 class PoolLogger(gluetool.log.ContextAdapter):
@@ -572,16 +574,94 @@ def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Fa
     return Ok(match_obj.group(1))
 
 
-def stdout_to_str(output: Any) -> str:
-    if output.stdout:
-        if isinstance(output.stdout, str):
-            cmd_out = output.stdout
-        else:
-            cmd_out = output.stdout.decode('utf-8')
+def run_cli_tool(
+    logger: gluetool.log.ContextAdapter,
+    command: List[str],
+    json_output: bool = False,
+    command_scrubber: Optional[Callable[[List[str]], List[str]]] = None,
+    allow_empty: bool = True
+) -> Result[Tuple[Any, gluetool.utils.ProcessOutput], Failure]:
+    """
+    Run a given command, and return its output.
 
-        assert isinstance(cmd_out, str)
-        return cmd_out
-    return ""
+    This helper is designed for pool drivers that require a common functionality:
+
+    * run a CLI tool, with options
+    * capture its standard output
+    * optionally, convert the standard output to JSON.
+
+    This function does exactly this, and tries to make life easier for drivers that need to do some
+    processing of this output. Returns the original command output as well.
+
+    :param command: command to execute, plus its options.
+    :param json_output: if set, command's standard output will be parsed as JSON.
+    :param command_strubber: a callback for converting the command to its "scrubbed" version, without any
+        credentials or otherwise sensitive items. If unset, a default 1:1 no-op scrubbing is used.
+    :param allow_empty: under some conditions, the standard output, as returned by Python libraries,
+        may be ``None``. If this parameter is unset, such an output would be reported as a failure,
+        if set, ``None`` would be converted to an empty string, and processed as any other output.
+    :returns: either a valid result, a tuple of two items, or an error with a :py:class:`Failure` describing
+        the problem. The first item of the tuple is either command's standard output, or, if ``json_output``
+        was set, a datastructure representing command's output after parsing it as JSON structure. The second
+        pair of the tuple is always :py:class:`gluetool.utils.ProcessOutput`.
+    """
+
+    # We have our own no-op scrubber, preserving the command.
+    def _noop_scrubber(_command: List[str]) -> List[str]:
+        return _command
+
+    command_scrubber = command_scrubber or _noop_scrubber
+
+    try:
+        output = gluetool.utils.Command(command).run()
+
+    except gluetool.glue.GlueCommandError as exc:
+        return Error(Failure.from_exc(
+            'error running CLI command',
+            exc,
+            command_output=exc.output,
+            scrubbed_command=command_scrubber(command)
+        ))
+
+    if output.stdout is None:
+        if not allow_empty:
+            return Error(Failure(
+                'CLI did not emit any output',
+                command_output=output,
+                scrubbed_command=command_scrubber(command)
+            ))
+
+        output_stdout = ''
+
+    else:
+        # We *know* for sure that `output.stdout` is not `None`, therefore `process_output_to_str` can never return
+        # `None`. Type checking can't infere this information, therefore it believes the return value may be `None`,
+        # and complains about type collision with variable set in the `if` branch above (which is *not* `Optional`).
+        output_stdout = cast(
+            str,
+            process_output_to_str(output, stream='stdout')
+        )
+
+    if json_output:
+        if not output_stdout:
+            return Error(Failure(
+                'CLI did not emit any output, cannot treat as JSON',
+                command_output=output,
+                scrubbed_command=command_scrubber(command)
+            ))
+
+        try:
+            return Ok((json.loads(output_stdout), output))
+
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'failed to convert string to JSON',
+                exc=exc,
+                command_output=output,
+                scrubbed_command=command_scrubber(command)
+            ))
+
+    return Ok((output_stdout, output))
 
 
 @contextlib.contextmanager

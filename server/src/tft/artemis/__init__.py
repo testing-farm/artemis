@@ -89,6 +89,27 @@ def format_struct_as_yaml(data: Any) -> str:
     return stream.getvalue()
 
 
+def process_output_to_str(output: gluetool.utils.ProcessOutput, stream: str = 'stdout') -> Optional[str]:
+    """
+    A helper working around Gluetool issue: it still supports Python 2, which makes its
+    :py:class:`gluetool.utils.ProcessOutput` a bit weird when it comes to types: type of
+    both ``stdout`` and ``stderr`` is supposedly ``str``, but the actual value **may** be
+    ``bytes`` too.
+    """
+
+    assert stream in ('stdout', 'stderr')
+
+    stream_content = getattr(output, stream)
+
+    if stream_content is None:
+        return None
+
+    if isinstance(stream_content, str):
+        return stream_content
+
+    return cast(str, stream_content.decode('utf-8'))
+
+
 class Failure:
     """
     Bundles exception related info.
@@ -325,22 +346,10 @@ class Failure:
         if 'command_output' in details:
             command_output = details['command_output']
 
-            details['command_output'] = {}
-
-            # This is a workaround for one problem in gluetool's ProcessOutput - it's stderr/stdout
-            # are declared as strings, but often can contain bytes, because gluetool still sits
-            # in Python 2 world :/
-            if isinstance(command_output.stdout, bytes):
-                details['command_output']['stdout'] = command_output.stdout.decode('utf-8')
-
-            else:
-                details['command_output']['stdout'] = command_output.stdout
-
-            if isinstance(command_output.stderr, bytes):
-                details['command_output']['stderr'] = command_output.stderr.decode('utf-8')
-
-            else:
-                details['command_output']['stderr'] = command_output.stderr
+            details['command_output'] = {
+                'stdout': process_output_to_str(command_output, stream='stdout'),
+                'stderr': process_output_to_str(command_output, stream='stderr')
+            }
 
         if self.caused_by:
             details['caused-by'] = self.caused_by.get_log_details()

@@ -6,12 +6,10 @@ import tempfile
 import threading
 
 import gluetool.log
-from gluetool.utils import Command
-from gluetool.glue import GlueCommandError
 from gluetool.result import Result, Ok, Error
-from gluetool.log import log_xml, log_blob
+from gluetool.log import log_xml
 
-from . import PoolDriver, PoolCapabilities
+from . import PoolDriver, PoolCapabilities, run_cli_tool
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
@@ -78,18 +76,18 @@ class BeakerDriver(PoolDriver):
         # options.extend(['--username', self.pool_config['username'],
         #                '--password', self.pool_config['password']])
 
-        try:
-            output = Command(['bkr'], options=options, logger=self.logger).run()
+        r_run = run_cli_tool(
+            self.logger,
+            ['bkr'] + options,
+            json_output=False
+        )
 
-        except GlueCommandError as exc:
-            return Error(Failure("Failure during 'bkr {}' execution: {}".format(options[0], exc.output.stderr)))
+        if r_run.is_error:
+            return Error(r_run.unwrap_error())
 
-        if output.stdout:
-            log_blob(self.logger.debug, 'bkr {} returned:'.format(options[0]), output.stdout)
+        output_stdout, _ = r_run.unwrap()
 
-        if output.stdout and not isinstance(output.stdout, str):
-            output.stdout = output.stdout.decode('utf-8')
-        return Ok(output.stdout) if output.stdout else Error(Failure('No stdout provided by bkr'))
+        return Ok(output_stdout)
 
     def _create_job(self, environment: Environment) -> Result[bs4.BeautifulSoup, Failure]:
         """
