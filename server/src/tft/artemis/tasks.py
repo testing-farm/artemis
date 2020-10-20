@@ -31,9 +31,6 @@ from .drivers import azure as azure_driver
 from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Union
 from typing_extensions import Protocol
 
-DEFAULT_RETRIES = 5
-DEFAULT_MIN_BACKOFF_SECONDS = 15
-DEFAULT_MAX_BACKOFF_SECONDS = 60
 
 # There is a very basic thing we must be aware of: a task - the Python function below - can run multiple times,
 # sequentialy or in parallel. It's like multithreading application above a database, without any locks available.
@@ -93,6 +90,30 @@ db = get_db(root_logger)
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
 BROKER = get_broker()
 
+
+KNOB_ACTOR_DEFAULT_RETRIES_COUNT: Knob[int] = Knob(
+    'actor.default-retries-count',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DEFAULT_RETRIES',
+    envvar_cast=int,
+    default=5
+)
+
+KNOB_ACTOR_DEFAULT_MIN_BACKOFF: Knob[int] = Knob(
+    'actor.default-min-backoff',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DEFAULT_MIN_BACKOFF',
+    envvar_cast=int,
+    default=15
+)
+
+KNOB_ACTOR_DEFAULT_MAX_BACKOFF: Knob[int] = Knob(
+    'actor.default-max-backoff',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DEFAULT_MAX_BACKOFF',
+    envvar_cast=int,
+    default=60
+)
 
 KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
     'broker.close-after-dispatch',
@@ -271,12 +292,10 @@ def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:
 
 
 def actor_kwargs(actor_name: str) -> Dict[str, Any]:
-    default_retries = int(os.getenv('ARTEMIS_ACTOR_DEFAULT_RETRIES', 5))
-
     return {
-        'max_retries': int(actor_control_value(actor_name, 'RETRIES', default_retries)),
-        'min_backoff': int(actor_control_value(actor_name, 'MIN_BACKOFF', DEFAULT_MIN_BACKOFF_SECONDS)),
-        'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', DEFAULT_MAX_BACKOFF_SECONDS))
+        'max_retries': int(actor_control_value(actor_name, 'RETRIES', KNOB_ACTOR_DEFAULT_RETRIES_COUNT.value)),
+        'min_backoff': int(actor_control_value(actor_name, 'MIN_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value)),
+        'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value))
     }
 
 
