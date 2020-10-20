@@ -12,9 +12,8 @@ import sqlalchemy.orm.session
 import stackprinter
 
 from gluetool.result import Result, Ok, Error
-from gluetool.utils import normalize_bool_option
 
-from . import Failure, get_db, get_logger, get_broker, safe_call, safe_db_execute, log_guest_event, \
+from . import Failure, Knob, get_db, get_logger, get_broker, safe_call, safe_db_execute, log_guest_event, \
     log_error_guest_event
 from . import metrics
 from .db import DB, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
@@ -97,7 +96,13 @@ db = get_db(root_logger)
 BROKER = get_broker()
 
 
-_CLOSE_AFTER_DISPATCH = normalize_bool_option(os.getenv('ARTEMIS_CLOSE_AFTER_DISPATCH', 'no'))
+KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
+    'broker.close-after-dispatch',
+    has_db=False,
+    envvar='ARTEMIS_CLOSE_AFTER_DISPATCH',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=False
+)
 
 
 POOL_DRIVERS = {
@@ -463,7 +468,7 @@ def dispatch_task(
             ', '.join(formatted_args)
         ))
 
-        if _CLOSE_AFTER_DISPATCH:
+        if KNOB_CLOSE_AFTER_DISPATCH.value:
             logger.debug('closing broker connection as requested')
 
             BROKER.connection.close()

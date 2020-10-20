@@ -73,19 +73,6 @@ T = TypeVar('T')
 FailureDetailsType = Dict[str, Any]
 
 
-DEFAULT_CONFIG_DIR = os.getcwd()
-DEFAULT_BROKER_URL = 'amqp://guest:guest@127.0.0.1:5672'
-DEFAULT_DB_URL = 'sqlite:///test.db'
-DEFAULT_VAULT_PASSWORD_FILE = '~/.vault_password'
-
-DEFAULT_RABBITMQ_HEARTBEAT_TIMEOUT = 60
-"""
-RabbitMQ client should ping the server over established connection to keep both parties
-aware the connection should be kept alive.
-"""
-
-DEFAULT_RABBITMQ_BLOCKED_TIMEOUT = 300
-
 # Gluetool Sentry instance
 gluetool_sentry = gluetool.sentry.Sentry()
 
@@ -622,23 +609,122 @@ class Knob(Generic[T]):
         return Error(Failure('Cannot fetch knob value'))
 
 
+KNOB_LOGGING_LEVEL: Knob[int] = Knob(
+    'logging.level',
+    has_db=False,
+    envvar='ARTEMIS_LOG_LEVEL',
+    envvar_cast=lambda s: logging._nameToLevel.get(s.strip().upper(), logging.INFO),
+    default=logging.INFO
+)
+
+KNOB_LOGGING_JSON: Knob[bool] = Knob(
+    'logging.json',
+    has_db=False,
+    envvar='ARTEMIS_LOG_JSON',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=True
+)
+
+KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
+    'config.dirpath',
+    has_db=False,
+    envvar='ARTEMIS_CONFIG_DIR',
+    envvar_cast=lambda s: os.path.expanduser(s.strip()),
+    default=os.getcwd()
+)
+
+KNOB_BROKER_URL: Knob[str] = Knob(
+    'broker.url',
+    has_db=False,
+    envvar='ARTEMIS_BROKER_URL',
+    envvar_cast=str,
+    default='amqp://guest:guest@127.0.0.1:5672'
+)
+
+KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
+    'broker.heartbeat-timeout',
+    has_db=False,
+    envvar='ARTEMIS_BROKER_HEARTBEAT_TIMEOUT',
+    envvar_cast=int,
+    default=60
+)
+"""
+RabbitMQ client should ping the server over established connection to keep both parties
+aware the connection should be kept alive.
+"""
+
+KNOB_BROKER_BLOCKED_TIMEOUT: Knob[int] = Knob(
+    'broker.blocked-timeout',
+    has_db=False,
+    envvar='ARTEMIS_BROKER_BLOCKED_TIMEOUT',
+    envvar_cast=int,
+    default=300
+)
+
+KNOB_DB_URL: Knob[str] = Knob(
+    'db.url',
+    has_db=False,
+    envvar='ARTEMIS_DB_URL',
+    envvar_cast=str,
+    default='sqlite:///test.db'
+)
+
+KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
+    'vault.password.filepath',
+    has_db=False,
+    envvar='ARTEMIS_VAULT_PASSWORD_FILE',
+    envvar_cast=lambda s: os.path.expanduser(s.strip()),
+    default=os.path.expanduser('~/.vault_password')
+)
+
+KNOB_LOGGING_DB_QUERIES: Knob[bool] = Knob(
+    'logging.db.queries',
+    has_db=False,
+    envvar='ARTEMIS_LOG_DB_QUERIES',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+KNOB_LOGGING_DB_POOL: Knob[str] = Knob(
+    'logging.db.pool',
+    has_db=False,
+    envvar='ARTEMIS_LOG_DB_POOL',
+    envvar_cast=str,
+    default='none'
+)
+
+KNOB_DB_SQLALCHEMY_POOL_SIZE: Knob[int] = Knob(
+    'db.sqlalchemy.pool.size',
+    has_db=False,
+    envvar='ARTEMIS_SQLALCHEMY_POOL_SIZE',
+    envvar_cast=int,
+    default=20
+)
+
+KNOB_DB_SQLALCHEMY_POOL_OVERFLOW: Knob[int] = Knob(
+    'db.sqlalchemy.pool.max-overflow',
+    has_db=False,
+    envvar='ARTEMIS_SQLALCHEMY_MAX_OVERFLOW',
+    envvar_cast=int,
+    default=10
+)
+
+
 def get_logger() -> gluetool.log.ContextAdapter:
     gluetool.color.switch(True)
 
     return gluetool.log.Logging.setup_logger(
-        level=getattr(logging, os.getenv('ARTEMIS_LOG_LEVEL', 'INFO')),
-        json_output=gluetool.utils.normalize_bool_option(os.getenv('ARTEMIS_LOG_JSON', 'yes')),
+        level=KNOB_LOGGING_LEVEL.value,
+        json_output=KNOB_LOGGING_JSON.value,
         sentry=gluetool_sentry
     )
 
 
 def get_config() -> Dict[str, Any]:
-    config_dir = os.path.expanduser(os.getenv('ARTEMIS_CONFIG_DIR', DEFAULT_CONFIG_DIR))
-
     return cast(
         Dict[str, Any],
         gluetool.utils.load_yaml(
-            os.path.join(config_dir, 'server.yml'),
+            os.path.join(KNOB_CONFIG_DIRPATH.value, 'server.yml'),
             logger=get_logger()
         )
     )
@@ -663,8 +749,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
 
         import pika
 
-        broker_url = os.getenv('ARTEMIS_BROKER_URL', DEFAULT_BROKER_URL)
-        parsed_url = urllib.parse.urlparse(broker_url)
+        parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
 
         broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
             middleware=[
@@ -679,10 +764,8 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
                 'host': parsed_url.hostname,
                 'port': int(parsed_url.port),
                 'credentials': pika.PlainCredentials(parsed_url.username, parsed_url.password),
-                'heartbeat': int(os.getenv('ARTEMIS_BROKER_HEARTBEAT_TIMEOUT', DEFAULT_RABBITMQ_HEARTBEAT_TIMEOUT)),
-                'blocked_connection_timeout': int(
-                    os.getenv('ARTEMIS_BROKER_BLOCKED_TIMEOUT', DEFAULT_RABBITMQ_BLOCKED_TIMEOUT)
-                ),
+                'heartbeat': KNOB_BROKER_HEARTBEAT_TIMEOUT.value,
+                'blocked_connection_timeout': KNOB_BROKER_HEARTBEAT_TIMEOUT.value
             }]
         )
 
@@ -691,23 +774,15 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
     return broker
 
 
-def get_db_url() -> str:
-    return os.getenv('ARTEMIS_DB_URL', DEFAULT_DB_URL)
-
-
 def get_db(logger: gluetool.log.ContextAdapter) -> artemis_db.DB:
     return artemis_db.DB(
         logger,
-        get_db_url()
+        KNOB_DB_URL.value
     )
 
 
 def get_vault() -> artemis_vault.Vault:
-    password_filepath = os.path.expanduser(
-        os.getenv('ARTEMIS_VAULT_PASSWORD_FILE', DEFAULT_VAULT_PASSWORD_FILE)
-    )
-
-    with open(password_filepath, 'r') as f:
+    with open(KNOB_VAULT_PASSWORD_FILEPATH.value, 'r') as f:
         return artemis_vault.Vault(f.read())
 
 
