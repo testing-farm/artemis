@@ -46,3 +46,31 @@ pools:
       resource-group: "{{ azure.vms.resource_group }}"
       # snapshot feature is not yet implemented for Azure driver
       snapshots: false
+
+  - name: aws
+    driver: aws
+    parameters:
+      command: aws
+      master-key-name: "{{ aws.vms.keyname }}"
+
+      # availability zone match chosen subnet
+      availability-zone: "{{ aws.vms.availability_zone }}"
+      subnet-id: "{{ aws.vms.subnet_id }}"
+      security-group: "{{ aws.vms.security_group }}"
+      # instance details
+      default-instance-type: "{{ aws.vms.default_flavor }}"
+
+      # how many % we bid on the spot instance price. Raise this if we get too many instances terminated.
+      spot-price-bid-percentage: 10
+      # wait timeout/tick for fulfilling spot request
+      spot-request-timeout: 60
+      spot-request-tick: 1
+
+      # wait timeout/tick for instance becoming running
+      instance-running-timeout: 120
+      instance-running-tick: 1
+
+      # tags to add to all created resources
+      tags: {{ aws.vms.tags }}
+
+      snapshots: False

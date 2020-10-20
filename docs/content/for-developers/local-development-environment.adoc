@@ -57,8 +57,13 @@ You can use samples and `server/configuration/gen.sh` script which will setup Ar
 $ cp server/configuration/env.yml.sample server/configuration/env.yml
 ....
 +
-* edit this new `env.yml` file and provide details of your OpenStack tenant and an SSH key pair to be used by Artemis as its master-key.
-* create an SSH keypair for Artemis, and upload it to your OpenStack tenant matching the `openstack.vms.keyname` in your `env.yml`. For example, if you set `openstack.vms.keyname` to `artemis`:
+* edit this new `env.yml` file, provide details of the cloud accounts you would like to use with Artemis (removing configuration for those you don't need) and
+ an SSH key pair to be used by Artemis as its master-key.
+* create an SSH keypair for Artemis.
++
+In case of OpenStack or AWS clouds you should also create a keypair with the public key in the OpenStack tenant or AWS account, the keypair name
+should match the `openstack.vms.keyname` or `aws.vms.keyname` in your `env.yml`, respectively.
+For example, if you set `openstack.vms.keyname` to `artemis`:
 +
 [source,shell]
 ....
