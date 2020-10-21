@@ -86,7 +86,7 @@ def format_struct_as_yaml(data: Any) -> str:
 
     YAML.dump(data, stream)
 
-    return cast(str, stream.getvalue())
+    return stream.getvalue()
 
 
 class Failure:
