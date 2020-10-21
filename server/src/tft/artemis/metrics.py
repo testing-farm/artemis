@@ -263,12 +263,12 @@ class ProvisioningMetrics(MetricsBase):
         session: sqlalchemy.orm.session.Session
     ) -> 'ProvisioningMetrics':
         requested_record = artemis_db.Query \
-            .from_session(session, artemis_db.MetricsFailover) \
+            .from_session(session, artemis_db.Metrics) \
             .filter(artemis_db.Metrics.metric == 'requested') \
             .one_or_none()
 
         success_record = artemis_db.Query \
-            .from_session(session, artemis_db.MetricsFailover) \
+            .from_session(session, artemis_db.Metrics) \
             .filter(artemis_db.Metrics.metric == 'success') \
             .one_or_none()
 
