@@ -234,6 +234,12 @@ class Failure:
 
         details['message'] = self.message
 
+        if self.exception:
+            details['exception'] = {
+                'instance': str(self.exception),
+                'type': str(type(self.exception))
+            }
+
         if 'scrubbed_command' in details:
             details['scrubbed_command'] = gluetool.utils.format_command_line([details['scrubbed_command']])
 
