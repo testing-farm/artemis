@@ -35,8 +35,6 @@ DEFAULT_RETRIES = 5
 DEFAULT_MIN_BACKOFF_SECONDS = 15
 DEFAULT_MAX_BACKOFF_SECONDS = 60
 
-DEFAULT_POOL_RESOURCES_METRICS_REFRESH_TICK = 60
-
 # There is a very basic thing we must be aware of: a task - the Python function below - can run multiple times,
 # sequentialy or in parallel. It's like multithreading application above a database, without any locks available.
 # Tasks must be aware of this and carefully plan their workflow, to employ database queries to help with the
