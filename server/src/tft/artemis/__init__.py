@@ -189,7 +189,10 @@ class Failure:
                 scrubbed_command = [exc.cmd[0], '<scrubbed...>']
 
             return {
-                'instance': 'Command {} failed with exit code'.format(' '.join(scrubbed_command)),
+                'instance': 'Command "{}" failed with exit code {}'.format(
+                    ' '.join(scrubbed_command),
+                    exc.output.exit_code
+                ),
                 'type': 'GlueCommandError'
             }
 
