@@ -304,6 +304,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def update_guest(
         self,
+        logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -365,7 +366,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError()
 
-    def release_guest(self, guest: Guest) -> Result[bool, Failure]:
+    def release_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest: Guest
+    ) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 

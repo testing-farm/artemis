@@ -1378,7 +1378,7 @@ def do_release_guest_request(
             assert workspace.pool
             assert workspace.guest
 
-            r_release = workspace.pool.release_guest(workspace.guest)
+            r_release = workspace.pool.release_guest(logger, workspace.guest)
 
             if r_release.is_error:
                 handle_failure(r_release, 'failed to release guest')
@@ -1452,7 +1452,7 @@ def do_update_guest(
     def _undo_guest_update(guest: Guest) -> None:
         assert workspace.pool
 
-        r = workspace.pool.release_guest(guest)
+        r = workspace.pool.release_guest(logger, guest)
 
         if r.is_ok:
             return
@@ -1461,7 +1461,12 @@ def do_update_guest(
 
     environment = Environment.unserialize_from_json(json.loads(workspace.gr.environment))
 
-    r_update = workspace.pool.update_guest(workspace.gr, environment, workspace.ssh_key)
+    r_update = workspace.pool.update_guest(
+        logger,
+        workspace.gr,
+        environment,
+        workspace.ssh_key
+    )
 
     if r_update.is_error:
         return handle_failure(r_update, 'failed to update guest')
@@ -1565,7 +1570,7 @@ def do_acquire_guest(
     def _undo_guest_acquire() -> None:
         assert workspace.pool
 
-        r = workspace.pool.release_guest(guest)
+        r = workspace.pool.release_guest(logger, guest)
 
         if r.is_ok:
             return

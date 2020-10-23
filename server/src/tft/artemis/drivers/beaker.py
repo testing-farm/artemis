@@ -251,6 +251,7 @@ class BeakerDriver(PoolDriver):
         return Ok(job_results.find('recipe')['system'])
 
     def update_guest(self,
+                     logger: gluetool.log.ContextAdapter,
                      guest_request: GuestRequest,
                      environment: Environment,
                      master_key: SSHKey,
@@ -401,7 +402,7 @@ class BeakerDriver(PoolDriver):
             )
         )
 
-    def release_guest(self, guest: Guest) -> Result[bool, Failure]:
+    def release_guest(self, logger: gluetool.log.ContextAdapter, guest: Guest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 

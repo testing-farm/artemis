@@ -521,7 +521,7 @@ class AWSDriver(PoolDriver):
 
         return Ok(guest)
 
-    def release_guest(self, guest: Guest) -> Result[bool, Failure]:
+    def release_guest(self, logger: gluetool.log.ContextAdapter, guest: Guest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 

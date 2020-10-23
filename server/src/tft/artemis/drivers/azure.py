@@ -76,6 +76,7 @@ class AzureDriver(PoolDriver):
 
     def update_guest(
         self,
+        logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -109,10 +110,11 @@ class AzureDriver(PoolDriver):
 
         status = output['provisioningState'].lower()
 
-        self.logger.info('instance status is {}'.format(status))
+        logger.info('instance status is {}'.format(status))
 
         if status == 'failed':
             self.release_guest(
+                logger,
                 AzureGuest(
                     guest.guestname,
                     guest.instance_id,
@@ -122,9 +124,9 @@ class AzureDriver(PoolDriver):
                     ssh_info=None
                 )
             )
-            self.logger.warning('Instance ended up in failed state. NOT provisioning a new one')
+            logger.warning('Instance ended up in failed state. NOT provisioning a new one')
 
-            return self._do_acquire_guest(self.logger, guest_request, environment, master_key)
+            return self._do_acquire_guest(logger, guest_request, environment, master_key)
 
         r_ip_address = vm_info_to_ip(output, 'publicIps', r'((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*')
 
@@ -136,7 +138,7 @@ class AzureDriver(PoolDriver):
 
         return Ok(guest)
 
-    def release_guest(self, guest: Guest) -> Result[bool, Failure]:
+    def release_guest(self, logger: gluetool.log.ContextAdapter, guest: Guest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 
@@ -394,7 +396,7 @@ class AzureDriver(PoolDriver):
             return Error(Failure('Instance id not found'))
 
         status = output['powerState'].lower()
-        self.logger.info('instance status is {}'.format(status))
+        logger.info('instance status is {}'.format(status))
 
         # There is no chance that the guest will be ready in this step
         # Return the guest with no ip and check it in the next update_guest event

@@ -350,7 +350,7 @@ class OpenStackDriver(PoolDriver):
 
         status = output['status'].lower()
 
-        self.logger.info('instance status is {}'.format(status))
+        logger.info('instance status is {}'.format(status))
 
         # There is no chance that the guest will be ready in this step
         # Return the guest with no ip and check it in the next update_guest event
@@ -637,6 +637,7 @@ class OpenStackDriver(PoolDriver):
 
     def update_guest(
         self,
+        logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -666,12 +667,13 @@ class OpenStackDriver(PoolDriver):
 
         status = output['status'].lower()
 
-        self.logger.info('instance status is {}'.format(status))
+        logger.info('instance status is {}'.format(status))
 
         def _reprovision(msg: str) -> Result[Guest, Failure]:
-            self.logger.warning(msg)
+            logger.warning(msg)
 
             self.release_guest(
+                logger,
                 OpenStackGuest(
                     guest.guestname,
                     guest.instance_id,
@@ -680,7 +682,7 @@ class OpenStackDriver(PoolDriver):
                 )
             )
 
-            return self._do_acquire_guest(self.logger, guest_request, environment, master_key)
+            return self._do_acquire_guest(logger, guest_request, environment, master_key)
 
         if status == 'error':
             return _reprovision('Instance ended up in error state. provisioning a new one')
@@ -712,7 +714,7 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(guest)
 
-    def release_guest(self, guest: Guest) -> Result[bool, Failure]:
+    def release_guest(self, logger: gluetool.log.ContextAdapter, guest: Guest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 
