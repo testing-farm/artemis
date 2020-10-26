@@ -169,6 +169,38 @@ class Failure:
             **details
         )
 
+    @classmethod
+    def _exception_details(
+        cls,
+        exc: BaseException,
+        scrubbed_command: Optional[List[str]]
+    ) -> Dict[str, str]:
+        # Special handling of GlueCommandError - when logged, it reports the full command,
+        # possibly revealing credentials and other sensitive details.
+        #
+        # So, we can either use a scrubbed command we already have, or, if this information
+        # was not provided when creating this failure, we construct our own, very dummy, by
+        # logging just the command and dropping the rest.
+        #
+        # It would be nice to test this *before* logging, e.g. when running static analysis
+        # of Artemis sources.
+        if isinstance(exc, gluetool.glue.GlueCommandError):
+            if scrubbed_command is None:
+                scrubbed_command = [exc.cmd[0], '<scrubbed...>']
+
+            return {
+                'instance': 'Command "{}" failed with exit code {}'.format(
+                    ' '.join(scrubbed_command),
+                    exc.output.exit_code
+                ),
+                'type': 'GlueCommandError'
+            }
+
+        return {
+            'instance': str(exc),
+            'type': str(type(exc))
+        }
+
     def get_event_details(self) -> Dict[str, Any]:
         """
         Returns a mapping of failure details, suitable for storing in DB as a guest event details.
@@ -235,10 +267,7 @@ class Failure:
         details['message'] = self.message
 
         if self.exception:
-            details['exception'] = {
-                'instance': str(self.exception),
-                'type': str(type(self.exception))
-            }
+            details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))
 
         if 'scrubbed_command' in details:
             details['scrubbed_command'] = gluetool.utils.format_command_line([details['scrubbed_command']])
