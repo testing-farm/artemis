@@ -684,8 +684,10 @@ class OpenStackDriver(PoolDriver):
                 ).handle(self.logger)
 
             else:
-                if (datetime.utcnow() - created_stamp).total_seconds() > KNOB_BUILD_TIMEOUT.value:
-                    return _reprovision('instance stuck in BUILD state, provisioning a new one')
+                diff = datetime.utcnow() - created_stamp
+
+                if diff.total_seconds() > KNOB_BUILD_TIMEOUT.value:
+                    return _reprovision('instance stuck in BUILD state for {}, provisioning a new one'.format(diff))
 
         r_ip_address = self._output_to_ip(output)
 
