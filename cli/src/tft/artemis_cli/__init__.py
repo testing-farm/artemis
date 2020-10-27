@@ -262,7 +262,7 @@ def artemis_inspect(cfg, resource, rid, params=None, data=None, logger=None):
     return fetch_artemis(cfg, '/{}/{}'.format(resource, rid), request_kwargs={'json': data, 'params': params}, logger=None)
 
 def artemis_create(cfg, resource, data, logger=None):
-    return fetch_artemis(cfg, '/{}'.format(resource), method='post', request_kwargs={'json':data}, logger=None)
+    return fetch_artemis(cfg, '/{}'.format(resource), method='post', request_kwargs={'json': data}, logger=None)
 
 def artemis_delete(cfg, resource, rid, logger=None):
     return fetch_artemis(cfg, '{}/{}'.format(resource, rid), method='delete', logger=None, allow_statuses=[200, 201, 404])

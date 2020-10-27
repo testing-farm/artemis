@@ -7,7 +7,7 @@ import gluetool.log
 from gluetool.result import Result, Error, Ok
 from gluetool.utils import Command
 
-from . import PoolDriver, stdout_to_str, vm_info_to_ip
+from . import PoolDriver, stdout_to_str, vm_info_to_ip, create_tempfile
 from .. import Failure
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -362,22 +362,24 @@ class AzureDriver(PoolDriver):
     ) -> Result[Guest, Failure]:
 
         name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
-
         # XXX FIXME not using hooks for the moment, transfer to a hook some time later
         if environment.pool:
             image = environment.os.compose
         else:
             raise NotImplementedError("Compose mapping not implemented for azure yet")
 
-        az_options = [
-            'vm',
-            'create',
-            '--resource-group', self.pool_config['resource-group'],
-            '--image', image,
-            '--name', name,
-            '--tags', 'uid={}'.format(name)
-        ]
-        r_output = self._run_cmd_with_auth(az_options)
+        r_output = None
+        with create_tempfile(file_contents=guest_request.post_install_script) as custom_data:
+            az_options = [
+                'vm',
+                'create',
+                '--resource-group', self.pool_config['resource-group'],
+                '--image', image,
+                '--name', name,
+                '--tags', 'uid={}'.format(name),
+                '--custom-data', custom_data,
+            ]
+            r_output = self._run_cmd_with_auth(az_options)
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 

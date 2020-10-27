@@ -1,9 +1,12 @@
 import argparse
+import contextlib
 import dataclasses
 import threading
+import os
 import re
 import sqlalchemy
 import sqlalchemy.orm.session
+import tempfile
 
 import gluetool.log
 from gluetool.result import Result, Ok, Error
@@ -16,7 +19,7 @@ from ..guest import Guest, GuestState
 from ..snapshot import Snapshot
 
 # Type annotations
-from typing import cast, Any, Callable, List, Dict, Optional
+from typing import cast, Any, Callable, Iterator, List, Dict, Optional
 
 
 class PoolLogger(gluetool.log.ContextAdapter):
@@ -579,3 +582,17 @@ def stdout_to_str(output: Any) -> str:
         assert isinstance(cmd_out, str)
         return cmd_out
     return ""
+
+
+@contextlib.contextmanager
+def create_tempfile(file_contents: Optional[str] = None) -> Iterator[str]:
+    """Returns a path to the temporary file with given contents."""
+    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        if file_contents:
+            temp_file.write(file_contents.encode('utf-8'))
+            # Make sure all changes are committed to the OS
+            temp_file.flush()
+    try:
+        yield temp_file.name
+    finally:
+        os.unlink(temp_file.name)

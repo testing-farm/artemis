@@ -61,18 +61,21 @@ class GuestRequest:
     environment: Dict[str, Any]
     priority_group: Optional[str]
     user_data: Optional[Dict[str, Optional[str]]]
+    post_install_script: Optional[str]
 
     def __init__(
         self,
         keyname: str,
         environment: Dict[str, Any],
         priority_group: str,
-        user_data: Optional[Dict[str, Optional[str]]]
+        user_data: Optional[Dict[str, Optional[str]]],
+        post_install_script: Optional[str]
     ) -> None:
         self.keyname = keyname
         self.environment = environment
         self.priority_group = priority_group
         self.user_data = user_data or {}
+        self.post_install_script = post_install_script
 
 
 @molten.schema
@@ -101,6 +104,7 @@ class GuestResponse:
     ssh: GuestSSHInfo
     state: GuestState
     user_data: Dict[str, Optional[str]]
+    post_install_script: Optional[str]
 
     def __init__(
         self,
@@ -110,7 +114,9 @@ class GuestResponse:
         address: Optional[str],
         ssh: GuestSSHInfo,
         state: GuestState,
-        user_data: Dict[str, Optional[str]]
+        user_data: Dict[str, Optional[str]],
+        post_install_script: Optional[str]
+
     ) -> None:
         self.guestname = guestname
         self.owner = owner
@@ -119,6 +125,7 @@ class GuestResponse:
         self.ssh = ssh
         self.state = state.value
         self.user_data = user_data
+        self.post_install_script = post_install_script
 
     @classmethod
     def from_db(cls, guest: artemis_db.GuestRequest):
@@ -135,7 +142,8 @@ class GuestResponse:
                 guest.ssh_keyname
             ),
             state=GuestState(guest.state),
-            user_data=json.loads(guest.user_data)
+            user_data=json.loads(guest.user_data),
+            post_install_script=guest.post_install_script
         )
 
 
@@ -295,7 +303,8 @@ class GuestRequestManager:
                     poolname=None,
                     pool_data=json.dumps({}),
                     user_data=json.dumps(guest_request.user_data),
-                    state=GuestState.PENDING.value
+                    state=GuestState.PENDING.value,
+                    post_install_script=guest_request.post_install_script,
                 )
             )
 

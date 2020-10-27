@@ -8,7 +8,7 @@ from gluetool.glue import GlueCommandError
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import Command, normalize_bool_option
 
-from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics
+from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics, create_tempfile
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -321,28 +321,26 @@ class OpenStackDriver(PoolDriver):
             return Error(r_network.unwrap_error())
 
         network = r_network.unwrap()
-
         name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
-
-        os_options = [
-            'server',
-            'create',
-            '--flavor', flavor,
-            '--image', image,
-            '--network', network,
-            '--key-name', self.pool_config['master-key-name'],
-            '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
-            '--security-group', self.pool_config.get('security-group', 'default'),
-            name
-        ]
-
-        r_output = self._run_os(os_options)
-
+        r_output = None
+        with create_tempfile(file_contents=guest_request.post_install_script) as user_data:
+            os_options = [
+                'server',
+                'create',
+                '--flavor', flavor,
+                '--image', image,
+                '--network', network,
+                '--key-name', self.pool_config['master-key-name'],
+                '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
+                '--security-group', self.pool_config.get('security-group', 'default'),
+                '--user-data', user_data,
+                name
+            ]
+            r_output = self._run_os(os_options)
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
         output = r_output.unwrap()
-
         if not output['id']:
             return Error(Failure('Instance id not found'))
         instance_id = output['id']

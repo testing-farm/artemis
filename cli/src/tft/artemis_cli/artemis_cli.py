@@ -100,6 +100,7 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--compose', required=True, help='compose id')
 @click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
+@click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
 @click.pass_obj
 def cmd_guest_create(
         cfg: Configuration,
@@ -108,7 +109,8 @@ def cmd_guest_create(
         compose: str = None,
         pool: str = None,
         snapshots = False,
-        priority_group = None
+        priority_group = None,
+        post_install_script: str = None
 ) -> None:
     environment = {}
     environment['arch'] = arch
@@ -120,10 +122,17 @@ def cmd_guest_create(
     if snapshots:
         environment['snapshots'] = True
 
+    post_install = None
+    # check that post_install_script is a valid file and read it
+    if post_install_script and os.path.isfile(post_install_script):
+        with open(post_install_script) as f:
+            post_install = f.read()
+
     data = {
             'environment': environment,
             'keyname': keyname,
-            'priority_group': 'default-priority'
+            'priority_group': 'default-priority',
+            'post_install_script': post_install,
             }
 
     response = artemis_create(cfg, 'guests/', data)

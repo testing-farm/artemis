@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 import threading
@@ -42,7 +43,8 @@ AWS_INSTANCE_SPECIFICATION = """
       ],
       "AssociatePublicIpAddress": false
     }}
-  ]
+  ],
+  "UserData": "{user_data}"
 }}
 """
 
@@ -275,7 +277,8 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         instance_type: str,
         image: Dict[str, str],
-        guestname: str
+        guestname: str,
+        post_install_script: Optional[str] = None
     ) -> Result[Guest, Failure]:
 
         # find our spot instance prices for the instance_type in our availability zone
@@ -286,13 +289,21 @@ class AWSDriver(PoolDriver):
 
         spot_price = r_price.unwrap()
 
+        if post_install_script:
+            # NOTE(ivasilev) Encoding is needed as base62.b64encode() requires bytes object per py3 specification,
+            # and decoding is getting us the expected str back.
+            user_data = base64.b64encode(post_install_script.encode('utf-8')).decode('utf-8')
+        else:
+            user_data = ""
+
         specification = AWS_INSTANCE_SPECIFICATION.format(
             ami_id=image['ImageId'],
             key_name=self.pool_config['master-key-name'],
             instance_type=instance_type,
             availability_zone=self.pool_config['availability-zone'],
             subnet_id=self.pool_config['subnet-id'],
-            security_group=self.pool_config['security-group']
+            security_group=self.pool_config['security-group'],
+            user_data=user_data
         )
 
         r_spot_request = self._aws_command([
@@ -478,7 +489,11 @@ class AWSDriver(PoolDriver):
         image = r_image.unwrap()
 
         # request a spot instance and wait for it's full fillment
-        r_spot_instance = self._request_spot_instance(logger, instance_type, image, guest_request.guestname)
+        r_spot_instance = self._request_spot_instance(logger=logger,
+                                                      instance_type=instance_type,
+                                                      image=image,
+                                                      guestname=guest_request.guestname,
+                                                      post_install_script=guest_request.post_install_script)
 
         if r_spot_instance.is_error:
             # cleanup the spot request if needed
