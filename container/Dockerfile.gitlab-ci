@@ -1,12 +1,12 @@
 FROM quay.io/testing-farm/python-ci-image
 
-RUN    apt-get -y update \
-    && apt-get -y install \
-        # required for beaker-client package
-        libkrb5-dev \
-        # required for PostgreSQL
-        libpq-dev \
-        # required for XML libs
-        libxml2-dev \
-        libxslt1-dev \
-    && apt-get clean
+RUN    dnf -y update \
+    && dnf -y install \
+       # required for beaker-client package
+       krb5-devel \
+       # required for PostgreSQL
+       libpq-devel \
+       # required for XML libs
+       libxml2-devel \
+       libxslt-devel \
+    && dnf clean all
