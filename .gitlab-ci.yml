@@ -1,6 +1,9 @@
 # source: https://gitlab.com/testing-farm/artemis/tree/master/container/Dockerfile.gitlab-ci
 image: quay.io/testing-farm/gitlab-ci-artemis
 
+variables:
+  MYPY_FORCE_COLOR: "yes"
+
 stages:
   - test_stage
   - deploy

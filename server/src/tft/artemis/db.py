@@ -70,7 +70,7 @@ class Query(Generic[T]):
 
         return self
 
-    def limit(self, limit: Optional[int] = None) -> 'Query[T]':
+    def limit(self, limit=None) -> 'Query[T]':
         self.query = cast(
             Callable[[Optional[int]], _Query],
             self.query.limit
