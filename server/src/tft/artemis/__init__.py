@@ -222,11 +222,52 @@ class Failure:
 
         return event_details
 
-    def get_sentry_details(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    @classmethod
+    def _get_sentry_stack_info(cls, frames: _traceback.StackSummary) -> Dict[str, Any]:
         """
-        Returns two mappings, tags and extra, accepted by Sentry as issue details.
+        Based on Raven's ``get_stack_info``. Because Raven is quite outdated, we need to convert
+        the traceback to a format Sentry accepts. The original method cannot deal with ``FrameSummary``
+        objects used by Python 3.5+, it understands only the old frame objects, witg ``f_*`` attributes.
         """
 
+        from raven.utils.stacks import slim_frame_data
+
+        result = []
+        for frame in frames:
+            lineno = frame.lineno
+            filename = frame.filename
+            function = frame.name
+            line = frame.line
+
+            frame_result = {
+                'abs_path': filename,
+                'filename': os.path.relpath(filename, os.getcwd()),
+                'module': None,
+                'function': function or '<unknown>',
+                'lineno': lineno + 1,
+            }
+
+            if line is not None:
+                frame_result.update({
+                    'pre_context': None,
+                    'context_line': line,
+                    'post_context': None,
+                })
+
+            result.append(frame_result)
+
+        stackinfo = {
+            'frames': slim_frame_data(result),
+        }
+
+        return stackinfo
+
+    def get_sentry_details(self) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        """
+        Returns three mappings, data, tags and extra, accepted by Sentry as issue details.
+        """
+
+        data: Dict[str, Any] = {}
         tags: Dict[str, str] = {}
         extra: Dict[str, Any] = {}
 
@@ -247,15 +288,21 @@ class Failure:
         if 'poolname' in self.details:
             tags['poolname'] = self.details['poolname']
 
+        if self.traceback:
+            # Convert our traceback to format understood by Sentry, and store it in `data['stacktrace']` where Sentry
+            # expects it to find when generating the message for submission.
+            data['stacktrace'] = Failure._get_sentry_stack_info(self.traceback)
+
         if self.caused_by:
-            caused_by_tags, caused_by_extra = self.caused_by.get_sentry_details()
+            caused_by_data, caused_by_tags, caused_by_extra = self.caused_by.get_sentry_details()
 
             extra['caused_by'] = {
+                'data': caused_by_data,
                 'tags': caused_by_tags,
                 'extra': caused_by_extra
             }
 
-        return tags, extra
+        return data, tags, extra
 
     def get_log_details(self) -> Dict[str, Any]:
         """
@@ -268,6 +315,9 @@ class Failure:
 
         if self.exception:
             details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))
+
+        if self.exc_info:
+            details['traceback'] = stackprinter.format(self.exc_info)
 
         if 'scrubbed_command' in details:
             details['scrubbed_command'] = gluetool.utils.format_command_line([details['scrubbed_command']])
@@ -321,15 +371,15 @@ class Failure:
         if self.submited_to_sentry:
             return
 
-        tags, extra = self.get_sentry_details()
+        data, tags, extra = self.get_sentry_details()
 
         if additional_tags:
             tags.update(additional_tags)
 
         self.sentry_event_id = gluetool_sentry.submit_message(
             'Failure: {}'.format(self.message),
-            exception=self.exception if self.exception else '<no exception>',
-            traceback=self.traceback,
+            exc_info=self.exc_info,
+            data=data,
             tags=tags,
             extra=extra
         )
