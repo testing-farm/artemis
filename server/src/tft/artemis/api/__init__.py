@@ -11,7 +11,7 @@ import uuid
 import molten
 import molten.dependency_injection
 import molten.openapi
-from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, Response, Request
+from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, Response, Request, Field
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
@@ -56,26 +56,36 @@ class DBComponent:
 
 
 @molten.schema
+class EnvironmentOs:
+    compose: str
+
+    def serialize_to_json(self) -> Dict[str, Any]:
+        return {'compose': self.compose}
+
+
+@molten.schema
+class Environment:
+    arch: str
+    os: EnvironmentOs
+    pool: Optional[str] = Field(default=None)
+    snapshots: bool = Field(default=False)
+
+    def serialize_to_json(self) -> Dict[str, Any]:
+        return {
+            'arch': self.arch,
+            'os': self.os.serialize_to_json(),
+            'pool': self.pool,
+            'snapshots': self.snapshots
+        }
+
+
+@molten.schema
 class GuestRequest:
     keyname: str
-    environment: Dict[str, Any]
+    environment: Environment
     priority_group: Optional[str]
     user_data: Optional[Dict[str, Optional[str]]]
     post_install_script: Optional[str]
-
-    def __init__(
-        self,
-        keyname: str,
-        environment: Dict[str, Any],
-        priority_group: str,
-        user_data: Optional[Dict[str, Optional[str]]],
-        post_install_script: Optional[str]
-    ) -> None:
-        self.keyname = keyname
-        self.environment = environment
-        self.priority_group = priority_group
-        self.user_data = user_data or {}
-        self.post_install_script = post_install_script
 
 
 @molten.schema
@@ -294,7 +304,7 @@ class GuestRequestManager:
             session.add(
                 artemis_db.GuestRequest(
                     guestname=guestname,
-                    environment=json.dumps(guest_request.environment),
+                    environment=json.dumps(guest_request.environment.serialize_to_json()),
                     ownername=DEFAULT_GUEST_REQUEST_OWNER,
                     ssh_keyname=guest_request.keyname,
                     ssh_port=DEFAULT_SSH_PORT,
