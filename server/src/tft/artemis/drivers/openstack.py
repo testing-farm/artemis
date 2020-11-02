@@ -26,6 +26,15 @@ KNOB_WAIT_TIMEOUT: Knob[int] = Knob(
     default=180
 )
 
+# How long would we wait for an instance to leave BUILD state.
+KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
+    'openstack.build-timeout',
+    has_db=False,
+    envvar='ARTEMIS_OPENSTACK_BUILD_TIMEOUT',
+    envvar_cast=int,
+    default=600
+)
+
 
 class OpenStackGuest(Guest):
     def __init__(
@@ -629,9 +638,8 @@ class OpenStackDriver(PoolDriver):
 
         if r_guest.is_error:
             return Error(r_guest.unwrap_error())
-        guest = r_guest.unwrap()
 
-        assert isinstance(guest, OpenStackGuest)
+        guest = cast(OpenStackGuest, r_guest.unwrap())
 
         r_output = self._show_guest(guest.instance_id)
 
@@ -647,7 +655,9 @@ class OpenStackDriver(PoolDriver):
 
         self.logger.info('instance status is {}'.format(status))
 
-        if status == 'error':
+        def _reprovision(msg: str) -> Result[Guest, Failure]:
+            self.logger.warning(msg)
+
             self.release_guest(
                 OpenStackGuest(
                     guest.guestname,
@@ -656,9 +666,28 @@ class OpenStackDriver(PoolDriver):
                     ssh_info=None
                 )
             )
-            self.logger.warning('Instance ended up in error state. provisioning a new one')
 
             return self._do_acquire_guest(self.logger, guest_request, environment, master_key)
+
+        if status == 'error':
+            return _reprovision('Instance ended up in error state. provisioning a new one')
+
+        if status == 'build' and 'created' in output:
+            try:
+                created_stamp = datetime.strptime(output['created'], '%Y-%m-%dT%H:%M:%SZ')
+
+            except Exception as exc:
+                Failure.from_exc(
+                    'failed to parse "created" timestamp',
+                    exc,
+                    stamp=output['created']
+                ).handle(self.logger)
+
+            else:
+                diff = datetime.utcnow() - created_stamp
+
+                if diff.total_seconds() > KNOB_BUILD_TIMEOUT.value:
+                    return _reprovision('instance stuck in BUILD state for {}, provisioning a new one'.format(diff))
 
         r_ip_address = self._output_to_ip(output)
 
