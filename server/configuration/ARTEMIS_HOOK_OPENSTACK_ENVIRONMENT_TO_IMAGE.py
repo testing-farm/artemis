@@ -9,8 +9,6 @@ import gluetool.log
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import PatternMap
 
-import stackprinter
-
 from typing import Any, Optional
 
 
@@ -90,9 +88,13 @@ def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(
         return _image_by_name(logger, pool, image_name)
 
     except Exception as exc:
-        logger.error('crashed while mapping {} to image:\n{}'.format(environment, stackprinter.format(exc)))
+        return Error(Failure.from_exc(
+            'crashed while mapping environment to image',
+            exc,
+            environment=environment
+        ))
 
-    error = 'failed to map {} to image'.format(environment)
-    logger.error(error)
-
-    return Error(Failure(error))
+    return Error(Failure(
+        'failed to map environment to image',
+        environment=environment
+    ))
