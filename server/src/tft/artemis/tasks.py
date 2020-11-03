@@ -1619,6 +1619,9 @@ def do_acquire_guest(
 
     logger.info('successfully acquired')
 
+    # update metrics counter for successfully provisioned guest requests
+    metrics.ProvisioningMetrics.inc_success(session)
+
     return SUCCESS
 
 
