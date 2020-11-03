@@ -19,7 +19,8 @@ from molten.typing import Middleware
 from gluetool.log import log_dict
 
 from . import errors, handlers
-from .middleware import error_handler_middleware, prometheus_middleware, authorization_middleware
+from .middleware import error_handler_middleware, prometheus_middleware
+from .middleware import authorization_middleware, AuthContext
 from .. import get_logger, get_db, safe_db_execute, log_guest_event
 from .. import db as artemis_db
 from .. import metrics
@@ -53,6 +54,42 @@ class DBComponent:
 
     def resolve(self) -> artemis_db.DB:
         return self.db
+
+
+class AuthContextComponent:
+    """
+    Makes auth context accessible to request handlers.
+
+    WARNING: given that authentication and authorization are TEMPORARILY optional, and disabled by default,
+    each handler that requires auth context MUST test the state of authentication/authorization, and deal
+    appropriately when any of them is disabled. This may require using default usernames or allow access
+    to everyone, but that is acceptable - once all pieces are merged, this optionality will be removed, and
+    the mere fact the handler is running would mean the auth middleware succeeded - otherwise, auth middleware
+    would have interrupted the chain, e.g. by returning HTTP 401.
+    """
+
+    is_cacheable = True
+    is_singleton = False
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is AuthContext
+
+    def resolve(self, request: Request) -> AuthContext:
+        r_ctx = AuthContext.extract(request)
+
+        # If the context does not exist, it means we have a handler that requests it, by adding
+        # corresponding parameter, but auth middleware did not create it - the most likely chance
+        # is the handler takes care of path that is marked as "auth not needed".
+        if r_ctx.is_error:
+            failure = r_ctx.unwrap_error()
+
+            failure.handle(get_logger())
+
+            # We cannot continue: handler requires auth context, and we don't have any. It's not possible to
+            # recover.
+            raise Exception(failure.message)
+
+        return r_ctx.unwrap()
 
 
 @molten.schema
@@ -297,7 +334,7 @@ class GuestRequestManager:
 
         return responses
 
-    def create(self, guest_request: GuestRequest) -> GuestResponse:
+    def create(self, guest_request: GuestRequest, ownername: str) -> GuestResponse:
         guestname = str(uuid.uuid4())
 
         with self.db.get_session() as session:
@@ -543,8 +580,23 @@ def get_guest_requests(manager: GuestRequestManager, request: Request) -> APIRes
     return APIResponse(manager.get_guest_requests(), request=request)
 
 
-def create_guest_request(guest_request: GuestRequest, manager: GuestRequestManager, request: Request) -> APIResponse:
-    return APIResponse(manager.create(guest_request), request=request, status=HTTP_201)
+def create_guest_request(
+    guest_request: GuestRequest,
+    manager: GuestRequestManager,
+    request: Request,
+    auth: AuthContext
+) -> APIResponse:
+    # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
+    # and we got so far means user must be authenticated.
+    if auth.is_authentication_enabled and auth.is_authenticated:
+        assert auth.username
+
+        ownername = auth.username
+
+    else:
+        ownername = DEFAULT_GUEST_REQUEST_OWNER
+
+    return APIResponse(manager.create(guest_request, ownername=ownername), request=request, status=HTTP_201)
 
 
 def get_guest_request(guestname: str, manager: GuestRequestManager, request: Request) -> APIResponse:
@@ -653,7 +705,8 @@ def run_app() -> molten.app.App:
         DBComponent(db),
         GuestRequestManagerComponent(),
         GuestEventManagerComponent(),
-        SnapshotRequestManagerComponent()
+        SnapshotRequestManagerComponent(),
+        AuthContextComponent()
     ]
 
 # TODO: uncomment when registration is done

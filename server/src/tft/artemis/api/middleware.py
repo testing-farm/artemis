@@ -4,6 +4,7 @@ import json
 import re
 import urllib.parse
 
+from gluetool.result import Result, Ok, Error
 from gluetool.utils import normalize_bool_option
 import sqlalchemy.orm.session
 from molten import Request, Response
@@ -12,7 +13,7 @@ from molten import Request, Response
 from molten.contrib.prometheus import REQUEST_COUNT as REQUEST_COUNT, REQUESTS_INPROGRESS as REQUESTS_INPROGRESS
 
 from . import errors
-from .. import get_logger, get_db, Knob
+from .. import get_logger, get_db, Knob, Failure
 from ..db import User, UserRoles
 
 from typing import Any, Callable, List, Optional, Pattern
@@ -52,14 +53,31 @@ KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
     default=False
 )
 
+AUTH_CTX_HEADER = 'x-auth-ctx'
+"""
+This header is added by our authorization middleware, to transport an auth context to route handlers.
+
+Note that user may specify its own value, but that shouldn't matter, because our middleware
+overwrites the provided value with our own string, throwing whatever user tried to sneak in away.
+Before every request, the middleware does its own tests, based entirely on provided credentials.
+
+This solution is far from being perfect, but I do not know how to transport the auth context
+down to handlers, in a Molten way, e.g. using dependency injection. Looking at things, I always
+get down to the fact that I need to attach something to a request, and ``Request`` class is using
+``__slots__`` which means I cannot add any new attributes.
+"""
+
 
 def matches_path(request: Request, patterns: List[Pattern[str]]) -> bool:
     return any((pattern.match(request.path) for pattern in patterns))
 
 
 @dataclasses.dataclass
-class AuthVerification:
+class AuthContext:
     request: Request
+
+    is_authentication_enabled: bool
+    is_authorization_enabled: bool
 
     is_empty: bool = True
     is_invalid_request: bool = False
@@ -70,6 +88,58 @@ class AuthVerification:
     token: Optional[str] = None
 
     user: Optional[User] = None
+
+    def serialize(self) -> str:
+        return json.dumps({
+            'is_authentication_enabled': self.is_authentication_enabled,
+            'is_authorization_enabled': self.is_authorization_enabled,
+            'is_empty': self.is_empty,
+            'is_invalid_request': self.is_invalid_request,
+            'is_authenticated': self.is_authenticated,
+            'is_authorized': self.is_authorized,
+            'username': self.username
+        })
+
+    @classmethod
+    def unserialize(cls, serialized: str, request: Request) -> 'AuthContext':
+        unserialized = json.loads(serialized)
+
+        ctx = AuthContext(
+            request=request,
+            is_authentication_enabled=unserialized['is_authentication_enabled'],
+            is_authorization_enabled=unserialized['is_authorization_enabled']
+        )
+
+        ctx.is_empty = unserialized['is_empty']
+        ctx.is_invalid_request = unserialized['is_invalid_request']
+        ctx.is_authenticated = unserialized['is_authenticated']
+        ctx.is_authorized = unserialized['is_authorized']
+
+        return ctx
+
+    def inject(self) -> None:
+        """
+        Inject the context into a request, i.e. serialize the context, and store it in request headers.
+        """
+
+        # By this, we throw away whatever user might have tried to sneak in.
+        self.request.headers.add(AUTH_CTX_HEADER, self.serialize())
+
+    @classmethod
+    def extract(cls, request: Request) -> Result['AuthContext', Failure]:
+        """
+        Extract the context from a requst, i.e. find the corresponding header, and unserialize its content.
+        """
+
+        serialized_ctx = request.headers.get(AUTH_CTX_HEADER)
+
+        if serialized_ctx is None:
+            return Error(Failure(
+                'undefined auth context',
+                request_path=request.path
+            ))
+
+        return Ok(AuthContext.unserialize(serialized_ctx, request))
 
     def _extract_credentials_basic(self) -> None:
         # HTTP header looks like this: `Authorization: Basic credentials`, where `credentials
@@ -157,22 +227,38 @@ class AuthVerification:
 
 def authorization_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
     def _authorization_middleware(request: Request) -> Any:
-        if not KNOB_API_ENABLE_AUTHENTICATION.value:
+        # We need context even when authentication and authorization are disabled: handlers request it,
+        # and dependency injection must have something to give them.
+        #
+        # Once we make auth mandatory, it should be possible to initialize context after we realize
+        # we're dealing with protected endpoint.
+        ctx = AuthContext(
+            request=request,
+            is_authentication_enabled=KNOB_API_ENABLE_AUTHENTICATION.value,
+            is_authorization_enabled=KNOB_API_ENABLE_AUTHORIZATION.value
+        )
+
+        ctx.inject()
+
+        if not ctx.is_authentication_enabled:
             return handler()
 
-        state = AuthVerification(request=request)
-        state.verify_auth()
+        ctx.verify_auth()
 
-        if state.is_invalid_request:
+        # Refresh stored state, to capture changes made by verification.
+        ctx.inject()
+
+        if ctx.is_invalid_request:
             raise errors.BadRequestError()
 
-        # We somehow need to pass `state.user` to those handling the request. No idea
-        # how, but e.g. `POST /guests/` needs to know who's requesting the new guest.
+        # Enable this once all pieces are merged and authentication/authorization becomes mandatory.
+        # if not ctx.is_authenticated:
+        #     raise errors.NotAuthorizedError()
 
-        if not KNOB_API_ENABLE_AUTHORIZATION.value:
+        if not ctx.is_authorization_enabled:
             return handler()
 
-        if not state.is_authorized:
+        if not ctx.is_authorized:
             raise errors.NotAuthorizedError()
 
         return handler()
