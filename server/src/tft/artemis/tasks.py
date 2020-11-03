@@ -16,7 +16,7 @@ from gluetool.result import Result, Ok, Error
 from . import Failure, Knob, get_db, get_logger, get_broker, safe_call, safe_db_execute, log_guest_event, \
     log_error_guest_event
 from . import metrics
-from .db import DB, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
+from .db import DB, GuestEvent, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
 from .drivers import PoolDriver, PoolLogger
 from .environment import Environment
 from .guest import Guest, GuestLogger, GuestState, GuestPoolDataType
@@ -879,6 +879,7 @@ class Workspace:
         self.ssh_key: Optional[SSHKey] = None
         self.pool: Optional[PoolDriver] = None
         self.guest: Optional[Guest] = None
+        self.guest_events: Optional[List[GuestEvent]] = None
         self.snapshot: Optional[Snapshot] = None
 
     def load_guest_request(self, guestname: str, state: Optional[GuestState] = None) -> None:
@@ -1095,6 +1096,39 @@ class Workspace:
             return
 
         self.guest = r.unwrap()
+
+    def load_guest_events(self, eventname: Optional[str] = None) -> None:
+        """
+        Load guest events according to set guestname.
+
+        **OUTCOMES:**
+
+          * ``RESCHEDULE`` if cancel was requested
+          * ``FAIL`` otherwise
+
+        **SETS:**
+
+          * ``guest_events``
+        """
+
+        if self.result:
+            return
+
+        assert self.guestname
+
+        events = GuestEvent.fetch(
+            self.session,
+            eventname=eventname,
+            guestname=self.guestname
+        )
+
+        assert events
+
+        if _cancel_task_if(self.logger, self.cancel):
+            self.result = RESCHEDULE
+            return
+
+        self.guest_events = events
 
     def load_snapshot(self) -> None:
         """
@@ -1331,6 +1365,46 @@ class Workspace:
         return r.unwrap()
 
 
+def _handle_successful_failover(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    workspace: Workspace
+) -> None:
+
+    previous_poolname = None
+
+    # load events to workspace, sorted by date
+    workspace.load_guest_events(eventname='error')
+    assert workspace.guest_events
+
+    # detect and log successful first failover
+    for event in workspace.guest_events:
+        if not event.details:
+            continue
+
+        details = json.loads(event.details)
+
+        if 'failure' not in details or 'poolname' not in details['failure']:
+            continue
+
+        previous_poolname = details['failure']['poolname']
+
+        break
+
+    assert workspace.gr
+    assert workspace.gr.poolname
+
+    poolname = workspace.gr.poolname
+
+    if previous_poolname and previous_poolname != poolname:
+        logger.warning('successful failover - from pool {} to {}'.format(previous_poolname, poolname))
+        metrics.ProvisioningMetrics.inc_failover_success(
+            session=session,
+            from_pool=previous_poolname,
+            to_pool=poolname
+        )
+
+
 def do_release_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -1516,6 +1590,9 @@ def do_update_guest(
     # update metrics counter for successfully provisioned guest requests
     metrics.ProvisioningMetrics.inc_success(session)
 
+    # check if this was a failover and mark it in metrics
+    _handle_successful_failover(logger, session, workspace)
+
     return SUCCESS
 
 
@@ -1626,6 +1703,9 @@ def do_acquire_guest(
 
     # update metrics counter for successfully provisioned guest requests
     metrics.ProvisioningMetrics.inc_success(session)
+
+    # check if this was a successful failover and mark it in metrics
+    _handle_successful_failover(logger, session, workspace)
 
     return SUCCESS
 

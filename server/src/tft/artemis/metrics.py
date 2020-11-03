@@ -224,6 +224,7 @@ class ProvisioningMetrics(MetricsBase):
     current: int
     success: int
     failover: Dict[Tuple[str, str], int]
+    failover_success: Dict[Tuple[str, str], int]
 
     @staticmethod
     def inc_requested(
@@ -255,6 +256,22 @@ class ProvisioningMetrics(MetricsBase):
         )
         return Ok(None)
 
+    @staticmethod
+    def inc_failover_success(
+        session: sqlalchemy.orm.session.Session,
+        from_pool: str,
+        to_pool: str
+    ) -> Result[None, Failure]:
+        upsert_inc_metric(
+            session,
+            artemis_db.MetricsFailoverSuccess,
+            {
+                artemis_db.MetricsFailoverSuccess.from_pool: from_pool,
+                artemis_db.MetricsFailoverSuccess.to_pool: to_pool
+            }
+        )
+        return Ok(None)
+
     @classmethod
     def load(
         cls,
@@ -279,6 +296,10 @@ class ProvisioningMetrics(MetricsBase):
             failover={
                 (record.from_pool, record.to_pool): record.count
                 for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailover).all()
+            },
+            failover_success={
+                (record.from_pool, record.to_pool): record.count
+                for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailoverSuccess).all()
             }
         )
 
@@ -303,7 +324,14 @@ class ProvisioningMetrics(MetricsBase):
 
         failover = Counter(
             'provision_failover_guest_request_count',
-            'Number of provisioned guest requests which were provisioned with failover',
+            'Number of failovers to a different pool',
+            ['from_pool', 'to_pool'],
+            registry=registry
+        )
+
+        successful_failover = Counter(
+            'provision_failover_success_guest_request_count',
+            'Number of successfully provisioned guest requests which were provisioned with failover',
             ['from_pool', 'to_pool'],
             registry=registry
         )
@@ -314,6 +342,9 @@ class ProvisioningMetrics(MetricsBase):
 
         for (from_pool, to_pool), count in self.failover.items():
             failover.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
+
+        for (from_pool, to_pool), count in self.failover_success.items():
+            successful_failover.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
 
 
 @dataclasses.dataclass

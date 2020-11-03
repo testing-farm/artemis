@@ -376,6 +376,7 @@ class GuestEvent(Base):
     def fetch(
         cls,
         session: sqlalchemy.orm.session.Session,
+        eventname: Optional[str] = None,
         guestname: Optional[str] = None,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
@@ -388,6 +389,9 @@ class GuestEvent(Base):
 
         if guestname is not None:
             query = query.filter(cls.guestname == guestname)
+
+        if eventname:
+            query = query.filter(cls.eventname == eventname)
 
         if since:
             query = query.filter(cls.updated >= since)
@@ -436,6 +440,15 @@ class Metrics(Base):
 
 class MetricsFailover(Base):
     __tablename__ = 'metrics_failover'
+
+    from_pool = Column(String(250), ForeignKey('pools.poolname'), primary_key=True)
+    to_pool = Column(String(250), ForeignKey('pools.poolname'), primary_key=True)
+    count = Column(Integer, default=0)
+    updated = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class MetricsFailoverSuccess(Base):
+    __tablename__ = 'metrics_failover_success'
 
     from_pool = Column(String(250), ForeignKey('pools.poolname'), primary_key=True)
     to_pool = Column(String(250), ForeignKey('pools.poolname'), primary_key=True)
