@@ -1,0 +1,3 @@
+#!/bin/sh
+
+sudo sed -i 's/.*ssh-rsa/ssh-rsa/' /root/.ssh/authorized_keys

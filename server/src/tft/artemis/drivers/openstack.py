@@ -312,8 +312,12 @@ class OpenStackDriver(PoolDriver):
 
         network = r_network.unwrap()
         name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
-        r_output = None
-        with create_tempfile(file_contents=guest_request.post_install_script) as user_data:
+
+        def _create(user_data_filename: str) -> Result[Any, Failure]:
+            """The actual call to the openstack cli guest create command is happening here.
+               If user_data_filename is an empty string then the guest vm is booted with no user-data.
+            """
+
             os_options = [
                 'server',
                 'create',
@@ -323,10 +327,19 @@ class OpenStackDriver(PoolDriver):
                 '--key-name', self.pool_config['master-key-name'],
                 '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
                 '--security-group', self.pool_config.get('security-group', 'default'),
-                '--user-data', user_data,
+                '--user-data', user_data_filename,
                 name
             ]
-            r_output = self._run_os(os_options)
+            return self._run_os(os_options)
+
+        if guest_request.post_install_script:
+            # user has specified custom script to execute, contents stored as post_install_script
+            with create_tempfile(file_contents=guest_request.post_install_script) as user_data_filename:
+                r_output = _create(user_data_filename)
+        else:
+            # using post_install_script setting from the pool config
+            r_output = _create(self.pool_config.get('post-install-script', ''))
+
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 

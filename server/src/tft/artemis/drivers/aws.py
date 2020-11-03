@@ -297,7 +297,13 @@ class AWSDriver(PoolDriver):
             # and decoding is getting us the expected str back.
             user_data = base64.b64encode(post_install_script.encode('utf-8')).decode('utf-8')
         else:
-            user_data = ""
+            post_install_script_file = self.pool_config.get('post-install-script')
+            if post_install_script_file:
+                # path to a post-install-script is defined in the pool and isn't a default empty string
+                with open(post_install_script_file) as f:
+                    user_data = base64.b64encode(f.read().encode('utf8')).decode('utf-8')
+            else:
+                user_data = ""
 
         specification = AWS_INSTANCE_SPECIFICATION.format(
             ami_id=image['ImageId'],

@@ -360,7 +360,13 @@ class AzureDriver(PoolDriver):
             raise NotImplementedError("Compose mapping not implemented for azure yet")
 
         r_output = None
-        with create_tempfile(file_contents=guest_request.post_install_script) as custom_data:
+
+        def _create(custom_data_filename: str) -> Result[Any, Failure]:
+            """
+            The actual call to the azure cli guest create command is happening here.
+            If custom_data_filename is an empty string then the guest vm is booted with no user-data.
+            """
+
             az_options = [
                 'vm',
                 'create',
@@ -368,9 +374,18 @@ class AzureDriver(PoolDriver):
                 '--image', image,
                 '--name', name,
                 '--tags', 'uid={}'.format(name),
-                '--custom-data', custom_data,
+                '--custom-data', custom_data_filename,
             ]
-            r_output = self._run_cmd_with_auth(az_options)
+            return self._run_cmd_with_auth(az_options)
+
+        if guest_request.post_install_script:
+            # user has specified custom script to execute, contents stored as post_install_script
+            with create_tempfile(file_contents=guest_request.post_install_script) as custom_data_filename:
+                r_output = _create(custom_data_filename)
+        else:
+            # using post_install_script setting from the pool config
+            r_output = _create(self.pool_config.get('post-install-script', ''))
+
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
