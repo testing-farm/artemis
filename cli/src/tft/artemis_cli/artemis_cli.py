@@ -12,7 +12,7 @@ import stackprinter
 from typing import Optional
 from tft import artemis_cli
 from . import Logger, Configuration, fetch_remote, NL, GREEN, RED, YELLOW, WHITE, prettify_json, \
-              artemis_inspect, artemis_create, artemis_delete, prompt, confirm
+              artemis_inspect, artemis_create, artemis_restore, artemis_delete, prompt, confirm \
 
 from typing import cast, Any
 
@@ -86,6 +86,69 @@ def cli_root(ctx: Any, config: str) -> None:
 
     cfg.artemis_api_url = cfg.raw_config['artemis_api_url']
     assert cfg.artemis_api_url is not None
+
+
+@cli_root.group(name='snapshot', short_help='Snapshots related commands')
+@click.pass_obj
+def cmd_snapshot(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_snapshot.command(name='create', short_help='Create snapshot of a guest')
+@click.option('--guest', required=True, help='Guest id')
+@click.option('--no-start-again', is_flag=True, help='Do not start the guest after snapshotting')
+@click.pass_obj
+def cmd_snapshot_create(
+        cfg: Configuration,
+        guest: str,
+        no_start_again: bool
+) -> None:
+    data = {
+        'start_again': not no_start_again
+    }
+
+    response = artemis_create(cfg, 'guests/{}/snapshots'.format(guest), data=data)
+    cfg.logger.info(prettify_json(True, response.json()))
+
+
+@cmd_snapshot.command(name='inspect', short_help='Inspect snapshot of a guest')
+@click.option('--guest', required=True, help='Guest id')
+@click.option('--snapshot', required=True, help='Snapshot id')
+@click.pass_obj
+def cmd_snapshot_inspect(
+        cfg: Configuration,
+        guest: str,
+        snapshot: str,
+) -> None:
+    response = artemis_inspect(cfg, 'guests/{}/snapshots'.format(guest), snapshot)
+    cfg.logger.info(prettify_json(True, response.json()))
+
+
+@cmd_snapshot.command(name='restore', short_help='Restore snapshot of a guest')
+@click.option('--guest', required=True, help='Guest id')
+@click.option('--snapshot', required=True, help='Snapshot id')
+@click.pass_obj
+def cmd_snapshot_restore(
+        cfg: Configuration,
+        guest: str,
+        snapshot: str,
+) -> None:
+    response = artemis_restore(cfg, 'guests/{}/snapshots'.format(guest), snapshot)
+    cfg.logger.info(prettify_json(True, response.json()))
+
+
+@cmd_snapshot.command(name='cancel', short_help='Delete snapshot of a guest')
+@click.option('--guest', required=True, help='Guest id')
+@click.option('--snapshot', required=True, help='Snapshot id')
+@click.pass_obj
+def cmd_snapshot_cancel(
+        cfg: Configuration,
+        guest: str,
+        snapshot: str,
+) -> None:
+    artemis_delete(cfg, 'guests/{}/snapshots'.format(guest), snapshot)
+    # TODO: add 404 handling
+    cfg.logger.info('snapshot "{}" has been canceled'.format(snapshot))
 
 
 @cli_root.group(name='guest', short_help='Guest related commands')
