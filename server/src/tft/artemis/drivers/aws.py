@@ -6,9 +6,10 @@ import threading
 from typing import Any, Dict, List, Optional
 
 import gluetool.log
-from gluetool.log import log_dict
+from gluetool.log import log_blob, log_dict
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import wait
+from jinja2 import Template
 
 from . import PoolDriver, PoolCapabilities, run_cli_tool
 from .. import Failure
@@ -17,6 +18,10 @@ from ..environment import Environment
 from ..guest import Guest, SSHInfo
 from ..script import hook_engine
 
+#
+# Custom typing types
+#
+BlockDeviceMappingsType = List[Dict[str, Any]]
 
 #
 # All these defautls should go to configuration later
@@ -25,28 +30,31 @@ AWS_PRODUCT_DESC_RHEL = 'Red Hat Enterprise Linux'
 AWS_PRODUCT_DESC_LINUX = 'Linux/UNIX'
 AWS_SPOT_PRICE_BID_PERCENTAGE = 10  # how much % to bid to the spot price
 
-AWS_INSTANCE_SPECIFICATION = """
-{{
-  "ImageId": "{ami_id}",
-  "KeyName": "{key_name}",
-  "InstanceType": "{instance_type}",
-  "Placement": {{
-    "AvailabilityZone": "{availability_zone}"
-  }},
+AWS_INSTANCE_SPECIFICATION = Template("""
+{
+  "ImageId": "{{ ami_id }}",
+  "KeyName": "{{ key_name }}",
+  "InstanceType": "{{ instance_type }}",
+  "Placement": {
+    "AvailabilityZone": "{{ availability_zone }}"
+  },
   "NetworkInterfaces": [
-    {{
+    {
       "DeviceIndex": 0,
-      "SubnetId": "{subnet_id}",
+      "SubnetId": "{{ subnet_id }}",
       "DeleteOnTermination": true,
       "Groups": [
-        "{security_group}"
+        "{{ security_group }}"
       ],
       "AssociatePublicIpAddress": false
-    }}
+    }
   ],
-  "UserData": "{user_data}"
-}}
-"""
+  {% if block_device_mappings -%}
+  "BlockDeviceMappings": {{ block_device_mappings | to_json }},
+  {% endif -%}
+  "UserData": "{{ user_data }}"
+}
+""")
 
 
 class FailedSpotRequest(Failure):
@@ -275,6 +283,53 @@ class AWSDriver(PoolDriver):
 
         return Ok(price)
 
+    def _set_root_disk_size(
+        self,
+        block_device_mappings: BlockDeviceMappingsType,
+        root_disk_size: int
+    ) -> Result[BlockDeviceMappingsType, Failure]:
+
+        try:
+            block_device_mappings[0]['Ebs']['VolumeSize'] = root_disk_size
+        except (KeyError, IndexError) as error:
+            return Error(
+                Failure.from_exc(
+                    'Failed to set root disk size',
+                    error,
+                    block_device_mappings=block_device_mappings
+                )
+            )
+
+        return Ok(block_device_mappings)
+
+    def _get_block_device_mappings(self, image_id: str) -> Result[BlockDeviceMappingsType, Failure]:
+
+        # get image block device mappings
+        command = [
+            'ec2', 'describe-images',
+            '--image-id', image_id,
+        ]
+
+        r_image = self._aws_command(command, key='Images')
+
+        if r_image.is_error:
+            return r_image
+
+        image = r_image.unwrap()
+
+        try:
+            block_device_mappings = image[0]['BlockDeviceMappings']
+        except (KeyError, IndexError) as error:
+            return Error(
+                Failure.from_exc(
+                    'Failed to get block device mappings',
+                    error,
+                    block_device_mappings=block_device_mappings
+                )
+            )
+
+        return Ok(block_device_mappings)
+
     def _request_spot_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -283,6 +338,9 @@ class AWSDriver(PoolDriver):
         guestname: str,
         post_install_script: Optional[str] = None
     ) -> Result[Guest, Failure]:
+
+        block_device_mappings: Optional[BlockDeviceMappingsType] = None
+        image_id = image['ImageId']
 
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)
@@ -305,15 +363,32 @@ class AWSDriver(PoolDriver):
             else:
                 user_data = ""
 
-        specification = AWS_INSTANCE_SPECIFICATION.format(
-            ami_id=image['ImageId'],
+        if 'default-root-disk-size' in self.pool_config:
+
+            r_block_device_mappings = self._get_block_device_mappings(image_id=image_id)
+
+            if r_block_device_mappings.is_error:
+                return Error(r_block_device_mappings.unwrap_error())
+
+            r_block_device_mappings = self._set_root_disk_size(
+                r_block_device_mappings.unwrap(),
+                root_disk_size=self.pool_config['default-root-disk-size']
+            )
+
+            block_device_mappings = r_block_device_mappings.unwrap()
+
+        specification = AWS_INSTANCE_SPECIFICATION.render(
+            ami_id=image_id,
             key_name=self.pool_config['master-key-name'],
             instance_type=instance_type,
             availability_zone=self.pool_config['availability-zone'],
             subnet_id=self.pool_config['subnet-id'],
             security_group=self.pool_config['security-group'],
-            user_data=user_data
+            user_data=user_data,
+            block_device_mappings=block_device_mappings
         )
+
+        log_blob(logger.info, 'spot request launch specification', specification)
 
         r_spot_request = self._aws_command([
             'ec2', 'request-spot-instances',
