@@ -239,6 +239,9 @@ def create_event_handlers(
 
     spice_details: Dict[str, Any] = {**default_details}
 
+    if guestname:
+        spice_details['guestname'] = guestname
+
     if task:
         spice_details['task'] = task
 
