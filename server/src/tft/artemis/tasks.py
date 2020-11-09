@@ -1125,8 +1125,6 @@ class Workspace:
             guestname=self.guestname
         )
 
-        assert events
-
         if _cancel_task_if(self.logger, self.cancel):
             self.result = RESCHEDULE
             return
@@ -1373,14 +1371,18 @@ def _handle_successful_failover(
     session: sqlalchemy.orm.session.Session,
     workspace: Workspace
 ) -> None:
-
-    previous_poolname = None
-
     # load events to workspace, sorted by date
     workspace.load_guest_events(eventname='error')
-    assert workspace.guest_events
+    assert workspace.guest_events is not None
+
+    # If the list of events is empty, it means the provisioning did not run into any error at all.
+    # Which means, we are not dealing with a failover.
+    if not workspace.guest_events:
+        return
 
     # detect and log successful first failover
+    previous_poolname: Optional[str] = None
+
     for event in workspace.guest_events:
         if not event.details:
             continue
