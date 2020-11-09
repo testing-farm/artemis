@@ -414,7 +414,7 @@ def task_core(
     except Exception as exc:
         stackprinter.show_current_exception()
         failure = Failure.from_exc('unhandled doer exception', exc)
-        failure.log(logger.error)
+        failure.handle(logger)
 
         doer_result = Error(failure)
 
