@@ -1416,7 +1416,7 @@ def do_release_guest_request(
         logger,
         session,
         guestname=guestname,
-        task='release-guest'
+        task='release-guest-request'
     )
 
     handle_success('enter-task')
@@ -1485,12 +1485,12 @@ def do_release_guest_request(
 def release_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_guest_request,
-        logger=get_guest_logger('release', root_logger, guestname),
+        logger=get_guest_logger('release-guest-request', root_logger, guestname),
         doer_args=(guestname,)
     )
 
 
-def do_update_guest(
+def do_update_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: DB,
     session: sqlalchemy.orm.session.Session,
@@ -1501,7 +1501,7 @@ def do_update_guest(
         logger,
         session,
         guestname=guestname,
-        task='update-guest'
+        task='update-guest-request'
     )
 
     handle_success('enter-task')
@@ -1558,7 +1558,7 @@ def do_update_guest(
             current_pool_data=current_pool_data
         )
 
-        workspace.dispatch_task(update_guest, guestname)
+        workspace.dispatch_task(update_guest_request, guestname)
 
         if workspace.result:
             _undo_guest_update(guest)
@@ -1597,15 +1597,15 @@ def do_update_guest(
 
 
 @dramatiq.actor(**actor_kwargs('UPDATE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
-def update_guest(guestname: str) -> None:
+def update_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_update_guest,
-        logger=get_guest_logger('update', root_logger, guestname),
+        do_update_guest_request,
+        logger=get_guest_logger('update-guest-request', root_logger, guestname),
         doer_args=(guestname,)
     )
 
 
-def do_acquire_guest(
+def do_acquire_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: DB,
     session: sqlalchemy.orm.session.Session,
@@ -1617,7 +1617,7 @@ def do_acquire_guest(
         logger,
         session,
         guestname=guestname,
-        task='acquire-guest',
+        task='acquire-guest-request',
         poolname=poolname
     )
 
@@ -1670,7 +1670,7 @@ def do_acquire_guest(
             }
         )
 
-        workspace.dispatch_task(update_guest, guestname)
+        workspace.dispatch_task(update_guest_request, guestname)
 
         if workspace.result:
             _undo_guest_acquire()
@@ -1711,10 +1711,10 @@ def do_acquire_guest(
 
 
 @dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
-def acquire_guest(guestname: str, poolname: str) -> None:
+def acquire_guest_request(guestname: str, poolname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_acquire_guest,
-        logger=get_guest_logger('acquire', root_logger, guestname),
+        do_acquire_guest_request,
+        logger=get_guest_logger('acquire-guest-request', root_logger, guestname),
         doer_args=(guestname, poolname)
     )
 
@@ -1730,7 +1730,7 @@ def do_route_guest_request(
         logger,
         session,
         guestname=guestname,
-        task='route-guest'
+        task='route-guest-request'
     )
 
     handle_success('enter-task')
@@ -1794,7 +1794,7 @@ def do_route_guest_request(
     # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
     # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
     # task.
-    workspace.dispatch_task(acquire_guest, guestname, pool.poolname)
+    workspace.dispatch_task(acquire_guest_request, guestname, pool.poolname)
 
     if workspace.result:
         workspace.ungrab_guest_request(GuestState.PROVISIONING, GuestState.ROUTING)
@@ -1815,7 +1815,7 @@ def do_route_guest_request(
 def route_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_route_guest_request,
-        logger=get_guest_logger('route', root_logger, guestname),
+        logger=get_guest_logger('route-guest-request', root_logger, guestname),
         doer_args=(guestname,)
     )
 
