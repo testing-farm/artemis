@@ -239,9 +239,6 @@ def create_event_handlers(
 
     spice_details: Dict[str, Any] = {**default_details}
 
-    if guestname:
-        spice_details['guestname'] = guestname
-
     if task:
         spice_details['task'] = task
 
@@ -264,7 +261,7 @@ def create_event_handlers(
     ) -> DoerReturnType:
         failure = result.unwrap_error()
 
-        failure.handle(logger, label=label, sentry=sentry, **spice_details)
+        failure.handle(logger, label=label, sentry=sentry, guestname=guestname, **spice_details)
 
         if guestname:
             log_error_guest_event(
