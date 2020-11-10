@@ -25,8 +25,8 @@ import jinja2_ansible_filters.core_filters
 import periodiq
 import stackprinter
 
-from typing import cast, Any, Callable, Dict, Generic, List, NoReturn, Optional, Tuple, TypeVar, Union
-from types import TracebackType
+from typing import cast, Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, TypeVar, Union
+from types import FrameType, TracebackType
 
 # Install additional Jinja2 filters. This must be done before we call `render_template` for the first
 # time, because Jinja2 reuses anonymous environments.
@@ -160,7 +160,10 @@ class Failure:
             # This is what `traceback.extract_tb` does, but `extract_tb` does not let us save frame locals,
             # and we would like to see them, at least in Sentry.
             self.traceback = _traceback.StackSummary.extract(
-                _traceback.walk_tb(exc_info[2]),
+                cast(
+                    Generator[Tuple[FrameType, int], None, None],
+                    _traceback.walk_tb(exc_info[2])
+                ),
                 capture_locals=True
             )
 
@@ -266,7 +269,7 @@ class Failure:
             function = frame.name
             line = frame.line
 
-            frame_result = {
+            frame_result: Dict[str, Union[int, str, Dict[str, str], None]] = {
                 'abs_path': filename,
                 'filename': os.path.relpath(filename, os.getcwd()),
                 'module': None,
