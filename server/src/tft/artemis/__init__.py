@@ -156,7 +156,13 @@ class Failure:
 
         if exc_info:
             self.exception = exc_info[1]
-            self.traceback = _traceback.extract_tb(exc_info[2])
+
+            # This is what `traceback.extract_tb` does, but `extract_tb` does not let us save frame locals,
+            # and we would like to see them, at least in Sentry.
+            self.traceback = _traceback.StackSummary.extract(
+                _traceback.walk_tb(exc_info[2]),
+                capture_locals=True
+            )
 
         if traceback:
             self.traceback = traceback
@@ -251,7 +257,7 @@ class Failure:
         objects used by Python 3.5+, it understands only the old frame objects, witg ``f_*`` attributes.
         """
 
-        from raven.utils.stacks import slim_frame_data
+        from raven.utils.stacks import get_lines_from_file, slim_frame_data
 
         result = []
         for frame in frames:
@@ -265,15 +271,22 @@ class Failure:
                 'filename': os.path.relpath(filename, os.getcwd()),
                 'module': None,
                 'function': function or '<unknown>',
-                'lineno': lineno + 1,
+                'lineno': lineno,
             }
 
             if line is not None:
+                # Lines are indexed from 0, but human representation starts with 1: "1st line".
+                # Hence the decrement.
+                pre_context, context_line, post_context = get_lines_from_file(filename, lineno - 1, 5)
+
                 frame_result.update({
-                    'pre_context': None,
-                    'context_line': line,
-                    'post_context': None,
+                    'pre_context': pre_context,
+                    'context_line': context_line,
+                    'post_context': post_context,
                 })
+
+            if frame.locals:
+                frame_result['vars'] = frame.locals
 
             result.append(frame_result)
 
