@@ -78,3 +78,8 @@ pools:
       post-install-script: "{{ aws.vms.post_install_script }}"
 
       snapshots: False
+
+  - name: beaker
+    driver: beaker
+    parameters:
+      snapshots: False

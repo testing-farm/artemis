@@ -69,6 +69,9 @@ For example, if you set `openstack.vms.keyname` to `artemis`:
 ....
 $ openstack keypair create --public-key path/to/your-new-ssh-key.pub artemis
 ....
++
+In case of Beaker you should add the public key to the `SSH Keys` section of the `User Preferences`. This way you will be able to login as `root` without
+providing a password.
 
 == Minishift and Scaffold
 
