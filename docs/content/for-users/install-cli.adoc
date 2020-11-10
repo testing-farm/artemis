@@ -1,0 +1,88 @@
+---
+title: "Install CLI"
+date: 2020-10-05T14:40:58+02:00
+draft: false
+chapter: true
+---
+:sectlinks:
+:showtitle:
+
+*Artemis* has CLI tool to simplify usage experience. To install the CLI you need to have installed the next requirements:
+
+* Python3
+* PIP
+
+There are several ways to install the CLI.
+
+== From repository using Poetry (Recommended)
+
+* Follow https://python-poetry.org/docs/#installation[this guide] to install Poetry
+
+* Clone *Artemis* repository:
++
+[source, shell]
+....
+$ git clone git@gitlab.com:testing-farm/artemis.git
+....
+
+* Go to the `cli` folder:
++
+[source, shell]
+....
+$ cd artemis/cli
+....
+
+* Install the CLI:
++
+[source, shell]
+....
+$ poetry install
+....
+
+* Poetry works in virtual environment. Enable it:
++
+[source, shell]
+....
+$ poetry shell
+....
++
+[TIP]
+====
+You can avoid enabling the virtual environment by adding `poetry run` before every CLI command
+====
+
+* Check the CLI is installed:
++
+[source, shell]
+....
+$ artemis-cli --help
+....
+
+== From PyPi
+
+[NOTE]
+====
+You might want to install the CLI into a virtual environment to avoid any dependencies conflicts.
+
+To do that follow the next steps:
+[source, shell]
+....
+$ pip install --user virtualenv
+$ virtualenv -p /usr/bin/python3 <virtualenv-dir>
+$ . <virtualenv-dir>/bin/activate
+....
+====
+
+* Install the CLI from PyPi:
++
+[source, shell]
+....
+$ pip install tft-artemis-cli
+....
+
+* Check the CLI is installed:
++
+[source, shell]
+....
+$ artemis-cli --help
+....

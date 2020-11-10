@@ -1,0 +1,122 @@
+---
+title: "CLI usage"
+date: 2020-10-05T14:40:58+02:00
+draft: false
+chapter: true
+---
+:sectlinks:
+:showtitle:
+
+== Configure the CLI
+
+First, initialize the CLI:
+[source, shell]
+....
+$ artemis-cli init
+....
+
+And follow steps to configure it.
+
+[NOTE]
+====
+All commands support `--help` argument
+====
+
+== Guest commands
+
+=== Create a guest request
+
+Create guest request command looks next:
+[source, shell]
+....
+$ artemis-cli guest create --keyname <ssh-key-name> --arch <arch-type> --compose <compose-name>
+....
+
+These options are required:
+
+* `--keyname NAME` specify the name of the ssh key which was added to backend providers by administrators of the Artemis. The key will be added to the list of authorized keys of a guest.
+* `--arch ARCH` specify the architecture type of a guest. Value example: `x86_64`.
+* `--compose COMPOSE` specify the name of compose which will be installed on a guest.
+
+The next options are optional:
+
+* `--priority-group GROUP` specify the priority group of the guest request.
+* `--pool POOL` specify pool name if you want to have a guest from a specific pool.
+* `--snapshots` tell Artemis you want to have a guest with snapshots support.
+* `--post-install-script PATH` specify path to a script you want to be executed on a guest after provisioning
+
+Example of a minimal command:
+[source, shell]
+....
+$ artemis-cli guest create --keyname my-ssh-key --arch x86_64 --compose Fedora-30
+....
+
+The command will return a data of the guest request in json format. At first, check correctness of `environment` and `ssh` field. At this moment you will be mostly interested in two fields: `guestname` and `state`. The `guestname` is an ID of the guest request in UUID format. You will need it to operate your guest. The `state` field describes in which state guest request has. Also, note there is `address` field which is empty now. That means the request is processing by Artemis, but no guest was provisioned yet. Wait a moment or two and move on to the next section.
+
+=== Inspect a guest request
+
+After the guest request was created, you can inspect it with the next command:
+[source, shell]
+....
+$ artemis-cli guest inspect <guestname>
+....
+
+The command will return all available current information about the guest request in json format. Look at `state` field. If the value of the field is `ready`, the guest is provisioned and IP address should appear in the `address` field. More information about different states of the guest request could be found https://TODO:[here]
+
+=== Print a guest request events log
+
+If you want to troubleshoot your guest request or know more about its path inside of Artemis, you can print events log of a guest request:
+[source, shell]
+....
+$ artemis-cli guest events <guestname>
+....
+
+The command will return a list of events in json format. Here you can find information about state changes, errors, last update time and more. More information about events you can find https://TODO:[here]
+
+=== Cancel a guest request
+
+Whenever your guest is not needed anymore, don't forget to cancel the guest request. Artemis will remove the guest from a pool and delete the guest request from a database.
+[source, shell]
+....
+$ artemis-cli guest cancel <guestname>
+....
+
+== Snapshot related commands
+
+=== Create a snapshot request
+
+Snapshot is a preserved state and data of a guest. First, make sure you have provisioned the guest with snapshots support. To create the snapshot request, execute:
+[source, shell]
+....
+$ artemis-cli snapshot create --guest <guestname>
+....
+
+The command will return data about snapshot in json format. The snapshot requests works in the same way as guest requests does. Until the state is not `ready`, the snapshot is not created. The `snapshotname` field will be needed to operate the snapshot request.
+
+=== Inspect a snapshot request
+
+To inspect a snapshot request, execute:
+[source, shell]
+....
+$ artemis-cli snapshot inspect --guest <guestname> --snapshot <snapshotname>
+....
+
+The command will return data about snapshot in json format. Whenever the value of the `state` field will be `ready` the snapshot is ready and you can proceed work with that.
+
+=== Restore snapshot request
+
+To restore snapshot on a guest, execute:
+[source, shell]
+....
+$ artemis-cli snapshot restore --guest <guestname> --snapshot <snapshotname>
+....
+
+The command will return data about snapshot in json format. Wait for `ready` state before proceeding work with the guest.
+
+=== Cancel a snapshot request
+
+Whenever a snapshot is not needed anymore, don't forget to cancel a snapshot request. Artemis will remove the snapshot and delete the request from a database.
+[source, shell]
+....
+$ artemis-cli snapshot cancel --guest <guestname> --snapshot <snapshotname>
+....
