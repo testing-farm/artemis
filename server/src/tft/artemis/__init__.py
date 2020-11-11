@@ -129,6 +129,7 @@ class Failure:
         traceback: Optional[_traceback.StackSummary] = None,
         caused_by: Optional['Failure'] = None,
         sentry: Optional[bool] = True,
+        recoverable: bool = True,
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
@@ -147,6 +148,8 @@ class Failure:
         self.traceback: Optional[_traceback.StackSummary] = None
 
         self.caused_by = caused_by
+
+        self.recoverable = recoverable
 
         if scrubbed_command:
             self.details['scrubbed_command'] = scrubbed_command
@@ -179,6 +182,7 @@ class Failure:
         message: str,
         exc: Exception,
         caused_by: Optional['Failure'] = None,
+        recoverable: bool = True,
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
@@ -194,6 +198,7 @@ class Failure:
                 exc.__traceback__
             ),
             caused_by=caused_by,
+            recoverable=recoverable,
             scrubbed_command=scrubbed_command,
             command_output=command_output,
             **details
@@ -239,6 +244,7 @@ class Failure:
         event_details = self.details.copy()
 
         event_details['message'] = self.message
+        event_details['recoverable'] = self.recoverable
 
         # We don't want command or its output in the event details - hard to serialize, full of secrets, etc.
         event_details.pop('command_output', None)
@@ -309,6 +315,7 @@ class Failure:
         extra: Dict[str, Any] = {}
 
         extra['message'] = self.message
+        extra['recoverable'] = self.recoverable
 
         if 'scrubbed_command' in self.details:
             extra['scrubbed_command'] = gluetool.utils.format_command_line([self.details['scrubbed_command']])
@@ -349,6 +356,7 @@ class Failure:
         details = self.details.copy()
 
         details['message'] = self.message
+        details['recoverable'] = self.recoverable
 
         if self.exception:
             details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))
