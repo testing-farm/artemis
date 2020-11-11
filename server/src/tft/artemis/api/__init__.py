@@ -11,7 +11,7 @@ import uuid
 import molten
 import molten.dependency_injection
 import molten.openapi
-from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, Response, Request, Field
+from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, HTTP_409, Response, Request, Field
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
@@ -403,23 +403,37 @@ class GuestRequestManager:
 
             return GuestResponse.from_db(guest_request_record)
 
-    def delete_by_guestname(self, guestname: str, request: Request) -> None:
+    def delete_by_guestname(self, guestname: str, request: Request) -> bool:
         with self.db.get_session() as session:
+            snapshot_count_subquery = session \
+                .query(sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')) \
+                .filter(artemis_db.SnapshotRequest.guestname == guestname) \
+                .subquery('t')
+
             query = sqlalchemy \
                 .update(artemis_db.GuestRequest.__table__) \
                 .where(artemis_db.GuestRequest.guestname == guestname) \
+                .where(snapshot_count_subquery.c.snapshot_count == 0) \
                 .values(state=GuestState.CONDEMNED.value)
 
             logger = get_logger()
-            if safe_db_change(logger, session, query):
-                # add guest event
-                log_guest_event(
-                    logger,
-                    session,
-                    guestname,
-                    'condemned'
-                )
-                return
+
+            r_execute = safe_db_change(logger, session, query)
+
+            if r_execute.is_ok:
+                if r_execute.unwrap():
+                    # add guest event
+                    log_guest_event(
+                        logger,
+                        session,
+                        guestname,
+                        'condemned'
+                    )
+                    return True
+
+                # Actual row count is not equal to expected
+                else:
+                    return False
 
             raise errors.GenericError(request=request)
 
@@ -619,7 +633,9 @@ def delete_guest(guestname: str, request: Request, manager: GuestRequestManager)
     if not manager.get_by_guestname(guestname):
         return APIResponse(request=request, status=HTTP_404)
 
-    manager.delete_by_guestname(guestname, request=request)
+    if not manager.delete_by_guestname(guestname, request=request):
+        return APIResponse(request=request, status=HTTP_409)
+
     return APIResponse(request=request)
 
 

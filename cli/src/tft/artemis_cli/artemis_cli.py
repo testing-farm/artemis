@@ -234,6 +234,8 @@ def cmd_cancel(cfg: Configuration, guestname: str) -> None:
     response = artemis_delete(cfg, 'guests', guestname, logger=logger)
     if response.status_code == 404:
         logger.error('guest "{}" has not been found'.format(guestname))
+    elif response.status_code == 409:
+        logger.error('guest "{}" has provisioned snapshots. Remove the snapshots first'.format(guestname))
     if response.ok:
         logger.info('guest "{}" has been canceled'.format(guestname))
 
