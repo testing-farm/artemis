@@ -28,6 +28,8 @@ class GuestState(enum.Enum):
     #: some time, and probably also a series of additional tasks.
     PROMISED = 'promised'
 
+    PREPARING = 'preparing'
+
     #: Provisioning is done, there is a guest available for SSH connections.
     READY = 'ready'
 

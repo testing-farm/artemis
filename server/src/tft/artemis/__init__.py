@@ -11,6 +11,8 @@ import dramatiq.middleware.age_limit
 import dramatiq.middleware.time_limit
 import dramatiq.middleware.shutdown
 import dramatiq.middleware.callbacks
+import dramatiq.rate_limits.backends
+import dramatiq.rate_limits.concurrent
 import gluetool.log
 import gluetool.sentry
 import gluetool.utils
@@ -884,6 +886,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
             dramatiq.middleware.time_limit.TimeLimit(),
             dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
             dramatiq.middleware.callbacks.Callbacks(),
+            dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
             artemis_middleware.Retries(),
             periodiq.PeriodiqMiddleware()
         ])
@@ -896,6 +899,9 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
 
         import pika
 
+        # TODO: for actual limiter, we would need to throw in either Redis or Memcached.
+        # Using stub and a dummy key for now, but it's just not going to do its job properly.
+
         parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
 
         broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
@@ -904,6 +910,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
                 dramatiq.middleware.time_limit.TimeLimit(),
                 dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
                 dramatiq.middleware.callbacks.Callbacks(),
+                dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
                 artemis_middleware.Retries(),
                 periodiq.PeriodiqMiddleware()
             ],

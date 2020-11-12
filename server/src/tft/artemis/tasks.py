@@ -196,6 +196,12 @@ class Actor(Protocol):
     ) -> None:
         ...
 
+    def message(
+        self,
+        *args: Any
+    ) -> dramatiq.Message:
+        ...
+
 
 class DispatchTaskType(Protocol):
     def __call__(
@@ -540,6 +546,39 @@ def dispatch_task(
         task_args=args,
         task_delay=delay
     ))
+
+
+def dispatch_group(
+    logger: gluetool.log.ContextAdapter,
+    tasks: List[Actor],
+    *args: Any,
+    on_complete: Optional[Actor] = None
+) -> Result[None, Failure]:
+    try:
+        group = dramatiq.group([
+            task.message(*args)
+            for task in tasks
+        ])
+
+        if on_complete:
+            group.add_completion_callback(on_complete.message(*args))
+
+        group.run()
+
+        logger.info('scheduled group ({})({})'.format(
+            '|'.join([task.actor_name for task in tasks]),
+            ', '.join([str(arg) for arg in args])
+        ))
+
+    except Exception as exc:
+        return Error(Failure.from_exc(
+            'failed to dispatch group',
+            exc,
+            group_tasks=[task.actor_name for task in tasks],
+            group_args=args
+        ))
+
+    return Ok(None)
 
 
 def _get_guest_request(
@@ -1309,6 +1348,16 @@ class Workspace:
             self.result = self.handle_failure(r, 'failed to dispatch update task')
             return
 
+    def dispatch_group(self, tasks: List[Actor], *args: Any, on_complete: Optional[Actor] = None) -> None:
+        if self.result:
+            return
+
+        r = dispatch_group(self.logger, tasks, *args, on_complete=on_complete)
+
+        if r.is_error:
+            self.result = self.handle_failure(r, 'failed to dispatch group')
+            return
+
     def run_hook(self, hook_name: str, **kwargs: Any) -> Any:
         r_engine = hook_engine(hook_name)
 
@@ -1561,6 +1610,30 @@ def handle_provisioning_chain_tail(
             GuestState.ERROR
         )
 
+    # for post-acquire prepare chain final task, revert to ROUTING
+    elif actor.actor_name == guest_request_prepare_finalize.actor_name:
+        r = do_handle_provisioning_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            GuestState.PREPARING,
+            GuestState.ROUTING
+        )
+
+    # for post-acquire verify chain tasks, revert to ROUTING
+    elif actor.actor_name == prepare_verify_ssh.actor_name:
+        r = do_handle_provisioning_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            GuestState.PREPARING,
+            GuestState.ROUTING
+        )
+
     else:
         Failure(
             'actor not covered by provisioning chain tail',
@@ -1587,6 +1660,142 @@ def handle_provisioning_chain_tail(
 
     # Failures were already handled by this point
     return False
+
+
+def do_prepare_verify_ssh(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str
+) -> DoerReturnType:
+    # Avoid circular imports
+    from .drivers import run_cli_tool, create_tempfile
+
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='prepare-verify-ssh'
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, state=GuestState.PREPARING)
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+    assert workspace.gr.address
+
+    r_master_key = _get_ssh_key(logger, session, 'artemis', 'master-key')
+
+    if r_master_key.is_error:
+        return handle_failure(r_master_key, 'failed to fetch master key')
+
+    with create_tempfile(file_contents=r_master_key.unwrap().private) as private_key_filepath:
+        r_ssh = run_cli_tool(
+            logger,
+            [
+                'ssh',
+                '-i', private_key_filepath,
+                '-o', 'UserKnownHostsFile=/dev/null',
+                '-o', 'StrictHostKeyChecking=no',
+                '-l', 'root',
+                workspace.gr.address,
+                'bash -c "echo ping"'
+            ]
+        )
+
+    if r_ssh.is_error:
+        return handle_failure(r_ssh, 'failed to verify SSH')
+
+    stdout_content, output = r_ssh.unwrap()
+
+    if stdout_content.strip() != 'ping':
+        failure = Failure(
+            'did not receive expected response',
+            command_output=output
+        )
+
+        return handle_failure(Error(failure), 'failed to verify SSH')
+
+    return handle_success('finished-task')
+
+
+@dramatiq.actor  # type: ignore  # Untyped decorator
+def prepare_verify_ssh(guestname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_prepare_verify_ssh,
+        logger=get_guest_logger('prepare-verify-ssh', _ROOT_LOGGER, guestname),
+        doer_args=(guestname,)
+    )
+
+
+def do_guest_request_prepare_finalize(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='prepare-finalize'
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, state=GuestState.PREPARING)
+
+    workspace.update_guest_state(
+        GuestState.PREPARING,
+        GuestState.READY
+    )
+
+    if workspace.result:
+        return workspace.result
+
+    logger.info('successfully provisioned')
+
+    # check if this was a failover and mark it in metrics
+    _handle_successful_failover(logger, session, workspace)
+
+    # update metrics counter for successfully provisioned guest requests
+    metrics.ProvisioningMetrics.inc_success(session)
+
+    return handle_success('finished-task')
+
+
+@dramatiq.actor(**actor_kwargs('GUEST_REQUEST_PREPARE_FINALIZE'))  # type: ignore  # Untyped decorator
+def guest_request_prepare_finalize(guestname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_guest_request_prepare_finalize,
+        logger=get_guest_logger('guest-request-prepare-finalize', _ROOT_LOGGER, guestname),
+        doer_args=(guestname,)
+    )
+
+
+def dispatch_preparing(
+    logger: gluetool.log.ContextAdapter,
+    workspace: Workspace,
+) -> None:
+    """
+    Helper for dispatching post-acquire chain of tasks.
+    """
+
+    workspace.dispatch_group(
+        [
+            prepare_verify_ssh
+        ],
+        workspace.guestname,
+        on_complete=guest_request_prepare_finalize
+    )
 
 
 def do_release_guest_request(
@@ -1737,7 +1946,7 @@ def do_update_guest_request(
 
     workspace.update_guest_state(
         GuestState.PROMISED,
-        GuestState.READY,
+        GuestState.PREPARING,
         set_values={
             'address': provisioning_progress.address,
             'pool_data': provisioning_progress.pool_data.serialize()
@@ -1752,11 +1961,12 @@ def do_update_guest_request(
 
     logger.info('successfully acquired')
 
-    # update metrics counter for successfully provisioned guest requests
-    metrics.ProvisioningMetrics.inc_success(session)
+    dispatch_preparing(logger, workspace)
 
-    # check if this was a failover and mark it in metrics
-    _handle_successful_failover(logger, session, workspace)
+    if workspace.result:
+        _undo_guest_update()
+
+        return workspace.result
 
     return handle_success('finished-task')
 
@@ -1850,7 +2060,7 @@ def do_acquire_guest_request(
 
     workspace.update_guest_state(
         GuestState.PROVISIONING,
-        GuestState.READY,
+        GuestState.PREPARING,
         set_values={
             'address': provisioning_progress.address,
             'pool_data': provisioning_progress.pool_data.serialize()
@@ -1867,11 +2077,12 @@ def do_acquire_guest_request(
 
     logger.info('successfully acquired')
 
-    # update metrics counter for successfully provisioned guest requests
-    metrics.ProvisioningMetrics.inc_success(session)
+    dispatch_preparing(logger, workspace)
 
-    # check if this was a successful failover and mark it in metrics
-    _handle_successful_failover(logger, session, workspace)
+    if workspace.result:
+        _undo_guest_acquire()
+
+        return workspace.result
 
     return handle_success('finished-task')
 
