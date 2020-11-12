@@ -85,18 +85,21 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         actor: Any,
         message: Any
     ) -> bool:
+        # we need to import late, because middleware is called initialized in __init__
+        from .tasks import acquire_guest_request, update_guest_request, route_guest_request
+
         # for acquire_guest, move from PROVISIONING back to ROUTING
-        if actor.actor_name == 'acquire_guest':
+        if actor.actor_name == acquire_guest_request.actor_name:
             self._move_to_routing(logger, guestname, GuestState.PROVISIONING)
             return True
 
         # for do_update_guest, move from PROMISED back to ROUTING
-        elif actor.actor_name == 'update_guest':
+        elif actor.actor_name == update_guest_request.actor_name:
             self._move_to_routing(logger, guestname, GuestState.PROMISED)
             return True
 
         # for route_guest_request, stay in ROUTING
-        elif actor.actor_name == 'route_guest_request':
+        elif actor.actor_name == route_guest_request.actor_name:
             self._move_to_error(logger, guestname, GuestState.ROUTING)
             return False
 
