@@ -1,52 +1,24 @@
+import dataclasses
 from datetime import datetime
-import json
 import threading
 
 import gluetool.log
 from gluetool.result import Result, Error, Ok
 
-from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool, PoolResourcesIDsType
+from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool, PoolResourcesIDsType, PoolData, \
+    ProvisioningProgress
 from .. import Failure
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
-from ..guest import Guest, SSHInfo
-from ..snapshot import Snapshot
 
 from typing import cast, Any, Dict, List, Optional
 
 
-class AzureGuest(Guest):
-    def __init__(
-        self,
-        guestname: str,
-        instance_id: str,
-        instance_name: str,
-        resource_group: str,
-        address: Optional[str] = None,
-        ssh_info: Optional[SSHInfo] = None
-    ) -> None:
-        super(AzureGuest, self).__init__(guestname, address, ssh_info)
-
-        self.instance_id = instance_id
-        self.instance_name = instance_name
-        self.resource_group = resource_group
-
-    def __repr__(self) -> str:
-        return '<AzureGuest: az_instance={}, instance_name={}, resource_group={}, address={}, ssh_info={}>'.format(
-            self.instance_id,
-            self.instance_name,
-            self.resource_group,
-            self.address,
-            self.ssh_info
-        )
-
-    @property
-    def pool_data(self) -> Dict[str, Any]:
-        return {
-            'instance_id': self.instance_id,
-            'instance_name': self.instance_name,
-            'resource_group': self.resource_group
-        }
+@dataclasses.dataclass
+class AzurePoolData(PoolData):
+    instance_id: str
+    instance_name: str
+    resource_group: str
 
 
 class AzureDriver(PoolDriver):
@@ -104,12 +76,6 @@ class AzureDriver(PoolDriver):
 
         return Ok(None)
 
-    def snapshot_factory(
-        self,
-        snapshpt_request: SnapshotRequest
-    ) -> Result[Snapshot, Failure]:
-        raise NotImplementedError()
-
     def can_acquire(
         self,
         environment: Environment
@@ -127,24 +93,14 @@ class AzureDriver(PoolDriver):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
         with an address set, driver signals the provisioning is now complete. Returning a guest instance without an
         address would schedule yet another call to this method in the future.
         """
 
-        assert guest_request.poolname
-
-        r_guest = self.guest_factory(guest_request, ssh_key=master_key)
-
-        if r_guest.is_error:
-            return Error(r_guest.unwrap_error())
-        guest = r_guest.unwrap()
-
-        assert isinstance(guest, AzureGuest)
-
-        r_output = self._show_guest(guest.instance_id)
+        r_output = self._show_guest(guest_request)
 
         if r_output.is_error:
             return Error(Failure('no such guest'))
@@ -159,17 +115,7 @@ class AzureDriver(PoolDriver):
         logger.info('instance status is {}'.format(status))
 
         if status == 'failed':
-            self.release_guest(
-                logger,
-                AzureGuest(
-                    guest.guestname,
-                    guest.instance_id,
-                    guest.instance_name,
-                    guest.resource_group,
-                    address=None,
-                    ssh_info=None
-                )
-            )
+            self.release_guest(logger, guest_request)
             logger.warning('Instance ended up in failed state. NOT provisioning a new one')
 
             return self._do_acquire_guest(logger, guest_request, environment, master_key)
@@ -178,13 +124,14 @@ class AzureDriver(PoolDriver):
 
         if r_ip_address.is_error:
             return Error(r_ip_address.unwrap_error())
-        ip_address = r_ip_address.unwrap()
 
-        guest.address = ip_address
+        return Ok(ProvisioningProgress(
+            is_acquired=True,
+            pool_data=AzurePoolData.unserialize(guest_request),
+            address=r_ip_address.unwrap()
+        ))
 
-        return Ok(guest)
-
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest: Guest) -> Result[bool, Failure]:
+    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 
@@ -192,12 +139,11 @@ class AzureDriver(PoolDriver):
         :rtype: result.Result[bool, Failure]
         """
 
-        if not isinstance(guest, AzureGuest):
-            return Error(Failure('guest is not an AzureGuest guest'))
+        pool_data = AzurePoolData.unserialize(guest_request)
 
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
-        cmd = ['resource', 'list', '--tag', 'uid={}'.format(guest.instance_name)]
+        cmd = ['resource', 'list', '--tag', 'uid={}'.format(pool_data.instance_id)]
         resources_by_tag = self._run_cmd_with_auth(cmd).unwrap()
 
         def _delete_resource(res_id: str) -> Any:
@@ -210,7 +156,12 @@ class AzureDriver(PoolDriver):
         for res in [r for r in resources_by_tag if r["type"] != "Microsoft.Compute/virtualMachines"]:
             assorted_resource_ids.append(res['id'])
 
-        r_cleanup = self._dispatch_resource_cleanup(logger, *assorted_resource_ids, instance_id=guest.instance_id)
+        r_cleanup = self._dispatch_resource_cleanup(
+            logger,
+            *assorted_resource_ids,
+            instance_id=pool_data.instance_id,
+            guest_request=guest_request
+        )
 
         if r_cleanup.is_error:
             return Error(r_cleanup.unwrap_error())
@@ -219,9 +170,9 @@ class AzureDriver(PoolDriver):
 
     def create_snapshot(
         self,
-        snapshot_request: SnapshotRequest,
-        guest: Guest
-    ) -> Result[Snapshot, Failure]:
+        guest_request: GuestRequest,
+        snapshot_request: SnapshotRequest
+    ) -> Result[ProvisioningProgress, Failure]:
         """
         Create snapshot of a guest.
         If the returned snapshot is not active, ``update_snapshot`` would be scheduled by Artemis core.
@@ -236,11 +187,11 @@ class AzureDriver(PoolDriver):
 
     def update_snapshot(
         self,
-        snapshot: Snapshot,
-        guest: Guest,
+        guest_request: GuestRequest,
+        snapshot_request: SnapshotRequest,
         canceled: Optional[threading.Event] = None,
         start_again: bool = True
-    ) -> Result[Snapshot, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
         """
         Update state of the snapshot.
         Called for unfinished snapshot.
@@ -256,7 +207,7 @@ class AzureDriver(PoolDriver):
 
     def remove_snapshot(
         self,
-        snapshot: Snapshot,
+        snapshot_request: SnapshotRequest,
     ) -> Result[bool, Failure]:
         """
         Remove snapshot from the pool.
@@ -270,8 +221,8 @@ class AzureDriver(PoolDriver):
 
     def restore_snapshot(
         self,
-        snapshot_request: SnapshotRequest,
-        guest: Guest
+        guest_request: GuestRequest,
+        snapshot_request: SnapshotRequest
     ) -> Result[bool, Failure]:
         """
         Restore the guest to the snapshot.
@@ -291,7 +242,7 @@ class AzureDriver(PoolDriver):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
         by `environment`.
@@ -311,37 +262,6 @@ class AzureDriver(PoolDriver):
             environment,
             master_key,
             cancelled)
-
-    def guest_factory(
-        self,
-        guest_request: GuestRequest,
-        ssh_key: SSHKey
-    ) -> Result[Guest, Failure]:
-        if not guest_request.pool_data:
-            return Error(Failure('invalid pool data'))
-
-        pool_data = json.loads(guest_request.pool_data)
-
-        if 'instance_id' not in pool_data:
-            return Error(Failure('no guest was provisioned for request'))
-
-        r_output = self._show_guest(pool_data['instance_id'])
-
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
-
-        return Ok(
-            AzureGuest(
-                guest_request.guestname,
-                pool_data['instance_id'],
-                pool_data['instance_name'],
-                pool_data['resource_group'],
-                address=guest_request.address,
-                ssh_info=SSHInfo(port=guest_request.ssh_port,
-                                 username=guest_request.ssh_username,
-                                 key=ssh_key),
-            )
-        )
 
     def _run_cmd(self, options: List[str], json_format: bool = True) -> Result[Any, Failure]:
         r_run = run_cli_tool(
@@ -382,13 +302,20 @@ class AzureDriver(PoolDriver):
 
     def _show_guest(
         self,
-        instance_id: str,
+        guest_request: GuestRequest
     ) -> Result[Any, Failure]:
 
         login_output = self._login()
         if login_output.is_error:
             return Error(login_output.value)
-        r_output = self._run_cmd_with_auth(['vm', 'show', '-d', '--ids', instance_id])
+
+        r_output = self._run_cmd_with_auth([
+            'vm',
+            'show',
+            '-d',
+            '--ids', AzurePoolData.unserialize(guest_request).instance_id
+        ])
+
         if r_output.is_error:
             return Error(r_output.value)
         return Ok(r_output.unwrap())
@@ -400,7 +327,7 @@ class AzureDriver(PoolDriver):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
 
         name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
         # XXX FIXME not using hooks for the moment, transfer to a hook some time later
@@ -447,14 +374,11 @@ class AzureDriver(PoolDriver):
         logger.info('instance status is {}'.format(status))
 
         # There is no chance that the guest will be ready in this step
-        # Return the guest with no ip and check it in the next update_guest event
-        return Ok(
-            AzureGuest(
-                guest_request.guestname,
-                output['id'],
-                name,
-                self.pool_config['resource-group'],
-                address=None,
-                ssh_info=None
+        return Ok(ProvisioningProgress(
+            is_acquired=False,
+            pool_data=AzurePoolData(
+                instance_id=output['id'],
+                instance_name=name,
+                resource_group=self.pool_config['resource-group']
             )
-        )
+        ))

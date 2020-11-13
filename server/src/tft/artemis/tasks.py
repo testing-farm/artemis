@@ -19,9 +19,9 @@ from . import metrics
 from .db import DB, GuestEvent, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
 from .drivers import PoolDriver, PoolLogger
 from .environment import Environment
-from .guest import Guest, GuestLogger, GuestState, GuestPoolDataType
+from .guest import GuestLogger, GuestState
 from .script import hook_engine
-from .snapshot import Snapshot, SnapshotLogger
+from .snapshot import SnapshotLogger
 
 from .drivers import aws as aws_driver
 from .drivers import beaker as beaker_driver
@@ -595,9 +595,8 @@ def _update_guest_state(
     guestname: str,
     current_state: GuestState,
     new_state: GuestState,
-    guest: Optional[Guest] = None,
-    set_values: Optional[Dict[str, Any]] = None,
-    current_pool_data: Optional[GuestPoolDataType] = None,
+    set_values: Optional[Dict[str, Union[str, int]]] = None,
+    current_pool_data: Optional[str] = None,
     **details: Any
 ) -> Result[bool, Failure]:
     handle_success, handle_failure, _ = create_event_handlers(
@@ -627,7 +626,7 @@ def _update_guest_state(
             .update(GuestRequest.__table__) \
             .where(GuestRequest.guestname == guestname) \
             .where(GuestRequest.state == current_state.value) \
-            .where(GuestRequest.pool_data == Guest.pool_data_to_db(current_pool_data)) \
+            .where(GuestRequest.pool_data == current_pool_data) \
             .values(**values)
 
     else:
@@ -888,9 +887,7 @@ class Workspace:
         self.sr: Optional[SnapshotRequest] = None
         self.ssh_key: Optional[SSHKey] = None
         self.pool: Optional[PoolDriver] = None
-        self.guest: Optional[Guest] = None
         self.guest_events: Optional[List[GuestEvent]] = None
-        self.snapshot: Optional[Snapshot] = None
 
     def load_guest_request(self, guestname: str, state: Optional[GuestState] = None) -> None:
         """
@@ -1074,39 +1071,6 @@ class Workspace:
 
         self.pool = r.unwrap()
 
-    def load_guest(self) -> None:
-        """
-        Load a guest described by a guest request.
-
-        **OUTCOMES:**
-
-          * ``RESCHEDULE`` if cancel was requested
-          * ``FAIL`` otherwise
-
-        **SETS:**
-
-          * ``guest``
-        """
-
-        if self.result:
-            return
-
-        assert self.gr
-        assert self.ssh_key
-        assert self.pool
-
-        r = self.pool.guest_factory(self.gr, ssh_key=self.ssh_key)
-
-        if r.is_error:
-            self.result = self.handle_failure(r, 'failed to load guest')
-            return
-
-        if _cancel_task_if(self.logger, self.cancel):
-            self.result = RESCHEDULE
-            return
-
-        self.guest = r.unwrap()
-
     def load_guest_events(self, eventname: Optional[str] = None) -> None:
         """
         Load guest events according to set guestname.
@@ -1137,37 +1101,6 @@ class Workspace:
             return
 
         self.guest_events = events
-
-    def load_snapshot(self) -> None:
-        """
-        Load a snapshot described by a snapshot request.
-
-        **OUTCOMES:**
-
-          * ``RESCHEDULE`` if cancel was requested
-          * ``FAIL`` otherwise
-
-        **SETS:**
-
-          * ``snapshot``
-        """
-
-        if self.result:
-            return
-
-        assert self.sr
-        assert self.pool
-
-        r = self.pool.snapshot_factory(self.sr)
-
-        if r.is_error:
-            self.result = self.handle_failure(r, 'failed to load snapshot')
-
-        if _cancel_task_if(self.logger, self.cancel):
-            self.result = RESCHEDULE
-            return
-
-        self.snapshot = r.unwrap()
 
     def update_guest_state(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -1511,21 +1444,12 @@ def do_release_guest_request(
 
             return workspace.result
 
-        workspace.load_guest()
+        assert workspace.pool
 
-        # If we cancelled the guest early, no provisioned guest is available
-        if workspace.result:
-            pass
+        r_release = workspace.pool.release_guest(logger, workspace.gr)
 
-        # This can happen if somebody removed the instance outside of Artemis
-        else:
-            assert workspace.pool
-            assert workspace.guest
-
-            r_release = workspace.pool.release_guest(logger, workspace.guest)
-
-            if r_release.is_error:
-                handle_failure(r_release, 'failed to release guest')
+        if r_release.is_error:
+            handle_failure(r_release, 'failed to release guest')
 
     query = sqlalchemy \
         .delete(GuestRequest.__table__) \
@@ -1580,7 +1504,6 @@ def do_update_guest_request(
     workspace.load_guest_request(guestname, state=GuestState.PROMISED)
     workspace.load_ssh_key()
     workspace.load_gr_pool()
-    workspace.load_guest()
 
     if workspace.result:
         return workspace.result
@@ -1588,15 +1511,15 @@ def do_update_guest_request(
     assert workspace.gr
     assert workspace.pool
     assert workspace.ssh_key
-    assert workspace.guest
 
     spice_details['poolname'] = workspace.gr.poolname
-    current_pool_data = Guest.pool_data_from_db(workspace.gr)
+    current_pool_data = workspace.gr.pool_data
 
-    def _undo_guest_update(guest: Guest) -> None:
+    def _undo_guest_update() -> None:
+        assert workspace.gr
         assert workspace.pool
 
-        r = workspace.pool.release_guest(logger, guest)
+        r = workspace.pool.release_guest(logger, workspace.gr)
 
         if r.is_ok:
             return
@@ -1615,15 +1538,14 @@ def do_update_guest_request(
     if r_update.is_error:
         return handle_failure(r_update, 'failed to update guest')
 
-    guest = r_update.unwrap()
+    provisioning_progress = r_update.unwrap()
 
-    if guest.is_promised:
+    if not provisioning_progress.is_acquired:
         workspace.update_guest_state(
             GuestState.PROMISED,
             GuestState.PROMISED,
-            guest=guest,
             set_values={
-                'pool_data': Guest.pool_data_to_db(guest.pool_data)
+                'pool_data': provisioning_progress.pool_data.serialize()
             },
             current_pool_data=current_pool_data
         )
@@ -1631,7 +1553,7 @@ def do_update_guest_request(
         workspace.dispatch_task(update_guest_request, guestname)
 
         if workspace.result:
-            _undo_guest_update(guest)
+            _undo_guest_update()
 
             return workspace.result
 
@@ -1639,19 +1561,20 @@ def do_update_guest_request(
 
         return SUCCESS
 
+    assert provisioning_progress.address
+
     workspace.update_guest_state(
         GuestState.PROMISED,
         GuestState.READY,
-        guest=guest,
         set_values={
-            'address': guest.address,
-            'pool_data': Guest.pool_data_to_db(guest.pool_data)
+            'address': provisioning_progress.address,
+            'pool_data': provisioning_progress.pool_data.serialize()
         },
         current_pool_data=current_pool_data
     )
 
     if workspace.result:
-        _undo_guest_update(guest)
+        _undo_guest_update()
 
         return workspace.result
 
@@ -1712,12 +1635,13 @@ def do_acquire_guest_request(
     if result.is_error:
         return handle_failure(result, 'failed to provision')
 
-    guest = result.unwrap()
+    provisioning_progress = result.unwrap()
 
     def _undo_guest_acquire() -> None:
+        assert workspace.gr
         assert workspace.pool
 
-        r = workspace.pool.release_guest(logger, guest)
+        r = workspace.pool.release_guest(logger, workspace.gr)
 
         if r.is_ok:
             return
@@ -1730,13 +1654,12 @@ def do_acquire_guest_request(
     # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
     # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
     # save guest's address. In both cases, we must be sure nobody else did any changes before us.
-    if guest.is_promised:
+    if not provisioning_progress.is_acquired:
         workspace.update_guest_state(
             GuestState.PROVISIONING,
             GuestState.PROMISED,
-            guest=guest,
             set_values={
-                'pool_data': Guest.pool_data_to_db(guest.pool_data)
+                'pool_data': provisioning_progress.pool_data.serialize()
             }
         )
 
@@ -1751,17 +1674,18 @@ def do_acquire_guest_request(
 
         return SUCCESS
 
+    assert provisioning_progress.address
+
     workspace.update_guest_state(
         GuestState.PROVISIONING,
         GuestState.READY,
-        guest=guest,
         set_values={
-            'address': guest.address,
-            'pool_data': Guest.pool_data_to_db(guest.pool_data)
+            'address': provisioning_progress.address,
+            'pool_data': provisioning_progress.pool_data.serialize()
         },
-        address=guest.address,
+        address=provisioning_progress.address,
         pool=workspace.gr.poolname,
-        pool_data=guest.pool_data
+        pool_data=provisioning_progress.pool_data.serialize()
     )
 
     if workspace.result:
@@ -1925,7 +1849,6 @@ def do_release_snapshot_request(
         spice_details['poolname'] = workspace.sr.poolname
 
         workspace.load_sr_pool()
-        workspace.load_snapshot()
 
         if workspace.result:
             _undo_grab()
@@ -1995,16 +1918,14 @@ def do_create_snapshot_start_guest(
 
     workspace.load_sr_pool()
     workspace.load_ssh_key()
-    workspace.load_guest()
 
     if workspace.result:
         return workspace.result
 
     assert workspace.pool
     assert workspace.ssh_key
-    assert workspace.guest
 
-    r_started = workspace.pool.is_guest_running(workspace.guest)
+    r_started = workspace.pool.is_guest_running(workspace.gr)
 
     if r_started.is_error:
         return handle_failure(r_started, 'failed to check if guest is started')
@@ -2064,39 +1985,37 @@ def do_update_snapshot(
     workspace.load_guest_request(guestname, state=GuestState.STOPPED)
     workspace.load_sr_pool()
     workspace.load_ssh_key()
-    workspace.load_guest()
-    workspace.load_snapshot()
 
     if workspace.result:
         return workspace.result
 
+    assert workspace.gr
     assert workspace.sr
-    assert workspace.snapshot
-    assert workspace.guest
     assert workspace.pool
 
     r_update = workspace.pool.update_snapshot(
-        workspace.snapshot,
-        workspace.guest,
+        workspace.gr,
+        workspace.sr,
         start_again=workspace.sr.start_again
     )
 
     if r_update.is_error:
         return handle_failure(r_update, 'failed to update snapshot')
 
-    snapshot = r_update.unwrap()
+    provisioning_progress = r_update.unwrap()
 
-    def _undo_snapshot_update(snapshot: Snapshot) -> None:
+    def _undo_snapshot_update() -> None:
+        assert workspace.sr
         assert workspace.pool
 
-        r = workspace.pool.remove_snapshot(snapshot)
+        r = workspace.pool.remove_snapshot(workspace.sr)
 
         if r.is_ok:
             return
 
         handle_failure(r, 'failed to undo guest update')
 
-    if snapshot.is_promised:
+    if not provisioning_progress.is_acquired:
         workspace.update_snapshot_state(
             GuestState.PROMISED,
             GuestState.PROMISED,
@@ -2105,7 +2024,7 @@ def do_update_snapshot(
         workspace.dispatch_task(update_snapshot, guestname, snapshotname)
 
         if workspace.result:
-            _undo_snapshot_update(snapshot)
+            _undo_snapshot_update()
 
             return workspace.result
 
@@ -2124,7 +2043,7 @@ def do_update_snapshot(
     if not workspace.sr.start_again:
         return SUCCESS
 
-    r_start = workspace.pool.start_guest(logger, workspace.guest)
+    r_start = workspace.pool.start_guest(logger, workspace.gr)
 
     if r_start.is_error:
         return handle_failure(r_start, 'failed to start guest')
@@ -2135,14 +2054,14 @@ def do_update_snapshot(
     )
 
     if workspace.result:
-        _undo_snapshot_update(snapshot)
+        _undo_snapshot_update()
 
         return workspace.result
 
     workspace.dispatch_task(create_snapshot_start_guest, guestname, snapshotname)
 
     if workspace.result:
-        _undo_snapshot_update(snapshot)
+        _undo_snapshot_update()
 
         return workspace.result
 
@@ -2188,33 +2107,32 @@ def do_create_snapshot_create(
 
     workspace.load_sr_pool()
     workspace.load_ssh_key()
-    workspace.load_guest()
 
     if workspace.result:
         return workspace.result
 
     assert workspace.pool
     assert workspace.ssh_key
-    assert workspace.guest
 
-    r_create = workspace.pool.create_snapshot(workspace.sr, workspace.guest)
+    r_create = workspace.pool.create_snapshot(workspace.gr, workspace.sr)
 
     if r_create.is_error:
         return handle_failure(r_create, 'failed to create snapshot')
 
-    snapshot = r_create.unwrap()
+    provisioning_progress = r_create.unwrap()
 
     def _undo_snapshot_create() -> None:
+        assert workspace.sr
         assert workspace.pool
 
-        r = workspace.pool.remove_snapshot(snapshot)
+        r = workspace.pool.remove_snapshot(workspace.sr)
 
         if r.is_ok:
             return
 
         handle_failure(r, 'failed to undo snapshot create')
 
-    if snapshot.is_promised:
+    if not provisioning_progress.is_acquired:
         workspace.update_snapshot_state(
             GuestState.CREATING,
             GuestState.PROMISED,
@@ -2242,7 +2160,7 @@ def do_create_snapshot_create(
     if not workspace.sr.start_again:
         return SUCCESS
 
-    r_start = workspace.pool.start_guest(logger, workspace.guest)
+    r_start = workspace.pool.start_guest(logger, workspace.gr)
 
     if r_start.is_error:
         return handle_failure(r_start, 'failed to start guest')
@@ -2308,16 +2226,14 @@ def do_create_snapshot_stop_guest(
 
     workspace.load_sr_pool()
     workspace.load_ssh_key()
-    workspace.load_guest()
 
     if workspace.result:
         return workspace.result
 
     assert workspace.pool
     assert workspace.ssh_key
-    assert workspace.guest
 
-    r_stopped = workspace.pool.is_guest_stopped(workspace.guest)
+    r_stopped = workspace.pool.is_guest_stopped(workspace.gr)
 
     if r_stopped.is_error:
         return handle_failure(r_stopped, 'failed to check if guest is stopped')
@@ -2391,25 +2307,23 @@ def do_create_snapshot(
 
     workspace.load_sr_pool()
     workspace.load_ssh_key()
-    workspace.load_guest()
 
     if workspace.result:
         return workspace.result
 
     assert workspace.pool
     assert workspace.ssh_key
-    assert workspace.guest
 
-    r_stop = workspace.pool.stop_guest(logger, workspace.guest)
+    r_stop = workspace.pool.stop_guest(logger, workspace.gr)
 
     if r_stop.is_error:
         return handle_failure(r_stop, 'failed to stop guest')
 
     def _undo_snapshot_create() -> None:
         assert workspace.pool
-        assert workspace.guest
+        assert workspace.gr
 
-        r = workspace.pool.start_guest(logger, workspace.guest)
+        r = workspace.pool.start_guest(logger, workspace.gr)
 
         if r.is_ok:
             return
@@ -2539,18 +2453,17 @@ def do_restore_snapshot_request(
 
     workspace.load_sr_pool()
     workspace.load_ssh_key()
-    workspace.load_guest()
 
     if workspace.result:
         workspace.ungrab_snapshot_request(GuestState.PROCESSING, GuestState.RESTORING)
 
         return workspace.result
 
+    assert workspace.gr
     assert workspace.sr
     assert workspace.pool
-    assert workspace.guest
 
-    r_restore = workspace.pool.restore_snapshot(workspace.sr, workspace.guest)
+    r_restore = workspace.pool.restore_snapshot(workspace.gr, workspace.sr)
 
     if r_restore.is_error:
         workspace.ungrab_snapshot_request(GuestState.PROCESSING, GuestState.RESTORING)

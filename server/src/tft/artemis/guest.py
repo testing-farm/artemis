@@ -1,16 +1,9 @@
 import dataclasses
 import enum
-import json
-import sqlalchemy
 
 import gluetool.log
 
 from . import db as artemis_db
-
-from typing import cast, Any, Dict, Optional
-
-
-GuestPoolDataType = Dict[str, Any]
 
 
 class GuestState(enum.Enum):
@@ -82,57 +75,3 @@ class SSHInfo:
             self.username,
             self.key.keyname if self.key else ''
         )
-
-
-class Guest:
-    """
-    Parent class of all provisioned machines. Pool drivers may create their own child classes
-    to track their own internal information (e.g. cloud instance IDs) within the same object.
-    """
-
-    def __init__(
-        self,
-        guestname: str,
-        address: Optional[str] = None,
-        ssh_info: Optional[SSHInfo] = None
-    ) -> None:
-        self.guestname = guestname
-        self.address = address
-        self.ssh_info = ssh_info
-
-    def __repr__(self) -> str:
-        return '<Guest: address={}, ssh_info={}>'.format(
-            self.address,
-            self.ssh_info
-        )
-
-    @property
-    def pool_data(self) -> GuestPoolDataType:
-        return {}
-
-    @staticmethod
-    def pool_data_to_db(pool_data: GuestPoolDataType) -> str:
-        return json.dumps(pool_data, sort_keys=True)
-
-    @staticmethod
-    def pool_data_from_db(guest_record: artemis_db.GuestRequest) -> GuestPoolDataType:
-        assert guest_record.pool_data is not None
-
-        return cast(GuestPoolDataType, json.loads(guest_record.pool_data))
-
-    def log_event(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        eventname: str,
-        **details: Any
-    ) -> None:
-        """ Create event log record for guest """
-
-        from . import log_guest_event
-
-        log_guest_event(logger, session, self.guestname, eventname, **details)
-
-    @property
-    def is_promised(self) -> bool:
-        return self.address is None

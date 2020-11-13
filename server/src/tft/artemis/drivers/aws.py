@@ -1,5 +1,5 @@
 import base64
-import json
+import dataclasses
 import re
 import threading
 
@@ -11,11 +11,10 @@ from gluetool.result import Result, Ok, Error
 from gluetool.utils import wait
 from jinja2 import Template
 
-from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType
+from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
-from ..guest import Guest, SSHInfo
 from ..script import hook_engine
 
 #
@@ -68,33 +67,10 @@ class FailedSpotRequest(Failure):
         self.spot_request_id = spot_request_id
 
 
-class AWSGuest(Guest):
-    def __init__(
-        self,
-        guestname: str,
-        instance_id: str,
-        spot_request_id: str,
-        address: Optional[str] = None,
-        ssh_info: Optional[SSHInfo] = None
-    ) -> None:
-        super(AWSGuest, self).__init__(guestname, address, ssh_info)
-        self._instance_id = instance_id
-        self._spot_request_id = spot_request_id
-
-    def __repr__(self) -> str:
-        return '<AWSGuest: id={}, spot_request_id={}, address={}, ssh_info={}>'.format(
-            self._instance_id,
-            self._spot_request_id,
-            self.address,
-            self.ssh_info
-        )
-
-    @property
-    def pool_data(self) -> Dict[str, Any]:
-        return {
-            'instance_id': str(self._instance_id),
-            'spot_request_id': str(self._spot_request_id)
-        }
+@dataclasses.dataclass
+class AWSPoolData(PoolData):
+    instance_id: str
+    spot_instance_id: str
 
 
 class AWSDriver(PoolDriver):
@@ -164,48 +140,6 @@ class AWSDriver(PoolDriver):
                 return Error(r_output.value)
 
         return Ok(None)
-
-    def guest_factory(
-        self,
-        guest_request: GuestRequest,
-        ssh_key: SSHKey
-    ) -> Result[Guest, Failure]:
-
-        if not guest_request.pool_data:
-            return Error(Failure('no pool data'))
-
-        pool_data = json.loads(guest_request.pool_data)
-
-        if 'instance_id' not in pool_data:
-            return Error(Failure('no instance_id in pool data found, pool data: {}'.format(pool_data)))
-
-        result = self._aws_command(
-            ['ec2', 'describe-instances', '--instance-id={}'.format(pool_data['instance_id'])],
-            key='Reservations'
-        )
-
-        # no instance found
-        if result.is_error:
-            return Error(Failure('no instance found'))
-
-        try:
-            instance = result.unwrap()[0]['Instances'][0]
-        except (KeyError, IndexError):
-            return Error(Failure('no instance found'))
-
-        return Ok(
-            AWSGuest(
-                guest_request.guestname,
-                pool_data['instance_id'],
-                pool_data['spot_request_id'],
-                instance['PrivateIpAddress'],
-                SSHInfo(
-                    port=guest_request.ssh_port,
-                    username=guest_request.ssh_username,
-                    key=ssh_key
-                )
-            )
-        )
 
     def can_acquire(self, environment: Environment) -> Result[bool, Failure]:
         if environment.arch != 'x86_64':
@@ -375,11 +309,10 @@ class AWSDriver(PoolDriver):
     def _request_spot_instance(
         self,
         logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
         instance_type: str,
-        image: Dict[str, str],
-        guestname: str,
-        post_install_script: Optional[str] = None
-    ) -> Result[Guest, Failure]:
+        image: Dict[str, str]
+    ) -> Result[ProvisioningProgress, Failure]:
 
         block_device_mappings: Optional[BlockDeviceMappingsType] = None
         image_id = image['ImageId']
@@ -392,10 +325,10 @@ class AWSDriver(PoolDriver):
 
         spot_price = r_price.unwrap()
 
-        if post_install_script:
+        if guest_request.post_install_script:
             # NOTE(ivasilev) Encoding is needed as base62.b64encode() requires bytes object per py3 specification,
             # and decoding is getting us the expected str back.
-            user_data = base64.b64encode(post_install_script.encode('utf-8')).decode('utf-8')
+            user_data = base64.b64encode(guest_request.post_install_script.encode('utf-8')).decode('utf-8')
         else:
             post_install_script_file = self.pool_config.get('post-install-script')
             if post_install_script_file:
@@ -520,18 +453,17 @@ class AWSDriver(PoolDriver):
         self._tag_instance(instance, owner, tags={
             'Name': '{}::{}'.format(instance['PrivateIpAddress'], image['Name']),
             'SpotRequestId': spot_request_id,
-            'ArtemisGuestName': guestname,
+            'ArtemisGuestName': guest_request.guestname,
         })
 
-        return Ok(
-            AWSGuest(
-                guestname,
-                instance['InstanceId'],
-                spot_request_id,
-                instance['PrivateIpAddress'],
-                ssh_info=None
+        return Ok(ProvisioningProgress(
+            is_acquired=True,
+            address=instance['PrivateIpAddress'],
+            pool_data=AWSPoolData(
+                instance_id=instance['InstanceId'],
+                spot_instance_id=spot_request_id
             )
-        )
+        ))
 
     def _tag_instance(
         self,
@@ -577,7 +509,7 @@ class AWSDriver(PoolDriver):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
         by `environment`.
@@ -615,11 +547,9 @@ class AWSDriver(PoolDriver):
         image = r_image.unwrap()
 
         # request a spot instance and wait for it's full fillment
-        r_spot_instance = self._request_spot_instance(logger=logger,
-                                                      instance_type=instance_type,
-                                                      image=image,
-                                                      guestname=guest_request.guestname,
-                                                      post_install_script=guest_request.post_install_script)
+        r_spot_instance = self._request_spot_instance(
+            logger, guest_request, instance_type, image
+        )
 
         if r_spot_instance.is_error:
             # cleanup the spot request if needed
@@ -634,11 +564,9 @@ class AWSDriver(PoolDriver):
             # just return the error, no cleanup required
             return r_spot_instance
 
-        guest = r_spot_instance.unwrap()
+        return Ok(r_spot_instance.unwrap())
 
-        return Ok(guest)
-
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest: Guest) -> Result[bool, Failure]:
+    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 
@@ -646,19 +574,16 @@ class AWSDriver(PoolDriver):
         :rtype: result.Result[bool, str]
         """
 
-        if not isinstance(guest, AWSGuest):
-            return Error(Failure('Guest is not an AWS guest'))
+        pool_data = AWSPoolData.unserialize(guest_request)
 
-        # required for type checking
-        assert isinstance(guest, AWSGuest)
-
-        if guest._instance_id is None or guest._spot_request_id is None:
+        if pool_data.instance_id is None or pool_data.spot_instance_id is None:
             return Error(Failure('guest has no identification'))
 
         r_cleanup = self._dispatch_resource_cleanup(
             logger,
-            instance_id=guest._instance_id,
-            spot_instance_id=guest._spot_request_id
+            instance_id=pool_data.instance_id,
+            spot_instance_id=pool_data.spot_instance_id,
+            guest_request=guest_request
         )
 
         if r_cleanup.is_error:

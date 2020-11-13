@@ -352,6 +352,10 @@ class GuestRequest(Base):
 
         log_guest_event(logger, session, self.guestname, eventname, **details)
 
+    @property
+    def is_promised(self) -> bool:
+        return self.address is None
+
 
 class GuestEvent(Base):
     __tablename__ = 'guest_events'

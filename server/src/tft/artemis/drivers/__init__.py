@@ -17,8 +17,7 @@ from .. import Failure, process_output_to_str
 from ..db import GuestRequest, SnapshotRequest, SSHKey, Query
 from ..db import PoolResourcesMetrics as PoolResourcesMetricsRecord, PoolResourcesMetricsDimensions
 from ..environment import Environment
-from ..guest import Guest, GuestState
-from ..snapshot import Snapshot
+from ..guest import GuestState
 
 # Type annotations
 from typing import cast, Any, Callable, Iterator, List, Dict, Optional, Tuple
@@ -231,6 +230,38 @@ class PoolMetrics:
     resources: PoolResourcesMetrics = dataclasses.field(default_factory=PoolResourcesMetrics)
 
 
+@dataclasses.dataclass
+class PoolData:
+    """
+    Base class for containers of pool-specific data stored in guests requests. It is up to each driver
+    to declare its own fields.
+    """
+
+    def serialize(self) -> str:
+        return json.dumps(dataclasses.asdict(self))
+
+    @classmethod
+    def unserialize(cls, guest_request: GuestRequest) -> Any:
+        return cls(**json.loads(guest_request.pool_data))  # type: ignore
+
+
+@dataclasses.dataclass
+class ProvisioningProgress:
+    """
+    Container for reporting provisioning progress by drivers.
+    """
+
+    #: Whether the provisioning is complete.
+    is_acquired: bool
+
+    #: Pool-specific data drivers wishes to store for the guest request in question.
+    pool_data: PoolData
+
+    #: If the provisioning is complete - ``is_acquired`` is set to ``True``, driver is expected
+    #: to set this property to guest's IP address.
+    address: Optional[str] = None
+
+
 class PoolDriver(gluetool.log.LoggerMixin):
     def __init__(
         self,
@@ -247,19 +278,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def __repr__(self) -> str:
         return '<{}: {}>'.format(self.__class__.__name__, self.poolname)
-
-    def guest_factory(
-        self,
-        guest_request: GuestRequest,
-        ssh_key: SSHKey
-    ) -> Result[Guest, Failure]:
-        raise NotImplementedError()
-
-    def snapshot_factory(
-        self,
-        snapshpt_request: SnapshotRequest
-    ) -> Result[Snapshot, Failure]:
-        raise NotImplementedError()
 
     def sanity(self) -> Result[bool, Failure]:
         """
@@ -332,21 +350,23 @@ class PoolDriver(gluetool.log.LoggerMixin):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
         """
-        Acquire one guest from the pool. The guest must satisfy requirements specified
-        by `environment`.
+        Acquire one guest from the pool. The guest must satisfy requirements specified by `environment`.
 
-        If the returned guest is missing an address, it is considered to be unfinished,
-        and followup calls to ``update_guest`` would be scheduled by Artemis core.
+        Method is expected to return :py:class:`ProvisioningProgress` instance, with ``is_acquired`` signaling
+        whether the process has finished or not. If set to ``False``, :py:meth:`update_guest` call will be
+        scheduled by Artemis core, to check and update the progress.
 
-        :param Environment environment: environmental requirements a guest must satisfy.
-        :param Key key: master key used for SSH connection.
-        :param threading.Event cancelled: if set, method should cancel its operation, release
-            resources, and return.
-        :rtype: result.Result[Guest, Failure]
-        :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
-            of error.
+        If the process finished - ``is_acquired`` set to ``True`` - method is expected to provide guest details
+        via :py:class:`ProvisioningProgress` fields, namely ``address``.
+
+        :param logger: logger to use for logging.
+        :param guest_request: guest request to provision for.
+        :param enviroment: environment to satisfy.
+        :param master_key: Artemis' master SSH key.
+        :param cancelled: if provided, and set, method is expected to cancel its work, and release
+            resources it already allocated.
         """
 
         raise NotImplementedError()
@@ -358,11 +378,24 @@ class PoolDriver(gluetool.log.LoggerMixin):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
         """
-        Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
-        with an address set, driver signals the provisioning is now complete. Returning a guest instance without an
-        address would schedule yet another call to this method in the future.
+        Update provisioning progress of a given request. The method is expected to check what :py:meth:`acquire_guest`
+        may have started.
+
+        Method is expected to return :py:class:`ProvisioningProgress` instance, with ``is_acquired`` signaling
+        whether the process has finished or not. If set to ``False``, :py:meth:`update_guest` call will be
+        scheduled by Artemis core, to check and update the progress.
+
+        If the process finished - ``is_acquired`` set to ``True`` - method is expected to provide guest details
+        via :py:class:`ProvisioningProgress` fields, namely ``address``.
+
+        :param logger: logger to use for logging.
+        :param guest_request: guest request to provision for.
+        :param enviroment: environment to satisfy.
+        :param master_key: Artemis' master SSH key.
+        :param cancelled: if provided, and set, method is expected to cancel its work, and release
+            resources it already allocated.
         """
 
         raise NotImplementedError()
@@ -370,7 +403,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def stop_guest(
         self,
         logger: gluetool.log.ContextAdapter,
-        guest: Guest
+        guest: GuestRequest
     ) -> Result[bool, Failure]:
         """
         Instructs a guest to stop.
@@ -384,7 +417,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def start_guest(
         self,
         logger: gluetool.log.ContextAdapter,
-        guest: Guest
+        guest: GuestRequest
     ) -> Result[bool, Failure]:
         """
         Instructs a guest to stop.
@@ -395,7 +428,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError()
 
-    def is_guest_stopped(self, guest: Guest) -> Result[bool, Failure]:
+    def is_guest_stopped(self, guest: GuestRequest) -> Result[bool, Failure]:
         """
         Check if a guest is stopped
 
@@ -405,7 +438,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError()
 
-    def is_guest_running(self, guest: Guest) -> Result[bool, Failure]:
+    def is_guest_running(self, guest: GuestRequest) -> Result[bool, Failure]:
         """
         Check if a guest is running
 
@@ -418,12 +451,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def release_guest(
         self,
         logger: gluetool.log.ContextAdapter,
-        guest: Guest
+        guest: GuestRequest
     ) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 
-        :param Guest guest: a guest to be destroyed.
         :rtype: result.Result[bool, Failure]
         """
 
@@ -431,44 +463,43 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def create_snapshot(
         self,
-        snapshot_request: SnapshotRequest,
-        guest: Guest
-    ) -> Result[Snapshot, Failure]:
+        guest_request: GuestRequest,
+        snapshot_request: SnapshotRequest
+    ) -> Result[ProvisioningProgress, Failure]:
         """
-        Create snapshot of a guest.
-        If the returned snapshot is not active, ``update_snapshot`` would be scheduled by Artemis core.
+        Create snapshot of given guest.
 
-        :param SnapshotRequest snapshot_request: snapshot request to process
-        :param Guest guest: a guest, which will be snapshoted
-        :rtype: result.Result[Snapshot, Failure]
-        :returns: :py:class:`result.result` with either :py:class:`Snapshot`
-            or specification of error.
+        Method is expected to return :py:class:`ProvisioningProgress` instance, with ``is_acquired`` signaling
+        whether the process has finished or not. If set to ``False``, :py:meth:`update_snapshot` call will be
+        scheduled by Artemis core, to check and update the progress.
+
+        :param guest_request: guest request to provision for.
+        :param snapshot_request: snapshot request to satisfy.
         """
         raise NotImplementedError()
 
     def update_snapshot(
         self,
-        snapshot: Snapshot,
-        guest: Guest,
+        guest_request: GuestRequest,
+        snapshot_request: SnapshotRequest,
         canceled: Optional[threading.Event] = None,
         start_again: bool = True
-    ) -> Result[Snapshot, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
         """
-        Update state of the snapshot.
-        Called for unfinished snapshot.
-        If snapshot status is active, snapshot request is evaluated as finished
+        Update progress of snapshot creation.
 
-        :param Snapshot snapshot: snapshot to update
-        :param Guest guest: a guest, which was snapshoted
-        :rtype: result.Result[Snapshot, Failure]
-        :returns: :py:class:`result.result` with either :py:class:`Snapshot`
-            or specification of error.
+        Method is expected to return :py:class:`ProvisioningProgress` instance, with ``is_acquired`` signaling
+        whether the process has finished or not. If set to ``False``, :py:meth:`update_snapshot` call will be
+        scheduled by Artemis core, to check and update the progress.
+
+        :param guest_request: guest request to provision for.
+        :param snapshot_request: snapshot request to update.
         """
         raise NotImplementedError()
 
     def remove_snapshot(
         self,
-        snapshot: Snapshot,
+        snapshot_request: SnapshotRequest,
     ) -> Result[bool, Failure]:
         """
         Remove snapshot from the pool.
@@ -482,8 +513,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def restore_snapshot(
         self,
-        snapshot_request: SnapshotRequest,
-        guest: Guest
+        guest_request: GuestRequest,
+        snapshot_request: SnapshotRequest
     ) -> Result[bool, Failure]:
         """
         Restore the guest to the snapshot.

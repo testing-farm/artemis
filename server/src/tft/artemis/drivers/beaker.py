@@ -1,5 +1,5 @@
 import bs4
-import json
+import dataclasses
 import os
 import stat
 import tempfile
@@ -9,11 +9,10 @@ import gluetool.log
 from gluetool.result import Result, Ok, Error
 from gluetool.log import log_xml
 
-from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType
+from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
-from ..guest import Guest, SSHInfo
 
 from typing import Any, Dict, Optional, List
 
@@ -24,34 +23,9 @@ DEFAULT_BEAKER_TIMEOUT = None
 DEFAULT_RESERVE_DURATION = '86400'  # 24 hours
 
 
-class BeakerGuest(Guest):
-    def __init__(
-        self,
-        guestname: str,
-        job_id: str,
-        address: Optional[str],
-        environment: Environment,
-        ssh_info: SSHInfo
-    ) -> None:
-
-        super(BeakerGuest, self).__init__(guestname, address, ssh_info)
-        self.job_id = job_id
-        self.environment = environment
-
-    def __repr__(self) -> str:
-
-        return '<BeakerGuest: job_id={}, address={}, ssh_info={}>'.format(
-            self.job_id,
-            self.address,
-            self.ssh_info
-        )
-
-    @property
-    def pool_data(self) -> Dict[str, Any]:
-        return {
-            'job_id': str(self.job_id),
-            'environment': str(self.environment)
-        }
+@dataclasses.dataclass
+class BeakerPoolData(PoolData):
+    job_id: str
 
 
 class BeakerDriver(PoolDriver):
@@ -284,7 +258,7 @@ class BeakerDriver(PoolDriver):
                      guest_request: GuestRequest,
                      environment: Environment,
                      master_key: SSHKey,
-                     cancelled: Optional[threading.Event] = None) -> Result[Guest, Failure]:
+                     cancelled: Optional[threading.Event] = None) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
         with an address set, driver signals the provisioning is now complete. Returning a guest instance without an
@@ -296,19 +270,7 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with guest, or specification of error.
         """
 
-        assert guest_request.poolname
-        if 'beaker' not in guest_request.poolname.lower():
-            return Error(Failure('guest is not an OpenStack guest'))
-
-        r_guest = self.guest_factory(guest_request, ssh_key=master_key)
-
-        if r_guest.is_error:
-            return Error(r_guest.unwrap_error())
-        guest = r_guest.unwrap()
-
-        assert isinstance(guest, BeakerGuest)  # mypy compliance
-
-        r_get_job_results = self._get_job_results(guest.job_id)
+        r_get_job_results = self._get_job_results(BeakerPoolData.unserialize(guest_request).job_id)
         if r_get_job_results.is_error and r_get_job_results.error:
             return Error(r_get_job_results.error)
 
@@ -328,45 +290,29 @@ class BeakerDriver(PoolDriver):
             if r_parse_guest_address.is_error and r_parse_guest_address.error:
                 return Error(r_parse_guest_address.error)
 
-            guest.address = r_parse_guest_address.unwrap()
-            return Ok(guest)
+            return Ok(ProvisioningProgress(
+                is_acquired=True,
+                pool_data=BeakerPoolData.unserialize(guest_request),
+                address=r_parse_guest_address.unwrap()
+            ))
 
         if job_status == 'New':
-            return Ok(guest)
+            return Ok(ProvisioningProgress(
+                is_acquired=False,
+                pool_data=BeakerPoolData.unserialize(guest_request)
+            ))
 
         if job_status == 'Fail':
-            r_reschedule_job = self._reschedule_job(guest.job_id, environment)
+            r_reschedule_job = self._reschedule_job(BeakerPoolData.unserialize(guest_request).job_id, environment)
             if r_reschedule_job.is_error and r_reschedule_job.error:
                 return Error(r_reschedule_job.error)
 
-            guest.job_id = r_reschedule_job.unwrap()
-
-            return Ok(guest)
+            return Ok(ProvisioningProgress(
+                is_acquired=False,
+                pool_data=BeakerPoolData(job_id=r_reschedule_job.unwrap())
+            ))
 
         return Error(Failure('Unknown status'))
-
-    def guest_factory(self, guest_request: GuestRequest,
-                      ssh_key: SSHKey) -> Result[Guest, Failure]:
-        if not guest_request.pool_data:
-            return Error(Failure('invalid pool data'))
-
-        pool_data = json.loads(guest_request.pool_data)
-
-        environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
-
-        return Ok(
-            BeakerGuest(
-                guestname=guest_request.guestname,
-                job_id=pool_data['job_id'],
-                address=guest_request.address,
-                environment=environment,
-                ssh_info=SSHInfo(
-                    port=22,
-                    username='root',
-                    key=ssh_key
-                )
-            )
-        )
 
     def can_acquire(self, environment: Environment) -> Result[bool, Failure]:
         """
@@ -389,7 +335,7 @@ class BeakerDriver(PoolDriver):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
         by `environment`.
@@ -417,31 +363,25 @@ class BeakerDriver(PoolDriver):
         # after. The reason of this solution is slow beaker system provisioning. It can take hours and
         # we can't use a thread for so large amount of time.
 
-        return Ok(
-            BeakerGuest(
-                guestname=guest_request.guestname,
-                job_id=job_id,
-                address=None,
-                environment=environment,
-                ssh_info=SSHInfo(
-                    port=22,
-                    username='root',
-                    key=master_key
-                )
-            )
-        )
+        return Ok(ProvisioningProgress(
+            is_acquired=False,
+            pool_data=BeakerPoolData(job_id=job_id)
+        ))
 
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest: Guest) -> Result[bool, Failure]:
+    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 
         :param Guest guest: a guest to be destroyed.
         :rtype: result.Result[bool, str]
         """
-        if not isinstance(guest, BeakerGuest):
-            return Error(Failure('guest is not an Beaker guest'))
 
-        r_job_cancel = self._dispatch_resource_cleanup(logger, guest.job_id)
+        r_job_cancel = self._dispatch_resource_cleanup(
+            logger,
+            job_id=BeakerPoolData.unserialize(guest_request).job_id,
+            guest_request=guest_request
+        )
+
         if r_job_cancel.is_error and r_job_cancel.error:
             return Error(r_job_cancel.error)
 

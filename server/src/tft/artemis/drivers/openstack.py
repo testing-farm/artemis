@@ -1,4 +1,4 @@
-import json
+import dataclasses
 import re
 import threading
 from datetime import datetime
@@ -7,13 +7,12 @@ import gluetool.log
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import normalize_bool_option
 
-from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics, create_tempfile, run_cli_tool, PoolResourcesIDsType
+from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics, create_tempfile, run_cli_tool, PoolResourcesIDsType, \
+    PoolData, ProvisioningProgress
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
-from ..guest import Guest, SSHInfo
 from ..script import hook_engine
-from ..snapshot import Snapshot
 
 from typing import cast, Any, Dict, List, Optional
 
@@ -36,45 +35,9 @@ KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
 )
 
 
-class OpenStackGuest(Guest):
-    def __init__(
-        self,
-        guestname: str,
-        instance_id: str,
-        address: Optional[str] = None,
-        ssh_info: Optional[SSHInfo] = None
-    ) -> None:
-        super(OpenStackGuest, self).__init__(guestname, address, ssh_info)
-
-        self.instance_id = instance_id
-
-    def __repr__(self) -> str:
-        return '<OpenStackGuest: os_instance={}, address={}, ssh_info={}>'.format(
-            self.instance_id,
-            self.address,
-            self.ssh_info
-        )
-
-    @property
-    def pool_data(self) -> Dict[str, Any]:
-        return {
-            'instance_id': str(self.instance_id)
-        }
-
-
-class OpenStackSnapshot(Snapshot):
-    def __init__(
-        self,
-        snapshotname: str,
-        guestname: str,
-        status: Optional[str] = None
-    ) -> None:
-        super(OpenStackSnapshot, self).__init__(snapshotname, guestname)
-        self.status = status
-
-    @property
-    def is_promised(self) -> bool:
-        return self.status != 'active'
+@dataclasses.dataclass
+class OpenStackPoolData(PoolData):
+    instance_id: str
 
 
 class OpenStackDriver(PoolDriver):
@@ -270,9 +233,13 @@ class OpenStackDriver(PoolDriver):
 
     def _show_guest(
         self,
-        instance_id: str,
+        guest_request: GuestRequest
     ) -> Result[Any, Failure]:
-        os_options = ['server', 'show', instance_id]
+        os_options = [
+            'server',
+            'show',
+            OpenStackPoolData.unserialize(guest_request).instance_id
+        ]
 
         r_output = self._run_os(os_options)
 
@@ -283,9 +250,9 @@ class OpenStackDriver(PoolDriver):
 
     def _show_snapshot(
         self,
-        snapshotname: str,
+        snapshot_request: SnapshotRequest,
     ) -> Result[Any, Failure]:
-        os_options = ['image', 'show', snapshotname]
+        os_options = ['image', 'show', snapshot_request.snapshotname]
 
         r_output = self._run_os(os_options)
 
@@ -314,7 +281,7 @@ class OpenStackDriver(PoolDriver):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
 
         logger.info('provisioning environment {}'.format(environment))
 
@@ -377,25 +344,16 @@ class OpenStackDriver(PoolDriver):
         logger.info('instance status is {}'.format(status))
 
         # There is no chance that the guest will be ready in this step
-        # Return the guest with no ip and check it in the next update_guest event
-        return Ok(
-            OpenStackGuest(
-                guest_request.guestname,
-                instance_id,
-                None,
-                ssh_info=None
-            )
-        )
+        return Ok(ProvisioningProgress(
+            is_acquired=False,
+            pool_data=OpenStackPoolData(instance_id=instance_id)
+        ))
 
     def _get_guest_status(
         self,
-        guest: Guest
+        guest_request: GuestRequest
     ) -> Result[str, Failure]:
-        if not isinstance(guest, OpenStackGuest):
-            return Error(Failure('guest is not an OpenStack guest'))
-        assert isinstance(guest, OpenStackGuest)
-
-        r_show = self._show_guest(guest.instance_id)
+        r_show = self._show_guest(guest_request)
 
         if r_show.is_error:
             return Error(r_show.unwrap_error())
@@ -406,9 +364,9 @@ class OpenStackDriver(PoolDriver):
 
     def is_guest_stopped(
         self,
-        guest: Guest
+        guest_request: GuestRequest
     ) -> Result[bool, Failure]:
-        r_status = self._get_guest_status(guest)
+        r_status = self._get_guest_status(guest_request)
 
         if r_status.is_error:
             return Error(r_status.unwrap_error())
@@ -418,9 +376,9 @@ class OpenStackDriver(PoolDriver):
 
     def is_guest_running(
         self,
-        guest: Guest
+        guest_request: GuestRequest
     ) -> Result[bool, Failure]:
-        r_status = self._get_guest_status(guest)
+        r_status = self._get_guest_status(guest_request)
 
         if r_status.is_error:
             return Error(r_status.unwrap_error())
@@ -431,14 +389,10 @@ class OpenStackDriver(PoolDriver):
     def stop_guest(
         self,
         logger: gluetool.log.ContextAdapter,
-        guest: Guest
+        guest_request: GuestRequest
     ) -> Result[bool, Failure]:
-        if not isinstance(guest, OpenStackGuest):
-            return Error(Failure('guest is not an OpenStack guest'))
-        assert isinstance(guest, OpenStackGuest)
-
         logger.info('stoping the guest instance')
-        os_options = ['server', 'stop', guest.instance_id]
+        os_options = ['server', 'stop', OpenStackPoolData.unserialize(guest_request).instance_id]
         r_stop = self._run_os(os_options, json_format=False)
 
         if r_stop.is_error:
@@ -449,14 +403,10 @@ class OpenStackDriver(PoolDriver):
     def start_guest(
         self,
         logger: gluetool.log.ContextAdapter,
-        guest: Guest
+        guest_request: GuestRequest
     ) -> Result[bool, Failure]:
-        if not isinstance(guest, OpenStackGuest):
-            return Error(Failure('guest is not an OpenStack guest'))
-        assert isinstance(guest, OpenStackGuest)
-
         logger.info('starting the guest instance')
-        os_options = ['server', 'start', guest.instance_id]
+        os_options = ['server', 'start', OpenStackPoolData.unserialize(guest_request).instance_id]
         r_start = self._run_os(os_options, json_format=False)
 
         if r_start.is_error:
@@ -470,114 +420,35 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(True)
 
-    def guest_factory(
-        self,
-        guest_request: GuestRequest,
-        ssh_key: SSHKey
-    ) -> Result[Guest, Failure]:
-        if not guest_request.pool_data:
-            return Error(Failure('invalid pool data'))
-
-        pool_data = json.loads(guest_request.pool_data)
-
-        if 'instance_id' not in pool_data:
-            return Error(Failure('no guest was provisioned for request'))
-
-        r_output = self._show_guest(pool_data['instance_id'])
-
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
-
-        return Ok(
-            OpenStackGuest(
-                guest_request.guestname,
-                pool_data['instance_id'],
-                guest_request.address,
-                SSHInfo(
-                    port=guest_request.ssh_port,
-                    username=guest_request.ssh_username,
-                    key=ssh_key
-                )
-            )
-        )
-
-    def snapshot_factory(
-        self,
-        snapshot_request: SnapshotRequest,
-    ) -> Result[Snapshot, Failure]:
-        r_output = self._show_snapshot(snapshot_request.snapshotname)
-
-        if r_output.is_error:
-            return Error(r_output.value)
-
-        output = r_output.unwrap()
-
-        status = ''
-
-        if output:
-            status = output['status']
-
-        return Ok(
-            OpenStackSnapshot(
-                snapshot_request.snapshotname,
-                snapshot_request.guestname,
-                status if status else None
-            )
-        )
-
     def create_snapshot(
         self,
-        snapshot_request: SnapshotRequest,
-        guest: Guest
-    ) -> Result[Snapshot, Failure]:
-
-        if not isinstance(guest, OpenStackGuest):
-            return Error(Failure('guest is not an OpenStack guest'))
-
-        assert isinstance(guest, OpenStackGuest)
-
+        guest_request: GuestRequest,
+        snapshot_request: SnapshotRequest
+    ) -> Result[ProvisioningProgress, Failure]:
         os_options = [
             'server', 'image', 'create',
             '--name', snapshot_request.snapshotname,
-            guest.instance_id
+            OpenStackPoolData.unserialize(guest_request).instance_id
         ]
 
         r_output = self._run_os(os_options)
 
         if r_output.is_error:
             return Error(r_output.value)
-        output = r_output.unwrap()
 
-        status = ''
-
-        if output:
-            status = output['status']
-
-        return Ok(OpenStackSnapshot(
-            snapshot_request.snapshotname,
-            snapshot_request.guestname,
-            status if status else None
+        return Ok(ProvisioningProgress(
+            is_acquired=False,
+            pool_data=OpenStackPoolData.unserialize(guest_request)
         ))
 
     def update_snapshot(
         self,
-        snapshot: Snapshot,
-        guest: Guest,
+        guest_request: GuestRequest,
+        snapshot_request: SnapshotRequest,
         canceled: Optional[threading.Event] = None,
         start_again: bool = True
-    ) -> Result[Snapshot, Failure]:
-
-        if not isinstance(snapshot, OpenStackSnapshot):
-            return Error(Failure('snapshot is not an OpenStack guest'))
-
-        assert isinstance(snapshot, OpenStackSnapshot)
-
-        if not isinstance(guest, OpenStackGuest):
-            return Error(Failure('guest is not an OpenStack guest'))
-
-        assert isinstance(guest, OpenStackGuest)
-
-        r_output = self._show_snapshot(snapshot.snapshotname)
+    ) -> Result[ProvisioningProgress, Failure]:
+        r_output = self._show_snapshot(snapshot_request)
 
         if r_output.is_error:
             return Error(r_output.value)
@@ -591,16 +462,21 @@ class OpenStackDriver(PoolDriver):
         self.logger.info('snapshot status is {}'.format(status))
 
         if status != 'active':
-            return Ok(snapshot)
+            return Ok(ProvisioningProgress(
+                is_acquired=False,
+                pool_data=OpenStackPoolData.unserialize(guest_request)
+            ))
 
-        snapshot.status = status
-        return Ok(snapshot)
+        return Ok(ProvisioningProgress(
+            is_acquired=True,
+            pool_data=OpenStackPoolData.unserialize(guest_request)
+        ))
 
     def remove_snapshot(
         self,
-        snapshot: Snapshot,
+        snapshot_request: SnapshotRequest,
     ) -> Result[bool, Failure]:
-        os_options = ['image', 'delete', snapshot.snapshotname]
+        os_options = ['image', 'delete', snapshot_request.snapshotname]
 
         r_output = self._run_os(os_options, json_format=False)
 
@@ -611,18 +487,14 @@ class OpenStackDriver(PoolDriver):
 
     def restore_snapshot(
         self,
+        guest_request: GuestRequest,
         snapshot_request: SnapshotRequest,
-        guest: Guest
     ) -> Result[bool, Failure]:
-        if not isinstance(guest, OpenStackGuest):
-            return Error(Failure('guest is not an OpenStack guest'))
-
-        assert isinstance(guest, OpenStackGuest)
-
         os_options = [
             'server', 'rebuild',
             '--image', snapshot_request.snapshotname,
-            guest.instance_id, '--wait'
+            '--wait',
+            OpenStackPoolData.unserialize(guest_request).instance_id
         ]
 
         r_output = self._run_os(os_options, json_format=False)
@@ -639,7 +511,7 @@ class OpenStackDriver(PoolDriver):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
+    ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
         by `environment`.
@@ -657,7 +529,8 @@ class OpenStackDriver(PoolDriver):
             guest_request,
             environment,
             master_key,
-            cancelled)
+            cancelled
+        )
 
     def update_guest(
         self,
@@ -666,20 +539,8 @@ class OpenStackDriver(PoolDriver):
         environment: Environment,
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
-    ) -> Result[Guest, Failure]:
-
-        assert guest_request.poolname
-        if 'openstack' not in guest_request.poolname.lower():
-            return Error(Failure('guest is not an OpenStack guest'))
-
-        r_guest = self.guest_factory(guest_request, ssh_key=master_key)
-
-        if r_guest.is_error:
-            return Error(r_guest.unwrap_error())
-
-        guest = cast(OpenStackGuest, r_guest.unwrap())
-
-        r_output = self._show_guest(guest.instance_id)
+    ) -> Result[ProvisioningProgress, Failure]:
+        r_output = self._show_guest(guest_request)
 
         if r_output.is_error:
             return Error(Failure('no such guest'))
@@ -693,12 +554,13 @@ class OpenStackDriver(PoolDriver):
 
         logger.info('instance status is {}'.format(status))
 
-        def _reprovision(msg: str) -> Result[Guest, Failure]:
+        def _reprovision(msg: str) -> Result[ProvisioningProgress, Failure]:
             logger.warning(msg)
 
             self._dispatch_resource_cleanup(
                 logger,
-                guest.instance_id
+                instance_id=OpenStackPoolData.unserialize(guest_request).instance_id,
+                guest_request=guest_request
             )
 
             return self._do_acquire_guest(logger, guest_request, environment, master_key)
@@ -723,17 +585,24 @@ class OpenStackDriver(PoolDriver):
                 if diff.total_seconds() > KNOB_BUILD_TIMEOUT.value:
                     return _reprovision('instance stuck in BUILD state for {}, provisioning a new one'.format(diff))
 
+            return Ok(ProvisioningProgress(
+                is_acquired=False,
+                pool_data=OpenStackPoolData.unserialize(guest_request)
+            ))
+
         r_ip_address = self._output_to_ip(output)
 
         if r_ip_address.is_error:
             return Error(r_ip_address.unwrap_error())
         ip_address = r_ip_address.unwrap()
 
-        guest.address = ip_address
+        return Ok(ProvisioningProgress(
+            is_acquired=True,
+            pool_data=OpenStackPoolData.unserialize(guest_request),
+            address=ip_address
+        ))
 
-        return Ok(guest)
-
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest: Guest) -> Result[bool, Failure]:
+    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 
@@ -741,14 +610,13 @@ class OpenStackDriver(PoolDriver):
         :rtype: result.Result[bool, str]
         """
 
-        if not isinstance(guest, OpenStackGuest):
-            return Error(Failure('guest is not an OpenStack guest'))
-
-        assert isinstance(guest, OpenStackGuest)
+        if guest_request.poolname != self.poolname:
+            return Error(Failure('guest is not owned by this pool'))
 
         r_cleanup = self._dispatch_resource_cleanup(
             logger,
-            instance_id=guest.instance_id
+            instance_id=OpenStackPoolData.unserialize(guest_request).instance_id,
+            guest_request=guest_request
         )
 
         if r_cleanup.is_error:
