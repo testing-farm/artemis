@@ -919,81 +919,23 @@ def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Fail
         return Error(Failure.from_exc('failed to execute {}: {}'.format(fn.__name__, exc), exc))
 
 
-def safe_db_execute(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    query: Any,
-    expected_rows: int = 1
-) -> Result[bool, Failure]:
-    """
-    Execute a given SQL query, followed by an explicit commit.
-
-    The main purpose of this function is to provide helper for queries that modify database state with respect
-    to concurrent access. We often need to update records in a way that works as a sort of a locking, providing
-    a consistent, serialized access. We need to prepare the query, execute it, commit the transaction and make
-    sure it updated/deleted the expected amount of records - all these steps can be broken by exceptions.
-
-    :returns: if the commit was successfull, a valid result is returned. If the commit failed,
-        .e.g. because another thread changed the database content and made the query invalid,
-        an error result is returned, wrapping the failure.
-    """
-
-    logger.warning('safe execute: {}'.format(str(query)))
-
-    r = safe_call(session.execute, query)
-
-    if r.is_error:
-        failure = r.unwrap_error()
-
-        return Error(
-            Failure(
-                'failed to execute query: {}'.format(failure.message),
-                caused_by=failure
-            )
-        )
-
-    query_result = cast(
-        sqlalchemy.engine.ResultProxy,
-        r.value
-    )
-
-    if query_result.rowcount != expected_rows:
-        logger.warning('expected {} matching rows, found {}'.format(expected_rows, query_result.rowcount))
-
-        return Ok(False)
-
-    r = safe_call(session.commit)
-
-    if r.is_ok:
-        logger.warning('found {} matching rows, as expected'.format(query_result.rowcount))
-
-        return Ok(True)
-
-    return Error(
-        Failure(
-            'failed to commit query: {}'.format(r.unwrap_error().message),
-            caused_by=r.unwrap_error()
-        )
-    )
-
-
-def safe_db_update(
+def safe_db_change(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     query: Any,
     expected_records: int = 1
 ) -> Result[bool, Failure]:
     """
-    Execute a given SQL ``UPDATE`` query, followed by an explicit commit. Verify the expected number of records
-    has been changed.
+    Execute a given SQL query, ``UPDATE`` or ``DELETE``, followed by an explicit commit. Verify the expected number
+    of records has been changed.
 
     :returns: a valid boolean result if queries were executed successfully: ``True`` if changes were made, and
-        the number of changed rows matched the expectation, ``False`` otherwise. If the queries - including the
+        the number of changed records matched the expectation, ``False`` otherwise. If the queries - including the
         commit - were rejected by lower layers or database, an invalid result is returned, wrapping
         a :py:class:`Failure` instance.
     """
 
-    logger.debug('safe db update: {}'.format(str(query)))
+    logger.debug('safe db change: {}'.format(str(query)))
 
     r = safe_call(session.execute, query)
 
@@ -1001,7 +943,8 @@ def safe_db_update(
         return Error(
             Failure(
                 'failed to execute update query',
-                caused_by=r.unwrap_error()
+                caused_by=r.unwrap_error(),
+                query=str(query)
             )
         )
 
@@ -1020,10 +963,18 @@ def safe_db_update(
     r = safe_call(session.commit)
 
     if r.is_error:
+        failure = r.unwrap_error()
+
+        if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
+            logger.warning('expected {} matching rows, found 0'.format(expected_records))
+
+            return Ok(False)
+
         return Error(
             Failure(
                 'failed to commit query',
-                caused_by=r.unwrap_error()
+                caused_by=failure,
+                query=str(query)
             )
         )
 

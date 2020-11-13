@@ -21,7 +21,7 @@ from gluetool.log import log_dict
 from . import errors, handlers
 from .middleware import error_handler_middleware, prometheus_middleware
 from .middleware import authorization_middleware, AuthContext
-from .. import get_logger, get_db, safe_db_execute, log_guest_event
+from .. import get_logger, get_db, safe_db_change, log_guest_event
 from .. import db as artemis_db
 from .. import metrics
 from ..guest import GuestState
@@ -400,7 +400,7 @@ class GuestRequestManager:
                     .values(state=GuestState.CONDEMNED.value)
 
             logger = get_logger()
-            if safe_db_execute(logger, session, query):
+            if safe_db_change(logger, session, query):
                 # add guest event
                 log_guest_event(
                     logger,
@@ -538,7 +538,7 @@ class SnapshotRequestManager:
                     .where(artemis_db.SnapshotRequest.guestname == guestname) \
                     .values(state=GuestState.CONDEMNED.value)
 
-            if safe_db_execute(get_logger(), session, query):
+            if safe_db_change(get_logger(), session, query):
                 return
 
             raise errors.GenericError()
@@ -552,7 +552,7 @@ class SnapshotRequestManager:
                     .where(artemis_db.SnapshotRequest.state != GuestState.CONDEMNED.value) \
                     .values(state=GuestState.RESTORING.value)
 
-            if safe_db_execute(get_logger(), session, query):
+            if safe_db_change(get_logger(), session, query):
                 snapshot_response = self.get_snapshot(guestname, snapshotname)
 
                 assert snapshot_response is not None

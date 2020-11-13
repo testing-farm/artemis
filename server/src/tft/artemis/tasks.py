@@ -13,7 +13,7 @@ import stackprinter
 
 from gluetool.result import Result, Ok, Error
 
-from . import Failure, Knob, get_db, get_logger, get_broker, safe_call, safe_db_execute, log_guest_event, \
+from . import Failure, Knob, get_db, get_logger, get_broker, safe_call, safe_db_change, log_guest_event, \
     log_error_guest_event
 from . import metrics
 from .db import DB, GuestEvent, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
@@ -636,7 +636,7 @@ def _update_guest_state(
             .where(GuestRequest.state == current_state.value) \
             .values(**values)
 
-    r = safe_db_execute(logger, session, query)
+    r = safe_db_change(logger, session, query)
 
     if r.is_ok:
         if r.value is True:
@@ -703,7 +703,7 @@ def _update_snapshot_state(
         .where(SnapshotRequest.state == current_state.value) \
         .values(**values)
 
-    r = safe_db_execute(logger, session, query)
+    r = safe_db_change(logger, session, query)
 
     if r.is_ok:
         if r.value is True:
@@ -1456,7 +1456,7 @@ def do_release_guest_request(
         .where(GuestRequest.guestname == guestname) \
         .where(GuestRequest.state == GuestState.RELEASING.value)
 
-    r_delete = safe_db_execute(logger, session, query)
+    r_delete = safe_db_change(logger, session, query)
 
     if r_delete.is_ok:
         handle_success('released')
@@ -1860,7 +1860,7 @@ def do_release_snapshot_request(
         .where(SnapshotRequest.snapshotname == snapshotname) \
         .where(SnapshotRequest.state == GuestState.RELEASING.value)
 
-    r_delete = safe_db_execute(logger, session, query)
+    r_delete = safe_db_change(logger, session, query)
 
     if r_delete.is_ok:
         handle_success('snapshot-released')

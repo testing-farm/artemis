@@ -4,7 +4,7 @@ import sqlalchemy
 import sqlalchemy.ext.declarative
 from sqlalchemy import Column, Text, Integer
 
-from tft.artemis import safe_db_update
+from tft.artemis import safe_db_change
 from tft.artemis.db import Query, upsert
 
 
@@ -152,8 +152,8 @@ def test_upsert_multiple_commits(session):
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters')
-def test_safe_db_update_missed(logger, session):
-    r = safe_db_update(
+def test_safe_db_change_missed(logger, session):
+    r = safe_db_change(
         logger,
         session,
         sqlalchemy.update(Counters.__table__).where(Counters.name == 'foo').values(count=1)
@@ -164,8 +164,8 @@ def test_safe_db_update_missed(logger, session):
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters_1record')
-def test_safe_db_update(logger, session):
-    r = safe_db_update(
+def test_safe_db_change(logger, session):
+    r = safe_db_change(
         logger,
         session,
         sqlalchemy.update(Counters.__table__).where(Counters.name == 'foo').values(count=1)
@@ -181,8 +181,8 @@ def test_safe_db_update(logger, session):
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters_2records')
-def test_safe_db_update_multiple(logger, session):
-    r = safe_db_update(
+def test_safe_db_change_multiple(logger, session):
+    r = safe_db_change(
         logger,
         session,
         sqlalchemy.update(Counters.__table__).values(count=1),
@@ -196,3 +196,22 @@ def test_safe_db_update_multiple(logger, session):
 
     assert len(records) == 2
     assert all([record.count == 1 for record in records])
+
+
+@pytest.mark.usefixtures('_schema_test_db_Counters_2records')
+def test_safe_db_change_single_delete(logger, session):
+    r = safe_db_change(
+        logger,
+        session,
+        sqlalchemy.delete(Counters.__table__).where(Counters.name == 'foo')
+    )
+
+    assert r.is_error is False
+    assert r.unwrap() is True
+
+    records = Query.from_session(session, Counters).all()
+
+    assert len(records) == 1
+
+    assert records[0].name == 'bar'
+    assert records[0].count == 0
