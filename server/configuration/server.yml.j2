@@ -79,7 +79,15 @@ pools:
 
       snapshots: False
 
+  {% if beaker is defined %}
   - name: beaker
     driver: beaker
     parameters:
+      {% if beaker.credentials.username is defined and beaker.credentials.username != "" -%}
+      username: "{{ beaker.credentials.username }}"
+      {% endif -%}
+      {% if beaker.credentials.password is defined and beaker.credentials.password != "" -%}
+      password: "{{ beaker.credentials.password }}"
+      {% endif -%}
       snapshots: False
+  {% endif %}

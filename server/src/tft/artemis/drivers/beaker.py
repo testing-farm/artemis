@@ -73,8 +73,9 @@ class BeakerDriver(PoolDriver):
         :rtype: result.Result[str, Failure]
         :returns: :py:class:`result.Result` with output, or specification of error.
         """
-        # options.extend(['--username', self.pool_config['username'],
-        #                '--password', self.pool_config['password']])
+        if self.pool_config.get('username') and self.pool_config.get('password'):
+            options.extend(['--username', self.pool_config['username'],
+                            '--password', self.pool_config['password']])
 
         r_run = run_cli_tool(
             self.logger,
