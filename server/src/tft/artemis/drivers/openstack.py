@@ -139,7 +139,7 @@ class OpenStackDriver(PoolDriver):
                 os_output = cast(gluetool.utils.ProcessOutput, failure.details['command_output'])
 
                 if os_output.stderr \
-                   and os_output.stderr.strip().startswith('No server with name or ID'):
+                   and cast(bytes, os_output.stderr).strip().startswith(b'No server with a name or ID'):
                     failure.recoverable = False
 
             return Error(failure)
