@@ -131,7 +131,18 @@ class OpenStackDriver(PoolDriver):
         )
 
         if r_run.is_error:
-            return Error(r_run.unwrap_error())
+            # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
+            # run this method, we would never evenr made it remove instance that doesn't exist.
+            failure = r_run.unwrap_error()
+
+            if 'command_output' in failure.details:
+                os_output = cast(gluetool.utils.ProcessOutput, failure.details['command_output'])
+
+                if os_output.stderr \
+                   and cast(bytes, os_output.stderr).strip().startswith(b'No server with a name or ID'):
+                    failure.recoverable = False
+
+            return Error(failure)
 
         if json_format:
             json_output, _ = r_run.unwrap()
@@ -730,8 +741,9 @@ class OpenStackDriver(PoolDriver):
         options = ['server', 'delete', '--wait', guest.instance_id]
 
         r_output = self._run_os(options, json_format=False)
+
         if r_output.is_error:
-            return Error(r_output.value)
+            return Error(r_output.unwrap_error())
 
         return Ok(True)
 
