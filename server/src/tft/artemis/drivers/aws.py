@@ -147,7 +147,7 @@ class AWSDriver(PoolDriver):
         if 'spot_instance_id' in resource_ids:
             r_output = self._aws_command([
                 'ec2', 'cancel-spot-instance-requests',
-                '--spot-instance-request-ids={}'.format(resource_ids['spot_request_id'])
+                '--spot-instance-request-ids={}'.format(resource_ids['spot_instance_id'])
             ])
 
             if r_output.is_error:

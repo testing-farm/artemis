@@ -288,6 +288,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return dispatch_task(
             logger,
             release_pool_resources,
+            self.poolname,
             json.dumps(resource_ids)
         )
 
