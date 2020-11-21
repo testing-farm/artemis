@@ -271,7 +271,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def dispatch_resource_cleanup(
         self,
         logger: gluetool.log.ContextAdapter,
-        resource_ids: PoolResourcesIDsType
+        resource_ids: PoolResourcesIDsType,
+        guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
         """
         Schedule removal of given resources. Resources are identified by keys and values which are passed
@@ -289,7 +290,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
             logger,
             release_pool_resources,
             self.poolname,
-            json.dumps(resource_ids)
+            json.dumps(resource_ids),
+            guest_request.guestname if guest_request else None
         )
 
     def release_pool_resources(

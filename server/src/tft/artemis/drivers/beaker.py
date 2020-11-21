@@ -93,14 +93,15 @@ class BeakerDriver(PoolDriver):
     def _dispatch_resource_cleanup(
         self,
         logger: gluetool.log.ContextAdapter,
-        job_id: Optional[str] = None
+        job_id: Optional[str] = None,
+        guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
         resource_ids = {}
 
         if job_id is not None:
             resource_ids['job_id'] = job_id
 
-        return self.dispatch_resource_cleanup(logger, resource_ids)
+        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def release_pool_resources(
         self,

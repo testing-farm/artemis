@@ -1423,11 +1423,13 @@ def do_release_pool_resources(
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
     poolname: str,
-    serialized_resource_ids: str
+    serialized_resource_ids: str,
+    guestname: Optional[str]
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,
         session,
+        guestname=guestname,
         task='release-pool-resources'
     )
 
@@ -1459,11 +1461,17 @@ def do_release_pool_resources(
 
 
 @dramatiq.actor(**actor_kwargs('RELEASE_POOL_RESOURCES'))  # type: ignore  # Untyped decorator
-def release_pool_resources(poolname: str, resource_ids: str) -> None:
+def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional[str]) -> None:
+    if guestname:
+        logger = get_guest_logger('release-pool-resources', root_logger, guestname)
+
+    else:
+        logger = TaskLogger(root_logger, 'release-pool-resources')
+
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_pool_resources,
-        logger=TaskLogger(root_logger, 'release-pool-resources'),
-        doer_args=(poolname, resource_ids)
+        logger=logger,
+        doer_args=(poolname, resource_ids, guestname)
     )
 
 

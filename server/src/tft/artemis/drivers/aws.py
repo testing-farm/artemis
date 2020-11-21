@@ -127,7 +127,8 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         instance_id: Optional[str] = None,
-        spot_instance_id: Optional[str] = None
+        spot_instance_id: Optional[str] = None,
+        guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
         resource_ids = {}
 
@@ -137,7 +138,7 @@ class AWSDriver(PoolDriver):
         if spot_instance_id is not None:
             resource_ids['spot_instance_id'] = spot_instance_id
 
-        return self.dispatch_resource_cleanup(logger, resource_ids)
+        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def release_pool_resources(
         self,

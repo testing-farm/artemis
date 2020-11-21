@@ -62,7 +62,8 @@ class AzureDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         *other_resources: Any,
-        instance_id: Optional[str] = None
+        instance_id: Optional[str] = None,
+        guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
         resource_ids: PoolResourcesIDsType = {}
 
@@ -72,7 +73,7 @@ class AzureDriver(PoolDriver):
         if other_resources:
             resource_ids['assorted_resource_ids'] = other_resources
 
-        return self.dispatch_resource_cleanup(logger, resource_ids)
+        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def release_pool_resources(
         self,
