@@ -11,7 +11,7 @@ from gluetool.result import Result, Ok, Error
 from gluetool.utils import wait
 from jinja2 import Template
 
-from . import PoolDriver, PoolCapabilities, run_cli_tool
+from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
@@ -122,6 +122,48 @@ class AWSDriver(PoolDriver):
                 return Error(Failure("Required variable '{}' not found in pool configuration".format(variable)))
 
         return Ok(True)
+
+    def _dispatch_resource_cleanup(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        instance_id: Optional[str] = None,
+        spot_instance_id: Optional[str] = None,
+        guest_request: Optional[GuestRequest] = None
+    ) -> Result[None, Failure]:
+        resource_ids = {}
+
+        if instance_id is not None:
+            resource_ids['instance_id'] = instance_id
+
+        if spot_instance_id is not None:
+            resource_ids['spot_instance_id'] = spot_instance_id
+
+        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
+
+    def release_pool_resources(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resource_ids: PoolResourcesIDsType
+    ) -> Result[None, Failure]:
+        if 'spot_instance_id' in resource_ids:
+            r_output = self._aws_command([
+                'ec2', 'cancel-spot-instance-requests',
+                '--spot-instance-request-ids={}'.format(resource_ids['spot_instance_id'])
+            ])
+
+            if r_output.is_error:
+                return Error(r_output.value)
+
+        if 'instance_id' in resource_ids:
+            r_output = self._aws_command([
+                'ec2', 'terminate-instances',
+                '--instance-ids={}'.format(resource_ids['instance_id'])
+            ])
+
+            if r_output.is_error:
+                return Error(r_output.value)
+
+        return Ok(None)
 
     def guest_factory(
         self,
@@ -613,21 +655,14 @@ class AWSDriver(PoolDriver):
         if guest._instance_id is None or guest._spot_request_id is None:
             return Error(Failure('guest has no identification'))
 
-        r_cancel_request = self._aws_command([
-            'ec2', 'cancel-spot-instance-requests',
-            '--spot-instance-request-ids={}'.format(guest._spot_request_id)
-        ])
+        r_cleanup = self._dispatch_resource_cleanup(
+            logger,
+            instance_id=guest._instance_id,
+            spot_instance_id=guest._spot_request_id
+        )
 
-        if r_cancel_request.is_error:
-            return r_cancel_request
-
-        r_terminate_instance = self._aws_command([
-            'ec2', 'terminate-instances',
-            '--instance-ids={}'.format(guest._instance_id)
-        ])
-
-        if r_terminate_instance.is_error:
-            return r_terminate_instance
+        if r_cleanup.is_error:
+            return Error(r_cleanup.unwrap_error())
 
         return Ok(True)
 

@@ -24,6 +24,9 @@ from ..snapshot import Snapshot
 from typing import cast, Any, Callable, Iterator, List, Dict, Optional, Tuple
 
 
+PoolResourcesIDsType = Dict[str, Any]
+
+
 class PoolLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str) -> None:
         super(PoolLogger, self).__init__(logger, {
@@ -264,6 +267,52 @@ class PoolDriver(gluetool.log.LoggerMixin):
         correctness or anything else.
         """
         return Ok(True)
+
+    def dispatch_resource_cleanup(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resource_ids: PoolResourcesIDsType,
+        guest_request: Optional[GuestRequest] = None
+    ) -> Result[None, Failure]:
+        """
+        Schedule removal of given resources. Resources are identified by keys and values which are passed
+        to :py:meth:`release_pool_resource` method. The actual keys are completely under control of the
+        driver.
+        """
+
+        if not resource_ids:
+            return Ok(None)
+
+        # Local import, to avoid circular imports
+        from ..tasks import dispatch_task, release_pool_resources
+
+        return dispatch_task(
+            logger,
+            release_pool_resources,
+            self.poolname,
+            json.dumps(resource_ids),
+            guest_request.guestname if guest_request else None
+        )
+
+    def release_pool_resources(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources_ids: PoolResourcesIDsType
+    ) -> Result[None, Failure]:
+        """
+        Release any pool resources identified by provided IDs.
+
+        This method should implement the actual removal of cloud VM, instances, volumes, IP addresses and other
+        resources that together comprise what has been provisioned for a guest or snapshot. Instead of performing
+        this "cleanup" in the main acquire/update/release chains, the chains should schedule execution of this method
+        by calling :py:meth:`dispatch_resource_cleanup`. This will let them proceed with update of their given guest
+        without worrying about the cleaup after the previous - possibly crashed - provisioning attempt.
+
+        :param resources_ids: mapping of resource names and their IDs. The content is fully cloud-specific and
+            understandable by this particular driver only.
+        """
+
+        raise NotImplementedError()
 
     def can_acquire(
         self,

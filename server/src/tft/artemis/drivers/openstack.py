@@ -7,7 +7,7 @@ import gluetool.log
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import normalize_bool_option
 
-from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics, create_tempfile, run_cli_tool
+from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics, create_tempfile, run_cli_tool, PoolResourcesIDsType
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -152,6 +152,19 @@ class OpenStackDriver(PoolDriver):
         raw_output, _ = r_run.unwrap()
 
         return Ok(raw_output)
+
+    def _dispatch_resource_cleanup(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        instance_id: Optional[str] = None,
+        guest_request: Optional[GuestRequest] = None
+    ) -> Result[None, Failure]:
+        resource_ids = {}
+
+        if instance_id is not None:
+            resource_ids['instance_id'] = instance_id
+
+        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def _env_to_flavor(self, environment: Environment) -> Result[Any, Failure]:
         r_flavors = self._run_os(['flavor', 'list'])
@@ -683,14 +696,9 @@ class OpenStackDriver(PoolDriver):
         def _reprovision(msg: str) -> Result[Guest, Failure]:
             logger.warning(msg)
 
-            self.release_guest(
+            self._dispatch_resource_cleanup(
                 logger,
-                OpenStackGuest(
-                    guest.guestname,
-                    guest.instance_id,
-                    None,
-                    ssh_info=None
-                )
+                guest.instance_id
             )
 
             return self._do_acquire_guest(logger, guest_request, environment, master_key)
@@ -738,14 +746,33 @@ class OpenStackDriver(PoolDriver):
 
         assert isinstance(guest, OpenStackGuest)
 
-        options = ['server', 'delete', '--wait', guest.instance_id]
+        r_cleanup = self._dispatch_resource_cleanup(
+            logger,
+            instance_id=guest.instance_id
+        )
 
-        r_output = self._run_os(options, json_format=False)
-
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
+        if r_cleanup.is_error:
+            return Error(r_cleanup.unwrap_error())
 
         return Ok(True)
+
+    def release_pool_resources(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resource_ids: PoolResourcesIDsType
+    ) -> Result[None, Failure]:
+        if 'instance_id' in resource_ids:
+            r_output = self._run_os([
+                'server',
+                'delete',
+                '--wait',
+                resource_ids['instance_id']
+            ], json_format=False)
+
+            if r_output.is_error:
+                return Error(r_output.value)
+
+        return Ok(None)
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         result = super(OpenStackDriver, self).capabilities()

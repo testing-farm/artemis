@@ -5,14 +5,14 @@ import threading
 import gluetool.log
 from gluetool.result import Result, Error, Ok
 
-from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool
+from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool, PoolResourcesIDsType
 from .. import Failure
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..guest import Guest, SSHInfo
 from ..snapshot import Snapshot
 
-from typing import Any, Dict, List, Optional
+from typing import cast, Any, Dict, List, Optional
 
 
 class AzureGuest(Guest):
@@ -57,6 +57,52 @@ class AzureDriver(PoolDriver):
         pool_config: Dict[str, Any],
     ) -> None:
         super(AzureDriver, self).__init__(logger, poolname, pool_config)
+
+    def _dispatch_resource_cleanup(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        *other_resources: Any,
+        instance_id: Optional[str] = None,
+        guest_request: Optional[GuestRequest] = None
+    ) -> Result[None, Failure]:
+        resource_ids: PoolResourcesIDsType = {}
+
+        if instance_id is not None:
+            resource_ids['instance_id'] = instance_id
+
+        if other_resources:
+            resource_ids['assorted_resource_ids'] = other_resources
+
+        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
+
+    def release_pool_resources(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resource_ids: PoolResourcesIDsType
+    ) -> Result[None, Failure]:
+        # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
+        # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
+
+        # delete vm first, resources second
+
+        def _delete_resource(res_id: str) -> Any:
+            options = ['resource', 'delete', '--ids', res_id]
+            return self._run_cmd_with_auth(options, json_format=False)
+
+        if 'instance_id' in resource_ids:
+            r_delete = _delete_resource(resource_ids.pop('instance_id'))
+
+            if r_delete.is_error:
+                return Error(r_delete.unwrap_error())
+
+        if 'assorted_resource_ids' in resource_ids:
+            for resource_id in cast(List[str], resource_ids.get('assorted_resource_ids')):
+                r_delete = _delete_resource(resource_id)
+
+                if r_delete.is_error:
+                    return Error(r_delete.unwrap_error())
+
+        return Ok(None)
 
     def snapshot_factory(
         self,
@@ -159,13 +205,15 @@ class AzureDriver(PoolDriver):
             return self._run_cmd_with_auth(options, json_format=False)
 
         # delete vm first, resources second
-        del_output = [_delete_resource(guest.instance_id)]
+        assorted_resource_ids = []
+
         for res in [r for r in resources_by_tag if r["type"] != "Microsoft.Compute/virtualMachines"]:
-            del_output.append(_delete_resource(res['id']))
-        del_errors = [x._value.details['command_output'].stderr for x in del_output if x.is_error]
-        if del_errors:
-            return Error(Failure('The following resources were not cleaned up: {}'.format(
-                b'\n'.join(del_errors))))
+            assorted_resource_ids.append(res['id'])
+
+        r_cleanup = self._dispatch_resource_cleanup(logger, *assorted_resource_ids, instance_id=guest.instance_id)
+
+        if r_cleanup.is_error:
+            return Error(r_cleanup.unwrap_error())
 
         return Ok(True)
 

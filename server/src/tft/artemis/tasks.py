@@ -186,6 +186,16 @@ class Actor(Protocol):
     ) -> None: ...
 
 
+class DispatchTaskType(Protocol):
+    def __call__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        task: Actor,
+        *args: Any,
+        delay: Optional[int] = None
+    ) -> Result[None, Failure]: ...
+
+
 # Types of functions we use to handle success and failures.
 class SuccessHandlerType(Protocol):
     def __call__(
@@ -1405,6 +1415,64 @@ def _handle_successful_failover(
             from_pool=previous_poolname,
             to_pool=poolname
         )
+
+
+def do_release_pool_resources(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    poolname: str,
+    serialized_resource_ids: str,
+    guestname: Optional[str]
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='release-pool-resources'
+    )
+
+    handle_success('enter-task')
+
+    try:
+        resource_ids = json.loads(serialized_resource_ids)
+
+    except Exception as exc:
+        return Error(Failure.from_exc(
+            'failed to unserialize resource IDs',
+            exc,
+            resource_ids=resource_ids
+        ))
+
+    r_pool = _get_pool(logger, session, poolname)
+
+    if r_pool.is_error:
+        return handle_failure(r_pool, 'pool sanity failed')
+
+    pool = r_pool.unwrap()
+
+    r_release = pool.release_pool_resources(logger, resource_ids)
+
+    if r_release.is_error:
+        return handle_failure(r_release, 'failed to release pool resources')
+
+    return SUCCESS
+
+
+@dramatiq.actor(**actor_kwargs('RELEASE_POOL_RESOURCES'))  # type: ignore  # Untyped decorator
+def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional[str]) -> None:
+    if guestname:
+        logger = get_guest_logger('release-pool-resources', root_logger, guestname)
+
+    else:
+        logger = TaskLogger(root_logger, 'release-pool-resources')
+
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_release_pool_resources,
+        logger=logger,
+        doer_args=(poolname, resource_ids, guestname)
+    )
 
 
 def do_release_guest_request(

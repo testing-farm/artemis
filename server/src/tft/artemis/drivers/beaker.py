@@ -9,7 +9,7 @@ import gluetool.log
 from gluetool.result import Result, Ok, Error
 from gluetool.log import log_xml
 
-from . import PoolDriver, PoolCapabilities, run_cli_tool
+from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
@@ -89,6 +89,32 @@ class BeakerDriver(PoolDriver):
         output_stdout, _ = r_run.unwrap()
 
         return Ok(output_stdout)
+
+    def _dispatch_resource_cleanup(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        job_id: Optional[str] = None,
+        guest_request: Optional[GuestRequest] = None
+    ) -> Result[None, Failure]:
+        resource_ids = {}
+
+        if job_id is not None:
+            resource_ids['job_id'] = job_id
+
+        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
+
+    def release_pool_resources(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resource_ids: PoolResourcesIDsType
+    ) -> Result[None, Failure]:
+        if 'job_id' in resource_ids:
+            r_output = self._run_bkr(['job-cancel', resource_ids['job_id']])
+
+            if r_output.is_error:
+                return Error(r_output.unwrap_error())
+
+        return Ok(None)
 
     def _create_job(self, environment: Environment) -> Result[bs4.BeautifulSoup, Failure]:
         """
@@ -195,7 +221,9 @@ class BeakerDriver(PoolDriver):
         :rtype: result.Result[str, Failure]
         :returns: :py:class:`result.Result` with job id, or specification of error.
         """
-        r_job_cancel = self._run_bkr(['job-cancel', job_id])
+
+        r_job_cancel = self._dispatch_resource_cleanup(self.logger, job_id=job_id)
+
         if r_job_cancel.is_error and r_job_cancel.error:
             return Error(r_job_cancel.error)
 
@@ -413,7 +441,7 @@ class BeakerDriver(PoolDriver):
         if not isinstance(guest, BeakerGuest):
             return Error(Failure('guest is not an Beaker guest'))
 
-        r_job_cancel = self._run_bkr(['job-cancel', guest.job_id])
+        r_job_cancel = self._dispatch_resource_cleanup(logger, guest.job_id)
         if r_job_cancel.is_error and r_job_cancel.error:
             return Error(r_job_cancel.error)
 
