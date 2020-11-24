@@ -977,6 +977,59 @@ def safe_db_execute(
     )
 
 
+def safe_db_update(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    query: Any,
+    expected_records: int = 1
+) -> Result[bool, Failure]:
+    """
+    Execute a given SQL ``UPDATE`` query, followed by an explicit commit. Verify the expected number of records
+    has been changed.
+
+    :returns: a valid boolean result if queries were executed successfully: ``True`` if changes were made, and
+        the number of changed rows matched the expectation, ``False`` otherwise. If the queries - including the
+        commit - were rejected by lower layers or database, an invalid result is returned, wrapping
+        a :py:class:`Failure` instance.
+    """
+
+    logger.debug('safe db update: {}'.format(str(query)))
+
+    r = safe_call(session.execute, query)
+
+    if r.is_error:
+        return Error(
+            Failure(
+                'failed to execute update query',
+                caused_by=r.unwrap_error()
+            )
+        )
+
+    query_result = cast(
+        sqlalchemy.engine.ResultProxy,
+        r.value
+    )
+
+    if query_result.rowcount != expected_records:
+        logger.warning('expected {} matching rows, found {}'.format(expected_records, query_result.rowcount))
+
+        return Ok(False)
+
+    logger.debug('found {} matching rows, as expected'.format(query_result.rowcount))
+
+    r = safe_call(session.commit)
+
+    if r.is_error:
+        return Error(
+            Failure(
+                'failed to commit query',
+                caused_by=r.unwrap_error()
+            )
+        )
+
+    return Ok(True)
+
+
 def log_guest_event(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,

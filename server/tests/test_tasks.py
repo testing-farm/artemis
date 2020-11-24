@@ -12,20 +12,8 @@ import dramatiq.brokers.stub
 
 
 @pytest.fixture
-def logger():
-    return gluetool.log.Logging.get_logger()
-
-
-@pytest.fixture
 def server_config(logger):
     return gluetool.utils.load_yaml('artemis-configuration/server.yml', logger=logger)
-
-
-@pytest.fixture
-def db(logger, monkeypatch):
-    monkeypatch.setenv('ARTEMIS_DB_URL', 'sqlite://')
-
-    return tft.artemis.get_db(logger)
 
 
 @pytest.fixture
