@@ -4,6 +4,7 @@ import sys
 import tempfile
 import shutil
 import json
+import urllib
 
 import click
 import click_completion
@@ -186,10 +187,24 @@ def cmd_guest_create(
         environment['snapshots'] = True
 
     post_install = None
-    # check that post_install_script is a valid file and read it
-    if post_install_script and os.path.isfile(post_install_script):
-        with open(post_install_script) as f:
-            post_install = f.read()
+    if post_install_script:
+        logger=Logger()
+        # check that post_install_script is a valid file and read it
+        if os.path.isfile(post_install_script):
+            with open(post_install_script) as f:
+                post_install = f.read()
+        # check that post_install_script is a valid url, if it is - try to download the script
+        elif urllib.parse.urlparse(post_install_script).netloc:
+            res = requests.get(post_install_script)
+            if res.ok:
+                # NOTE(ivasilev) content is bytes so a decode step is necessary
+                post_install = res.content.decode("utf-8")
+            else:
+                logger.error("Could not fetch post-install-script {}".format(post_install_script))
+        else:
+            # not a file and cant be downloaded
+            logger.error("Post-install-script {} is not present locally and can't be downloaded".format(
+                post_install_script))
 
     data = {
             'environment': environment,
