@@ -530,93 +530,94 @@ class Knob(Base):
     value = Column(String(), nullable=False)
 
 
-class DB:
-    instance: 'Optional[__DB]' = None
-    _lock = threading.RLock()
+class _DB:
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        url: str
+    ) -> None:
+        from . import KNOB_LOGGING_DB_QUERIES, KNOB_LOGGING_DB_POOL, KNOB_DB_SQLALCHEMY_POOL_OVERFLOW, \
+            KNOB_DB_SQLALCHEMY_POOL_SIZE
 
-    class __DB:
-        def __init__(
-            self,
-            logger: gluetool.log.ContextAdapter,
-            url: str
-        ) -> None:
-            from . import KNOB_LOGGING_DB_QUERIES, KNOB_LOGGING_DB_POOL, KNOB_DB_SQLALCHEMY_POOL_OVERFLOW, \
-                KNOB_DB_SQLALCHEMY_POOL_SIZE
+        self.logger = logger
 
-            self.logger = logger
+        logger.info('connecting to db {}'.format(url))
 
-            logger.info('connecting to db {}'.format(url))
+        if KNOB_LOGGING_DB_QUERIES.value:
+            gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
 
-            if KNOB_LOGGING_DB_QUERIES.value:
-                gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
+        self._echo_pool: Union[str, bool] = False
 
-            self._echo_pool: Union[str, bool] = False
+        if KNOB_LOGGING_DB_POOL.value == 'debug':
+            self._echo_pool = 'debug'
 
-            if KNOB_LOGGING_DB_POOL.value == 'debug':
-                self._echo_pool = 'debug'
+        else:
+            self._echo_pool = gluetool.utils.normalize_bool_option(KNOB_LOGGING_DB_POOL.value)
 
-            else:
-                self._echo_pool = gluetool.utils.normalize_bool_option(KNOB_LOGGING_DB_POOL.value)
+        # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
+        if url.startswith('postgresql://'):
+            pool_size = KNOB_DB_SQLALCHEMY_POOL_SIZE.value
+            max_overflow = KNOB_DB_SQLALCHEMY_POOL_OVERFLOW.value
 
-            # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
-            if url.startswith('postgresql://'):
-                pool_size = KNOB_DB_SQLALCHEMY_POOL_SIZE.value
-                max_overflow = KNOB_DB_SQLALCHEMY_POOL_OVERFLOW.value
+            gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
+                'echo_pool': self._echo_pool,
+                'pool_size': pool_size,
+                'max_overflow': max_overflow
+            })
 
-                gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
-                    'echo_pool': self._echo_pool,
-                    'pool_size': pool_size,
-                    'max_overflow': max_overflow
-                })
+            self.engine = sqlalchemy.create_engine(
+                url,
+                echo_pool=self._echo_pool,
+                pool_size=pool_size,
+                max_overflow=max_overflow
+            )
 
-                self.engine = sqlalchemy.create_engine(
-                    url,
-                    echo_pool=self._echo_pool,
-                    pool_size=pool_size,
-                    max_overflow=max_overflow
+        # SQLite does not support altering pool size nor max overflow
+        else:
+            self.engine = sqlalchemy.create_engine(url)
+
+        self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self.engine)
+
+    @contextmanager
+    def get_session(self) -> Iterator[sqlalchemy.orm.session.Session]:
+        with DB._lock:
+            session = self._sessionmaker()
+
+            if self._echo_pool:
+                from .metrics import DBPoolMetrics
+
+                gluetool.log.log_dict(
+                    self.logger.info,
+                    'pool metrics',
+                    DBPoolMetrics.load(self.logger, self, session)  # type: ignore
                 )
 
-            # SQLite does not support altering pool size nor max overflow
-            else:
-                self.engine = sqlalchemy.create_engine(url)
+        try:
+            yield session
 
-            self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self.engine)
+            session.commit()
 
-        @contextmanager
-        def get_session(self) -> Iterator[sqlalchemy.orm.session.Session]:
-            with DB._lock:
-                session = self._sessionmaker()
+        except Exception:
+            session.rollback()
 
-                if self._echo_pool:
-                    from .metrics import DBPoolMetrics
+            raise
 
-                    gluetool.log.log_dict(
-                        self.logger.info,
-                        'pool metrics',
-                        DBPoolMetrics.load(self.logger, self, session)  # type: ignore
-                    )
+        finally:
+            session.close()
 
-            try:
-                yield session
 
-                session.commit()
-
-            except Exception:
-                session.rollback()
-
-                raise
-
-            finally:
-                session.close()
+class DB:
+    instance: Optional[_DB] = None
+    _lock = threading.RLock()
 
     def __new__(
         cls,
         logger: gluetool.log.ContextAdapter,
         url: str
-    ) -> '__DB':
+    ) -> _DB:
         with DB._lock:
             if DB.instance is None:
-                DB.instance = DB.__DB(logger, url)
+                DB.instance = _DB(logger, url)
 
                 # declared as class attributes only to avoid typing errors ("DB has no attribute" ...)
                 # those attributes should never be used, use instance attributes only
