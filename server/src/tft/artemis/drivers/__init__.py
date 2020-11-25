@@ -343,6 +343,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
+
+        :param Environment environment: environment to check
+        :rtype: result.Result[bool, Failure]
+        :returns: :py:class:`result.result` with either `bool`
+            or specification of error.
         """
 
         raise NotImplementedError()

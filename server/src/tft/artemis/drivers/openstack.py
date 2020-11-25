@@ -418,6 +418,14 @@ class OpenStackDriver(PoolDriver):
         if environment.arch not in self.pool_config['available-arches']:
             return Ok(False)
 
+        r_image = self._env_to_image(self.logger, environment)
+        if r_image.is_error:
+            return Error(r_image.value)
+
+        r_flavor = self._env_to_flavor(environment)
+        if r_flavor.is_error:
+            return Error(r_flavor.value)
+
         return Ok(True)
 
     def create_snapshot(

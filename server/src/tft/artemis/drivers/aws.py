@@ -145,6 +145,14 @@ class AWSDriver(PoolDriver):
         if environment.arch != 'x86_64':
             return Ok(False)
 
+        r_image = self._env_to_image(self.logger, environment)
+        if r_image.is_error:
+            return Error(r_image.value)
+
+        r_type = self._env_to_instance_type(environment)
+        if r_type.is_error:
+            return Error(r_type.value)
+
         return Ok(True)
 
     def _env_to_instance_type(self, environment: Environment) -> Result[Any, Failure]:
