@@ -237,6 +237,10 @@ class PoolData:
     to declare its own fields.
     """
 
+    @classmethod
+    def is_empty(cls, guest_request: GuestRequest) -> bool:
+        return guest_request.pool_data == json.dumps({})
+
     def serialize(self) -> str:
         return json.dumps(dataclasses.asdict(self))
 

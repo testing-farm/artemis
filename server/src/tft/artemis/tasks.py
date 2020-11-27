@@ -17,7 +17,7 @@ from . import Failure, Knob, get_db, get_logger, get_broker, safe_call, safe_db_
     log_error_guest_event
 from . import metrics
 from .db import DB, GuestEvent, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
-from .drivers import PoolDriver, PoolLogger
+from .drivers import PoolDriver, PoolLogger, PoolData
 from .environment import Environment
 from .guest import GuestLogger, GuestState
 from .script import hook_engine
@@ -1408,6 +1408,143 @@ def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional
     )
 
 
+def do_handle_provisioning_chain_tail(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    current_state: GuestState,
+    new_state: GuestState = GuestState.ROUTING
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='provisioning-tail'
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, state=current_state)
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+
+    if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
+        spice_details['poolname'] = workspace.gr.poolname
+
+        workspace.load_gr_pool()
+
+        if workspace.result:
+            return workspace.result
+
+        assert workspace.pool
+
+        r_release = workspace.pool.release_guest(logger, workspace.gr)
+
+        if r_release.is_error:
+            handle_failure(r_release, 'failed to release guest resources')
+
+            return RESCHEDULE
+
+    workspace.update_guest_state(
+        current_state,
+        new_state,
+        set_values={
+            'poolname': None,
+            'pool_data': json.dumps({})
+        },
+        current_pool_data=workspace.gr.pool_data
+    )
+
+    if new_state == GuestState.ROUTING:
+        workspace.dispatch_task(route_guest_request, guestname)
+
+    if workspace.result:
+        return workspace.result
+
+    handle_success('reverted to {}'.format(new_state.value))
+
+    return SUCCESS
+
+
+def handle_provisioning_chain_tail(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    guestname: str,
+    actor: Actor
+) -> bool:
+    cancel = threading.Event()
+
+    # for acquire_guest, move from PROVISIONING back to ROUTING
+    if actor.actor_name == acquire_guest_request.actor_name:
+        r = do_handle_provisioning_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            GuestState.PROVISIONING,
+            GuestState.ROUTING
+        )
+
+    # for do_update_guest, move from PROMISED back to ROUTING
+    elif actor.actor_name == update_guest_request.actor_name:
+        r = do_handle_provisioning_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            GuestState.PROMISED,
+            GuestState.ROUTING
+        )
+
+    # for route_guest_request, stay in ROUTING
+    elif actor.actor_name == route_guest_request.actor_name:
+        r = do_handle_provisioning_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            GuestState.ROUTING,
+            GuestState.ERROR
+        )
+
+    else:
+        Failure(
+            'actor not covered by provisioning chain tail',
+            guestname=guestname,
+            actor_name=actor.actor_name
+        ).handle(logger)
+
+        return False
+
+    if r.is_ok:
+        if r is SUCCESS:
+            return True
+
+        if r is RESCHEDULE:
+            return False
+
+        Failure(
+            'unexpected result of provisioning chain tail',
+            guestname=guestname,
+            actor_name=actor.actor_name
+        ).handle(logger)
+
+        return False
+
+    # Failures were already handled by this point
+    return False
+
+
 def do_release_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -1433,7 +1570,7 @@ def do_release_guest_request(
 
     assert workspace.gr
 
-    if workspace.gr.poolname:
+    if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
         spice_details['poolname'] = workspace.gr.poolname
 
         workspace.load_gr_pool()

@@ -2,10 +2,9 @@ import datetime
 import traceback
 
 import dramatiq.middleware.retries
-import gluetool
 from dramatiq.common import compute_backoff
 
-from .guest import GuestLogger, GuestState
+from .guest import GuestLogger
 
 from typing import cast, Any, Optional
 
@@ -21,91 +20,6 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         except IndexError:
             return None
 
-    def _move_to_routing(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guestname: str,
-        current_state: GuestState
-    ) -> None:
-        # we need to import late, because middleware is called initialized in __init__
-        from . import get_db
-        from .tasks import _update_guest_state, route_guest_request
-
-        # try to move from given state to ROUTING
-        with get_db(self.logger).get_session() as session:
-            if not _update_guest_state(
-                self.logger,
-                session,
-                guestname,
-                current_state,
-                GuestState.ROUTING
-            ):
-                # Somebody already did our job, the guest request is not in expected state anymore.
-                return
-
-            # Avoid circular imports
-            from .tasks import dispatch_task
-
-            dispatch_task(
-                self.logger,
-                route_guest_request,
-                guestname
-            )
-
-            logger.info('returned back to routing')
-
-    def _move_to_error(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guestname: str,
-        current_state: GuestState
-    ) -> None:
-        # we need to import late, because middleware is called initialized in __init__
-        from . import get_db
-        from .tasks import _update_guest_state
-
-        # try to move from given state to ERROR
-        with get_db(self.logger).get_session() as session:
-            if not _update_guest_state(
-                self.logger,
-                session,
-                guestname,
-                current_state,
-                GuestState.ERROR
-            ):
-                # Somebody already did our job, the guest request is not in expected state anymore.
-                return
-
-            logger.info('moved to error state')
-
-    def _retry_routing(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guestname: str,
-        actor: Any,
-        message: Any
-    ) -> bool:
-        # we need to import late, because middleware is called initialized in __init__
-        from .tasks import acquire_guest_request, update_guest_request, route_guest_request
-
-        # for acquire_guest, move from PROVISIONING back to ROUTING
-        if actor.actor_name == acquire_guest_request.actor_name:
-            self._move_to_routing(logger, guestname, GuestState.PROVISIONING)
-            return True
-
-        # for do_update_guest, move from PROMISED back to ROUTING
-        elif actor.actor_name == update_guest_request.actor_name:
-            self._move_to_routing(logger, guestname, GuestState.PROMISED)
-            return True
-
-        # for route_guest_request, stay in ROUTING
-        elif actor.actor_name == route_guest_request.actor_name:
-            self._move_to_error(logger, guestname, GuestState.ROUTING)
-            return False
-
-        logger.warning('cannot retry routing from actor {}'.format(actor.actor_name))
-        return False
-
     def after_process_message(
         self,
         broker: Any,
@@ -117,7 +31,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         if exception is None:
             return
 
-        from . import get_logger
+        from . import get_logger, get_db
 
         logger = get_logger()
 
@@ -140,17 +54,58 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         if retry_when is not None and not retry_when(retries, exception) or \
            retry_when is None and max_retries is not None and retries >= max_retries:
 
+            # We are not interested in special handling of messages that don't relate to guests.
             if not guestname:
                 logger.warning('retries: retries exceeded for message {}.'.format(message.message_id))
                 message.fail()
                 return
 
-            # try to move the request back to ROUTING for retry and finish
-            if not self._retry_routing(logger, guestname, actor, message):
-                logger.error('failed to retry routing')
-                message.fail()
+            # Handle the provisioning "tail": when we run out of retries on a task that works on
+            # provisioning, and we need to release anything we already acquired, and start again.
+            #
+            # By this point, most likely, the provisioning is probably stuck with a broken pool,
+            # or we already have a guest and we can't reach it, or something like that. Something
+            # happened after routing and before successfully reaching READY state. We need to
+            # release all the resources we have, to avoid leaks, and fall back to routing.
+            #
+            # This error path should be relatively cheap and straightforward, but not free of points
+            # where it can fail on its own - after all, it will try to load the guest request from
+            # database, and schedule routing task. It can fail, it may fail. The problem is, what to
+            # do in such a situation? We don't want to reschedule the message, that would reschedule
+            # the original task and by this time we kind of decided it's doomed and it's time to start
+            # again. We can't schedule this "release & revert to routing" as a standalone task - we did
+            # fail to schedule the routing task, we probably won't get away with a different actor.
+            #
+            # As of now, if we want to keep any chance of falling back to routing, rescheduling the
+            # message seems to be the only way. It's quite likely it will fail again, giving us another
+            # chance for release & revert. Note that this applies to situations where "release & revert"
+            # attempt fails, i.e. DB or broker issues, most likely.
 
-            return
+            from .tasks import TaskLogger, handle_provisioning_chain_tail
+
+            tail_logger = TaskLogger(logger, 'provisioning-tail')
+
+            db = get_db(tail_logger)
+
+            with db.get_session() as session:
+                if handle_provisioning_chain_tail(
+                    tail_logger,
+                    db,
+                    session,
+                    guestname,
+                    actor
+                ):
+                    tail_logger.info('successfuly handled the provisioning tail')
+                    return
+
+            tail_logger.error('failed to handle the provisioning tail')
+
+            # This would cause the message to be dropped, effectively halting any work towards provisioning
+            # of the guest.
+            #
+            # In the spirit of "let's try again...", falling through to rescheduling the original task.
+            #
+            # message.fail()
 
         message.options["retries"] += 1
         message.options["traceback"] = traceback.format_exc(limit=30)
