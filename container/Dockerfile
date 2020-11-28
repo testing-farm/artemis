@@ -12,7 +12,7 @@
 #
 
 # Note that alpine from 3.11 uses python 3.8 which we do not yet support
-FROM alpine:3.10
+FROM quay.io/testing-farm/alpine:3.10
 
 # This hack is widely applied to avoid python printing issues in docker containers.
 # See: https://github.com/Docker-Hub-frolvlad/docker-alpine-python3/pull/13
