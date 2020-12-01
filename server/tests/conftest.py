@@ -15,7 +15,7 @@ DB_URLS = [
 
 
 @pytest.fixture
-def logger() -> gluetool.log.ContextAdapter:
+def logger(caplog) -> gluetool.log.ContextAdapter:
     # Set the most detailed log level possible. It may help when debugging test failures, and we don't
     # keep it for the future, it gets thrown away when tests did not fail.
     tft.artemis.KNOB_LOGGING_LEVEL.value = 'DEBUG'
@@ -25,7 +25,14 @@ def logger() -> gluetool.log.ContextAdapter:
     #
     # tft.artemis.KNOB_LOGGING_JSON.value = False
 
-    return tft.artemis.get_logger()
+    logger = tft.artemis.get_logger()
+
+    assert gluetool.log.Logging.logger is not None
+
+    # Feed our logs into Pytest's fixture, so we can inspect them later.
+    gluetool.log.Logging.logger.addHandler(caplog.handler)
+
+    return logger
 
 
 @pytest.fixture(params=DB_URLS)
