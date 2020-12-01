@@ -422,12 +422,16 @@ def run_doer(
 def task_core(
     doer: DoerType,
     logger: TaskLogger,
+    db: Optional[DB] = None,
+    session: Optional[sqlalchemy.orm.session.Session] = None,
+    cancel: Optional[threading.Event] = None,
     doer_args: Optional[Tuple[Any, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None
 ) -> None:
     logger.begin()
 
-    cancel = threading.Event()
+    db = db or _ROOT_DB
+    cancel = cancel or threading.Event()
 
     doer_args = doer_args or tuple()
     doer_kwargs = doer_kwargs or dict()
@@ -435,8 +439,12 @@ def task_core(
     doer_result: DoerReturnType = Error(Failure('undefined doer result'))
 
     try:
-        with _ROOT_DB.get_session() as session:
-            doer_result = run_doer(logger, _ROOT_DB, session, cancel, doer, *doer_args, **doer_kwargs)
+        if session is None:
+            with _ROOT_DB.get_session() as session:
+                doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
+
+        else:
+            doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
 
     except Exception as exc:
         stackprinter.show_current_exception()
