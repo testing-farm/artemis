@@ -84,8 +84,8 @@ from typing_extensions import Protocol
 
 
 # Initialize our top-level objects, database and logger, shared by all threads and in *this* worker.
-root_logger = get_logger()
-db = get_db(root_logger)
+_ROOT_LOGGER = get_logger()
+_ROOT_DB = get_db(_ROOT_LOGGER)
 
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
 BROKER = get_broker()
@@ -418,8 +418,8 @@ def task_core(
     doer_result: DoerReturnType = Error(Failure('undefined doer result'))
 
     try:
-        with db.get_session() as session:
-            doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
+        with _ROOT_DB.get_session() as session:
+            doer_result = run_doer(logger, _ROOT_DB, session, cancel, doer, *doer_args, **doer_kwargs)
 
     except Exception as exc:
         stackprinter.show_current_exception()
@@ -802,35 +802,35 @@ def _get_master_key(
 
 def get_pool_logger(
     task_name: str,
-    root_logger: gluetool.log.ContextAdapter,
+    logger: gluetool.log.ContextAdapter,
     poolname: str
 ) -> TaskLogger:
     return TaskLogger(
-        PoolLogger(root_logger, poolname),
+        PoolLogger(logger, poolname),
         task_name
     )
 
 
 def get_guest_logger(
     task_name: str,
-    root_logger: gluetool.log.ContextAdapter,
+    logger: gluetool.log.ContextAdapter,
     guestname: str
 ) -> TaskLogger:
     return TaskLogger(
-        GuestLogger(root_logger, guestname),
+        GuestLogger(logger, guestname),
         task_name
     )
 
 
 def get_snapshot_logger(
     task_name: str,
-    root_logger: gluetool.log.ContextAdapter,
+    logger: gluetool.log.ContextAdapter,
     guestname: str,
     snapshotname: str
 ) -> TaskLogger:
     return TaskLogger(
         SnapshotLogger(
-            GuestLogger(root_logger, guestname),
+            GuestLogger(logger, guestname),
             snapshotname
         ),
         task_name
@@ -1396,10 +1396,10 @@ def do_release_pool_resources(
 @dramatiq.actor(**actor_kwargs('RELEASE_POOL_RESOURCES'))  # type: ignore  # Untyped decorator
 def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional[str]) -> None:
     if guestname:
-        logger = get_guest_logger('release-pool-resources', root_logger, guestname)
+        logger = get_guest_logger('release-pool-resources', _ROOT_LOGGER, guestname)
 
     else:
-        logger = TaskLogger(root_logger, 'release-pool-resources')
+        logger = TaskLogger(_ROOT_LOGGER, 'release-pool-resources')
 
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_pool_resources,
@@ -1616,7 +1616,7 @@ def do_release_guest_request(
 def release_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_guest_request,
-        logger=get_guest_logger('release-guest-request', root_logger, guestname),
+        logger=get_guest_logger('release-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
 
@@ -1730,7 +1730,7 @@ def do_update_guest_request(
 def update_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_update_guest_request,
-        logger=get_guest_logger('update-guest-request', root_logger, guestname),
+        logger=get_guest_logger('update-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
 
@@ -1845,7 +1845,7 @@ def do_acquire_guest_request(
 def acquire_guest_request(guestname: str, poolname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_acquire_guest_request,
-        logger=get_guest_logger('acquire-guest-request', root_logger, guestname),
+        logger=get_guest_logger('acquire-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname, poolname)
     )
 
@@ -1946,7 +1946,7 @@ def do_route_guest_request(
 def route_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_route_guest_request,
-        logger=get_guest_logger('route-guest-request', root_logger, guestname),
+        logger=get_guest_logger('route-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
 
@@ -2020,7 +2020,7 @@ def do_release_snapshot_request(
 def release_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_snapshot_request,
-        logger=get_snapshot_logger('release-snapshot', root_logger, guestname, snapshotname),
+        logger=get_snapshot_logger('release-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
@@ -2094,7 +2094,7 @@ def do_create_snapshot_start_guest(
 def create_snapshot_start_guest(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot_start_guest,
-        logger=get_snapshot_logger('create-snapshot-start-guest', root_logger, guestname, snapshotname),
+        logger=get_snapshot_logger('create-snapshot-start-guest', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
@@ -2209,7 +2209,7 @@ def do_update_snapshot(
 def update_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_update_snapshot,
-        logger=get_snapshot_logger('update-snapshot', root_logger, guestname, snapshotname),
+        logger=get_snapshot_logger('update-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
@@ -2328,7 +2328,7 @@ def do_create_snapshot_create(
 def create_snapshot_create(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot_create,
-        logger=get_snapshot_logger('create-snapshot-create', root_logger, guestname, snapshotname),
+        logger=get_snapshot_logger('create-snapshot-create', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
@@ -2409,7 +2409,7 @@ def do_create_snapshot_stop_guest(
 def create_snapshot_stop_guest(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot_stop_guest,
-        logger=get_snapshot_logger('create-snapshot-stop-guest', root_logger, guestname, snapshotname),
+        logger=get_snapshot_logger('create-snapshot-stop-guest', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
@@ -2498,7 +2498,7 @@ def do_create_snapshot(
 def create_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot,
-        logger=get_snapshot_logger('create-snapshot', root_logger, guestname, snapshotname),
+        logger=get_snapshot_logger('create-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
@@ -2557,7 +2557,7 @@ def do_route_snapshot_request(
 def route_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_route_snapshot_request,
-        logger=get_snapshot_logger('route-snapshot', root_logger, guestname, snapshotname),
+        logger=get_snapshot_logger('route-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
@@ -2626,7 +2626,7 @@ def do_restore_snapshot_request(
 def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_restore_snapshot_request,
-        logger=get_snapshot_logger('restore-snapshot', root_logger, guestname, snapshotname),
+        logger=get_snapshot_logger('restore-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
@@ -2674,7 +2674,7 @@ def do_refresh_pool_resources_metrics(
 def refresh_pool_resources_metrics(poolname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_refresh_pool_resources_metrics,
-        logger=get_pool_logger('refresh-pool-resources-metrics', root_logger, poolname),
+        logger=get_pool_logger('refresh-pool-resources-metrics', _ROOT_LOGGER, poolname),
         doer_args=(poolname,)
     )
 
@@ -2695,9 +2695,9 @@ def do_refresh_pool_resources_metrics_dispatcher(
 
     logger.info('scheduling pool metrics refresh')
 
-    for pool in get_pools(root_logger, session):
+    for pool in get_pools(_ROOT_LOGGER, session):
         dispatch_task(
-            get_pool_logger('refresh-pool-resources-metrics-dispatcher', root_logger, pool.poolname),
+            get_pool_logger('refresh-pool-resources-metrics-dispatcher', _ROOT_LOGGER, pool.poolname),
             refresh_pool_resources_metrics,
             pool.poolname
         )
@@ -2725,5 +2725,5 @@ def refresh_pool_resources_metrics_dispatcher() -> None:
 
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_refresh_pool_resources_metrics_dispatcher,
-        logger=TaskLogger(root_logger, 'refresh-pool-resources-dispatcher')
+        logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-resources-dispatcher')
     )
