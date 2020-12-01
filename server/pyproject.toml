@@ -34,6 +34,8 @@ typing-extensions = "^3.7.4"
 periodiq = "^0.12.1"
 
 [tool.poetry.dev-dependencies]
+# Install `toml` extra to allow parsing pyproject.toml - no need for special config file for coverage.
+coverage = { version = "*", extras = ["toml"] }
 flake8 = "*"
 pytest = "*"
 mypy = "0.720"
@@ -52,3 +54,8 @@ artemis-init-postgres-schema = "tft.artemis.db:init_postgres"
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
+
+[tool.coverage.run]
+source = [
+  "src/tft/artemis"
+]
