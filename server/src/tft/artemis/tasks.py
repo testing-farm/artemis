@@ -1372,11 +1372,13 @@ def do_release_pool_resources(
         resource_ids = json.loads(serialized_resource_ids)
 
     except Exception as exc:
-        return Error(Failure.from_exc(
+        failure = Failure.from_exc(
             'failed to unserialize resource IDs',
             exc,
-            resource_ids=resource_ids
-        ))
+            serialized_resource_ids=serialized_resource_ids
+        )
+
+        return handle_failure(Error(failure), 'failed to unserialize resource IDs')
 
     r_pool = _get_pool(logger, session, poolname)
 
