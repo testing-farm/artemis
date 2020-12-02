@@ -1,3 +1,4 @@
+import logging
 import operator
 import re
 
@@ -97,3 +98,27 @@ def assert_log(caplog, evaluator=any, **tests):
         _cmp(record)
         for record in caplog.records
     ]), LOG_ASSERT_MESAGE.render(fields=tests)
+
+
+def assert_failure_log(caplog, failure_message, exception_label=None, **tests):
+    """
+    A failure log is just a special log record, with a nicely formatted message describing the aspects
+    of the failure. As of now, only the failure message is tested, but in the future we want to verify
+    failure details as well, to make sure code under the test actually sets them.
+
+    .. code-block::
+
+       assert_failure_log(caplog, 'failed to release pool resources')
+       assert_failure_log(caplog, 'failed to unserialize resource IDs', exception_label='JSONDecodeError:')
+    """
+
+    message = r'(?m){}\n'.format(failure_message)
+
+    if exception_label:
+        message = '{}(?:.*\n)+    {}'.format(message, exception_label)
+
+    assert_log(
+        caplog,
+        message=MATCH(message),
+        levelno=logging.ERROR
+    )
