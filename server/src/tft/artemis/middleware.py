@@ -1,29 +1,48 @@
 import datetime
+import inspect
 import traceback
 
+import dramatiq.message
 import dramatiq.middleware.retries
 from dramatiq.common import compute_backoff
+import gluetool.log
 
 from .guest import GuestLogger
 
-from typing import cast, Any, Optional
+from typing import Any, Dict, Optional
 
 
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class cannot subclass 'Retries
-    def _guestname_from_message(self, message: Any) -> Optional[str]:
-        try:
-            return cast(
-                str,
-                message._message[2][0]
-            )
+    def _actor_arguments(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        message: dramatiq.message.Message,
+        actor: Any  # it's actually tasks.Actor, but circular import :/
+    ) -> Optional[Dict[str, Any]]:
+        signature = inspect.signature(actor.fn)
 
-        except IndexError:
-            return None
+        gluetool.log.log_dict(logger.debug, 'raw message data', message._message)
+
+        if len(signature.parameters) != len(message._message[2]):
+            from . import Failure
+
+            Failure(
+                'actor signature parameters does not match message content',
+                signature=[name for name in signature.parameters.keys()],
+                arguments=message._message[2]
+            ).handle(logger)
+
+            return {}
+
+        return {
+            name: message._message[2][index]
+            for index, name in enumerate(signature.parameters.keys())
+        }
 
     def after_process_message(
         self,
         broker: Any,
-        message: Any,
+        message: dramatiq.message.Message,
         *,
         result: Optional[Any] = None,
         exception: Optional[Any] = None
@@ -40,7 +59,9 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         max_retries = message.options.get("max_retries") or actor.options.get("max_retries", self.max_retries)
         retry_when = actor.options.get("retry_when", self.retry_when)
 
-        guestname = self._guestname_from_message(message)
+        actor_arguments = self._actor_arguments(logger, message, actor)
+
+        guestname = actor_arguments['guestname'] if actor_arguments and 'guestname' in actor_arguments else None
 
         if guestname:
             logger = GuestLogger(logger, guestname)
