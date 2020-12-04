@@ -27,7 +27,7 @@ from .drivers import beaker as beaker_driver
 from .drivers import openstack as openstack_driver
 from .drivers import azure as azure_driver
 
-from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from typing_extensions import Protocol
 
 
@@ -515,77 +515,65 @@ def _get_guest_request(
     session: sqlalchemy.orm.session.Session,
     guestname: str
 ) -> Result[Optional[GuestRequest], Failure]:
-    query_proxy = Query.from_session(session, GuestRequest) \
-        .filter(GuestRequest.guestname == guestname)
+    try:
+        return Ok(
+            Query.from_session(session, GuestRequest)
+            .filter(GuestRequest.guestname == guestname)
+            .one_or_none()
+        )
 
-    r_query = cast(
-        Result[GuestRequest, Failure],
-        safe_call(query_proxy.one)
-    )
-
-    if r_query.is_ok:
-        return Ok(r_query.unwrap())
-
-    failure = r_query.unwrap_error()
-
-    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        return Ok(None)
-
-    return Error(failure)
+    except Exception as exc:
+        return Error(Failure.from_exc(
+            'failed to fetch guest request',
+            exc,
+            guestname=guestname
+        ))
 
 
-def _get_guest_by_state(
+def _get_guest_request_by_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     guestname: str,
     state: GuestState
 ) -> Result[Optional[GuestRequest], Failure]:
-    query_proxy = Query.from_session(session, GuestRequest) \
-        .filter(GuestRequest.guestname == guestname) \
-        .filter(GuestRequest.state == state.value)
+    try:
+        return Ok(
+            Query.from_session(session, GuestRequest)
+            .filter(GuestRequest.guestname == guestname)
+            .filter(GuestRequest.state == state.value)
+            .one_or_none()
+        )
 
-    r_query = cast(
-        Result[GuestRequest, Failure],
-        safe_call(query_proxy.one)
-    )
-
-    if r_query.is_ok:
-        return Ok(r_query.unwrap())
-
-    failure = r_query.unwrap_error()
-
-    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        logger.warning('not in {} state anymore'.format(state.value))
-        return Ok(None)
-
-    return Error(failure)
+    except Exception as exc:
+        return Error(Failure.from_exc(
+            'failed to fetch guest request',
+            exc,
+            guestname=guestname,
+            state=state.name
+        ))
 
 
-def _get_snapshot_by_state(
+def _get_snapshot_request_by_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     snapshotname: str,
     state: GuestState
 ) -> Result[Optional[SnapshotRequest], Failure]:
-    query_proxy = Query.from_session(session, SnapshotRequest) \
-        .filter(SnapshotRequest.snapshotname == snapshotname) \
-        .filter(SnapshotRequest.state == state.value)
+    try:
+        return Ok(
+            Query.from_session(session, SnapshotRequest)
+            .filter(SnapshotRequest.snapshotname == snapshotname)
+            .filter(SnapshotRequest.state == state.value)
+            .one_or_none()
+        )
 
-    r_query = cast(
-        Result[SnapshotRequest, Failure],
-        safe_call(query_proxy.one)
-    )
-
-    if r_query.is_ok:
-        return Ok(r_query.unwrap())
-
-    failure = r_query.unwrap_error()
-
-    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        logger.warning('not in {} state anymore'.format(state.value))
-        return Ok(None)
-
-    return Error(failure)
+    except Exception as exc:
+        return Error(Failure.from_exc(
+            'failed to fetch snapshot request',
+            exc,
+            snapshotname=snapshotname,
+            state=state.name
+        ))
 
 
 def _update_guest_state(
@@ -732,9 +720,17 @@ def _get_pool(
     session: sqlalchemy.orm.session.Session,
     poolname: str
 ) -> Result[PoolDriver, Failure]:
-    pool_record = Query.from_session(session, Pool) \
-        .filter(Pool.poolname == poolname) \
-        .one_or_none()
+    try:
+        pool_record = Query.from_session(session, Pool) \
+            .filter(Pool.poolname == poolname) \
+            .one_or_none()
+
+    except Exception as exc:
+        return Error(Failure.from_exc(
+            'failed to fetch pool record',
+            exc,
+            poolname=poolname
+        ))
 
     if not pool_record:
         return Error(Failure(
@@ -915,7 +911,7 @@ class Workspace:
             r = _get_guest_request(self.logger, self.session, guestname)
 
         else:
-            r = _get_guest_by_state(self.logger, self.session, guestname, state)
+            r = _get_guest_request_by_state(self.logger, self.session, guestname, state)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to load guest request')
@@ -954,7 +950,7 @@ class Workspace:
 
         self.snapshotname = snapshotname
 
-        r = _get_snapshot_by_state(self.logger, self.session, snapshotname, state)
+        r = _get_snapshot_request_by_state(self.logger, self.session, snapshotname, state)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to load snapshot request')
