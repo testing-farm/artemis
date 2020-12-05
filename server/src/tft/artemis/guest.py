@@ -1,9 +1,6 @@
-import dataclasses
 import enum
 
 import gluetool.log
-
-from . import db as artemis_db
 
 
 class GuestState(enum.Enum):
@@ -58,20 +55,8 @@ class GuestLogger(gluetool.log.ContextAdapter):
         })
 
 
-@dataclasses.dataclass
-class SSHInfo:
-    """
-    SSH-related information used to transport all the relevant information between different subsystems.
-    We want to keep our use of SSH usernames and keys consistent.
-    """
-
-    key: artemis_db.SSHKey
-    port: int = 22
-    username: str = 'root'
-
-    def __repr__(self) -> str:
-        return '<SSHInfo: port={}, username={}, key={}>'.format(
-            self.port,
-            self.username,
-            self.key.keyname if self.key else ''
-        )
+class SnapshotLogger(gluetool.log.ContextAdapter):
+    def __init__(self, logger: gluetool.log.ContextAdapter, snapshotname: str) -> None:
+        super(SnapshotLogger, self).__init__(logger, {
+            'ctx_snapshot_name': (11, snapshotname)
+        })

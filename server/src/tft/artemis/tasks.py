@@ -19,9 +19,8 @@ from . import metrics
 from .db import DB, GuestEvent, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
 from .drivers import PoolDriver, PoolLogger, PoolData
 from .environment import Environment
-from .guest import GuestLogger, GuestState
+from .guest import GuestLogger, GuestState, SnapshotLogger
 from .script import hook_engine
-from .snapshot import SnapshotLogger
 
 from .drivers import aws as aws_driver
 from .drivers import beaker as beaker_driver
