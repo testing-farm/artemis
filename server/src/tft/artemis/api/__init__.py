@@ -326,13 +326,10 @@ class GuestRequestManager:
 
     def get_guest_requests(self) -> List[GuestResponse]:
         with self.db.get_session() as session:
-            guests = session.query(artemis_db.GuestRequest).all()
-
-            responses = [
-                GuestResponse.from_db(guest) for guest in guests
+            return [
+                GuestResponse.from_db(guest)
+                for guest in artemis_db.Query.from_session(session, artemis_db.GuestRequest).all()
             ]
-
-        return responses
 
     def create(self, guest_request: GuestRequest, ownername: str) -> GuestResponse:
         guestname = str(uuid.uuid4())
@@ -378,19 +375,15 @@ class GuestRequestManager:
         return gr
 
     def get_by_guestname(self, guestname: str) -> Optional[GuestResponse]:
-        try:
-            with self.db.get_session() as session:
-                guest = session \
-                        .query(artemis_db.GuestRequest) \
-                        .filter(artemis_db.GuestRequest.guestname == guestname) \
-                        .one()
+        with self.db.get_session() as session:
+            guest_request_record = artemis_db.Query.from_session(session, artemis_db.GuestRequest) \
+                .filter(artemis_db.GuestRequest.guestname == guestname) \
+                .one_or_none()
 
-                response = GuestResponse.from_db(guest)
+            if guest_request_record is None:
+                return None
 
-        except sqlalchemy.orm.exc.NoResultFound:
-            return None
-
-        return response
+            return GuestResponse.from_db(guest_request_record)
 
     def delete_by_guestname(self, guestname: str, request: Request) -> None:
         with self.db.get_session() as session:
@@ -495,20 +488,16 @@ class SnapshotRequestManager:
         self.db = db
 
     def get_snapshot(self, guestname: str, snapshotname: str) -> Optional[SnapshotResponse]:
-        try:
-            with self.db.get_session() as session:
-                snapshot = session \
-                           .query(artemis_db.SnapshotRequest.__table__) \
-                           .filter(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
-                           .filter(artemis_db.SnapshotRequest.guestname == guestname) \
-                           .one()
+        with self.db.get_session() as session:
+            snapshot_request_record = artemis_db.Query.from_session(session, artemis_db.SnapshotRequest) \
+                .filter(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
+                .filter(artemis_db.SnapshotRequest.guestname == guestname) \
+                .one_or_none()
 
-                response = SnapshotResponse.from_db(snapshot)
+            if snapshot_request_record is None:
+                return None
 
-        except sqlalchemy.orm.exc.NoResultFound:
-            return None
-
-        return response
+            return SnapshotResponse.from_db(snapshot_request_record)
 
     def create_snapshot(self, guestname: str, snapshot_request: SnapshotRequest) -> SnapshotResponse:
         snapshotname = str(uuid.uuid4())
