@@ -1409,6 +1409,19 @@ def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional
     )
 
 
+def is_provisioning_tail_task(actor: Actor) -> bool:
+    """
+    Returns ``True`` if the given task is considered to be part of the provisioning "tail",
+    i.e. tasks that take care of provisioning and follow up tasks.
+    """
+
+    return actor.actor_name in (
+        acquire_guest_request.actor_name,
+        update_guest_request.actor_name,
+        route_guest_request.actor_name
+    )
+
+
 def do_handle_provisioning_chain_tail(
     logger: gluetool.log.ContextAdapter,
     db: DB,

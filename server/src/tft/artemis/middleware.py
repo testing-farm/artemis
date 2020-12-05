@@ -53,13 +53,6 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
 
         if retry_when is not None and not retry_when(retries, exception) or \
            retry_when is None and max_retries is not None and retries >= max_retries:
-
-            # We are not interested in special handling of messages that don't relate to guests.
-            if not guestname:
-                logger.warning('retries: retries exceeded for message {}.'.format(message.message_id))
-                message.fail()
-                return
-
             # Handle the provisioning "tail": when we run out of retries on a task that works on
             # provisioning, and we need to release anything we already acquired, and start again.
             #
@@ -81,31 +74,49 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
             # chance for release & revert. Note that this applies to situations where "release & revert"
             # attempt fails, i.e. DB or broker issues, most likely.
 
-            from .tasks import TaskLogger, handle_provisioning_chain_tail
+            from .tasks import TaskLogger, is_provisioning_tail_task, handle_provisioning_chain_tail
 
-            tail_logger = TaskLogger(logger, 'provisioning-tail')
+            if is_provisioning_tail_task(actor):
+                tail_logger = TaskLogger(logger, 'provisioning-tail')
 
-            db = get_db(tail_logger)
+                if not guestname:
+                    from . import Failure
 
-            with db.get_session() as session:
-                if handle_provisioning_chain_tail(
-                    tail_logger,
-                    db,
-                    session,
-                    guestname,
-                    actor
-                ):
-                    tail_logger.info('successfuly handled the provisioning tail')
+                    Failure(
+                        'cannot handle provisioning tail with undefined guestname',
+                    ).handle(tail_logger)
+
+                    message.fail()
                     return
 
-            tail_logger.error('failed to handle the provisioning tail')
+                db = get_db(tail_logger)
 
-            # This would cause the message to be dropped, effectively halting any work towards provisioning
-            # of the guest.
-            #
-            # In the spirit of "let's try again...", falling through to rescheduling the original task.
-            #
-            # message.fail()
+                with db.get_session() as session:
+                    if handle_provisioning_chain_tail(
+                        tail_logger,
+                        db,
+                        session,
+                        guestname,
+                        actor
+                    ):
+                        tail_logger.info('successfuly handled the provisioning tail')
+                        return
+
+                tail_logger.error('failed to handle the provisioning tail')
+
+                # This would cause the message to be dropped, effectively halting any work towards provisioning
+                # of the guest.
+                #
+                # In the spirit of "let's try again...", falling through to rescheduling the original task.
+                #
+                # message.fail()
+
+            else:
+                # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
+                logger.warning('retries: retries exceeded for message {}.'.format(message.message_id))
+                message.fail()
+
+                return
 
         message.options["retries"] += 1
         message.options["traceback"] = traceback.format_exc(limit=30)
