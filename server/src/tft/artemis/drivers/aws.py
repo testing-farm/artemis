@@ -167,7 +167,7 @@ class AWSDriver(PoolDriver):
         r_engine = hook_engine('AWS_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
-            raise Exception('Failed to load AWS_ENVIRONMENT_TO_IMAGE hook: {}'.format(r_engine.unwrap_error().message))
+            return Error(r_engine.unwrap_error())
 
         engine = r_engine.unwrap()
 
@@ -541,13 +541,7 @@ class AWSDriver(PoolDriver):
         instance_type = r_instance_type.unwrap()
 
         # find out image from enviroment
-        try:
-            r_image = self._env_to_image(logger, environment)
-        except Exception as exc:
-            error_msg = str(exc)
-            if 'Failed to load AWS_ENVIRONMENT_TO_IMAGE hook' in error_msg:
-                return Error(Failure(error_msg))
-            raise exc
+        r_image = self._env_to_image(logger, environment)
 
         if r_image.is_error:
             return r_image

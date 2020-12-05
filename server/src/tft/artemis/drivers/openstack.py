@@ -167,9 +167,7 @@ class OpenStackDriver(PoolDriver):
         r_engine = hook_engine('OPENSTACK_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
-            raise Exception(
-                'Failed to load OPENSTACK_ENVIRONMENT_TO_IMAGE hook: {}'.format(r_engine.unwrap_error().message)
-            )
+            return Error(r_engine.unwrap_error())
 
         engine = r_engine.unwrap()
 

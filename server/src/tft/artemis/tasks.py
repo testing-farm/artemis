@@ -732,13 +732,15 @@ def _get_pool(
     session: sqlalchemy.orm.session.Session,
     poolname: str
 ) -> Result[PoolDriver, Failure]:
-    try:
-        pool_record = Query.from_session(session, Pool) \
-            .filter(Pool.poolname == poolname) \
-            .one()
+    pool_record = Query.from_session(session, Pool) \
+        .filter(Pool.poolname == poolname) \
+        .one_or_none()
 
-    except sqlalchemy.orm.exc.NoResultFound:
-        raise Exception('no such pool "{}"'.format(poolname))
+    if not pool_record:
+        return Error(Failure(
+            'no such pool',
+            poolname=poolname
+        ))
 
     pool_driver_class = POOL_DRIVERS[pool_record.driver]
     driver = pool_driver_class(logger, poolname, json.loads(pool_record.parameters))
