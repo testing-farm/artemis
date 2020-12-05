@@ -1607,7 +1607,6 @@ def do_release_guest_request(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.CONDEMNED)
-    workspace.grab_guest_request(GuestState.CONDEMNED, GuestState.RELEASING)
 
     if workspace.result:
         return workspace.result
@@ -1621,8 +1620,6 @@ def do_release_guest_request(
         workspace.load_ssh_key()
 
         if workspace.result:
-            workspace.ungrab_guest_request(GuestState.RELEASING, GuestState.CONDEMNED)
-
             return workspace.result
 
         assert workspace.pool
@@ -1630,30 +1627,24 @@ def do_release_guest_request(
         r_release = workspace.pool.release_guest(logger, workspace.gr)
 
         if r_release.is_error:
-            handle_failure(r_release, 'failed to release guest')
+            return handle_failure(r_release, 'failed to release guest')
 
     query = sqlalchemy \
         .delete(GuestRequest.__table__) \
         .where(GuestRequest.guestname == guestname) \
-        .where(GuestRequest.state == GuestState.RELEASING.value)
+        .where(GuestRequest.state == GuestState.CONDEMNED.value)
 
     r_delete = safe_db_change(logger, session, query)
 
-    if r_delete.is_ok:
-        handle_success('released')
+    if r_delete.is_error:
+        return handle_failure(r_delete, 'failed to remove guest request record')
 
-        return handle_success('finished-task')
+    # We ignore the actual return value: the query was executed, but we either removed exactly one record,
+    # which is good, or we removed 0 records, which is also acceptable, as somebody already did that for us.
+    # We did schedule the release of resources successfully, which means we left no loose ends.
+    handle_success('released')
 
-    failure = r_delete.unwrap_error()
-
-    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        logger.warning('not in RELEASING state anymore')
-
-        return handle_success('finished-task')
-
-    workspace.ungrab_guest_request(GuestState.RELEASING, GuestState.CONDEMNED)
-
-    return handle_failure(r_delete, 'failed to release guest')
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('RELEASE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
