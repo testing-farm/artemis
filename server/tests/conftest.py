@@ -6,12 +6,40 @@ import tft.artemis
 import tft.artemis.tasks
 
 
-# List of database URLs we test against. The idea is: this list can be modified via pytest options,
-# to add URLs of currently running databases. We could spin a PostgreSQL container, add its URL to
-# this list, and get our code tested with it "for free".
-DB_URLS = [
+# The default list of database URLs we test against. Serves as a safe parameter when
+# no other URLs were requested via `--against-db-url`.
+DEFAULT_DB_URLS = [
     'sqlite://'
 ]
+
+
+def pytest_addoption(parser):
+    # --against-db-url=sqlite://some.db --against-db-url=postgresql://some:user...
+    parser.addoption(
+        '--against-db-url',
+        action='append',
+        # Default list is applied later - should it be applied here, user would have no way to get rid of the defaults.
+        default=[],
+        help='Database URLs to run tests against. Specify multiple times for more DB dialects.'
+    )
+
+
+# This function is executed automagically by Pytest to support dynamic fixture parametrization (and more).
+# We want to parametrize our `db` fixture, but when we apply the `pytest.fixture` decorator, we do not have
+# access to command-line option `--against-db-url` and the list of database URLs. The hook below is called
+# when collecting tests, and it does have access to configuration, fixtures and allows their parametrization.
+#
+# So, when we encounter `db_url` fixture - which does not really exists as a function, only as a name - we
+# collect its parameters (the list of database URLs, or the default list if none specified), and apply the
+# parametrization. The `db` fixture is then given the list of database URL that can be modified on the
+# via command-line.
+#
+# https://docs.pytest.org/en/2.8.7/parametrize.html#pytest-generate-tests
+def pytest_generate_tests(metafunc):
+    if 'db_url' not in metafunc.fixturenames:
+        return
+
+    metafunc.parametrize('db_url', metafunc.config.option.against_db_url or DEFAULT_DB_URLS)
 
 
 @pytest.fixture
@@ -35,9 +63,9 @@ def logger(caplog) -> gluetool.log.ContextAdapter:
     return logger
 
 
-@pytest.fixture(params=DB_URLS)
-def db(logger, request):
-    return tft.artemis.db._DB(logger, request.param)
+@pytest.fixture
+def db(logger, db_url):
+    return tft.artemis.db._DB(logger, db_url)
 
 
 @pytest.fixture
