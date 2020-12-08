@@ -12,9 +12,8 @@ When choosing the pools, following policies are followed:
 
 import datetime
 import json
-import os
 
-from tft.artemis import Failure, get_logger, get_db
+from tft.artemis import Failure, get_logger, get_db, Knob
 from tft.artemis.api import GuestEventManager, GuestEvent
 from tft.artemis.drivers import PoolDriver, PoolMetrics
 from tft.artemis.environment import Environment
@@ -25,14 +24,32 @@ from gluetool.result import Error, Ok, Result
 
 from typing import List, Optional
 
-# Number of seconds an error from pool is accountable, errors which happened later are ignored
-ERROR_FORGIVING_THRESHOLD = 10 * 60
-
 # Maximum request time in seconds
-MAXIMUM_REQUEST_TIME = 6 * 3600
+KNOB_ROUTE_REQUEST_MAX_TIME: Knob[int] = Knob(
+    'route.request.max-time',
+    has_db=False,
+    envvar='ARTEMIS_ROUTE_REQUEST_MAX_TIME',
+    envvar_cast=int,
+    default=6 * 3600
+)
+
+# Number of seconds an error from pool is accountable, errors which happened later are ignored
+KNOB_ROUTE_POOL_FORGIVING_TIME: Knob[int] = Knob(
+    'route.pool.forgiving-time',
+    has_db=False,
+    envvar='ARTEMIS_ROUTE_POOL_FORGIVING_TIME',
+    envvar_cast=int,
+    default=10 * 60
+)
 
 # Default threshold for usage/limit balance. If usage reaches this percentage, we consider the pool full.
-DEFAULT_POOL_RESOURCE_THRESHOLD = float(os.getenv('ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD', 0.9))
+KNOB_ROUTE_POOL_RESOURCE_THRESHOLD: Knob[float] = Knob(
+    'route.pool.resource-threshold',
+    has_db=False,
+    envvar='ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD',
+    envvar_cast=float,
+    default=0.9
+)
 
 
 class PolicyLogger(gluetool.log.ContextAdapter):
@@ -103,7 +120,7 @@ def _policy_one_attempt_forgiving(
     logger: gluetool.log.ContextAdapter, events: List[GuestEvent], pools: List[PoolDriver]
 ) -> List[PoolDriver]:
 
-    threshold = datetime.datetime.utcnow() - datetime.timedelta(seconds=ERROR_FORGIVING_THRESHOLD)
+    threshold = datetime.datetime.utcnow() - datetime.timedelta(seconds=KNOB_ROUTE_POOL_FORGIVING_TIME.value)
 
     error_pools = [
         event.details['failure'].get('poolname')
@@ -123,7 +140,7 @@ def _policy_one_attempt_forgiving(
 # Returns true if request timeout was reached
 def _policy_timeout_reached(logger: gluetool.log.ContextAdapter, events: List[GuestEvent],) -> bool:
 
-    validity = events[0].updated + datetime.timedelta(seconds=MAXIMUM_REQUEST_TIME)
+    validity = events[0].updated + datetime.timedelta(seconds=KNOB_ROUTE_REQUEST_MAX_TIME.value)
 
     logger.info('event created {}, valid until {}'.format(str(events[0].updated), str(validity)))
 
@@ -156,7 +173,7 @@ def _policy_enough_resources(
             # Very crude trim. We could be smarter, but this should be enough to not hit the limit.
             usage_level = usage / limit
 
-            return usage_level < DEFAULT_POOL_RESOURCE_THRESHOLD
+            return usage_level < KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.value
 
         resources_depletion = metrics.resources.get_depletion(is_enough)
 
@@ -199,7 +216,9 @@ def hook_ROUTE(
 
     # Check if request timeout reached
     if _policy_timeout_reached(logger, events):
-        return Error(Failure('Routing is taking more then {} hours, cannot continue'.format(MAXIMUM_REQUEST_TIME)))
+        return Error(Failure(
+            'Routing is taking more then {} hours, cannot continue'.format(KNOB_ROUTE_REQUEST_MAX_TIME)
+        ))
 
     # Show all available pools
     gluetool.log.log_dict(logger.info, 'available pools', [pool.poolname for pool in pools])
