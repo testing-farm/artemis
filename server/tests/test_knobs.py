@@ -10,7 +10,7 @@ def test_knob_missing_sources():
             has_db=False
         )
 
-    assert excinfo.value.args[0] == 'Badly configured knob: no source specified - no DB, envvar nor default value.'
+    assert excinfo.value.args[0] == 'Badly configured knob: no source specified - no DB, envvar, actual nor default value.'
 
 
 def test_knob_missing_default():
@@ -22,4 +22,4 @@ def test_knob_missing_default():
             envvar_cast=str
         )
 
-    assert excinfo.value.args[0] == 'Badly configured knob: no DB, yet other sources do not provide value! To fix, add an envvar source, or a default value.'
+    assert excinfo.value.args[0] == 'Badly configured knob: no DB, yet other sources do not provide value! To fix, add an envvar, actual or default value.'
