@@ -139,15 +139,24 @@ class _RescheduleType:
     pass
 
 
+# A class of unique "failed but ignore" doer return value
+class _IgnoreType:
+    pass
+
+
 # Unique object representing "reschedule task" return value of doer.
 Reschedule = _RescheduleType()
 
+# Unique object representing "failed but ignore" return value of doer.
+Ignore = _IgnoreType()
+
 # Doer return value type.
-DoerReturnType = Result[Union[None, _RescheduleType], Failure]
+DoerReturnType = Result[Union[None, _RescheduleType, _IgnoreType], Failure]
 
 # Helpers for constructing return values.
 SUCCESS: DoerReturnType = Ok(None)
 RESCHEDULE: DoerReturnType = Ok(Reschedule)
+IGNORE: DoerReturnType = Ok(Ignore)
 
 
 def FAIL(result: Result[Any, Failure]) -> DoerReturnType:
@@ -281,7 +290,10 @@ def create_event_handlers(
                 failure
             )
 
-        return Error(failure)
+        if failure.recoverable is True:
+            return Error(failure)
+
+        return IGNORE
 
     return handle_success, handle_failure, spice_details
 
@@ -429,6 +441,9 @@ def task_core(
 
     if doer_result.is_ok:
         result = doer_result.unwrap()
+
+        if result is Ignore:
+            logger.warning('message processing encountered error and requests waiver')
 
         logger.finished()
 
