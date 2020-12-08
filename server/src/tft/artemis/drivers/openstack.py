@@ -563,13 +563,22 @@ class OpenStackDriver(PoolDriver):
         def _reprovision(msg: str) -> Result[ProvisioningProgress, Failure]:
             logger.warning(msg)
 
-            self._dispatch_resource_cleanup(
-                logger,
-                instance_id=OpenStackPoolData.unserialize(guest_request).instance_id,
-                guest_request=guest_request
-            )
+            r_acquire = self._do_acquire_guest(logger, guest_request, environment, master_key)
 
-            return self._do_acquire_guest(logger, guest_request, environment, master_key)
+            if r_acquire.is_ok:
+                logger.info('successfully reprovisioned, releasing the broken instance')
+
+                # We can schedule release only when acquire succeeded. Only successfull acquire
+                # let's us update guest request pool data with new instance ID. If acquire failed,
+                # we keep our broken instance, and enter update guest task later, trying again
+                # to either update or reschedule and drop the failed one.
+                self._dispatch_resource_cleanup(
+                    logger,
+                    instance_id=OpenStackPoolData.unserialize(guest_request).instance_id,
+                    guest_request=guest_request
+                )
+
+            return r_acquire
 
         if status == 'error':
             return _reprovision('Instance ended up in error state. provisioning a new one')

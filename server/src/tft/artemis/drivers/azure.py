@@ -115,10 +115,20 @@ class AzureDriver(PoolDriver):
         logger.info('instance status is {}'.format(status))
 
         if status == 'failed':
-            self.release_guest(logger, guest_request)
-            logger.warning('Instance ended up in failed state. NOT provisioning a new one')
+            logger.warning('Instance ended up in failed state')
 
-            return self._do_acquire_guest(logger, guest_request, environment, master_key)
+            r_acquire = self._do_acquire_guest(logger, guest_request, environment, master_key)
+
+            if r_acquire.is_ok:
+                logger.info('successfully reprovisioned, releasing the broken instance')
+
+                # We can schedule release only when acquire succeeded. Only successfull acquire
+                # let's us update guest request pool data with new instance ID. If acquire failed,
+                # we keep our broken instance, and enter update guest task later, trying again
+                # to either update or reschedule and drop the failed one.
+                self.release_guest(logger, guest_request)
+
+            return r_acquire
 
         r_ip_address = vm_info_to_ip(output, 'publicIps', r'((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*')
 
