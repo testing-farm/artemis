@@ -112,7 +112,10 @@ class AzureDriver(PoolDriver):
 
         status = output['provisioningState'].lower()
 
-        logger.info('instance status is {}'.format(status))
+        logger.info('current instance status {}:{}'.format(
+            AzurePoolData.unserialize(guest_request).instance_id,
+            status
+        ))
 
         if status == 'failed':
             logger.warning('Instance ended up in failed state')
@@ -381,7 +384,11 @@ class AzureDriver(PoolDriver):
             return Error(Failure('Instance id not found'))
 
         status = output['powerState'].lower()
-        logger.info('instance status is {}'.format(status))
+
+        logger.info('acquired instance status {}:{}'.format(
+            output['id'],
+            status
+        ))
 
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(

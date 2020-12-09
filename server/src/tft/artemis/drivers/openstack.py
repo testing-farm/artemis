@@ -339,7 +339,10 @@ class OpenStackDriver(PoolDriver):
 
         status = output['status'].lower()
 
-        logger.info('instance status is {}'.format(status))
+        logger.info('acquired instance status {}:{}'.format(
+            instance_id,
+            status
+        ))
 
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
@@ -558,7 +561,10 @@ class OpenStackDriver(PoolDriver):
 
         status = output['status'].lower()
 
-        logger.info('instance status is {}'.format(status))
+        logger.info('current instance status {}:{}'.format(
+            OpenStackPoolData.unserialize(guest_request).instance_id,
+            status
+        ))
 
         def _reprovision(msg: str) -> Result[ProvisioningProgress, Failure]:
             logger.warning(msg)

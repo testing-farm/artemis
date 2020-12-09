@@ -285,6 +285,11 @@ class BeakerDriver(PoolDriver):
 
         job_status = r_parse_job_status.unwrap()
 
+        logger.info('current job status {}:{}'.format(
+            BeakerPoolData.unserialize(guest_request).job_id,
+            job_status
+        ))
+
         if job_status == 'Pass':
             r_parse_guest_address = self._parse_guest_address(job_results_xml)
             if r_parse_guest_address.is_error and r_parse_guest_address.error:
