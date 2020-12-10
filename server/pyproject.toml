@@ -44,6 +44,7 @@ pre-commit = "^2.7.1"
 pytest-flake8 = "*"
 pytest-mock = "*"
 sqlalchemy-stubs = "*"
+sqlalchemy-utils = "*"
 
 [tool.poetry.scripts]
 artemis-api-server = "tft.artemis.api:main"

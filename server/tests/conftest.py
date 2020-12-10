@@ -4,6 +4,8 @@ import os
 import pytest
 import gluetool.log
 import gluetool.utils
+import sqlalchemy.engine.url
+import sqlalchemy_utils.functions
 
 import tft.artemis
 import tft.artemis.tasks
@@ -68,7 +70,20 @@ def logger(caplog) -> gluetool.log.ContextAdapter:
 
 @pytest.fixture
 def db(logger, db_url):
-    return tft.artemis.db._DB(logger, db_url)
+    parsed_url = sqlalchemy.engine.url.make_url(db_url)
+
+    if parsed_url.get_dialect() != 'sqlalchemy':
+        if sqlalchemy_utils.functions.database_exists(db_url):
+            sqlalchemy_utils.functions.drop_database(db_url)
+
+        sqlalchemy_utils.functions.create_database(db_url)
+
+    try:
+        yield tft.artemis.db._DB(logger, db_url)
+
+    finally:
+        if parsed_url.get_dialect() != 'sqlalchemy':
+            sqlalchemy_utils.functions.drop_database(db_url)
 
 
 @pytest.fixture

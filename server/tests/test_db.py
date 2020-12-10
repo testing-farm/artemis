@@ -73,7 +73,7 @@ def test_upsert(session):
         session,
         Counters,
         {
-            'name': 'foo'
+            Counters.name: 'foo'
         },
         insert_data={
             Counters.count: 1
@@ -97,7 +97,7 @@ def test_upsert_multiple(session):
             session,
             Counters,
             {
-                'name': 'foo'
+                Counters.name: 'foo'
             },
             insert_data={
                 Counters.count: 1
@@ -125,7 +125,7 @@ def test_upsert_multiple_commits(session):
             session,
             Counters,
             {
-                'name': 'foo'
+                Counters.name: 'foo'
             },
             insert_data={
                 Counters.count: 1
