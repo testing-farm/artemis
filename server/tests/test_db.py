@@ -5,7 +5,7 @@ import sqlalchemy.ext.declarative
 from sqlalchemy import Column, Text, Integer
 
 from tft.artemis import safe_db_change
-from tft.artemis.db import Query, upsert
+from tft.artemis.db import Query, upsert, GuestRequest
 
 
 Base = sqlalchemy.ext.declarative.declarative_base()
@@ -215,3 +215,15 @@ def test_safe_db_change_single_delete(logger, session):
 
     assert records[0].name == 'bar'
     assert records[0].count == 0
+
+
+@pytest.mark.usefixtures('_schema_actual')
+def test_schema_actual_load(session):
+    """
+    Metatest of sorts: doesn't test any unit nor scenario, but a fixture. If everything went well, ``_schema_actual``
+    was successfull and created the full DB schema in our current DB fixture. We are not interested in testing
+    whether the schema is sane or whether it matches models, no, we only want to be sure the schema fixture works,
+    and at least something resembling the Artemis DB schema has been created.
+    """
+
+    assert Query.from_session(session, GuestRequest).all() == []

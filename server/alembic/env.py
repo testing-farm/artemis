@@ -12,9 +12,11 @@ from tft.artemis import db, get_db, get_logger
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
-fileConfig(config.config_file_name)
+# Interpret the config file for Python logging. This line sets up loggers basically.
+#
+# Sometimes we do not want env.py mess with the given configuration, hence the `None` test.
+if config.config_file_name:
+    fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -59,7 +61,8 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = get_db(get_logger()).engine
+
+    connectable = config.attributes.get('connectable', None) or get_db(get_logger()).engine
 
     # This trick should result in not generating a revision if there are no changes to schema.
     def process_revision_directives(context: str, revision: str, directives: List[Any]) -> None:

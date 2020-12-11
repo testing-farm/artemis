@@ -1,3 +1,6 @@
+import alembic
+import alembic.config
+import os
 import pytest
 import gluetool.log
 import gluetool.utils
@@ -84,3 +87,12 @@ def skip_sqlite(session):
 def skip_postgresql(session):
     if session.bind.dialect.name == 'postgresql':
         pytest.skip('Not supported with PostgreSQL')
+
+
+@pytest.fixture(name='_schema_actual')
+def fixture_schema_actual(request, logger, db):
+    alembic_config = alembic.config.Config()
+    alembic_config.set_main_option('script_location', os.path.join(request.config.rootpath, 'alembic'))
+    alembic_config.attributes['connectable'] = db.engine
+
+    alembic.command.upgrade(alembic_config, 'head')
