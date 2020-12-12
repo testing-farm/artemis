@@ -593,7 +593,22 @@ class _DB:
         try:
             yield session
 
-            session.commit()
+            # Commit only when the transaction is still active. Our transactions are usually commited here, after
+            # being used in read-only workflows, or workflows that do not care about conflicts or concurrency.
+            # The workflows that do care about concurrency - switching guest request state, for example - calls
+            # commit explicitly. Any SQL query after that starts new transaction.
+            #
+            # But if this explicit commit fails - because somebody already modified the guest request record - then
+            # the transaction is marked as failed, and rolled back. This does not automatically mean we'd encounter
+            # an exception, since the situation was probably handled and reported and so on. Which means we have to
+            # check session state before issuing `COMMIT`, because committing a failed transaction will just case yet
+            # another error.
+            #
+            # A thing to consider: could we/should we do a rollback instead of a commit? Because we work in read-only
+            # mode, then rollback vs commit makes no difference, or we make changes and then we could issue explicit
+            # commits, like we do when changing guest request state. We don't make that many changes after all...
+            if session.transaction.is_active:
+                session.commit()
 
         except Exception:
             session.rollback()

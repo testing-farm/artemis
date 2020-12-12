@@ -7,6 +7,8 @@ from sqlalchemy import Column, Text, Integer
 from tft.artemis import safe_db_change
 from tft.artemis.db import Query, upsert, GuestRequest
 
+from mock import MagicMock
+
 
 Base = sqlalchemy.ext.declarative.declarative_base()
 
@@ -54,6 +56,64 @@ def _schema_test_db_Counters_2records(session, _schema_test_db_Counters):
     session.add(Counters(name='bar', count=0))
 
     session.commit()
+
+
+@pytest.fixture(name='mock_session')
+def fixture_mock_session(db, monkeypatch):
+    mock_session = MagicMock(
+        name='Session<mock>',
+        transaction=MagicMock(
+            name='Transaction<mock>',
+            is_active=True
+        )
+    )
+
+    mock_sessionmaker = MagicMock(
+        name='sessionmaker<mock>',
+        return_value=mock_session
+    )
+
+    monkeypatch.setattr(db, '_sessionmaker', mock_sessionmaker)
+
+    return mock_session
+
+
+def test_session(db):
+    with db.get_session() as session:
+        assert hasattr(session, 'commit')
+
+
+def test_session_autocommit(db, mock_session):
+    with db.get_session() as session:
+        assert session is mock_session
+
+    mock_session.commit.assert_called_once()
+    mock_session.close.assert_called_once()
+
+
+def test_session_autocommit_active_only(db, mock_session):
+    mock_session.transaction.is_active = False
+
+    with db.get_session():
+        pass
+
+    mock_session.commit.assert_not_called()
+    mock_session.close.assert_called_once()
+
+
+def test_session_autorollback(db, mock_session):
+    mock_exception = ValueError('Exception<mock>')
+
+    try:
+        with db.get_session():
+            raise mock_exception
+
+    except Exception as exc:
+        assert exc is mock_exception
+
+    mock_session.commit.assert_not_called()
+    mock_session.rollback.assert_called_once()
+    mock_session.close.assert_called_once()
 
 
 def assert_upsert_counter(session, count):
