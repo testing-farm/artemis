@@ -1016,7 +1016,7 @@ def log_guest_event(
     guestname: str,
     eventname: str,
     **details: Any
-) -> None:
+) -> Result[None, Failure]:
     """ Create event log record for guest """
 
     session.add(
@@ -1030,17 +1030,30 @@ def log_guest_event(
     r = safe_call(session.commit)
 
     if r.is_error:
-        r.unwrap_error().handle(
+        failure = r.unwrap_error()
+
+        failure.details.update({
+            'guestname': guestname,
+            'eventname': eventname
+        })
+
+        gluetool.log.log_dict(logger.warning, 'failed to log event {}'.format(eventname), details)
+
+        # TODO: this handle() call can be removed once we fix callers of log_guest_event and they start consuming
+        # its return value. At this moment, they ignore it, therefore we have to keep reporting the failures on
+        # our own.
+        failure.handle(
             logger,
             label='failed to store guest event',
             guestname=guestname,
             eventname=eventname
         )
 
-        logger.warning('failed to log event {}'.format(eventname))
-        return
+        return Error(failure)
 
     gluetool.log.log_dict(logger.info, 'logged event {}'.format(eventname), details)
+
+    return Ok(None)
 
 
 def log_error_guest_event(
@@ -1049,10 +1062,10 @@ def log_error_guest_event(
     guestname: str,
     message: str,
     failure: Failure
-) -> None:
+) -> Result[None, Failure]:
     """ Create event log record for guest """
 
-    log_guest_event(
+    return log_guest_event(
         logger,
         session,
         guestname,
