@@ -23,6 +23,10 @@ class Counters(Base):
     name = Column(Text(), primary_key=True, nullable=False)
     count = Column(Integer, default=0)
 
+    # Used to verify compound keys and multiple values work.
+    subname = Column(Text(), default='')
+    subcount = Column(Integer, default=0)
+
 
 @pytest.fixture
 def _schema_test_db_Counters(db, session):
@@ -116,7 +120,7 @@ def test_session_autorollback(db, mock_session):
     mock_session.close.assert_called_once()
 
 
-def assert_upsert_counter(session, count):
+def assert_upsert_counter(session, count, subname='', subcount=0):
     records = Query.from_session(session, Counters).all()
 
     assert len(records) == 1
@@ -125,6 +129,10 @@ def assert_upsert_counter(session, count):
 
     assert record.name == 'foo'
     assert record.count == count
+    assert record.subname == subname
+    assert record.subcount == subcount
+
+    return record
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
@@ -151,7 +159,56 @@ def test_upsert(session):
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_multiple(session):
+def test_upsert_compound_key(session):
+    r = upsert(
+        session,
+        Counters,
+        {
+            Counters.name: 'foo',
+            Counters.subname: 'bar'
+        },
+        insert_data={
+            Counters.count: 1
+        },
+        update_data={
+            'count': Counters.count + 1
+        }
+    )
+
+    assert r is None
+
+    session.commit()
+
+    assert_upsert_counter(session, 1, subname='bar')
+
+
+@pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
+def test_upsert_multiple_values(session):
+    r = upsert(
+        session,
+        Counters,
+        {
+            Counters.name: 'foo'
+        },
+        insert_data={
+            Counters.count: 1,
+            Counters.subcount: 1
+        },
+        update_data={
+            'count': Counters.count + 1,
+            'subcount': Counters.subcount + 1,
+        }
+    )
+
+    assert r is None
+
+    session.commit()
+
+    assert_upsert_counter(session, 1, subcount=1)
+
+
+@pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
+def test_upsert_multiple_upserts(session):
     def do_upsert():
         r = upsert(
             session,
