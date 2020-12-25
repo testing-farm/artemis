@@ -213,7 +213,7 @@ class SuccessHandlerType(Protocol):
     def __call__(
         self,
         eventname: str
-    ) -> None:
+    ) -> DoerReturnType:
         ...
 
 
@@ -267,8 +267,9 @@ def create_event_handlers(
         spice_details['task'] = task
 
     def handle_success(
-        eventname: str
-    ) -> None:
+        eventname: str,
+        return_value: DoerReturnType = SUCCESS
+    ) -> DoerReturnType:
         if guestname:
             log_guest_event(
                 logger,
@@ -277,6 +278,8 @@ def create_event_handlers(
                 eventname,
                 **spice_details
             )
+
+        return return_value
 
     def handle_failure(
         result: Result[Any, Failure],
@@ -1418,7 +1421,7 @@ def do_release_pool_resources(
     if r_release.is_error:
         return handle_failure(r_release, 'failed to release pool resources')
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('RELEASE_POOL_RESOURCES'))  # type: ignore  # Untyped decorator
@@ -1508,9 +1511,9 @@ def do_handle_provisioning_chain_tail(
     if workspace.result:
         return workspace.result
 
-    handle_success('reverted to {}'.format(new_state.value))
+    logger.info('reverted to {}'.format(new_state.value))
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 def handle_provisioning_chain_tail(
@@ -1639,14 +1642,14 @@ def do_release_guest_request(
     if r_delete.is_ok:
         handle_success('released')
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     failure = r_delete.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('not in RELEASING state anymore')
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     workspace.ungrab_guest_request(GuestState.RELEASING, GuestState.CONDEMNED)
 
@@ -1737,7 +1740,7 @@ def do_update_guest_request(
 
         logger.info('scheduled update')
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     assert provisioning_progress.address
 
@@ -1764,7 +1767,7 @@ def do_update_guest_request(
     # check if this was a failover and mark it in metrics
     _handle_successful_failover(logger, session, workspace)
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('UPDATE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1850,7 +1853,7 @@ def do_acquire_guest_request(
 
         logger.info('scheduled update')
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     assert provisioning_progress.address
 
@@ -1879,7 +1882,7 @@ def do_acquire_guest_request(
     # check if this was a successful failover and mark it in metrics
     _handle_successful_failover(logger, session, workspace)
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
@@ -1961,7 +1964,7 @@ def do_route_guest_request(
         # We failed to move guest to PROVISIONING state which means some other instance of this task changed
         # guest's state instead of us, which means we should throw everything away because our decisions no
         # longer matter.
-        return SUCCESS
+        return handle_success('finished-task')
 
     # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
     # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
@@ -1980,7 +1983,7 @@ def do_route_guest_request(
         logger.warning('failover - trying {} pool instead of {}'.format(new_pool, current_pool))
         metrics.ProvisioningMetrics.inc_failover(session=session, from_pool=current_pool, to_pool=new_pool)
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('ROUTE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
@@ -2043,14 +2046,14 @@ def do_release_snapshot_request(
     if r_delete.is_ok:
         handle_success('snapshot-released')
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     failure = r_delete.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('not in RELEASING state anymore')
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     _undo_grab()
 
@@ -2116,7 +2119,7 @@ def do_create_snapshot_start_guest(
         if workspace.result:
             return workspace.result
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     workspace.update_guest_state(
         GuestState.STARTING,
@@ -2128,7 +2131,7 @@ def do_create_snapshot_start_guest(
 
     logger.info('successfully started')
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_START_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
@@ -2208,7 +2211,7 @@ def do_update_snapshot(
 
         logger.info('scheduled update')
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     workspace.update_snapshot_state(
         GuestState.PROMISED,
@@ -2219,7 +2222,7 @@ def do_update_snapshot(
         return workspace.result
 
     if not workspace.sr.start_again:
-        return SUCCESS
+        return handle_success('finished-task')
 
     r_start = workspace.pool.start_guest(logger, workspace.gr)
 
@@ -2243,7 +2246,7 @@ def do_update_snapshot(
 
         return workspace.result
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('UPDATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -2325,7 +2328,7 @@ def do_create_snapshot_create(
 
         logger.info('scheduled update')
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     workspace.update_snapshot_state(
         GuestState.CREATING,
@@ -2336,7 +2339,7 @@ def do_create_snapshot_create(
         return workspace.result
 
     if not workspace.sr.start_again:
-        return SUCCESS
+        return handle_success('finished-task')
 
     r_start = workspace.pool.start_guest(logger, workspace.gr)
 
@@ -2362,7 +2365,7 @@ def do_create_snapshot_create(
 
     logger.info('successfully created')
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_CREATE_REQUEST'))  # type: ignore  # Untyped decorator
@@ -2426,7 +2429,7 @@ def do_create_snapshot_stop_guest(
 
         logger.info('scheduled create-snapshot-stop-guest')
 
-        return SUCCESS
+        return handle_success('finished-task')
 
     workspace.update_guest_state(
         GuestState.STOPPING,
@@ -2443,7 +2446,7 @@ def do_create_snapshot_stop_guest(
 
     logger.info('scheduled create-snapshot-create-snapshot')
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_STOP_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
@@ -2532,7 +2535,7 @@ def do_create_snapshot(
 
     logger.info('scheduled create-snapshot-stop-guest')
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -2591,7 +2594,7 @@ def do_route_snapshot_request(
 
     logger.info('scheduled creation')
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('ROUTE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -2660,7 +2663,7 @@ def do_restore_snapshot_request(
 
     logger.info('restored sucessfully')
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('RESTORE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
@@ -2708,7 +2711,7 @@ def do_refresh_pool_resources_metrics(
         if r_refresh.is_error:
             handle_failure(r_refresh, 'failed to refresh pool resources metrics')
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(**actor_kwargs('REFRESH_POOL_RESOURCES_METRICS'))  # type: ignore  # Untyped decorator
@@ -2743,7 +2746,7 @@ def do_refresh_pool_resources_metrics_dispatcher(
             pool.poolname
         )
 
-    return SUCCESS
+    return handle_success('finished-task')
 
 
 @dramatiq.actor(  # type: ignore  # Untyped decorator
