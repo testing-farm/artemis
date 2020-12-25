@@ -1384,7 +1384,7 @@ def do_release_pool_resources(
         task='release-pool-resources'
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     try:
         resource_ids = json.loads(serialized_resource_ids)
@@ -1457,7 +1457,7 @@ def do_handle_provisioning_chain_tail(
         task='provisioning-tail'
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=current_state)
@@ -1592,7 +1592,7 @@ def do_release_guest_request(
         task='release-guest-request'
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.CONDEMNED)
@@ -1668,7 +1668,7 @@ def do_update_guest_request(
         task='update-guest-request'
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PROMISED)
@@ -1784,7 +1784,7 @@ def do_acquire_guest_request(
         poolname=poolname
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PROVISIONING)
@@ -1897,7 +1897,7 @@ def do_route_guest_request(
         task='route-guest-request'
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
 
@@ -2000,7 +2000,7 @@ def do_release_snapshot_request(
         snapshotname=snapshotname
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname)
@@ -2074,7 +2074,7 @@ def do_create_snapshot_start_guest(
         snapshotname=snapshotname
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.READY)
@@ -2148,7 +2148,7 @@ def do_update_snapshot(
         snapshotname=snapshotname
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.PROMISED)
@@ -2263,7 +2263,7 @@ def do_create_snapshot_create(
         snapshotname=snapshotname
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
@@ -2382,7 +2382,7 @@ def do_create_snapshot_stop_guest(
         snapshotname=snapshotname
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
@@ -2463,7 +2463,7 @@ def do_create_snapshot(
         snapshotname=snapshotname
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
@@ -2552,7 +2552,7 @@ def do_route_snapshot_request(
         snapshotname=snapshotname
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.ROUTING)
@@ -2611,7 +2611,7 @@ def do_restore_snapshot_request(
         snapshotname=snapshotname
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.RESTORING)
@@ -2677,7 +2677,7 @@ def do_refresh_pool_resources_metrics(
         task='refresh-pool-metrics'
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     # Handling errors is slightly different in this task. While we fully use `handle_failure()`,
     # we do not return `RESCHEDULE` or `Error()` from this doer. This particular task is being
@@ -2724,7 +2724,7 @@ def do_refresh_pool_resources_metrics_dispatcher(
         task='refresh-pool-metrics-dispatcher'
     )
 
-    handle_success('enter-task')
+    handle_success('entered-task')
 
     logger.info('scheduling pool metrics refresh')
 
