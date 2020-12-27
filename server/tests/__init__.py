@@ -21,9 +21,22 @@ Cannot find log record with these properties:
 """)
 
 
-class MATCH:
+class PatternMatching:
+    def __init__(self, pattern, method):
+        self.pattern = pattern
+        self._compiled_pattern = re.compile(pattern)
+        self.method = getattr(self._compiled_pattern, method)
+
+    def __repr__(self):
+        return '<{}: "{}">'.format(self.__class__.__name__, self.pattern)
+
+
+class MATCH(PatternMatching):
     """
-    Wrap a string with this class, to use it as a regular expression when searching for log records.
+    Wrap a string with this class, to use it as a regular expression when matching log records.
+
+    :py:class:`SEARCH` applies to any place within the string, while ``MATCH`` must match from the
+    beginning of the string.
 
     .. code-block:: python
 
@@ -31,7 +44,23 @@ class MATCH:
     """
 
     def __init__(self, pattern):
-        self.pattern = pattern
+        super(MATCH, self).__init__(pattern, 'match')
+
+
+class SEARCH(PatternMatching):
+    """
+    Wrap a string with this class, to use it as a regular expression when searching for log records.
+
+    ``SEARCH`` applies to any place within the string, while :py:class:`MATCH` must match from the
+    beginning of the string.
+
+    .. code-block:: python
+
+       assert_log(message=SEARCH('an exception .+ was raised'))
+    """
+
+    def __init__(self, pattern):
+        super(SEARCH, self).__init__(pattern, 'search')
 
 
 def assert_log(caplog, evaluator=any, **tests):
@@ -61,13 +90,13 @@ def assert_log(caplog, evaluator=any, **tests):
     operators = []
 
     for field_name, expected_value in tests.items():
-        # Special case: if the expected value is `MATCH` instance, it represents a regular expression.
-        # We don't modify the field name and "expected" value, but the function will be a custom
-        # lambda calling `re.match`.
-        if isinstance(expected_value, MATCH):
+        # Special case: if the expected value is a pattern matching instance, it represents a regular expression.
+        # We don't modify the field name and "expected" value, but the function will be a custom lambda calling
+        # proper `re` method.
+        if isinstance(expected_value, PatternMatching):
             operators.append((
                 field_name,
-                lambda a, b: re.match(a.pattern, b) is not None,
+                lambda a, b: a.method(b) is not None,
                 expected_value
             ))
 
@@ -119,6 +148,6 @@ def assert_failure_log(caplog, failure_message, exception_label=None, **tests):
 
     assert_log(
         caplog,
-        message=MATCH(message),
+        message=SEARCH(message),
         levelno=logging.ERROR
     )
