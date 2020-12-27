@@ -543,11 +543,20 @@ class KnobSourceDB(KnobSource[T]):
     """
 
     def get_value(self, session: Session, *args) -> Result[Optional[T], Failure]:  # type: ignore  # match parent
-        from .db import Query, Knob as KnobRecord
+        from . import Failure
+        from .db import SafeQuery, Knob as KnobRecord
 
-        knob = Query.from_session(session, KnobRecord) \
+        r = SafeQuery.from_session(session, KnobRecord) \
             .filter(KnobRecord.knobname == self.knob.knobname) \
             .one_or_none()
+
+        if r.is_error:
+            return Error(Failure(
+                'Cannot fetch knob value from db',
+                caused_by=r.unwrap_error()
+            ))
+
+        knob = r.unwrap()
 
         if not knob:
             return Ok(None)
@@ -556,8 +565,6 @@ class KnobSourceDB(KnobSource[T]):
             return Ok(cast(T, json.loads(knob.value)))
 
         except json.JSONDecodeError as exc:
-            from . import Failure
-
             return Error(Failure.from_exc('Cannot decode knob value', exc))
 
     def to_repr(self) -> List[str]:

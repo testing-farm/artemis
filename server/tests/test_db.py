@@ -5,7 +5,10 @@ import sqlalchemy.ext.declarative
 from sqlalchemy import Column, Text, Integer
 
 from tft.artemis import safe_db_change
-from tft.artemis.db import Query, upsert, GuestRequest
+from tft.artemis.db import Query, SafeQuery, upsert, GuestRequest
+
+from mock import MagicMock
+from . import assert_failure_log
 
 from mock import MagicMock
 
@@ -344,3 +347,82 @@ def test_schema_actual_load(session):
     """
 
     assert Query.from_session(session, GuestRequest).all() == []
+
+
+@pytest.mark.usefixtures('_schema_test_db_Counters_1record')
+def test_safe_query_query(logger, session):
+    """
+    Test regular workflow: construct query, fetch records.
+    """
+
+    r = SafeQuery.from_session(session, Counters).all()
+
+    assert r.is_ok is True
+
+    records = r.unwrap()
+
+    assert len(records) == 1
+    assert records[0].name == 'foo'
+    assert records[0].count == 0
+
+
+@pytest.mark.usefixtures('_schema_test_db_Counters_2records')
+def test_safe_query_query_filter(logger, session):
+    """
+    Test regular workflow: construct query, apply filter and sorting, fetch records.
+    """
+
+    r = SafeQuery.from_session(session, Counters).filter(Counters.name == 'bar').order_by(Counters.name).all()
+
+    assert r.is_ok is True
+
+    records = r.unwrap()
+
+    assert len(records) == 1
+    assert records[0].name == 'bar'
+    assert records[0].count == 0
+
+
+def test_safe_query_no_change_on_error(caplog, logger, session, monkeypatch):
+    """
+    If query already encoutered an error, it should not apply any additional methods nor return any valid records.
+    """
+
+    mock_failure = MagicMock(name='Failure<mock>')
+
+    query = SafeQuery.from_session(session, Counters)
+
+    # Inject a failure
+    query.failure = mock_failure
+
+    # Now these should do nothing, and return an error.
+    r = query.filter(Counters.name == 'bar').all()
+
+    assert r.is_ok is False
+
+    failure = r.unwrap_error()
+
+    assert failure is mock_failure
+
+
+def test_safe_query_get_error(caplog, logger, session):
+    """
+    Test handling of genuine SQLAlchemy error: without any schema or records, fetch a record.
+    """
+
+    r = SafeQuery.from_session(session, Counters).filter(Counters.name == 'bar').all()
+
+    assert r.is_ok is False
+
+    failure = r.unwrap_error()
+
+    assert 'query' in failure.details
+    assert failure.exception is not None
+
+    failure.handle(logger)
+
+    assert_failure_log(
+        caplog,
+        'failed to retrieve query result',
+        exception_label=r'OperationalError: \(sqlite3\.OperationalError\) no such table: counters'
+    )

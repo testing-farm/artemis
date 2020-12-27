@@ -1,5 +1,6 @@
 import datetime
 import enum
+import functools
 import hashlib
 import json
 import logging
@@ -10,6 +11,7 @@ import threading
 from contextlib import contextmanager
 
 import gluetool.glue
+from gluetool.result import Result, Ok, Error
 import sqlalchemy
 import sqlalchemy.ext.declarative
 from sqlalchemy import BigInteger, Column, ForeignKey, String, Boolean, Enum, Text, Integer, DateTime
@@ -17,8 +19,18 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
 import sqlalchemy.sql.expression
 
-from typing import cast, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, Union
+from typing import TYPE_CHECKING, cast, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, \
+    Union
 import gluetool.log
+
+if TYPE_CHECKING:  # noqa
+    from . import Failure
+    from mypy_extensions import VarArg
+
+
+# Type variables for use in our generic types
+T = TypeVar('T')
+S = TypeVar('S')
 
 
 # "A reasonable default" size of tokens. There's no need to tweak it in runtime, but we don't want
@@ -36,9 +48,6 @@ Base = sqlalchemy.ext.declarative.declarative_base()
 # provides all methods we need but applies cast() as needed.
 #
 # https://github.com/dropbox/sqlalchemy-stubs/pull/81
-T = TypeVar('T')
-
-
 class Query(Generic[T]):
     def __init__(self, query: _Query) -> None:
         self.query = query
@@ -98,6 +107,180 @@ class Query(Generic[T]):
             self.query.one_or_none
         )()
 
+    def all(self) -> List[T]:
+        return cast(
+            Callable[[], List[T]],
+            self.query.all
+        )()
+
+
+# "Safe" query - a Query-like class, adapted to return Result instances instead of the raw data.
+# When it comes to issues encountered when working with the database, SafeQuery should be easier
+# to use than Query, because it aligns better with our codebase, and exceptions raised by underlying
+# SQLAlchemy code are translated into Failures. For example, should the database connection go away,
+# Query.one_or_none() will raise an exception when called - SafeQuery.one_or_none() would return
+# Error(Failure) instead.
+#
+# TODO: when SafeQuery replaces the use of Query, we will drop Query, rename SafeQuery and that's it.
+
+# Types of SafeQuery methods, as used by SafeQuery decorators.
+#
+# Our decorators change the signature of the decorated function: to make the SafeQuery code simpler,
+# its methods return raw SQLAlchemy's Query, or the requested records (e.g. List[SomeTableRecord]).
+# Decorators then take care of catching exceptions, and either return the SafeQuery instance (e.g. filter()),
+# or wrap the "raw" results with Result instances (e.g. one()). Therefore we need one type for the
+# original SafeQuery method, and another type for the method as seen by users of SafeQuery:
+#
+# `one(self) -> T` becomes `one(self) -> Result[T, Failure]`
+#
+# All types are generic, and depend on at least one type provided by the SafeQuery itself, `T`. This is
+# the type of the records query is supposed to work with (e.g. `SafeQuery[db.Knob]`). Types that apply
+# to "get records" methods need one more generic type, `S`, which represents the type of the raw value
+# returned by the original method: `T` for `one()`, `List[T]` for `all()`, etc. `S` is then used when
+# defining what type the decorated method returns, `Result[S, Failure]`, preserving the original return
+# value type.
+#
+# Note: unfortunately, I wasn't able to cover "update" methods - filter(), limit(), ... - with a single
+# type/decorator and preserve the signature enough to keep type checking. I always foud out that methods
+# accepting 1 integer parameter (limit/offset) collide with signature of filter() which accepts variable
+# number of arguments: `[argument: int]` does not fit under [*args: Any]`. Therefore we have a decorator
+# for methods accepting anything, and another decorator for methods accepting an integer. On the plus
+# side, type checking works, and mypy does see SafeQuery.limit() as accepting one integer and nothing else.
+SafeQueryRawUpdateVAType = Callable[['SafeQuery[T]', 'VarArg(Any)'], _Query]  # type: ignore
+SafeQueryUpdateVAType = Callable[['SafeQuery[T]', 'VarArg(Any)'], 'SafeQuery[T]']  # type: ignore
+
+SafeQueryRawUpdateIType = Callable[['SafeQuery[T]', int], _Query]
+SafeQueryUpdateIType = Callable[['SafeQuery[T]', int], 'SafeQuery[T]']
+
+SafeQueryRawGetType = Callable[['SafeQuery[T]'], S]
+SafeQueryGetType = Callable[['SafeQuery[T]'], Result[S, 'Failure']]
+
+
+# Decorator for methods with variable number of arguments (VA)...
+def chain_update_va(fn: 'SafeQueryRawUpdateVAType[T]') -> 'SafeQueryUpdateVAType[T]':
+    @functools.wraps(fn)
+    def wrapper(self: 'SafeQuery[T]', *args: Any) -> 'SafeQuery[T]':
+        if self.failure is None:
+            try:
+                self.query = fn(self, *args)
+
+            except Exception as exc:
+                from . import Failure
+
+                self.failure = Failure.from_exc(
+                    'failed to update query',
+                    exc,
+                    query=str(self.query)
+                )
+
+        return self
+
+    return wrapper
+
+
+# ... and a decorator for methods with just a single integer argument (I).
+def chain_update_i(fn: 'SafeQueryRawUpdateIType[T]') -> 'SafeQueryUpdateIType[T]':
+    @functools.wraps(fn)
+    def wrapper(self: 'SafeQuery[T]', arg: int) -> 'SafeQuery[T]':
+        if self.failure is None:
+            try:
+                self.query = fn(self, arg)
+
+            except Exception as exc:
+                from . import Failure
+
+                self.failure = Failure.from_exc(
+                    'failed to update query',
+                    exc,
+                    query=str(self.query)
+                )
+
+        return self
+
+    return wrapper
+
+
+def chain_get(fn: 'SafeQueryRawGetType[T, S]') -> 'SafeQueryGetType[T, S]':
+    @functools.wraps(fn)
+    def wrapper(self: 'SafeQuery[T]') -> 'Result[S, Failure]':
+        if self.failure is None:
+            try:
+                return Ok(fn(self))
+
+            except Exception as exc:
+                from . import Failure
+
+                self.failure = Failure.from_exc(
+                    'failed to retrieve query result',
+                    exc,
+                    query=str(self.query)
+                )
+
+        return Error(self.failure)
+
+    return wrapper
+
+
+class SafeQuery(Generic[T]):
+    def __init__(self, query: _Query) -> None:
+        self.query = query
+
+        self.failure: Optional[Failure] = None
+
+    @staticmethod
+    def from_session(session: sqlalchemy.orm.session.Session, klass: Type[T]) -> 'SafeQuery[T]':
+        query_proxy: SafeQuery[T] = SafeQuery(
+            cast(
+                Callable[[Type[T]], _Query],
+                session.query
+            )(klass)
+        )
+
+        return query_proxy
+
+    @chain_update_va
+    def filter(self, *args: Any) -> _Query:
+        return cast(
+            Callable[..., _Query],
+            self.query.filter
+        )(*args)
+
+    @chain_update_va
+    def order_by(self, *args: Any) -> _Query:
+        return cast(
+            Callable[..., _Query],
+            self.query.order_by
+        )(*args)
+
+    @chain_update_i
+    def limit(self, limit: int) -> _Query:
+        return cast(
+            Callable[[Optional[int]], _Query],
+            self.query.limit
+        )(limit)
+
+    @chain_update_i
+    def offset(self, offset: int) -> _Query:
+        return cast(
+            Callable[[Optional[int]], _Query],
+            self.query.offset
+        )(offset)
+
+    @chain_get
+    def one(self) -> T:
+        return cast(
+            Callable[[], T],
+            self.query.one
+        )()
+
+    @chain_get
+    def one_or_none(self) -> Optional[T]:
+        return cast(
+            Callable[[], T],
+            self.query.one_or_none
+        )()
+
+    @chain_get
     def all(self) -> List[T]:
         return cast(
             Callable[[], List[T]],
