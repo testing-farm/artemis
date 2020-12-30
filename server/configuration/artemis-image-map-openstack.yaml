@@ -1,10 +1,20 @@
 ---
+
 #
-# The mapping file maps compose names to openstack tenant images, use the following format
+# The file mapping compose names to actual OpenStack images supported by the tenant.
 #
-# - 'compose-name' : 'openstack-image-name'
+# Note: the matching depends on the use of regular expressions. Compose names in this file
+# are treated as patterns Artemis tries to match against the compose specified by the guest
+# request environment. When using as patterns, compose names must be modified slightly:
 #
-- 'RHEL-7.9.0': 'rhel-7.9-server-x86_64-latest'
-- 'RHEL-8.3.0': 'rhel-8.3.0-x86_64-nightly'
-- 'RHEL-8.4.0': 'RHEL-8.4.0-x86_64-nightly-latest'
-- 'Fedora-32': 'Fedora-Cloud-Base-32'
+# * use `\` to escape any otherwise significant characters, namely `.` - these have special
+#   meaning when used in regular expressions.
+# * wrap the compose name pattern with `^` and `$` - since the entries are tested in the
+#   same order they are specified in this file, enforcing the full match prevents any unexpected
+#   partial matches.
+#
+
+- '^RHEL-7\.9\.0$': 'rhel-7.9-server-x86_64-latest'
+- '^RHEL-8\.3\.0$': 'rhel-8.3.0-x86_64-nightly'
+- '^RHEL-8\.4\.0$': 'RHEL-8.4.0-x86_64-nightly-latest'
+- '^Fedora-32$': 'Fedora-Cloud-Base-32'
