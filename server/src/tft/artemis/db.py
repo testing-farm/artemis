@@ -354,6 +354,29 @@ class GuestRequest(Base):
     def is_promised(self) -> bool:
         return self.address is None
 
+    def fetch_events(
+        self,
+        session: sqlalchemy.orm.session.Session,
+        eventname: Optional[str] = None,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        sort_field: str = 'updated',
+        sort_direction: str = 'desc',
+        since: Optional[str] = None,
+        until: Optional[str] = None
+    ) -> List['GuestEvent']:
+        return GuestEvent.fetch(
+            session,
+            guestname=self.guestname,
+            eventname=eventname,
+            page=page,
+            page_size=page_size,
+            sort_field=sort_field,
+            sort_direction=sort_direction,
+            since=since,
+            until=until
+        )
+
 
 class GuestEvent(Base):
     __tablename__ = 'guest_events'
@@ -373,6 +396,24 @@ class GuestEvent(Base):
         self.eventname = eventname
         self.guestname = guestname
         self.details = json.dumps(details)
+
+    # This is not very friendly... In our code, when we access event details, we want to get the unserialized form.
+    # And we want a nice name, like `details`: `event.details` should be Python-friendly, unserialized details. They
+    # are read-only anyway, and we do `details = ...` just once, when we initialize the event just before inserting
+    # it to the database.
+    #
+    # But `details` is already used for the column, and therefore it is `str`. The best solution would be to rename
+    # the column (e.g. `_details` or `details_serialized`), and add `details` property for transparent unserialize.
+    # TODO: another patch...
+    @property
+    def details_unserialized(self) -> Dict[str, Any]:
+        if not self.details:
+            return {}
+
+        return cast(
+            Dict[str, Any],
+            json.loads(self.details)
+        )
 
     @classmethod
     def fetch(
