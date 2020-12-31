@@ -1914,6 +1914,7 @@ def do_route_guest_request(
 
     pool = workspace.run_hook(
         'ROUTE',
+        session=session,
         guest_request=workspace.gr,
         pools=get_pools(logger, session)
     )
