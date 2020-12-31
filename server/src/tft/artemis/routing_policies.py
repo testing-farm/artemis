@@ -521,9 +521,9 @@ def policy_one_attempt_forgiving(
     threshold = datetime.datetime.utcnow() - datetime.timedelta(seconds=r_time.unwrap())
 
     error_pools = [
-        event.details_unserialized['failure'].get('poolname')
+        event.details['failure'].get('poolname')
         for event in events
-        if event.details and event.details_unserialized.get('failure') and event.updated > threshold
+        if event.details and event.details.get('failure') and event.updated > threshold
     ]
 
     return Ok(PolicyRuling(

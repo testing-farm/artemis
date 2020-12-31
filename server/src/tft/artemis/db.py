@@ -576,7 +576,7 @@ class GuestEvent(Base):
     updated = Column(DateTime, default=datetime.datetime.utcnow)
     guestname = Column(String(250), nullable=False, index=True)
     eventname = Column(String(250), nullable=False)
-    details = Column(Text())
+    details_serialized = Column(Text(), nullable=True)
 
     def __init__(
         self,
@@ -588,7 +588,7 @@ class GuestEvent(Base):
         self.eventname = eventname
         self.guestname = guestname
         self.updated = updated or datetime.datetime.utcnow()
-        self.details = json.dumps(details)
+        self.details_serialized = json.dumps(details)
 
     # This is not very friendly... In our code, when we access event details, we want to get the unserialized form.
     # And we want a nice name, like `details`: `event.details` should be Python-friendly, unserialized details. They
@@ -599,13 +599,13 @@ class GuestEvent(Base):
     # the column (e.g. `_details` or `details_serialized`), and add `details` property for transparent unserialize.
     # TODO: another patch...
     @property
-    def details_unserialized(self) -> Dict[str, Any]:
-        if not self.details:
+    def details(self) -> Dict[str, Any]:
+        if not self.details_serialized:
             return {}
 
         return cast(
             Dict[str, Any],
-            json.loads(self.details)
+            json.loads(self.details_serialized)
         )
 
     @classmethod

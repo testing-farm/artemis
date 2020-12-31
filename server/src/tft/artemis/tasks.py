@@ -1814,12 +1814,10 @@ def _handle_successful_failover(
         if not event.details:
             continue
 
-        details = json.loads(event.details)
-
-        if 'failure' not in details or 'poolname' not in details['failure']:
+        if 'failure' not in event.details or 'poolname' not in event.details['failure']:
             continue
 
-        previous_poolname = details['failure']['poolname']
+        previous_poolname = event.details['failure']['poolname']
 
         break
 
