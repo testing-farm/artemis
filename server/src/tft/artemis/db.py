@@ -387,7 +387,7 @@ class GuestEvent(Base):
     updated = Column(DateTime, default=datetime.datetime.utcnow)
     guestname = Column(String(250), nullable=False)
     eventname = Column(String(250), nullable=False)
-    details = Column(Text())
+    details_serialized = Column(Text(), nullable=True)
 
     def __init__(
         self,
@@ -397,24 +397,19 @@ class GuestEvent(Base):
     ) -> None:
         self.eventname = eventname
         self.guestname = guestname
-        self.details = json.dumps(details)
+        self.details_serialized = json.dumps(details)
 
-    # This is not very friendly... In our code, when we access event details, we want to get the unserialized form.
-    # And we want a nice name, like `details`: `event.details` should be Python-friendly, unserialized details. They
-    # are read-only anyway, and we do `details = ...` just once, when we initialize the event just before inserting
-    # it to the database.
-    #
-    # But `details` is already used for the column, and therefore it is `str`. The best solution would be to rename
-    # the column (e.g. `_details` or `details_serialized`), and add `details` property for transparent unserialize.
-    # TODO: another patch...
+    # TODO: make the result cached - `details_serialized` is set just once, in `__init__()`, and then it is
+    # read-only. But! I am not really, really sure gluetool's `@cached_property` will work with whatever
+    # magic SQLAlchemy does in the background.
     @property
-    def details_unserialized(self) -> Dict[str, Any]:
-        if not self.details:
+    def details(self) -> Dict[str, Any]:
+        if not self.details_serialized:
             return {}
 
         return cast(
             Dict[str, Any],
-            json.loads(self.details)
+            json.loads(self.details_serialized)
         )
 
     @classmethod
