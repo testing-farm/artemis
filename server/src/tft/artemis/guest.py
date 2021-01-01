@@ -1,9 +1,17 @@
+"""
+Guest request state definitions and helpers.
+"""
+
 import enum
 
 import gluetool.log
 
 
 class GuestState(enum.Enum):
+    """
+    Guest request states.
+    """
+
     ERROR = 'error'
 
     #: Initial state. Newly created guest requests are set to PENDING and wait for
@@ -49,14 +57,36 @@ class GuestState(enum.Enum):
 
 
 class GuestLogger(gluetool.log.ContextAdapter):
+    """
+    Logger adapter which adds a given guest request name to context.
+    """
+
     def __init__(self, logger: gluetool.log.ContextAdapter, guestname: str) -> None:
+        """
+        Logger adapter which adds a given guest request name to context.
+
+        :param logger: logger to extend.
+        :param guestname: snapshot request name to add.
+        """
+
         super(GuestLogger, self).__init__(logger, {
             'ctx_guest_name': (10, guestname)
         })
 
 
 class SnapshotLogger(gluetool.log.ContextAdapter):
+    """
+    Logger adapter which adds a given snapshot request name to context.
+    """
+
     def __init__(self, logger: gluetool.log.ContextAdapter, snapshotname: str) -> None:
+        """
+        Logger adapter which adds a given snapshot request name to context.
+
+        :param logger: logger to extend.
+        :param snapshotname: snapshot request name to add.
+        """
+
         super(SnapshotLogger, self).__init__(logger, {
             'ctx_snapshot_name': (11, snapshotname)
         })
