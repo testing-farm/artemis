@@ -388,9 +388,9 @@ class GuestRequestManager:
     def delete_by_guestname(self, guestname: str, request: Request) -> None:
         with self.db.get_session() as session:
             query = sqlalchemy \
-                    .update(artemis_db.GuestRequest.__table__) \
-                    .where(artemis_db.GuestRequest.guestname == guestname) \
-                    .values(state=GuestState.CONDEMNED.value)
+                .update(artemis_db.GuestRequest.__table__) \
+                .where(artemis_db.GuestRequest.guestname == guestname) \
+                .values(state=GuestState.CONDEMNED.value)
 
             logger = get_logger()
             if safe_db_change(logger, session, query):
@@ -522,10 +522,10 @@ class SnapshotRequestManager:
     def delete_snapshot(self, guestname: str, snapshotname: str) -> None:
         with self.db.get_session() as session:
             query = sqlalchemy \
-                    .update(artemis_db.SnapshotRequest.__table__) \
-                    .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
-                    .where(artemis_db.SnapshotRequest.guestname == guestname) \
-                    .values(state=GuestState.CONDEMNED.value)
+                .update(artemis_db.SnapshotRequest.__table__) \
+                .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
+                .where(artemis_db.SnapshotRequest.guestname == guestname) \
+                .values(state=GuestState.CONDEMNED.value)
 
             if safe_db_change(get_logger(), session, query):
                 return
@@ -535,11 +535,11 @@ class SnapshotRequestManager:
     def restore_snapshot(self, guestname: str, snapshotname: str) -> SnapshotResponse:
         with self.db.get_session() as session:
             query = sqlalchemy \
-                    .update(artemis_db.SnapshotRequest.__table__) \
-                    .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
-                    .where(artemis_db.SnapshotRequest.guestname == guestname) \
-                    .where(artemis_db.SnapshotRequest.state != GuestState.CONDEMNED.value) \
-                    .values(state=GuestState.RESTORING.value)
+                .update(artemis_db.SnapshotRequest.__table__) \
+                .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
+                .where(artemis_db.SnapshotRequest.guestname == guestname) \
+                .where(artemis_db.SnapshotRequest.state != GuestState.CONDEMNED.value) \
+                .values(state=GuestState.RESTORING.value)
 
             if safe_db_change(get_logger(), session, query):
                 snapshot_response = self.get_snapshot(guestname, snapshotname)
@@ -738,9 +738,9 @@ def run_app() -> molten.app.App:
     ]
 
     return molten.app.App(
-            components=components,
-            middleware=mw,
-            routes=routes
+        components=components,
+        middleware=mw,
+        routes=routes
     )
 
 

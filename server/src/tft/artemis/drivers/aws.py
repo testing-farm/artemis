@@ -253,7 +253,7 @@ class AWSDriver(PoolDriver):
             return Error(Failure('failed to detect spot price'))
 
         # we bid some % to the price
-        price = current_price + current_price * (float(self.pool_config['spot-price-bid-percentage'])/100.0)
+        price = current_price + current_price * (float(self.pool_config['spot-price-bid-percentage']) / 100.0)
 
         spot_price_bid_percentage = self.pool_config['spot-price-bid-percentage']
 

@@ -173,7 +173,8 @@ class DoerType(Protocol):
         cancel: threading.Event,
         *args: Any,
         **kwargs: Any
-    ) -> DoerReturnType: ...
+    ) -> DoerReturnType:
+        ...
 
 
 # Task actor type.
@@ -183,7 +184,8 @@ class Actor(Protocol):
     def send(
         self,
         *args: Any
-    ) -> None: ...
+    ) -> None:
+        ...
 
     def send_with_options(
         self,
@@ -191,7 +193,8 @@ class Actor(Protocol):
         kwargs: Optional[Dict[str, Any]] = None,
         delay: Optional[int] = None,
         **options: Any
-    ) -> None: ...
+    ) -> None:
+        ...
 
 
 class DispatchTaskType(Protocol):
@@ -201,7 +204,8 @@ class DispatchTaskType(Protocol):
         task: Actor,
         *args: Any,
         delay: Optional[int] = None
-    ) -> Result[None, Failure]: ...
+    ) -> Result[None, Failure]:
+        ...
 
 
 # Types of functions we use to handle success and failures.
@@ -209,7 +213,8 @@ class SuccessHandlerType(Protocol):
     def __call__(
         self,
         eventname: str
-    ) -> None: ...
+    ) -> None:
+        ...
 
 
 class FailureHandlerType(Protocol):
@@ -218,7 +223,8 @@ class FailureHandlerType(Protocol):
         result: Result[Any, Failure],
         label: str,
         sentry: bool = True
-    ) -> DoerReturnType: ...
+    ) -> DoerReturnType:
+        ...
 
 
 class TaskLogger(gluetool.log.ContextAdapter):

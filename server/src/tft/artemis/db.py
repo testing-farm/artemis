@@ -149,9 +149,9 @@ def upsert(
     # parameter of the `on_conflict_update` clause.
     if len(primary_keys) > 1:
         where = sqlalchemy.sql.expression.and_(*[
-                column == value
-                for column, value in primary_keys.items()
-            ])
+            column == value
+            for column, value in primary_keys.items()
+        ])
 
     else:
         column, value = list(primary_keys.items())[0]
@@ -162,24 +162,22 @@ def upsert(
     # But columns are easier to pass and type-check, which means we need to convert comments
     # to their names. Also, since `values()` applies when inserting new record, we shouldn't
     # forget the primary key columns neither.
-    statement = insert(model) \
-        .values(
+    statement = insert(model).values(
+        **{
             **{
-                **{
-                    column.name: value
-                    for column, value in primary_keys.items()
-                },
-                **{
-                    column.name: value
-                    for column, value in (insert_data or {}).items()
-                }
+                column.name: value
+                for column, value in primary_keys.items()
+            },
+            **{
+                column.name: value
+                for column, value in (insert_data or {}).items()
             }
-        ) \
-        .on_conflict_do_update(
-            constraint=model.__table__.primary_key,  # type: ignore
-            set_=update_data,
-            where=where
-        )
+        }
+    ).on_conflict_do_update(
+        constraint=model.__table__.primary_key,  # type: ignore
+        set_=update_data,
+        where=where
+    )
 
     session.execute(statement)
 
@@ -253,8 +251,8 @@ class User(Base):
     @classmethod
     def fetch_by_username(cls, session: sqlalchemy.orm.session.Session, username: str) -> Optional['User']:
         return Query.from_session(session, User) \
-               .filter(User.username == username) \
-               .one_or_none()
+            .filter(User.username == username) \
+            .one_or_none()
 
 
 class SSHKey(Base):
