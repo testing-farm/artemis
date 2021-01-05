@@ -18,7 +18,6 @@ from . import Failure, Knob, get_db, get_logger, get_broker, safe_call, safe_db_
 from . import metrics
 from .db import DB, GuestEvent, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
 from .drivers import PoolDriver, PoolLogger, PoolData
-from .environment import Environment
 from .guest import GuestLogger, GuestState, SnapshotLogger
 from .script import hook_engine
 
@@ -754,7 +753,7 @@ def _get_pool(
         ))
 
     pool_driver_class = POOL_DRIVERS[pool_record.driver]
-    driver = pool_driver_class(logger, poolname, json.loads(pool_record.parameters))
+    driver = pool_driver_class(logger, poolname, pool_record.parameters)
 
     r_sanity = driver.sanity()
 
@@ -774,7 +773,7 @@ def get_pools(
         pool_driver_class = POOL_DRIVERS[pool_record.driver]
 
         pools += [
-            pool_driver_class(logger, pool_record.poolname, json.loads(pool_record.parameters))
+            pool_driver_class(logger, pool_record.poolname, pool_record.parameters)
         ]
 
     # NOTE(ivasilev) Currently Azure driver can't guarantee proper authentication in case of more than one Azure
@@ -1481,7 +1480,7 @@ def do_handle_provisioning_chain_tail(
         new_state,
         set_values={
             'poolname': None,
-            'pool_data': json.dumps({})
+            'pool_data': {}
         },
         current_pool_data=workspace.gr.pool_data
     )
@@ -1688,12 +1687,10 @@ def do_update_guest_request(
 
         handle_failure(r, 'failed to undo guest update')
 
-    environment = Environment.unserialize_from_json(json.loads(workspace.gr.environment))
-
     r_update = workspace.pool.update_guest(
         logger,
         workspace.gr,
-        environment,
+        workspace.gr.environment,
         workspace.ssh_key
     )
 
@@ -1790,9 +1787,13 @@ def do_acquire_guest_request(
     assert workspace.pool
     assert workspace.ssh_key
 
-    environment = Environment.unserialize_from_json(json.loads(workspace.gr.environment))
-
-    result = workspace.pool.acquire_guest(logger, workspace.gr, environment, workspace.ssh_key, cancelled=cancel)
+    result = workspace.pool.acquire_guest(
+        logger,
+        workspace.gr,
+        workspace.gr.environment,
+        workspace.ssh_key,
+        cancelled=cancel
+    )
 
     if result.is_error:
         return handle_failure(result, 'failed to provision')

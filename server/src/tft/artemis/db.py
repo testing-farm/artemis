@@ -1,7 +1,6 @@
 import datetime
 import enum
 import hashlib
-import json
 import logging
 import os
 import secrets
@@ -12,13 +11,17 @@ from contextlib import contextmanager
 import gluetool.glue
 import sqlalchemy
 import sqlalchemy.ext.declarative
-from sqlalchemy import BigInteger, Column, ForeignKey, String, Boolean, Enum, Text, Integer, DateTime
+from sqlalchemy import BigInteger, Column, ForeignKey, String, Boolean, Enum, Text, Integer, DateTime, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
 import sqlalchemy.sql.expression
 
-from typing import cast, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, Union
+from typing import TYPE_CHECKING, cast, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, \
+    Union
 import gluetool.log
+
+if TYPE_CHECKING:
+    from .environment import Environment
 
 
 # "A reasonable default" size of tokens. There's no need to tweak it in runtime, but we don't want
@@ -26,6 +29,41 @@ import gluetool.log
 # SHA256 hash.
 TOKEN_SIZE = 32
 TOKEN_HASH_SIZE = 64
+
+
+#
+# JSON handling: how we store JSON values, and other objects that are serialized into JSON when stored in
+# the database.
+#
+# Note: JSON is a *file* format, a string when read. We use the term often in the meaning of either
+# raw value provided by user via REST API, or the representation of such a value in the form of builtin
+# Python data structures (mappings, lists, ...) - as opposed to dedicated Python class representing
+# similarly structured values. See :py:class:`environment.Environment`: a dedicated Python class that
+# is "serialized to JSON" when needed for transport over HTTP or store in the database - but "JSON" here
+# is indeed the pile of Python builtin data structures, not a string.
+#
+# * if we need to store JSON-like data - represented as Python mappings most of the time - we should use
+# SQLAlchemy's `JSON` column type.
+#
+# * `JSON` column type describes itself as `Union[Dict[...], List[...]]`, which is often too open and
+# forgiving. Therefore we need a layer which would enforce more strict types. Each `JSON` column
+# is therefore marked with a prefix `_` (i.e. field `foo` is stored as `_foo` column), and we add
+# @property getter with correct, stricter type annotations.
+#
+# * these stricter types should probably be defined as standalone types (see below), to make them easy
+# to follow through the code.
+#
+
+#: "Generic" type representing form in which we store JSON-like data in the database. It corresponds to
+#: how :py:class:`sqlalchemy.JSON` describes itself, but without ``JSON``'s `List[...]` alternative: our
+#: needs focus on mappings, we have no need for storing JSON-ish lists.
+SerializedType = Dict[str, Any]
+
+#: Type of serialized guest request environment.
+EnvironmentSerializedType = SerializedType
+
+#: Type of serialized guest request user data.
+UserDataSerializedType = Dict[str, Optional[str]]
 
 
 Base = sqlalchemy.ext.declarative.declarative_base()
@@ -302,16 +340,20 @@ class Pool(Base):
 
     poolname = Column(String(250), primary_key=True, nullable=False)
     driver = Column(String(250), nullable=False)
-    parameters = Column(Text(), nullable=False)
+    _parameters = Column(JSON(), nullable=False)
 
     guests = relationship('GuestRequest', back_populates='pool')
+
+    @property
+    def parameters(self) -> SerializedType:
+        return cast(SerializedType, self._parameters)
 
 
 class GuestRequest(Base):
     __tablename__ = 'guest_requests'
 
     guestname = Column(String(250), primary_key=True, nullable=False)
-    environment = Column(Text(), nullable=False)
+    _environment = Column(JSON(), nullable=False)
     ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
     priorityname = Column(String(250), ForeignKey('priority_groups.name'), nullable=True)
     poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
@@ -326,10 +368,10 @@ class GuestRequest(Base):
     ssh_username = Column(String(250), nullable=False)
 
     # Pool-specific data.
-    pool_data = Column(Text(), nullable=False)
+    _pool_data = Column(JSON(), nullable=False, default={})
 
     # User specified data
-    user_data = Column(Text(), nullable=False)
+    _user_data = Column(JSON(), nullable=False, default={})
 
     # Contents of a script to be run when the guest becomes active
     post_install_script = Column(Text(), nullable=True)
@@ -338,6 +380,24 @@ class GuestRequest(Base):
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
+
+    @property
+    def environment(self) -> 'Environment':
+        from .environment import Environment
+
+        return Environment.unserialize_from_json(cast(EnvironmentSerializedType, self._environment))
+
+    @property
+    def pool_data(self) -> SerializedType:
+        return cast(SerializedType, self._pool_data)
+
+    @pool_data.setter
+    def pool_data(self, data: SerializedType) -> None:
+        self._pool_data = data
+
+    @property
+    def user_data(self) -> UserDataSerializedType:
+        return cast(UserDataSerializedType, self._user_data)
 
     def log_event(
         self,
@@ -387,7 +447,7 @@ class GuestEvent(Base):
     updated = Column(DateTime, default=datetime.datetime.utcnow)
     guestname = Column(String(250), nullable=False)
     eventname = Column(String(250), nullable=False)
-    details_serialized = Column(Text(), nullable=True)
+    _details = Column(JSON(), nullable=False)
 
     def __init__(
         self,
@@ -397,20 +457,11 @@ class GuestEvent(Base):
     ) -> None:
         self.eventname = eventname
         self.guestname = guestname
-        self.details_serialized = json.dumps(details)
+        self._details = details
 
-    # TODO: make the result cached - `details_serialized` is set just once, in `__init__()`, and then it is
-    # read-only. But! I am not really, really sure gluetool's `@cached_property` will work with whatever
-    # magic SQLAlchemy does in the background.
     @property
-    def details(self) -> Dict[str, Any]:
-        if not self.details_serialized:
-            return {}
-
-        return cast(
-            Dict[str, Any],
-            json.loads(self.details_serialized)
-        )
+    def details(self) -> SerializedType:
+        return cast(SerializedType, self._details)
 
     @classmethod
     def fetch(
@@ -563,7 +614,7 @@ class Knob(Base):
     __tablename__ = 'knobs'
 
     knobname = Column(String(), primary_key=True, nullable=False)
-    value = Column(String(), nullable=False)
+    value = Column(Text(), nullable=False)
 
 
 class _DB:
@@ -740,7 +791,7 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
                 Pool(
                     poolname=pool_config['name'],
                     driver=pool_config['driver'],
-                    parameters=json.dumps(pool_parameters)
+                    _parameters=pool_parameters
                 )
             )
 

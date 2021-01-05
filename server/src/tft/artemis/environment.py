@@ -1,7 +1,10 @@
 import dataclasses
 import json
 
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from .db import EnvironmentSerializedType
 
 
 @dataclasses.dataclass
@@ -27,7 +30,7 @@ class Environment:
     def __repr__(self) -> str:
         return json.dumps(dataclasses.asdict(self))
 
-    def serialize_to_json(self) -> Dict[str, Any]:
+    def serialize_to_json(self) -> 'EnvironmentSerializedType':
         """
         Serialize testing environment to a JSON dictionary.
         """
@@ -35,7 +38,7 @@ class Environment:
         return dataclasses.asdict(self)
 
     @classmethod
-    def unserialize_from_json(cls, serialized: Dict[str, Any]):
+    def unserialize_from_json(cls, serialized: 'EnvironmentSerializedType'):
         # type: (...) -> Environment
         """
         Construct a testing environment from a JSON representation of fields and their values.

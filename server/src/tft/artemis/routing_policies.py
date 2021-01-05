@@ -1,12 +1,10 @@
 import dataclasses
 import datetime
 import functools
-import json
 
 from . import Failure, Knob
 from .drivers import PoolDriver, PoolMetrics
 from .db import GuestRequest
-from .environment import Environment
 
 import gluetool.log
 from gluetool.log import log_dict
@@ -129,14 +127,12 @@ def policy_match_pool_name(
     If guest request requires a specific pool by its name, disallow any other pools.
     """
 
-    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
-
-    if environment.pool:
+    if guest_request.environment.pool:
         return Ok(PolicyRuling(
             allowed_pools=[
                 pool
                 for pool in pools
-                if pool.poolname == environment.pool
+                if pool.poolname == guest_request.environment.pool
             ]
         ))
 
@@ -156,9 +152,7 @@ def policy_supports_snapshots(
     If guest request requires snapshot support, disallow all pools that lack this capability.
     """
 
-    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
-
-    if environment.snapshots is not True:
+    if guest_request.environment.snapshots is not True:
         return Ok(PolicyRuling(
             allowed_pools=pools
         ))

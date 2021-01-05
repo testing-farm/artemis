@@ -121,7 +121,7 @@ class GuestRequest:
     keyname: str
     environment: Environment
     priority_group: Optional[str]
-    user_data: Optional[Dict[str, Optional[str]]]
+    user_data: Optional[artemis_db.UserDataSerializedType]
     post_install_script: Optional[str]
 
 
@@ -150,7 +150,7 @@ class GuestResponse:
     address: Optional[str]
     ssh: GuestSSHInfo
     state: GuestState
-    user_data: Dict[str, Optional[str]]
+    user_data: artemis_db.UserDataSerializedType
     post_install_script: Optional[str]
 
     def __init__(
@@ -161,7 +161,7 @@ class GuestResponse:
         address: Optional[str],
         ssh: GuestSSHInfo,
         state: GuestState,
-        user_data: Dict[str, Optional[str]],
+        user_data: artemis_db.UserDataSerializedType,
         post_install_script: Optional[str]
 
     ) -> None:
@@ -181,7 +181,7 @@ class GuestResponse:
         return cls(
             guestname=guest.guestname,
             owner=guest.ownername,
-            environment=json.loads(guest.environment),
+            environment=guest.environment.serialize_to_json(),
             address=guest.address,
             ssh=GuestSSHInfo(
                 guest.ssh_username,
@@ -189,7 +189,7 @@ class GuestResponse:
                 guest.ssh_keyname
             ),
             state=GuestState(guest.state),
-            user_data=json.loads(guest.user_data),
+            user_data=guest.user_data,
             post_install_script=guest.post_install_script
         )
 
@@ -338,15 +338,15 @@ class GuestRequestManager:
             session.add(
                 artemis_db.GuestRequest(
                     guestname=guestname,
-                    environment=json.dumps(guest_request.environment.serialize_to_json()),
+                    _environment=guest_request.environment.serialize_to_json(),
                     ownername=DEFAULT_GUEST_REQUEST_OWNER,
                     ssh_keyname=guest_request.keyname,
                     ssh_port=DEFAULT_SSH_PORT,
                     ssh_username=DEFAULT_SSH_USERNAME,
                     priorityname=guest_request.priority_group,
                     poolname=None,
-                    pool_data=json.dumps({}),
-                    user_data=json.dumps(guest_request.user_data),
+                    _pool_data={},
+                    _user_data=guest_request.user_data or {},
                     state=GuestState.PENDING.value,
                     post_install_script=guest_request.post_install_script,
                 )
