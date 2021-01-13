@@ -35,6 +35,7 @@ ENV PATH="/tmp/.poetry/bin:$PATH"
 RUN    apk add --no-cache bash \
                           curl \
                           gcc \
+                          g++ \
                           krb5 \
                           krb5-dev \
                           libffi-dev \
