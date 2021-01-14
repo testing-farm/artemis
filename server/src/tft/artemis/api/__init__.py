@@ -21,7 +21,7 @@ from gluetool.log import log_dict
 from . import errors, handlers
 from .middleware import error_handler_middleware, prometheus_middleware
 from .middleware import authorization_middleware, AuthContext
-from .. import get_logger, get_db, safe_db_change, log_guest_event
+from .. import get_logger, get_db, safe_db_change, log_guest_event, Knob
 from .. import db as artemis_db
 from .. import metrics
 from ..guest import GuestState
@@ -40,6 +40,24 @@ DEFAULT_EVENTS_PAGE = 1
 DEFAULT_EVENTS_PAGE_SIZE = 20
 DEFAULT_EVENTS_SORT_FIELD = 'updated'
 DEFAULT_EVENTS_SORT_BY = 'desc'
+
+
+KNOB_API_PROCESSES: Knob[int] = Knob(
+    'api.processes',
+    has_db=False,
+    envvar='ARTEMIS_API_PROCESSES',
+    envvar_cast=int,
+    default=1
+)
+
+
+KNOB_API_THREADS: Knob[int] = Knob(
+    'api.threads',
+    has_db=False,
+    envvar='ARTEMIS_API_THREADS',
+    envvar_cast=int,
+    default=1
+)
 
 
 class DBComponent:
@@ -753,12 +771,18 @@ def main() -> NoReturn:
     sys.stdout.flush()
     sys.stderr.flush()
 
+    gunicorn_options = [
+        '--bind', '0.0.0.0:8001',
+        '--reload',
+        '--workers', str(KNOB_API_PROCESSES.value),
+        '--threads', str(KNOB_API_THREADS.value)
+    ]
+
     os.execve(
         gunicorn_path,
         [
-            'gunicorn',
-            '--bind', '0.0.0.0:8001',
-            '--reload',
+            'gunicorn'
+        ] + gunicorn_options + [
             'tft.artemis.api:run_app()'
         ],
         os.environ
