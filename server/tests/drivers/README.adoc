@@ -1,0 +1,13 @@
+= Driver tests
+
+== Driver test checklist
+
+* driver uses a CLI tool to actually query and control the cloud?
+** test calling `drivers.run_cli_tool` with correct arguments
+** if non-JSON output is supported, test calling `drivers.run_cli_tool` with `json_format=False`
+** test propagation of errors coming from `drivers.run_cli_tool`
+** test detection of irrecoverable errors
+
+* test release of pool resources
+** test all possible resource ID types are accepted by `release_pool_resources`
+** test propagation of errors

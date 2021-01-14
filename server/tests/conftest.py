@@ -8,7 +8,14 @@ import sqlalchemy.engine.url
 import sqlalchemy_utils.functions
 
 import tft.artemis
+import tft.artemis.drivers.aws
+import tft.artemis.drivers.azure
+import tft.artemis.drivers.beaker
+import tft.artemis.drivers.openstack
 import tft.artemis.tasks
+
+from mock import MagicMock
+from gluetool.result import Ok
 
 
 # The default list of database URLs we test against. Serves as a safe parameter when
@@ -56,7 +63,7 @@ def logger(caplog) -> gluetool.log.ContextAdapter:
     # It might be better to avoid JSON when logging, but it might be also easier to test
     # logged messages as they would be JSON, and therefore easier to parse and verify.
     #
-    # tft.artemis.KNOB_LOGGING_JSON.value = False
+    tft.artemis.KNOB_LOGGING_JSON.value = False
 
     logger = tft.artemis.get_logger()
 
@@ -111,3 +118,96 @@ def fixture_schema_actual(request, logger, db):
     alembic_config.attributes['connectable'] = db.engine
 
     alembic.command.upgrade(alembic_config, 'head')
+
+
+POOL_DRIVERS = {
+    'aws': (
+        tft.artemis.drivers.aws.AWSDriver,
+        {
+            'command': 'dummy-aws-cli'
+        }
+    ),
+    'azure': (
+        tft.artemis.drivers.azure.AzureDriver,
+        {}
+    ),
+    'beaker': (
+        tft.artemis.drivers.beaker.BeakerDriver,
+        {
+            'username': 'dummy-username',
+            'password': 'dummy-password'
+        }
+    ),
+    'openstack': (
+        tft.artemis.drivers.openstack.OpenStackDriver,
+        {
+            'auth-url': 'dummy-auth-url',
+            'api-version': 'dummy-api-version',
+            'user-domain-name': 'dummy-user-domain-name',
+            'project-name': 'dummy-project-name',
+            'username': 'dummy-username',
+            'password': 'dummy-password'
+        }
+    ),
+}
+
+
+def _create_pool_driver(logger, driver_name):
+    klass, params = POOL_DRIVERS[driver_name]
+
+    return klass(logger, 'dummy-pool-driver', params)
+
+
+@pytest.fixture(
+    name='pool_driver',
+    params=list(POOL_DRIVERS.keys())
+)
+def pool_driver_fixture(logger, request):
+    return _create_pool_driver(logger, request.param)
+
+
+@pytest.fixture(name='aws_driver')
+def fixture_aws_driver(logger):
+    return _create_pool_driver(logger, 'aws')
+
+
+@pytest.fixture(name='azure_driver')
+def fixture_azure_driver(logger):
+    return _create_pool_driver(logger, 'azure')
+
+
+@pytest.fixture(name='beaker_driver')
+def fixture_beaker_driver(logger):
+    return _create_pool_driver(logger, 'beaker')
+
+
+@pytest.fixture(name='openstack_driver')
+def fixture_openstack_driver(logger):
+    return _create_pool_driver(logger, 'openstack')
+
+
+@pytest.fixture
+def openstack_only(pool_driver):
+    if not isinstance(pool_driver, tft.artemis.drivers.openstack.OpenStackDriver):
+        pytest.skip('Supported with OpenStack driver only')
+
+
+@pytest.fixture
+def mock_failure():
+    return MagicMock(
+        name='Failure<mock>',
+        recoverable=True
+    )
+
+
+@pytest.fixture
+def mock_run_cli_tool():
+    mock_run_cli_tool = MagicMock(
+        name='run_cli_tool<mock>',
+        return_value=Ok([
+            'dummy CLI tool output',
+            gluetool.utils.ProcessOutput([], 0, 'dummy CLI tool output', 'dummy CLI tool error output', {})
+        ])
+    )
+
+    return mock_run_cli_tool
