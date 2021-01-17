@@ -2,25 +2,40 @@ import bs4
 import dataclasses
 import os
 import stat
-import tempfile
 import threading
 
 import gluetool.log
+import gluetool.utils
 from gluetool.result import Result, Ok, Error
 from gluetool.log import log_xml
 
-from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress
-from .. import Failure
+from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress, \
+    create_tempfile
+from .. import Failure, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 
-from typing import Any, Dict, Optional, List
+from typing import Any, Optional, List, Tuple
 
 NodeRefType = Any
 
-DEFAULT_BEAKER_TICK = 60
-DEFAULT_BEAKER_TIMEOUT = None
-DEFAULT_RESERVE_DURATION = '86400'  # 24 hours
+
+#: RefreshTemeout for wait function in _stop_guest and _start_guest events
+KNOB_RESERVATION_DURATION: Knob[int] = Knob(
+    'beaker.reservation.duration',
+    has_db=False,
+    envvar='ARTEMIS_BEAKER_RESERVATION_DURATION',
+    envvar_cast=int,
+    default=86400
+)
+
+KNOB_UPDATE_TICK: Knob[int] = Knob(
+    'beaker.update.tick',
+    has_db=False,
+    envvar='ARTEMIS_BEAKER_UPDATE_TICK',
+    envvar_cast=int,
+    default=300
+)
 
 
 @dataclasses.dataclass
@@ -29,30 +44,29 @@ class BeakerPoolData(PoolData):
 
 
 class BeakerDriver(PoolDriver):
-    def __init__(
+    def _run_bkr(
         self,
         logger: gluetool.log.ContextAdapter,
-        poolname: str,
-        pool_config: Dict[str, Any]
-    ) -> None:
-
-        super(BeakerDriver, self).__init__(logger, poolname, pool_config)
-
-    def _run_bkr(self, options: List[str]) -> Result[str, Failure]:
+        options: List[str]
+    ) -> Result[Tuple[Any, gluetool.utils.ProcessOutput], Failure]:
         """
         Run bkr command with additional options
 
-        :param gluetool.log.ContextAdapter logger: parent logger whose methods will be used for logging.
+        :param gluetool.log.ContextAdapter logger: logger to use for logging.
         :param List(str) options: options for the command
-        :rtype: result.Result[str, Failure]
-        :returns: :py:class:`result.Result` with output, or specification of error.
+        :returns: either a valid result, a tuple of two items, or an error with a :py:class:`Failure` describing
+            the problem. The first item of the tuple is command's standard output, the second is
+            :py:class:`gluetool.utils.ProcessOutput`.
         """
+
         if self.pool_config.get('username') and self.pool_config.get('password'):
-            options.extend(['--username', self.pool_config['username'],
-                            '--password', self.pool_config['password']])
+            options.extend([
+                '--username', self.pool_config['username'],
+                '--password', self.pool_config['password']
+            ])
 
         r_run = run_cli_tool(
-            self.logger,
+            logger,
             ['bkr'] + options,
             json_output=False
         )
@@ -60,9 +74,7 @@ class BeakerDriver(PoolDriver):
         if r_run.is_error:
             return Error(r_run.unwrap_error())
 
-        output_stdout, _ = r_run.unwrap()
-
-        return Ok(output_stdout)
+        return Ok(r_run.unwrap())
 
     def _dispatch_resource_cleanup(
         self,
@@ -83,14 +95,18 @@ class BeakerDriver(PoolDriver):
         resource_ids: PoolResourcesIDsType
     ) -> Result[None, Failure]:
         if 'job_id' in resource_ids:
-            r_output = self._run_bkr(['job-cancel', resource_ids['job_id']])
+            r_output = self._run_bkr(logger, ['job-cancel', resource_ids['job_id']])
 
             if r_output.is_error:
                 return Error(r_output.unwrap_error())
 
         return Ok(None)
 
-    def _create_job(self, environment: Environment) -> Result[bs4.BeautifulSoup, Failure]:
+    def _create_job_xml(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment
+    ) -> Result[bs4.BeautifulSoup, Failure]:
         """
         Create job xml with bkr workflow-simple and environment variables
 
@@ -99,36 +115,45 @@ class BeakerDriver(PoolDriver):
         :rtype: result.Result[bs4.BeautifulSoup, Failure]
         :returns: :py:class:`result.Result` with job xml, or specification of error.
         """
+
         distro = None  # type: Optional[str]
         distro = environment.os.compose
 
         if not distro:
             return Error(Failure('No distro specified'))
 
-        options = ['workflow-simple',
-                   '--dry-run',
-                   '--prettyxml',
-                   '--distro', distro,
-                   '--arch', environment.arch,
-                   '--task', '/distribution/dummy',
-                   '--reserve',
-                   '--reserve-duration', DEFAULT_RESERVE_DURATION
-                   ]
+        options = [
+            'workflow-simple',
+            '--dry-run',
+            '--prettyxml',
+            '--distro', distro,
+            '--arch', environment.arch,
+            '--task', '/distribution/dummy',
+            '--reserve',
+            '--reserve-duration', str(KNOB_RESERVATION_DURATION.value)
+        ]
 
-        r_workflow_simple = self._run_bkr(options)
-        if r_workflow_simple.is_error and r_workflow_simple.error:
-            return Error(r_workflow_simple.error)
+        r_workflow_simple = self._run_bkr(logger, options)
+        if r_workflow_simple.is_error:
+            return Error(r_workflow_simple.unwrap_error())
 
-        output = r_workflow_simple.unwrap()
+        stdout, output = r_workflow_simple.unwrap()
 
         try:
-            job_xml = bs4.BeautifulSoup(output, 'xml')
+            return Ok(bs4.BeautifulSoup(stdout, 'xml'))
+
         except Exception as exc:
-            return Error(Failure.from_exc('Failure during job_xml parsing', exc))
+            return Error(Failure.from_exc(
+                'failed to parse job XML',
+                exc,
+                command_output=output
+            ))
 
-        return Ok(job_xml)
-
-    def _submit_job(self, job: bs4.BeautifulSoup) -> Result[str, Failure]:
+    def _submit_job(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        job: bs4.BeautifulSoup
+    ) -> Result[str, Failure]:
         """
         Submit a Beaker job.
 
@@ -140,52 +165,62 @@ class BeakerDriver(PoolDriver):
 
         log_xml(self.logger.debug, 'job to submit', job)
 
-        # Save the job description.
-        try:
-            with tempfile.NamedTemporaryFile(prefix='beaker-job-', suffix='.xml',
-                                             dir=os.getcwd(), delete=False) as job_file:
-                job_file.write(job.prettify(encoding='utf-8'))
-                job_file.flush()
+        with create_tempfile(
+            file_contents=job.prettify(),
+            prefix='beaker-job-',
+            suffix='.xml'
+        ) as job_filepath:
+            # Temporary file has limited permissions, but we'd like to make the file inspectable.
+            os.chmod(job_filepath, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
 
-        except Exception as exc:
-            return Error(Failure.from_exc('Failure during saving job description to a file', exc))
+            r_job_submit = self._run_bkr(logger, ['job-submit', job_filepath])
 
-        # Temporary file has limited permissions, but we'd like to make the file inspectable.
-        os.chmod(job_file.name, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+        if r_job_submit.is_error:
+            return Error(r_job_submit.unwrap_error())
 
-        r_job_submit = self._run_bkr(['job-submit', job_file.name])
-
-        if r_job_submit.is_error and r_job_submit.error:
-            return Error(r_job_submit.error)
-
-        # Delete the job description
-        try:
-            os.remove(job_file.name)
-        except Exception as exc:
-            self.logger.warning('Cannot delete job description file: {}'.format(exc))
-
-        output = r_job_submit.unwrap()
-
-        if not isinstance(output, str):  # mypy needs it
-            return Error(Failure('output is not str'))
+        stdout, output = r_job_submit.unwrap()
 
         # Parse job id from output
         try:
             # Submitted: ['J:1806666']
-            first_job_index = output.index('\'') + 1
-            last_job_index = len(output) - output[::-1].index('\'') - 1
+            first_job_index = stdout.index('\'') + 1
+            last_job_index = len(stdout) - stdout[::-1].index('\'') - 1
 
             # J:1806666
-            job_id = output[first_job_index:last_job_index]
+            job_id = stdout[first_job_index:last_job_index]
 
         except Exception as exc:
-            return Error(Failure.from_exc('Cannot convert job-submit output to job ID: {}', exc))
+            return Error(Failure.from_exc(
+                'cannot convert job-submit output to job ID',
+                exc,
+                command_output=output
+            ))
 
-        self.logger.info('Job submitted: {}'.format(job_id))
+        logger.info('Job submitted: {}'.format(job_id))
 
         return Ok(job_id)
 
-    def _reschedule_job(self, job_id: str, environment: Environment) -> Result[str, Failure]:
+    def _create_job(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment
+    ) -> Result[str, Failure]:
+        r_job_xml = self._create_job_xml(
+            logger,
+            environment
+        )
+
+        if r_job_xml.is_error:
+            return Error(r_job_xml.unwrap_error())
+
+        return self._submit_job(logger, r_job_xml.unwrap())
+
+    def _reschedule_job(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        job_id: str,
+        environment: Environment
+    ) -> Result[str, Failure]:
         """
         Reschedule a Beaker job. Cancel the old job with `job_id`, create and
         submit a new job with `environment` specs and return new `job_id`.
@@ -198,17 +233,16 @@ class BeakerDriver(PoolDriver):
 
         r_job_cancel = self._dispatch_resource_cleanup(self.logger, job_id=job_id)
 
-        if r_job_cancel.is_error and r_job_cancel.error:
-            return Error(r_job_cancel.error)
+        if r_job_cancel.is_error:
+            return Error(r_job_cancel.unwrap_error())
 
-        r_create_job = self._create_job(environment)
-        if r_create_job.is_error and r_create_job.error:
-            return Error(r_create_job.error)
+        return self._create_job(logger, environment)
 
-        job_id = r_create_job.unwrap()
-        return Ok(job_id)
-
-    def _get_job_results(self, job_id: str) -> Result[str, Failure]:
+    def _get_job_results(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        job_id: str
+    ) -> Result[bs4.BeautifulSoup, Failure]:
         """
         Run 'bkr job-results' comand and return job results.
 
@@ -216,15 +250,29 @@ class BeakerDriver(PoolDriver):
         :rtype: result.Result[str, Failure]
         :returns: :py:class:`result.Result` with job results, or specification of error.
         """
-        options = ['job-results', job_id]
 
-        r_job_results = self._run_bkr(options)
-        if r_job_results.is_error and r_job_results.error:
-            return Error(r_job_results.error)
+        r_results = self._run_bkr(logger, ['job-results', job_id])
 
-        return r_job_results
+        if r_results.is_error:
+            return Error(r_results.unwrap_error())
 
-    def _parse_job_status(self, job_results: bs4.BeautifulSoup) -> Result[str, Failure]:
+        stdout, output = r_results.unwrap()
+
+        try:
+            return Ok(bs4.BeautifulSoup(stdout, 'xml'))
+
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'failed to parse job results XML',
+                exc,
+                command_output=output
+            ))
+
+    def _parse_job_status(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        job_results: bs4.BeautifulSoup
+    ) -> Result[str, Failure]:
         """
         Parse job results and return job status
 
@@ -232,15 +280,26 @@ class BeakerDriver(PoolDriver):
         :rtype: result.Result[str, Failure]
         :returns: :py:class:`result.Result` with job status, or specification of error.
         """
+
         if not job_results.find('job') or len(job_results.find_all('job')) != 1:
-            Error(Failure('Job results returned not known structure'))
+            return Error(Failure(
+                'job results XML has unknown structure',
+                job_results=job_results.prettify(encoding='utf-8')
+            ))
 
         if not job_results.find('job')['result']:
-            return Error(Failure('Job result xml does not contain result attribute'))
+            return Error(Failure(
+                'job results XML does not contain result attribute',
+                job_results=job_results.prettify(encoding='utf-8')
+            ))
 
         return Ok(job_results.find('job')['result'])
 
-    def _parse_guest_address(self, job_results: bs4.BeautifulSoup) -> Result[str, Failure]:
+    def _parse_guest_address(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        job_results: bs4.BeautifulSoup
+    ) -> Result[str, Failure]:
         """
         Parse job results and return guest address
 
@@ -248,17 +307,23 @@ class BeakerDriver(PoolDriver):
         :rtype: result.Result[str, Failure]
         :returns: :py:class:`result.Result` with guest address, or specification of error.
         """
+
         if not job_results.find('recipe')['system']:
-            return Error(Failure('System was not found in job results'))
+            return Error(Failure(
+                'System element was not found in job results',
+                job_results=job_results.prettify(encoding='utf-8')
+            ))
 
         return Ok(job_results.find('recipe')['system'])
 
-    def update_guest(self,
-                     logger: gluetool.log.ContextAdapter,
-                     guest_request: GuestRequest,
-                     environment: Environment,
-                     master_key: SSHKey,
-                     cancelled: Optional[threading.Event] = None) -> Result[ProvisioningProgress, Failure]:
+    def update_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        environment: Environment,
+        master_key: SSHKey,
+        cancelled: Optional[threading.Event] = None
+    ) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
         with an address set, driver signals the provisioning is now complete. Returning a guest instance without an
@@ -270,54 +335,64 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with guest, or specification of error.
         """
 
-        r_get_job_results = self._get_job_results(BeakerPoolData.unserialize(guest_request).job_id)
-        if r_get_job_results.is_error and r_get_job_results.error:
-            return Error(r_get_job_results.error)
+        r_job_results = self._get_job_results(logger, BeakerPoolData.unserialize(guest_request).job_id)
 
-        job_results = r_get_job_results.unwrap()
+        if r_job_results.is_error:
+            return Error(r_job_results.unwrap_error())
 
-        # parse xml
-        job_results_xml = bs4.BeautifulSoup(job_results, 'xml')
+        job_results = r_job_results.unwrap()
 
-        r_parse_job_status = self._parse_job_status(job_results_xml)
-        if r_parse_job_status.is_error and r_parse_job_status.error:
-            return Error(r_parse_job_status.error)
+        r_job_status = self._parse_job_status(logger, job_results)
 
-        job_status = r_parse_job_status.unwrap()
+        if r_job_status.is_error:
+            return Error(r_job_status.unwrap_error())
 
-        logger.info('current job status {}:{}'.format(
+        job_status = r_job_status.unwrap()
+
+        logger.info('current job status {}: {}'.format(
             BeakerPoolData.unserialize(guest_request).job_id,
             job_status
         ))
 
-        if job_status == 'Pass':
-            r_parse_guest_address = self._parse_guest_address(job_results_xml)
-            if r_parse_guest_address.is_error and r_parse_guest_address.error:
-                return Error(r_parse_guest_address.error)
+        if job_status.lower() == 'pass':
+            r_guest_address = self._parse_guest_address(logger, job_results)
+
+            if r_guest_address.is_error:
+                return Error(r_guest_address.unwrap_error())
 
             return Ok(ProvisioningProgress(
                 is_acquired=True,
                 pool_data=BeakerPoolData.unserialize(guest_request),
-                address=r_parse_guest_address.unwrap()
+                address=r_guest_address.unwrap()
             ))
 
-        if job_status == 'New':
+        if job_status.lower() == 'new':
             return Ok(ProvisioningProgress(
                 is_acquired=False,
-                pool_data=BeakerPoolData.unserialize(guest_request)
+                pool_data=BeakerPoolData.unserialize(guest_request),
+                delay_update=KNOB_UPDATE_TICK.value
             ))
 
-        if job_status == 'Fail':
-            r_reschedule_job = self._reschedule_job(BeakerPoolData.unserialize(guest_request).job_id, environment)
-            if r_reschedule_job.is_error and r_reschedule_job.error:
-                return Error(r_reschedule_job.error)
+        if job_status.lower() == 'fail':
+            r_reschedule_job = self._reschedule_job(
+                logger,
+                BeakerPoolData.unserialize(guest_request).job_id,
+                environment
+            )
+
+            if r_reschedule_job.is_error:
+                return Error(r_reschedule_job.unwrap_error())
 
             return Ok(ProvisioningProgress(
                 is_acquired=False,
-                pool_data=BeakerPoolData(job_id=r_reschedule_job.unwrap())
+                pool_data=BeakerPoolData(job_id=r_reschedule_job.unwrap()),
+                delay_update=KNOB_UPDATE_TICK.value
             ))
 
-        return Error(Failure('Unknown status'))
+        return Error(Failure(
+            'unknown status',
+            job_results=job_results.prettify(encoding='utf-8')
+        ))
 
     def can_acquire(self, environment: Environment) -> Result[bool, Failure]:
         """
@@ -353,16 +428,11 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
         """
-        r_create_job = self._create_job(environment)
-        if r_create_job.is_error:
-            return Error(r_create_job.value)
-        job = r_create_job.unwrap()
 
-        # Run submit beaker job
-        r_submit_job = self._submit_job(job)
-        if r_submit_job.is_error and r_submit_job.error:
-            return Error(r_submit_job.error)
-        job_id = r_submit_job.unwrap()
+        r_create_job = self._create_job(logger, environment)
+
+        if r_create_job.is_error:
+            return Error(r_create_job.unwrap_error())
 
         # The returned guest doesn't have address. The address will be added by executing `update_guest()`
         # after. The reason of this solution is slow beaker system provisioning. It can take hours and
@@ -370,10 +440,14 @@ class BeakerDriver(PoolDriver):
 
         return Ok(ProvisioningProgress(
             is_acquired=False,
-            pool_data=BeakerPoolData(job_id=job_id)
+            pool_data=BeakerPoolData(job_id=r_create_job.unwrap())
         ))
 
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+    def release_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[bool, Failure]:
         """
         Release guest and its resources back to the pool.
 
@@ -387,8 +461,8 @@ class BeakerDriver(PoolDriver):
             guest_request=guest_request
         )
 
-        if r_job_cancel.is_error and r_job_cancel.error:
-            return Error(r_job_cancel.error)
+        if r_job_cancel.is_error:
+            return Error(r_job_cancel.unwrap_error())
 
         return Ok(True)
 
@@ -399,6 +473,6 @@ class BeakerDriver(PoolDriver):
             return result
 
         capabilities = result.unwrap()
-        capabilities.supports_snapshots = True
+        capabilities.supports_snapshots = False
 
         return Ok(capabilities)

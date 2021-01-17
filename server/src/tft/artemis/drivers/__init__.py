@@ -764,9 +764,9 @@ def run_cli_tool(
 
 
 @contextlib.contextmanager
-def create_tempfile(file_contents: Optional[str] = None) -> Iterator[str]:
+def create_tempfile(file_contents: Optional[str] = None, **kwargs: Any) -> Iterator[str]:
     """Returns a path to the temporary file with given contents."""
-    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+    with tempfile.NamedTemporaryFile(delete=False, **kwargs) as temp_file:
         if file_contents:
             temp_file.write(file_contents.encode('utf-8'))
             # Make sure all changes are committed to the OS
