@@ -8,18 +8,21 @@ in their area.
 
 Our metrics are split into several sections, grouped together by the subsystem or other shared properties,
 and together they form a tree of :py:class:`MetricsBase` classes, starting with :py:class:`Metrics` which
-then links to :py:class:`DBMetrics` and other areas:
+then links to :py:class:`DBMetrics` and other areas. :py:class:`MetricsBase` itself is *not* a dataclass
+since it provides only methods, and therefore does not need to be declared as container - that's left
+to its offsprings.
 """
 
 import dataclasses
-import sqlalchemy
-
-from prometheus_client import Counter, Gauge, CollectorRegistry, generate_latest
+from typing import Any, Dict, Optional, Tuple, Type, cast
 
 import gluetool.log
-from gluetool.result import Result, Ok
+import sqlalchemy
 import sqlalchemy.orm.session
 import sqlalchemy.sql.schema
+from gluetool.result import Ok, Result
+from prometheus_client import (CollectorRegistry, Counter, Gauge,
+                               generate_latest)
 
 from . import Failure
 from . import db as artemis_db
@@ -27,12 +30,10 @@ from . import tasks as artemis_tasks
 from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 from .drivers import PoolMetrics
 
-from typing import cast, Any, Dict, Optional, Tuple, Type
-
 
 class MetricsBase:
     """
-    Base class for all classes carrying metrics around.
+    Base class for all containers carrying metrics around.
     """
 
     @classmethod
@@ -44,13 +45,21 @@ class MetricsBase:
     ) -> 'MetricsBase':
         """
         Load values from database, and return the container instance.
+
+        :param logger: logger to use for logging.
+        :param db: DB instance to use for DB access.
+        :param session: DB session to use for DB access.
+        :raises NotImplementedError: when not implemented by a child class.
         """
 
         raise NotImplementedError()
 
     def to_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Transform our values into Prometheus metric instances, and attach them to the given registry.
+        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        :raises NotImplementedError: when not implemented by a child class.
         """
 
         raise NotImplementedError()
@@ -62,9 +71,16 @@ class DBPoolMetrics(MetricsBase):
     Database connection pool metrics.
     """
 
+    #: Total number of connections allowed to exist in the pool.
     size: int
+
+    #: Number of connections in the use.
     checked_in_connections: int
+
+    #: Number of idle connections.
     checked_out_connections: int
+
+    #: Maximal "overflow" of the pool, i.e. how many connections above the :py:attr:`size` are allowed.
     current_overflow: int
 
     @classmethod
@@ -74,6 +90,15 @@ class DBPoolMetrics(MetricsBase):
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
     ) -> 'DBPoolMetrics':
+        """
+        Load values from database, and return the container instance.
+
+        :param logger: logger to use for logging.
+        :param db: DB instance to use for DB access.
+        :param session: DB session to use for DB access.
+        :returns: a metrics container instance.
+        """
+
         if not hasattr(db.engine.pool, 'size'):
             return DBPoolMetrics(
                 size=-1,
@@ -90,6 +115,12 @@ class DBPoolMetrics(MetricsBase):
         )
 
     def to_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
         pool_size = Gauge(
             'db_pool_size',
             'Maximal number of connections available in the pool',
@@ -126,6 +157,7 @@ class DBMetrics(MetricsBase):
     Database metrics.
     """
 
+    #: Database connection pool metrics.
     pool: DBPoolMetrics
 
     @classmethod
@@ -135,11 +167,26 @@ class DBMetrics(MetricsBase):
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
     ) -> 'DBMetrics':
+        """
+        Load values from database, and return the container instance.
+
+        :param logger: logger to use for logging.
+        :param db: DB instance to use for DB access.
+        :param session: DB session to use for DB access.
+        :returns: a metrics container instance.
+        """
+
         return DBMetrics(
             pool=DBPoolMetrics.load(logger, db, session)
         )
 
     def to_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
         self.pool.to_prometheus(registry)
 
 
@@ -160,6 +207,15 @@ class PoolsMetrics(MetricsBase):
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
     ) -> 'PoolsMetrics':
+        """
+        Load values from database, and return the container instance.
+
+        :param logger: logger to use for logging.
+        :param db: DB instance to use for DB access.
+        :param session: DB session to use for DB access.
+        :returns: a metrics container instance.
+        """
+
         return PoolsMetrics(
             metrics={
                 pool.poolname: pool.metrics(logger, session)
@@ -168,6 +224,12 @@ class PoolsMetrics(MetricsBase):
         )
 
     def to_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
         def _create_pool_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
                 'pool_resources_{}{}'.format(name, '_{}'.format(unit) if unit else ''),
@@ -230,6 +292,13 @@ class ProvisioningMetrics(MetricsBase):
     def inc_requested(
         session: sqlalchemy.orm.session.Session
     ) -> Result[None, Failure]:
+        """
+        Increase :py:attr:`requested` metric by 1.
+
+        :param session: DB session to use for DB access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
         upsert_inc_metric(session, artemis_db.Metrics, {artemis_db.Metrics.metric: 'requested'})
         return Ok(None)
 
@@ -237,6 +306,13 @@ class ProvisioningMetrics(MetricsBase):
     def inc_success(
         session: sqlalchemy.orm.session.Session
     ) -> Result[None, Failure]:
+        """
+        Increase :py:attr:`success` metric by 1.
+
+        :param session: DB session to use for DB access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
         upsert_inc_metric(session, artemis_db.Metrics, {artemis_db.Metrics.metric: 'success'})
         return Ok(None)
 
@@ -246,6 +322,15 @@ class ProvisioningMetrics(MetricsBase):
         from_pool: str,
         to_pool: str
     ) -> Result[None, Failure]:
+        """
+        Increase pool failover metric by 1.
+
+        :param session: DB session to use for DB access.
+        :param from_pool: name of the originating pool.
+        :param to_pool: name of the replacement pool.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
         upsert_inc_metric(
             session,
             artemis_db.MetricsFailover,
@@ -262,6 +347,15 @@ class ProvisioningMetrics(MetricsBase):
         from_pool: str,
         to_pool: str
     ) -> Result[None, Failure]:
+        """
+        Increase successfull pool failover meric by 1.
+
+        :param session: DB session to use for DB access.
+        :param from_pool: name of the originating pool.
+        :param to_pool: name of the replacement pool.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
         upsert_inc_metric(
             session,
             artemis_db.MetricsFailoverSuccess,
@@ -279,6 +373,15 @@ class ProvisioningMetrics(MetricsBase):
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
     ) -> 'ProvisioningMetrics':
+        """
+        Load values from database, and return the container instance.
+
+        :param logger: logger to use for logging.
+        :param db: DB instance to use for DB access.
+        :param session: DB session to use for DB access.
+        :returns: a metrics container instance.
+        """
+
         requested_record = artemis_db.Query \
             .from_session(session, artemis_db.Metrics) \
             .filter(artemis_db.Metrics.metric == 'requested') \
@@ -304,6 +407,12 @@ class ProvisioningMetrics(MetricsBase):
         )
 
     def to_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
         overall_request_count = Counter(
             'overall_guest_request_count_total',
             'Number of overall guest requests',
@@ -364,6 +473,15 @@ class Metrics(MetricsBase):
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
     ) -> 'Metrics':
+        """
+        Load values from database, and return the container instance.
+
+        :param logger: logger to use for logging.
+        :param db: DB instance to use for DB access.
+        :param session: DB session to use for DB access.
+        :returns: a metrics container instance.
+        """
+
         return Metrics(
             db=DBMetrics.load(logger, db, session),
             pools=PoolsMetrics.load(logger, db, session),
@@ -371,6 +489,12 @@ class Metrics(MetricsBase):
         )
 
     def to_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
         self.db.to_prometheus(registry)
         self.pools.to_prometheus(registry)
         self.provisioning.to_prometheus(registry)
@@ -381,6 +505,14 @@ class Metrics(MetricsBase):
         logger: gluetool.log.ContextAdapter,
         db: artemis_db.DB,
     ) -> bytes:
+        """
+        Render plaintext output of Prometheus metrics representing values in this tree of metrics.
+
+        :param logger: logger to use for logging.
+        :param db: DB instance to use for DB access.
+        :returns: plaintext represenation of Prometheus metrics, encoded as ``bytes``.
+        """
+
         registry = CollectorRegistry()
         registry.register(REQUEST_COUNT)
         registry.register(REQUESTS_INPROGRESS)
@@ -400,10 +532,24 @@ def upsert_metric(
     change: int
 ) -> None:
     """
-    Wrapper around :py:func:`tft.artemis.db.upsert` to simplify its use when it comes to metrics.
+    Update a stored value of a given metric.
 
-    With metrics, the situation is simpler: we expect the given table has some primary key columns,
-    and one column called `count` we want to modify.
+    Wrapper for :py:func:`tft.artemis.db.upsert` to simplify its use when it comes to metrics. With metrics, we work
+    with the following assumptions:
+
+    * model (table) has one or more primary keys,
+    * model has a "counter" column (called ``count``) which holds the value of the metric specified by primary keys.
+
+    Therefore, this helper focuses on changing the counter, using primary keys to limit the change, or initialize
+    the row if it doesn't exist yet.
+
+    :param session: DB session to use for DB access.
+    :param model: SQLAlchemy model representing the metrics table we need to update.
+    :param primary_keys: mapping of primary keys and their expected values. This mapping is used to limit
+        the update to a particular record, or initialize new record if it doesn't exist yet.
+
+        Primary keys - keys of the mapping - should be the columns of the given model.
+    :param change: amount to add to ``count``.
     """
 
     # TODO: actually check if result of upsert was sucessful
@@ -422,7 +568,14 @@ def upsert_inc_metric(
     primary_keys: Dict[Any, Any]
 ) -> None:
     """
-    Increment a metric counter in DB by 1.
+    Increment a metric counter by 1.
+
+    Implemented as a thin wrapper for :py:func:`upsert_metric`, therefore the parameters share their meaning.
+
+    :param session: DB session to use for DB access.
+    :param model: SQLAlchemy model representing the metrics table we need to update.
+    :param primary_keys: mapping of primary keys and their expected values. See :py:func:`upsert_metric`
+        for more details.
     """
 
     upsert_metric(session, model, primary_keys, 1)
@@ -434,7 +587,14 @@ def upsert_dec_metric(
     primary_keys: Dict[Any, Any]
 ) -> None:
     """
-    Decrement a metric counter in DB by 1.
+    Decrement a metric counter by 1.
+
+    Implemented as a thin wrapper for :py:func:`upsert_metric`, therefore the parameters share their meaning.
+
+    :param session: DB session to use for DB access.
+    :param model: SQLAlchemy model representing the metrics table we need to update.
+    :param primary_keys: mapping of primary keys and their expected values. See :py:func:`upsert_metric`
+        for more details.
     """
 
     upsert_metric(session, model, primary_keys, -1)
