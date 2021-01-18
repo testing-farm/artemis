@@ -1299,11 +1299,11 @@ class Workspace:
 
         assert False, 'unreachable'
 
-    def dispatch_task(self, task: Actor, *args: Any) -> None:
+    def dispatch_task(self, task: Actor, *args: Any, delay: Optional[int] = None) -> None:
         if self.result:
             return
 
-        r = dispatch_task(self.logger, task, *args)
+        r = dispatch_task(self.logger, task, *args, delay=delay)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to dispatch update task')
@@ -1722,7 +1722,7 @@ def do_update_guest_request(
             current_pool_data=current_pool_data
         )
 
-        workspace.dispatch_task(update_guest_request, guestname)
+        workspace.dispatch_task(update_guest_request, guestname, delay=provisioning_progress.delay_update)
 
         if workspace.result:
             _undo_guest_update()

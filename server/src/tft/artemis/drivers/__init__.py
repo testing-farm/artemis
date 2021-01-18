@@ -265,6 +265,11 @@ class ProvisioningProgress:
     #: to set this property to guest's IP address.
     address: Optional[str] = None
 
+    #: If set, it represents a suggestion from the pool driver: it does not make much sense
+    #: to run :py:meth:`PoolDriver.update_guest` sooner than this second in the future. If
+    #: left unset, Artemis core will probably run the update as soon as possible.
+    delay_update: Optional[int] = None
+
 
 class PoolDriver(gluetool.log.LoggerMixin):
     def __init__(
