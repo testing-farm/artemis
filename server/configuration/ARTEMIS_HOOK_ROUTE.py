@@ -7,7 +7,6 @@ but you probably won't need to touch :py:func:`hook_ROUTE` - it's pretty generic
 :py:data:`POLICIES`. Change that list rather than the code, since the decisions should happen in policies.
 """
 
-from tft.artemis import Failure
 from tft.artemis.drivers import PoolDriver
 from tft.artemis.db import GuestRequest
 from tft.artemis.routing_policies import policy_boilerplate, PolicyRuling, PolicyReturnType
@@ -15,7 +14,7 @@ from tft.artemis.routing_policies import policy_match_pool_name, policy_least_cr
     policy_timeout_reached, policy_enough_resources, policy_supports_snapshots, run_routing_policies
 
 import gluetool.log
-from gluetool.result import Error, Ok, Result
+from gluetool.result import Ok
 import sqlalchemy
 
 from typing import List, Optional
@@ -65,35 +64,11 @@ def hook_ROUTE(
     session: Optional[sqlalchemy.orm.session.Session] = None,
     guest_request: Optional[GuestRequest] = None,
     pools: Optional[List[PoolDriver]] = None,
-) -> Result[Optional[PoolDriver], Failure]:
+) -> PolicyReturnType:
 
     assert logger is not None
     assert session is not None
     assert guest_request is not None
     assert pools is not None
 
-    r = run_routing_policies(logger, session, guest_request, pools, POLICIES)
-
-    if r.is_error:
-        return Error(r.unwrap_error())
-
-    ruling = r.unwrap()
-
-    if ruling.cancel:
-        # TODO: This was NOT handled correctly in the previous version: routing script returns Error, which leads
-        # to task rescheduling, hitting the same timeout ruling once again.
-        #
-        # We should use PolicyRuling as the script's return value, that would help us explain more details
-        # about the result.
-        return Ok(None)
-
-        # return Error(Failure(
-        #     'Routing is taking more then {} hours, cannot continue'.format(KNOB_ROUTE_REQUEST_MAX_TIME)
-        # ))
-
-    # If no suitable pools found
-    if not ruling.allowed_pools:
-        return Ok(None)
-
-    # At this point, all pools are equally worthy: we may very well return any of them.
-    return Ok(ruling.allowed_pools[0])
+    return run_routing_policies(logger, session, guest_request, pools, POLICIES)

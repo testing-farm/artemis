@@ -20,6 +20,7 @@ from .db import DB, GuestEvent, GuestRequest, Pool, SnapshotRequest, SSHKey, Que
 from .drivers import PoolDriver, PoolLogger, PoolData
 from .environment import Environment
 from .guest import GuestLogger, GuestState, SnapshotLogger
+from .routing_policies import PolicyRuling
 from .script import hook_engine
 
 from .drivers import aws as aws_driver
@@ -27,7 +28,7 @@ from .drivers import beaker as beaker_driver
 from .drivers import openstack as openstack_driver
 from .drivers import azure as azure_driver
 
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Union
 from typing_extensions import Protocol
 
 
@@ -2131,20 +2132,39 @@ def do_route_guest_request(
 
     logger.info('finding suitable provisioner')
 
-    pool = workspace.run_hook(
-        'ROUTE',
-        session=session,
-        guest_request=workspace.gr,
-        pools=get_pools(logger, session)
+    ruling = cast(
+        PolicyRuling,
+        workspace.run_hook(
+            'ROUTE',
+            session=session,
+            guest_request=workspace.gr,
+            pools=get_pools(logger, session)
+        )
     )
 
     # Route hook failed, request cannot be fulfilled ;(
     if workspace.result:
         return workspace.result
 
-    # No suitable pool found
-    if not pool:
+    if ruling.cancel:
+        handle_success('routing-cancelled')
+
+        workspace.update_guest_state(
+            GuestState.ROUTING,
+            GuestState.ERROR
+        )
+
+        if workspace.result:
+            return workspace.result
+
+        return handle_success('finished-task')
+
+    # If no suitable pools found
+    if not ruling.allowed_pools:
         return RESCHEDULE
+
+    # At this point, all pools are equally worthy: we may very well use the first one.
+    pool = ruling.allowed_pools[0]
 
     assert workspace.gr
     new_pool = pool.poolname
