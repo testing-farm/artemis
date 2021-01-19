@@ -60,14 +60,11 @@ def _image_by_name(
 
 
 def hook_AWS_ENVIRONMENT_TO_IMAGE(
-    logger: Optional[gluetool.log.ContextAdapter] = None,
-    pool: Optional[AWSDriver] = None,
-    environment: Optional[Environment] = None,
+    *,
+    logger: gluetool.log.ContextAdapter,
+    pool: AWSDriver,
+    environment: Environment,
 ) -> Result[Any, Failure]:
-    assert logger is not None
-    assert pool is not None
-    assert environment is not None
-
     image_name: Optional[str] = None
 
     try:

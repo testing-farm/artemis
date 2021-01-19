@@ -59,14 +59,11 @@ def _image_by_name(
 
 
 def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(
-    logger: Optional[gluetool.log.ContextAdapter] = None,
-    pool: Optional[OpenStackDriver] = None,
-    environment: Optional[Environment] = None,
+    *,
+    logger: gluetool.log.ContextAdapter,
+    pool: OpenStackDriver,
+    environment: Environment
 ) -> Result[str, Failure]:
-    assert logger is not None
-    assert pool is not None
-    assert environment is not None
-
     image_name: Optional[str] = None
 
     try:

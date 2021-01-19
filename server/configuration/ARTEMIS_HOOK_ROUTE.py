@@ -17,7 +17,7 @@ import gluetool.log
 from gluetool.result import Ok
 import sqlalchemy
 
-from typing import List, Optional
+from typing import List
 
 
 @policy_boilerplate
@@ -60,15 +60,10 @@ POLICIES = [
 
 
 def hook_ROUTE(
-    logger: Optional[gluetool.log.ContextAdapter] = None,
-    session: Optional[sqlalchemy.orm.session.Session] = None,
-    guest_request: Optional[GuestRequest] = None,
-    pools: Optional[List[PoolDriver]] = None,
+    *,
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    guest_request: GuestRequest,
+    pools: List[PoolDriver]
 ) -> PolicyReturnType:
-
-    assert logger is not None
-    assert session is not None
-    assert guest_request is not None
-    assert pools is not None
-
     return run_routing_policies(logger, session, guest_request, pools, POLICIES)
