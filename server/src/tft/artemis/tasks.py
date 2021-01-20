@@ -123,6 +123,14 @@ KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
     default=False
 )
 
+KNOB_DISPATCH_PREPARE_DELAY: Knob[int] = Knob(
+    'actor.dispatch-preparing.delay',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY',
+    envvar_cast=int,
+    default=60
+)
+
 
 POOL_DRIVERS = {
     'aws': aws_driver.AWSDriver,
@@ -591,9 +599,18 @@ def dispatch_group(
         else:
             group.run(delay=delay * 1000)
 
+        formatted_args = [
+            str(arg) for arg in args
+        ]
+
+        if delay is not None:
+            formatted_args += [
+                'delay={}'.format(delay)
+            ]
+
         logger.info('scheduled group ({})({})'.format(
-            '|'.join([task.actor_name for task in tasks]),
-            ', '.join([str(arg) for arg in args])
+            ' | '.join([task.actor_name for task in tasks]),
+            ', '.join(formatted_args)
         ))
 
     except Exception as exc:
@@ -1374,11 +1391,17 @@ class Workspace:
             self.result = self.handle_failure(r, 'failed to dispatch update task')
             return
 
-    def dispatch_group(self, tasks: List[Actor], *args: Any, on_complete: Optional[Actor] = None) -> None:
+    def dispatch_group(
+        self,
+        tasks: List[Actor],
+        *args: Any,
+        on_complete: Optional[Actor] = None,
+        delay: Optional[int] = None
+    ) -> None:
         if self.result:
             return
 
-        r = dispatch_group(self.logger, tasks, *args, on_complete=on_complete)
+        r = dispatch_group(self.logger, tasks, *args, on_complete=on_complete, delay=delay)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to dispatch group')
@@ -1820,7 +1843,8 @@ def dispatch_preparing(
             prepare_verify_ssh
         ],
         workspace.guestname,
-        on_complete=guest_request_prepare_finalize
+        on_complete=guest_request_prepare_finalize,
+        delay=KNOB_DISPATCH_PREPARE_DELAY.value
     )
 
 
