@@ -43,6 +43,7 @@ RUN    apk add --no-cache bash \
                           libxslt-dev \
                           make \
                           musl-dev \
+                          openssh \
                           openssl-dev \
                           postgresql \
                           postgresql-dev \
