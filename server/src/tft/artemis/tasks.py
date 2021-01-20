@@ -512,11 +512,21 @@ def dispatch_task(
     *args: Any,
     delay: Optional[int] = None
 ) -> Result[None, Failure]:
+    """
+    Dispatch a given task.
+
+    :param logger: logger to use for logging.
+    :param task: callable, a Dramatiq task, to dispatch.
+    :param args: positional parameters to pass to the task.
+    :param delay: if set, the task will be delayed by this many seconds.
+    """
+
     if delay is None:
         r = safe_call(task.send, *args)
 
     else:
-        r = safe_call(task.send_with_options, args=args, delay=delay)
+        # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
+        r = safe_call(task.send_with_options, args=args, delay=delay * 1000)
 
     if r.is_ok:
         formatted_args = [
@@ -553,8 +563,19 @@ def dispatch_group(
     logger: gluetool.log.ContextAdapter,
     tasks: List[Actor],
     *args: Any,
-    on_complete: Optional[Actor] = None
+    on_complete: Optional[Actor] = None,
+    delay: Optional[int] = None
 ) -> Result[None, Failure]:
+    """
+    Dispatch given tasks as a group.
+
+    :param logger: logger to use for logging.
+    :param tasks: list of callables, Dramatiq tasks, to dispatch.
+    :param args: positional parameters to pass to all tasks.
+    :param on_complete: a task to dispatch when group tasks complete.
+    :param delay: if set, the task will be delayed by this many seconds.
+    """
+
     try:
         group = dramatiq.group([
             task.message(*args)
@@ -564,7 +585,11 @@ def dispatch_group(
         if on_complete:
             group.add_completion_callback(on_complete.message(*args))
 
-        group.run()
+        if delay is None:
+            group.run()
+
+        else:
+            group.run(delay=delay * 1000)
 
         logger.info('scheduled group ({})({})'.format(
             '|'.join([task.actor_name for task in tasks]),
