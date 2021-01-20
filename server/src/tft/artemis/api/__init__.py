@@ -350,7 +350,11 @@ class GuestRequestManager:
             ]
 
     def create(self, guest_request: GuestRequest, ownername: str) -> GuestResponse:
+        from ..tasks import get_guest_logger
+
         guestname = str(uuid.uuid4())
+
+        guest_logger = get_guest_logger('create-guest-request', get_logger(), guestname)
 
         with self.db.get_session() as session:
             session.add(
@@ -378,10 +382,9 @@ class GuestRequestManager:
         assert gr is not None
 
         # add guest event
-        logger = get_logger()
         with self.db.get_session() as session:
             log_guest_event(
-                logger,
+                guest_logger,
                 session,
                 gr.guestname,
                 'created',
@@ -404,6 +407,10 @@ class GuestRequestManager:
             return GuestResponse.from_db(guest_request_record)
 
     def delete_by_guestname(self, guestname: str, request: Request) -> bool:
+        from ..tasks import get_guest_logger
+
+        guest_logger = get_guest_logger('delete-guest-request', get_logger(), guestname)
+
         with self.db.get_session() as session:
             snapshot_count_subquery = session \
                 .query(sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')) \
@@ -416,15 +423,13 @@ class GuestRequestManager:
                 .where(snapshot_count_subquery.c.snapshot_count == 0) \
                 .values(state=GuestState.CONDEMNED.value)
 
-            logger = get_logger()
-
-            r_execute = safe_db_change(logger, session, query)
+            r_execute = safe_db_change(guest_logger, session, query)
 
             if r_execute.is_ok:
                 if r_execute.unwrap():
                     # add guest event
                     log_guest_event(
-                        logger,
+                        guest_logger,
                         session,
                         guestname,
                         'condemned'
@@ -552,6 +557,10 @@ class SnapshotRequestManager:
         return snapshot_response
 
     def delete_snapshot(self, guestname: str, snapshotname: str) -> None:
+        from ..tasks import get_snapshot_logger
+
+        snapshot_logger = get_snapshot_logger('delete-snapshot-request', get_logger(), guestname, snapshotname)
+
         with self.db.get_session() as session:
             query = sqlalchemy \
                 .update(artemis_db.SnapshotRequest.__table__) \
@@ -559,12 +568,16 @@ class SnapshotRequestManager:
                 .where(artemis_db.SnapshotRequest.guestname == guestname) \
                 .values(state=GuestState.CONDEMNED.value)
 
-            if safe_db_change(get_logger(), session, query):
+            if safe_db_change(snapshot_logger, session, query):
                 return
 
             raise errors.GenericError()
 
     def restore_snapshot(self, guestname: str, snapshotname: str) -> SnapshotResponse:
+        from ..tasks import get_snapshot_logger
+
+        snapshot_logger = get_snapshot_logger('delete-snapshot-request', get_logger(), guestname, snapshotname)
+
         with self.db.get_session() as session:
             query = sqlalchemy \
                 .update(artemis_db.SnapshotRequest.__table__) \
@@ -573,7 +586,7 @@ class SnapshotRequestManager:
                 .where(artemis_db.SnapshotRequest.state != GuestState.CONDEMNED.value) \
                 .values(state=GuestState.RESTORING.value)
 
-            if safe_db_change(get_logger(), session, query):
+            if safe_db_change(snapshot_logger, session, query):
                 snapshot_response = self.get_snapshot(guestname, snapshotname)
 
                 assert snapshot_response is not None
