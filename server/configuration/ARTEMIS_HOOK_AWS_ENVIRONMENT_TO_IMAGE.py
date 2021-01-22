@@ -13,7 +13,6 @@ from typing import Any, Optional
 
 
 def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -> Result[str, Failure]:
-
     configuration_dir = os.getenv('ARTEMIS_CONFIG_DIR', '/configuration')
     compose_image_map = os.path.join(configuration_dir, 'artemis-image-map-aws.yaml')
 
@@ -90,10 +89,10 @@ def hook_AWS_ENVIRONMENT_TO_IMAGE(
         return Error(Failure.from_exc(
             'crashed while mapping environment to image',
             exc,
-            environment=environment.serialize_to_json()
+            environment=environment
         ))
 
     return Error(Failure(
         'failed to map environment to image',
-        environment=environment.serialize_to_json()
+        environment=environment
     ))

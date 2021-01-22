@@ -39,6 +39,7 @@ jinja2.defaults.DEFAULT_FILTERS.update(
 
 # Now we can import our stuff without any fear we'd miss DEFAULT_FILTERS update
 from . import db as artemis_db  # noqa: E402
+from .environment import Environment  # noqa: E402
 from . import vault as artemis_vault  # noqa: E402
 from . import middleware as artemis_middleware  # noqa: E402
 
@@ -135,6 +136,7 @@ class Failure:
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
+        environment: Optional[Environment] = None,
         **details: Any
     ):
         self.message = message
@@ -158,6 +160,9 @@ class Failure:
 
         if command_output:
             self.details['command_output'] = command_output
+
+        if environment:
+            self.details['environment'] = environment
 
         if exc_info:
             self.exception = exc_info[1]
@@ -188,6 +193,7 @@ class Failure:
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
+        environment: Optional[Environment] = None,
         **details: Any
     ):
         # type: (...) -> Failure
@@ -203,6 +209,7 @@ class Failure:
             recoverable=recoverable,
             scrubbed_command=scrubbed_command,
             command_output=command_output,
+            environment=environment,
             **details
         )
 

@@ -183,7 +183,7 @@ class OpenStackDriver(PoolDriver):
                 Failure(
                     'Failed to find image for environment',
                     caused_by=r_image.unwrap_error(),
-                    environment=environment.serialize_to_json()
+                    environment=environment
                 )
             )
 
