@@ -13,7 +13,7 @@ from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
 import sqlalchemy
 
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Type
 
 
 @dataclasses.dataclass
@@ -142,9 +142,35 @@ def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[Pool
         ))
 
     return Ok([
-        (pool, r_capabilities.unwrap())
-        for pool, r_capabilities in r_capabilities
+        (pool, r.unwrap())
+        for pool, r in r_capabilities
     ])
+
+
+def create_preferrence_filter_by_driver_class(*preferred_drivers: Type[PoolDriver]) -> PolicyType:
+    @policy_boilerplate
+    def policy(
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        pools: List[PoolDriver],
+        guest_request: GuestRequest
+    ) -> PolicyReturnType:
+        preferred_pools: List[PoolDriver] = [
+            pool
+            for pool in pools
+            if isinstance(pool, preferred_drivers)
+        ]
+
+        if not preferred_pools:
+            return Ok(PolicyRuling(
+                allowed_pools=pools
+            ))
+
+        return Ok(PolicyRuling(
+            allowed_pools=preferred_pools
+        ))
+
+    return policy
 
 
 @policy_boilerplate

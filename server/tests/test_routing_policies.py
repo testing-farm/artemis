@@ -119,6 +119,49 @@ def test_boilerplate_crash(mock_inputs):
     assert failure.exception is mock_exception
 
 
+def test_collect_pool_capabilities(mock_inputs):
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    mock_capabilities = [
+        MagicMock(name='{}.capabilities<mock>'.format(pool.poolname)) for pool in mock_pools
+    ]
+
+    for pool, capabilities in zip(mock_pools, mock_capabilities):
+        pool.capabilities = MagicMock(return_value=Ok(capabilities))
+
+    r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
+
+    assert r.is_ok
+
+    collected = r.unwrap()
+
+    for i in range(0, len(mock_pools)):
+        expected_pool = mock_pools[i]
+        expected_capabilities = mock_capabilities[i]
+
+        actual_pool, actual_capabilities = collected[i]
+
+        assert actual_pool is expected_pool
+        assert actual_capabilities is expected_capabilities
+
+
+def test_collect_pool_capabilities_error(mock_inputs):
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    mock_pools[0].capabilities = MagicMock(return_value=Ok(MagicMock(name='{}.capabilities<mock>'.format(mock_pools[0].poolname))))
+    mock_pools[1].capabilities = MagicMock(return_value=Error(MagicMock(name='failure<mock>')))
+    mock_pools[2].capabilities = MagicMock(return_value=Ok(MagicMock(name='{}.capabilities<mock>'.format(mock_pools[2].poolname))))
+
+    r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
+
+    assert r.is_error
+
+    failure = r.unwrap_error()
+
+    assert isinstance(failure, tft.artemis.Failure)
+    assert failure.caused_by == mock_pools[1].capabilities.return_value.unwrap_error()
+
+
 def test_run_routing_policies(mock_inputs, mock_policies):
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
@@ -139,6 +182,44 @@ def test_run_routing_policies(mock_inputs, mock_policies):
 
     mock_policies[0].assert_called_once_with(mock_logger, mock_session, mock_pools, mock_guest_request)
     mock_policies[1].assert_called_once_with(mock_logger, mock_session, [mock_pools[0], mock_pools[1]], mock_guest_request)
+
+
+def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs):
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
+        dict
+    )
+
+    mock_pools = [list(), list(), list()]
+
+    r_ruling = policy(mock_logger, mock_session, mock_pools, mock_guest_request)
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+
+    assert ruling.cancel is False
+    assert ruling.allowed_pools == mock_pools
+
+
+def test_create_preferrence_filter_by_driver_class(mock_inputs):
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
+        list
+    )
+
+    mock_pools = [list(), list(), dict(), list()]
+
+    r_ruling = policy(mock_logger, mock_session, mock_pools, mock_guest_request)
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+
+    assert ruling.cancel is False
+    assert ruling.allowed_pools == [mock_pools[0], mock_pools[1], mock_pools[3]]
 
 
 def test_run_routing_policies_cancel(mock_inputs, mock_policies):
@@ -228,6 +309,50 @@ def test_policy_match_pool_name_no_match(mock_inputs):
 
 def test_policy_match_pool_name_no_trigger(mock_inputs):
     do_test_policy_match_pool_name(mock_inputs, None, None)
+
+
+def do_test_policy_supports_architecture(mock_inputs, provide_arch):
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    for mock_pool in mock_pools:
+        mock_pool.capabilities = lambda: Ok(tft.artemis.drivers.PoolCapabilities(supported_architectures=['foo', 'bar']))
+
+    if provide_arch:
+        mock_pools[1].capabilities = lambda: Ok(tft.artemis.drivers.PoolCapabilities(supported_architectures=['foo', 'bar', 'x86_64']))
+
+    mock_guest_request.environment = json.dumps(
+        tft.artemis.environment.Environment(
+            arch='x86_64',
+            os=tft.artemis.environment.Os(compose='dummy-compose'),
+            snapshots=False
+        ).serialize_to_json()
+    )
+
+    r_ruling = tft.artemis.routing_policies.policy_supports_architecture(mock_logger, mock_session, mock_pools, mock_guest_request)
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+
+    assert isinstance(ruling, tft.artemis.routing_policies.PolicyRuling)
+    assert ruling.cancel is False
+
+    if provide_arch:
+        assert ruling.allowed_pools == [mock_pools[1]]
+
+    elif not provide_arch:
+        assert ruling.allowed_pools == []
+
+    else:
+        assert False, 'unreachable'
+
+
+def test_policy_supports_architecture(mock_inputs):
+    do_test_policy_supports_architecture(mock_inputs, True)
+
+
+def test_policy_supports_architecture_no_match(mock_inputs):
+    do_test_policy_supports_architecture(mock_inputs, False)
 
 
 def do_test_policy_supports_snapshots(mock_inputs, require_snapshots, provide_snapshots):

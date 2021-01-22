@@ -9,51 +9,45 @@ but you probably won't need to touch :py:func:`hook_ROUTE` - it's pretty generic
 
 from tft.artemis.drivers import PoolDriver
 from tft.artemis.db import GuestRequest
-from tft.artemis.routing_policies import policy_boilerplate, PolicyRuling, PolicyReturnType
+from tft.artemis.routing_policies import PolicyReturnType
 from tft.artemis.routing_policies import policy_match_pool_name, policy_least_crowded, policy_one_attempt_forgiving, \
-    policy_timeout_reached, policy_enough_resources, policy_supports_snapshots, run_routing_policies
+    policy_timeout_reached, policy_enough_resources, policy_supports_snapshots, run_routing_policies, \
+    policy_supports_architecture, create_preferrence_filter_by_driver_class
+
+import tft.artemis.drivers.azure
+import tft.artemis.drivers.aws
+import tft.artemis.drivers.openstack
 
 import gluetool.log
-from gluetool.result import Ok
 import sqlalchemy
 
 from typing import List
 
 
-@policy_boilerplate
-def policy_prefer_openstack(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    pools: List[PoolDriver],
-    guest_request: GuestRequest
-) -> PolicyReturnType:
-    """
-    If there are OpenStack pools still in the mix, then prefer these pools over the rest. If there are no OpenStack
-    pools allowed anymore, return the original list: *prefer*, not *use only*.
-    """
+#: If there are OpenStack pools still in the mix, then prefer these pools over the rest. If there are no OpenStack
+#: pools allowed anymore, return the original list: *prefer*, not *use only*.
+policy_prefer_openstack = create_preferrence_filter_by_driver_class(
+    tft.artemis.drivers.openstack.OpenStackDriver
+)
 
-    openstack_pools = [
-        pool
-        for pool in pools
-        if pool.__class__.__name__ == 'OpenStackDriver'
-    ]
 
-    if not openstack_pools:
-        return Ok(PolicyRuling(
-            allowed_pools=pools
-        ))
-
-    return Ok(PolicyRuling(
-        allowed_pools=openstack_pools
-    ))
+#: If there are cloud-backed pools still in the mix, then prefer these pools over more expensive pools (like Beaker).
+#: If there are no cloud-backed pools available anymore, return the original list: *prefer*, not *use only*.
+policy_prefer_clouds = create_preferrence_filter_by_driver_class(
+    tft.artemis.drivers.aws.AWSDriver,
+    tft.artemis.drivers.azure.AzureDriver,
+    tft.artemis.drivers.openstack.OpenStackDriver
+)
 
 
 POLICIES = [
     policy_timeout_reached,
     policy_match_pool_name,
+    policy_supports_architecture,
     policy_supports_snapshots,
     policy_one_attempt_forgiving,
     policy_enough_resources,
+    policy_prefer_clouds,
     policy_prefer_openstack,
     policy_least_crowded
 ]
