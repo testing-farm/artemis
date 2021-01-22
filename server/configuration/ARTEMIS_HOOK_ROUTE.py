@@ -13,6 +13,8 @@ from tft.artemis.routing_policies import policy_boilerplate, PolicyRuling, Polic
 from tft.artemis.routing_policies import policy_match_pool_name, policy_least_crowded, policy_one_attempt_forgiving, \
     policy_timeout_reached, policy_enough_resources, policy_supports_snapshots, run_routing_policies
 
+import tft.artemis.drivers.openstack
+
 import gluetool.log
 from gluetool.result import Ok
 import sqlalchemy
@@ -35,7 +37,7 @@ def policy_prefer_openstack(
     openstack_pools = [
         pool
         for pool in pools
-        if pool.__class__.__name__ == 'OpenStackDriver'
+        if isinstance(pool, tft.artemis.drivers.openstack.OpenStackDriver)
     ]
 
     if not openstack_pools:
