@@ -20,10 +20,20 @@ from ..environment import Environment
 from ..guest import GuestState
 
 # Type annotations
-from typing import cast, Any, Callable, Iterator, List, Dict, Optional, Tuple
+from typing import cast, Any, Callable, Iterator, List, Dict, Optional, Tuple, Union
 
 
 PoolResourcesIDsType = Dict[str, Any]
+
+
+class _AnyArchitecture:
+    pass
+
+    def __repr__(self) -> str:
+        return '<Any>'
+
+
+AnyArchitecture = _AnyArchitecture()
 
 
 class PoolLogger(gluetool.log.ContextAdapter):
@@ -34,7 +44,23 @@ class PoolLogger(gluetool.log.ContextAdapter):
 
 
 class PoolCapabilities(argparse.Namespace):
+    supported_architectures: Union[List[str], _AnyArchitecture]
     supports_snapshots = False
+
+    def supports_arch(self, arch: str) -> bool:
+        """
+        Check whether a given architecture is supported. It is either listed among architectures supported
+        by the pool, or pool supports *any* architecture.
+
+        :param arch: architecture to test support for.
+        """
+
+        if self.supported_architectures is AnyArchitecture:
+            return True
+
+        # Here we know the attribute must be a list, because we ruled out the `AnyArchitecture` above, but mypy
+        # can't deduce it.
+        return arch in cast(List[str], self.supported_architectures)
 
 
 @dataclasses.dataclass
@@ -542,9 +568,42 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError()
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
-        # nothing yet, thinking about what capabilities might Beaker provide...
+        capabilities = PoolCapabilities(
+            supported_architectures=AnyArchitecture,
+            supports_snapshots=False
+        )
 
-        return Result.Ok(PoolCapabilities())
+        capabilities_config = self.pool_config.get('capabilities')
+
+        if not capabilities_config:
+            return Ok(capabilities)
+
+        if 'supported-architectures' in capabilities_config:
+            supported_architectures = capabilities_config['supported-architectures']
+
+            if isinstance(supported_architectures, str) and supported_architectures.strip().lower() == 'any':
+                # Already set by initialization
+                pass
+
+            elif isinstance(supported_architectures, list):
+                capabilities.supported_architectures = [
+                    str(arch) for arch in capabilities_config['supported-architectures']
+                ]
+
+            else:
+                return Error(Failure(
+                    'cannot parse supported architectures',
+                    # converting to string because at this point, we don't know what's the type, and the failure
+                    # might land in db, causing troubles to serialization.
+                    supported_architectures=repr(supported_architectures)
+                ))
+
+        if 'supports-snapshots' in capabilities_config:
+            capabilities.supports_snapshots = gluetool.utils.normalize_bool_option(
+                cast(str, capabilities_config['supports-snapshots'])
+            )
+
+        return Result.Ok(capabilities)
 
     def current_guests_in_pool(self, session: sqlalchemy.orm.session.Session) -> List[GuestRequest]:
         return Query.from_session(session, GuestRequest) \

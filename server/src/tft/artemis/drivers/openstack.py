@@ -5,9 +5,8 @@ from datetime import datetime
 
 import gluetool.log
 from gluetool.result import Result, Ok, Error
-from gluetool.utils import normalize_bool_option
 
-from . import PoolDriver, PoolCapabilities, PoolResourcesMetrics, create_tempfile, run_cli_tool, PoolResourcesIDsType, \
+from . import PoolDriver, PoolResourcesMetrics, create_tempfile, run_cli_tool, PoolResourcesIDsType, \
     PoolData, ProvisioningProgress
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
@@ -662,19 +661,6 @@ class OpenStackDriver(PoolDriver):
                 return Error(r_output.value)
 
         return Ok(None)
-
-    def capabilities(self) -> Result[PoolCapabilities, Failure]:
-        result = super(OpenStackDriver, self).capabilities()
-
-        if result.is_error:
-            return result
-
-        capabilities = result.unwrap()
-
-        # And to handle str -> bool conversions, we have tried and tested tools in gluetool's utils.
-        capabilities.supports_snapshots = normalize_bool_option(cast(str, self.pool_config.get('snapshots')))
-
-        return Ok(capabilities)
 
     def fetch_pool_resources_metrics(
         self,

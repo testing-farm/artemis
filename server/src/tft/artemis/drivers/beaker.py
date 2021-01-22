@@ -9,7 +9,7 @@ import gluetool.utils
 from gluetool.result import Result, Ok, Error
 from gluetool.log import log_xml
 
-from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress, \
+from . import PoolDriver, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress, \
     create_tempfile
 from .. import Failure, Knob
 from ..db import GuestRequest, SSHKey
@@ -465,14 +465,3 @@ class BeakerDriver(PoolDriver):
             return Error(r_job_cancel.unwrap_error())
 
         return Ok(True)
-
-    def capabilities(self) -> Result[PoolCapabilities, Failure]:
-        result = super(BeakerDriver, self).capabilities()
-
-        if result.is_error:
-            return result
-
-        capabilities = result.unwrap()
-        capabilities.supports_snapshots = False
-
-        return Ok(capabilities)

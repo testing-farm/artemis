@@ -11,7 +11,7 @@ from gluetool.result import Result, Ok, Error
 from gluetool.utils import wait
 from jinja2 import Template
 
-from . import PoolDriver, PoolCapabilities, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress
+from . import PoolDriver, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
@@ -592,15 +592,3 @@ class AWSDriver(PoolDriver):
             return Error(r_cleanup.unwrap_error())
 
         return Ok(True)
-
-    def capabilities(self) -> Result[PoolCapabilities, Failure]:
-        result = super(AWSDriver, self).capabilities()
-
-        if result.is_error:
-            return result
-
-        capabilities = result.unwrap()
-        # NOTE: we definitely would like to support snapshots later
-        capabilities.supports_snapshots = False
-
-        return Ok(capabilities)

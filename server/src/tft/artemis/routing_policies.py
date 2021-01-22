@@ -4,7 +4,7 @@ import functools
 import json
 
 from . import Failure, Knob
-from .drivers import PoolDriver, PoolMetrics
+from .drivers import PoolDriver, PoolMetrics, PoolCapabilities
 from .db import GuestRequest
 from .environment import Environment
 
@@ -13,7 +13,7 @@ from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
 import sqlalchemy
 
-from typing import Callable, List
+from typing import Callable, List, Tuple
 
 
 @dataclasses.dataclass
@@ -118,6 +118,35 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
     return wrapper
 
 
+def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[PoolDriver, PoolCapabilities]], Failure]:
+    """
+    Collect capabilities of given pools. Since pool's :py:meth:`PoolDriver.capabilities` can return a failure,
+    we use this helper to simplify writing of policies by gathering capabilities, or returns the failure capturing
+    the fact we failed to get capabilities of one or more pools.
+
+    :param pools: list of pools to inspect.
+    :return: List of two item tuples, pool and its capabilities.
+    """
+
+    r_capabilities = [
+        (pool, pool.capabilities())
+        for pool in pools
+    ]
+
+    errors = [r for _, r in r_capabilities if r.is_error]
+
+    if errors:
+        return Error(Failure(
+            'failed to get pool capabilities',
+            caused_by=errors[0].unwrap_error()
+        ))
+
+    return Ok([
+        (pool, r_capabilities.unwrap())
+        for pool, r_capabilities in r_capabilities
+    ])
+
+
 @policy_boilerplate
 def policy_match_pool_name(
     logger: gluetool.log.ContextAdapter,
@@ -146,6 +175,35 @@ def policy_match_pool_name(
 
 
 @policy_boilerplate
+def policy_supports_architecture(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Disallow pools that don't support requested architecture.
+    """
+
+    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
+
+    r_capabilities = collect_pool_capabilities(pools)
+
+    if r_capabilities.is_error:
+        return Error(r_capabilities.unwrap_error())
+
+    pool_capabilities = r_capabilities.unwrap()
+
+    return Ok(PolicyRuling(
+        allowed_pools=[
+            pool
+            for pool, capabilities in pool_capabilities
+            if capabilities.supports_arch(environment.arch)
+        ]
+    ))
+
+
+@policy_boilerplate
 def policy_supports_snapshots(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -163,16 +221,18 @@ def policy_supports_snapshots(
             allowed_pools=pools
         ))
 
-    pool_capabilities = [
-        (pool, pool.capabilities())
-        for pool in pools
-    ]
+    r_capabilities = collect_pool_capabilities(pools)
+
+    if r_capabilities.is_error:
+        return Error(r_capabilities.unwrap_error())
+
+    pool_capabilities = r_capabilities.unwrap()
 
     return Ok(PolicyRuling(
         allowed_pools=[
             pool
-            for pool, r_capabilities in pool_capabilities
-            if r_capabilities.is_ok and r_capabilities.unwrap().supports_snapshots is True
+            for pool, capabilities in pool_capabilities
+            if capabilities.supports_snapshots is True
         ]
     ))
 

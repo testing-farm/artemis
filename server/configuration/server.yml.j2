@@ -37,7 +37,10 @@ pools:
       ip-version: "4"
       post-install-script: "{{ openstack.vms.post_install_script }}"
 
-      snapshots: true
+      capabilities:
+        supports-snapshots: true
+        supported-architectures:
+          - x86_64
 
   - name: azure
     driver: azure
@@ -47,8 +50,11 @@ pools:
       resource-group: "{{ azure.vms.resource_group }}"
       post-install-script: "{{ azure.vms.post_install_script }}"
 
-      # snapshot feature is not yet implemented for Azure driver
-      snapshots: false
+      capabilities:
+        # snapshot feature is not yet implemented for Azure driver
+        supports-snapshots: false
+        supported-architectures:
+          - x86_64
 
   - name: aws
     driver: aws
@@ -77,7 +83,10 @@ pools:
       tags: {{ aws.vms.tags }}
       post-install-script: "{{ aws.vms.post_install_script }}"
 
-      snapshots: False
+      capabilities:
+        supports-snapshots: False
+        supported-architectures:
+          - x86_64
 
   {% if beaker is defined %}
   - name: beaker
@@ -89,5 +98,11 @@ pools:
       {% if beaker.credentials.password is defined and beaker.credentials.password != "" -%}
       password: "{{ beaker.credentials.password }}"
       {% endif -%}
-      snapshots: False
+
+      capabilities:
+        supports-snapshots: False
+        # supports any architecture - there may be other constraints based on distro vs. arch support,
+        # but in general, Beaker is open
+        supported-arches: any
+
   {% endif %}
