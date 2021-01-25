@@ -30,10 +30,11 @@ def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -
         image_name = pattern_map.match(compose_id)
 
     except gluetool.glue.GlueError:
-        error = 'cannot map compose {} to image name'.format(compose_id)
-        logger.error(error)
-
-        return Error(Failure(error))
+        return Error(Failure(
+            'cannot map compose to image name',
+            recoverable=False,
+            compose=compose_id
+        ))
 
     return Ok(image_name[0] if isinstance(image_name, list) else image_name)
 

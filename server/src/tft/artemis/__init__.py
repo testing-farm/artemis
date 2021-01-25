@@ -218,6 +218,25 @@ class Failure:
             **details
         )
 
+    def update(
+        self,
+        # these are common "details" so we add them as extra keyword arguments with their types
+        scrubbed_command: Optional[List[str]] = None,
+        command_output: Optional[gluetool.utils.ProcessOutput] = None,
+        environment: Optional[Environment] = None,
+        **details: Any
+    ) -> None:
+        self.details.update(details)
+
+        if scrubbed_command:
+            self.details['scrubbed_command'] = scrubbed_command
+
+        if command_output:
+            self.details['command_output'] = command_output
+
+        if environment:
+            self.details['environment'] = environment
+
     @classmethod
     def _exception_details(
         cls,

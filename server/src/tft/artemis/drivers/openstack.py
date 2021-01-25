@@ -221,13 +221,10 @@ class OpenStackDriver(PoolDriver):
         )
 
         if r_image.is_error:
-            return Error(
-                Failure(
-                    'Failed to find image for environment',
-                    caused_by=r_image.unwrap_error(),
-                    environment=environment
-                )
-            )
+            failure = r_image.unwrap_error()
+            failure.update(environment=environment)
+
+            return Error(failure)
 
         return r_image
 
