@@ -1,6 +1,7 @@
 import os
 
 from tft.artemis import Failure
+from tft.artemis.drivers import PoolImageInfoType
 from tft.artemis.drivers.openstack import OpenStackDriver
 from tft.artemis.environment import Environment
 
@@ -9,11 +10,10 @@ import gluetool.log
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import PatternMap
 
-from typing import Any, Optional
+from typing import Optional
 
 
 def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -> Result[str, Failure]:
-
     configuration_dir = os.getenv('ARTEMIS_CONFIG_DIR', '/configuration')
     compose_image_map = os.path.join(configuration_dir, 'artemis-image-map-openstack.yaml')
 
@@ -34,55 +34,28 @@ def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -
     return Ok(image_name[0] if isinstance(image_name, list) else image_name)
 
 
-def _image_by_name(
-    logger: gluetool.log.ContextAdapter, pool: OpenStackDriver, image_name: str
-) -> Result[Any, Failure]:
-    r_images_list = pool._run_os(['image', 'list'])
-
-    if r_images_list.is_error:
-        error = 'Fail to get images'
-        logger.error(error, sentry=True)
-        return Error(Failure(error))
-
-    images_list = r_images_list.unwrap()
-
-    for image_data in images_list:
-        if image_data['Name'] != image_name:
-            continue
-
-        return Ok(image_data['ID'])
-
-    error = 'cannot find image {}'.format(image_name)
-    logger.error(error)
-
-    return Error(Failure(error))
-
-
 def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(
     *,
     logger: gluetool.log.ContextAdapter,
     pool: OpenStackDriver,
     environment: Environment
-) -> Result[str, Failure]:
+) -> Result[PoolImageInfoType, Failure]:
     image_name: Optional[str] = None
 
     try:
         logger.info('deciding image for {}'.format(environment))
 
         # Convert compose to image name
-
         r_image_name = _map_compose_to_name(logger, environment.os.compose)
+
         if r_image_name.is_error:
-            return r_image_name
+            return Error(r_image_name.unwrap_error())
 
         image_name = r_image_name.unwrap()
 
-        if image_name is None:
-            raise Exception
-
         logger.info('mapped {} to image {}'.format(environment, image_name))
 
-        return _image_by_name(logger, pool, image_name)
+        return pool.image_info_by_name(logger, image_name)
 
     except Exception as exc:
         return Error(Failure.from_exc(
@@ -90,8 +63,3 @@ def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(
             exc,
             environment=environment
         ))
-
-    return Error(Failure(
-        'failed to map environment to image',
-        environment=environment
-    ))
