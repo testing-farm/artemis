@@ -10,7 +10,7 @@ from gluetool.result import Result, Ok, Error
 from gluetool.log import log_xml
 
 from . import PoolDriver, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress, \
-    create_tempfile
+    create_tempfile, PoolImageInfoType
 from .. import Failure, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
@@ -101,6 +101,24 @@ class BeakerDriver(PoolDriver):
                 return Error(r_output.unwrap_error())
 
         return Ok(None)
+
+    def image_info_by_name(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        imagename: str
+    ) -> Result[PoolImageInfoType, Failure]:
+        # TODO: is it true that `name` is equal to `id` in Beaker? Is really each `name` we get from
+        # the `compose` => `image name` mapping really the same as "ID" of the distro? I believe this
+        # is indeed correct, but needs checking.
+        #
+        # The thing is: this could be true even for OpenStack and AWS, if user would use `compose` => `image ID` map.
+        # We want the right-hand side to be human-readable and easy to follow, therefore OpenStack and AWS have this
+        # extra level of dereference.
+
+        return Ok(PoolImageInfoType(
+            name=imagename,
+            id=imagename
+        ))
 
     def _create_job_xml(
         self,

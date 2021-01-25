@@ -1,6 +1,7 @@
 import os
 
 from tft.artemis import Failure
+from tft.artemis.drivers import PoolImageInfoType
 from tft.artemis.drivers.aws import AWSDriver
 from tft.artemis.environment import Environment
 
@@ -9,7 +10,7 @@ import gluetool.log
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import PatternMap
 
-from typing import Any, Optional
+from typing import Optional
 
 
 def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -> Result[str, Failure]:
@@ -33,57 +34,28 @@ def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -
     return Ok(image_name[0] if isinstance(image_name, list) else image_name)
 
 
-def _image_by_name(
-    logger: gluetool.log.ContextAdapter, pool: AWSDriver, image_name: str
-) -> Result[Any, Failure]:
-    result = pool._aws_command(['ec2', 'describe-images', '--owner=self'], key='Images')
-
-    if result.is_error:
-        logger.error("failed to run aws command")
-        logger.error(result.unwrap_error().message)
-        return result
-
-    images = result.unwrap()
-
-    suitable_images = [image for image in images if image['Name'] == image_name]
-
-    if suitable_images:
-        return Ok(suitable_images[0])
-
-    available_images = [image['Name'] for image in images]
-    error = 'cannot find image {}, available images'.format(image_name)
-
-    gluetool.log.log_dict(logger.warning, error, available_images)
-
-    return Error(Failure('{}: {}'.format(error, available_images)))
-
-
 def hook_AWS_ENVIRONMENT_TO_IMAGE(
     *,
     logger: gluetool.log.ContextAdapter,
     pool: AWSDriver,
     environment: Environment,
-) -> Result[Any, Failure]:
+) -> Result[PoolImageInfoType, Failure]:
     image_name: Optional[str] = None
 
     try:
         logger.info('deciding image for {}'.format(environment))
 
         # Convert compose to image name
-
         r_image_name = _map_compose_to_name(logger, environment.os.compose)
 
         if r_image_name.is_error:
-            return r_image_name
+            return Error(r_image_name.unwrap_error())
 
         image_name = r_image_name.unwrap()
 
-        if image_name is None:
-            raise Exception
-
         logger.info('mapped {} to image {}'.format(environment, image_name))
 
-        return _image_by_name(logger, pool, image_name)
+        return pool.image_info_by_name(logger, image_name)
 
     except Exception as exc:
         return Error(Failure.from_exc(
@@ -91,8 +63,3 @@ def hook_AWS_ENVIRONMENT_TO_IMAGE(
             exc,
             environment=environment
         ))
-
-    return Error(Failure(
-        'failed to map environment to image',
-        environment=environment
-    ))

@@ -43,6 +43,31 @@ class PoolLogger(gluetool.log.ContextAdapter):
         })
 
 
+@dataclasses.dataclass
+class PoolImageInfoType:
+    """
+    Describes important information about a pool image.
+
+    Name vs ID: many pool backends support 2 ways how to identify an image, a name and an ID. One is often nice
+    and good looking, the other is ugly and hard to quickly identify. When talking to their backends, drivers
+    almost exclusively use the ID, but when presenting information to users (logs, Sentry issues, events, compose
+    => image mappings, and so on) the name is much better.
+
+    :ivar name: a human-readable, easy-to-follow **name** of the image. It usually consists of distribution name,
+        its version, maybe a release date and architecture, describing altogether what OS the image provides. For
+        example, ``RHEL-8.3.0-20201012-x86_64`` is a typical "image name".
+    :ivar id: ID of the image as understood by the pool backed. Images are often assigned an ID, ugly looking
+        hash-ish ID the pool backend then uses to identify the image. :py:attr:`name` is supported by these
+        clouds to make the situation easier for punny humans.
+    """
+
+    name: str
+    id: str
+
+    def __repr__(self) -> str:
+        return '<PoolImageInfoType: name={} id={}>'.format(self.name, self.id)
+
+
 class PoolCapabilities(argparse.Namespace):
     supported_architectures: Union[List[str], _AnyArchitecture]
     supports_snapshots = False
@@ -379,6 +404,17 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :rtype: result.Result[bool, Failure]
         :returns: :py:class:`result.result` with either `bool`
             or specification of error.
+        """
+
+        raise NotImplementedError()
+
+    def image_info_by_name(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        imagename: str
+    ) -> Result[PoolImageInfoType, Failure]:
+        """
+        Search pool resources, and find a pool-specific information for an image identified by the given name.
         """
 
         raise NotImplementedError()

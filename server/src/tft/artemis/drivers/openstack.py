@@ -7,7 +7,7 @@ import gluetool.log
 from gluetool.result import Result, Ok, Error
 
 from . import PoolDriver, PoolResourcesMetrics, create_tempfile, run_cli_tool, PoolResourcesIDsType, \
-    PoolData, ProvisioningProgress
+    PoolData, ProvisioningProgress, PoolImageInfoType
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -136,6 +136,41 @@ class OpenStackDriver(PoolDriver):
 
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
+    def image_info_by_name(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        imagename: str
+    ) -> Result[PoolImageInfoType, Failure]:
+        r_images = self._run_os(['image', 'list'])
+
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
+
+        images = r_images.unwrap()
+
+        suitable_images = [image for image in images if image['Name'] == imagename]
+
+        if not suitable_images:
+            return Error(Failure(
+                'cannot find image by name',
+                imagename=imagename,
+                available_images=[image['Name'] for image in images]
+            ))
+
+        try:
+            return Ok(PoolImageInfoType(
+                name=imagename,
+                id=suitable_images[0]['ID']
+            ))
+
+        except KeyError as exc:
+            return Error(Failure.from_exc(
+                'malformed image description',
+                exc,
+                imagename=imagename,
+                image_info=suitable_images[0]
+            ))
+
     def _env_to_flavor(self, environment: Environment) -> Result[Any, Failure]:
         r_flavors = self._run_os(['flavor', 'list'])
 
@@ -170,7 +205,7 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[Any, Failure]:
+    ) -> Result[PoolImageInfoType, Failure]:
         r_engine = hook_engine('OPENSTACK_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
@@ -178,12 +213,12 @@ class OpenStackDriver(PoolDriver):
 
         engine = r_engine.unwrap()
 
-        r_image = engine.run_hook(
+        r_image: Result[PoolImageInfoType, Failure] = engine.run_hook(
             'OPENSTACK_ENVIRONMENT_TO_IMAGE',
             logger=logger,
             pool=self,
             environment=environment
-        )  # type: Result[Any, Failure]
+        )
 
         if r_image.is_error:
             return Error(
@@ -302,6 +337,8 @@ class OpenStackDriver(PoolDriver):
 
         image = r_image.unwrap()
 
+        logger.info('provisioning from image {}'.format(image))
+
         r_network = self._env_to_network(environment)
         if r_network.is_error:
             return Error(r_network.unwrap_error())
@@ -318,7 +355,7 @@ class OpenStackDriver(PoolDriver):
                 'server',
                 'create',
                 '--flavor', flavor,
-                '--image', image,
+                '--image', image.id,
                 '--network', network,
                 '--key-name', self.pool_config['master-key-name'],
                 '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
@@ -429,7 +466,7 @@ class OpenStackDriver(PoolDriver):
 
         r_image = self._env_to_image(self.logger, environment)
         if r_image.is_error:
-            return Error(r_image.value)
+            return Error(r_image.unwrap_error())
 
         r_flavor = self._env_to_flavor(environment)
         if r_flavor.is_error:

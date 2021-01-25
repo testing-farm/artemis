@@ -6,7 +6,7 @@ import gluetool.log
 from gluetool.result import Result, Error, Ok
 
 from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool, PoolResourcesIDsType, PoolData, \
-    ProvisioningProgress
+    ProvisioningProgress, PoolImageInfoType
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -56,6 +56,21 @@ class AzureDriver(PoolDriver):
             resource_ids['assorted_resource_ids'] = other_resources
 
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
+
+    def image_info_by_name(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        imagename: str
+    ) -> Result[PoolImageInfoType, Failure]:
+        r_images_show = self._run_cmd_with_auth(['vm', 'image', 'show', '--urn', imagename])
+
+        if r_images_show.is_error:
+            return Error(r_images_show.unwrap_error())
+
+        return Ok(PoolImageInfoType(
+            name=imagename,
+            id=imagename
+        ))
 
     def release_pool_resources(
         self,
@@ -349,7 +364,7 @@ class AzureDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[Any, Failure]:
+    ) -> Result[PoolImageInfoType, Failure]:
         r_engine = hook_engine('AZURE_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
@@ -357,12 +372,12 @@ class AzureDriver(PoolDriver):
 
         engine = r_engine.unwrap()
 
-        r_image = engine.run_hook(
+        r_image: Result[PoolImageInfoType, Failure] = engine.run_hook(
             'AZURE_ENVIRONMENT_TO_IMAGE',
             logger=logger,
             pool=self,
             environment=environment
-        )  # type: Result[Any, Failure]
+        )
 
         if r_image.is_error:
             return Error(
@@ -387,8 +402,11 @@ class AzureDriver(PoolDriver):
         name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
         r_image = self._env_to_image(logger, environment)
         if r_image.is_error:
-            return Error(r_image.value)
+            return Error(r_image.unwrap_error())
+
         image = r_image.unwrap()
+
+        logger.info('provisioning from image {}'.format(image))
 
         r_output = None
 
@@ -402,7 +420,7 @@ class AzureDriver(PoolDriver):
                 'vm',
                 'create',
                 '--resource-group', self.pool_config['resource-group'],
-                '--image', image,
+                '--image', image.id,
                 '--name', name,
                 '--tags', 'uid={}'.format(name),
                 '--custom-data', custom_data_filename,
