@@ -1,121 +1,239 @@
-from typing import Any, Dict, Optional
-from molten import HTTP_409, HTTP_404, HTTP_401, HTTP_403, HTTP_400, HTTP_500, Request
+from typing import Any, Dict, Optional, Union
+from molten import HTTP_404, HTTP_401, HTTP_403, HTTP_400, HTTP_500, Request
 from molten.errors import HTTPError
+import molten.http.query_params
 
-from .. import gluetool_sentry
+import gluetool.log
+
+from .. import FailureDetailsType, Failure, get_logger
 
 
-def get_tags_from_request(request: Optional[Request] = None) -> Dict[str, Any]:
+def get_failure_details_from_request(request: Optional[Request]) -> Dict[str, Any]:
+    """
+    Extract interesting bits from the given request. We plan to use them as :py:class:`Failure` details when
+    reporting HTTP error as a failure.
+    """
 
     if not request:
         return {}
 
+    # Request params are dict-like, but not a dict alone which makes it harder for our YAML-ish logging
+    # to represent them as strings. To overcome this difficulty, help our logging until it gets smarter.
+    if request.params is None:
+        serialized_params: Optional[Union[str, Dict[str, str]]] = None
+
+    elif isinstance(request.params, (dict, molten.http.query_params.QueryParams)):
+        serialized_params = dict(request.params)
+
+    else:
+        serialized_params = str(request.params)
+
     return {
-        'request_method': request.method,
-        'request_path': request.path,
-        'request_params': request.params,
-        'request_host': request.host
+        'api_request_method': request.method,
+        'api_request_path': request.path,
+        'api_request_params': serialized_params,
+        'api_request_host': request.host
     }
 
 
+# There will be a lot of copy paste when it comes to parameters of `__init__` methods. I'd love to replace
+# all the parameters with `*kwargs`, but at that moment mypy would lost track of types. It would be possible
+# to `raise BadRequestError(caused_by='this should have been a failure instance')`, and mypy wouldn't spot
+# the error. As soon as mypy gives me tools smart enough to protect me from the errors like this, I'll be
+# happy to use them.
 class ArtemisHTTPError(HTTPError):
     def __init__(
         self,
+        *,
         status: str,
-        response: Any = None,
-        headers: Any = None,
-        request: Optional[Request] = None
+        message: Optional[str] = None,
+        response: Optional[Any] = None,
+        headers: Optional[Any] = None,
+        request: Optional[Request] = None,
+        report_as_failure: bool = True,
+        logger: Optional[gluetool.log.ContextAdapter] = None,
+        caused_by: Optional[Failure] = None,
+        failure_details: Optional[FailureDetailsType] = None
     ) -> None:
-        self.request = request
-        gluetool_sentry.submit_message(
-            '{}: {}'.format(
-                status if status else 'No HTTP status',
-                response.get('message', '<no response message>') if response else '<no response>',
-            ),
-            tags=get_tags_from_request(request)
-        )
+        """
+        Base class for our custom HTTP errors. Provides one interface to reporting issues via HTTP responses
+        and takes care of proper reporting if needed.
+
+        :param status: HTTP status code as provided by :py:mod:`molten`.
+        :param message: a message to include in the response body. It is ignored if ``response`` is specified.
+        :param response: a JSON representing the body of the response. If not specified, an empty mapping is used.
+        :param headers: mapping with additional or custom HTTP headers to include in the response.
+        :param request: request whose handling lead to the error.
+        :param report_as_failure: if set, an ad-hoc :py:class:`Failure` and logged.
+        :param logger: logger to use for logging.
+        :param caused_by: a :py:class:`Failure` instance representing the cause of the error.
+        :param failure_details: additional details for the ad-hoc :py:class:`Failure` created when
+            ``report_as_failure`` was set.
+        """
+
+        if response is not None:
+            pass
+
+        elif message is not None:
+            response = {
+                'message': message
+            }
+
+        else:
+            response = {}
+
         super().__init__(status=status, response=response, headers=headers)
 
+        if report_as_failure:
+            details = {}
 
-class GenericError(ArtemisHTTPError):
-    def __init__(self, headers: Any = None, request: Optional[Request] = None) -> None:
+            if failure_details:
+                details.update(failure_details)
+
+            details.update(get_failure_details_from_request(request))
+
+            Failure(
+                'API error',
+                caused_by=caused_by,
+                api_response_status=status,
+                api_response_payload=response,
+                **details
+            ).handle(logger or get_logger())
+
+
+class InternalServerError(ArtemisHTTPError):
+    def __init__(
+        self,
+        *,
+        message: Optional[str] = None,
+        response: Optional[Any] = None,
+        headers: Optional[Any] = None,
+        request: Optional[Request] = None,
+        logger: Optional[gluetool.log.ContextAdapter] = None,
+        caused_by: Optional[Failure] = None,
+        failure_details: Optional[FailureDetailsType] = None
+    ) -> None:
+        if not message and not response:
+            message = 'Unknown error'
+
         super().__init__(
             status=HTTP_500,
-            response={
-                'message': 'Unknown error'
-            },
+            message=message,
+            response=response,
             headers=headers,
-            request=request
+            request=request,
+            logger=logger,
+            caused_by=caused_by,
+            failure_details=failure_details
         )
 
 
 class BadRequestError(ArtemisHTTPError):
-    def __init__(self, headers: Any = None, request: Optional[Request] = None) -> None:
+    def __init__(
+        self,
+        *,
+        message: Optional[str] = None,
+        response: Optional[Any] = None,
+        headers: Optional[Any] = None,
+        request: Optional[Request] = None,
+        logger: Optional[gluetool.log.ContextAdapter] = None,
+        caused_by: Optional[Failure] = None,
+        failure_details: Optional[FailureDetailsType] = None
+    ) -> None:
+        if not message and not response:
+            message = 'Bad request'
+
         super().__init__(
             status=HTTP_400,
-            response={
-                'message': 'Bad Request'
-            },
+            message=message,
+            response=response,
             headers=headers,
-            request=request
+            request=request,
+            logger=logger,
+            caused_by=caused_by,
+            failure_details=failure_details
         )
 
 
 class NoSuchEntityError(ArtemisHTTPError):
-    def __init__(self, headers: Any = None, request: Optional[Request] = None) -> None:
+    def __init__(
+        self,
+        *,
+        message: Optional[str] = None,
+        response: Optional[Any] = None,
+        headers: Optional[Any] = None,
+        request: Optional[Request] = None,
+        logger: Optional[gluetool.log.ContextAdapter] = None,
+        caused_by: Optional[Failure] = None,
+        failure_details: Optional[FailureDetailsType] = None
+    ) -> None:
+        if not message and not response:
+            message = 'No such entity'
+
         super().__init__(
             status=HTTP_404,
-            response={
-                'message': 'No such entity'
-            },
+            message=message,
+            response=response,
             headers=headers,
-            request=request
+            request=request,
+            report_as_failure=False,
+            logger=logger,
+            caused_by=caused_by,
+            failure_details=failure_details
         )
 
 
-class NonUniqueValidationError(ArtemisHTTPError):
-    def __init__(self, headers: Any = None, request: Optional[Request] = None) -> None:
-        super().__init__(status=HTTP_409,
-                         response={"message": "Object already exists"},
-                         headers=headers,
-                         request=request)
+class UnauthorizedError(ArtemisHTTPError):
+    def __init__(
+        self,
+        *,
+        message: Optional[str] = None,
+        response: Optional[Any] = None,
+        headers: Optional[Any] = None,
+        request: Optional[Request] = None,
+        logger: Optional[gluetool.log.ContextAdapter] = None,
+        caused_by: Optional[Failure] = None,
+        failure_details: Optional[FailureDetailsType] = None
+    ) -> None:
+        if not message and not response:
+            message = 'Not authorized to perform this action'
 
-
-class ForeignKeyValidationError(ArtemisHTTPError):
-    def __init__(self, headers: Any = None, request: Optional[Request] = None) -> None:
-        super().__init__(status=HTTP_400,
-                         response={"message": "Foreign key constraint failed"},
-                         headers=headers,
-                         request=request)
-
-
-class RequiredValidationError(ArtemisHTTPError):
-    def __init__(self, headers: Any = None, request: Optional[Request] = None) -> None:
-        super().__init__(status=HTTP_400,
-                         response={"message": "Required fields can't be null"},
-                         headers=headers,
-                         request=request)
-
-
-class SchemaValidationError(ArtemisHTTPError):
-    def __init__(self, headers: Any = None, request: Optional[Request] = None) -> None:
-        super().__init__(status=HTTP_400,
-                         response={"message": "Request doesn't match the API schema"},
-                         headers=headers,
-                         request=request)
-
-
-class NotAuthorizedError(ArtemisHTTPError):
-    def __init__(self, headers: Any = None, request: Optional[Request] = None) -> None:
-        super().__init__(status=HTTP_401,
-                         response={"message": "Not authorized to perform this action"},
-                         headers=headers,
-                         request=request)
+        super().__init__(
+            status=HTTP_401,
+            message=message,
+            response=response,
+            headers=headers,
+            request=request,
+            report_as_failure=False,
+            logger=logger,
+            caused_by=caused_by,
+            failure_details=failure_details
+        )
 
 
 class ForbiddenError(ArtemisHTTPError):
-    def __init__(self, headers: Any = None, request: Optional[Request] = None) -> None:
-        super().__init__(status=HTTP_403,
-                         response={"message": "Not authorized to perform this action"},
-                         headers=headers,
-                         request=request)
+    def __init__(
+        self,
+        *,
+        message: Optional[str] = None,
+        response: Optional[Any] = None,
+        headers: Optional[Any] = None,
+        request: Optional[Request] = None,
+        logger: Optional[gluetool.log.ContextAdapter] = None,
+        caused_by: Optional[Failure] = None,
+        failure_details: Optional[FailureDetailsType] = None
+    ) -> None:
+        if not message and not response:
+            message = 'Not authorized to perform this action'
+
+        super().__init__(
+            status=HTTP_403,
+            message=message,
+            response=response,
+            headers=headers,
+            request=request,
+            report_as_failure=False,
+            logger=logger,
+            caused_by=caused_by,
+            failure_details=failure_details
+        )

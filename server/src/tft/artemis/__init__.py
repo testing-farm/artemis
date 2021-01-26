@@ -352,6 +352,12 @@ class Failure:
         if 'environment' in self.details:
             extra['environment'] = self.details['environment'].serialize_to_json()
 
+        tags.update({
+            key: value
+            for key, value in self.details.items()
+            if key.startswith('api_request_') or key.startswith('api_response_')
+        })
+
         if self.caused_by:
             caused_by_data, caused_by_tags, caused_by_extra = self.caused_by.get_sentry_details()
 

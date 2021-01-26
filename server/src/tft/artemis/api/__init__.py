@@ -440,7 +440,7 @@ class GuestRequestManager:
                 else:
                     return False
 
-            raise errors.GenericError(request=request)
+            raise errors.InternalServerError(request=request, caused_by=r_execute.unwrap_error())
 
 
 class GuestEventManager:
@@ -571,7 +571,7 @@ class SnapshotRequestManager:
             if safe_db_change(snapshot_logger, session, query):
                 return
 
-            raise errors.GenericError()
+            raise errors.InternalServerError()
 
     def restore_snapshot(self, guestname: str, snapshotname: str) -> SnapshotResponse:
         from ..tasks import get_snapshot_logger
@@ -593,7 +593,7 @@ class SnapshotRequestManager:
 
                 return snapshot_response
 
-            raise errors.GenericError()
+            raise errors.InternalServerError()
 
 
 class SnapshotRequestManagerComponent:
