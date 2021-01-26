@@ -119,3 +119,10 @@ class ForbiddenError(ArtemisHTTPError):
                          response={"message": "Not authorized to perform this action"},
                          headers=headers,
                          request=request)
+
+
+class Conflict(ArtemisHTTPError):
+    def __init__(self, message: Optional[str] = None, headers: Any = None, request: Optional[Request] = None) -> None:
+        message = message or 'Request conflicts with the current state of the resource'
+
+        super().__init__(status=HTTP_409, response={'message': message}, headers=headers, request=request)
