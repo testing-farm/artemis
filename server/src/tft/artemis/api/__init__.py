@@ -347,9 +347,14 @@ class GuestRequestManager:
 
     def get_guest_requests(self) -> List[GuestResponse]:
         with self.db.get_session() as session:
+            r_guests = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest).all()
+
+            if r_guests.is_error:
+                raise errors.InternalServerError(caused_by=r_guests.unwrap_error())
+
             return [
                 GuestResponse.from_db(guest)
-                for guest in artemis_db.Query.from_session(session, artemis_db.GuestRequest).all()
+                for guest in r_guests.unwrap()
             ]
 
     def create(self, guest_request: GuestRequest, ownername: str) -> GuestResponse:
@@ -400,9 +405,14 @@ class GuestRequestManager:
 
     def get_by_guestname(self, guestname: str) -> Optional[GuestResponse]:
         with self.db.get_session() as session:
-            guest_request_record = artemis_db.Query.from_session(session, artemis_db.GuestRequest) \
+            r_guest_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest) \
                 .filter(artemis_db.GuestRequest.guestname == guestname) \
                 .one_or_none()
+
+            if r_guest_request_record.is_error:
+                raise errors.InternalServerError(caused_by=r_guest_request_record.unwrap_error())
+
+            guest_request_record = r_guest_request_record.unwrap()
 
             if guest_request_record is None:
                 return None
@@ -529,10 +539,15 @@ class SnapshotRequestManager:
 
     def get_snapshot(self, guestname: str, snapshotname: str) -> Optional[SnapshotResponse]:
         with self.db.get_session() as session:
-            snapshot_request_record = artemis_db.Query.from_session(session, artemis_db.SnapshotRequest) \
+            r_snapshot_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.SnapshotRequest) \
                 .filter(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
                 .filter(artemis_db.SnapshotRequest.guestname == guestname) \
                 .one_or_none()
+
+            if r_snapshot_request_record.is_error:
+                raise errors.InternalServerError(caused_by=r_snapshot_request_record.unwrap_error())
+
+            snapshot_request_record = r_snapshot_request_record.unwrap()
 
             if snapshot_request_record is None:
                 return None
