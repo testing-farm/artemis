@@ -11,11 +11,12 @@ import uuid
 import molten
 import molten.dependency_injection
 import molten.openapi
-from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, HTTP_409, Response, Request, Field
+from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, Response, Request, Field
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
 
+import gluetool.log
 from gluetool.log import log_dict
 
 from . import errors, handlers
@@ -26,7 +27,7 @@ from .. import db as artemis_db
 from .. import metrics
 from ..guest import GuestState
 
-from typing import Any, Dict, List, NoReturn, Optional, Union
+from typing import Any, Dict, List, NoReturn, Optional, Union, Type
 
 from inspect import Parameter
 
@@ -108,6 +109,29 @@ class AuthContextComponent:
             raise Exception(failure.message)
 
         return r_ctx.unwrap()
+
+
+def perform_safe_db_change(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    query: Any,
+    conflict_error: Union[Type[errors.ConflictError], Type[errors.NoSuchEntityError]] = errors.ConflictError
+) -> None:
+    """
+    Helper for handling :py:func:`safe_db_change` in the same manner. Performs the query and tests the result:
+
+    * raise ``500 Internal Server Error`` if the change failed,
+    * raise ``conflict_error`` if the query didn't fail but changed no records,
+    * do nothing and return when the query didn't fail and changed expected number of records.
+    """
+
+    r_change = safe_db_change(logger, session, query)
+
+    if r_change.is_error:
+        raise errors.InternalServerError(logger=logger, caused_by=r_change.unwrap_error())
+
+    if not r_change.unwrap():
+        raise conflict_error(logger=logger)
 
 
 @molten.schema
@@ -419,7 +443,7 @@ class GuestRequestManager:
 
             return GuestResponse.from_db(guest_request_record)
 
-    def delete_by_guestname(self, guestname: str, request: Request) -> bool:
+    def delete_by_guestname(self, guestname: str, request: Request) -> None:
         from ..tasks import get_guest_logger
 
         guest_logger = get_guest_logger('delete-guest-request', get_logger(), guestname)
@@ -436,24 +460,14 @@ class GuestRequestManager:
                 .where(snapshot_count_subquery.c.snapshot_count == 0) \
                 .values(state=GuestState.CONDEMNED.value)
 
-            r_execute = safe_db_change(guest_logger, session, query)
+            # The query can miss either with existing snapshots, or when the guest request has been
+            # removed from DB already. The "gone already" situation could be better expressed by
+            # returning "404 Not Found", but we can't tell which of these two situations caused the
+            # change to go vain, therefore returning general "409 Conflict", expressing our believe
+            # user should resolve the conflict and try again.
+            perform_safe_db_change(guest_logger, session, query)
 
-            if r_execute.is_ok:
-                if r_execute.unwrap():
-                    # add guest event
-                    log_guest_event(
-                        guest_logger,
-                        session,
-                        guestname,
-                        'condemned'
-                    )
-                    return True
-
-                # Actual row count is not equal to expected
-                else:
-                    return False
-
-            raise errors.InternalServerError(request=request, caused_by=r_execute.unwrap_error())
+            log_guest_event(guest_logger, session, guestname, 'condemned')
 
 
 class GuestEventManager:
@@ -586,10 +600,12 @@ class SnapshotRequestManager:
                 .where(artemis_db.SnapshotRequest.guestname == guestname) \
                 .values(state=GuestState.CONDEMNED.value)
 
-            if safe_db_change(snapshot_logger, session, query):
-                return
+            # Unline guest requests, here seem to be no possibility of conflict or relationships we must
+            # preserve. Given the query, snapshot request already being removed seems to be the only option
+            # here - what else could cause the query *not* marking the record as condemned?
+            perform_safe_db_change(snapshot_logger, session, query, conflict_error=errors.NoSuchEntityError)
 
-            raise errors.InternalServerError()
+            log_guest_event(snapshot_logger, session, guestname, 'snapshot-condemned')
 
     def restore_snapshot(self, guestname: str, snapshotname: str) -> SnapshotResponse:
         from ..tasks import get_snapshot_logger
@@ -604,14 +620,18 @@ class SnapshotRequestManager:
                 .where(artemis_db.SnapshotRequest.state != GuestState.CONDEMNED.value) \
                 .values(state=GuestState.RESTORING.value)
 
-            if safe_db_change(snapshot_logger, session, query):
-                snapshot_response = self.get_snapshot(guestname, snapshotname)
+            # Similarly to guest request removal, two options exist: either the snapshot is already gone,
+            # or it's marked as condemned. Again, we cannot tell which of these happened. "404 Not Found"
+            # would better express the former, but sticking with "409 Conflict" to signal user there's a
+            # conflict of some kind, and after resolving it - e.g. by inspecting the snapshot request - user
+            # should decide how to proceed.
+            perform_safe_db_change(snapshot_logger, session, query)
 
-                assert snapshot_response is not None
+            snapshot_response = self.get_snapshot(guestname, snapshotname)
 
-                return snapshot_response
+            assert snapshot_response is not None
 
-            raise errors.InternalServerError()
+            return snapshot_response
 
 
 class SnapshotRequestManagerComponent:
@@ -664,8 +684,7 @@ def delete_guest(guestname: str, request: Request, manager: GuestRequestManager)
     if not manager.get_by_guestname(guestname):
         return APIResponse(request=request, status=HTTP_404)
 
-    if not manager.delete_by_guestname(guestname, request=request):
-        return APIResponse(request=request, status=HTTP_409)
+    manager.delete_by_guestname(guestname, request=request)
 
     return APIResponse(request=request)
 
