@@ -16,12 +16,14 @@ from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, HTTP_409, Response, R
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
 
+import gluetool.log
 from gluetool.log import log_dict
+from gluetool.result import Result
 
 from . import errors, handlers
 from .middleware import error_handler_middleware, prometheus_middleware
 from .middleware import authorization_middleware, AuthContext
-from .. import get_logger, get_db, safe_db_change, log_guest_event, Knob
+from .. import get_logger, get_db, safe_db_change, log_guest_event, Knob, Failure
 from .. import db as artemis_db
 from .. import metrics
 from ..guest import GuestState
@@ -108,6 +110,35 @@ class AuthContextComponent:
             raise Exception(failure.message)
 
         return r_ctx.unwrap()
+
+
+def assert_internal_error(
+    result: Result[Any, Failure],
+    logger: Optional[gluetool.log.ContextAdapter] = None,
+    **details: Any
+) -> None:
+    """
+    Test a given result, and if it a failed result, raise :py:class:`errors.GenericError` exception. This exception
+    will then be handled by the framework, and returned to user as a 500 Internal Error response.
+
+    If the result is valid, do nothing at all.
+
+    If we don't have anything better to do, more suitable error to return, this is a helper to log the failure
+    and convert it into proper HTTP response.
+
+    :param result: result to test.
+    :param logger: logger to use for logging.
+    """
+
+    if result.is_ok:
+        return
+
+    result.unwrap_error().handle(
+        logger=logger or get_logger(),
+        **details
+    )
+
+    raise errors.GenericError()
 
 
 @molten.schema
@@ -344,9 +375,13 @@ class GuestRequestManager:
 
     def get_guest_requests(self) -> List[GuestResponse]:
         with self.db.get_session() as session:
+            r_guests = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest).all()
+
+            assert_internal_error(r_guests)
+
             return [
                 GuestResponse.from_db(guest)
-                for guest in artemis_db.Query.from_session(session, artemis_db.GuestRequest).all()
+                for guest in r_guests.unwrap()
             ]
 
     def create(self, guest_request: GuestRequest, ownername: str) -> GuestResponse:
@@ -397,9 +432,13 @@ class GuestRequestManager:
 
     def get_by_guestname(self, guestname: str) -> Optional[GuestResponse]:
         with self.db.get_session() as session:
-            guest_request_record = artemis_db.Query.from_session(session, artemis_db.GuestRequest) \
+            r_guest_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest) \
                 .filter(artemis_db.GuestRequest.guestname == guestname) \
                 .one_or_none()
+
+            assert_internal_error(r_guest_request_record)
+
+            guest_request_record = r_guest_request_record.unwrap()
 
             if guest_request_record is None:
                 return None
@@ -526,10 +565,14 @@ class SnapshotRequestManager:
 
     def get_snapshot(self, guestname: str, snapshotname: str) -> Optional[SnapshotResponse]:
         with self.db.get_session() as session:
-            snapshot_request_record = artemis_db.Query.from_session(session, artemis_db.SnapshotRequest) \
+            r_snapshot_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.SnapshotRequest) \
                 .filter(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
                 .filter(artemis_db.SnapshotRequest.guestname == guestname) \
                 .one_or_none()
+
+            assert_internal_error(r_snapshot_request_record)
+
+            snapshot_request_record = r_snapshot_request_record.unwrap()
 
             if snapshot_request_record is None:
                 return None
