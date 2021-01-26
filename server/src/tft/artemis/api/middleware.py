@@ -251,13 +251,13 @@ def authorization_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
 
         # Enable this once all pieces are merged and authentication/authorization becomes mandatory.
         # if not ctx.is_authenticated:
-        #     raise errors.NotAuthorizedError()
+        #     raise errors.UnauthorizedError()
 
         if not ctx.is_authorization_enabled:
             return handler()
 
         if not ctx.is_authorized:
-            raise errors.NotAuthorizedError()
+            raise errors.UnauthorizedError()
 
         return handler()
 

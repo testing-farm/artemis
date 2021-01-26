@@ -346,6 +346,12 @@ class Failure:
             # expects it to find when generating the message for submission.
             data['stacktrace'] = Failure._get_sentry_stack_info(self.traceback)
 
+        tags.update({
+            key: value
+            for key, value in self.details.items()
+            if key.startswith('api_request_') or key.startswith('api_response_')
+        })
+
         if self.caused_by:
             caused_by_data, caused_by_tags, caused_by_extra = self.caused_by.get_sentry_details()
 
