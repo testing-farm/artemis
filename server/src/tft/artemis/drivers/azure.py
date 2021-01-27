@@ -7,11 +7,20 @@ from gluetool.result import Result, Error, Ok
 
 from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool, PoolResourcesIDsType, PoolData, \
     ProvisioningProgress
-from .. import Failure
+from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 
 from typing import cast, Any, Dict, List, Optional
+
+
+KNOB_UPDATE_TICK: Knob[int] = Knob(
+    'azure.update.tick',
+    has_db=False,
+    envvar='ARTEMIS_AZURE_UPDATE_TICK',
+    envvar_cast=int,
+    default=30
+)
 
 
 @dataclasses.dataclass
@@ -397,5 +406,6 @@ class AzureDriver(PoolDriver):
                 instance_id=output['id'],
                 instance_name=name,
                 resource_group=self.pool_config['resource-group']
-            )
+            ),
+            delay_update=KNOB_UPDATE_TICK.value
         ))

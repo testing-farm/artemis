@@ -33,6 +33,14 @@ KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     default=600
 )
 
+KNOB_UPDATE_TICK: Knob[int] = Knob(
+    'openstack.update.tick',
+    has_db=False,
+    envvar='ARTEMIS_OPENSTACK_UPDATE_TICK',
+    envvar_cast=int,
+    default=30
+)
+
 
 @dataclasses.dataclass
 class OpenStackPoolData(PoolData):
@@ -346,7 +354,8 @@ class OpenStackDriver(PoolDriver):
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
             is_acquired=False,
-            pool_data=OpenStackPoolData(instance_id=instance_id)
+            pool_data=OpenStackPoolData(instance_id=instance_id),
+            delay_update=KNOB_UPDATE_TICK.value
         ))
 
     def _get_guest_status(
@@ -446,7 +455,8 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(ProvisioningProgress(
             is_acquired=False,
-            pool_data=OpenStackPoolData.unserialize(guest_request)
+            pool_data=OpenStackPoolData.unserialize(guest_request),
+            delay_update=KNOB_UPDATE_TICK.value
         ))
 
     def update_snapshot(
@@ -472,7 +482,8 @@ class OpenStackDriver(PoolDriver):
         if status != 'active':
             return Ok(ProvisioningProgress(
                 is_acquired=False,
-                pool_data=OpenStackPoolData.unserialize(guest_request)
+                pool_data=OpenStackPoolData.unserialize(guest_request),
+                delay_update=KNOB_UPDATE_TICK.value
             ))
 
         return Ok(ProvisioningProgress(
@@ -607,7 +618,8 @@ class OpenStackDriver(PoolDriver):
 
             return Ok(ProvisioningProgress(
                 is_acquired=False,
-                pool_data=OpenStackPoolData.unserialize(guest_request)
+                pool_data=OpenStackPoolData.unserialize(guest_request),
+                delay_update=KNOB_UPDATE_TICK.value
             ))
 
         r_ip_address = self._output_to_ip(output)

@@ -440,7 +440,8 @@ class BeakerDriver(PoolDriver):
 
         return Ok(ProvisioningProgress(
             is_acquired=False,
-            pool_data=BeakerPoolData(job_id=r_create_job.unwrap())
+            pool_data=BeakerPoolData(job_id=r_create_job.unwrap()),
+            delay_update=KNOB_UPDATE_TICK.value
         ))
 
     def release_guest(
