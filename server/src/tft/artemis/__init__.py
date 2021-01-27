@@ -262,6 +262,9 @@ class Failure:
         # Guestname will be provided by event instance itself, no need to parse it as event details
         event_details.pop('guestname', None)
 
+        if 'environment' in event_details:
+            event_details['environment'] = event_details['environment'].serialize_to_json()
+
         if self.caused_by:
             event_details['caused_by'] = self.caused_by.get_event_details()
 
@@ -346,6 +349,9 @@ class Failure:
             # expects it to find when generating the message for submission.
             data['stacktrace'] = Failure._get_sentry_stack_info(self.traceback)
 
+        if 'environment' in self.details:
+            extra['environment'] = self.details['environment'].serialize_to_json()
+
         if self.caused_by:
             caused_by_data, caused_by_tags, caused_by_extra = self.caused_by.get_sentry_details()
 
@@ -383,6 +389,9 @@ class Failure:
                 'stdout': process_output_to_str(command_output, stream='stdout'),
                 'stderr': process_output_to_str(command_output, stream='stderr')
             }
+
+        if 'environment' in details:
+            details['environment'] = details['environment'].serialize_to_json()
 
         if self.caused_by:
             details['caused-by'] = self.caused_by.get_log_details()
