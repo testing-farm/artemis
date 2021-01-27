@@ -1,6 +1,7 @@
 import concurrent.futures
 import json
 import os
+import random
 import threading
 
 import dramatiq
@@ -129,6 +130,14 @@ KNOB_DISPATCH_PREPARE_DELAY: Knob[int] = Knob(
     envvar='ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY',
     envvar_cast=int,
     default=60
+)
+
+KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
+    'actor.delay-uniform-spread',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD',
+    envvar_cast=int,
+    default=5
 )
 
 
@@ -514,6 +523,14 @@ def _cancel_task_if(
     return True
 
 
+def _randomize_delay(delay: int) -> int:
+    """
+    Modify a given delay by a randomized value withing spread specified by :py:const:`KNOB_DELAY_UNIFORM_SPREAD`.
+    """
+
+    return delay + int(random.uniform(-KNOB_DELAY_UNIFORM_SPREAD.value, KNOB_DELAY_UNIFORM_SPREAD.value))
+
+
 def dispatch_task(
     logger: gluetool.log.ContextAdapter,
     task: Actor,
@@ -533,6 +550,8 @@ def dispatch_task(
         r = safe_call(task.send, *args)
 
     else:
+        delay = _randomize_delay(delay)
+
         # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
         r = safe_call(task.send_with_options, args=args, delay=delay * 1000)
 
@@ -597,6 +616,8 @@ def dispatch_group(
             group.run()
 
         else:
+            delay = _randomize_delay(delay)
+
             group.run(delay=delay * 1000)
 
         formatted_args = [
