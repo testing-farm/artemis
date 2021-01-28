@@ -9,7 +9,7 @@ users:
 ssh-keys:
   - name: master-key
     owner: artemis
-    file: /configuration/master-key.yaml
+    file: {{ env("PWD") }}/master-key.yaml
 
 priority-groups:
   - name: default-priority
