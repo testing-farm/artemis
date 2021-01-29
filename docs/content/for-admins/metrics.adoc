@@ -32,6 +32,12 @@ Counters are emitted as two distinct metrics, `foo_total` and `foo_created`, to 
 * `db_pool_checked_out` (gauge): Current number of connections out.
 * `db_pool_overflow` (gauge): Current overflow of connections.
 
+=== Routing metrics
+
+* `overall_policy_calls_count` (counter): Overall total number of policy call by policy name.
+* `overall_policy_cancellations_count` (counter): Overall total number of policy canceling a guest request by policy name.
+* `overall_policy_rulings_count` (counter): Overall total number of policy rulings by policy name, pool name and whether the pool was allowed.
+
 === Provisioning metrics
 
 * `current_guest_request_count` (gauge): Current number of guest requests being provisioned by pool and state.
