@@ -10,6 +10,7 @@ from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool, PoolReso
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
+from ..script import hook_engine
 
 from typing import cast, Any, Dict, List, Optional
 
@@ -342,6 +343,38 @@ class AzureDriver(PoolDriver):
             return Error(r_output.value)
         return Ok(r_output.unwrap())
 
+    # NOTE(ivasilev) Borrowed as is with cosmetic changes from openstack driver.
+    # Should land into the hooks library one day.
+    def _env_to_image(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment
+    ) -> Result[Any, Failure]:
+        r_engine = hook_engine('AZURE_ENVIRONMENT_TO_IMAGE')
+
+        if r_engine.is_error:
+            return Error(r_engine.unwrap_error())
+
+        engine = r_engine.unwrap()
+
+        r_image = engine.run_hook(
+            'AZURE_ENVIRONMENT_TO_IMAGE',
+            logger=logger,
+            pool=self,
+            environment=environment
+        )  # type: Result[Any, Failure]
+
+        if r_image.is_error:
+            return Error(
+                Failure(
+                    'Failed to find image for environment',
+                    caused_by=r_image.unwrap_error(),
+                    environment=environment
+                )
+            )
+
+        return r_image
+
     def _do_acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -352,11 +385,10 @@ class AzureDriver(PoolDriver):
     ) -> Result[ProvisioningProgress, Failure]:
 
         name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
-        # XXX FIXME not using hooks for the moment, transfer to a hook some time later
-        if environment.pool:
-            image = environment.os.compose
-        else:
-            raise NotImplementedError("Compose mapping not implemented for azure yet")
+        r_image = self._env_to_image(logger, environment)
+        if r_image.is_error:
+            return Error(r_image.value)
+        image = r_image.unwrap()
 
         r_output = None
 

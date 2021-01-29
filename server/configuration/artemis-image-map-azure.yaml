@@ -1,0 +1,8 @@
+---
+#
+# The mapping file maps compose names to Azure images, use the following format
+#
+# - 'compose-name' : 'azure-image-name'
+#
+- '^RHEL-7\.9\.0$': 'RedHat:RHEL:7_9:7.9.2020111301'
+- '^RHEL.*$': 'RedHat:RHEL:7-LVM:latest'
