@@ -716,6 +716,29 @@ class MetricsFailoverSuccess(Base):
     updated = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class MetricsPolicyCalls(Base):
+    __tablename__ = 'metrics_policy_calls'
+
+    policy_name = Column(String(), primary_key=True)
+    count = Column(Integer, default=0)
+
+
+class MetricsPolicyCancellations(Base):
+    __tablename__ = 'metrics_policy_cancellations'
+
+    policy_name = Column(String(), primary_key=True)
+    count = Column(Integer, default=0)
+
+
+class MetricsPolicyRulings(Base):
+    __tablename__ = 'metrics_policy_rulings'
+
+    policy_name = Column(String(), primary_key=True)
+    pool_name = Column(String(), primary_key=True)
+    allowed = Column(Boolean(), primary_key=True)
+    count = Column(Integer, default=0)
+
+
 class PoolResourcesMetricsDimensions(enum.Enum):
     LIMITS = 'LIMITS'
     USAGE = 'USAGE'

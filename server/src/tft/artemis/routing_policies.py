@@ -13,7 +13,8 @@ from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
 import sqlalchemy
 
-from typing import Callable, List, Tuple, Type
+from typing import cast, Callable, List, Tuple, Type
+from typing_extensions import Protocol
 
 
 @dataclasses.dataclass
@@ -45,6 +46,10 @@ PolicyType = Callable[
     ],
     PolicyReturnType
 ]
+
+
+class PolicyWrapperType(Protocol):
+    policy_name: str
 
 
 # Maximum request time in seconds
@@ -85,6 +90,8 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
     Wraps a given policy function with a common code that provides unified logging and error handling.
     """
 
+    policy_name = fn.__name__.lower().replace('policy_', '').replace('_', '-')
+
     @functools.wraps(fn)
     def wrapper(
         logger: gluetool.log.ContextAdapter,
@@ -93,8 +100,6 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
         guest_request: GuestRequest
     ) -> PolicyReturnType:
         try:
-            policy_name = fn.__name__.lower().replace('policy_', '').replace('_', '-')
-
             policy_logger = PolicyLogger(logger, policy_name)
 
             log_dict(policy_logger.debug, 'input pools', pools)
@@ -112,8 +117,10 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
             return Error(Failure.from_exc(
                 'routing policy crashed',
                 exc,
-                routing_policy=fn.__name__
+                routing_policy=policy_name
             ))
+
+    cast(PolicyWrapperType, wrapper).policy_name = policy_name
 
     return wrapper
 
@@ -433,11 +440,18 @@ def run_routing_policies(
     :param policies: list of policies to run. Policies are executed in the order they appear in this list.
     """
 
+    # Avoiding circular imports (.metrics imports .tasks which imports .ruling_policies)
+    from .metrics import RoutingMetrics
+
     ruling = PolicyRuling()
     ruling.allowed_pools = pools[:]
 
     for policy in policies:
+        policy_name = cast(PolicyWrapperType, policy).policy_name
+
         r = policy(logger, session, ruling.allowed_pools, guest_request)
+
+        RoutingMetrics.inc_policy_called(session, policy_name)
 
         if r.is_error:
             return Error(Failure(
@@ -448,10 +462,25 @@ def run_routing_policies(
         policy_ruling = r.unwrap()
 
         if policy_ruling.cancel:
+            # Mark all input pools are excluded
+            map(lambda x: RoutingMetrics.inc_pool_excluded(session, policy_name, x.poolname), ruling.allowed_pools)
+
+            RoutingMetrics.inc_policy_canceled(session, policy_name)
+
+            ruling.allowed_pools = []
             ruling.cancel = True
 
             return Ok(ruling)
 
+        # Store ruling metrics before we update ruling container with results from the policy.
+        for pool in ruling.allowed_pools:
+            if pool in policy_ruling.allowed_pools:
+                RoutingMetrics.inc_pool_allowed(session, policy_name, pool.poolname)
+
+            else:
+                RoutingMetrics.inc_pool_excluded(session, policy_name, pool.poolname)
+
+        # Now we can update our container with up-to-date results.
         ruling.allowed_pools = policy_ruling.allowed_pools
 
     return Ok(ruling)

@@ -35,9 +35,14 @@ ENOUGH_RESOURCES_EXCESS_MULTIPLIER = tft.artemis.routing_policies.KNOB_ROUTE_POO
 
 @pytest.fixture
 def mock_inputs():
-    return (
+    inputs = (
         MagicMock(name='logger<mock>'),
-        MagicMock(name='session<mock>'),
+        MagicMock(
+            name='session<mock>',
+            bind=MagicMock(
+                dialect=MagicMock()
+            )
+        ),
         [
             MagicMock(name='pool_foo<mock>', poolname='dummy-pool'),
             MagicMock(name='pool_bar<mock>', poolname='not-so-dummy-pool'),
@@ -45,6 +50,12 @@ def mock_inputs():
         ],
         MagicMock(name='guest_request<mock>')
     )
+
+    # We need `dialect` mock to have attribute `name` but it cannot be done by passing `name=...` to `MagiMock()`,
+    # it must be done afterward.
+    inputs[1].bind.dialect.name = 'postgresql'
+
+    return inputs
 
 
 @pytest.fixture

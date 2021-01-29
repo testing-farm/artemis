@@ -514,6 +514,183 @@ class ProvisioningMetrics(MetricsBase):
 
 
 @dataclasses.dataclass
+class RoutingMetrics(MetricsBase):
+    """
+    Routing metrics.
+    """
+
+    policy_calls: Dict[str, int]
+    policy_cancellations: Dict[str, int]
+    policy_rulings: Dict[Tuple[str, str, bool], int]
+
+    @staticmethod
+    def inc_policy_called(
+        session: sqlalchemy.orm.session.Session,
+        policy_name: str
+    ) -> Result[None, Failure]:
+        """
+        Increase "policy called to make ruling" metric by 1.
+
+        :param session: DB session to use for DB access.
+        :param policy_name: policy that was called to make ruling.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        upsert_inc_metric(
+            session,
+            artemis_db.MetricsPolicyCalls,
+            {
+                artemis_db.MetricsPolicyCalls.policy_name: policy_name
+            }
+        )
+        return Ok(None)
+
+    @staticmethod
+    def inc_policy_canceled(
+        session: sqlalchemy.orm.session.Session,
+        policy_name: str
+    ) -> Result[None, Failure]:
+        """
+        Increase "policy canceled a guest request" metric by 1.
+
+        :param session: DB session to use for DB access.
+        :param policy_name: policy that made the decision.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        upsert_inc_metric(
+            session,
+            artemis_db.MetricsPolicyCancellations,
+            {
+                artemis_db.MetricsPolicyCancellations.policy_name: policy_name
+            }
+        )
+        return Ok(None)
+
+    @staticmethod
+    def inc_pool_allowed(
+        session: sqlalchemy.orm.session.Session,
+        policy_name: str,
+        pool_name: str
+    ) -> Result[None, Failure]:
+        """
+        Increase "pool allowed by policy" metric by 1.
+
+        :param session: DB session to use for DB access.
+        :param policy_name: policy that made the decision.
+        :param pool_name: pool that was allowed.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        upsert_inc_metric(
+            session,
+            artemis_db.MetricsPolicyRulings,
+            {
+                artemis_db.MetricsPolicyRulings.policy_name: policy_name,
+                artemis_db.MetricsPolicyRulings.pool_name: pool_name,
+                artemis_db.MetricsPolicyRulings.allowed: True
+            }
+        )
+        return Ok(None)
+
+    @staticmethod
+    def inc_pool_excluded(
+        session: sqlalchemy.orm.session.Session,
+        policy_name: str,
+        pool_name: str
+    ) -> Result[None, Failure]:
+        """
+        Increase "pool excluded by policy" metric by 1.
+
+        :param session: DB session to use for DB access.
+        :param policy_name: policy that made the decision.
+        :param pool_name: pool that was excluded.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        upsert_inc_metric(
+            session,
+            artemis_db.MetricsPolicyRulings,
+            {
+                artemis_db.MetricsPolicyRulings.policy_name: policy_name,
+                artemis_db.MetricsPolicyRulings.pool_name: pool_name,
+                artemis_db.MetricsPolicyRulings.allowed: False
+            }
+        )
+        return Ok(None)
+
+    @classmethod
+    def load(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        db: artemis_db.DB,
+        session: sqlalchemy.orm.session.Session
+    ) -> 'RoutingMetrics':
+        """
+        Load values from database, and return the container instance.
+
+        :param logger: logger to use for logging.
+        :param db: DB instance to use for DB access.
+        :param session: DB session to use for DB access.
+        :returns: a metrics container instance.
+        """
+
+        return RoutingMetrics(
+            policy_calls={
+                record.policy_name: record.count
+                for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyCalls).all()
+            },
+            policy_cancellations={
+                record.policy_name: record.count
+                for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyCancellations).all()
+            },
+            policy_rulings={
+                (record.policy_name, record.pool_name, record.allowed): record.count
+                for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyRulings).all()
+            }
+        )
+
+    def to_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
+        overall_policy_calls_count = Counter(
+            'overall_policy_calls_count',
+            'Overall total number of policy call by policy name.',
+            ['policy'],
+            registry=registry
+        )
+
+        overall_policy_cancellations_count = Counter(
+            'overall_policy_cancellations_count',
+            'Overall total number of policy canceling a guest request by policy name.',
+            ['policy'],
+            registry=registry
+        )
+
+        overall_policy_rulings_count = Counter(
+            'overall_policy_rulings_count',
+            'Overall total number of policy rulings by policy name, pool name and whether the pool was allowed.',
+            ['policy', 'pool', 'allowed'],
+            registry=registry
+        )
+
+        for policy_name, count in self.policy_calls.items():
+            overall_policy_calls_count.labels(policy=policy_name).inc(amount=count)
+
+        for policy_name, count in self.policy_cancellations.items():
+            overall_policy_cancellations_count.labels(policy=policy_name).inc(amount=count)
+
+        for (policy_name, pool_name, allowed), count in self.policy_rulings.items():
+            overall_policy_rulings_count \
+                .labels(policy=policy_name, pool=pool_name, allowed='yes' if allowed else 'no') \
+                .inc(amount=count)
+
+
+@dataclasses.dataclass
 class Metrics(MetricsBase):
     """
     Global metrics that don't fit anywhere else, and also a root of the tree of metrics.
@@ -522,6 +699,7 @@ class Metrics(MetricsBase):
     db: DBMetrics
     pools: PoolsMetrics
     provisioning: ProvisioningMetrics
+    routing: RoutingMetrics
 
     @classmethod
     def load(
@@ -542,7 +720,8 @@ class Metrics(MetricsBase):
         return Metrics(
             db=DBMetrics.load(logger, db, session),
             pools=PoolsMetrics.load(logger, db, session),
-            provisioning=ProvisioningMetrics.load(logger, db, session)
+            provisioning=ProvisioningMetrics.load(logger, db, session),
+            routing=RoutingMetrics.load(logger, db, session)
         )
 
     def to_prometheus(self, registry: CollectorRegistry) -> None:
@@ -555,6 +734,7 @@ class Metrics(MetricsBase):
         self.db.to_prometheus(registry)
         self.pools.to_prometheus(registry)
         self.provisioning.to_prometheus(registry)
+        self.routing.to_prometheus(registry)
 
     @classmethod
     def render_prometheus_metrics(
