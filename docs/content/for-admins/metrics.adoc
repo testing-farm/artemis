@@ -1,0 +1,61 @@
+---
+title: "Metrics"
+date: 2021-01-29T10:22:42+01:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== Artemis metrics
+
+Artemis and components Artemis depends on, RabbitMQ and PostgreSQL, provide metrics in a well-known format suitable for ingestion by https://prometheus.io/[Prometheus]. Artemis core metrics are served by Artemis API server under dedicated path, `/metrics`.
+
+[NOTE]
+====
+Since Artemis is still under heavy development, some Artemis metrics are yet to be provided, namely metrics related to workers and scheduler are yet to be made available.
+====
+
+[NOTE]
+====
+Counters are emitted as two distinct metrics, `foo_total` and `foo_created`, to track the value and creation time of the counter. In the list below, we list the metric names without these suffixes.
+====
+
+=== API server HTTP traffic
+
+* `http_requests` (counter): Request count by method, path and status line.
+* `http_requests_inprogress` (gauge): Requests in progress by method and path.
+
+=== API server DB metrics
+
+* `db_pool_size` (gauge): Maximal number of connections available in the pool.
+* `db_pool_checked_in` (gauge): Current number of connections checked in.
+* `db_pool_checked_out` (gauge): Current number of connections out.
+* `db_pool_overflow` (gauge): Current overflow of connections.
+
+=== Provisioning metrics
+
+* `current_guest_request_count` (gauge): Current number of guest requests being provisioned by pool and state.
+* `current_guest_request_count_total` (gauge): Current total number of guest requests being provisioned.
+* `overall_provisioning_count` (counter): Overall total number of all requested guest requests.
+* `overall_successfull_provisioning_count` (counter): Overall total number of successfully provisioned guest requests.
+* `overall_failover_count` (counter): Overall total number of failovers to another pool by source and destination pool.
+* `overall_successfull_failover_count` (counter): Overall total number of successful failovers to another pool by source and destination pool.
+
+=== Pool resource metrics
+
+Following metrics are generated for every known pool, and represent limits and current usage of pool resources. All metrics have a label called `dimension` set to either `limit` or `usage` to represent which side of the equation it provides.
+
+* `pool_resources_instances` (gauge): Current limits and usage of pool instances.
+* `pool_resources_cores` (gauge) Current limits and usage of pool cores.
+* `pool_resources_memory_bytes` (gauge): Current limits and usage of pool memory.
+* `pool_resources_diskspace_bytes` (gauge): Current limits and usage of pool diskspace.
+* `pool_resources_snapshot` (gauge): Current limits and usage of pool snapshot.
+
+
+== Other components
+
+#TODO: List other components and where to find their metrics, plus links to their documentation - we don't want to document their metrics here. But this will need to somehow standardise where their metrics can be found, e.g. by listing routes and checking k8s the routes are available.#
+
+=== PostgreSQL
+
+=== RabbitMQ

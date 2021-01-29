@@ -240,7 +240,7 @@ class PoolsMetrics(MetricsBase):
 
         current_guest_request_count = Gauge(
             'current_guest_request_count',
-            'Number of current guest requests in pool',
+            'Current number of guest requests being provisioned by pool and state.',
             ['pool', 'state'],
             registry=registry
         )
@@ -382,6 +382,8 @@ class ProvisioningMetrics(MetricsBase):
         :returns: a metrics container instance.
         """
 
+        current_record = session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
+
         requested_record = artemis_db.Query \
             .from_session(session, artemis_db.Metrics) \
             .filter(artemis_db.Metrics.metric == 'requested') \
@@ -393,8 +395,8 @@ class ProvisioningMetrics(MetricsBase):
             .one_or_none()
 
         return ProvisioningMetrics(
+            current=current_record.scalar(),
             requested=requested_record.count if requested_record else 0,
-            current=len(artemis_db.Query.from_session(session, artemis_db.GuestRequest).all()),
             success=success_record.count if success_record else 0,
             failover={
                 (record.from_pool, record.to_pool): record.count
@@ -413,47 +415,47 @@ class ProvisioningMetrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        overall_request_count = Counter(
-            'overall_guest_request_count_total',
-            'Number of overall guest requests',
-            registry=registry
-        )
-
-        current_request_count = Gauge(
+        current_guest_request_count_total = Gauge(
             'current_guest_request_count_total',
-            'Number of current guest requests',
+            'Current total number of guest requests being provisioned.',
             registry=registry
         )
 
-        successfull_request_count = Counter(
-            'successfull_guest_request_count_total',
-            'Number of successfull current guest requests',
+        overall_provisioning_count = Counter(
+            'overall_provisioning_count',
+            'Overall total number of all requested guest requests.',
             registry=registry
         )
 
-        failover = Counter(
+        overall_successfull_provisioning_count = Counter(
+            'overall_successfull_provisioning_count',
+            'Overall total number of all successfully provisioned guest requests.',
+            registry=registry
+        )
+
+        overall_failover_count = Counter(
             'provision_failover_guest_request_count',
-            'Number of failovers to a different pool',
+            'Overall total number of failovers to another pool by source and destination pool.',
             ['from_pool', 'to_pool'],
             registry=registry
         )
 
-        successful_failover = Counter(
-            'provision_failover_success_guest_request_count',
-            'Number of successfully provisioned guest requests which were provisioned with failover',
+        overall_successfull_failover_count = Counter(
+            'overall_successfull_failover_count',
+            'Overall total number of successful failovers to another pool by source and destination pool.',
             ['from_pool', 'to_pool'],
             registry=registry
         )
 
-        overall_request_count.inc(amount=self.requested)
-        current_request_count.set(self.current)
-        successfull_request_count.inc(amount=self.success)
+        current_guest_request_count_total.set(self.current)
+        overall_provisioning_count.inc(amount=self.requested)
+        overall_successfull_provisioning_count.inc(amount=self.success)
 
         for (from_pool, to_pool), count in self.failover.items():
-            failover.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
+            overall_failover_count.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
 
         for (from_pool, to_pool), count in self.failover_success.items():
-            successful_failover.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
+            overall_successfull_failover_count.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
 
 
 @dataclasses.dataclass
