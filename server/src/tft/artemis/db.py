@@ -758,8 +758,7 @@ class _DB:
         logger: gluetool.log.ContextAdapter,
         url: str
     ) -> None:
-        from . import KNOB_LOGGING_DB_QUERIES, KNOB_LOGGING_DB_POOL, KNOB_DB_SQLALCHEMY_POOL_OVERFLOW, \
-            KNOB_DB_SQLALCHEMY_POOL_SIZE
+        from . import KNOB_LOGGING_DB_QUERIES, KNOB_LOGGING_DB_POOL, KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE
 
         self.logger = logger
 
@@ -778,20 +777,17 @@ class _DB:
 
         # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
         if url.startswith('postgresql://'):
-            pool_size = KNOB_DB_SQLALCHEMY_POOL_SIZE.value
-            max_overflow = KNOB_DB_SQLALCHEMY_POOL_OVERFLOW.value
-
             gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
                 'echo_pool': self._echo_pool,
-                'pool_size': pool_size,
-                'max_overflow': max_overflow
+                'pool_size': KNOB_DB_POOL_SIZE.value,
+                'max_overflow': KNOB_DB_POOL_MAX_OVERFLOW.value
             })
 
             self.engine = sqlalchemy.create_engine(
                 url,
                 echo_pool=self._echo_pool,
-                pool_size=pool_size,
-                max_overflow=max_overflow
+                pool_size=KNOB_DB_POOL_SIZE.value,
+                max_overflow=KNOB_DB_POOL_MAX_OVERFLOW.value
             )
 
         # SQLite does not support altering pool size nor max overflow

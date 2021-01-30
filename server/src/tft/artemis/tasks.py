@@ -91,7 +91,7 @@ _ROOT_DB = get_db(_ROOT_LOGGER)
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
 BROKER = get_broker()
 
-
+#:  A number of time a failing task get retried. Serves as a default value for tasks without custom setting.
 KNOB_ACTOR_DEFAULT_RETRIES_COUNT: Knob[int] = Knob(
     'actor.default-retries-count',
     has_db=False,
@@ -100,6 +100,7 @@ KNOB_ACTOR_DEFAULT_RETRIES_COUNT: Knob[int] = Knob(
     default=5
 )
 
+#: The lowest possible delay, in seconds, before the next attempt to run a failed task.
 KNOB_ACTOR_DEFAULT_MIN_BACKOFF: Knob[int] = Knob(
     'actor.default-min-backoff',
     has_db=False,
@@ -108,6 +109,7 @@ KNOB_ACTOR_DEFAULT_MIN_BACKOFF: Knob[int] = Knob(
     default=15
 )
 
+#: The biggest possible delay, in seconds, before the next attempt to run a failed task.
 KNOB_ACTOR_DEFAULT_MAX_BACKOFF: Knob[int] = Knob(
     'actor.default-max-backoff',
     has_db=False,
@@ -116,6 +118,7 @@ KNOB_ACTOR_DEFAULT_MAX_BACKOFF: Knob[int] = Knob(
     default=60
 )
 
+#: When enabled, broker connection will be forcefully closed after every message dispatch.
 KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
     'broker.close-after-dispatch',
     has_db=False,
@@ -124,6 +127,7 @@ KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
     default=False
 )
 
+#: A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks.
 KNOB_DISPATCH_PREPARE_DELAY: Knob[int] = Knob(
     'actor.dispatch-preparing.delay',
     has_db=False,
@@ -132,6 +136,7 @@ KNOB_DISPATCH_PREPARE_DELAY: Knob[int] = Knob(
     default=60
 )
 
+#: A range, in seconds, by which can a task delay be modified before use.
 KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
     'actor.delay-uniform-spread',
     has_db=False,
@@ -348,7 +353,7 @@ def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:
 def actor_kwargs(actor_name: str) -> Dict[str, Any]:
     return {
         'max_retries': int(actor_control_value(actor_name, 'RETRIES', KNOB_ACTOR_DEFAULT_RETRIES_COUNT.value)),
-        'min_backoff': int(actor_control_value(actor_name, 'MIN_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value)),
+        'min_backoff': int(actor_control_value(actor_name, 'MIN_BACKOFF', KNOB_ACTOR_DEFAULT_MIN_BACKOFF.value)),
         'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value))
     }
 

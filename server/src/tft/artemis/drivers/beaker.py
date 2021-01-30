@@ -20,7 +20,7 @@ from typing import Any, Optional, List, Tuple
 NodeRefType = Any
 
 
-#: RefreshTemeout for wait function in _stop_guest and _start_guest events
+#: A time, in seconds, for which the guest would be initially reserved.
 KNOB_RESERVATION_DURATION: Knob[int] = Knob(
     'beaker.reservation.duration',
     has_db=False,
@@ -29,6 +29,7 @@ KNOB_RESERVATION_DURATION: Knob[int] = Knob(
     default=86400
 )
 
+#: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
     'beaker.update.tick',
     has_db=False,

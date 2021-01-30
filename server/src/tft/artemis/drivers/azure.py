@@ -15,6 +15,7 @@ from ..script import hook_engine
 from typing import cast, Any, Dict, List, Optional
 
 
+#: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
     'azure.update.tick',
     has_db=False,

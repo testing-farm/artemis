@@ -783,6 +783,8 @@ class Knob(Generic[T]):
         return Error(Failure('Cannot fetch knob value'))
 
 
+#: Level of logging. Accepted values are Python logging levels as defined by Python's
+#: https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 KNOB_LOGGING_LEVEL: Knob[int] = Knob(
     'logging.level',
     has_db=False,
@@ -791,6 +793,7 @@ KNOB_LOGGING_LEVEL: Knob[int] = Knob(
     default=logging.INFO
 )
 
+#: If enabled, Artemis would emit log messages as JSON mappings.
 KNOB_LOGGING_JSON: Knob[bool] = Knob(
     'logging.json',
     has_db=False,
@@ -799,6 +802,7 @@ KNOB_LOGGING_JSON: Knob[bool] = Knob(
     default=True
 )
 
+#: Path to a directory with configuration.
 KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
     'config.dirpath',
     has_db=False,
@@ -807,6 +811,7 @@ KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
     default=os.getcwd()
 )
 
+#: Broker URL.
 KNOB_BROKER_URL: Knob[str] = Knob(
     'broker.url',
     has_db=False,
@@ -815,8 +820,8 @@ KNOB_BROKER_URL: Knob[str] = Knob(
     default='amqp://guest:guest@127.0.0.1:5672'
 )
 
-#: RabbitMQ client should ping the server over established connection to keep both parties
-#: aware the connection should be kept alive.
+#: An interval, in seconds, after which a broker client should ping the server over the established connection to
+#: keep both parties aware the connection should be kept alive.
 KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
     'broker.heartbeat-timeout',
     has_db=False,
@@ -825,14 +830,7 @@ KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
     default=60
 )
 
-KNOB_BROKER_BLOCKED_TIMEOUT: Knob[int] = Knob(
-    'broker.blocked-timeout',
-    has_db=False,
-    envvar='ARTEMIS_BROKER_BLOCKED_TIMEOUT',
-    envvar_cast=int,
-    default=300
-)
-
+#: Database URL.
 KNOB_DB_URL: Knob[str] = Knob(
     'db.url',
     has_db=False,
@@ -841,6 +839,7 @@ KNOB_DB_URL: Knob[str] = Knob(
     default='sqlite:///test.db'
 )
 
+#: Path to a file with a Vault password for decrypting protected files.
 KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
     'vault.password.filepath',
     has_db=False,
@@ -849,6 +848,7 @@ KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
     default=os.path.expanduser('~/.vault_password')
 )
 
+#: When enabled, Artemis would log SQL queries.
 KNOB_LOGGING_DB_QUERIES: Knob[bool] = Knob(
     'logging.db.queries',
     has_db=False,
@@ -857,26 +857,27 @@ KNOB_LOGGING_DB_QUERIES: Knob[bool] = Knob(
     default=False
 )
 
+#: When enabled, Artemis would log events related to database connection pool.
 KNOB_LOGGING_DB_POOL: Knob[str] = Knob(
     'logging.db.pool',
     has_db=False,
     envvar='ARTEMIS_LOG_DB_POOL',
     envvar_cast=str,
-    default='none'
+    default='no'
 )
 
-KNOB_DB_SQLALCHEMY_POOL_SIZE: Knob[int] = Knob(
-    'db.sqlalchemy.pool.size',
+KNOB_DB_POOL_SIZE: Knob[int] = Knob(
+    'db.pool.size',
     has_db=False,
-    envvar='ARTEMIS_SQLALCHEMY_POOL_SIZE',
+    envvar='ARTEMIS_DB_POOL_SIZE',
     envvar_cast=int,
     default=20
 )
 
-KNOB_DB_SQLALCHEMY_POOL_OVERFLOW: Knob[int] = Knob(
-    'db.sqlalchemy.pool.max-overflow',
+KNOB_DB_POOL_MAX_OVERFLOW: Knob[int] = Knob(
+    'db.pool.max-overflow',
     has_db=False,
-    envvar='ARTEMIS_SQLALCHEMY_MAX_OVERFLOW',
+    envvar='ARTEMIS_DB_POOL_MAX_OVERFLOW',
     envvar_cast=int,
     default=10
 )

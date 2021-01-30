@@ -16,15 +16,7 @@ from ..script import hook_engine
 from typing import cast, Any, Dict, List, Optional
 
 
-# Temeout for wait function in _stop_guest and _start_guest events
-KNOB_WAIT_TIMEOUT: Knob[int] = Knob(
-    'openstack.wait-timeout',
-    envvar='ARTEMIS_OPENSTACK_WAIT_TIMEOUT',
-    envvar_cast=int,
-    default=180
-)
-
-# How long would we wait for an instance to leave BUILD state.
+#: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
     has_db=False,
@@ -33,6 +25,7 @@ KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     default=600
 )
 
+#: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
     'openstack.update.tick',
     has_db=False,

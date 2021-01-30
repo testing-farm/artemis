@@ -47,7 +47,7 @@ PolicyType = Callable[
 ]
 
 
-# Maximum request time in seconds
+#: A time, in seconds, after which a guest request is cancelled if provisioning haven't succeeded.
 KNOB_ROUTE_REQUEST_MAX_TIME: Knob[int] = Knob(
     'route.request.max-time',
     has_db=False,
@@ -56,7 +56,8 @@ KNOB_ROUTE_REQUEST_MAX_TIME: Knob[int] = Knob(
     default=6 * 3600
 )
 
-# Number of seconds an error from pool is accountable, errors which happened later are ignored
+#: A time, in seconds, after which a pool error during a guest provisioning is ignored and pool becomes eligible
+#: for said guest request again.
 KNOB_ROUTE_POOL_FORGIVING_TIME: Knob[int] = Knob(
     'route.pool.forgiving-time',
     has_db=False,
@@ -65,13 +66,13 @@ KNOB_ROUTE_POOL_FORGIVING_TIME: Knob[int] = Knob(
     default=10 * 60
 )
 
-# Default threshold for usage/limit balance. If usage reaches this percentage, we consider the pool full.
+#: A percentage part of pool resource that, when reached, marks pool as depleted and not eligible for provisioning.
 KNOB_ROUTE_POOL_RESOURCE_THRESHOLD: Knob[float] = Knob(
     'route.pool.resource-threshold',
     has_db=False,
     envvar='ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD',
     envvar_cast=float,
-    default=0.9
+    default=90.0
 )
 
 
@@ -379,12 +380,14 @@ def policy_enough_resources(
 
     log_dict(logger.info, 'pool metrics', pool_metrics)
 
+    threshold = KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.value / 100.0
+
     def has_enough(pool: PoolDriver, metrics: PoolMetrics) -> bool:
         def is_enough(metric_name: str, limit: int, usage: int) -> bool:
             # Very crude trim. We could be smarter, but this should be enough to not hit the limit.
             usage_level = usage / limit
 
-            return usage_level < KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.value
+            return usage_level < threshold
 
         resources_depletion = metrics.resources.get_depletion(is_enough)
 
