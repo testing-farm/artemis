@@ -1,0 +1,93 @@
+---
+title: "Environment variables"
+date: 2021-01-30T08:10:36+01:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== Environment variables
+
+Artemis accepts several environment variables that control its behavior after starting.
+
+[WARNING]
+====
+All variables starting with `ARTEMIS_HOOK_` prefix are *required* and must be set properly.
+====
+
+[NOTE]
+====
+Since Artemis consists of stand-alone services, the variables set for each component may have different value. While unlikely, it is possible, for example, to set different `ARTEMIS_CONFIG_DIR` for each component, respecting you custom deployment.
+====
+
+[NOTE]
+====
+To specify boolean, two-state values, Artemis accepts a wide range of values: `yes`, `true`, `1`, `y`, and `on` to mark
+"enabled" or "allowed" state, and corresponding negative values to express "disabled" or "disallowed". All values are
+case-insensitive.
+====
+
+=== Artemis core
+
+* `ARTEMIS_BROKER_HEARTBEAT_TIMEOUT` (int): An interval, in seconds, after which a broker client should ping the server over the established connection to keep both parties aware the connection should be kept alive. Default: `60`.
+* `ARTEMIS_BROKER_URL` (string): Broker URL. Default: `amqp://guest:guest@127.0.0.1:5672`.
+* `ARTEMIS_CLOSE_AFTER_DISPATCH` (boolean): When enabled, broker connection will be forcefully closed after every message dispatch. Default: `no`.
+* `ARTEMIS_CONFIG_DIR` (string): Path to a directory with configuration. Default: current working directory.
+* `ARTEMIS_DB_POOL_SIZE` (int): Size of the DB connection pool. Default: `20`.
+* `ARTEMIS_DB_POOL_MAX_OVERFLOW` (int): Maximum size of connection pool overflow. Default: `10`.
+* `ARTEMIS_DB_URL` (string): Database URL. Default: `sqlite:///test.db`.
+* `ARTEMIS_LOG_DB_POOL` (boolean|string): When enabled, Artemis would log events related to database connection pool. Accepts also `debug` for more details. Default: `no`.
+* `ARTEMIS_LOG_DB_QUERIES` (boolean): When enabled, Artemis would log SQL queries. Default: `no`.
+* `ARTEMIS_LOG_JSON` (boolean): When enabled, Artemis would emit log messages as JSON mappings. Default: `yes`.
+* `ARTEMIS_LOG_LEVEL` (choice): Level of logging. Accepted values are Python logging levels as defined by Python's https://docs.python.org/3.7/library/logging.html#levels[logging subsystem], case-insensitive. Default: `info`.
+* `ARTEMIS_VAULT_PASSWORD_FILE` (string): Path to a file with a password for decrypting files protected by Ansible Vault. Default: `$HOME/.vault_password`.
+
+=== API server
+
+* `ARTEMIS_API_PROCESSES` (int): Number of processes to spawn for servicing API requests. Default: `1`.
+* `ARTEMIS_API_THREADS` (int): Number of threads to spawn in each process for servicing API requests. Default: `1`.
+* `ARTEMIS_ENABLE_AUTHENTICATION` (bool): If enabled, API requests must pass authentication by providing proper username and token. Default: `no`.
+* `ARTEMIS_ENABLE_AUTHORIZATION` (bool): If enabled, API requests must pass authorization by providing username with privileges high enough for the requested action. Default: `no`.
+
+=== AWS driver
+
+* `ARTEMIS_HOOK_AWS_ENVIRONMENT_TO_IMAGE` (string): Script to map environment to an AWS image.
+
+=== Azure driver
+
+* `ARTEMIS_HOOK_AZURE_ENVIRONMENT_TO_IMAGE` (string): Script to map environment to an Azure image.
+* `ARTEMIS_AZURE_UPDATE_TICK` (int): A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress. Default: `30`.
+
+=== Beaker driver
+
+* `ARTEMIS_BEAKER_RESERVATION_DURATION` (int): A time, in seconds, for which the guest would be initially reserved. Default: `86400`.
+* `ARTEMIS_BEAKER_UPDATE_TICK` (int): A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress. Default: `300`.
+
+=== OpenStack driver
+
+* `ARTEMIS_HOOK_OPENSTACK_ENVIRONMENT_TO_IMAGE` (string): Script to map environment to an OpenStack image.
+* `ARTEMIS_OPENSTACK_BUILD_TIMEOUT` (int): How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned. Default: `600`.
+* `ARTEMIS_OPENSTACK_UPDATE_TICK` (int): A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress. Default: `30`.
+
+=== Routing
+
+* `ARTEMIS_HOOK_ROUTE` (string): Routing script, to be called by `route-guest-request` task.
+* `ARTEMIS_ROUTE_REQUEST_MAX_TIME` (int): A time, in seconds, after which a guest request is cancelled if provisioning haven't succeeded. Default: `21600`.
+* `ARTEMIS_ROUTE_POOL_FORGIVING_TIME` (int): A time, in seconds, after which a pool error during a guest provisioning is ignored and pool becomes eligible for said guest request again. Default: `600`.
+* `ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD` (int): A percentage part of pool resource that, when reached, marks pool as depleted and not eligible for provisioning. Default: `90`.
+
+=== Provisioning workflow
+
+Besides the variables listed below, Artemis accepts also per-task variables, tweaking tasks' retries and minimal and maximal back-off:
+
+* `ARTEMIS_ACTOR_X_RETRIES`
+* `ARTEMIS_ACTOR_X_MIN_BACKOFF`
+* `ARTEMIS_ACTOR_X_MAX_BACKOFF`
+
+For every task, `X`, these three variables can be set, overriding defaults specified by `ARTEMIS_ACTOR_DEFAULT_*` variables.
+
+* `ARTEMIS_ACTOR_DEFAULT_RETRIES` (int): A number of time a failing task get retried. Serves as a default value for tasks without custom setting. Default: `5`.
+* `ARTEMIS_ACTOR_DEFAULT_MIN_BACKOFF` (int): The lowest possible delay, in seconds, before the next attempt to run a failed task. Default: `15`.
+* `ARTEMIS_ACTOR_DEFAULT_MAX_BACKOFF` (int): The biggest possible delay, in seconds, before the next attempt to run a failed task. Default: `60`.
+* `ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD` (int): A range, in seconds, by which can a task delay be modified before use. For example, with `ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD=7` every delay is changed by a random number from range `\<-7, +7>` seconds. Default: `5`.
+* `ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY` (int): A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks. Default: `60`.

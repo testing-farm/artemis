@@ -42,6 +42,8 @@ ADMIN_AUTH: List[Pattern[str]] = []
 # and tokens, yet, therefore it'd be hard to request they start using it right
 # now. These knobs will change, eventually, to "enabled by default", as soon
 # as we implement all the steps.
+
+#: If enabled, API requests must pass authentication by providing proper username and token.
 KNOB_API_ENABLE_AUTHENTICATION: Knob[bool] = Knob(
     'api.enable-authentication',
     has_db=False,
@@ -50,6 +52,8 @@ KNOB_API_ENABLE_AUTHENTICATION: Knob[bool] = Knob(
     default=False
 )
 
+#: If enabled, API requests must pass authorization by providing username with privileges high enough
+#: for the requested action.
 KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
     'api.enable-authorization',
     has_db=False,

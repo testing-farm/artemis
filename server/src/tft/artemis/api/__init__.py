@@ -43,6 +43,7 @@ DEFAULT_EVENTS_SORT_FIELD = 'updated'
 DEFAULT_EVENTS_SORT_BY = 'desc'
 
 
+#: Number of processes to spawn for servicing API requests.
 KNOB_API_PROCESSES: Knob[int] = Knob(
     'api.processes',
     has_db=False,
@@ -51,7 +52,7 @@ KNOB_API_PROCESSES: Knob[int] = Knob(
     default=1
 )
 
-
+#: Number of threads to spawn in each process for servicing API requests.
 KNOB_API_THREADS: Knob[int] = Knob(
     'api.threads',
     has_db=False,

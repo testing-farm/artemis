@@ -816,8 +816,7 @@ class _DB:
         url: str,
         application_name: Optional[str] = None
     ) -> None:
-        from . import KNOB_LOGGING_DB_QUERIES, KNOB_LOGGING_DB_POOL, KNOB_DB_SQLALCHEMY_POOL_OVERFLOW, \
-            KNOB_DB_SQLALCHEMY_POOL_SIZE
+        from . import KNOB_LOGGING_DB_QUERIES, KNOB_LOGGING_DB_POOL, KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE
 
         self.logger = logger
 
@@ -841,21 +840,18 @@ class _DB:
             if application_name is not None:
                 connect_args['application_name'] = application_name
 
-            pool_size = KNOB_DB_SQLALCHEMY_POOL_SIZE.value
-            max_overflow = KNOB_DB_SQLALCHEMY_POOL_OVERFLOW.value
-
             gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
                 'echo_pool': self._echo_pool,
-                'pool_size': pool_size,
-                'max_overflow': max_overflow,
+                'pool_size': KNOB_DB_POOL_SIZE.value,
+                'max_overflow': KNOB_DB_POOL_MAX_OVERFLOW.value,
                 'application_name': application_name
             })
 
             self.engine = sqlalchemy.create_engine(
                 url,
                 echo_pool=self._echo_pool,
-                pool_size=pool_size,
-                max_overflow=max_overflow,
+                pool_size=KNOB_DB_POOL_SIZE.value,
+                max_overflow=KNOB_DB_POOL_MAX_OVERFLOW.value,
                 connect_args=connect_args
             )
 
