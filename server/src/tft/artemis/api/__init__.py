@@ -22,7 +22,7 @@ from gluetool.log import log_dict
 from . import errors, handlers
 from .middleware import error_handler_middleware, prometheus_middleware
 from .middleware import authorization_middleware, AuthContext
-from .. import get_logger, get_db, safe_db_change, log_guest_event, Knob
+from .. import get_logger, get_db, safe_db_change, log_guest_event, Knob, __VERSION__
 from .. import db as artemis_db
 from .. import metrics
 from ..guest import GuestState
@@ -303,6 +303,12 @@ class SnapshotResponse:
             guestname=snapshot_request.guestname,
             state=GuestState(snapshot_request.state)
         )
+
+
+class AboutResponse:
+    package_version: str
+    image_digest: Optional[str]
+    image_url: Optional[str]
 
 
 class APIResponse(Response):  # type: ignore
@@ -763,6 +769,15 @@ def restore_snapshot_request(guestname: str, snapshotname: str, manager: Snapsho
     return APIResponse(manager.restore_snapshot(guestname, snapshotname), status=HTTP_201)
 
 
+def get_about(request: Request) -> APIResponse:
+    response = AboutResponse()
+    response.package_version = __VERSION__
+    response.image_digest = os.getenv('ARTEMIS_IMAGE_DIGEST')
+    response.image_url = os.getenv('ARTEMIS_IMAGE_URL')
+
+    return APIResponse(response, request=request)
+
+
 def run_app() -> molten.app.App:
     from molten.router import Include, Route
 
@@ -798,7 +813,7 @@ def run_app() -> molten.app.App:
     metadata = molten.openapi.documents.Metadata(  # type: ignore
         title='Artemis API',
         description='Artemis provisioning system API.',
-        version='0.0.1'
+        version=__VERSION__
     )
 
     get_schema = handlers.OpenAPIHandler(metadata=metadata)
@@ -817,8 +832,9 @@ def run_app() -> molten.app.App:
             Route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
         ]),
         Route('/metrics', get_metrics),
+        Route('/about', get_about),
         Route('/_docs', get_docs),
-        Route('/_schema', get_schema),
+        Route('/_schema', get_schema)
     ]
 
     return molten.app.App(

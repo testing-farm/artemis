@@ -26,9 +26,14 @@ import jinja2_ansible_filters.core_filters
 
 import periodiq
 import stackprinter
+import pkg_resources
 
 from typing import cast, Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, TypeVar, Union
 from types import FrameType, TracebackType
+
+
+__VERSION__ = pkg_resources.get_distribution('tft-artemis').version
+
 
 # Install additional Jinja2 filters. This must be done before we call `render_template` for the first
 # time, because Jinja2 reuses anonymous environments.
