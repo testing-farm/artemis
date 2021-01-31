@@ -7,7 +7,7 @@ error() { echo "$@"; exit 1; }
 
 [ -z "$API_HOSTNAME" ] && error "API_HOSTNAME environment variable not set"
 [ -z "$API_PORT" ] && error "API_PORT environment variable not set"
-[ -z "$API_TIMEOUT" ] && API_TIMOEUT=10
+[ -z "$API_TIMEOUT" ] && API_TIMEOUT=10
 [ -z "$WAIT_TIMEOUT" ] && WAIT_TIMEOUT=60
 [ -z "$WAIT_TICK" ] && WAIT_TICK=1
 
