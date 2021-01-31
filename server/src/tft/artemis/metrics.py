@@ -434,7 +434,7 @@ class ProvisioningMetrics(MetricsBase):
         )
 
         overall_failover_count = Counter(
-            'provision_failover_guest_request_count',
+            'overall_failover_count',
             'Overall total number of failovers to another pool by source and destination pool.',
             ['from_pool', 'to_pool'],
             registry=registry
