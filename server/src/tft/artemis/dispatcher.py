@@ -115,7 +115,7 @@ def _restore_snapshot_request(
 
 def main() -> None:
     root_logger = get_logger()
-    db = get_db(root_logger)
+    db = get_db(root_logger, application_name='artemis-dispatcher')
 
     # Spawn HTTP server to provide metrics for Prometheus
     # ...

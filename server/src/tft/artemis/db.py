@@ -813,7 +813,8 @@ class _DB:
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
-        url: str
+        url: str,
+        application_name: Optional[str] = None
     ) -> None:
         from . import KNOB_LOGGING_DB_QUERIES, KNOB_LOGGING_DB_POOL, KNOB_DB_SQLALCHEMY_POOL_OVERFLOW, \
             KNOB_DB_SQLALCHEMY_POOL_SIZE
@@ -835,20 +836,27 @@ class _DB:
 
         # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
         if url.startswith('postgresql://'):
+            connect_args: Dict[str, str] = {}
+
+            if application_name is not None:
+                connect_args['application_name'] = application_name
+
             pool_size = KNOB_DB_SQLALCHEMY_POOL_SIZE.value
             max_overflow = KNOB_DB_SQLALCHEMY_POOL_OVERFLOW.value
 
             gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
                 'echo_pool': self._echo_pool,
                 'pool_size': pool_size,
-                'max_overflow': max_overflow
+                'max_overflow': max_overflow,
+                'application_name': application_name
             })
 
             self.engine = sqlalchemy.create_engine(
                 url,
                 echo_pool=self._echo_pool,
                 pool_size=pool_size,
-                max_overflow=max_overflow
+                max_overflow=max_overflow,
+                connect_args=connect_args
             )
 
         # SQLite does not support altering pool size nor max overflow
@@ -907,11 +915,12 @@ class DB:
     def __new__(
         cls,
         logger: gluetool.log.ContextAdapter,
-        url: str
+        url: str,
+        application_name: Optional[str] = None
     ) -> _DB:
         with DB._lock:
             if DB.instance is None:
-                DB.instance = _DB(logger, url)
+                DB.instance = _DB(logger, url, application_name=application_name)
 
                 # declared as class attributes only to avoid typing errors ("DB has no attribute" ...)
                 # those attributes should never be used, use instance attributes only

@@ -14,8 +14,8 @@ from molten.errors import HTTPError
 from molten.contrib.prometheus import REQUEST_COUNT as REQUEST_COUNT, REQUESTS_INPROGRESS as REQUESTS_INPROGRESS
 
 from . import errors
-from .. import get_logger, get_db, Knob, Failure
-from ..db import User, UserRoles
+from .. import Knob, Failure
+from ..db import User, UserRoles, DB
 
 from typing import Any, Callable, List, Optional, Pattern
 
@@ -207,12 +207,12 @@ class AuthContext:
             self.user = user
             self.is_authenticated = True
 
-    def verify_auth(self) -> None:
+    def verify_auth(self, db: DB) -> None:
         if matches_path(self.request, NO_AUTH):
             self.is_authorized = True
             return
 
-        with get_db(get_logger()).get_session() as session:
+        with db.get_session() as session:
             if matches_path(self.request, PROVISIONING_AUTH):
                 self.verify_auth_basic(session, 'provisioning')
 
@@ -229,7 +229,7 @@ class AuthContext:
 
 
 def authorization_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
-    def _authorization_middleware(request: Request) -> Any:
+    def _authorization_middleware(request: Request, db: DB) -> Any:
         # We need context even when authentication and authorization are disabled: handlers request it,
         # and dependency injection must have something to give them.
         #
@@ -246,7 +246,7 @@ def authorization_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
         if not ctx.is_authentication_enabled:
             return handler()
 
-        ctx.verify_auth()
+        ctx.verify_auth(db)
 
         # Refresh stored state, to capture changes made by verification.
         ctx.inject()

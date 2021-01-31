@@ -962,10 +962,20 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
     return broker
 
 
-def get_db(logger: gluetool.log.ContextAdapter) -> artemis_db.DB:
+def get_db(logger: gluetool.log.ContextAdapter, application_name: Optional[str] = None) -> artemis_db.DB:
+    """
+    Return a DB instance.
+
+    :param logger: logger to use for logging.
+    :param application_name: if set, it is passed to DB driver. Some drivers can propagate this string
+        down to server level and display it when inspecting DB connections, which may help debugging
+        DB operations.
+    """
+
     return artemis_db.DB(
         logger,
-        KNOB_DB_URL.value
+        KNOB_DB_URL.value,
+        application_name=application_name
     )
 
 

@@ -86,7 +86,20 @@ from typing_extensions import Protocol
 
 # Initialize our top-level objects, database and logger, shared by all threads and in *this* worker.
 _ROOT_LOGGER = get_logger()
-_ROOT_DB = get_db(_ROOT_LOGGER)
+
+_ROOT_DB: Optional[DB] = None
+
+
+def get_root_db(logger: Optional[gluetool.log.ContextAdapter] = None) -> DB:
+    global _ROOT_DB
+
+    logger = logger or _ROOT_LOGGER
+
+    if _ROOT_DB is None:
+        _ROOT_DB = get_db(logger, application_name='artemis-worker')
+
+    return _ROOT_DB
+
 
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
 BROKER = get_broker()
@@ -457,7 +470,7 @@ def task_core(
 ) -> None:
     logger.begin()
 
-    db = db or _ROOT_DB
+    db = db or get_root_db()
     cancel = cancel or threading.Event()
 
     doer_args = doer_args or tuple()
@@ -467,7 +480,7 @@ def task_core(
 
     try:
         if session is None:
-            with _ROOT_DB.get_session() as session:
+            with db.get_session() as session:
                 doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
 
         else:

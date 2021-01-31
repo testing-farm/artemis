@@ -50,7 +50,8 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         if exception is None:
             return
 
-        from . import get_logger, get_db
+        from . import get_logger
+        from .tasks import get_root_db
 
         logger = get_logger()
 
@@ -110,7 +111,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
                     message.fail()
                     return
 
-                db = get_db(tail_logger)
+                db = get_root_db(tail_logger)
 
                 with db.get_session() as session:
                     if handle_provisioning_chain_tail(

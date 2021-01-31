@@ -738,9 +738,8 @@ def get_guest_events(guestname: str, request: Request, manager: GuestEventManage
     return APIResponse(events, request=request)
 
 
-def get_metrics(request: Request) -> APIResponse:
+def get_metrics(request: Request, db: artemis_db.DB) -> APIResponse:
     logger = get_logger()
-    db = get_db(logger)
 
     return APIResponse(
         stream=metrics.Metrics.render_prometheus_metrics(logger, db),
@@ -785,7 +784,7 @@ def run_app() -> molten.app.App:
     from molten.router import Include, Route
 
     logger = get_logger()
-    db = get_db(logger)
+    db = get_db(logger, application_name='artemis-api-server')
 
     components: List[molten.dependency_injection.Component[Any]] = [
         molten.settings.SettingsComponent(
