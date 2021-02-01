@@ -19,6 +19,10 @@ from ..db import User, UserRoles
 from typing import Any, Callable, List, Optional, Pattern
 
 
+GUEST_ROUTE_PATTERN = re.compile(r'^/guests/[a-z0-9-]+(/(?:events|snapshots))?$')
+SNAPSHOT_ROUTE_PATTERN = re.compile(r'^/guests/[a-z0-9-]+/snapshots/[a-z0-9-]+(/.+)?$')
+
+
 NO_AUTH = [
     re.compile(r'/_docs(?:/.+)?'),
     re.compile(r'/_schema(?:/.+)?'),
@@ -276,14 +280,31 @@ def error_handler_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
     return middleware
 
 
-def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
-    guest_route_pattern = re.compile(r'(/guests/)[a-z0-9-]*(/events)?')
+def rewrite_request_path(path: str) -> str:
+    """
+    Rewrite given request path to replace all guest and snapshot names with ``GUESTNAME`` and ``SNAPSHOTNAME``
+    strings. This is designed to avoid generating HTTP metrics per guest and per snapshot.
 
+    :param str: request path to rewrite.
+    """
+
+    match = GUEST_ROUTE_PATTERN.match(path)
+    if match is not None:
+        return '/guests/GUESTNAME{}'.format(match.group(1) or '')
+
+    match = SNAPSHOT_ROUTE_PATTERN.match(path)
+    if match is not None:
+        return '/guests/GUESTNAME/snapshots/SNAPSHOTNAME{}'.format(match.group(1) or '')
+
+    return path
+
+
+def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
     def middleware(request: Request) -> Any:
         status = "500 Internal Server Error"
-        # this is needed so that metrics for each guestname route won't clog up metrics page
-        # let's treat all /guest/<guestname> routes as the single one
-        path = guest_route_pattern.sub(r'\1GUEST\2', request.path)
+
+        path = rewrite_request_path(request.path)
+
         requests_inprogress = REQUESTS_INPROGRESS.labels(request.method, path)
         requests_inprogress.inc()
 
