@@ -215,6 +215,9 @@ class GuestResponse:
 @molten.schema
 class GuestEvent:
     eventname: str
+    guestname: str
+    details: Dict[str, Any]
+    updated: datetime.datetime
 
     def __init__(
         self,
