@@ -41,7 +41,7 @@ This way Artemis source runs in the same environment as the rest of the processe
 
 == Create configuration
 
-No matter which way you chose, you will need a configuration for your Artemis server. Create the development configuration in the 'server/configuration/' directory.
+No matter which way you chose, you will need a configuration for your Artemis server. Create the development configuration in the `server/configuration/` directory.
 
 [NOTE]
 ====
@@ -54,12 +54,18 @@ You can use samples and `server/configuration/gen.sh` script which will setup Ar
 +
 [source,shell]
 ....
-$ cp server/configuration/env.yml.sample server/configuration/env.yml
+$ cd server/configuration
+$ cp env.yml.sample env.yml
 ....
 +
 * edit this new `env.yml` file, provide details of the cloud accounts you would like to use with Artemis (removing configuration for those you don't need) and
  an SSH key pair to be used by Artemis as its master-key.
 * create an SSH keypair for Artemis.
++
+[NOTE]
+====
+You may skip this step if you are not starting from the scratch, but rather work with already existing keys and prepared tenants.
+====
 +
 In case of OpenStack or AWS clouds you should also create a keypair with the public key in the OpenStack tenant or AWS account, the keypair name
 should match the `openstack.vms.keyname` or `aws.vms.keyname` in your `env.yml`, respectively.
@@ -72,6 +78,18 @@ $ openstack keypair create --public-key path/to/your-new-ssh-key.pub artemis
 +
 In case of Beaker you should add the public key to the `SSH Keys` section of the `User Preferences`. This way you will be able to login as `root` without
 providing a password.
++
+* run `gen.sh` to generate Artemis configuration.
++
+[NOTE]
+====
+You will be prompted for "Vault password". This is then used to encrypt master key file in your configuration, and Artemis will use it to decrypt the file when needed. This password is completely local to your configuration, it is not shared with anyone else.
+====
++
+[source,shell]
+....
+$ bash ./gen.sh
+....
 
 == Minishift and Scaffold
 
