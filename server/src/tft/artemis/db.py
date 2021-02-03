@@ -497,6 +497,33 @@ class GuestRequest(Base):
     priorityname = Column(String(250), ForeignKey('priority_groups.name'), nullable=True)
     poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
 
+    # This is tricky:
+    # * we want to keep `nullable=False`, because `ctime` cannot ever be set to `NULL`. That way we're not forced
+    #   to use `Optional` in our code when talking about `ctime`.
+    # * `nullable=False` requires us to specify a default value.
+    # * `server_default` is a prefered way, instead of `default`, because then it's the DB that takes care about
+    #   the default values. `server_default=sqlalchemy.sql.func.utcnow()` would be the right choice here.
+    # * there might be existing guests in `guest_requests` table, and SQLAlchemy and Alembic must be able to update
+    #   them as well as alter the table by adding a column - but SQLite will not accept our `server_default` because
+    #   it is not a constant!
+    #
+    # We could relax our requirements and settle for `nullable=False`, but then we would have to pretend `ctime` can
+    # be `None`...
+    #
+    # It all boils down to what to assign to existing guest requests when adding new column. Apparently, we cannot
+    # use a dynamic function call, so we may have to keep `default` around, because:
+    #
+    # * `default` tells SQLAlchemy what default value to use *on Python level* - this means it is not a DB taking
+    #   care of the default value after all.
+    # * in Alembic script, we use `server_default` set to a value returned by `datetime.datetime.utcnow()`. This
+    #   means the default value of the column on the DB level is not dynamic, but set to whatever date and time when
+    #   the script was executed, frozen. It applies to existing guest request, because new ones will never land in
+    #   db with unknown `ctime`, it will be always set by SQLAlchemy because we used `default`.
+    #
+    # This needs more attention in general, guest events and some metrics also have these datetime-ish columns,
+    # we should use the same approach. Maybe it's possible to limit the static default to SQLite only.
+    ctime = Column(DateTime(), nullable=False, default=datetime.datetime.utcnow)
+
     state = Column(String(250), nullable=False)
 
     address = Column(String(250), nullable=True)

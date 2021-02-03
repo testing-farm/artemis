@@ -194,6 +194,7 @@ class GuestResponse:
     state: GuestState
     user_data: Dict[str, Optional[str]]
     post_install_script: Optional[str]
+    ctime: datetime.datetime
 
     def __init__(
         self,
@@ -204,8 +205,8 @@ class GuestResponse:
         ssh: GuestSSHInfo,
         state: GuestState,
         user_data: Dict[str, Optional[str]],
-        post_install_script: Optional[str]
-
+        post_install_script: Optional[str],
+        ctime: datetime.datetime
     ) -> None:
         self.guestname = guestname
         self.owner = owner
@@ -215,6 +216,7 @@ class GuestResponse:
         self.state = state.value
         self.user_data = user_data
         self.post_install_script = post_install_script
+        self.ctime = ctime
 
     @classmethod
     def from_db(cls, guest: artemis_db.GuestRequest):
@@ -232,7 +234,8 @@ class GuestResponse:
             ),
             state=GuestState(guest.state),
             user_data=json.loads(guest.user_data),
-            post_install_script=guest.post_install_script
+            post_install_script=guest.post_install_script,
+            ctime=guest.ctime
         )
 
 
