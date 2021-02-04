@@ -8,6 +8,7 @@ from gluetool.result import Result, Ok, Error
 from gluetool.utils import normalize_bool_option
 import sqlalchemy.orm.session
 from molten import Request, Response
+from molten.errors import HTTPError
 # To make mypy happy when others try `from api.middleware import REQUEST_COUNT`, explicit re-export is needed.
 # See https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-no-implicit-reexport
 from molten.contrib.prometheus import REQUEST_COUNT as REQUEST_COUNT, REQUESTS_INPROGRESS as REQUESTS_INPROGRESS
@@ -312,7 +313,14 @@ def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
             response = handler()
             status = response.status
             return response
+
+        except HTTPError as exc:
+            status = exc.status
+
+            raise
+
         finally:
             requests_inprogress.dec()
             REQUEST_COUNT.labels(request.method, path, status).inc()
+
     return middleware
