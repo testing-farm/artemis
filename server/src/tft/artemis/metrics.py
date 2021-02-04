@@ -14,21 +14,34 @@ to its offsprings.
 """
 
 import dataclasses
-from typing import Any, Dict, Optional, Tuple, Type, cast
+import datetime
+from typing import Any, Dict, List, Optional, Tuple, Type, cast
 
 import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
-from prometheus_client import (CollectorRegistry, Counter, Gauge,
-                               generate_latest)
+from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
+import prometheus_client.utils
 
 from . import Failure
 from . import db as artemis_db
 from . import tasks as artemis_tasks
 from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 from .drivers import PoolMetrics
+from .guest import GuestState
+
+
+# Guest age buckets are not all same, but:
+#
+# * first hour split into intervals of 5 minutes,
+# * next 47 hours, by hour,
+# * and the rest.
+GUEST_AGE_BUCKETS = \
+    list(range(300, 3600, 300)) \
+    + list(range(3600, 49 * 3600, 3600)) \
+    + [prometheus_client.utils.INF]
 
 
 class MetricsBase:
@@ -288,6 +301,9 @@ class ProvisioningMetrics(MetricsBase):
     failover: Dict[Tuple[str, str], int]
     failover_success: Dict[Tuple[str, str], int]
 
+    # We want to maybe point fingers on pools where guests are stuck, so include pool name and state as labels.
+    guest_ages: List[Tuple[GuestState, Optional[str], datetime.timedelta]]
+
     @staticmethod
     def inc_requested(
         session: sqlalchemy.orm.session.Session
@@ -382,6 +398,8 @@ class ProvisioningMetrics(MetricsBase):
         :returns: a metrics container instance.
         """
 
+        NOW = datetime.datetime.utcnow()
+
         current_record = session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
 
         requested_record = artemis_db.Query \
@@ -405,7 +423,20 @@ class ProvisioningMetrics(MetricsBase):
             failover_success={
                 (record.from_pool, record.to_pool): record.count
                 for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailoverSuccess).all()
-            }
+            },
+            # Using `query` directly, because we need just limited set of fields, and we need our `Query`
+            # and `SafeQuery` to support this functionality (it should be just a matter of correct types).
+            guest_ages=[
+                (record[0], record[1], NOW - record[2])
+                for record in cast(
+                    List[Tuple[GuestState, Optional[str], datetime.datetime]],
+                    session.query(  # type: ignore
+                        artemis_db.GuestRequest.state,
+                        artemis_db.GuestRequest.poolname,
+                        artemis_db.GuestRequest.ctime
+                    ).all()
+                )
+            ]
         )
 
     def to_prometheus(self, registry: CollectorRegistry) -> None:
@@ -447,6 +478,13 @@ class ProvisioningMetrics(MetricsBase):
             registry=registry
         )
 
+        guest_ages = Gauge(
+            'guest_request_age',
+            'Guest request ages by pool and state.',
+            ['pool', 'state', 'age_threshold'],
+            registry=registry
+        )
+
         current_guest_request_count_total.set(self.current)
         overall_provisioning_count.inc(amount=self.requested)
         overall_successfull_provisioning_count.inc(amount=self.success)
@@ -456,6 +494,13 @@ class ProvisioningMetrics(MetricsBase):
 
         for (from_pool, to_pool), count in self.failover_success.items():
             overall_successfull_failover_count.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
+
+        for state, poolname, age in self.guest_ages:
+            # Pick the smallest larger bucket threshold (e.g. age == 250 => 300, age == 3599 => 3600, ...)
+            # There's always the last threshold, infinity, so the list should never be empty.
+            age_threshold = min([threshold for threshold in GUEST_AGE_BUCKETS if threshold > age.total_seconds()])
+
+            guest_ages.labels(state=state, pool=poolname, age_threshold=age_threshold).inc()
 
 
 @dataclasses.dataclass
