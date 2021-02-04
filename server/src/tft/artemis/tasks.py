@@ -1837,7 +1837,10 @@ def do_guest_request_prepare_finalize(
     _handle_successful_failover(logger, session, workspace)
 
     # update metrics counter for successfully provisioned guest requests
-    metrics.ProvisioningMetrics.inc_success(session)
+    assert workspace.gr
+    assert workspace.gr.poolname is not None
+
+    metrics.ProvisioningMetrics.inc_success(session, workspace.gr.poolname)
 
     return handle_success('finished-task')
 

@@ -691,6 +691,13 @@ class Metrics(Base):
     updated = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class MetricsProvisioningSuccess(Base):
+    __tablename__ = 'metrics_provisioning_success'
+
+    pool = Column(String(), primary_key=True)
+    count = Column(Integer, nullable=False, default=0)
+
+
 class MetricsFailover(Base):
     __tablename__ = 'metrics_failover'
 

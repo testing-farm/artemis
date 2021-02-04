@@ -37,7 +37,7 @@ Counters are emitted as two distinct metrics, `foo_total` and `foo_created`, to 
 * `current_guest_request_count` (gauge): Current number of guest requests being provisioned by pool and state.
 * `current_guest_request_count_total` (gauge): Current total number of guest requests being provisioned.
 * `overall_provisioning_count` (counter): Overall total number of all requested guest requests.
-* `overall_successfull_provisioning_count` (counter): Overall total number of successfully provisioned guest requests.
+* `overall_successfull_provisioning_count` (counter): Overall total number of successfully provisioned guest requests by pool.
 * `overall_failover_count` (counter): Overall total number of failovers to another pool by source and destination pool.
 * `overall_successfull_failover_count` (counter): Overall total number of successful failovers to another pool by source and destination pool.
 * `guest_request_age` (summary): Guest request ages by pool and state.

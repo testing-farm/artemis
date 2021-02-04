@@ -297,7 +297,7 @@ class ProvisioningMetrics(MetricsBase):
 
     requested: int
     current: int
-    success: int
+    success: Dict[str, int]
     failover: Dict[Tuple[str, str], int]
     failover_success: Dict[Tuple[str, str], int]
 
@@ -320,16 +320,25 @@ class ProvisioningMetrics(MetricsBase):
 
     @staticmethod
     def inc_success(
-        session: sqlalchemy.orm.session.Session
+        session: sqlalchemy.orm.session.Session,
+        pool: str
     ) -> Result[None, Failure]:
         """
         Increase :py:attr:`success` metric by 1.
 
         :param session: DB session to use for DB access.
+        :param pool: pool that provided the instance.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        upsert_inc_metric(session, artemis_db.Metrics, {artemis_db.Metrics.metric: 'success'})
+        upsert_inc_metric(
+            session,
+            artemis_db.MetricsProvisioningSuccess,
+            {
+                artemis_db.MetricsProvisioningSuccess.pool: pool
+            }
+        )
+
         return Ok(None)
 
     @staticmethod
@@ -407,15 +416,13 @@ class ProvisioningMetrics(MetricsBase):
             .filter(artemis_db.Metrics.metric == 'requested') \
             .one_or_none()
 
-        success_record = artemis_db.Query \
-            .from_session(session, artemis_db.Metrics) \
-            .filter(artemis_db.Metrics.metric == 'success') \
-            .one_or_none()
-
         return ProvisioningMetrics(
             current=current_record.scalar(),
             requested=requested_record.count if requested_record else 0,
-            success=success_record.count if success_record else 0,
+            success={
+                record.pool: record.count
+                for record in artemis_db.Query.from_session(session, artemis_db.MetricsProvisioningSuccess).all()
+            },
             failover={
                 (record.from_pool, record.to_pool): record.count
                 for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailover).all()
@@ -460,7 +467,8 @@ class ProvisioningMetrics(MetricsBase):
 
         overall_successfull_provisioning_count = Counter(
             'overall_successfull_provisioning_count',
-            'Overall total number of all successfully provisioned guest requests.',
+            'Overall total number of all successfully provisioned guest requests by pool.',
+            ['pool'],
             registry=registry
         )
 
@@ -487,7 +495,9 @@ class ProvisioningMetrics(MetricsBase):
 
         current_guest_request_count_total.set(self.current)
         overall_provisioning_count.inc(amount=self.requested)
-        overall_successfull_provisioning_count.inc(amount=self.success)
+
+        for pool, count in self.success.items():
+            overall_successfull_provisioning_count.labels(pool=pool).inc(amount=count)
 
         for (from_pool, to_pool), count in self.failover.items():
             overall_failover_count.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
