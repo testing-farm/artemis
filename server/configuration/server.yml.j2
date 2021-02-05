@@ -15,6 +15,7 @@ priority-groups:
   - name: default-priority
 
 pools:
+  {% if openstack is defined %}
   - name: openstack
     driver: openstack
     parameters:
@@ -42,7 +43,9 @@ pools:
         supports-snapshots: true
         supported-architectures:
           - x86_64
+  {% endif %}
 
+  {% if azure is defined %}
   - name: azure
     driver: azure
     parameters:
@@ -56,7 +59,9 @@ pools:
         supports-snapshots: false
         supported-architectures:
           - x86_64
+  {% endif %}
 
+  {% if aws is defined %}
   - name: aws
     driver: aws
     parameters:
@@ -88,6 +93,7 @@ pools:
         supports-snapshots: False
         supported-architectures:
           - x86_64
+  {% endif %}
 
   {% if beaker is defined %}
   - name: beaker
