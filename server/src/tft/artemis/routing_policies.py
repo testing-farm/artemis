@@ -71,7 +71,7 @@ KNOB_ROUTE_POOL_RESOURCE_THRESHOLD: Knob[float] = Knob(
     has_db=False,
     envvar='ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD',
     envvar_cast=float,
-    default=0.9
+    default=0.8
 )
 
 
