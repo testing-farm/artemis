@@ -2,26 +2,24 @@ import argparse
 import contextlib
 import dataclasses
 import json
-import threading
 import os
 import re
-import sqlalchemy
-import sqlalchemy.orm.session
 import tempfile
+import threading
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union, cast
 
 import gluetool
 import gluetool.log
-from gluetool.result import Result, Ok, Error
+import sqlalchemy
+import sqlalchemy.orm.session
+from gluetool.result import Error, Ok, Result
 
 from .. import Failure, process_output_to_str
-from ..db import GuestRequest, SnapshotRequest, SSHKey, Query, GuestTag
-from ..db import PoolResourcesMetrics as PoolResourcesMetricsRecord, PoolResourcesMetricsDimensions
+from ..db import GuestRequest, GuestTag
+from ..db import PoolResourcesMetrics as PoolResourcesMetricsRecord
+from ..db import PoolResourcesMetricsDimensions, Query, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..guest import GuestState
-
-# Type annotations
-from typing import cast, Any, Callable, Iterator, List, Dict, Optional, Tuple, Union
-
 
 PoolResourcesIDsType = Dict[str, Any]
 GuestTagsType = Dict[str, str]

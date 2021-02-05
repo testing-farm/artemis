@@ -22,12 +22,10 @@
 # sys.path.insert(0, os.path.abspath('.'))
 
 import sys
+from typing import List
 
 import pkg_resources
 import sphinx_rtd_theme
-
-from typing import List
-
 
 # -- General configuration ------------------------------------------------
 

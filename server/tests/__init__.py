@@ -12,7 +12,6 @@ import jinja2
 # Importing Artemis core package gives it chance to do what must be done.
 import tft.artemis  # noqa: F401
 
-
 LOG_ASSERT_MESAGE = jinja2.Template("""
 Cannot find log record with these properties:
 {% for field, value in fields.items() %}

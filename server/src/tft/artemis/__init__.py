@@ -3,34 +3,31 @@ import logging
 import os
 import traceback as _traceback
 import urllib.parse
+from types import FrameType, TracebackType
+from typing import Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, TypeVar, Union, cast
 
 import dramatiq
 import dramatiq.brokers.rabbitmq
 import dramatiq.brokers.stub
 import dramatiq.middleware.age_limit
-import dramatiq.middleware.time_limit
-import dramatiq.middleware.shutdown
 import dramatiq.middleware.callbacks
+import dramatiq.middleware.shutdown
+import dramatiq.middleware.time_limit
 import dramatiq.rate_limits.backends
 import dramatiq.rate_limits.concurrent
 import gluetool.log
 import gluetool.sentry
 import gluetool.utils
-from gluetool.result import Result, Ok, Error
+import jinja2.defaults
+import jinja2_ansible_filters.core_filters
+import periodiq
+import pkg_resources
 import ruamel.yaml
 import ruamel.yaml.compat
 import sqlalchemy.orm.session
-from sqlalchemy.orm.session import Session
-import jinja2.defaults
-import jinja2_ansible_filters.core_filters
-
-import periodiq
 import stackprinter
-import pkg_resources
-
-from typing import cast, Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, TypeVar, Union
-from types import FrameType, TracebackType
-
+from gluetool.result import Error, Ok, Result
+from sqlalchemy.orm.session import Session
 
 __VERSION__ = pkg_resources.get_distribution('tft-artemis').version
 
@@ -44,10 +41,9 @@ jinja2.defaults.DEFAULT_FILTERS.update(
 
 # Now we can import our stuff without any fear we'd miss DEFAULT_FILTERS update
 from . import db as artemis_db  # noqa: E402
-from .environment import Environment  # noqa: E402
-from . import vault as artemis_vault  # noqa: E402
 from . import middleware as artemis_middleware  # noqa: E402
-
+from . import vault as artemis_vault  # noqa: E402
+from .environment import Environment  # noqa: E402
 
 stackprinter.set_excepthook(
     style='darkbg2',
@@ -583,7 +579,8 @@ class KnobSourceDB(KnobSource[T]):
 
     def get_value(self, session: Session, *args) -> Result[Optional[T], Failure]:  # type: ignore  # match parent
         from . import Failure
-        from .db import SafeQuery, Knob as KnobRecord
+        from .db import Knob as KnobRecord
+        from .db import SafeQuery
 
         r = SafeQuery.from_session(session, KnobRecord) \
             .filter(KnobRecord.knobname == self.knob.knobname) \

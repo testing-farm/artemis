@@ -1,20 +1,18 @@
 import dataclasses
-from datetime import datetime
 import threading
+from datetime import datetime
+from typing import Any, Dict, List, Optional, cast
 
 import gluetool.log
-from gluetool.result import Result, Error, Ok
 import sqlalchemy.orm.session
+from gluetool.result import Error, Ok, Result
 
-from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool, PoolResourcesIDsType, PoolData, \
-    ProvisioningProgress, PoolImageInfoType
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-
-from typing import cast, Any, Dict, List, Optional
-
+from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, create_tempfile, \
+    run_cli_tool, vm_info_to_ip
 
 #: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(

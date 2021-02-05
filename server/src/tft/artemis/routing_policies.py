@@ -2,19 +2,18 @@ import dataclasses
 import datetime
 import functools
 import json
-
-from . import Failure, Knob
-from .drivers import PoolDriver, PoolMetrics, PoolCapabilities
-from .db import GuestRequest
-from .environment import Environment
+from typing import Callable, List, Tuple, Type, cast
 
 import gluetool.log
+import sqlalchemy
 from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
-import sqlalchemy
-
-from typing import cast, Callable, List, Tuple, Type
 from typing_extensions import Protocol
+
+from . import Failure, Knob
+from .db import GuestRequest
+from .drivers import PoolCapabilities, PoolDriver, PoolMetrics
+from .environment import Environment
 
 
 @dataclasses.dataclass

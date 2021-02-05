@@ -1,11 +1,11 @@
 from typing import Any, Dict, Optional, Union
-from molten import HTTP_404, HTTP_401, HTTP_403, HTTP_400, HTTP_409, HTTP_500, Request
-from molten.errors import HTTPError
-import molten.http.query_params
 
 import gluetool.log
+import molten.http.query_params
+from molten import HTTP_400, HTTP_401, HTTP_403, HTTP_404, HTTP_409, HTTP_500, Request
+from molten.errors import HTTPError
 
-from .. import FailureDetailsType, Failure, get_logger
+from .. import Failure, FailureDetailsType, get_logger
 
 
 def get_failure_details_from_request(request: Optional[Request]) -> Dict[str, Any]:

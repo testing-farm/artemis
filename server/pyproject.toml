@@ -41,6 +41,7 @@ coverage = { version = "*", extras = ["toml"] }
 darglint = "*"
 flake8 = "*"
 flake8-docstrings = "*"
+isort = "*"
 pytest = "*"
 pre-commit = "*"
 pytest-flake8 = "*"
@@ -75,3 +76,9 @@ build-backend = "poetry.masonry.api"
 source = [
   "src/tft/artemis"
 ]
+
+[tool.isort]
+py_version = "3"
+line_length = "120"
+multi_line_output = "2"
+group_by_package = true

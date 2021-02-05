@@ -8,25 +8,24 @@ import logging
 import os
 import secrets
 import threading
-
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, Union, \
+    cast
 
 import gluetool.glue
-from gluetool.result import Result, Ok, Error
+import gluetool.log
 import sqlalchemy
 import sqlalchemy.ext.declarative
-from sqlalchemy import BigInteger, Column, ForeignKey, String, Boolean, Enum, Text, Integer, DateTime
+import sqlalchemy.sql.expression
+from gluetool.result import Error, Ok, Result
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
-import sqlalchemy.sql.expression
-
-from typing import TYPE_CHECKING, cast, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, \
-    Union
-import gluetool.log
 
 if TYPE_CHECKING:  # noqa
-    from . import Failure
     from mypy_extensions import VarArg
+
+    from . import Failure
 
 
 # Type variables for use in our generic types
@@ -855,7 +854,7 @@ class _DB:
         url: str,
         application_name: Optional[str] = None
     ) -> None:
-        from . import KNOB_LOGGING_DB_QUERIES, KNOB_LOGGING_DB_POOL, KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE
+        from . import KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE, KNOB_LOGGING_DB_POOL, KNOB_LOGGING_DB_QUERIES
 
         self.logger = logger
 
@@ -974,7 +973,6 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
     #
     # When adding new bits, let's use a safer approach and test before adding possibly already existing
     # records.
-
     # Adding system and pool tags. We do not want to overwrite the existing value, only add those
     # that are missing. Artemis' default example of configuration tries to add as little as possible,
     # which means we probably don't return any tag user might have removed.
@@ -1096,7 +1094,7 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
 
 def init_postgres() -> None:
     # `artemis` imports `artemis.db`, therefore `artemis.db` cannot import artemis on module-level.
-    from . import get_logger, get_config, get_db, KNOB_DB_URL
+    from . import KNOB_DB_URL, get_config, get_db, get_logger
 
     logger = get_logger()
     server_config = get_config()
@@ -1110,7 +1108,7 @@ def init_postgres() -> None:
 
 def init_sqlite() -> None:
     # `artemis` imports `artemis.db`, therefore `artemis.db` cannot import artemis on module-level.
-    from . import get_logger, get_config, get_db, KNOB_DB_URL
+    from . import KNOB_DB_URL, get_config, get_db, get_logger
 
     logger = get_logger()
     server_config = get_config()

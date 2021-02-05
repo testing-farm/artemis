@@ -2,11 +2,9 @@
 
 import re
 import sys
-
-import jinja2
-
 from typing import Dict, List
 
+import jinja2
 
 USAGE = """
 git log ... | generate-changelog.py [-h|--help]

@@ -3,13 +3,12 @@ import time
 import gluetool.log
 import sqlalchemy.orm.session
 
-from . import get_logger, get_db
+from . import get_db, get_logger
 from .db import GuestRequest, SnapshotRequest
 from .guest import GuestState
-from .tasks import get_guest_logger, get_snapshot_logger, dispatch_task
-from .tasks import route_guest_request, release_guest_request, _update_guest_state
-from .tasks import route_snapshot_request, release_snapshot_request, restore_snapshot_request
-from .tasks import _update_snapshot_state
+from .tasks import _update_guest_state, _update_snapshot_state, dispatch_task, get_guest_logger, get_snapshot_logger, \
+    release_guest_request, release_snapshot_request, restore_snapshot_request, route_guest_request, \
+    route_snapshot_request
 
 
 def _dispatch_guest_request(

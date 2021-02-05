@@ -1,22 +1,21 @@
-import bs4
 import dataclasses
 import os
 import stat
 import threading
+from typing import Any, List, Optional, Tuple
 
+import bs4
 import gluetool.log
 import gluetool.utils
-from gluetool.result import Result, Ok, Error
-from gluetool.log import log_xml
 import sqlalchemy.orm.session
+from gluetool.log import log_xml
+from gluetool.result import Error, Ok, Result
 
-from . import PoolDriver, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress, \
-    create_tempfile, PoolImageInfoType
 from .. import Failure, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
-
-from typing import Any, Optional, List, Tuple
+from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, create_tempfile, \
+    run_cli_tool
 
 NodeRefType = Any
 

@@ -18,12 +18,12 @@ import datetime
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
 import gluetool.log
+import prometheus_client.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
-import prometheus_client.utils
 
 from . import Failure
 from . import db as artemis_db
@@ -31,7 +31,6 @@ from . import tasks as artemis_tasks
 from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 from .drivers import PoolMetrics
 from .guest import GuestState
-
 
 # Guest age buckets are not all same, but:
 #

@@ -2,22 +2,21 @@ import base64
 import dataclasses
 import re
 import threading
-
 from typing import Any, Dict, List, Optional
 
 import gluetool.log
+import sqlalchemy.orm.session
 from gluetool.log import log_blob, log_dict
-from gluetool.result import Result, Ok, Error
+from gluetool.result import Error, Ok, Result
 from gluetool.utils import wait
 from jinja2 import Template
-import sqlalchemy.orm.session
 
-from . import PoolDriver, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress, \
-    PoolImageInfoType, GuestTagsType
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
+from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, \
+    run_cli_tool
 
 #
 # Custom typing types

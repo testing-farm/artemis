@@ -1,15 +1,15 @@
-import alembic
-import alembic.config
 import os
-import pytest
+
 import gluetool.log
 import gluetool.utils
+import pytest
 import sqlalchemy.engine.url
 import sqlalchemy_utils.functions
 
+import alembic
+import alembic.config
 import tft.artemis
 import tft.artemis.tasks
-
 
 # The default list of database URLs we test against. Serves as a safe parameter when
 # no other URLs were requested via `--against-db-url`.

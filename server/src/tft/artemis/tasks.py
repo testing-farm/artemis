@@ -3,6 +3,7 @@ import json
 import os
 import random
 import threading
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import dramatiq
 import gluetool.log
@@ -11,27 +12,21 @@ import sqlalchemy
 import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
 import stackprinter
+from gluetool.result import Error, Ok, Result
+from typing_extensions import Protocol
 
-from gluetool.result import Result, Ok, Error
-
-from . import Failure, Knob, get_db, get_logger, get_broker, safe_call, safe_db_change, log_guest_event, \
-    log_error_guest_event
-from . import metrics
-from .db import DB, GuestEvent, GuestRequest, Pool, SnapshotRequest, SSHKey, Query
-from .drivers import PoolDriver, PoolLogger, PoolData
+from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
+    safe_call, safe_db_change
+from .db import DB, GuestEvent, GuestRequest, Pool, Query, SnapshotRequest, SSHKey
+from .drivers import PoolData, PoolDriver, PoolLogger
+from .drivers import aws as aws_driver
+from .drivers import azure as azure_driver
+from .drivers import beaker as beaker_driver
+from .drivers import openstack as openstack_driver
 from .environment import Environment
 from .guest import GuestLogger, GuestState, SnapshotLogger
 from .routing_policies import PolicyRuling
 from .script import hook_engine
-
-from .drivers import aws as aws_driver
-from .drivers import beaker as beaker_driver
-from .drivers import openstack as openstack_driver
-from .drivers import azure as azure_driver
-
-from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Union
-from typing_extensions import Protocol
-
 
 # There is a very basic thing we must be aware of: a task - the Python function below - can run multiple times,
 # sequentialy or in parallel. It's like multithreading application above a database, without any locks available.
@@ -1758,7 +1753,7 @@ def do_prepare_verify_ssh(
     guestname: str
 ) -> DoerReturnType:
     # Avoid circular imports
-    from .drivers import run_cli_tool, create_tempfile
+    from .drivers import create_tempfile, run_cli_tool
 
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,

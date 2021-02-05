@@ -1,38 +1,33 @@
 import datetime
-import json
 import io
+import json
 import os
 import shutil
 import sys
-import sqlalchemy
-import sqlalchemy.orm.exc
 import threading
 import uuid
+from inspect import Parameter
+from typing import Any, Dict, List, NoReturn, Optional, Type, Union
 
+import gluetool.log
 import molten
 import molten.dependency_injection
 import molten.openapi
-from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, Response, Request, Field
+import sqlalchemy
+import sqlalchemy.orm.exc
+from gluetool.log import log_dict
+from molten import HTTP_200, HTTP_201, HTTP_400, HTTP_404, Field, Request, Response
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 
-import gluetool.log
-from gluetool.log import log_dict
-
-from . import errors, handlers
-from .middleware import error_handler_middleware, prometheus_middleware
-from .middleware import authorization_middleware, AuthContext
-from .. import get_logger, get_db, safe_db_change, log_guest_event, Knob, __VERSION__
+from .. import __VERSION__, Knob
 from .. import db as artemis_db
-from .. import metrics
+from .. import get_db, get_logger, log_guest_event, metrics, safe_db_change
 from ..guest import GuestState
-
-from typing import Any, Dict, List, NoReturn, Optional, Union, Type
-
-from inspect import Parameter
-
+from . import errors, handlers
+from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
 DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
 

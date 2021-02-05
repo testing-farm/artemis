@@ -7,22 +7,19 @@ but you probably won't need to touch :py:func:`hook_ROUTE` - it's pretty generic
 :py:data:`POLICIES`. Change that list rather than the code, since the decisions should happen in policies.
 """
 
-from tft.artemis.drivers import PoolDriver
-from tft.artemis.db import GuestRequest
-from tft.artemis.routing_policies import PolicyReturnType
-from tft.artemis.routing_policies import policy_match_pool_name, policy_least_crowded, policy_one_attempt_forgiving, \
-    policy_timeout_reached, policy_enough_resources, policy_supports_snapshots, run_routing_policies, \
-    policy_supports_architecture, create_preferrence_filter_by_driver_class
-
-import tft.artemis.drivers.azure
-import tft.artemis.drivers.aws
-import tft.artemis.drivers.openstack
+from typing import List
 
 import gluetool.log
 import sqlalchemy
 
-from typing import List
-
+import tft.artemis.drivers.aws
+import tft.artemis.drivers.azure
+import tft.artemis.drivers.openstack
+from tft.artemis.db import GuestRequest
+from tft.artemis.drivers import PoolDriver
+from tft.artemis.routing_policies import PolicyReturnType, create_preferrence_filter_by_driver_class, \
+    policy_enough_resources, policy_least_crowded, policy_match_pool_name, policy_one_attempt_forgiving, \
+    policy_supports_architecture, policy_supports_snapshots, policy_timeout_reached, run_routing_policies
 
 #: If there are OpenStack pools still in the mix, then prefer these pools over the rest. If there are no OpenStack
 #: pools allowed anymore, return the original list: *prefer*, not *use only*.

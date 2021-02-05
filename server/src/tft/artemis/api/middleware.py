@@ -3,22 +3,21 @@ import dataclasses
 import json
 import re
 import urllib.parse
-
-from gluetool.result import Result, Ok, Error
-from gluetool.utils import normalize_bool_option
-import sqlalchemy.orm.session
-from molten import Request, Response
-from molten.errors import HTTPError
-# To make mypy happy when others try `from api.middleware import REQUEST_COUNT`, explicit re-export is needed.
-# See https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-no-implicit-reexport
-from molten.contrib.prometheus import REQUEST_COUNT as REQUEST_COUNT, REQUESTS_INPROGRESS as REQUESTS_INPROGRESS
-
-from . import errors
-from .. import Knob, Failure
-from ..db import User, UserRoles, DB
-
 from typing import Any, Callable, List, Optional, Pattern
 
+import sqlalchemy.orm.session
+from gluetool.result import Error, Ok, Result
+from gluetool.utils import normalize_bool_option
+from molten import Request, Response
+# To make mypy happy when others try `from api.middleware import REQUEST_COUNT`, explicit re-export is needed.
+# See https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-no-implicit-reexport
+from molten.contrib.prometheus import REQUEST_COUNT as REQUEST_COUNT
+from molten.contrib.prometheus import REQUESTS_INPROGRESS as REQUESTS_INPROGRESS
+from molten.errors import HTTPError
+
+from .. import Failure, Knob
+from ..db import DB, User, UserRoles
+from . import errors
 
 GUEST_ROUTE_PATTERN = re.compile(r'^/guests/[a-z0-9-]+(/(?:events|snapshots))?$')
 SNAPSHOT_ROUTE_PATTERN = re.compile(r'^/guests/[a-z0-9-]+/snapshots/[a-z0-9-]+(/.+)?$')

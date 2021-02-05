@@ -1,15 +1,14 @@
 import datetime
 import inspect
 import traceback
+from typing import Any, Dict, Optional
 
 import dramatiq.message
 import dramatiq.middleware.retries
-from dramatiq.common import compute_backoff
 import gluetool.log
+from dramatiq.common import compute_backoff
 
 from .guest import GuestLogger
-
-from typing import Any, Dict, Optional
 
 
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class cannot subclass 'Retries
@@ -96,7 +95,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
             # chance for release & revert. Note that this applies to situations where "release & revert"
             # attempt fails, i.e. DB or broker issues, most likely.
 
-            from .tasks import TaskLogger, is_provisioning_tail_task, handle_provisioning_chain_tail
+            from .tasks import TaskLogger, handle_provisioning_chain_tail, is_provisioning_tail_task
 
             if is_provisioning_tail_task(actor):
                 tail_logger = TaskLogger(logger, 'provisioning-tail')

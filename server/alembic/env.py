@@ -1,12 +1,9 @@
 import logging
-
 from logging.config import fileConfig
 from typing import Any, List
 
 from alembic import context  # type: ignore  # module has no attribute, but it does.
-
 from tft.artemis import db, get_db, get_logger
-
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

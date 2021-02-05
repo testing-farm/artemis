@@ -15,14 +15,14 @@ just a couple of parameters - together with fixtures, this makes the actual test
 
 import datetime
 import json
+
 import pytest
+from gluetool.result import Error, Ok
 from mock import MagicMock
-from gluetool.result import Ok, Error
 
 import tft.artemis
 import tft.artemis.db
 import tft.artemis.routing_policies
-
 
 TIMEOUT_REACHED_AGE_TOO_YOUNG = tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.value / 2
 TIMEOUT_REACHED_AGE_TOO_OLD = tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.value * 2

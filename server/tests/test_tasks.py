@@ -1,18 +1,17 @@
 import logging
 import threading
 
+import dramatiq
+import dramatiq.brokers.stub
 import gluetool.log
 import gluetool.utils
-
 import pytest
-from mock import MagicMock, ANY, call
+from mock import ANY, MagicMock, call
 
 import tft.artemis
 import tft.artemis.tasks
-import dramatiq
-import dramatiq.brokers.stub
 
-from . import assert_log, MATCH
+from . import MATCH, assert_log
 
 
 @pytest.fixture

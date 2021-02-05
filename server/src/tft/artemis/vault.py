@@ -1,6 +1,6 @@
-import ansible_vault
-
 from typing import Any
+
+import ansible_vault
 
 
 # Workaround a nasty issue in ansible-vault package: compares Ansible versions

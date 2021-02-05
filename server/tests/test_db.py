@@ -1,17 +1,13 @@
 import pytest
-
 import sqlalchemy
 import sqlalchemy.ext.declarative
-from sqlalchemy import Column, Text, Integer
+from mock import MagicMock
+from sqlalchemy import Column, Integer, Text
 
 from tft.artemis import safe_db_change
-from tft.artemis.db import Query, SafeQuery, upsert, GuestRequest
+from tft.artemis.db import GuestRequest, Query, SafeQuery, upsert
 
-from mock import MagicMock
 from . import assert_failure_log
-
-from mock import MagicMock
-
 
 Base = sqlalchemy.ext.declarative.declarative_base()
 

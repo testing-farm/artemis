@@ -1,16 +1,15 @@
 import os
+from typing import Optional
+
+import gluetool.glue
+import gluetool.log
+from gluetool.result import Error, Ok, Result
+from gluetool.utils import PatternMap
 
 from tft.artemis import Failure
 from tft.artemis.drivers import PoolImageInfoType
 from tft.artemis.drivers.openstack import OpenStackDriver
 from tft.artemis.environment import Environment
-
-import gluetool.glue
-import gluetool.log
-from gluetool.result import Result, Ok, Error
-from gluetool.utils import PatternMap
-
-from typing import Optional
 
 
 def _map_compose_to_name(logger: gluetool.log.ContextAdapter, compose_id: str) -> Result[str, Failure]:

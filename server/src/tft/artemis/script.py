@@ -1,12 +1,11 @@
 import imp
 import os
+from typing import Any, Callable, Dict
 
-from gluetool.result import Result, Ok, Error
 import gluetool.utils
+from gluetool.result import Error, Ok, Result
 
 from . import Failure
-
-from typing import Any, Callable, Dict
 
 
 class ScriptEngine:

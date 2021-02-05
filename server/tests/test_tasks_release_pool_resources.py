@@ -1,13 +1,13 @@
 import json
 import threading
 
-from gluetool.result import Ok, Error
-from tft.artemis import Failure
-import tft.artemis.tasks
-from tft.artemis.tasks import do_release_pool_resources
-
-from pytest import fixture
+from gluetool.result import Error, Ok
 from mock import MagicMock
+from pytest import fixture
+
+import tft.artemis.tasks
+from tft.artemis import Failure
+from tft.artemis.tasks import do_release_pool_resources
 
 from . import assert_failure_log
 

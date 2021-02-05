@@ -2,20 +2,18 @@ import dataclasses
 import re
 import threading
 from datetime import datetime
+from typing import Any, Dict, List, Optional, cast
 
 import gluetool.log
-from gluetool.result import Result, Ok, Error
 import sqlalchemy.orm.session
+from gluetool.result import Error, Ok, Result
 
-from . import PoolDriver, PoolResourcesMetrics, create_tempfile, run_cli_tool, PoolResourcesIDsType, \
-    PoolData, ProvisioningProgress, PoolImageInfoType
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-
-from typing import cast, Any, Dict, List, Optional
-
+from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, PoolResourcesMetrics, \
+    ProvisioningProgress, create_tempfile, run_cli_tool
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
