@@ -14,7 +14,7 @@ import gluetool.log
 from gluetool.result import Result, Ok, Error
 
 from .. import Failure, process_output_to_str
-from ..db import GuestRequest, SnapshotRequest, SSHKey, Query
+from ..db import GuestRequest, SnapshotRequest, SSHKey, Query, GuestTag
 from ..db import PoolResourcesMetrics as PoolResourcesMetricsRecord, PoolResourcesMetricsDimensions
 from ..environment import Environment
 from ..guest import GuestState
@@ -24,6 +24,7 @@ from typing import cast, Any, Callable, Iterator, List, Dict, Optional, Tuple, U
 
 
 PoolResourcesIDsType = Dict[str, Any]
+GuestTagsType = Dict[str, str]
 
 
 class _AnyArchitecture:
@@ -422,6 +423,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -450,6 +452,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def update_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -640,6 +643,36 @@ class PoolDriver(gluetool.log.LoggerMixin):
             )
 
         return Result.Ok(capabilities)
+
+    def get_guest_tags(
+        self,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[GuestTagsType, Failure]:
+        """
+        Get all tags applicable for a given guest request.
+
+        Collects all system, pool, and guest-level tags.
+        """
+
+        system_tags = GuestTag.fetch_system_tags(session)
+
+        if system_tags.is_error:
+            return Error(system_tags.unwrap_error())
+
+        pool_tags = GuestTag.fetch_pool_tags(session, self.poolname)
+
+        if pool_tags.is_error:
+            return Error(pool_tags.unwrap_error())
+
+        tags: GuestTagsType = {
+            **{r.tag: r.value for r in system_tags.unwrap()},
+            **{r.tag: r.value for r in pool_tags.unwrap()}
+        }
+
+        tags['ArtemisGuestName'] = guest_request.guestname
+
+        return Ok(tags)
 
     def current_guests_in_pool(self, session: sqlalchemy.orm.session.Session) -> List[GuestRequest]:
         return Query.from_session(session, GuestRequest) \

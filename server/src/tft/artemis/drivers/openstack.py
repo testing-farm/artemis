@@ -5,6 +5,7 @@ from datetime import datetime
 
 import gluetool.log
 from gluetool.result import Result, Ok, Error
+import sqlalchemy.orm.session
 
 from . import PoolDriver, PoolResourcesMetrics, create_tempfile, run_cli_tool, PoolResourcesIDsType, \
     PoolData, ProvisioningProgress, PoolImageInfoType
@@ -307,6 +308,7 @@ class OpenStackDriver(PoolDriver):
     def _do_acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -341,6 +343,16 @@ class OpenStackDriver(PoolDriver):
                If user_data_filename is an empty string then the guest vm is booted with no user-data.
             """
 
+            tags = self.get_guest_tags(session, guest_request)
+
+            if tags.is_error:
+                return Error(tags.unwrap_error())
+
+            property_options: List[str] = sum([
+                ['--property', '{}={}'.format(tag, value)]
+                for tag, value in tags.unwrap().items()
+            ], [])
+
             os_options = [
                 'server',
                 'create',
@@ -348,11 +360,12 @@ class OpenStackDriver(PoolDriver):
                 '--image', image.id,
                 '--network', network,
                 '--key-name', self.pool_config['master-key-name'],
-                '--property', 'ArtemisGuestName={}'.format(guest_request.guestname),
                 '--security-group', self.pool_config.get('security-group', 'default'),
-                '--user-data', user_data_filename,
+                '--user-data', user_data_filename
+            ] + property_options + [
                 name
             ]
+
             return self._run_os(os_options)
 
         if guest_request.post_install_script:
@@ -553,6 +566,7 @@ class OpenStackDriver(PoolDriver):
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -572,6 +586,7 @@ class OpenStackDriver(PoolDriver):
         """
         return self._do_acquire_guest(
             logger,
+            session,
             guest_request,
             environment,
             master_key,
@@ -581,6 +596,7 @@ class OpenStackDriver(PoolDriver):
     def update_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -606,7 +622,7 @@ class OpenStackDriver(PoolDriver):
         def _reprovision(msg: str) -> Result[ProvisioningProgress, Failure]:
             logger.warning(msg)
 
-            r_acquire = self._do_acquire_guest(logger, guest_request, environment, master_key)
+            r_acquire = self._do_acquire_guest(logger, session, guest_request, environment, master_key)
 
             if r_acquire.is_ok:
                 logger.info('successfully reprovisioned, releasing the broken instance')

@@ -1,3 +1,4 @@
+import collections
 import datetime
 import enum
 import functools
@@ -683,6 +684,44 @@ class SnapshotRequest(Base):
     start_again = Column(Boolean(), nullable=False)
 
 
+class GuestTag(Base):
+    __tablename__ = 'guest_tags'
+
+    #: Used as a poolname to represent system-wide tags.
+    SYSTEM_POOL_ALIAS = '__system__'
+
+    poolname = Column(String(), primary_key=True, nullable=False)
+    tag = Column(String(), primary_key=True, nullable=False)
+    value = Column(String(), nullable=False)
+
+    @classmethod
+    def fetch_system_tags(
+        cls,
+        session: sqlalchemy.orm.session.Session
+    ) -> Result[List['GuestTag'], 'Failure']:
+        """
+        Load all system-wide guest tags.
+        """
+
+        return SafeQuery.from_session(session, cls) \
+            .filter(cls.poolname == cls.SYSTEM_POOL_ALIAS) \
+            .all()
+
+    @classmethod
+    def fetch_pool_tags(
+        cls,
+        session: sqlalchemy.orm.session.Session,
+        poolname: str
+    ) -> Result[List['GuestTag'], 'Failure']:
+        """
+        Load all pool-wide guest tags for a given pool.
+        """
+
+        return SafeQuery.from_session(session, cls) \
+            .filter(cls.poolname == poolname) \
+            .all()
+
+
 class Metrics(Base):
     __tablename__ = 'metrics'
 
@@ -927,6 +966,53 @@ class DB:
 
 
 def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
+    from .drivers import GuestTagsType
+
+    # Note: the current approach of "init schema" is crappy, it basically either succeeds or fails at
+    # the first conflict, skipping the rest. To avoid collisions, it must be refactored, and sooner
+    # or later CLI will take over once we get full support for user accounts.
+    #
+    # When adding new bits, let's use a safer approach and test before adding possibly already existing
+    # records.
+
+    # Adding system and pool tags. We do not want to overwrite the existing value, only add those
+    # that are missing. Artemis' default example of configuration tries to add as little as possible,
+    # which means we probably don't return any tag user might have removed.
+    with db.get_session() as session:
+        all_tags = Query.from_session(session, GuestTag).all()
+
+        current_tags: Dict[str, GuestTagsType] = collections.defaultdict(dict)
+
+        for r in all_tags:
+            current_tags[r.poolname][r.tag] = r.value
+
+        def _add_tags(poolname: str, input_tags: GuestTagsType) -> None:
+            for tag, value in input_tags.items():
+                logger.info('  Adding {}={}'.format(tag, value))
+
+                if tag in current_tags[poolname]:
+                    logger.info('    Already exists, skipping')
+                    continue
+
+                session.add(GuestTag(
+                    poolname=poolname,
+                    tag=tag,
+                    value=value
+                ))
+
+        # Add system-level tags
+        logger.info('Adding system-level guest tags')
+
+        _add_tags(GuestTag.SYSTEM_POOL_ALIAS, cast(GuestTagsType, server_config.get('guest_tags', {})))
+
+        # Add pool-level tags
+        for pool_config in server_config.get('pools', []):
+            poolname = pool_config['name']
+
+            logger.info('Adding pool-level guest tag for pool {}'.format(poolname))
+
+            _add_tags(poolname, cast(GuestTagsType, pool_config.get('guest_tags', {})))
+
     with db.get_session() as session:
         # Insert our bootstrap users.
         def _add_user(username: str, role: UserRoles) -> None:

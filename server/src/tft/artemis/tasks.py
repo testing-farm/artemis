@@ -2003,6 +2003,7 @@ def do_update_guest_request(
 
     r_update = workspace.pool.update_guest(
         logger,
+        session,
         workspace.gr,
         environment,
         workspace.ssh_key
@@ -2104,7 +2105,14 @@ def do_acquire_guest_request(
 
     environment = Environment.unserialize_from_json(json.loads(workspace.gr.environment))
 
-    result = workspace.pool.acquire_guest(logger, workspace.gr, environment, workspace.ssh_key, cancelled=cancel)
+    result = workspace.pool.acquire_guest(
+        logger,
+        session,
+        workspace.gr,
+        environment,
+        workspace.ssh_key,
+        cancelled=cancel
+    )
 
     if result.is_error:
         return handle_failure(result, 'failed to provision')

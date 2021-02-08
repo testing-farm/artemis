@@ -10,9 +10,10 @@ from gluetool.log import log_blob, log_dict
 from gluetool.result import Result, Ok, Error
 from gluetool.utils import wait
 from jinja2 import Template
+import sqlalchemy.orm.session
 
 from . import PoolDriver, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress, \
-    PoolImageInfoType
+    PoolImageInfoType, GuestTagsType
 from .. import Failure
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
@@ -350,6 +351,7 @@ class AWSDriver(PoolDriver):
     def _request_spot_instance(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         instance_type: str,
         image: PoolImageInfoType
@@ -490,10 +492,11 @@ class AWSDriver(PoolDriver):
         self.info('instance succesfully provisioned and it has become running')
 
         # tag the instance if requested
-        self._tag_instance(instance, owner, tags={
+        # TODO: move these into configuration. Before that, we need to add support for templates in tags, so we
+        # could generate tags like `Name`. But it really belongs to configuration.
+        self._tag_instance(session, guest_request, instance, owner, tags={
             'Name': '{}::{}'.format(instance['PrivateIpAddress'], image.name),
-            'SpotRequestId': spot_request_id,
-            'ArtemisGuestName': guest_request.guestname,
+            'SpotRequestId': spot_request_id
         })
 
         return Ok(ProvisioningProgress(
@@ -507,16 +510,23 @@ class AWSDriver(PoolDriver):
 
     def _tag_instance(
         self,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
         instance: Dict[str, Any],
         owner: str,
-        tags: Optional[Dict[str, str]] = None
+        tags: Optional[GuestTagsType] = None
     ) -> None:
+        base_tags = self.get_guest_tags(session, guest_request)
 
-        tags = tags or {}
+        # TODO: this is a huge problem, AWS driver tends to ignore many of possible errors, we need to fix that
+        # so we can propagate issues like this one upwards.
+        if base_tags.is_error:
+            return
 
-        # add tags from pool config
-        if 'tags' in self.pool_config:
-            tags.update(self.pool_config['tags'])
+        tags = {
+            **base_tags.unwrap(),
+            **(tags if tags is not None else {})
+        }
 
         if not tags:
             self.debug('Skipping tagging as no tags specified.')
@@ -545,6 +555,7 @@ class AWSDriver(PoolDriver):
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -584,7 +595,7 @@ class AWSDriver(PoolDriver):
 
         # request a spot instance and wait for it's full fillment
         r_spot_instance = self._request_spot_instance(
-            logger, guest_request, instance_type, image
+            logger, session, guest_request, instance_type, image
         )
 
         if r_spot_instance.is_error:

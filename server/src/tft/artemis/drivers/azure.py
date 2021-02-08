@@ -4,6 +4,7 @@ import threading
 
 import gluetool.log
 from gluetool.result import Result, Error, Ok
+import sqlalchemy.orm.session
 
 from . import PoolDriver, vm_info_to_ip, create_tempfile, run_cli_tool, PoolResourcesIDsType, PoolData, \
     ProvisioningProgress, PoolImageInfoType
@@ -115,6 +116,7 @@ class AzureDriver(PoolDriver):
     def update_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -146,7 +148,7 @@ class AzureDriver(PoolDriver):
         if status == 'failed':
             logger.warning('Instance ended up in failed state')
 
-            r_acquire = self._do_acquire_guest(logger, guest_request, environment, master_key)
+            r_acquire = self._do_acquire_guest(logger, session, guest_request, environment, master_key)
 
             if r_acquire.is_ok:
                 logger.info('successfully reprovisioned, releasing the broken instance')
@@ -277,6 +279,7 @@ class AzureDriver(PoolDriver):
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -297,6 +300,7 @@ class AzureDriver(PoolDriver):
         """
         return self._do_acquire_guest(
             logger,
+            session,
             guest_request,
             environment,
             master_key,
@@ -391,6 +395,7 @@ class AzureDriver(PoolDriver):
     def _do_acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -414,13 +419,18 @@ class AzureDriver(PoolDriver):
             If custom_data_filename is an empty string then the guest vm is booted with no user-data.
             """
 
+            tags = self.get_guest_tags(session, guest_request)
+
+            if tags.is_error:
+                return Error(tags.unwrap_error())
+
             az_options = [
                 'vm',
                 'create',
                 '--resource-group', self.pool_config['resource-group'],
                 '--image', image.id,
                 '--name', name,
-                '--tags', 'uid={}'.format(name),
+                '--tags', ','.join(['{}={}'.format(tag, value) for tag, value in tags.unwrap().items()]),
                 '--custom-data', custom_data_filename,
             ]
             return self._run_cmd_with_auth(az_options)

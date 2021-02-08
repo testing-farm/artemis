@@ -8,6 +8,7 @@ import gluetool.log
 import gluetool.utils
 from gluetool.result import Result, Ok, Error
 from gluetool.log import log_xml
+import sqlalchemy.orm.session
 
 from . import PoolDriver, run_cli_tool, PoolResourcesIDsType, PoolData, ProvisioningProgress, \
     create_tempfile, PoolImageInfoType
@@ -338,6 +339,7 @@ class BeakerDriver(PoolDriver):
     def update_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
@@ -430,6 +432,7 @@ class BeakerDriver(PoolDriver):
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         environment: Environment,
         master_key: SSHKey,
