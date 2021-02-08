@@ -24,7 +24,8 @@ pools:
       project-name: "{{ openstack.credentials.project_name }}"
       {% if openstack.credentials.project_domain_id is defined and openstack.credentials.project_domain_id != "" %}
       project-domain-id: "{{ openstack.credentials.project_domain_id }}"
-      {% else %}
+      {% endif %}
+      {% if openstack.credentials.project_domain_name is defined and openstack.credentials.project_domain_name != "" %}
       project-domain-name: "{{ openstack.credentials.project_domain_name }}"
       {% endif %}
       user-domain-name: "{{ openstack.credentials.user_domain_name }}"
