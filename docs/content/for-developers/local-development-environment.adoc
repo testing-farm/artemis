@@ -332,3 +332,10 @@ $ docker-compose down -v
 
 This instructs Docker to remove volumes associated with the containers.
 ====
+
+=== Environment variables
+
+Besides xref:environment-variables.adoc[the variables accepted by Artemis itself], the `nominishift-develop.sh` accepts additional variables:
+
+* `ONLY_DB_INIT`: When set to any value, the `nominishift-develop.sh` script would perform the database initialization and quit immediately after that, without running any Artemis components.
+* `SKIP_DB_INIT`: When set to any value, the `nominishift-develop.sh` script would skip the database initialization.

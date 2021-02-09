@@ -39,8 +39,14 @@ if [ "$ARTEMIS_WORKER_QUEUES" != "" ]; then
     ARTEMIS_WORKER_OPTIONS="-Q \"${ARTEMIS_WORKER_QUEUES}\" ${ARTEMIS_WORKER_OPTIONS}"
 fi
 
-poetry run alembic upgrade head
-poetry run artemis-init-postgres-schema
+if [ "$SKIP_DB_INIT" = "" ]; then
+    poetry run alembic upgrade head
+    poetry run artemis-init-postgres-schema
+
+    if [ "$ONLY_DB_INIT" != "" ]; then
+        exit 0
+    fi
+fi
 
 poetry run artemis-api-server &
 poetry run artemis-dispatcher &
