@@ -27,6 +27,7 @@ from typing import List
 #: If there are OpenStack pools still in the mix, then prefer these pools over the rest. If there are no OpenStack
 #: pools allowed anymore, return the original list: *prefer*, not *use only*.
 policy_prefer_openstack = create_preferrence_filter_by_driver_class(
+    'prefer-openstack',
     tft.artemis.drivers.openstack.OpenStackDriver
 )
 
@@ -34,6 +35,7 @@ policy_prefer_openstack = create_preferrence_filter_by_driver_class(
 #: If there are cloud-backed pools still in the mix, then prefer these pools over more expensive pools (like Beaker).
 #: If there are no cloud-backed pools available anymore, return the original list: *prefer*, not *use only*.
 policy_prefer_clouds = create_preferrence_filter_by_driver_class(
+    'prefer-clouds',
     tft.artemis.drivers.aws.AWSDriver,
     tft.artemis.drivers.azure.AzureDriver,
     tft.artemis.drivers.openstack.OpenStackDriver

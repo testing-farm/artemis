@@ -199,8 +199,11 @@ def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs):
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
+        'dummy-custom-policy',
         dict
     )
+
+    assert policy.policy_name == 'dummy-custom-policy'
 
     mock_pools = [list(), list(), list()]
 
@@ -218,8 +221,11 @@ def test_create_preferrence_filter_by_driver_class(mock_inputs):
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
+        'dummy-custom-policy',
         list
     )
+
+    assert policy.policy_name == 'dummy-custom-policy'
 
     mock_pools = [list(), list(), dict(), list()]
 

@@ -155,7 +155,7 @@ def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[Pool
     ])
 
 
-def create_preferrence_filter_by_driver_class(*preferred_drivers: Type[PoolDriver]) -> PolicyType:
+def create_preferrence_filter_by_driver_class(policy_name: str, *preferred_drivers: Type[PoolDriver]) -> PolicyType:
     @policy_boilerplate
     def policy(
         logger: gluetool.log.ContextAdapter,
@@ -177,6 +177,8 @@ def create_preferrence_filter_by_driver_class(*preferred_drivers: Type[PoolDrive
         return Ok(PolicyRuling(
             allowed_pools=preferred_pools
         ))
+
+    cast(PolicyWrapperType, policy).policy_name = policy_name
 
     return policy
 
