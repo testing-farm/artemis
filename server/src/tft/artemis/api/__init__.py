@@ -6,6 +6,7 @@ import shutil
 import sys
 import sqlalchemy
 import sqlalchemy.orm.exc
+import threading
 import uuid
 
 import molten
@@ -15,6 +16,7 @@ from molten import HTTP_201, HTTP_200, HTTP_400, HTTP_404, Response, Request, Fi
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
 from molten.typing import Middleware
+from prometheus_client import CollectorRegistry
 
 import gluetool.log
 from gluetool.log import log_dict
@@ -61,6 +63,9 @@ KNOB_API_THREADS: Knob[int] = Knob(
     default=1
 )
 
+#: Protects our metrics tree when updating & rendering to user.
+METRICS_LOCK = threading.Lock()
+
 
 class DBComponent:
     is_cacheable = True
@@ -74,6 +79,20 @@ class DBComponent:
 
     def resolve(self) -> artemis_db.DB:
         return self.db
+
+
+class MetricsComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def __init__(self, metrics_tree: 'metrics.Metrics') -> None:
+        self.metrics_tree = metrics_tree
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is metrics.Metrics or parameter.annotation == 'metrics.Metrics'
+
+    def resolve(self) -> 'metrics.Metrics':
+        return self.metrics_tree
 
 
 class AuthContextComponent:
@@ -739,13 +758,14 @@ def get_guest_events(guestname: str, request: Request, manager: GuestEventManage
     return APIResponse(events, request=request)
 
 
-def get_metrics(request: Request, db: artemis_db.DB) -> APIResponse:
+def get_metrics(request: Request, db: artemis_db.DB, metrics_tree: 'metrics.Metrics') -> APIResponse:
     logger = get_logger()
 
-    return APIResponse(
-        stream=metrics.Metrics.render_prometheus_metrics(logger, db),
-        request=request
-    )
+    with METRICS_LOCK:
+        return APIResponse(
+            stream=metrics_tree.render_prometheus_metrics(logger, db),
+            request=request
+        )
 
 
 def get_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:
@@ -787,6 +807,9 @@ def run_app() -> molten.app.App:
     logger = get_logger()
     db = get_db(logger, application_name='artemis-api-server')
 
+    metrics_tree = metrics.Metrics()
+    metrics_tree.register_with_prometheus(CollectorRegistry())
+
     components: List[molten.dependency_injection.Component[Any]] = [
         molten.settings.SettingsComponent(
             molten.settings.Settings({
@@ -797,7 +820,8 @@ def run_app() -> molten.app.App:
         GuestRequestManagerComponent(),
         GuestEventManagerComponent(),
         SnapshotRequestManagerComponent(),
-        AuthContextComponent()
+        AuthContextComponent(),
+        MetricsComponent(metrics_tree)
     ]
 
 # TODO: uncomment when registration is done

@@ -15,7 +15,7 @@ to its offsprings.
 
 import dataclasses
 import datetime
-from typing import Any, Dict, List, Optional, Tuple, Type, cast
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
 import gluetool.log
 import sqlalchemy
@@ -44,20 +44,30 @@ GUEST_AGE_BUCKETS = \
     + [prometheus_client.utils.INF]
 
 
+def reset_counters(metric: Union[Counter, Gauge]) -> None:
+    """
+    Reset each existing labeled metric to zero. After that, we can use ``inc()`` again.
+
+    :param metric: metric whose labeled sub-metrics we need to reset.
+    """
+
+    for labeled_metric in metric._metrics.values():
+        labeled_metric._value.set(0)
+
+
 class MetricsBase:
     """
     Base class for all containers carrying metrics around.
     """
 
-    @classmethod
-    def load(
-        cls,
+    def sync(
+        self,
         logger: gluetool.log.ContextAdapter,
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
-    ) -> 'MetricsBase':
+    ) -> None:
         """
-        Load values from database, and return the container instance.
+        Load values from database and update this container with up-to-date values..
 
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
@@ -67,11 +77,20 @@ class MetricsBase:
 
         raise NotImplementedError()
 
-    def to_prometheus(self, registry: CollectorRegistry) -> None:
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+        Register instances of Prometheus metrics with the given registry..
 
         :param registry: Prometheus registry to attach metrics to.
+        :raises NotImplementedError: when not implemented by a child class.
+        """
+
+        raise NotImplementedError()
+
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+
         :raises NotImplementedError: when not implemented by a child class.
         """
 
@@ -85,83 +104,84 @@ class DBPoolMetrics(MetricsBase):
     """
 
     #: Total number of connections allowed to exist in the pool.
-    size: int
+    size: int = 0
 
     #: Number of connections in the use.
-    checked_in_connections: int
+    checked_in_connections: int = 0
 
     #: Number of idle connections.
-    checked_out_connections: int
+    checked_out_connections: int = 0
 
     #: Maximal "overflow" of the pool, i.e. how many connections above the :py:attr:`size` are allowed.
-    current_overflow: int
+    current_overflow: int = 0
 
-    @classmethod
-    def load(
-        cls,
+    def sync(
+        self,
         logger: gluetool.log.ContextAdapter,
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
-    ) -> 'DBPoolMetrics':
+    ) -> None:
         """
-        Load values from database, and return the container instance.
+        Load values from database and update this container with up-to-date values..
 
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :returns: a metrics container instance.
         """
 
         if not hasattr(db.engine.pool, 'size'):
-            return DBPoolMetrics(
-                size=-1,
-                checked_in_connections=-1,
-                checked_out_connections=-1,
-                current_overflow=-1
-            )
+            self.size = 0
+            self.checked_in_connections = 0
+            self.checked_out_connections = 0
+            self.current_overflow = 0
 
-        return DBPoolMetrics(
-            size=db.engine.pool.size(),
-            checked_in_connections=db.engine.pool.checkedin(),
-            checked_out_connections=db.engine.pool.checkedout(),
-            current_overflow=db.engine.pool.overflow()
-        )
+            return
 
-    def to_prometheus(self, registry: CollectorRegistry) -> None:
+        self.size = db.engine.pool.size()
+        self.checked_in_connections = db.engine.pool.checkedin()
+        self.checked_out_connections = db.engine.pool.checkedout()
+        self.current_overflow = db.engine.pool.overflow()
+
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+        Register instances of Prometheus metrics with the given registry..
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        pool_size = Gauge(
+        self.POOL_SIZE = Gauge(
             'db_pool_size',
             'Maximal number of connections available in the pool',
             registry=registry
         )
 
-        pool_checked_in = Gauge(
-            'db_pool_checked_in',
+        self.POOL_CHECKED_IN = Gauge(
+            'db_pool_checked',
             'Current number of connections checked in',
             registry=registry
         )
 
-        pool_checked_out = Gauge(
+        self.POOL_CHECKED_OUT = Gauge(
             'db_pool_checked_out',
             'Current number of connections out',
             registry=registry
         )
 
-        pool_overflow = Gauge(
+        self.POOL_OVERFLOW = Gauge(
             'db_pool_overflow',
             'Current overflow of connections',
             registry=registry
         )
 
-        pool_size.set(self.size)
-        pool_checked_in.set(self.checked_in_connections)
-        pool_checked_out.set(self.checked_out_connections)
-        pool_overflow.set(self.current_overflow)
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
+
+        self.POOL_SIZE.set(self.size)
+        self.POOL_CHECKED_IN.set(self.checked_in_connections)
+        self.POOL_CHECKED_OUT.set(self.checked_out_connections)
+        self.POOL_OVERFLOW.set(self.current_overflow)
 
 
 @dataclasses.dataclass
@@ -171,36 +191,39 @@ class DBMetrics(MetricsBase):
     """
 
     #: Database connection pool metrics.
-    pool: DBPoolMetrics
+    pool: DBPoolMetrics = DBPoolMetrics()
 
-    @classmethod
-    def load(
-        cls,
+    def sync(
+        self,
         logger: gluetool.log.ContextAdapter,
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
-    ) -> 'DBMetrics':
+    ) -> None:
         """
-        Load values from database, and return the container instance.
+        Load values from database and update this container with up-to-date values..
 
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :returns: a metrics container instance.
         """
 
-        return DBMetrics(
-            pool=DBPoolMetrics.load(logger, db, session)
-        )
+        self.pool.sync(logger, db, session)
 
-    def to_prometheus(self, registry: CollectorRegistry) -> None:
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+        Register instances of Prometheus metrics with the given registry..
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        self.pool.to_prometheus(registry)
+        self.pool.register_with_prometheus(registry)
+
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
+
+        self.pool.update_prometheus()
 
 
 @dataclasses.dataclass
@@ -211,34 +234,30 @@ class PoolsMetrics(MetricsBase):
 
     # here is the space left for global pool-related metrics.
 
-    metrics: Dict[str, PoolMetrics]
+    metrics: Dict[str, PoolMetrics] = dataclasses.field(default_factory=dict)
 
-    @classmethod
-    def load(
-        cls,
+    def sync(
+        self,
         logger: gluetool.log.ContextAdapter,
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
-    ) -> 'PoolsMetrics':
+    ) -> None:
         """
-        Load values from database, and return the container instance.
+        Load values from database and update this container with up-to-date values..
 
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :returns: a metrics container instance.
         """
 
-        return PoolsMetrics(
-            metrics={
-                pool.poolname: pool.metrics(logger, session)
-                for pool in artemis_tasks.get_pools(logger, session)
-            }
-        )
+        self.metrics = {
+            pool.poolname: pool.metrics(logger, session)
+            for pool in artemis_tasks.get_pools(logger, session)
+        }
 
-    def to_prometheus(self, registry: CollectorRegistry) -> None:
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+        Register instances of Prometheus metrics with the given registry..
 
         :param registry: Prometheus registry to attach metrics to.
         """
@@ -251,31 +270,36 @@ class PoolsMetrics(MetricsBase):
                 registry=registry
             )
 
-        current_guest_request_count = Gauge(
+        self.CURRENT_GUEST_REQUEST_COUNT = Gauge(
             'current_guest_request_count',
             'Current number of guest requests being provisioned by pool and state.',
             ['pool', 'state'],
             registry=registry
         )
 
-        pool_resources_instances = _create_pool_resource_metric('instances')
-        pool_resources_cores = _create_pool_resource_metric('cores')
-        pool_resources_memory = _create_pool_resource_metric('memory', unit='bytes')
-        pool_resources_diskspace = _create_pool_resource_metric('diskspace', unit='bytes')
-        pool_resources_snapshots = _create_pool_resource_metric('snapshot')
+        self.POOL_RESOURCES_INSTANCES = _create_pool_resource_metric('instances')
+        self.POOL_RESOURCES_CORES = _create_pool_resource_metric('cores')
+        self.POOL_RESOURCES_MEMORY = _create_pool_resource_metric('memory', unit='bytes')
+        self.POOL_RESOURCES_DISKSPACE = _create_pool_resource_metric('diskspace', unit='bytes')
+        self.POOL_RESOURCES_SNAPSHOTS = _create_pool_resource_metric('snapshot')
+
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
 
         for poolname, pool_metrics in self.metrics.items():
             for state in pool_metrics.current_guest_request_count_per_state:
-                current_guest_request_count \
+                self.CURRENT_GUEST_REQUEST_COUNT \
                     .labels(poolname, state.value) \
                     .set(pool_metrics.current_guest_request_count_per_state[state])
 
             for gauge, metric_name in [
-                (pool_resources_instances, 'instances'),
-                (pool_resources_cores, 'cores'),
-                (pool_resources_memory, 'memory'),
-                (pool_resources_diskspace, 'diskspace'),
-                (pool_resources_snapshots, 'snapshots')
+                (self.POOL_RESOURCES_INSTANCES, 'instances'),
+                (self.POOL_RESOURCES_CORES, 'cores'),
+                (self.POOL_RESOURCES_MEMORY, 'memory'),
+                (self.POOL_RESOURCES_DISKSPACE, 'diskspace'),
+                (self.POOL_RESOURCES_SNAPSHOTS, 'snapshots')
             ]:
                 limit = getattr(pool_metrics.resources.limits, metric_name)
                 usage = getattr(pool_metrics.resources.usage, metric_name)
@@ -295,14 +319,14 @@ class ProvisioningMetrics(MetricsBase):
     Provisioning metrics.
     """
 
-    requested: int
-    current: int
-    success: Dict[str, int]
-    failover: Dict[Tuple[str, str], int]
-    failover_success: Dict[Tuple[str, str], int]
+    requested: int = 0
+    current: int = 0
+    success: Dict[str, int] = dataclasses.field(default_factory=dict)
+    failover: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    failover_success: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
 
     # We want to maybe point fingers on pools where guests are stuck, so include pool name and state as labels.
-    guest_ages: List[Tuple[GuestState, Optional[str], datetime.timedelta]]
+    guest_ages: List[Tuple[GuestState, Optional[str], datetime.timedelta]] = dataclasses.field(default_factory=list)
 
     @staticmethod
     def inc_requested(
@@ -391,20 +415,18 @@ class ProvisioningMetrics(MetricsBase):
         )
         return Ok(None)
 
-    @classmethod
-    def load(
-        cls,
+    def sync(
+        self,
         logger: gluetool.log.ContextAdapter,
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
-    ) -> 'ProvisioningMetrics':
+    ) -> None:
         """
-        Load values from database, and return the container instance.
+        Load values from database and update this container with up-to-date values..
 
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :returns: a metrics container instance.
         """
 
         NOW = datetime.datetime.utcnow()
@@ -416,101 +438,106 @@ class ProvisioningMetrics(MetricsBase):
             .filter(artemis_db.Metrics.metric == 'requested') \
             .one_or_none()
 
-        return ProvisioningMetrics(
-            current=current_record.scalar(),
-            requested=requested_record.count if requested_record else 0,
-            success={
-                record.pool: record.count
-                for record in artemis_db.Query.from_session(session, artemis_db.MetricsProvisioningSuccess).all()
-            },
-            failover={
-                (record.from_pool, record.to_pool): record.count
-                for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailover).all()
-            },
-            failover_success={
-                (record.from_pool, record.to_pool): record.count
-                for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailoverSuccess).all()
-            },
-            # Using `query` directly, because we need just limited set of fields, and we need our `Query`
-            # and `SafeQuery` to support this functionality (it should be just a matter of correct types).
-            guest_ages=[
-                (record[0], record[1], NOW - record[2])
-                for record in cast(
-                    List[Tuple[GuestState, Optional[str], datetime.datetime]],
-                    session.query(  # type: ignore
-                        artemis_db.GuestRequest.state,
-                        artemis_db.GuestRequest.poolname,
-                        artemis_db.GuestRequest.ctime
-                    ).all()
-                )
-            ]
-        )
+        self.current = current_record.scalar()
+        self.requested = requested_record.count if requested_record else 0
+        self.success = {
+            record.pool: record.count
+            for record in artemis_db.Query.from_session(session, artemis_db.MetricsProvisioningSuccess).all()
+        }
+        self.failover = {
+            (record.from_pool, record.to_pool): record.count
+            for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailover).all()
+        }
+        self.failover_success = {
+            (record.from_pool, record.to_pool): record.count
+            for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailoverSuccess).all()
+        }
+        # Using `query` directly, because we need just limited set of fields, and we need our `Query`
+        # and `SafeQuery` to support this functionality (it should be just a matter of correct types).
+        self.guest_ages = [
+            (record[0], record[1], NOW - record[2])
+            for record in cast(
+                List[Tuple[GuestState, Optional[str], datetime.datetime]],
+                session.query(  # type: ignore
+                    artemis_db.GuestRequest.state,
+                    artemis_db.GuestRequest.poolname,
+                    artemis_db.GuestRequest.ctime
+                ).all()
+            )
+        ]
 
-    def to_prometheus(self, registry: CollectorRegistry) -> None:
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+        Register instances of Prometheus metrics with the given registry..
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        current_guest_request_count_total = Gauge(
+        self.CURRENT_GUEST_REQUEST_COUNT_TOTAL = Gauge(
             'current_guest_request_count_total',
             'Current total number of guest requests being provisioned.',
             registry=registry
         )
 
-        overall_provisioning_count = Counter(
+        self.OVERALL_PROVISIONING_COUNT = Counter(
             'overall_provisioning_count',
             'Overall total number of all requested guest requests.',
             registry=registry
         )
 
-        overall_successfull_provisioning_count = Counter(
+        self.OVERALL_SUCCESSFULL_PROVISIONING_COUNT = Counter(
             'overall_successfull_provisioning_count',
             'Overall total number of all successfully provisioned guest requests by pool.',
             ['pool'],
             registry=registry
         )
 
-        overall_failover_count = Counter(
+        self.OVERALL_FAILOVER_COUNT = Counter(
             'overall_failover_count',
             'Overall total number of failovers to another pool by source and destination pool.',
             ['from_pool', 'to_pool'],
             registry=registry
         )
 
-        overall_successfull_failover_count = Counter(
+        self.OVERALL_SUCCESSFULL_FAILOVER_COUNT = Counter(
             'overall_successfull_failover_count',
             'Overall total number of successful failovers to another pool by source and destination pool.',
             ['from_pool', 'to_pool'],
             registry=registry
         )
 
-        guest_ages = Gauge(
+        self.GUEST_AGES = Gauge(
             'guest_request_age',
             'Guest request ages by pool and state.',
             ['pool', 'state', 'age_threshold'],
             registry=registry
         )
 
-        current_guest_request_count_total.set(self.current)
-        overall_provisioning_count.inc(amount=self.requested)
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
+
+        self.CURRENT_GUEST_REQUEST_COUNT_TOTAL.set(self.current)
+        self.OVERALL_PROVISIONING_COUNT._value.set(self.requested)
 
         for pool, count in self.success.items():
-            overall_successfull_provisioning_count.labels(pool=pool).inc(amount=count)
+            self.OVERALL_SUCCESSFULL_PROVISIONING_COUNT.labels(pool=pool)._value.set(count)
 
         for (from_pool, to_pool), count in self.failover.items():
-            overall_failover_count.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
+            self.OVERALL_FAILOVER_COUNT.labels(from_pool=from_pool, to_pool=to_pool)._value.set(count)
 
         for (from_pool, to_pool), count in self.failover_success.items():
-            overall_successfull_failover_count.labels(from_pool=from_pool, to_pool=to_pool).inc(amount=count)
+            self.OVERALL_SUCCESSFULL_FAILOVER_COUNT.labels(from_pool=from_pool, to_pool=to_pool)._value.set(count)
+
+        reset_counters(self.GUEST_AGES)
 
         for state, poolname, age in self.guest_ages:
             # Pick the smallest larger bucket threshold (e.g. age == 250 => 300, age == 3599 => 3600, ...)
             # There's always the last threshold, infinity, so the list should never be empty.
             age_threshold = min([threshold for threshold in GUEST_AGE_BUCKETS if threshold > age.total_seconds()])
 
-            guest_ages.labels(state=state, pool=poolname, age_threshold=age_threshold).inc()
+            self.GUEST_AGES.labels(state=state, pool=poolname, age_threshold=age_threshold).inc()
 
 
 @dataclasses.dataclass
@@ -519,9 +546,9 @@ class RoutingMetrics(MetricsBase):
     Routing metrics.
     """
 
-    policy_calls: Dict[str, int]
-    policy_cancellations: Dict[str, int]
-    policy_rulings: Dict[Tuple[str, str, bool], int]
+    policy_calls: Dict[str, int] = dataclasses.field(default_factory=dict)
+    policy_cancellations: Dict[str, int] = dataclasses.field(default_factory=dict)
+    policy_rulings: Dict[Tuple[str, str, bool], int] = dataclasses.field(default_factory=dict)
 
     @staticmethod
     def inc_policy_called(
@@ -619,75 +646,76 @@ class RoutingMetrics(MetricsBase):
         )
         return Ok(None)
 
-    @classmethod
-    def load(
-        cls,
+    def sync(
+        self,
         logger: gluetool.log.ContextAdapter,
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
-    ) -> 'RoutingMetrics':
+    ) -> None:
         """
-        Load values from database, and return the container instance.
+        Load values from database and update this container with up-to-date values..
 
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :returns: a metrics container instance.
         """
 
-        return RoutingMetrics(
-            policy_calls={
-                record.policy_name: record.count
-                for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyCalls).all()
-            },
-            policy_cancellations={
-                record.policy_name: record.count
-                for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyCancellations).all()
-            },
-            policy_rulings={
-                (record.policy_name, record.pool_name, record.allowed): record.count
-                for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyRulings).all()
-            }
-        )
+        self.policy_calls = {
+            record.policy_name: record.count
+            for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyCalls).all()
+        }
+        self.policy_cancellations = {
+            record.policy_name: record.count
+            for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyCancellations).all()
+        }
+        self.policy_rulings = {
+            (record.policy_name, record.pool_name, record.allowed): record.count
+            for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyRulings).all()
+        }
 
-    def to_prometheus(self, registry: CollectorRegistry) -> None:
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+        Register instances of Prometheus metrics with the given registry..
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        overall_policy_calls_count = Counter(
+        self.OVERALL_POLICY_CALLS_COUNT = Counter(
             'overall_policy_calls_count',
             'Overall total number of policy call by policy name.',
             ['policy'],
             registry=registry
         )
 
-        overall_policy_cancellations_count = Counter(
+        self.OVERALL_POLICY_CANCELLATIONS_COUNT = Counter(
             'overall_policy_cancellations_count',
             'Overall total number of policy canceling a guest request by policy name.',
             ['policy'],
             registry=registry
         )
 
-        overall_policy_rulings_count = Counter(
+        self.OVERALL_POLICY_RULINGS_COUNT = Counter(
             'overall_policy_rulings_count',
             'Overall total number of policy rulings by policy name, pool name and whether the pool was allowed.',
             ['policy', 'pool', 'allowed'],
             registry=registry
         )
 
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
+
         for policy_name, count in self.policy_calls.items():
-            overall_policy_calls_count.labels(policy=policy_name).inc(amount=count)
+            self.OVERALL_POLICY_CALLS_COUNT.labels(policy=policy_name)._value.set(count)
 
         for policy_name, count in self.policy_cancellations.items():
-            overall_policy_cancellations_count.labels(policy=policy_name).inc(amount=count)
+            self.OVERALL_POLICY_CANCELLATIONS_COUNT.labels(policy=policy_name)._value.set(count)
 
         for (policy_name, pool_name, allowed), count in self.policy_rulings.items():
-            overall_policy_rulings_count \
+            self.OVERALL_POLICY_RULINGS_COUNT \
                 .labels(policy=policy_name, pool=pool_name, allowed='yes' if allowed else 'no') \
-                .inc(amount=count)
+                ._value.set(count)
 
 
 @dataclasses.dataclass
@@ -696,51 +724,64 @@ class Metrics(MetricsBase):
     Global metrics that don't fit anywhere else, and also a root of the tree of metrics.
     """
 
-    db: DBMetrics
-    pools: PoolsMetrics
-    provisioning: ProvisioningMetrics
-    routing: RoutingMetrics
+    db: DBMetrics = DBMetrics()
+    pools: PoolsMetrics = PoolsMetrics()
+    provisioning: ProvisioningMetrics = ProvisioningMetrics()
+    routing: RoutingMetrics = RoutingMetrics()
 
-    @classmethod
-    def load(
-        cls,
+    # Registry this tree of metrics containers is tied to.
+    _registry: Optional[CollectorRegistry] = None
+
+    def sync(
+        self,
         logger: gluetool.log.ContextAdapter,
         db: artemis_db.DB,
         session: sqlalchemy.orm.session.Session
-    ) -> 'Metrics':
+    ) -> None:
         """
-        Load values from database, and return the container instance.
+        Load values from database and update this container with up-to-date values..
 
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :returns: a metrics container instance.
         """
 
-        return Metrics(
-            db=DBMetrics.load(logger, db, session),
-            pools=PoolsMetrics.load(logger, db, session),
-            provisioning=ProvisioningMetrics.load(logger, db, session),
-            routing=RoutingMetrics.load(logger, db, session)
-        )
+        self.db.sync(logger, db, session)
+        self.pools.sync(logger, db, session)
+        self.provisioning.sync(logger, db, session)
+        self.routing.sync(logger, db, session)
 
-    def to_prometheus(self, registry: CollectorRegistry) -> None:
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Transform values in the container into Prometheus metric instances, and attach them to the given registry.
+        Register instances of Prometheus metrics with the given registry..
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        self.db.to_prometheus(registry)
-        self.pools.to_prometheus(registry)
-        self.provisioning.to_prometheus(registry)
-        self.routing.to_prometheus(registry)
+        self._registry = registry
 
-    @classmethod
+        registry.register(REQUEST_COUNT)
+        registry.register(REQUESTS_INPROGRESS)
+
+        self.db.register_with_prometheus(registry)
+        self.pools.register_with_prometheus(registry)
+        self.provisioning.register_with_prometheus(registry)
+        self.routing.register_with_prometheus(registry)
+
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
+
+        self.db.update_prometheus()
+        self.pools.update_prometheus()
+        self.provisioning.update_prometheus()
+        self.routing.update_prometheus()
+
     def render_prometheus_metrics(
-        cls,
+        self,
         logger: gluetool.log.ContextAdapter,
-        db: artemis_db.DB,
+        db: artemis_db.DB
     ) -> bytes:
         """
         Render plaintext output of Prometheus metrics representing values in this tree of metrics.
@@ -750,16 +791,12 @@ class Metrics(MetricsBase):
         :returns: plaintext represenation of Prometheus metrics, encoded as ``bytes``.
         """
 
-        registry = CollectorRegistry()
-        registry.register(REQUEST_COUNT)
-        registry.register(REQUESTS_INPROGRESS)
-
         with db.get_session() as session:
-            metrics = Metrics.load(logger, db, session)
+            self.sync(logger, db, session)
 
-        metrics.to_prometheus(registry)
+        self.update_prometheus()
 
-        return cast(bytes, generate_latest(registry=registry))
+        return cast(bytes, generate_latest(registry=self._registry))
 
 
 def upsert_metric(
