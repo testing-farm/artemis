@@ -78,13 +78,6 @@ RUN    mkdir -p /etc/beaker \
     && ln -s $CONFIGURATION/beaker-client-config /etc/beaker/client.conf
 
 #
-# Copy Artemis sources and Alembic data and install Artemis
-#
-COPY server /APP/
-RUN    cd /APP \
-    && poetry install --no-dev
-
-#
 # Add entrypoint
 #
 COPY container/entrypoint.sh /entrypoint.sh
@@ -102,6 +95,13 @@ COPY container/wait-for-api.sh /
 COPY container/wait-for-postgres.sh /
 COPY container/wait-for-rabbitmq.sh /
 RUN chmod +x /wait-for-postgres.sh /wait-for-rabbitmq.sh /wait-for-api.sh
+
+#
+# Copy Artemis sources and Alembic data and install Artemis
+#
+COPY server /APP/
+RUN    cd /APP \
+    && poetry install --no-dev
 
 #
 # Make sure we can edit /etc/passwd
