@@ -17,8 +17,11 @@ import sqlalchemy
 import sqlalchemy.orm.exc
 from gluetool.log import log_dict
 from molten import HTTP_200, HTTP_201, HTTP_400, HTTP_404, Field, Request, Response
+from molten.app import BaseApp
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
+from molten.openapi.handlers import OpenAPIHandler as _OpenAPIHandler
+from molten.openapi.handlers import OpenAPIUIHandler
 from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 
@@ -26,7 +29,7 @@ from .. import __VERSION__, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, log_guest_event, metrics, safe_db_change
 from ..guest import GuestState
-from . import errors, handlers
+from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
 DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
@@ -796,6 +799,27 @@ def get_about(request: Request) -> APIResponse:
     return APIResponse(response, request=request)
 
 
+class OpenAPIHandler(_OpenAPIHandler):
+    """
+    Dynamically generates and serves OpenAPI v3 documents based on the current application object. Once
+    generated, the document is subsequently served from cache.
+
+    This custom handler was implemented to replace :py:class:`molten.openapi.handlers.OpenAPIHandler`,
+    which returns ``dict`` instead of :py:class:`molten.Response`. Ideally, we need every route to return
+    :py:class:`molten.Response` (or :py:class:`APIResponse`) so that we can use middleware that is designed
+    to work with :py:class:`molten.Response` and just stay consistent in general.
+    """
+
+    def __call__(self, app: BaseApp) -> Response:
+        super(OpenAPIHandler, self).__call__(app)
+
+        return Response(
+            status=HTTP_200,
+            content=json.dumps(self.document),
+            headers={'Content-Type': 'application/json'}
+        )
+
+
 def run_app() -> molten.app.App:
     from molten.router import Include, Route
 
@@ -828,8 +852,6 @@ def run_app() -> molten.app.App:
         prometheus_middleware
     ]
 
-    get_docs = molten.openapi.handlers.OpenAPIUIHandler()
-
     # Type checking this call is hard, mypy complains about unexpected keyword arguments, and refactoring
     # didn't help at all, just yielded another kind of errors.
     metadata = molten.openapi.documents.Metadata(  # type: ignore
@@ -837,8 +859,6 @@ def run_app() -> molten.app.App:
         description='Artemis provisioning system API.',
         version=__VERSION__
     )
-
-    get_schema = handlers.OpenAPIHandler(metadata=metadata)
 
     routes: List[Union[Route, Include]] = [
         Include('/guests', [
@@ -855,8 +875,8 @@ def run_app() -> molten.app.App:
         ]),
         Route('/metrics', get_metrics),
         Route('/about', get_about),
-        Route('/_docs', get_docs),
-        Route('/_schema', get_schema)
+        Route('/_docs', OpenAPIUIHandler()),
+        Route('/_schema', OpenAPIHandler(metadata=metadata))
     ]
 
     return molten.app.App(
