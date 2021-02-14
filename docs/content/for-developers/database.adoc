@@ -1,0 +1,123 @@
+---
+title: "Database"
+date: 2021-02-14T14:30:02+01:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== Database schema
+
+The database schema is maintained with the help of https://alembic.sqlalchemy.org/en/latest/[Alembic].
+Alembic takes care of both database schema initialization and its changes.
+It has native support for SQLAlchemy models and can detect model changes and generate queries needed to perform the schema update.
+
+[TIP]
+====
+There is an awesome Alembic tutorial https://alembic.sqlalchemy.org/en/latest/tutorial.html[here]. Check it out to gain more insight how does it work.
+====
+
+[WARNING]
+====
+Avoid manual changes to the database and schema, use Alembic and its CLI to upgrade and downgrade as needed.
+====
+
+All database schema patches - **revisions** - are stored in `server/alembic/versions/`, each represents one distinct change of the schema.
+Alembic keeps track of these patches and their order and stores additional information the database itself.
+
+[NOTE]
+====
+When running command below, `alembic` implicitly works with a dummy SQLite3 database named `test.db`.
+This name comes from the default value of `ARTEMIS_DB_URL` environment variable. You can always change this variable to point Alembic CLI to different database, e.g. your local PostgreSQL instance.
+====
+
+=== Schema revisions
+
+To display what schema revision is currently installed in the database, run following:
+
+[source,shell]
+....
+$ poetry run alembic current -v
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+Current revision(s) for sqlite:///test.db:
+Rev: 57f5d41c7200 (head)
+Parent: <base>
+Path: /home/mvadkert/git/gitlab.com/testing-farm/artemis/server/alembic/versions/57f5d41c7200_.py
+
+    Intial database schema upgrade
+
+    Revision ID: 57f5d41c7200
+    Revises:
+    Create Date: 2020-07-21 15:51:55.334506
+....
+
+To display complete history of revisions, run following:
+
+[source,shell]
+....
+$ poetry run alembic history
+a31dd2a66069 -> 7adee582ada3 (head), Adds guest_tags table
+51c5e4b2a7ac -> a31dd2a66069, Adds policy rulings metrics
+...
+57f5d41c7200 -> a3c173dfd6f5, Adding guest_requests.user_data column
+<base> -> 57f5d41c7200, Intial database schema import
+....
+
+=== Revision changes
+
+To initialize an empty database with current schema, run following:
+
+[source,shell]
+....
+$ poetry run alembic upgrade head
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 57f5d41c7200, Intial database schema import
+INFO  [alembic.runtime.migration] Running upgrade 57f5d41c7200 -> a3c173dfd6f5, Adding guest_requests.user_data column
+INFO  [alembic.runtime.migration] Running upgrade a3c173dfd6f5 -> 487f52cc5aef, Guest request user data shall never be NULL
+...
+....
+
+To downgrade or upgrade to given revision, run following:
+
+[source,shell]
+....
+$ poetry run alembic downgrade a31dd2a66069
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade 7adee582ada3 -> a31dd2a66069, Adds guest_tags table
+....
+
+[source,shell]
+....
+$ poetry run alembic upgrade head
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade a31dd2a66069 -> 7adee582ada3, Adds guest_tags table
+....
+
+=== Schema changes
+
+Alembic is smart enough to detect changes made to our DB models (see `server/src/tft/artemis/db.py`) and prepare a new revision.
+To create the patch, run following:
+
+[NOTE]
+====
+Don't forget to initialize the database schema before generating new revision.
+====
+
+[WARNING]
+====
+It is **highly** recommended to check the file and make adjustments when needed.
+Alembic can detect schema changes pretty reliably, but it is still a software and cannot be aware of your intentions.
+====
+
+[source,shell]
+....
+$ poetry run alembic revision --autogenerate -m "Adding user_data table"
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.autogenerate.compare] Detected added column 'guest_requests.user_data'
+  Generating /home/foo/git/artemis/server/alembic/versions/a3c173dfd6f5_adding_user_data_table.py ...  done
+....
