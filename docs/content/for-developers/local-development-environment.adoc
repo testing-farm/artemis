@@ -91,6 +91,62 @@ You will be prompted for "Vault password". This is then used to encrypt master k
 $ bash ./gen.sh
 ....
 
+== Follow-up steps
+
+After you complete the preferred way to setup your local development environment, there are additional steps to complete the whole process and make your environment ready.
+
+=== Install development tools
+
+Artemis packaging points to several tools that can help with the development and testing of your patches - `pre-commit`, linters.
+
+[WARNING]
+====
+Technically, you do not need to install these tools to develop Artemis patches. However, some of them are mandatory part of Gitlab CI process testing each submitted patch (`pre-commit`) and other can be very helpful when integrated with your IDE (`mypy`, `flake8`, etc.).
+====
+
+[NOTE]
+====
+You do not need to install these tools to run the test suite - test suite takes care of installing its requirements as needed and does not depend on this step.
+====
+
+[NOTE]
+====
+If you picked the <<_docker_compose>> method, you already have these tools available after you finished `poetry install` step. If you followed <<_minishift_and_scaffold>> method, then you did not perform this particular step as your Artemis sources are happily packaged within container images. You should, however, consider installing the tools.
+====
+
+* install the Artemis sources and all requirements:
++
+[source,shell]
+....
+$ cd server/
+$ poetry install -v --no-root
+....
++
+* install pre-commit hook:
++
+[source,shell]
+....
+$ poetry run pre-commit install
+....
+
+To integrate the tools with your IDE, you will need provide IDE with path to the virtual environment managed by Poetry. Run following command:
+
+[source,shell]
+....
+$ poetry env info
+
+Virtualenv
+Python:         3.7.7
+Implementation: CPython
+Path:           /foo/bar/artemis/server/.venv <1>
+Valid:          True
+...
+....
+<1> this is the path you are looking for.
+
+Then follow your IDE's documentation - it is often possible to point the IDE to particular linters by their path, e.g. `/foo/bar/artemis/server/.venv/bin/mypy`.
+
+
 == Minishift and Scaffold
 
 === Install requirements
