@@ -2145,7 +2145,7 @@ def do_acquire_guest_request(
             }
         )
 
-        workspace.dispatch_task(update_guest_request, guestname)
+        workspace.dispatch_task(update_guest_request, guestname, delay=provisioning_progress.delay_update)
 
         if workspace.result:
             _undo_guest_acquire()
