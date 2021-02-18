@@ -85,9 +85,9 @@ class AWSDriver(PoolDriver):
         super(AWSDriver, self).__init__(logger, poolname, pool_config)
         self.environ = {
             **os.environ,
-            "AWS_ACCESS_KEY_ID": self.pool_config['access_key_id'],
-            "AWS_SECRET_ACCESS_KEY": self.pool_config['secret_access_key'],
-            "AWS_DEFAULT_REGION": self.pool_config['region'],
+            "AWS_ACCESS_KEY_ID": self.pool_config['access-key-id'],
+            "AWS_SECRET_ACCESS_KEY": self.pool_config['secret-access-key'],
+            "AWS_DEFAULT_REGION": self.pool_config['default-region'],
             "AWS_DEFAULT_OUTPUT": 'json'
         }
 
@@ -95,7 +95,7 @@ class AWSDriver(PoolDriver):
         required_variables = [
             'access-key-id',
             'secret-access-key',
-            'region',
+            'default-region',
             'availability-zone',
             'command',
             'default-instance-type',
