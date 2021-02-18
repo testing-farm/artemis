@@ -804,7 +804,8 @@ def run_cli_tool(
     command: List[str],
     json_output: bool = False,
     command_scrubber: Optional[Callable[[List[str]], List[str]]] = None,
-    allow_empty: bool = True
+    allow_empty: bool = True,
+    env: Optional[Dict[str, str]] = None
 ) -> Result[Tuple[Any, gluetool.utils.ProcessOutput], Failure]:
     """
     Run a given command, and return its output.
@@ -838,7 +839,7 @@ def run_cli_tool(
     command_scrubber = command_scrubber or _noop_scrubber
 
     try:
-        output = gluetool.utils.Command(command).run()
+        output = gluetool.utils.Command(command).run(env=env)
 
     except gluetool.glue.GlueCommandError as exc:
         return Error(Failure.from_exc(

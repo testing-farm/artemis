@@ -1,5 +1,6 @@
 import base64
 import dataclasses
+import os
 import re
 import threading
 from typing import Any, Dict, List, Optional
@@ -82,9 +83,19 @@ class AWSDriver(PoolDriver):
         pool_config: Dict[str, Any]
     ) -> None:
         super(AWSDriver, self).__init__(logger, poolname, pool_config)
+        self.environ = {
+            **os.environ,
+            "AWS_ACCESS_KEY_ID": self.pool_config['access_key_id'],
+            "AWS_SECRET_ACCESS_KEY": self.pool_config['secret_access_key'],
+            "AWS_DEFAULT_REGION": self.pool_config['region'],
+            "AWS_DEFAULT_OUTPUT": 'json'
+        }
 
     def sanity(self) -> Result[bool, Failure]:
         required_variables = [
+            'access-key-id',
+            'secret-access-key',
+            'region',
             'availability-zone',
             'command',
             'default-instance-type',
@@ -235,7 +246,8 @@ class AWSDriver(PoolDriver):
         r_run = run_cli_tool(
             self.logger,
             command,
-            json_output=True
+            json_output=True,
+            env=self.environ
         )
 
         if r_run.is_error:

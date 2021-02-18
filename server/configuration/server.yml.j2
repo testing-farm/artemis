@@ -70,6 +70,10 @@ pools:
     driver: aws
     guest_tags: {{ aws.guest_tags }}
     parameters:
+      access-key-id: "{{ aws.credentials.access_key_id }}"
+      secret-access-key: "{{ aws.credentials.secret_access_key }}"
+      default-region: "{{ aws.default_region }}"
+
       command: aws
       master-key-name: "{{ aws.vms.keyname }}"
 
