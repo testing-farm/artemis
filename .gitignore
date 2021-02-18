@@ -1,7 +1,6 @@
 .coverage
 .mypy_cache
 .tox
-.vault_pass
 .vscode
 .nvimrc
 .venv
@@ -15,6 +14,11 @@ dist
 *~
 *.pyc
 
+
+# Generated configuration
+server/configuration/server.yml
+server/configuration/master-key.yaml
+server/configuration/.vault_pass
 
 # Generated docs and their sources
 server/autodocs/source/tft.artemis.rst
