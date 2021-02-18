@@ -25,7 +25,7 @@ from molten.openapi.handlers import OpenAPIUIHandler
 from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 
-from .. import __VERSION__, Knob
+from .. import __VERSION__, DATABASE, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, log_guest_event, metrics, safe_db_change
 from ..guest import GuestState
@@ -757,11 +757,11 @@ def get_guest_events(guestname: str, request: Request, manager: GuestEventManage
 
 
 def get_metrics(request: Request, db: artemis_db.DB, metrics_tree: 'metrics.Metrics') -> APIResponse:
-    logger = get_logger()
+    DATABASE.set(db)
 
     with METRICS_LOCK:
         return APIResponse(
-            stream=metrics_tree.render_prometheus_metrics(logger, db),
+            stream=metrics_tree.render_prometheus_metrics(),
             request=request
         )
 

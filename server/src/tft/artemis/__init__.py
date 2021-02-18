@@ -1,3 +1,4 @@
+import contextvars
 import json
 import logging
 import os
@@ -1163,3 +1164,36 @@ def log_error_guest_event(
             'failure': failure.get_event_details()
         }
     )
+
+
+#: Context variables
+#:
+#: These are global, "shared" names for important objects that together represent a certain "execution context"
+#: our code runs in. The entry points - places that call methods like :py:func:`get_logger` and :py:func:`get_db`,
+#: usually the first piece of code that runs in reaction to events like HTTP connection or delivered message - are
+#: expected to set these variables properly. It is then expected that following paths will update them as needed,
+#: for example :py:var:`LOGGER` will gain more logging context and therefore the initial object would be replaced
+#: with more specific loggers.
+#:
+#: Vast majority of our code expects very similar set of inputs - logger, db, session and so on. This approach
+#: should keep things typed and correctly propagated while allowing the expansion of this virtual "context" by
+#: simply addition of a new variable.
+#:
+#: See :py:mod:`contextvars` docs for details, in general these variables are stored as thread local data (not
+#: completely true since they also play nicely with asyncio). Our work is being done in threads, tasks and API
+#: requests are handled by threads with very visible entry points (actor, API handler), therefore it seems both
+#: fitting our approach and safe at the same time - as long as the entry points take care of updating the variables
+#: properly. But, we already have to pass an updated logger instance down the stream, we can assign it to a context
+#: variable instead, therefore it shouldn't bring more work.
+#:
+#: On the other hand, things become less visible, code becomes depending on an apparently shared global state,
+#: shared global variables. The names are shared, the value are *not*, thanks to thread-local magic. It seems
+#: possible to develop fixtures to make this code easily testable, and we need to chose very carefuly which code
+#: we switch to context variables and which would continue take arguments as its inputs. Code that exists in
+#: multiple incarnations with the same API (task actors, metric syncs) may benefit greatly from this - no need
+#: to pass N variables to each and every function plus a big red warning "this may use context variables" should
+#: prevent most of the issues.
+LOGGER: contextvars.ContextVar[gluetool.log.ContextAdapter] = contextvars.ContextVar('LOGGER', default=get_logger())
+DATABASE: contextvars.ContextVar['artemis_db.DB'] = contextvars.ContextVar('DATABASE', default=get_db(LOGGER.get()))
+SESSION: contextvars.ContextVar[sqlalchemy.orm.session.Session] = contextvars.ContextVar('SESSION')
+CACHE: contextvars.ContextVar[redis.Redis] = contextvars.ContextVar('CACHE', default=get_cache(LOGGER.get()))
