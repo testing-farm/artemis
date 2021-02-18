@@ -17,7 +17,6 @@ import dataclasses
 import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
 
-import gluetool.log
 import prometheus_client.utils
 import redis
 import sqlalchemy
@@ -26,7 +25,7 @@ import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
 
-from . import DATABASE, SESSION, Failure
+from . import DATABASE, LOGGER, SESSION, Failure
 from . import db as artemis_db
 from . import tasks as artemis_tasks
 from . import with_context
@@ -67,7 +66,11 @@ class MetricsBase:
 
         .. note::
 
+<<<<<<< HEAD
            **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
+=======
+           May use the context variables defined in :py:mod:`tft.artemis`.
+>>>>>>> Adds context variables for the most common objects we pass around
 
         :raises NotImplementedError: when not implemented by a child class.
         """
@@ -227,8 +230,8 @@ class PoolsMetrics(MetricsBase):
         """
 
         self.metrics = {
-            pool.poolname: pool.metrics(logger, session)
-            for pool in artemis_tasks.get_pools(logger, session)
+            pool.poolname: pool.metrics(LOGGER.get(), SESSION.get())
+            for pool in artemis_tasks.get_pools(LOGGER.get(), SESSION.get())
         }
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -398,6 +401,8 @@ class ProvisioningMetrics(MetricsBase):
 
         :param session: DB session to use for DB access.
         """
+
+        session = SESSION.get()
 
         NOW = datetime.datetime.utcnow()
 
@@ -623,6 +628,8 @@ class RoutingMetrics(MetricsBase):
 
         :param session: DB session to use for DB access.
         """
+
+        session = SESSION.get()
 
         self.policy_calls = {
             record.policy_name: record.count
