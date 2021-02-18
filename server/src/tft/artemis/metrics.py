@@ -15,10 +15,11 @@ to its offsprings.
 
 import dataclasses
 import datetime
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
 
 import gluetool.log
 import prometheus_client.utils
+import redis
 import sqlalchemy
 import sqlalchemy.orm.session
 import sqlalchemy.sql.schema
@@ -871,3 +872,152 @@ def upsert_dec_metric(
     """
 
     upsert_metric(session, model, primary_keys, -1)
+
+
+def inc_metric(
+    cache: redis.Redis,
+    metric: str
+) -> None:
+    """
+    Increment a metric counter by 1. If metric does not exist yet, it is set to `0` and incremented.
+
+    :param cache: cache instance to use for cache access.
+    :param metric: metric to increment.
+    """
+
+    cast(
+        Callable[[str], None],
+        cache.incr
+    )(metric)
+
+
+def dec_metric(
+    cache: redis.Redis,
+    metric: str
+) -> None:
+    """
+    Decrement a metric counter by 1. If metric does not exist yet, it is set to `0` and decremented.
+
+    :param cache: cache instance to use for cache access.
+    :param metric: metric to decrement.
+    """
+
+    cast(
+        Callable[[str], None],
+        cache.decr
+    )(metric)
+
+
+def inc_metric_field(
+    cache: redis.Redis,
+    metric: str,
+    field: str
+) -> None:
+    """
+    Increment a metric field counter by 1. If metric field does not exist yet, it is set to `0` and incremented.
+
+    :param cache: cache instance to use for cache access.
+    :param metric: parent metric to access.
+    :param field: field to increment.
+    """
+
+    cast(
+        Callable[[str, str, int], None],
+        cache.hincrby
+    )(metric, field, 1)
+
+
+def dec_metric_field(
+    cache: redis.Redis,
+    metric: str,
+    field: str
+) -> None:
+    """
+    Decrement a metric field counter by 1. If metric field does not exist yet, it is set to `0` and decremented.
+
+    :param cache: cache instance to use for cache access.
+    :param metric: parent metric to access.
+    :param field: field to decrement.
+    """
+
+    cast(
+        Callable[[str, str, int], None],
+        cache.hincrby
+    )(metric, field, -1)
+
+
+def get_metric(
+    cache: redis.Redis,
+    metric: str
+) -> Optional[int]:
+    """
+    Return a metric counter for the given metric.
+
+    :param cache: cache instance to use for cache access.
+    :param metric: metric name to retrieve.
+    :returns: value of the metric.
+    """
+
+    # Redis returns everything as bytes, therefore we need to decode field names to present them as strings
+    # and convert values to integers. To make things more complicated, lack of type annotations forces us
+    # to wrap `get` with `cast` calls.
+
+    return int(cast(
+        Callable[[str], bytes],
+        cache.get
+    )(metric))
+
+
+def set_metric(
+    cache: redis.Redis,
+    metric: str,
+    value: Optional[int] = None
+) -> None:
+    """
+    Set a metric counter for the given metric.
+
+    :param cache: cache instance to use for cache access.
+    :param metric: metric name to retrieve.
+    :param value: value to set to.
+    """
+
+    # Redis returns everything as bytes, therefore we need to decode field names to present them as strings
+    # and convert values to integers. To make things more complicated, lack of type annotations forces us
+    # to wrap `get` with `cast` calls.
+
+    if value is None:
+        cast(
+            Callable[[str], None],
+            cache.delete
+        )(metric)
+
+    else:
+        cast(
+            Callable[[str, int], None],
+            cache.set
+        )(metric, value)
+
+
+def get_metric_fields(
+    cache: redis.Redis,
+    metric: str
+) -> Dict[str, int]:
+    """
+    Return a mapping between fields and corresponding counters representing the given metric.
+
+    :param cache: cache instance to use for cache access.
+    :param metric: metric name to retrieve.
+    :returns: mapping between field and counters.
+    """
+
+    # Redis returns everything as bytes, therefore we need to decode field names to present them as strings
+    # and convert values to integers. To make things more complicated, lack of type annotations forces us
+    # to wrap `hgetall` with `cast` calls.
+
+    return {
+        field.decode(): int(count)
+        for field, count in cast(
+            Callable[[str], Dict[bytes, bytes]],
+            cache.hgetall
+        )(metric).items()
+    }

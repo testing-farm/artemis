@@ -31,6 +31,7 @@ case-insensitive.
 
 * `ARTEMIS_BROKER_HEARTBEAT_TIMEOUT` (int): An interval, in seconds, after which a broker client should ping the server over the established connection to keep both parties aware the connection should be kept alive. Default: `60`.
 * `ARTEMIS_BROKER_URL` (string): Broker URL. Default: `amqp://guest:guest@127.0.0.1:5672`.
+* `ARTEMIS_CACHE_URL` (string): Cache URL. Default: `redis://127.0.0.1:6379`.
 * `ARTEMIS_CLOSE_AFTER_DISPATCH` (boolean): When enabled, broker connection will be forcefully closed after every message dispatch. Default: `no`.
 * `ARTEMIS_CONFIG_DIR` (string): Path to a directory with configuration. Default: current working directory.
 * `ARTEMIS_DB_POOL_SIZE` (int): Size of the DB connection pool. Default: `20`.

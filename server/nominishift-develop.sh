@@ -14,6 +14,7 @@ export ARTEMIS_BROKER_URL="amqp://guest:guest@127.0.0.1:5672"
 export ARTEMIS_BACKEND_URL="redis://127.0.0.1:6379/0"
 # export ARTEMIS_DB_URL="sqlite:///test.db"
 export ARTEMIS_DB_URL="postgresql://artemis:artemis@127.0.0.1:5432/artemis"
+export ARTEMIS_CACHE_URL="${ARTEMIS_CACHE_URL:-redis://127.0.0.1:6379}"
 export ARTEMIS_VAULT_PASSWORD_FILE="$(pwd)/configuration/.vault_pass"
 
 export ARTEMIS_LOG_JSON=no

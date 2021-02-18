@@ -21,6 +21,7 @@ deploy:
     manifests:
       - k8s/api.yaml
       - k8s/rabbitmq.yaml
+      - k8s/redis.yaml
       - k8s/postgres.yaml
       - k8s/dispatcher.yaml
       - k8s/worker.yaml

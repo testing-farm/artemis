@@ -1,0 +1,39 @@
+---
+#
+# Redis deployment
+#
+# For local development only!
+#
+apiVersion: v1
+kind: Service
+metadata:
+  name: artemis-redis
+  labels:
+    app: artemis
+    service: artemis-redis
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: artemis-redis
+  selector:
+    service: artemis-redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artemis-redis
+spec:
+  selector:
+    matchLabels:
+      service: artemis-redis
+  template:
+    metadata:
+      labels:
+        service: artemis-redis
+    spec:
+      containers:
+        - name: redis
+          image: quay.io/testing-farm/redis:alpine
+          ports:
+            - containerPort: 6379

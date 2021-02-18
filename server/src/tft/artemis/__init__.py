@@ -22,6 +22,7 @@ import jinja2.defaults
 import jinja2_ansible_filters.core_filters
 import periodiq
 import pkg_resources
+import redis
 import ruamel.yaml
 import ruamel.yaml.compat
 import sqlalchemy.orm.session
@@ -847,6 +848,16 @@ KNOB_BROKER_URL: Knob[str] = Knob(
     default='amqp://guest:guest@127.0.0.1:5672'
 )
 
+#: Cache URL.
+KNOB_CACHE_URL: Knob[str] = Knob(
+    'cache.url',
+    has_db=False,
+    envvar='ARTEMIS_CACHE_URL',
+    envvar_cast=str,
+    default='redis://127.0.0.1:6379'
+)
+
+
 #: An interval, in seconds, after which a broker client should ping the server over the established connection to
 #: keep both parties aware the connection should be kept alive.
 KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
@@ -979,6 +990,13 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
     dramatiq.set_broker(broker)
 
     return broker
+
+
+def get_cache(logger: gluetool.log.ContextAdapter) -> redis.Redis:
+    return cast(
+        Callable[[str], redis.Redis],
+        redis.Redis.from_url
+    )(KNOB_CACHE_URL.value)
 
 
 def get_db(logger: gluetool.log.ContextAdapter, application_name: Optional[str] = None) -> artemis_db.DB:
