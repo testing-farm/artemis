@@ -6,37 +6,8 @@ import sqlalchemy.orm.session
 from . import get_db, get_logger
 from .db import GuestRequest, SnapshotRequest
 from .guest import GuestState
-from .tasks import _update_guest_state, _update_snapshot_state, dispatch_task, get_guest_logger, get_snapshot_logger, \
-    release_guest_request, release_snapshot_request, restore_snapshot_request, route_guest_request, \
-    route_snapshot_request
-
-
-def _dispatch_guest_request(
-    root_logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    guest: GuestRequest
-) -> None:
-    logger = get_guest_logger('dispatch-acquire', root_logger, guest.guestname)
-
-    logger.begin()
-
-    # Release the guest to the next stage. If this succeeds, dispatcher will no longer have any power
-    # over the guest, and completion of the request would be taken over by a set of tasks.
-    if not _update_guest_state(
-        logger,
-        session,
-        guest.guestname,
-        GuestState.PENDING,
-        GuestState.ROUTING
-    ):
-        # Somebody already did our job, the guest request is not in PENDING state anymore.
-        logger.finished()
-        return
-
-    # Kick of the task chain for this request.
-    dispatch_task(logger, route_guest_request, guest.guestname)
-
-    logger.finished()
+from .tasks import _update_snapshot_state, dispatch_task, get_guest_logger, get_snapshot_logger, \
+    release_guest_request, release_snapshot_request, restore_snapshot_request, route_snapshot_request
 
 
 def _release_guest_request(
@@ -124,14 +95,6 @@ def main() -> None:
 
         # For each pending guest request, start their processing by submitting the first, routing task.
         with db.get_session() as session:
-            guest_requests = session \
-                .query(GuestRequest) \
-                .filter(GuestRequest.state == GuestState.PENDING.value) \
-                .all()
-
-            for guest in guest_requests:
-                _dispatch_guest_request(root_logger, session, guest)
-
             guest_requests = session \
                 .query(GuestRequest) \
                 .filter(GuestRequest.state == GuestState.CONDEMNED.value) \

@@ -25,7 +25,7 @@ from molten.openapi.handlers import OpenAPIUIHandler
 from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 
-from .. import __VERSION__, Knob
+from .. import __VERSION__, FailureDetailsType, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, log_guest_event, metrics, safe_db_change
 from ..guest import GuestState
@@ -163,7 +163,12 @@ def perform_safe_db_change(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     query: Any,
-    conflict_error: Union[Type[errors.ConflictError], Type[errors.NoSuchEntityError]] = errors.ConflictError
+    conflict_error: Union[
+        Type[errors.ConflictError],
+        Type[errors.NoSuchEntityError],
+        Type[errors.InternalServerError]
+    ] = errors.ConflictError,
+    failure_details: Optional[FailureDetailsType] = None
 ) -> None:
     """
     Helper for handling :py:func:`safe_db_change` in the same manner. Performs the query and tests the result:
@@ -176,10 +181,14 @@ def perform_safe_db_change(
     r_change = safe_db_change(logger, session, query)
 
     if r_change.is_error:
-        raise errors.InternalServerError(logger=logger, caused_by=r_change.unwrap_error())
+        raise errors.InternalServerError(
+            logger=logger,
+            caused_by=r_change.unwrap_error(),
+            failure_details=failure_details
+        )
 
     if not r_change.unwrap():
-        raise conflict_error(logger=logger)
+        raise conflict_error(logger=logger, failure_details=failure_details)
 
 
 @molten.schema
@@ -351,15 +360,21 @@ class GuestRequestManager:
             ]
 
     def create(self, guest_request: GuestRequest, ownername: str, logger: gluetool.log.ContextAdapter) -> GuestResponse:
-        from ..tasks import get_guest_logger
+        from ..tasks import dispatch_task, get_guest_logger, route_guest_request
 
         guestname = str(uuid.uuid4())
+
+        failure_details = {
+            'guestname': guestname
+        }
 
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
         with self.db.get_session() as session:
-            session.add(
-                artemis_db.GuestRequest(
+            perform_safe_db_change(
+                guest_logger,
+                session,
+                sqlalchemy.insert(artemis_db.GuestRequest.__table__).values(
                     guestname=guestname,
                     environment=json.dumps(guest_request.environment.serialize_to_json()),
                     ownername=DEFAULT_GUEST_REQUEST_OWNER,
@@ -370,28 +385,71 @@ class GuestRequestManager:
                     poolname=None,
                     pool_data=json.dumps({}),
                     user_data=json.dumps(guest_request.user_data),
-                    state=GuestState.PENDING.value,
+                    state=GuestState.ROUTING.value,
                     post_install_script=guest_request.post_install_script,
-                )
+                ),
+                conflict_error=errors.InternalServerError,
+                failure_details=failure_details
             )
 
-            # update metrics counter for total guest requests
-            metrics.ProvisioningMetrics.inc_requested()
-
-        gr = self.get_by_guestname(guestname)
-
-        assert gr is not None
-
-        # add guest event
-        with self.db.get_session() as session:
             log_guest_event(
                 guest_logger,
                 session,
-                gr.guestname,
+                guestname,
                 'created',
                 **{
                     'user_data': guest_request.user_data
                 }
+            )
+
+            r_dispatch = dispatch_task(guest_logger, route_guest_request, guestname)
+
+            if r_dispatch.is_error:
+                # Now we're in a pickle. We successfully created a new guest request, but we failed to start
+                # the provisioning chain of tasks. We can't retry too much, because we need to send a response
+                # to client Soon (TM), and we can't leave the guest request in the database, because we won't
+                # provision it. We could try to remove it, but what if we fail to do so? We risk we'd be stuck
+                # with an orphaned guest request.
+                #
+                # Transactions probably would help - we could prepare the addition, but not commit the change,
+                # try to dispatch and only commit when we succeed. But there's a race condition: what if the
+                # freshly dispatched task is executed before our commit and finds no guest record?
+                #
+                # At this moment, we try to do the following: at least handle the dispatch failure, then try to
+                # remove the record from database - and report a internal error in any case.
+
+                r_dispatch.unwrap_error().handle(guest_logger)
+
+                perform_safe_db_change(
+                    guest_logger,
+                    session,
+                    sqlalchemy.delete(artemis_db.GuestRequest.__table__).where(
+                        artemis_db.GuestRequest.guestname == guestname
+                    ),
+                    conflict_error=errors.InternalServerError,
+                    failure_details=failure_details
+                )
+
+                # We successfully removed the request, but return the internal error anyway because of the
+                # failed dispatch.
+                raise errors.InternalServerError(
+                    logger=guest_logger,
+                    caused_by=r_dispatch.unwrap_error(),
+                    failure_details=failure_details
+                )
+
+            # Everything went well, update our accounting.
+            metrics.ProvisioningMetrics.inc_requested()
+
+        gr = self.get_by_guestname(guestname)
+
+        if gr is None:
+            # Now isn't this just funny... We just created the record, how could it be missing? There's probably
+            # no point in trying to clean up what we started - if the guest is missing, right after we created it,
+            # then things went south. At least it would get logged.
+            raise errors.InternalServerError(
+                logger=guest_logger,
+                failure_details=failure_details
             )
 
         return gr

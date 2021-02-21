@@ -1047,8 +1047,8 @@ def safe_db_change(
     expected_records: int = 1
 ) -> Result[bool, Failure]:
     """
-    Execute a given SQL query, ``UPDATE`` or ``DELETE``, followed by an explicit commit. Verify the expected number
-    of records has been changed.
+    Execute a given SQL query, ``INSERT``, ``UPDATE`` or ``DELETE``, followed by an explicit commit. Verify
+    the expected number of records has been changed (or created).
 
     :returns: a valid boolean result if queries were executed successfully: ``True`` if changes were made, and
         the number of changed records matched the expectation, ``False`` otherwise. If the queries - including the
