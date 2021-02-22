@@ -1,5 +1,4 @@
 import json
-import threading
 
 from gluetool.result import Error, Ok
 from mock import MagicMock
@@ -33,7 +32,7 @@ def fixture_mock_pool(monkeypatch):
     return mock_pool, mock_get_pool
 
 
-def test_release_pool_resources(logger, db, session, caplog, monkeypatch, mock_pool):
+def test_release_pool_resources(context, caplog, monkeypatch, mock_pool):
     """
     Test the success path.
     """
@@ -43,10 +42,6 @@ def test_release_pool_resources(logger, db, session, caplog, monkeypatch, mock_p
     mock_resource_ids = {'instance_id': 79}
 
     r = do_release_pool_resources(
-        logger,
-        db,
-        session,
-        threading.Event(),
         'dummy-pool',
         json.dumps(mock_resource_ids),
         None
@@ -55,10 +50,10 @@ def test_release_pool_resources(logger, db, session, caplog, monkeypatch, mock_p
     assert r.is_ok
     assert r is tft.artemis.tasks.SUCCESS
 
-    pool.release_pool_resources.assert_called_once_with(logger, mock_resource_ids)
+    pool.release_pool_resources.assert_called_once_with(tft.artemis.LOGGER.get(), mock_resource_ids)
 
 
-def test_release_pool_resources_broken_json(logger, db, session, caplog, monkeypatch, mock_pool):
+def test_release_pool_resources_broken_json(context, caplog, monkeypatch, mock_pool):
     """
     Test the broken, unserializable resource IDs are handled.
     """
@@ -66,10 +61,6 @@ def test_release_pool_resources_broken_json(logger, db, session, caplog, monkeyp
     pool, _ = mock_pool
 
     r = do_release_pool_resources(
-        logger,
-        db,
-        session,
-        threading.Event(),
         'dummy-pool',
         '{',
         None
@@ -89,7 +80,7 @@ def test_release_pool_resources_broken_json(logger, db, session, caplog, monkeyp
     assert_failure_log(caplog, 'failed to unserialize resource IDs', exception_label='JSONDecodeError:')
 
 
-def test_release_pool_resources_broken_pool(logger, db, session, caplog, monkeypatch, mock_pool):
+def test_release_pool_resources_broken_pool(context, caplog, monkeypatch, mock_pool):
     """
     Test the failure of fetching pool instance is handled.
     """
@@ -101,10 +92,6 @@ def test_release_pool_resources_broken_pool(logger, db, session, caplog, monkeyp
     mock_resource_ids = {'instance_id': 79}
 
     r = do_release_pool_resources(
-        logger,
-        db,
-        session,
-        threading.Event(),
         'dummy-pool',
         json.dumps(mock_resource_ids),
         None
@@ -123,7 +110,7 @@ def test_release_pool_resources_broken_pool(logger, db, session, caplog, monkeyp
     assert_failure_log(caplog, 'pool sanity failed')
 
 
-def test_release_pool_resources_failed(logger, db, session, caplog, monkeypatch, mock_pool):
+def test_release_pool_resources_failed(context, caplog, monkeypatch, mock_pool):
     """
     Test the pool failure is handled.
     """
@@ -135,10 +122,6 @@ def test_release_pool_resources_failed(logger, db, session, caplog, monkeypatch,
     mock_resource_ids = {'instance_id': 79}
 
     r = do_release_pool_resources(
-        logger,
-        db,
-        session,
-        threading.Event(),
         'dummy-pool',
         json.dumps(mock_resource_ids),
         None
@@ -152,6 +135,6 @@ def test_release_pool_resources_failed(logger, db, session, caplog, monkeypatch,
     assert failure.message == 'injected pool failure'
     assert failure.exception is None
 
-    pool.release_pool_resources.assert_called_once_with(logger, mock_resource_ids)
+    pool.release_pool_resources.assert_called_once_with(tft.artemis.LOGGER.get(), mock_resource_ids)
 
     assert_failure_log(caplog, 'failed to release pool resources')

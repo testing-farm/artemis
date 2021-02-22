@@ -1,4 +1,5 @@
 import os
+import threading
 
 import gluetool.log
 import gluetool.utils
@@ -111,3 +112,20 @@ def fixture_schema_actual(request, logger, db):
     alembic_config.attributes['connectable'] = db.engine
 
     alembic.command.upgrade(alembic_config, 'head')
+
+
+@pytest.fixture
+def cancel():
+    return threading.Event()
+
+
+@pytest.fixture
+def context(logger, db, session, cancel):
+    with tft.artemis.context(
+        logger=logger,
+        db=db,
+        session=session
+    ):
+        tft.artemis.tasks.CANCEL.set(cancel)
+
+        yield

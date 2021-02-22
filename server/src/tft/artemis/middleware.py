@@ -49,10 +49,10 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         if exception is None:
             return
 
-        from . import get_logger
+        from . import LOGGER, context
         from .tasks import get_root_db
 
-        logger = get_logger()
+        logger = LOGGER.get()
 
         actor = broker.get_actor(message.actor_name)
         retries = message.options.setdefault("retries", 0)
@@ -113,15 +113,13 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
                 db = get_root_db(tail_logger)
 
                 with db.get_session() as session:
-                    if handle_provisioning_chain_tail(
-                        tail_logger,
-                        db,
-                        session,
-                        guestname,
-                        actor
-                    ):
-                        tail_logger.info('successfuly handled the provisioning tail')
-                        return
+                    with context(logger=tail_logger, db=db, session=session):
+                        if handle_provisioning_chain_tail(
+                            guestname,
+                            actor
+                        ):
+                            tail_logger.info('successfuly handled the provisioning tail')
+                            return
 
                 tail_logger.error('failed to handle the provisioning tail')
 

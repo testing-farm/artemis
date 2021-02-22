@@ -17,6 +17,7 @@ import dataclasses
 import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
 
+import gluetool.log
 import prometheus_client.utils
 import redis
 import sqlalchemy
@@ -66,11 +67,7 @@ class MetricsBase:
 
         .. note::
 
-<<<<<<< HEAD
            **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
-=======
-           May use the context variables defined in :py:mod:`tft.artemis`.
->>>>>>> Adds context variables for the most common objects we pass around
 
         :raises NotImplementedError: when not implemented by a child class.
         """

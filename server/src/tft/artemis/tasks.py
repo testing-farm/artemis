@@ -1,13 +1,16 @@
 import concurrent.futures
+import contextlib
+import contextvars
 import json
 import os
 import random
 import threading
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union, cast
 
 import dramatiq
 import gluetool.log
 import periodiq
+import redis
 import sqlalchemy
 import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
@@ -15,8 +18,9 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
-    safe_call, safe_db_change
+from . import LOGGER, SESSION, Failure, Knob
+from . import context as _context
+from . import get_broker, get_db, log_error_guest_event, log_guest_event, metrics, safe_call, safe_db_change
 from .db import DB, GuestEvent, GuestRequest, Pool, Query, SnapshotRequest, SSHKey
 from .drivers import PoolData, PoolDriver, PoolLogger
 from .drivers import aws as aws_driver
@@ -78,9 +82,30 @@ from .script import hook_engine
 # - allow retries modification and tweaking
 # - "lazy actor" wrapper to avoid the necessity of initializing dramatiq at the import time
 
+CANCEL: contextvars.ContextVar[threading.Event] = contextvars.ContextVar('CANCEL')
 
-# Initialize our top-level objects, database and logger, shared by all threads and in *this* worker.
-_ROOT_LOGGER = get_logger()
+
+@contextlib.contextmanager
+def context(
+    logger: Optional[gluetool.log.ContextAdapter] = None,
+    db: Optional[DB] = None,
+    session: Optional[sqlalchemy.orm.session.Session] = None,
+    cache: Optional[redis.Redis] = None,
+    cancel: Optional[threading.Event] = None
+) -> Generator[None, None, None]:
+    tokens: List[Tuple[contextvars.ContextVar[Any], contextvars.Token[Any]]] = []
+
+    with _context(logger=logger, db=db, session=session, cache=cache):
+        try:
+            if cancel is not None:
+                tokens.append((CANCEL, CANCEL.set(cancel)))
+
+            yield
+
+        finally:
+            for var, token in tokens:
+                var.reset(token)
+
 
 _ROOT_DB: Optional[DB] = None
 
@@ -88,7 +113,7 @@ _ROOT_DB: Optional[DB] = None
 def get_root_db(logger: Optional[gluetool.log.ContextAdapter] = None) -> DB:
     global _ROOT_DB
 
-    logger = logger or _ROOT_LOGGER
+    logger = logger or LOGGER.get()
 
     if _ROOT_DB is None:
         _ROOT_DB = get_db(logger, application_name='artemis-worker')
@@ -198,10 +223,6 @@ def FAIL(result: Result[Any, Failure]) -> DoerReturnType:
 class DoerType(Protocol):
     def __call__(
         self,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         *args: Any,
         **kwargs: Any
     ) -> DoerReturnType:
@@ -281,8 +302,6 @@ class TaskLogger(gluetool.log.ContextAdapter):
 
 
 def create_event_handlers(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
     guestname: Optional[str] = None,
     task: Optional[str] = None,
     **default_details: Any
@@ -297,6 +316,9 @@ def create_event_handlers(
     Third returned value is a "spice" mapping - all key: value entries added to this mapping will be added
     as extra details to all logs and failures.
     """
+
+    logger = LOGGER.get()
+    session = SESSION.get()
 
     spice_details: Dict[str, Any] = {**default_details}
 
@@ -367,10 +389,6 @@ def actor_kwargs(actor_name: str) -> Dict[str, Any]:
 
 
 def run_doer(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     fn: DoerType,
     *args: Any,
     **kwargs: Any
@@ -386,6 +404,8 @@ def run_doer(
 
     executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
     doer_future: Optional[concurrent.futures.Future[DoerReturnType]] = None
+
+    logger = LOGGER.get()
 
     def _wait(message: str) -> None:
         """
@@ -428,7 +448,16 @@ def run_doer(
 
         logger.debug('submitting task doer {}'.format(fn))
 
-        doer_future = executor.submit(fn, logger, db, session, cancel, *args, **kwargs)
+        # We create a copy of our current context and inject it to the worker thread to make it available
+        # to doer code.
+        doer_context = contextvars.copy_context()
+
+        doer_future = executor.submit(
+            doer_context.run,
+            fn,
+            *args,
+            **kwargs
+        )
 
         _wait('doer finished in regular mode')
 
@@ -444,7 +473,7 @@ def run_doer(
 
         logger.debug('entering doer cancellation mode')
 
-        cancel.set()
+        CANCEL.get().set()
 
         logger.debug('waiting for doer to finish')
 
@@ -461,6 +490,7 @@ def run_doer(
 
 def task_core(
     doer: DoerType,
+    *,
     logger: TaskLogger,
     db: Optional[DB] = None,
     session: Optional[sqlalchemy.orm.session.Session] = None,
@@ -468,23 +498,28 @@ def task_core(
     doer_args: Optional[Tuple[Any, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None
 ) -> None:
-    logger.begin()
-
-    db = db or get_root_db()
-    cancel = cancel or threading.Event()
+    # This function is the entry point of all tasks, therefore it's responsible for setting as much context variables
+    # as needed. No need for any unrolls.
 
     doer_args = doer_args or tuple()
     doer_kwargs = doer_kwargs or dict()
 
     doer_result: DoerReturnType = Error(Failure('undefined doer result'))
 
+    logger.begin()
+
+    db = db or get_root_db()
+    cancel = cancel or threading.Event()
+
     try:
         if session is None:
             with db.get_session() as session:
-                doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
+                with context(logger=logger, db=db, cancel=cancel, session=session):
+                    doer_result = run_doer(doer, *doer_args, **doer_kwargs)
 
         else:
-            doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
+            with context(logger=logger, db=db, cancel=cancel, session=session):
+                doer_result = run_doer(doer, *doer_args, **doer_kwargs)
 
     except Exception as exc:
         stackprinter.show_current_exception()
@@ -735,8 +770,6 @@ def _update_guest_state(
     **details: Any
 ) -> Result[bool, Failure]:
     handle_success, handle_failure, _ = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         current_state=current_state.value,
         new_state=new_state.value,
@@ -810,8 +843,6 @@ def _update_snapshot_state(
     **details: Any
 ) -> Result[bool, Failure]:
     handle_success, handle_failure, _ = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         snapshotname=snapshotname,
         current_state=current_state.value,
@@ -1013,14 +1044,8 @@ class Workspace:
 
     def __init__(
         self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         handle_failure: FailureHandlerType
     ) -> None:
-        self.logger = logger
-        self.session = session
-        self.cancel = cancel
         self.handle_failure = handle_failure
 
         self.result: Optional[DoerReturnType] = None
@@ -1056,10 +1081,10 @@ class Workspace:
         self.guestname = guestname
 
         if state is None:
-            r = _get_guest_request(self.logger, self.session, guestname)
+            r = _get_guest_request(LOGGER.get(), SESSION.get(), guestname)
 
         else:
-            r = _get_guest_request_by_state(self.logger, self.session, guestname, state)
+            r = _get_guest_request_by_state(LOGGER.get(), SESSION.get(), guestname, state)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to load guest request')
@@ -1071,7 +1096,7 @@ class Workspace:
             self.result = SUCCESS
             return
 
-        if _cancel_task_if(self.logger, self.cancel):
+        if _cancel_task_if(LOGGER.get(), CANCEL.get()):
             self.result = RESCHEDULE
             return
 
@@ -1098,7 +1123,7 @@ class Workspace:
 
         self.snapshotname = snapshotname
 
-        r = _get_snapshot_request_by_state(self.logger, self.session, snapshotname, state)
+        r = _get_snapshot_request_by_state(LOGGER.get(), SESSION.get(), snapshotname, state)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to load snapshot request')
@@ -1110,7 +1135,7 @@ class Workspace:
             self.result = SUCCESS
             return
 
-        if _cancel_task_if(self.logger, self.cancel):
+        if _cancel_task_if(LOGGER.get(), CANCEL.get()):
             self.result = RESCHEDULE
             return
 
@@ -1136,8 +1161,8 @@ class Workspace:
         assert self.gr
 
         r = _get_ssh_key(
-            self.logger,
-            self.session,
+            LOGGER.get(),
+            SESSION.get(),
             self.gr.ownername,
             self.gr.ssh_keyname
         )
@@ -1146,7 +1171,7 @@ class Workspace:
             self.result = self.handle_failure(r, 'failed to get SSH key')
             return
 
-        if _cancel_task_if(self.logger, self.cancel):
+        if _cancel_task_if(LOGGER.get(), CANCEL.get()):
             self.result = RESCHEDULE
             return
 
@@ -1172,13 +1197,13 @@ class Workspace:
         assert self.gr
         assert self.gr.poolname is not None
 
-        r = _get_pool(self.logger, self.session, self.gr.poolname)
+        r = _get_pool(LOGGER.get(), SESSION.get(), self.gr.poolname)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'pool sanity failed')
             return
 
-        if _cancel_task_if(self.logger, self.cancel):
+        if _cancel_task_if(LOGGER.get(), CANCEL.get()):
             self.result = RESCHEDULE
             return
 
@@ -1204,13 +1229,13 @@ class Workspace:
         assert self.sr
         assert self.sr.poolname is not None
 
-        r = _get_pool(self.logger, self.session, self.sr.poolname)
+        r = _get_pool(LOGGER.get(), SESSION.get(), self.sr.poolname)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'pool sanity failed')
             return
 
-        if _cancel_task_if(self.logger, self.cancel):
+        if _cancel_task_if(LOGGER.get(), CANCEL.get()):
             self.result = RESCHEDULE
             return
 
@@ -1236,12 +1261,12 @@ class Workspace:
         assert self.guestname
 
         events = GuestEvent.fetch(
-            self.session,
+            SESSION.get(),
             eventname=eventname,
             guestname=self.guestname
         )
 
-        if _cancel_task_if(self.logger, self.cancel):
+        if _cancel_task_if(LOGGER.get(), CANCEL.get()):
             self.result = RESCHEDULE
             return
 
@@ -1262,8 +1287,8 @@ class Workspace:
         assert self.guestname
 
         r = _update_guest_state(
-            self.logger,
-            self.session,
+            LOGGER.get(),
+            SESSION.get(),
             self.guestname,
             *args,
             **kwargs
@@ -1293,8 +1318,8 @@ class Workspace:
         assert self.guestname
 
         r = _update_snapshot_state(
-            self.logger,
-            self.session,
+            LOGGER.get(),
+            SESSION.get(),
             self.snapshotname,
             self.guestname,
             *args,
@@ -1325,8 +1350,8 @@ class Workspace:
         assert self.guestname
 
         r = _update_guest_state(
-            self.logger,
-            self.session,
+            LOGGER.get(),
+            SESSION.get(),
             self.guestname,
             *args,
             **kwargs
@@ -1357,8 +1382,8 @@ class Workspace:
         assert self.guestname
 
         r = _update_snapshot_state(
-            self.logger,
-            self.session,
+            LOGGER.get(),
+            SESSION.get(),
             self.snapshotname,
             self.guestname,
             *args,
@@ -1377,8 +1402,8 @@ class Workspace:
         assert self.guestname
 
         r = _update_guest_state(
-            self.logger,
-            self.session,
+            LOGGER.get(),
+            SESSION.get(),
             self.guestname,
             *args,
             **kwargs
@@ -1398,8 +1423,8 @@ class Workspace:
         assert self.guestname
 
         r = _update_snapshot_state(
-            self.logger,
-            self.session,
+            LOGGER.get(),
+            SESSION.get(),
             self.snapshotname,
             self.guestname,
             *args,
@@ -1419,7 +1444,7 @@ class Workspace:
         if self.result:
             return
 
-        r = dispatch_task(self.logger, task, *args, delay=delay)
+        r = dispatch_task(LOGGER.get(), task, *args, delay=delay)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to dispatch update task')
@@ -1435,7 +1460,7 @@ class Workspace:
         if self.result:
             return
 
-        r = dispatch_group(self.logger, tasks, *args, on_complete=on_complete, delay=delay)
+        r = dispatch_group(LOGGER.get(), tasks, *args, on_complete=on_complete, delay=delay)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to dispatch group')
@@ -1453,7 +1478,7 @@ class Workspace:
         try:
             r = engine.run_hook(
                 hook_name,
-                logger=self.logger,
+                logger=LOGGER.get(),
                 **kwargs
             )
 
@@ -1468,8 +1493,6 @@ class Workspace:
 
 
 def _handle_successful_failover(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
     workspace: Workspace
 ) -> None:
     # load events to workspace, sorted by date
@@ -1503,26 +1526,20 @@ def _handle_successful_failover(
     poolname = workspace.gr.poolname
 
     if previous_poolname and previous_poolname != poolname:
-        logger.warning('successful failover - from pool {} to {}'.format(previous_poolname, poolname))
+        LOGGER.get().warning('successful failover - from pool {} to {}'.format(previous_poolname, poolname))
         metrics.ProvisioningMetrics.inc_failover_success(
-            session=session,
+            session=SESSION.get(),
             from_pool=previous_poolname,
             to_pool=poolname
         )
 
 
 def do_release_pool_resources(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     poolname: str,
     serialized_resource_ids: str,
     guestname: Optional[str]
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='release-pool-resources'
     )
@@ -1541,14 +1558,14 @@ def do_release_pool_resources(
 
         return handle_failure(Error(failure), 'failed to unserialize resource IDs')
 
-    r_pool = _get_pool(logger, session, poolname)
+    r_pool = _get_pool(LOGGER.get(), SESSION.get(), poolname)
 
     if r_pool.is_error:
         return handle_failure(r_pool, 'pool sanity failed')
 
     pool = r_pool.unwrap()
 
-    r_release = pool.release_pool_resources(logger, resource_ids)
+    r_release = pool.release_pool_resources(LOGGER.get(), resource_ids)
 
     if r_release.is_error:
         return handle_failure(r_release, 'failed to release pool resources')
@@ -1559,10 +1576,10 @@ def do_release_pool_resources(
 @dramatiq.actor(**actor_kwargs('RELEASE_POOL_RESOURCES'))  # type: ignore  # Untyped decorator
 def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional[str]) -> None:
     if guestname:
-        logger = get_guest_logger('release-pool-resources', _ROOT_LOGGER, guestname)
+        logger = get_guest_logger('release-pool-resources', LOGGER.get(), guestname)
 
     else:
-        logger = TaskLogger(_ROOT_LOGGER, 'release-pool-resources')
+        logger = TaskLogger(LOGGER.get(), 'release-pool-resources')
 
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_pool_resources,
@@ -1585,24 +1602,18 @@ def is_provisioning_tail_task(actor: Actor) -> bool:
 
 
 def do_handle_provisioning_chain_tail(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     current_state: GuestState,
     new_state: GuestState = GuestState.ROUTING
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='provisioning-tail'
     )
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_guest_request(guestname, state=current_state)
 
     if workspace.result:
@@ -1620,7 +1631,7 @@ def do_handle_provisioning_chain_tail(
 
         assert workspace.pool
 
-        r_release = workspace.pool.release_guest(logger, workspace.gr)
+        r_release = workspace.pool.release_guest(LOGGER.get(), workspace.gr)
 
         if r_release.is_error:
             handle_failure(r_release, 'failed to release guest resources')
@@ -1643,27 +1654,18 @@ def do_handle_provisioning_chain_tail(
     if workspace.result:
         return workspace.result
 
-    logger.info('reverted to {}'.format(new_state.value))
+    LOGGER.get().info('reverted to {}'.format(new_state.value))
 
     return handle_success('finished-task')
 
 
 def handle_provisioning_chain_tail(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
     guestname: str,
     actor: Actor
 ) -> bool:
-    cancel = threading.Event()
-
     # for acquire_guest, move from PROVISIONING back to ROUTING
     if actor.actor_name == acquire_guest_request.actor_name:
         r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
             guestname,
             GuestState.PROVISIONING,
             GuestState.ROUTING
@@ -1672,10 +1674,6 @@ def handle_provisioning_chain_tail(
     # for do_update_guest, move from PROMISED back to ROUTING
     elif actor.actor_name == update_guest_request.actor_name:
         r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
             guestname,
             GuestState.PROMISED,
             GuestState.ROUTING
@@ -1684,10 +1682,6 @@ def handle_provisioning_chain_tail(
     # for route_guest_request, stay in ROUTING
     elif actor.actor_name == route_guest_request.actor_name:
         r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
             guestname,
             GuestState.ROUTING,
             GuestState.ERROR
@@ -1696,10 +1690,6 @@ def handle_provisioning_chain_tail(
     # for post-acquire prepare chain final task, revert to ROUTING
     elif actor.actor_name == guest_request_prepare_finalize.actor_name:
         r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
             guestname,
             GuestState.PREPARING,
             GuestState.ROUTING
@@ -1708,10 +1698,6 @@ def handle_provisioning_chain_tail(
     # for post-acquire verify chain tasks, revert to ROUTING
     elif actor.actor_name == prepare_verify_ssh.actor_name:
         r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
             guestname,
             GuestState.PREPARING,
             GuestState.ROUTING
@@ -1722,7 +1708,7 @@ def handle_provisioning_chain_tail(
             'actor not covered by provisioning chain tail',
             guestname=guestname,
             actor_name=actor.actor_name
-        ).handle(logger)
+        ).handle(LOGGER.get())
 
         return False
 
@@ -1737,7 +1723,7 @@ def handle_provisioning_chain_tail(
             'unexpected result of provisioning chain tail',
             guestname=guestname,
             actor_name=actor.actor_name
-        ).handle(logger)
+        ).handle(LOGGER.get())
 
         return False
 
@@ -1746,25 +1732,19 @@ def handle_provisioning_chain_tail(
 
 
 def do_prepare_verify_ssh(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
     # Avoid circular imports
     from .drivers import create_tempfile, run_cli_tool
 
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='prepare-verify-ssh'
     )
 
     handle_success('enter-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
 
     if workspace.result:
@@ -1773,14 +1753,14 @@ def do_prepare_verify_ssh(
     assert workspace.gr
     assert workspace.gr.address
 
-    r_master_key = _get_ssh_key(logger, session, 'artemis', 'master-key')
+    r_master_key = _get_ssh_key(LOGGER.get(), SESSION.get(), 'artemis', 'master-key')
 
     if r_master_key.is_error:
         return handle_failure(r_master_key, 'failed to fetch master key')
 
     with create_tempfile(file_contents=r_master_key.unwrap().private) as private_key_filepath:
         r_ssh = run_cli_tool(
-            logger,
+            LOGGER.get(),
             [
                 'ssh',
                 '-i', private_key_filepath,
@@ -1812,28 +1792,22 @@ def do_prepare_verify_ssh(
 def prepare_verify_ssh(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_prepare_verify_ssh,
-        logger=get_guest_logger('prepare-verify-ssh', _ROOT_LOGGER, guestname),
+        logger=get_guest_logger('prepare-verify-ssh', LOGGER.get(), guestname),
         doer_args=(guestname,)
     )
 
 
 def do_guest_request_prepare_finalize(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='prepare-finalize'
     )
 
     handle_success('enter-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
 
     workspace.update_guest_state(
@@ -1844,16 +1818,16 @@ def do_guest_request_prepare_finalize(
     if workspace.result:
         return workspace.result
 
-    logger.info('successfully provisioned')
+    LOGGER.get().info('successfully provisioned')
 
     # check if this was a failover and mark it in metrics
-    _handle_successful_failover(logger, session, workspace)
+    _handle_successful_failover(workspace)
 
     # update metrics counter for successfully provisioned guest requests
     assert workspace.gr
     assert workspace.gr.poolname is not None
 
-    metrics.ProvisioningMetrics.inc_success(session, workspace.gr.poolname)
+    metrics.ProvisioningMetrics.inc_success(SESSION.get(), workspace.gr.poolname)
 
     return handle_success('finished-task')
 
@@ -1862,7 +1836,7 @@ def do_guest_request_prepare_finalize(
 def guest_request_prepare_finalize(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_guest_request_prepare_finalize,
-        logger=get_guest_logger('guest-request-prepare-finalize', _ROOT_LOGGER, guestname),
+        logger=get_guest_logger('guest-request-prepare-finalize', LOGGER.get(), guestname),
         doer_args=(guestname,)
     )
 
@@ -1886,22 +1860,16 @@ def dispatch_preparing(
 
 
 def do_release_guest_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='release-guest-request'
     )
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.CONDEMNED)
 
     if workspace.result:
@@ -1920,7 +1888,7 @@ def do_release_guest_request(
 
         assert workspace.pool
 
-        r_release = workspace.pool.release_guest(logger, workspace.gr)
+        r_release = workspace.pool.release_guest(LOGGER.get(), workspace.gr)
 
         if r_release.is_error:
             return handle_failure(r_release, 'failed to release guest')
@@ -1930,7 +1898,7 @@ def do_release_guest_request(
         .where(GuestRequest.guestname == guestname) \
         .where(GuestRequest.state == GuestState.CONDEMNED.value)
 
-    r_delete = safe_db_change(logger, session, query)
+    r_delete = safe_db_change(LOGGER.get(), SESSION.get(), query)
 
     if r_delete.is_error:
         return handle_failure(r_delete, 'failed to remove guest request record')
@@ -1947,28 +1915,22 @@ def do_release_guest_request(
 def release_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_guest_request,
-        logger=get_guest_logger('release-guest-request', _ROOT_LOGGER, guestname),
+        logger=get_guest_logger('release-guest-request', LOGGER.get(), guestname),
         doer_args=(guestname,)
     )
 
 
 def do_update_guest_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='update-guest-request'
     )
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PROMISED)
     workspace.load_ssh_key()
     workspace.load_gr_pool()
@@ -1987,7 +1949,7 @@ def do_update_guest_request(
         assert workspace.gr
         assert workspace.pool
 
-        r = workspace.pool.release_guest(logger, workspace.gr)
+        r = workspace.pool.release_guest(LOGGER.get(), workspace.gr)
 
         if r.is_ok:
             return
@@ -1997,8 +1959,8 @@ def do_update_guest_request(
     environment = Environment.unserialize_from_json(json.loads(workspace.gr.environment))
 
     r_update = workspace.pool.update_guest(
-        logger,
-        session,
+        LOGGER.get(),
+        SESSION.get(),
         workspace.gr,
         environment,
         workspace.ssh_key
@@ -2026,7 +1988,7 @@ def do_update_guest_request(
 
             return workspace.result
 
-        logger.info('scheduled update')
+        LOGGER.get().info('scheduled update')
 
         return handle_success('finished-task')
 
@@ -2047,9 +2009,9 @@ def do_update_guest_request(
 
         return workspace.result
 
-    logger.info('successfully acquired')
+    LOGGER.get().info('successfully acquired')
 
-    dispatch_preparing(logger, workspace)
+    dispatch_preparing(LOGGER.get(), workspace)
 
     if workspace.result:
         _undo_guest_update()
@@ -2063,22 +2025,16 @@ def do_update_guest_request(
 def update_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_update_guest_request,
-        logger=get_guest_logger('update-guest-request', _ROOT_LOGGER, guestname),
+        logger=get_guest_logger('update-guest-request', LOGGER.get(), guestname),
         doer_args=(guestname,)
     )
 
 
 def do_acquire_guest_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     poolname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='acquire-guest-request',
         poolname=poolname
@@ -2086,7 +2042,7 @@ def do_acquire_guest_request(
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PROVISIONING)
     workspace.load_ssh_key()
     workspace.load_gr_pool()
@@ -2101,12 +2057,12 @@ def do_acquire_guest_request(
     environment = Environment.unserialize_from_json(json.loads(workspace.gr.environment))
 
     result = workspace.pool.acquire_guest(
-        logger,
-        session,
+        LOGGER.get(),
+        SESSION.get(),
         workspace.gr,
         environment,
         workspace.ssh_key,
-        cancelled=cancel
+        cancelled=CANCEL.get()
     )
 
     if result.is_error:
@@ -2118,7 +2074,7 @@ def do_acquire_guest_request(
         assert workspace.gr
         assert workspace.pool
 
-        r = workspace.pool.release_guest(logger, workspace.gr)
+        r = workspace.pool.release_guest(LOGGER.get(), workspace.gr)
 
         if r.is_ok:
             return
@@ -2147,7 +2103,7 @@ def do_acquire_guest_request(
 
             return workspace.result
 
-        logger.info('scheduled update')
+        LOGGER.get().info('scheduled update')
 
         return handle_success('finished-task')
 
@@ -2170,9 +2126,9 @@ def do_acquire_guest_request(
 
         return workspace.result
 
-    logger.info('successfully acquired')
+    LOGGER.get().info('successfully acquired')
 
-    dispatch_preparing(logger, workspace)
+    dispatch_preparing(LOGGER.get(), workspace)
 
     if workspace.result:
         _undo_guest_acquire()
@@ -2186,28 +2142,22 @@ def do_acquire_guest_request(
 def acquire_guest_request(guestname: str, poolname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_acquire_guest_request,
-        logger=get_guest_logger('acquire-guest-request', _ROOT_LOGGER, guestname),
+        logger=get_guest_logger('acquire-guest-request', LOGGER.get(), guestname),
         doer_args=(guestname, poolname)
     )
 
 
 def do_route_guest_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='route-guest-request'
     )
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
 
     # First, pick up our assigned guest request. Make sure it hasn't been
     # processed yet.
@@ -2224,15 +2174,15 @@ def do_route_guest_request(
     # than asking for permission, let's continue but be prepared to clean up if someone else did the work instead
     # of us.
 
-    logger.info('finding suitable provisioner')
+    LOGGER.get().info('finding suitable provisioner')
 
     ruling = cast(
         PolicyRuling,
         workspace.run_hook(
             'ROUTE',
-            session=session,
+            session=SESSION.get(),
             guest_request=workspace.gr,
-            pools=get_pools(logger, session)
+            pools=get_pools(LOGGER.get(), SESSION.get())
         )
     )
 
@@ -2264,7 +2214,7 @@ def do_route_guest_request(
     new_pool = pool.poolname
     current_pool = workspace.gr.poolname
 
-    if _cancel_task_if(logger, cancel):
+    if _cancel_task_if(LOGGER.get(), CANCEL.get()):
         return RESCHEDULE
 
     # Mark request as suitable for provisioning.
@@ -2293,12 +2243,12 @@ def do_route_guest_request(
 
         return workspace.result
 
-    logger.info('scheduled provisioning')
+    LOGGER.get().info('scheduled provisioning')
 
     # New pool was chosen - log failover
     if workspace.gr and current_pool and new_pool != current_pool:
-        logger.warning('failover - trying {} pool instead of {}'.format(new_pool, current_pool))
-        metrics.ProvisioningMetrics.inc_failover(session=session, from_pool=current_pool, to_pool=new_pool)
+        LOGGER.get().warning('failover - trying {} pool instead of {}'.format(new_pool, current_pool))
+        metrics.ProvisioningMetrics.inc_failover(session=SESSION.get(), from_pool=current_pool, to_pool=new_pool)
 
     return handle_success('finished-task')
 
@@ -2307,22 +2257,16 @@ def do_route_guest_request(
 def route_guest_request(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_route_guest_request,
-        logger=get_guest_logger('route-guest-request', _ROOT_LOGGER, guestname),
+        logger=get_guest_logger('route-guest-request', LOGGER.get(), guestname),
         doer_args=(guestname,)
     )
 
 
 def do_release_snapshot_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='release-snapshot',
         snapshotname=snapshotname
@@ -2330,7 +2274,7 @@ def do_release_snapshot_request(
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_guest_request(guestname)
     workspace.load_snapshot_request(snapshotname, GuestState.CONDEMNED)
     workspace.grab_snapshot_request(GuestState.CONDEMNED, GuestState.RELEASING)
@@ -2358,7 +2302,7 @@ def do_release_snapshot_request(
         .where(SnapshotRequest.snapshotname == snapshotname) \
         .where(SnapshotRequest.state == GuestState.RELEASING.value)
 
-    r_delete = safe_db_change(logger, session, query)
+    r_delete = safe_db_change(LOGGER.get(), SESSION.get(), query)
 
     if r_delete.is_ok:
         handle_success('snapshot-released')
@@ -2368,7 +2312,7 @@ def do_release_snapshot_request(
     failure = r_delete.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        logger.warning('not in RELEASING state anymore')
+        LOGGER.get().warning('not in RELEASING state anymore')
 
         return handle_success('finished-task')
 
@@ -2381,22 +2325,16 @@ def do_release_snapshot_request(
 def release_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_release_snapshot_request,
-        logger=get_snapshot_logger('release-snapshot', _ROOT_LOGGER, guestname, snapshotname),
+        logger=get_snapshot_logger('release-snapshot', LOGGER.get(), guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
 
 def do_create_snapshot_start_guest(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='create-snapshot-stop-guest',
         snapshotname=snapshotname
@@ -2404,7 +2342,7 @@ def do_create_snapshot_start_guest(
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.READY)
     workspace.load_guest_request(guestname, state=GuestState.STARTING)
 
@@ -2446,7 +2384,7 @@ def do_create_snapshot_start_guest(
     if workspace.result:
         return workspace.result
 
-    logger.info('successfully started')
+    LOGGER.get().info('successfully started')
 
     return handle_success('finished-task')
 
@@ -2455,22 +2393,16 @@ def do_create_snapshot_start_guest(
 def create_snapshot_start_guest(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot_start_guest,
-        logger=get_snapshot_logger('create-snapshot-start-guest', _ROOT_LOGGER, guestname, snapshotname),
+        logger=get_snapshot_logger('create-snapshot-start-guest', LOGGER.get(), guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
 
 def do_update_snapshot(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='update-snapshot',
         snapshotname=snapshotname
@@ -2478,7 +2410,7 @@ def do_update_snapshot(
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.PROMISED)
     workspace.load_guest_request(guestname, state=GuestState.STOPPED)
     workspace.load_sr_pool()
@@ -2526,7 +2458,7 @@ def do_update_snapshot(
 
             return workspace.result
 
-        logger.info('scheduled update')
+        LOGGER.get().info('scheduled update')
 
         return handle_success('finished-task')
 
@@ -2541,7 +2473,7 @@ def do_update_snapshot(
     if not workspace.sr.start_again:
         return handle_success('finished-task')
 
-    r_start = workspace.pool.start_guest(logger, workspace.gr)
+    r_start = workspace.pool.start_guest(LOGGER.get(), workspace.gr)
 
     if r_start.is_error:
         return handle_failure(r_start, 'failed to start guest')
@@ -2570,22 +2502,16 @@ def do_update_snapshot(
 def update_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_update_snapshot,
-        logger=get_snapshot_logger('update-snapshot', _ROOT_LOGGER, guestname, snapshotname),
+        logger=get_snapshot_logger('update-snapshot', LOGGER.get(), guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
 
 def do_create_snapshot_create(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='create-snapshot-create',
         snapshotname=snapshotname
@@ -2593,7 +2519,7 @@ def do_create_snapshot_create(
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
     workspace.load_guest_request(guestname, state=GuestState.STOPPED)
 
@@ -2643,7 +2569,7 @@ def do_create_snapshot_create(
 
             return workspace.result
 
-        logger.info('scheduled update')
+        LOGGER.get().info('scheduled update')
 
         return handle_success('finished-task')
 
@@ -2658,7 +2584,7 @@ def do_create_snapshot_create(
     if not workspace.sr.start_again:
         return handle_success('finished-task')
 
-    r_start = workspace.pool.start_guest(logger, workspace.gr)
+    r_start = workspace.pool.start_guest(LOGGER.get(), workspace.gr)
 
     if r_start.is_error:
         return handle_failure(r_start, 'failed to start guest')
@@ -2680,7 +2606,7 @@ def do_create_snapshot_create(
 
         return workspace.result
 
-    logger.info('successfully created')
+    LOGGER.get().info('successfully created')
 
     return handle_success('finished-task')
 
@@ -2689,22 +2615,16 @@ def do_create_snapshot_create(
 def create_snapshot_create(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot_create,
-        logger=get_snapshot_logger('create-snapshot-create', _ROOT_LOGGER, guestname, snapshotname),
+        logger=get_snapshot_logger('create-snapshot-create', LOGGER.get(), guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
 
 def do_create_snapshot_stop_guest(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='create-snapshot-stop-guest',
         snapshotname=snapshotname
@@ -2712,7 +2632,7 @@ def do_create_snapshot_stop_guest(
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
     workspace.load_guest_request(guestname, state=GuestState.STOPPING)
 
@@ -2744,7 +2664,7 @@ def do_create_snapshot_stop_guest(
         if workspace.result:
             return workspace.result
 
-        logger.info('scheduled create-snapshot-stop-guest')
+        LOGGER.get().info('scheduled create-snapshot-stop-guest')
 
         return handle_success('finished-task')
 
@@ -2761,7 +2681,7 @@ def do_create_snapshot_stop_guest(
     if workspace.result:
         return workspace.result
 
-    logger.info('scheduled create-snapshot-create-snapshot')
+    LOGGER.get().info('scheduled create-snapshot-create-snapshot')
 
     return handle_success('finished-task')
 
@@ -2770,22 +2690,16 @@ def do_create_snapshot_stop_guest(
 def create_snapshot_stop_guest(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot_stop_guest,
-        logger=get_snapshot_logger('create-snapshot-stop-guest', _ROOT_LOGGER, guestname, snapshotname),
+        logger=get_snapshot_logger('create-snapshot-stop-guest', LOGGER.get(), guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
 
 def do_create_snapshot(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='create-snapshot',
         snapshotname=snapshotname
@@ -2793,7 +2707,7 @@ def do_create_snapshot(
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
     workspace.load_guest_request(guestname, state=GuestState.READY)
 
@@ -2812,7 +2726,7 @@ def do_create_snapshot(
     assert workspace.pool
     assert workspace.ssh_key
 
-    r_stop = workspace.pool.stop_guest(logger, workspace.gr)
+    r_stop = workspace.pool.stop_guest(LOGGER.get(), workspace.gr)
 
     if r_stop.is_error:
         return handle_failure(r_stop, 'failed to stop guest')
@@ -2821,7 +2735,7 @@ def do_create_snapshot(
         assert workspace.pool
         assert workspace.gr
 
-        r = workspace.pool.start_guest(logger, workspace.gr)
+        r = workspace.pool.start_guest(LOGGER.get(), workspace.gr)
 
         if r.is_ok:
             return
@@ -2850,7 +2764,7 @@ def do_create_snapshot(
 
         return workspace.result
 
-    logger.info('scheduled create-snapshot-stop-guest')
+    LOGGER.get().info('scheduled create-snapshot-stop-guest')
 
     return handle_success('finished-task')
 
@@ -2859,22 +2773,16 @@ def do_create_snapshot(
 def create_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_create_snapshot,
-        logger=get_snapshot_logger('create-snapshot', _ROOT_LOGGER, guestname, snapshotname),
+        logger=get_snapshot_logger('create-snapshot', LOGGER.get(), guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
 
 def do_route_snapshot_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='route-snapshot',
         snapshotname=snapshotname
@@ -2882,7 +2790,7 @@ def do_route_snapshot_request(
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.ROUTING)
     workspace.load_guest_request(guestname, state=GuestState.READY)
 
@@ -2909,7 +2817,7 @@ def do_route_snapshot_request(
 
         return workspace.result
 
-    logger.info('scheduled creation')
+    LOGGER.get().info('scheduled creation')
 
     return handle_success('finished-task')
 
@@ -2918,22 +2826,16 @@ def do_route_snapshot_request(
 def route_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_route_snapshot_request,
-        logger=get_snapshot_logger('route-snapshot', _ROOT_LOGGER, guestname, snapshotname),
+        logger=get_snapshot_logger('route-snapshot', LOGGER.get(), guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
 
 def do_restore_snapshot_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         guestname=guestname,
         task='restore-snapshot',
         snapshotname=snapshotname
@@ -2941,7 +2843,7 @@ def do_restore_snapshot_request(
 
     handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace = Workspace(handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.RESTORING)
     workspace.load_guest_request(guestname, state=GuestState.READY)
     workspace.grab_snapshot_request(GuestState.RESTORING, GuestState.PROCESSING)
@@ -2978,7 +2880,7 @@ def do_restore_snapshot_request(
 
         return workspace.result
 
-    logger.info('restored sucessfully')
+    LOGGER.get().info('restored sucessfully')
 
     return handle_success('finished-task')
 
@@ -2987,21 +2889,15 @@ def do_restore_snapshot_request(
 def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_restore_snapshot_request,
-        logger=get_snapshot_logger('restore-snapshot', _ROOT_LOGGER, guestname, snapshotname),
+        logger=get_snapshot_logger('restore-snapshot', LOGGER.get(), guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
 
 
 def do_refresh_pool_resources_metrics(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     poolname: str
 ) -> DoerReturnType:
     handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
         task='refresh-pool-metrics'
     )
 
@@ -3015,7 +2911,7 @@ def do_refresh_pool_resources_metrics(
     # On the other hand, we schedule next iteration of this task here, and it seems to make sense
     # to retry if we fail to schedule it - without this, the "it will run once again anyway" concept
     # breaks down.
-    r_pool = _get_pool(logger, session, poolname)
+    r_pool = _get_pool(LOGGER.get(), SESSION.get(), poolname)
 
     if r_pool.is_error:
         handle_failure(r_pool, 'failed to load pool')
@@ -3023,7 +2919,7 @@ def do_refresh_pool_resources_metrics(
     else:
         pool = r_pool.unwrap()
 
-        r_refresh = pool.refresh_pool_resources_metrics(logger, session)
+        r_refresh = pool.refresh_pool_resources_metrics(LOGGER.get(), SESSION.get())
 
         if r_refresh.is_error:
             handle_failure(r_refresh, 'failed to refresh pool resources metrics')
@@ -3035,30 +2931,23 @@ def do_refresh_pool_resources_metrics(
 def refresh_pool_resources_metrics(poolname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_refresh_pool_resources_metrics,
-        logger=get_pool_logger('refresh-pool-resources-metrics', _ROOT_LOGGER, poolname),
+        logger=get_pool_logger('refresh-pool-resources-metrics', LOGGER.get(), poolname),
         doer_args=(poolname,)
     )
 
 
-def do_refresh_pool_resources_metrics_dispatcher(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event
-) -> DoerReturnType:
+def do_refresh_pool_resources_metrics_dispatcher() -> DoerReturnType:
     handle_success, _, _ = create_event_handlers(
-        logger,
-        session,
         task='refresh-pool-metrics-dispatcher'
     )
 
     handle_success('entered-task')
 
-    logger.info('scheduling pool metrics refresh')
+    LOGGER.get().info('scheduling pool metrics refresh')
 
-    for pool in get_pools(_ROOT_LOGGER, session):
+    for pool in get_pools(LOGGER.get(), SESSION.get()):
         dispatch_task(
-            get_pool_logger('refresh-pool-resources-metrics-dispatcher', _ROOT_LOGGER, pool.poolname),
+            get_pool_logger('refresh-pool-resources-metrics-dispatcher', LOGGER.get(), pool.poolname),
             refresh_pool_resources_metrics,
             pool.poolname
         )
@@ -3086,5 +2975,5 @@ def refresh_pool_resources_metrics_dispatcher() -> None:
 
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_refresh_pool_resources_metrics_dispatcher,
-        logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-resources-dispatcher')
+        logger=TaskLogger(LOGGER.get(), 'refresh-pool-resources-dispatcher')
     )

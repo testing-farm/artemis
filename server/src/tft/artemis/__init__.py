@@ -1,3 +1,4 @@
+import contextlib
 import contextvars
 import functools
 import json
@@ -1250,3 +1251,31 @@ def with_context(fn: Callable[..., T]) -> Callable[['VarArg(Any)'], T]:  # type:
         return fn(self, **kwargs)
 
     return wrapper
+
+
+@contextlib.contextmanager
+def _context(**kwargs: Any) -> Generator[None, None, None]:
+    tokens: List[Tuple[contextvars.ContextVar[Any], contextvars.Token[Any]]] = []
+
+    try:
+        for (name, type_), var in CONTEXT_PROVIDERS.items():
+            if name not in kwargs:
+                continue
+
+            tokens.append((var, var.set(kwargs.pop(name))))
+
+        yield
+
+    finally:
+        for var, token in tokens:
+            var.reset(token)
+
+
+@contextlib.contextmanager
+def context(
+    logger: Optional[gluetool.log.ContextAdapter] = None,
+    db: Optional['artemis_db.DB'] = None,
+    session: Optional[sqlalchemy.orm.session.Session] = None,
+    cache: Optional[redis.Redis] = None
+) -> Generator[None, None, None]:
+    yield _context(logger=logger, db=db, session=session, cache=cache)
