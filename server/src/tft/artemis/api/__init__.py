@@ -1,5 +1,6 @@
+import dataclasses
 import datetime
-import io
+import enum
 import json
 import os
 import shutil
@@ -7,7 +8,7 @@ import sys
 import threading
 import uuid
 from inspect import Parameter
-from typing import Any, Dict, List, NoReturn, Optional, Type, Union
+from typing import Any, Dict, List, NoReturn, Optional, Tuple, Type, Union
 
 import gluetool.log
 import molten
@@ -15,8 +16,7 @@ import molten.dependency_injection
 import molten.openapi
 import sqlalchemy
 import sqlalchemy.orm.exc
-from gluetool.log import log_dict
-from molten import HTTP_200, HTTP_201, HTTP_400, HTTP_404, Field, Request, Response
+from molten import HTTP_200, HTTP_201, HTTP_204, Field, Request, Response
 from molten.app import BaseApp
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
@@ -25,7 +25,7 @@ from molten.openapi.handlers import OpenAPIUIHandler
 from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 
-from .. import __VERSION__, DATABASE, Knob
+from .. import __VERSION__, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, log_guest_event, metrics, safe_db_change
 from ..guest import GuestState
@@ -63,6 +63,22 @@ KNOB_API_THREADS: Knob[int] = Knob(
 
 #: Protects our metrics tree when updating & rendering to user.
 METRICS_LOCK = threading.Lock()
+
+
+class JSONRenderer(molten.JSONRenderer):  # type: ignore
+    """
+    Custom renderer, capable of handling :py:class:`datetime.datetime` and :py:class:`enum.Enum` instances
+    we use frequently in our responses.
+    """
+
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, datetime.datetime):
+            return str(obj)
+
+        if isinstance(obj, enum.Enum):
+            return obj.value
+
+        return super(JSONRenderer, self).default(obj)
 
 
 class LoggerComponent:
@@ -217,6 +233,7 @@ class GuestSSHInfo:
 
 
 @molten.schema
+@dataclasses.dataclass
 class GuestResponse:
     guestname: str
     owner: str
@@ -227,28 +244,6 @@ class GuestResponse:
     user_data: Dict[str, Optional[str]]
     post_install_script: Optional[str]
     ctime: datetime.datetime
-
-    def __init__(
-        self,
-        guestname: str,
-        owner: str,
-        environment: Dict[str, Any],
-        address: Optional[str],
-        ssh: GuestSSHInfo,
-        state: GuestState,
-        user_data: Dict[str, Optional[str]],
-        post_install_script: Optional[str],
-        ctime: datetime.datetime
-    ) -> None:
-        self.guestname = guestname
-        self.owner = owner
-        self.environment = environment
-        self.address = address
-        self.ssh = ssh
-        self.state = state.value
-        self.user_data = user_data
-        self.post_install_script = post_install_script
-        self.ctime = ctime
 
     @classmethod
     def from_db(cls, guest: artemis_db.GuestRequest):
@@ -313,21 +308,12 @@ class SnapshotRequest:
         self.start_again = start_again
 
 
+@molten.schema
+@dataclasses.dataclass
 class SnapshotResponse:
     snapshotname: str
     guestname: str
     state: GuestState
-
-    def __init__(
-        self,
-        snapshotname: str,
-        guestname: str,
-        state: GuestState
-
-    ) -> None:
-        self.snapshotname = snapshotname
-        self.guestname = guestname
-        self.state = state.value
 
     @classmethod
     def from_db(cls, snapshot_request: artemis_db.SnapshotRequest):
@@ -340,70 +326,12 @@ class SnapshotResponse:
         )
 
 
+@molten.schema
+@dataclasses.dataclass
 class AboutResponse:
     package_version: str
     image_digest: Optional[str]
     image_url: Optional[str]
-
-
-class APIResponse(Response):  # type: ignore
-    ''' Class that represents API response structure.
-        An instance of this class should be returned by routes.
-
-        :param object obj: Schema instance (for example GuestRequest).
-        :param str status: HTTP status code string.
-        :param dict headers: HTTP response headers.
-        :param str content: JSON-serializable string that will be used as response's body
-        :param stream: bytes-like string that will be used as response's body
-        :param str encoding: Data encoding
-        :parame Request request: Request instance
-    '''
-
-    def __init__(
-        self,
-        obj: Optional[Union[Any, List[Any]]] = None,
-        status: str = HTTP_200,
-        headers: Optional[Dict[Any, Any]] = None,
-        content: Optional[str] = None,
-        stream: Optional[Union[bytes, str]] = None,
-        encoding: str = 'utf-8',
-        request: Optional[Request] = None
-    ) -> None:
-
-        def _convert_values(value: Any) -> Any:
-            if isinstance(value, datetime.datetime):
-                return str(value)
-
-            return value.__dict__
-
-        if obj is not None:
-
-            header = 'Content-Type'
-            hvalue = 'application/json'
-
-            if headers is None:
-                headers = {header: hvalue}
-            elif header not in headers:
-                headers[header] = hvalue
-
-            try:
-                content = json.dumps(obj, default=_convert_values, sort_keys=True)
-            except (TypeError, OverflowError):
-                error_msg = 'object is not JSON serializable'
-                log = get_logger()
-                log_dict(log.debug, error_msg, obj.__dict__)
-                status = HTTP_400
-                content = json.dumps({'message': error_msg})
-                stream = None
-
-        if isinstance(stream, str):
-            stream = stream.encode(encoding)
-
-        super(APIResponse, self).__init__(status=status,
-                                          headers=headers,
-                                          content=content,
-                                          stream=io.BytesIO(stream or b''),
-                                          encoding=encoding)
 
 
 class GuestRequestManager:
@@ -694,8 +622,8 @@ class SnapshotRequestManagerComponent:
 #
 # Routes
 #
-def get_guest_requests(manager: GuestRequestManager, request: Request) -> APIResponse:
-    return APIResponse(manager.get_guest_requests(), request=request)
+def get_guest_requests(manager: GuestRequestManager, request: Request) -> List[GuestResponse]:
+    return manager.get_guest_requests()
 
 
 def create_guest_request(
@@ -704,7 +632,7 @@ def create_guest_request(
     request: Request,
     auth: AuthContext,
     logger: gluetool.log.ContextAdapter
-) -> APIResponse:
+) -> Tuple[str, GuestResponse]:
     # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
     # and we got so far means user must be authenticated.
     if auth.is_authentication_enabled and auth.is_authenticated:
@@ -715,16 +643,16 @@ def create_guest_request(
     else:
         ownername = DEFAULT_GUEST_REQUEST_OWNER
 
-    return APIResponse(manager.create(guest_request, ownername, logger), request=request, status=HTTP_201)
+    return HTTP_201, manager.create(guest_request, ownername, logger)
 
 
-def get_guest_request(guestname: str, manager: GuestRequestManager, request: Request) -> APIResponse:
+def get_guest_request(guestname: str, manager: GuestRequestManager, request: Request) -> GuestResponse:
     guest_response = manager.get_by_guestname(guestname)
 
     if guest_response is None:
         raise errors.NoSuchEntityError(request=request)
 
-    return APIResponse(guest_response, request=request)
+    return guest_response
 
 
 def delete_guest(
@@ -732,13 +660,13 @@ def delete_guest(
     request: Request,
     logger: gluetool.log.ContextAdapter,
     manager: GuestRequestManager
-) -> APIResponse:
+) -> Tuple[str, None]:
     if not manager.get_by_guestname(guestname):
-        return APIResponse(request=request, status=HTTP_404)
+        raise errors.NoSuchEntityError(request=request)
 
     manager.delete_by_guestname(guestname, request, logger)
 
-    return APIResponse(request=request)
+    return HTTP_204, None
 
 
 def _validate_events_params(request: Request) -> Dict[str, Any]:
@@ -769,16 +697,14 @@ def _validate_events_params(request: Request) -> Dict[str, Any]:
 def get_events(
         request: Request,
         manager: GuestEventManager,
-) -> APIResponse:
+) -> List[GuestEvent]:
     params: Dict[str, Any] = _validate_events_params(request)
-    events = manager.get_events(**params)
-    return APIResponse(events)
+    return manager.get_events(**params)
 
 
-def get_guest_events(guestname: str, request: Request, manager: GuestEventManager) -> APIResponse:
+def get_guest_events(guestname: str, request: Request, manager: GuestEventManager) -> List[GuestEvent]:
     params: Dict[str, Any] = _validate_events_params(request)
-    events = manager.get_events_by_guestname(guestname, **params)
-    return APIResponse(events, request=request)
+    return manager.get_events_by_guestname(guestname, **params)
 
 
 def get_metrics(
@@ -786,29 +712,31 @@ def get_metrics(
     db: artemis_db.DB,
     metrics_tree: 'metrics.Metrics',
     logger: gluetool.log.ContextAdapter
-) -> APIResponse:
-    DATABASE.set(db)
+) -> Response:
 
     with METRICS_LOCK:
-        return APIResponse(
-            stream=metrics_tree.render_prometheus_metrics(),
-            request=request
+        return Response(
+            HTTP_200,
+            content=metrics_tree.render_prometheus_metrics().decode('utf-8'),
+            headers={
+                "content-type": "text/plain; charset=utf-8"
+            }
         )
 
 
-def get_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:
+def get_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> SnapshotResponse:
     snapshot_response = manager.get_snapshot(guestname, snapshotname)
 
     if snapshot_response is None:
         raise errors.NoSuchEntityError()
 
-    return APIResponse(snapshot_response)
+    return snapshot_response
 
 
 def create_snapshot_request(guestname: str,
                             snapshot_request: SnapshotRequest,
-                            manager: SnapshotRequestManager) -> APIResponse:
-    return APIResponse(manager.create_snapshot(guestname, snapshot_request), status=HTTP_201)
+                            manager: SnapshotRequestManager) -> Tuple[str, SnapshotResponse]:
+    return HTTP_201, manager.create_snapshot(guestname, snapshot_request)
 
 
 def delete_snapshot(
@@ -816,9 +744,10 @@ def delete_snapshot(
     snapshotname: str,
     manager: SnapshotRequestManager,
     logger: gluetool.log.ContextAdapter
-) -> APIResponse:
+) -> Tuple[str, None]:
     manager.delete_snapshot(guestname, snapshotname, logger)
-    return APIResponse()
+
+    return HTTP_204, None
 
 
 def restore_snapshot_request(
@@ -826,17 +755,20 @@ def restore_snapshot_request(
     snapshotname: str,
     manager: SnapshotRequestManager,
     logger: gluetool.log.ContextAdapter
-) -> APIResponse:
-    return APIResponse(manager.restore_snapshot(guestname, snapshotname, logger), status=HTTP_201)
+) -> Tuple[str, SnapshotResponse]:
+    return HTTP_201, manager.restore_snapshot(guestname, snapshotname, logger)
 
 
-def get_about(request: Request) -> APIResponse:
-    response = AboutResponse()
-    response.package_version = __VERSION__
-    response.image_digest = os.getenv('ARTEMIS_IMAGE_DIGEST')
-    response.image_url = os.getenv('ARTEMIS_IMAGE_URL')
+def get_about(request: Request) -> AboutResponse:
+    """
+    Some docs.
+    """
 
-    return APIResponse(response, request=request)
+    return AboutResponse(
+        package_version=__VERSION__,
+        image_digest=os.getenv('ARTEMIS_IMAGE_DIGEST'),
+        image_url=os.getenv('ARTEMIS_IMAGE_URL')
+    )
 
 
 class OpenAPIHandler(_OpenAPIHandler):
@@ -923,7 +855,10 @@ def run_app() -> molten.app.App:
     return molten.app.App(
         components=components,
         middleware=mw,
-        routes=routes
+        routes=routes,
+        renderers=[
+            JSONRenderer()
+        ]
     )
 
 

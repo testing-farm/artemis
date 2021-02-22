@@ -1,21 +1,22 @@
 import concurrent.futures
+import dataclasses
 import json
-import pkg_resources
 import shlex
 import subprocess
 import sys
+from typing import (Any, Callable, Dict, Iterable, List, NamedTuple, NoReturn,
+                    Optional, Tuple, TypeVar, cast)
 
 import click
 import click_spinner
-import dataclasses
 import jsonschema
+import pkg_resources
 import requests
 import ruamel.yaml
 import ruamel.yaml.compat
 import tabulate
 import urlnormalizer
 
-from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, NoReturn, Optional, Tuple, TypeVar
 
 class ValidationResult(NamedTuple):
     """
@@ -268,7 +269,7 @@ def artemis_restore(cfg, resource, rid, data=None, logger=None):
     return fetch_artemis(cfg, '/{}/{}/restore'.format(resource, rid), method='post', request_kwargs={'json': data}, logger=None)
 
 def artemis_delete(cfg, resource, rid, logger=None):
-    return fetch_artemis(cfg, '{}/{}'.format(resource, rid), method='delete', logger=None, allow_statuses=[200, 201, 404, 409])
+    return fetch_artemis(cfg, '{}/{}'.format(resource, rid), method='delete', logger=None, allow_statuses=[200, 201, 204, 404, 409])
 
 def confirm(
     cfg: Configuration,

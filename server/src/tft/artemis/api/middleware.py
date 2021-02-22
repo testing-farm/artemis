@@ -314,7 +314,13 @@ def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
 
         try:
             response = handler()
-            status = response.status
+
+            if isinstance(response, tuple):
+                status = response[0]
+
+            elif isinstance(response, Response):
+                status = response.status
+
             return response
 
         except HTTPError as exc:
