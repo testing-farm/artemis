@@ -1578,6 +1578,8 @@ def is_provisioning_tail_task(actor: Actor) -> bool:
     """
 
     return actor.actor_name in (
+        guest_request_prepare_finalize.actor_name,
+        prepare_verify_ssh.actor_name,
         acquire_guest_request.actor_name,
         update_guest_request.actor_name,
         route_guest_request.actor_name
@@ -1808,7 +1810,7 @@ def do_prepare_verify_ssh(
     return handle_success('finished-task')
 
 
-@dramatiq.actor  # type: ignore  # Untyped decorator
+@dramatiq.actor(**actor_kwargs('PREPARE_VERIFY_SSH'))  # type: ignore  # Untyped decorator
 def prepare_verify_ssh(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
         do_prepare_verify_ssh,
