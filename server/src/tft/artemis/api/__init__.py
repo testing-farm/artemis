@@ -65,6 +65,20 @@ KNOB_API_THREADS: Knob[int] = Knob(
 METRICS_LOCK = threading.Lock()
 
 
+class LoggerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def __init__(self, logger: gluetool.log.ContextAdapter) -> None:
+        self.logger = logger
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is gluetool.log.ContextAdapter
+
+    def resolve(self) -> gluetool.log.ContextAdapter:
+        return self.logger
+
+
 class DBComponent:
     is_cacheable = True
     is_singleton = True
@@ -111,7 +125,7 @@ class AuthContextComponent:
     def can_handle_parameter(self, parameter: Parameter) -> bool:
         return parameter.annotation is AuthContext
 
-    def resolve(self, request: Request) -> AuthContext:
+    def resolve(self, request: Request, logger: gluetool.log.ContextAdapter) -> AuthContext:
         r_ctx = AuthContext.extract(request)
 
         # If the context does not exist, it means we have a handler that requests it, by adding
@@ -120,7 +134,7 @@ class AuthContextComponent:
         if r_ctx.is_error:
             failure = r_ctx.unwrap_error()
 
-            failure.handle(get_logger())
+            failure.handle(logger)
 
             # We cannot continue: handler requires auth context, and we don't have any. It's not possible to
             # recover.
@@ -408,12 +422,12 @@ class GuestRequestManager:
                 for guest in r_guests.unwrap()
             ]
 
-    def create(self, guest_request: GuestRequest, ownername: str) -> GuestResponse:
+    def create(self, guest_request: GuestRequest, ownername: str, logger: gluetool.log.ContextAdapter) -> GuestResponse:
         from ..tasks import get_guest_logger
 
         guestname = str(uuid.uuid4())
 
-        guest_logger = get_guest_logger('create-guest-request', get_logger(), guestname)
+        guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
         with self.db.get_session() as session:
             session.add(
@@ -470,10 +484,10 @@ class GuestRequestManager:
 
             return GuestResponse.from_db(guest_request_record)
 
-    def delete_by_guestname(self, guestname: str, request: Request) -> None:
+    def delete_by_guestname(self, guestname: str, request: Request, logger: gluetool.log.ContextAdapter) -> None:
         from ..tasks import get_guest_logger
 
-        guest_logger = get_guest_logger('delete-guest-request', get_logger(), guestname)
+        guest_logger = get_guest_logger('delete-guest-request', logger, guestname)
 
         with self.db.get_session() as session:
             snapshot_count_subquery = session \
@@ -615,10 +629,10 @@ class SnapshotRequestManager:
 
         return snapshot_response
 
-    def delete_snapshot(self, guestname: str, snapshotname: str) -> None:
+    def delete_snapshot(self, guestname: str, snapshotname: str, logger: gluetool.log.ContextAdapter) -> None:
         from ..tasks import get_snapshot_logger
 
-        snapshot_logger = get_snapshot_logger('delete-snapshot-request', get_logger(), guestname, snapshotname)
+        snapshot_logger = get_snapshot_logger('delete-snapshot-request', logger, guestname, snapshotname)
 
         with self.db.get_session() as session:
             query = sqlalchemy \
@@ -634,10 +648,15 @@ class SnapshotRequestManager:
 
             log_guest_event(snapshot_logger, session, guestname, 'snapshot-condemned')
 
-    def restore_snapshot(self, guestname: str, snapshotname: str) -> SnapshotResponse:
+    def restore_snapshot(
+        self,
+        guestname: str,
+        snapshotname: str,
+        logger: gluetool.log.ContextAdapter
+    ) -> SnapshotResponse:
         from ..tasks import get_snapshot_logger
 
-        snapshot_logger = get_snapshot_logger('delete-snapshot-request', get_logger(), guestname, snapshotname)
+        snapshot_logger = get_snapshot_logger('delete-snapshot-request', logger, guestname, snapshotname)
 
         with self.db.get_session() as session:
             query = sqlalchemy \
@@ -683,7 +702,8 @@ def create_guest_request(
     guest_request: GuestRequest,
     manager: GuestRequestManager,
     request: Request,
-    auth: AuthContext
+    auth: AuthContext,
+    logger: gluetool.log.ContextAdapter
 ) -> APIResponse:
     # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
     # and we got so far means user must be authenticated.
@@ -695,7 +715,7 @@ def create_guest_request(
     else:
         ownername = DEFAULT_GUEST_REQUEST_OWNER
 
-    return APIResponse(manager.create(guest_request, ownername=ownername), request=request, status=HTTP_201)
+    return APIResponse(manager.create(guest_request, ownername, logger), request=request, status=HTTP_201)
 
 
 def get_guest_request(guestname: str, manager: GuestRequestManager, request: Request) -> APIResponse:
@@ -707,11 +727,16 @@ def get_guest_request(guestname: str, manager: GuestRequestManager, request: Req
     return APIResponse(guest_response, request=request)
 
 
-def delete_guest(guestname: str, request: Request, manager: GuestRequestManager) -> APIResponse:
+def delete_guest(
+    guestname: str,
+    request: Request,
+    logger: gluetool.log.ContextAdapter,
+    manager: GuestRequestManager
+) -> APIResponse:
     if not manager.get_by_guestname(guestname):
         return APIResponse(request=request, status=HTTP_404)
 
-    manager.delete_by_guestname(guestname, request=request)
+    manager.delete_by_guestname(guestname, request, logger)
 
     return APIResponse(request=request)
 
@@ -756,7 +781,12 @@ def get_guest_events(guestname: str, request: Request, manager: GuestEventManage
     return APIResponse(events, request=request)
 
 
-def get_metrics(request: Request, db: artemis_db.DB, metrics_tree: 'metrics.Metrics') -> APIResponse:
+def get_metrics(
+    request: Request,
+    db: artemis_db.DB,
+    metrics_tree: 'metrics.Metrics',
+    logger: gluetool.log.ContextAdapter
+) -> APIResponse:
     DATABASE.set(db)
 
     with METRICS_LOCK:
@@ -781,13 +811,23 @@ def create_snapshot_request(guestname: str,
     return APIResponse(manager.create_snapshot(guestname, snapshot_request), status=HTTP_201)
 
 
-def delete_snapshot(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:
-    manager.delete_snapshot(guestname, snapshotname)
+def delete_snapshot(
+    guestname: str,
+    snapshotname: str,
+    manager: SnapshotRequestManager,
+    logger: gluetool.log.ContextAdapter
+) -> APIResponse:
+    manager.delete_snapshot(guestname, snapshotname, logger)
     return APIResponse()
 
 
-def restore_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotRequestManager) -> APIResponse:
-    return APIResponse(manager.restore_snapshot(guestname, snapshotname), status=HTTP_201)
+def restore_snapshot_request(
+    guestname: str,
+    snapshotname: str,
+    manager: SnapshotRequestManager,
+    logger: gluetool.log.ContextAdapter
+) -> APIResponse:
+    return APIResponse(manager.restore_snapshot(guestname, snapshotname, logger), status=HTTP_201)
 
 
 def get_about(request: Request) -> APIResponse:
@@ -835,6 +875,7 @@ def run_app() -> molten.app.App:
                 'logger': logger
             })
         ),
+        LoggerComponent(logger),
         DBComponent(db),
         GuestRequestManagerComponent(),
         GuestEventManagerComponent(),
