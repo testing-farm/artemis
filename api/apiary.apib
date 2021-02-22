@@ -259,16 +259,16 @@ multiple requests, each provisioning one guest.
   - ready - Provisioning is done, there is a guest available for SSH connections.
   - condemned - The guest has been released by the user, and it's resources may be released by its pool's driver.
   - releasing - The guest is being removed.
-- user_data (any) - key/value mapping tracked with the guest, as requested by the original request.
+- user_data (object) - key/value mapping tracked with the guest, as requested by the original request.
 - post_install_script (string) - if set, this script was executed after provisioning.
-- ctime (datetime) - Date and time the guest request was created.
+- ctime (string) - Date and time the guest request was created.
 
 ### Guest request
 
 - keyname (string, required) - SSH key to set up.
 - environment (Environment, required) - Requested environment of the guest.
 - priority_group (string) - name of a *priority group* the request belongs to.
-- user_data (any) - key/value mapping to track with the guest.
+- user_data (object) - key/value mapping to track with the guest.
 - post_install_script (string) - if set, this script will be executed after provisioning.
 
 ### Snapshot request
@@ -287,7 +287,7 @@ multiple requests, each provisioning one guest.
 
 ### Guest event
 
-- details (any, required) - Details of the guest event.
+- details (object, required) - Details of the guest event.
 - eventname (string, required) - Name of the guest event.
 - guestname (string, required) - Name of the guest as specified in a response to a provisioning request.
 - updated (string, required) - Timestamp of the guest event in "yyyy-MM-dd HH:mm:ss.SSS" format
