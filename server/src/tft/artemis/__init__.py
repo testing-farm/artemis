@@ -1,4 +1,5 @@
 import contextvars
+import functools
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ import ruamel.yaml.compat
 import sqlalchemy.orm.session
 import stackprinter
 from gluetool.result import Error, Ok, Result
+from mypy_extensions import VarArg
 from sqlalchemy.orm.session import Session
 
 __VERSION__ = pkg_resources.get_distribution('tft-artemis').version
@@ -1197,3 +1199,54 @@ LOGGER: contextvars.ContextVar[gluetool.log.ContextAdapter] = contextvars.Contex
 DATABASE: contextvars.ContextVar['artemis_db.DB'] = contextvars.ContextVar('DATABASE', default=get_db(LOGGER.get()))
 SESSION: contextvars.ContextVar[sqlalchemy.orm.session.Session] = contextvars.ContextVar('SESSION')
 CACHE: contextvars.ContextVar[redis.Redis] = contextvars.ContextVar('CACHE', default=get_cache(LOGGER.get()))
+
+#: Context variables available as injectables.
+CONTEXT_PROVIDERS: Dict[Tuple[str, Any], contextvars.ContextVar[Any]] = {
+    ('logger', gluetool.log.ContextAdapter): LOGGER,
+    ('db', artemis_db.DB): DATABASE,
+    ('session', sqlalchemy.orm.session.Session): SESSION,
+    ('cache', redis.Redis): CACHE
+}
+
+
+def with_context(fn: Callable[..., T]) -> Callable[['VarArg(Any)'], T]:  # type: ignore  # VarArg isn't a problem
+    """
+    Decorated function is injected with context variables by specifying them as parameters with known names and types.
+
+    * ``logger`` :py:class:`gluetool.logger.ContextAdapter` - :py:var:`LOGGER`
+    * ``db`` :py:class:`tft.artemis.db.DB` - :py:var:`DATABASE`
+    * ``session`` :py:class:`sqlalchemy.orm.session.Session` - :py:var:`SESSION`
+    * ``cache`` :py:class:`redis.Redis` - :py:var:`CACHE`
+
+    The objects available for injecting are provided by :py:var:`CONTEXT_PROVIDERS` mapping.
+
+    .. code-block:: python
+
+       @with_context
+       def foo(logger: ContextAdapter) -> str:
+           return 'bar'
+
+        foo()  # `foo(logger=LOGGER.get())` on background
+
+    .. warning::
+
+       At this moment, the decorator works with methods that accept only ``self`` and nothing else. The problem lies
+       in extending the support to any number or type of arguments but preserving the assurance type annotations
+       provide. Therefore, the use is limited.
+    """
+
+    annotation = fn.__annotations__
+
+    @functools.wraps(fn)
+    def wrapper(self: Any) -> T:
+        kwargs: Dict[str, Any] = {}
+
+        for (name, type_), var in CONTEXT_PROVIDERS.items():
+            if name not in annotation or annotation[name] is not type_:
+                continue
+
+            kwargs[name] = var.get()
+
+        return fn(self, **kwargs)
+
+    return wrapper

@@ -17,6 +17,7 @@ import dataclasses
 import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
 
+import gluetool.log
 import prometheus_client.utils
 import redis
 import sqlalchemy
@@ -25,9 +26,10 @@ import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
 
-from . import DATABASE, LOGGER, SESSION, Failure
+from . import DATABASE, SESSION, Failure
 from . import db as artemis_db
 from . import tasks as artemis_tasks
+from . import with_context
 from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 from .drivers import PoolMetrics
 from .guest import GuestState
@@ -215,14 +217,18 @@ class PoolsMetrics(MetricsBase):
 
     metrics: Dict[str, PoolMetrics] = dataclasses.field(default_factory=dict)
 
-    def sync(self) -> None:
+    @with_context
+    def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
         """
         Load values from database and update this container with up-to-date values..
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
         """
 
         self.metrics = {
-            pool.poolname: pool.metrics(LOGGER.get(), SESSION.get())
-            for pool in artemis_tasks.get_pools(LOGGER.get(), SESSION.get())
+            pool.poolname: pool.metrics(logger, session)
+            for pool in artemis_tasks.get_pools(logger, session)
         }
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -385,12 +391,13 @@ class ProvisioningMetrics(MetricsBase):
         )
         return Ok(None)
 
-    def sync(self) -> None:
+    @with_context
+    def sync(self, session: sqlalchemy.orm.session.Session) -> None:
         """
         Load values from database and update this container with up-to-date values..
-        """
 
-        session = SESSION.get()
+        :param session: DB session to use for DB access.
+        """
 
         NOW = datetime.datetime.utcnow()
 
@@ -609,12 +616,13 @@ class RoutingMetrics(MetricsBase):
         )
         return Ok(None)
 
-    def sync(self) -> None:
+    @with_context
+    def sync(self, session: sqlalchemy.orm.session.Session) -> None:
         """
         Load values from database and update this container with up-to-date values..
-        """
 
-        session = SESSION.get()
+        :param session: DB session to use for DB access.
+        """
 
         self.policy_calls = {
             record.policy_name: record.count
@@ -725,7 +733,8 @@ class Metrics(MetricsBase):
         self.provisioning.update_prometheus()
         self.routing.update_prometheus()
 
-    def render_prometheus_metrics(self) -> bytes:
+    @with_context
+    def render_prometheus_metrics(self, db: artemis_db.DB) -> bytes:
         """
         Render plaintext output of Prometheus metrics representing values in this tree of metrics.
 
@@ -733,10 +742,11 @@ class Metrics(MetricsBase):
 
            **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
 
+        :param db: DB instance to use for DB access.
         :returns: plaintext represenation of Prometheus metrics, encoded as ``bytes``.
         """
 
-        with DATABASE.get().get_session() as session:
+        with db.get_session() as session:
             SESSION.set(session)
 
             self.sync()
