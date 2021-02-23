@@ -27,6 +27,7 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
 
 from . import DATABASE, LOGGER, SESSION, Failure
 from . import db as artemis_db
+from . import safe_call
 from . import tasks as artemis_tasks
 from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 from .drivers import PoolMetrics
@@ -832,10 +833,7 @@ def inc_metric(
     :param metric: metric to increment.
     """
 
-    cast(
-        Callable[[str], None],
-        cache.incr
-    )(metric)
+    safe_call(cast(Callable[[str], None], cache.incr), metric)
 
 
 def dec_metric(
@@ -849,10 +847,7 @@ def dec_metric(
     :param metric: metric to decrement.
     """
 
-    cast(
-        Callable[[str], None],
-        cache.decr
-    )(metric)
+    safe_call(cast(Callable[[str], None], cache.decr), metric)
 
 
 def inc_metric_field(
@@ -868,10 +863,7 @@ def inc_metric_field(
     :param field: field to increment.
     """
 
-    cast(
-        Callable[[str, str, int], None],
-        cache.hincrby
-    )(metric, field, 1)
+    safe_call(cast(Callable[[str, str, int], None], cache.hincrby), metric, field, 1)
 
 
 def dec_metric_field(
@@ -887,10 +879,7 @@ def dec_metric_field(
     :param field: field to decrement.
     """
 
-    cast(
-        Callable[[str, str, int], None],
-        cache.hincrby
-    )(metric, field, -1)
+    safe_call(cast(Callable[[str, str, int], None], cache.hincrby), metric, field, -1)
 
 
 def get_metric(
@@ -933,16 +922,10 @@ def set_metric(
     # to wrap `get` with `cast` calls.
 
     if value is None:
-        cast(
-            Callable[[str], None],
-            cache.delete
-        )(metric)
+        safe_call(cast(Callable[[str], None], cache.delete), metric)
 
     else:
-        cast(
-            Callable[[str, int], None],
-            cache.set
-        )(metric, value)
+        safe_call(cast(Callable[[str, int], None], cache.set), metric, value)
 
 
 def get_metric_fields(
