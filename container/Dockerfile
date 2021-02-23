@@ -94,7 +94,8 @@ COPY required_hooks /
 COPY container/wait-for-api.sh /
 COPY container/wait-for-postgres.sh /
 COPY container/wait-for-rabbitmq.sh /
-RUN chmod +x /wait-for-postgres.sh /wait-for-rabbitmq.sh /wait-for-api.sh
+COPY container/wait-for-redis.sh /
+RUN chmod +x /wait-for-postgres.sh /wait-for-rabbitmq.sh /wait-for-api.sh /wait-for-redis.sh
 
 #
 # Copy Artemis sources and Alembic data and install Artemis

@@ -66,6 +66,15 @@ spec:
               value: artemis-rabbitmq
             - name: RABBITMQ_PORT
               value: "5672"
+        - name: wait-for-redis
+          image: artemis
+          command:
+            - /wait-for-redis.sh
+          env:
+            - name: REDIS_HOSTNAME
+              value: artemis-redis
+            - name: REDIS_PORT
+              value: "6379"
         # we ignore errors for initialization script, it can safely fail
         # once it initially initialized the database schema
         - name: initdb
