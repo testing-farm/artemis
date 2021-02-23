@@ -14,7 +14,7 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, process_output_to_str
+from .. import CACHE, Failure, process_output_to_str, safe_call
 from ..db import GuestRequest, GuestTag
 from ..db import PoolResourcesMetrics as PoolResourcesMetricsRecord
 from ..db import PoolResourcesMetricsDimensions, Query, SnapshotRequest, SSHKey
@@ -322,6 +322,9 @@ class ProvisioningProgress:
 
 
 class PoolDriver(gluetool.log.LoggerMixin):
+    #: Template for a cache key holding pool image info.
+    POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -334,6 +337,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self.pool_config = pool_config
 
         self._pool_resources_metrics: Optional[PoolResourcesMetrics] = None
+
+        self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)
 
     def __repr__(self) -> str:
         return '<{}: {}>'.format(self.__class__.__name__, self.poolname)
@@ -785,6 +790,109 @@ class PoolDriver(gluetool.log.LoggerMixin):
             metrics.resources = self._pool_resources_metrics
 
         return metrics
+
+    def fetch_pool_image_info(self) -> Result[List[PoolImageInfoType], Failure]:
+        """
+        Responsible for fetching the most up-to-date image info..
+
+        This is the only method common driver needs to reimplement. The default
+        implementation yields "no images" default as it has no actual pool to query.
+        The real driver would probably to query its pool's API, and retrieve actual data.
+        """
+
+        return Ok([])
+
+    def refresh_pool_image_info(self) -> Result[None, Failure]:
+        """
+        Responsible for updating the cache with the most up-to-date image info. For that purpose, it calls
+        :py:meth:`fetch_pool_image_info` to retrieve the actual data - this part is driver-specific, while
+        the cache operations are not.
+
+        Since :py:meth:`fetch_pool_image_info` is presumably going to talk to pool API, we cannot allow it
+        to be part of the critical paths like routing, therefore we exchange metrics through the cache.
+
+        Data are stored as a mapping between image name and a containers serialized into JSON blobs.
+        """
+
+        r_image_info = self.fetch_pool_image_info()
+
+        if r_image_info.is_error:
+            return Error(r_image_info.unwrap_error())
+
+        image_info = r_image_info.unwrap()
+
+        # When we get an empty list, we should remove the key entirely, to make queries looking for any image
+        # return `None` aka "not found". It's the same as if we'd try to remove all entries, just with one
+        # action.
+        if not image_info:
+            r_action = safe_call(
+                cast(Callable[[str], None], CACHE.get().delete),
+                self.image_info_cache_key
+            )
+
+        else:
+            # Two steps: create new structure, and replace the old one. We cannot check the old one
+            # and remove entries that are no longer valid.
+            actual_key = self.image_info_cache_key
+            new_key = '{}.new'.format(self.image_info_cache_key)
+
+            r_action = safe_call(
+                cast(Callable[[str, str, Dict[str, str]], None], CACHE.get().hmset),
+                new_key,
+                {
+                    ii.name: json.dumps(dataclasses.asdict(ii))
+                    for ii in r_image_info.unwrap()
+                    if ii.name
+                }
+            )
+
+            if r_action.is_error:
+                return Error(r_action.unwrap_error())
+
+            r_action = safe_call(
+                cast(Callable[[str, str], None], CACHE.get().rename),
+                new_key,
+                actual_key
+            )
+
+        if r_action.is_error:
+            return Error(r_action.unwrap_error())
+
+        return Ok(None)
+
+    def get_pool_image_info(self, imagename: str) -> Result[Optional[PoolImageInfoType], Failure]:
+        """
+        Retrieve "current" image info metrics, as stored in the cache. Given how the information is acquired,
+        it will **always** be slightly outdated.
+
+        .. note::
+
+           There is a small window opened to race conditions: if provisioning gets to this method *before*
+           pool's image info has been fetched and stored in the cache, after the cache was emptied (e.g. by
+           a caching service restart), then this method will return ``None``, falsely pretending the image
+           is unknown.
+        """
+
+        r_fetch = safe_call(
+            cast(Callable[[str, str], Optional[bytes]], CACHE.get().hget),
+            self.image_info_cache_key,
+            imagename
+        )
+
+        if r_fetch.is_error:
+            return Error(r_fetch.unwrap_error())
+
+        serialized = r_fetch.unwrap()
+
+        if serialized is None:
+            return Ok(None)
+
+        r_unserialize = safe_call(PoolImageInfoType, **json.loads(serialized.decode('utf-8')))
+
+        if r_unserialize.is_error:
+            return Error(r_unserialize.unwrap_error())
+
+        return Ok(r_unserialize.unwrap())
 
 
 def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Failure]:

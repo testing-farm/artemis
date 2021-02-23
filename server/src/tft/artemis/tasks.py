@@ -15,8 +15,8 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
-    safe_call, safe_db_change
+from . import DATABASE, LOGGER, SESSION, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
+    log_guest_event, metrics, safe_call, safe_db_change
 from .db import DB, GuestEvent, GuestRequest, Pool, Query, SnapshotRequest, SSHKey
 from .drivers import PoolData, PoolDriver, PoolLogger
 from .drivers import aws as aws_driver
@@ -151,6 +151,15 @@ KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
     envvar='ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD',
     envvar_cast=int,
     default=5
+)
+
+#: When to run pool image info refresh task, as a Cron-like specification.
+KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
+    'actor.refresh-pool-image-info.schedule',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_SCHEDULE',
+    envvar_cast=str,
+    default='*/5 * * * *'
 )
 
 
@@ -3089,4 +3098,108 @@ def refresh_pool_resources_metrics_dispatcher() -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_refresh_pool_resources_metrics_dispatcher,
         logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-resources-dispatcher')
+    )
+
+
+def do_refresh_pool_image_info(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    poolname: str
+) -> DoerReturnType:
+    # TODO: once context hits tasks completely, this won't be needed. Until that, we update it on our own,
+    # to avoid introducing parameters in driver methods.
+    LOGGER.set(logger)
+    DATABASE.set(db)
+    SESSION.set(session)
+
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        task='refresh-pool-image-info'
+    )
+
+    handle_success('entered-task')
+
+    # Handling errors is slightly different in this task. While we fully use `handle_failure()`,
+    # we do not return `RESCHEDULE` or `Error()` from this doer. This particular task is being
+    # rescheduled regularly anyway, and we probably do not want exponential delays, because
+    # they wouldn't make data any fresher when we'd finally succeed talking to the pool.
+    #
+    # On the other hand, we schedule next iteration of this task here, and it seems to make sense
+    # to retry if we fail to schedule it - without this, the "it will run once again anyway" concept
+    # breaks down.
+    r_pool = _get_pool(logger, session, poolname)
+
+    if r_pool.is_error:
+        handle_failure(r_pool, 'failed to load pool')
+
+    else:
+        pool = r_pool.unwrap()
+
+        r_refresh = pool.refresh_pool_image_info()
+
+        if r_refresh.is_error:
+            handle_failure(r_refresh, 'failed to refresh pool image info')
+
+    return handle_success('finished-task')
+
+
+@dramatiq.actor(**actor_kwargs('REFRESH_POOL_IMAGE_INFO'))  # type: ignore  # Untyped decorator
+def refresh_pool_image_info(poolname: str) -> None:
+    task_core(  # type: ignore # Argument 1 has incompatible type
+        do_refresh_pool_image_info,
+        logger=get_pool_logger('refresh-pool-image-info', _ROOT_LOGGER, poolname),
+        doer_args=(poolname,)
+    )
+
+
+def do_refresh_pool_image_info_dispatcher(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event
+) -> DoerReturnType:
+    handle_success, _, _ = create_event_handlers(
+        logger,
+        session,
+        task='refresh-pool-image-info-dispatcher'
+    )
+
+    handle_success('entered-task')
+
+    logger.info('scheduling pool image info refresh')
+
+    for pool in get_pools(_ROOT_LOGGER, session):
+        dispatch_task(
+            get_pool_logger('refresh-pool-image-info-dispatcher', _ROOT_LOGGER, pool.poolname),
+            refresh_pool_image_info,
+            pool.poolname
+        )
+
+    return handle_success('finished-task')
+
+
+@dramatiq.actor(  # type: ignore  # Untyped decorator
+    periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value),
+    **actor_kwargs('REFRESH_POOL_IMAGE_INFO')
+)
+def refresh_pool_image_info_dispatcher() -> None:
+    """
+    Dispatcher-like task for pool image info refresh. It is being scheduled periodically (by Periodiq),
+    and it refreshes nothing on its own - instead, it gets a list of pools, and dispatches the actual refresh
+    task for each pool.
+
+    This way, we can use Periodiq (or similar package), which makes it much simpler to run tasks in
+    a cron-like fashion, to schedule the task. It does not support this kind of scheduling with different
+    parameters, so we have this task that picks parameters for its kids.
+
+    We don't care about rescheduling or retries - this task would be executed again very soon, exponential
+    retries would make the metrics more outdated.
+    """
+
+    task_core(  # type: ignore # Argument 1 has incompatible type
+        do_refresh_pool_image_info_dispatcher,
+        logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-image-info-dispatcher')
     )
