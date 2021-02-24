@@ -14,6 +14,7 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
+from ..script import hook_engine
 from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, PoolResourcesMetrics, \
     ProvisioningProgress, create_tempfile, run_cli_tool
 
@@ -121,6 +122,33 @@ class BeakerDriver(PoolDriver):
             id=imagename
         ))
 
+    def _environment_to_image(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment
+    ) -> Result[PoolImageInfoType, Failure]:
+        r_engine = hook_engine('BEAKER_ENVIRONMENT_TO_IMAGE')
+
+        if r_engine.is_error:
+            return Error(r_engine.unwrap_error())
+
+        engine = r_engine.unwrap()
+
+        r_image: Result[PoolImageInfoType, Failure] = engine.run_hook(
+            'BEAKER_ENVIRONMENT_TO_IMAGE',
+            logger=logger,
+            pool=self,
+            environment=environment
+        )
+
+        if r_image.is_error:
+            failure = r_image.unwrap_error()
+            failure.update(environment=environment)
+
+            return Error(failure)
+
+        return r_image
+
     def _create_job_xml(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -135,17 +163,18 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with job xml, or specification of error.
         """
 
-        distro = None  # type: Optional[str]
-        distro = environment.os.compose
+        r_distro = self._environment_to_image(logger, environment)
 
-        if not distro:
-            return Error(Failure('No distro specified'))
+        if r_distro.is_error:
+            return Error(r_distro.unwrap_error())
+
+        distro = r_distro.unwrap()
 
         options = [
             'workflow-simple',
             '--dry-run',
             '--prettyxml',
-            '--distro', distro,
+            '--distro', distro.id,
             '--arch', environment.arch,
             '--task', '/distribution/dummy',
             '--reserve',
