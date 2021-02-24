@@ -20,6 +20,11 @@ Since Artemis is still under heavy development, some Artemis metrics are yet to 
 Counters are emitted as two distinct metrics, `foo_total` and `foo_created`, to track the value and creation time of the counter. In the list below, we list the metric names without these suffixes.
 ====
 
+=== Artemis
+
+* `artemis_identity` (gauge): Artemis identity info. Labels provide information about identity aspects.
+* `artemis_package_info` (gauge): Artemis packaging info. Labels provide information about package versions.
+
 === API server HTTP traffic
 
 * `http_requests` (counter): Request count by method, path and status line.

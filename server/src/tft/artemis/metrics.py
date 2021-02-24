@@ -15,6 +15,8 @@ to its offsprings.
 
 import dataclasses
 import datetime
+import os
+import platform
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
 
 import gluetool.log
@@ -24,9 +26,9 @@ import sqlalchemy
 import sqlalchemy.orm.session
 import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
-from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
+from prometheus_client import CollectorRegistry, Counter, Gauge, Info, generate_latest
 
-from . import DATABASE, SESSION, Failure
+from . import __VERSION__, DATABASE, SESSION, Failure
 from . import db as artemis_db
 from . import safe_call
 from . import tasks as artemis_tasks
@@ -716,6 +718,18 @@ class Metrics(MetricsBase):
 
         self._registry = registry
 
+        self.PACKAGE_INFO = Info(
+            'artemis_package',
+            'Artemis packaging info. Labels provide information about package versions.',
+            registry=registry
+        )
+
+        self.IDENTITY_INFO = Info(
+            'artemis_identity',
+            'Artemis identity info. Labels provide information about identity aspects.',
+            registry=registry
+        )
+
         registry.register(REQUEST_COUNT)
         registry.register(REQUESTS_INPROGRESS)
 
@@ -723,6 +737,17 @@ class Metrics(MetricsBase):
         self.pools.register_with_prometheus(registry)
         self.provisioning.register_with_prometheus(registry)
         self.routing.register_with_prometheus(registry)
+
+        # Since these values won't ever change, we can already set metrics and be done with it.
+        self.PACKAGE_INFO.info({
+            'package_version': __VERSION__,
+            'image_digest': os.getenv('ARTEMIS_IMAGE_DIGEST', '<undefined>'),
+            'image_url': os.getenv('ARTEMIS_IMAGE_URL', '<undefined>')
+        })
+
+        self.IDENTITY_INFO.info({
+            'api_node': platform.node()
+        })
 
     def update_prometheus(self) -> None:
         """
