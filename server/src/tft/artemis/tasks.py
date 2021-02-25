@@ -154,6 +154,16 @@ KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
 )
 
 #: When to run pool image info refresh task, as a Cron-like specification.
+KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE: Knob[str] = Knob(
+    'actor.refresh-pool-resources-metrics.schedule',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE',
+    envvar_cast=str,
+    default='* * * * *'
+)
+
+
+#: When to run pool image info refresh task, as a Cron-like specification.
 KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
     'actor.refresh-pool-image-info.schedule',
     has_db=False,
@@ -3078,7 +3088,7 @@ def do_refresh_pool_resources_metrics_dispatcher(
 
 
 @dramatiq.actor(  # type: ignore  # Untyped decorator
-    periodic=periodiq.cron('* * * * *'),
+    periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value),
     **actor_kwargs('REFRESH_POOL_RESOURCES_METRICS')
 )
 def refresh_pool_resources_metrics_dispatcher() -> None:

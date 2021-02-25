@@ -79,16 +79,22 @@ case-insensitive.
 
 === Provisioning workflow
 
-Besides the variables listed below, Artemis accepts also per-task variables, tweaking tasks' retries and minimal and maximal back-off:
-
-* `ARTEMIS_ACTOR_X_RETRIES`
-* `ARTEMIS_ACTOR_X_MIN_BACKOFF`
-* `ARTEMIS_ACTOR_X_MAX_BACKOFF`
-
-For every task, `X`, these three variables can be set, overriding defaults specified by `ARTEMIS_ACTOR_DEFAULT_*` variables.
+Following variables control default values of task aspects, and apply where no specific setting exists.
 
 * `ARTEMIS_ACTOR_DEFAULT_RETRIES` (int): A number of time a failing task get retried. Serves as a default value for tasks without custom setting. Default: `5`.
 * `ARTEMIS_ACTOR_DEFAULT_MIN_BACKOFF` (int): The lowest possible delay, in seconds, before the next attempt to run a failed task. Default: `15`.
 * `ARTEMIS_ACTOR_DEFAULT_MAX_BACKOFF` (int): The biggest possible delay, in seconds, before the next attempt to run a failed task. Default: `60`.
 * `ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD` (int): A range, in seconds, by which can a task delay be modified before use. For example, with `ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD=7` every delay is changed by a random number from range `\<-7, +7>` seconds. Default: `5`.
 * `ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY` (int): A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks. Default: `60`.
+
+Besides the variables listed above, Artemis accepts variables affecting particular tasks - the name of these variables contains upper-cased task name, with underscores replacing dashes. For example, to influence task named `foo-bar`, Artemis would accept variables named `ARTEMIS_ACTOR_FOO_BAR_...`.
+
+Following variables override defaults specified by `ARTEMIS_ACTOR_DEFAULT_*` variables for a given task:
+
+* `ARTEMIS_ACTOR_*_RETRIES`
+* `ARTEMIS_ACTOR_*_MIN_BACKOFF`
+* `ARTEMIS_ACTOR_*_MAX_BACKOFF`
+
+Periodically executed tasks accept following variable controlling the schedule:
+
+* `ARTEMIS_ACTOR_*_SCHEDULE` (str): A Cron-like schedule specification, e.g. `*/7 * * * *`. The default value depends on the task.
