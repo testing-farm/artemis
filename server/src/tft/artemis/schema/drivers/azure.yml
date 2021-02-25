@@ -17,6 +17,9 @@ properties:
   resource-group:
     type: string
 
+  resources:
+    type: object
+
   username:
     type: string
 

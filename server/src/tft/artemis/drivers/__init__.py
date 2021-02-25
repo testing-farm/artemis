@@ -531,6 +531,41 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(tags)
 
+    def _fetch_pool_resources_metrics_from_config(
+        self,
+        logger: gluetool.log.ContextAdapter
+    ) -> Result[PoolResourcesMetrics, Failure]:
+        """
+        Initialize resource metrics with data specified by the pool configuration - purely optional, but this
+        gives maintainers a chance to enforce limits where pool lacks the necessary functionality or when
+        they decide other than existing limits are needed.
+        """
+
+        metrics = PoolResourcesMetrics(self.poolname)
+
+        resources = self.pool_config.get('resources', None)
+        if not resources:
+            return Ok(metrics)
+
+        configured_limits = resources.get('limits', {})
+
+        for field_name in metrics.limits._TRIVIAL_FIELDS:
+            if field_name not in configured_limits:
+                continue
+
+            try:
+                setattr(metrics.limits, field_name, int(configured_limits[field_name]))
+
+            except ValueError as exc:
+                return Error(Failure.from_exc(
+                    'failed to parse configured pool limit',
+                    exc,
+                    field_name=field_name,
+                    field_value=configured_limits[field_name]
+                ))
+
+        return Ok(metrics)
+
     def fetch_pool_resources_metrics(
         self,
         logger: gluetool.log.ContextAdapter
@@ -544,7 +579,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         its pool's API, and retrieve actual data.
         """
 
-        return Ok(PoolResourcesMetrics(self.poolname))
+        return self._fetch_pool_resources_metrics_from_config(logger)
 
     def refresh_pool_resources_metrics(
         self,

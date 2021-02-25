@@ -521,7 +521,12 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
-        resources = PoolResourcesMetrics(self.poolname)
+        r_resources = super(BeakerDriver, self).fetch_pool_resources_metrics(logger)
+
+        if r_resources.is_error:
+            return Error(r_resources.unwrap_error())
+
+        resources = r_resources.unwrap()
 
         r_query_instances = self._run_bkr(
             logger,

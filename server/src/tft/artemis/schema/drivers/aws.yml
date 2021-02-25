@@ -38,6 +38,9 @@ properties:
   post-install-script:
     type: string
 
+  resources:
+    type: object
+
   secret-access-key:
     type: string
 

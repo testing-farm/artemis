@@ -706,6 +706,13 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
+        r_resources = super(OpenStackDriver, self).fetch_pool_resources_metrics(logger)
+
+        if r_resources.is_error:
+            return Error(r_resources.unwrap_error())
+
+        resources = r_resources.unwrap()
+
         r_query_limits = self._run_os(
             ['limits', 'show', '--absolute', '--reserved'],
             json_format=True
@@ -718,8 +725,6 @@ class OpenStackDriver(PoolDriver):
 
         if not isinstance(raw_limits_container, list):
             return Error(Failure('Invalid format of OpenStack limits report'))
-
-        resources = PoolResourcesMetrics(self.poolname)
 
         for entry in raw_limits_container:
             name, value = entry.get('Name'), entry.get('Value')
@@ -739,17 +744,18 @@ class OpenStackDriver(PoolDriver):
             elif name == 'totalSnapshotsUsed':
                 resources.usage.snapshots = int(value)
 
-            elif name == 'maxTotalCores':
+            # When updating limits, make sure to not overwrite those already specified by pool configuration.
+            elif name == 'maxTotalCores' and resources.limits.cores is None:
                 resources.limits.cores = int(value)
 
-            elif name == 'maxTotalInstances':
+            elif name == 'maxTotalInstances' and resources.limits.instances is None:
                 resources.limits.instances = int(value)
 
-            elif name == 'maxTotalRAMSize':
-                # RAM size/usage is reported in megabytes
+            # RAM size/usage is reported in megabytes
+            elif name == 'maxTotalRAMSize' and resources.limits.memory is None:
                 resources.limits.memory = int(value) * 1048576
 
-            elif name == 'maxTotalSnapshots':
+            elif name == 'maxTotalSnapshots' and resources.limits.snapshots is None:
                 resources.limits.snapshots = int(value)
 
         r_networks = self._run_os([

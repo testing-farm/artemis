@@ -44,6 +44,9 @@ properties:
   project-name:
     type: string
 
+  resources:
+    type: object
+
   security-group:
     type: string
 

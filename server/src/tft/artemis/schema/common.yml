@@ -116,6 +116,29 @@ properties:
                 - supported-architectures
                 - supports-snapshots
 
+            resources:
+              type: object
+
+              properties:
+                limits:
+                  type: object
+                  properties:
+                    instances:
+                      type: integer
+                    cores:
+                      type: integer
+                    memory:
+                      type: integer
+                    diskspace:
+                      type: integer
+                    snapshot:
+                      type: integer
+
+                  required: []
+
+              required:
+                - limits
+
           required:
             - capabilities
 

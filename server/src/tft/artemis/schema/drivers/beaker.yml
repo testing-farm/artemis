@@ -17,6 +17,9 @@ properties:
   capabilities:
     type: object
 
+  resources:
+    type: object
+
 additionalProperties: false
 
 required: []
