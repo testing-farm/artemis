@@ -14,8 +14,8 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, create_tempfile, \
-    run_cli_tool
+from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, PoolResourcesMetrics, \
+    ProvisioningProgress, create_tempfile, run_cli_tool
 
 NodeRefType = Any
 
@@ -487,3 +487,32 @@ class BeakerDriver(PoolDriver):
             return Error(r_job_cancel.unwrap_error())
 
         return Ok(True)
+
+    def fetch_pool_resources_metrics(
+        self,
+        logger: gluetool.log.ContextAdapter
+    ) -> Result[PoolResourcesMetrics, Failure]:
+        resources = PoolResourcesMetrics()
+
+        r_query_instances = self._run_bkr(
+            logger,
+            ['system-list', '--mine']
+        )
+
+        if r_query_instances.is_error:
+            return Error(r_query_instances.unwrap_error())
+
+        raw_machines, _ = r_query_instances.unwrap()
+
+        if raw_machines:
+            resources.usage.instances = len(raw_machines.splitlines())
+
+        else:
+            # Not an error, just an empty list which means, hm, 0 instances.
+            resources.usage.instances = 0
+
+        # For the actual numbers of cores, memory and other metrics, we'd have to query each and every machine from
+        # the list above. Is it worth it? At this moment it's not. But it can be done. Leaving them unspecified for
+        # now.
+
+        return Ok(resources)
