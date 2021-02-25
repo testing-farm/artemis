@@ -93,7 +93,7 @@ class AzureDriver(PoolDriver):
                 return Error(r_delete.unwrap_error())
 
         if 'assorted_resource_ids' in resource_ids:
-            for resource_id in cast(List[str], resource_ids.get('assorted_resource_ids')):
+            for resource_id in cast(List[str], resource_ids.pop('assorted_resource_ids')):
                 r_delete = _delete_resource(resource_id)
 
                 if r_delete.is_error:
@@ -182,7 +182,7 @@ class AzureDriver(PoolDriver):
 
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
-        cmd = ['resource', 'list', '--tag', 'uid={}'.format(pool_data.instance_id)]
+        cmd = ['resource', 'list', '--tag', 'uid={}'.format(pool_data.instance_name)]
         resources_by_tag = self._run_cmd_with_auth(cmd).unwrap()
 
         def _delete_resource(res_id: str) -> Any:
@@ -417,10 +417,19 @@ class AzureDriver(PoolDriver):
             If custom_data_filename is an empty string then the guest vm is booted with no user-data.
             """
 
-            tags = self.get_guest_tags(session, guest_request)
+            r_base_tags = self.get_guest_tags(session, guest_request)
 
-            if tags.is_error:
-                return Error(tags.unwrap_error())
+            if r_base_tags.is_error:
+                return Error(r_base_tags.unwrap_error())
+
+            tags = {
+                **r_base_tags.unwrap(),
+                **{
+                    # This tag links our VM and its resources, which comes handy when we want to remove everything
+                    # leaving no leaks.
+                    'uid': name
+                }
+            }
 
             az_options = [
                 'vm',
@@ -428,9 +437,26 @@ class AzureDriver(PoolDriver):
                 '--resource-group', self.pool_config['resource-group'],
                 '--image', image.id,
                 '--name', name,
-                '--tags', ','.join(['{}={}'.format(tag, value) for tag, value in tags.unwrap().items()]),
-                '--custom-data', custom_data_filename,
+                '--custom-data', custom_data_filename
             ]
+
+            # According to `az` documentation, `--tags` accepts `space-separated tags`, but that's not really true.
+            # Space-separated, yes, but not passed as one value after `--tags` option:
+            #
+            # NO:  --tags "foo=bar baz=79"
+            # NO:  '--tags foo=bar baz=79'
+            # YES: --tags foo=bar baz=79
+            #
+            # As you can see, `baz=79` in the valid example is not a space-separated bit of a `--tags` argument,
+            # but rather a stand-alone command-line item that is consumed by `--tags`.
+            if tags:
+                az_options += [
+                    '--tags'
+                ] + [
+                    '{}={}'.format(tag, value)
+                    for tag, value in tags.items()
+                ]
+
             return self._run_cmd_with_auth(az_options)
 
         if guest_request.post_install_script:
