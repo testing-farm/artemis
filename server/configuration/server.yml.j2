@@ -20,7 +20,9 @@ pools:
   {% if openstack is defined %}
   - name: openstack
     driver: openstack
+    {% if openstack.guest_tags is defined %}
     guest_tags: {{ openstack.guest_tags }}
+    {% endif %}
     parameters:
       username: "{{ openstack.credentials.username }}"
       password: "{{ openstack.credentials.password }}"
@@ -51,7 +53,9 @@ pools:
   {% if azure is defined %}
   - name: azure
     driver: azure
+    {% if azure.guest_tags is defined %}
     guest_tags: {{ azure.guest_tags }}
+    {% endif %}
     parameters:
       username: "{{ azure.credentials.username }}"
       password: "{{ azure.credentials.password }}"
@@ -68,7 +72,9 @@ pools:
   {% if aws is defined %}
   - name: aws
     driver: aws
+    {% if aws.guest_tags is defined %}
     guest_tags: {{ aws.guest_tags }}
+    {% endif %}
     parameters:
       access-key-id: "{{ aws.credentials.access_key_id }}"
       secret-access-key: "{{ aws.credentials.secret_access_key }}"
@@ -105,7 +111,9 @@ pools:
   {% if beaker is defined %}
   - name: beaker
     driver: beaker
+    {% if beaker.guest_tags is defined %}
     guest_tags: {{ beaker.guest_tags }}
+    {% endif %}
     parameters:
       {% if beaker.credentials.username is defined and beaker.credentials.username != "" -%}
       username: "{{ beaker.credentials.username }}"
