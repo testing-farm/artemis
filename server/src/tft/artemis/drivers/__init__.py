@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import dataclasses
+import datetime
 import json
 import os
 import re
@@ -661,6 +662,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Get all tags applicable for a given guest request.
 
         Collects all system, pool, and guest-level tags.
+
+        Currently provided guest-level tags:
+
+        * ``ArtemisGuestName``: guestname as known to Artemis, identifying the guest request. This tag does not change
+          over time.
+        * ``ArtemisGuestLabel``: nice, human-readable label assigned to the guest, usable e.g. for naming instances.
+          This label **does** change over time.
         """
 
         system_tags = GuestTag.fetch_system_tags(session)
@@ -679,6 +687,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         }
 
         tags['ArtemisGuestName'] = guest_request.guestname
+        # TODO: drivers could accept a template for the name, to allow custom naming schemes
+        tags['ArtemisGuestLabel'] = 'artemis-guest-{}'.format(datetime.datetime.utcnow().strftime('%Y-%m-%d-%H-%M-%S'))
 
         return Ok(tags)
 

@@ -1,6 +1,5 @@
 import dataclasses
 import threading
-from datetime import datetime
 from typing import Any, Dict, List, Optional, cast
 
 import gluetool.log
@@ -401,8 +400,6 @@ class AzureDriver(PoolDriver):
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
-
-        name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
         r_image = self._env_to_image(logger, environment)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
@@ -410,6 +407,19 @@ class AzureDriver(PoolDriver):
         image = r_image.unwrap()
 
         logger.info('provisioning from image {}'.format(image))
+
+        r_base_tags = self.get_guest_tags(session, guest_request)
+
+        if r_base_tags.is_error:
+            return Error(r_base_tags.unwrap_error())
+
+        tags = {
+            **r_base_tags.unwrap(),
+        }
+
+        # This tag links our VM and its resources, which comes handy when we want to remove everything
+        # leaving no leaks.
+        tags['uid'] = tags['ArtemisGuestLabel']
 
         r_output = None
 
@@ -419,26 +429,12 @@ class AzureDriver(PoolDriver):
             If custom_data_filename is an empty string then the guest vm is booted with no user-data.
             """
 
-            r_base_tags = self.get_guest_tags(session, guest_request)
-
-            if r_base_tags.is_error:
-                return Error(r_base_tags.unwrap_error())
-
-            tags = {
-                **r_base_tags.unwrap(),
-                **{
-                    # This tag links our VM and its resources, which comes handy when we want to remove everything
-                    # leaving no leaks.
-                    'uid': name
-                }
-            }
-
             az_options = [
                 'vm',
                 'create',
                 '--resource-group', self.pool_config['resource-group'],
                 '--image', image.id,
-                '--name', name,
+                '--name', tags['ArtemisGuestLabel'],
                 '--custom-data', custom_data_filename
             ]
 
@@ -488,7 +484,7 @@ class AzureDriver(PoolDriver):
             is_acquired=False,
             pool_data=AzurePoolData(
                 instance_id=output['id'],
-                instance_name=name,
+                instance_name=tags['ArtemisGuestLabel'],
                 resource_group=self.pool_config['resource-group']
             ),
             delay_update=KNOB_UPDATE_TICK.value

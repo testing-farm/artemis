@@ -319,21 +319,22 @@ class OpenStackDriver(PoolDriver):
             return Error(r_network.unwrap_error())
 
         network = r_network.unwrap()
-        name = 'artemis-guest-{}'.format(datetime.now().strftime('%d-%m-%Y-%H-%M-%S'))
 
         def _create(user_data_filename: str) -> Result[Any, Failure]:
             """The actual call to the openstack cli guest create command is happening here.
                If user_data_filename is an empty string then the guest vm is booted with no user-data.
             """
 
-            tags = self.get_guest_tags(session, guest_request)
+            r_tags = self.get_guest_tags(session, guest_request)
 
-            if tags.is_error:
-                return Error(tags.unwrap_error())
+            if r_tags.is_error:
+                return Error(r_tags.unwrap_error())
+
+            tags = r_tags.unwrap()
 
             property_options: List[str] = sum([
                 ['--property', '{}={}'.format(tag, value)]
-                for tag, value in tags.unwrap().items()
+                for tag, value in tags.items()
             ], [])
 
             os_options = [
@@ -346,7 +347,7 @@ class OpenStackDriver(PoolDriver):
                 '--security-group', self.pool_config.get('security-group', 'default'),
                 '--user-data', user_data_filename
             ] + property_options + [
-                name
+                tags['ArtemisGuestLabel']
             ]
 
             return self._run_os(os_options)
