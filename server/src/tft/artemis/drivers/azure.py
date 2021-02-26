@@ -151,6 +151,8 @@ class AzureDriver(PoolDriver):
             if r_acquire.is_ok:
                 logger.info('successfully reprovisioned, releasing the broken instance')
 
+                r_acquire.unwrap().pool_failures.append(Failure('instance status dropped to "failed"'))
+
                 # We can schedule release only when acquire succeeded. Only successfull acquire
                 # let's us update guest request pool data with new instance ID. If acquire failed,
                 # we keep our broken instance, and enter update guest task later, trying again

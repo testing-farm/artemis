@@ -320,6 +320,11 @@ class ProvisioningProgress:
     #: left unset, Artemis core will probably run the update as soon as possible.
     delay_update: Optional[int] = None
 
+    #: If pool driver encountered errors that were not critical enough to be returned immediately, causing
+    #: reschedule of the provisioning step, then to make them visible and logged, such failures should
+    #: be stored in this list.
+    pool_failures: List[Failure] = dataclasses.field(default_factory=list)
+
 
 class PoolDriver(gluetool.log.LoggerMixin):
     #: Template for a cache key holding pool image info.

@@ -2032,6 +2032,10 @@ def do_update_guest_request(
 
     provisioning_progress = r_update.unwrap()
 
+    # not returning here - pool was able to recover and proceed
+    for failure in provisioning_progress.pool_failures:
+        handle_failure(Error(failure), 'pool encountered failure during update')
+
     if not provisioning_progress.is_acquired:
         workspace.update_guest_state(
             GuestState.PROMISED,
@@ -2136,6 +2140,10 @@ def do_acquire_guest_request(
         return handle_failure(result, 'failed to provision')
 
     provisioning_progress = result.unwrap()
+
+    # not returning here - pool was able to recover and proceed
+    for failure in provisioning_progress.pool_failures:
+        handle_failure(Error(failure), 'pool encountered failure during acquisition')
 
     def _undo_guest_acquire() -> None:
         assert workspace.gr

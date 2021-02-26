@@ -610,6 +610,8 @@ class OpenStackDriver(PoolDriver):
             if r_acquire.is_ok:
                 logger.info('successfully reprovisioned, releasing the broken instance')
 
+                r_acquire.unwrap().pool_failures.append(Failure(msg))
+
                 # We can schedule release only when acquire succeeded. Only successfull acquire
                 # let's us update guest request pool data with new instance ID. If acquire failed,
                 # we keep our broken instance, and enter update guest task later, trying again
@@ -623,7 +625,7 @@ class OpenStackDriver(PoolDriver):
             return r_acquire
 
         if status == 'error':
-            return _reprovision('Instance ended up in error state. provisioning a new one')
+            return _reprovision('instance ended up in "ERROR" state')
 
         if status == 'build' and 'created' in output:
             try:
@@ -640,7 +642,7 @@ class OpenStackDriver(PoolDriver):
                 diff = datetime.utcnow() - created_stamp
 
                 if diff.total_seconds() > KNOB_BUILD_TIMEOUT.value:
-                    return _reprovision('instance stuck in BUILD state for {}, provisioning a new one'.format(diff))
+                    return _reprovision('instance stuck in "BUILD" for too long')
 
             return Ok(ProvisioningProgress(
                 is_acquired=False,
