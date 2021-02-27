@@ -1,21 +1,21 @@
+import json
 import os.path
-import requests
+import shutil
 import sys
 import tempfile
-import shutil
-import json
 import urllib
+from typing import Any, Optional, cast
 
 import click
 import click_completion
+import requests
 import stackprinter
-
-from typing import Optional
 from tft import artemis_cli
-from . import Logger, Configuration, fetch_remote, NL, GREEN, RED, YELLOW, WHITE, prettify_json, \
-              artemis_inspect, artemis_create, artemis_restore, artemis_delete, prompt, confirm \
 
-from typing import cast, Any
+from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
+               artemis_create, artemis_delete, artemis_inspect,
+               artemis_restore, artemis_update, confirm, fetch_remote,
+               prettify_json, prettify_yaml, prompt)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT=10000
@@ -423,3 +423,54 @@ artemis_api_url: {artemis_api_url}
     else:
         WARN('Ok, your answers were thrown away.')
 
+
+@cli_root.group(name='knob', short_help='Knob related commands')
+@click.pass_obj
+def cmd_knob(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_knob.command(name='list', short_help='List all knobs')
+@click.pass_obj
+def cmd_knob_list(cfg: Configuration) -> None:
+    print(prettify_yaml(True, artemis_inspect(cfg, 'knobs', '').json()))
+
+
+@cmd_knob.command(name='get', short_help='Get knob value')
+@click.argument('knobname', required=True, type=str)
+@click.pass_obj
+def cmd_knob_get(
+        cfg: Configuration,
+        knobname: str
+) -> None:
+    print(prettify_yaml(True, artemis_inspect(cfg, 'knobs', knobname).json()))
+
+
+@cmd_knob.command(name='set', short_help='Set knob value')
+@click.argument('knobname', required=True, type=str)
+@click.argument('value', required=True, type=str)
+@click.pass_obj
+def cmd_knob_set(
+        cfg: Configuration,
+        knobname: str,
+        value: str
+) -> None:
+    print(prettify_yaml(True, artemis_update(cfg, 'knobs/{}'.format(knobname), {'value': value}).json()))
+
+
+@cmd_knob.command(name='delete', short_help='Remove knob')
+@click.argument('knobname', required=True, type=str)
+@click.pass_obj
+def cmd_knob_delete(
+        cfg: Configuration,
+        knobname: str
+) -> None:
+    logger = Logger()
+
+    response = artemis_delete(cfg, 'knobs', knobname, logger=logger)
+
+    if response.status_code == 404:
+        logger.error('knob "{}" does not exist'.format(knobname))
+
+    if response.ok:
+        logger.info('knob "{}" has been removed'.format(knobname))

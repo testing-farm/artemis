@@ -220,6 +220,9 @@ def fetch_remote(
         elif method == 'delete':
             res = requests.delete(url, **request_kwargs)
 
+        elif method == 'put':
+            res = requests.put(url, **request_kwargs)
+
     if res.status_code not in allow_statuses:
         if on_error:
             on_error(res, request_kwargs)
@@ -264,6 +267,9 @@ def artemis_inspect(cfg, resource, rid, params=None, data=None, logger=None):
 
 def artemis_create(cfg, resource, data, logger=None):
     return fetch_artemis(cfg, '/{}'.format(resource), method='post', request_kwargs={'json': data}, logger=None)
+
+def artemis_update(cfg, resource, data, logger=None):
+    return fetch_artemis(cfg, '/{}'.format(resource), method='put', request_kwargs={'json': data}, logger=None)
 
 def artemis_restore(cfg, resource, rid, data=None, logger=None):
     return fetch_artemis(cfg, '/{}/{}/restore'.format(resource, rid), method='post', request_kwargs={'json': data}, logger=None)

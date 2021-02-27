@@ -337,6 +337,19 @@ class SnapshotResponse:
 
 @molten.schema
 @dataclasses.dataclass
+class KnobUpdateRequest:
+    value: str
+
+
+@molten.schema
+@dataclasses.dataclass
+class KnobResponse:
+    name: str
+    value: str
+
+
+@molten.schema
+@dataclasses.dataclass
 class AboutResponse:
     package_version: str
     image_digest: Optional[str]
@@ -677,6 +690,120 @@ class SnapshotRequestManagerComponent:
         return SnapshotRequestManager(db)
 
 
+class KnobManager:
+    def __init__(self, db: artemis_db.DB) -> None:
+        self.db = db
+
+    #
+    # Entry points hooked to routes
+    #
+    @staticmethod
+    def entry_get_knobs(manager: 'KnobManager') -> List[KnobResponse]:
+        return manager.get_knobs()
+
+    @staticmethod
+    def entry_get_knob(manager: 'KnobManager', knobname: str) -> KnobResponse:
+        response = manager.get_knob(knobname)
+
+        if response is None:
+            raise errors.NoSuchEntityError()
+
+        return response
+
+    @staticmethod
+    def entry_set_knob(
+        manager: 'KnobManager',
+        knobname: str,
+        payload: KnobUpdateRequest,
+        logger: gluetool.log.ContextAdapter
+    ) -> KnobResponse:
+        manager.set_knob(knobname, payload.value, logger)
+
+        response = manager.get_knob(knobname)
+
+        if response is None:
+            raise errors.NoSuchEntityError()
+
+        return response
+
+    @staticmethod
+    def entry_delete_knob(
+        manager: 'KnobManager',
+        logger: gluetool.log.ContextAdapter,
+        knobname: str
+    ) -> Tuple[str, None]:
+        manager.delete_knob(logger, knobname)
+
+        return HTTP_204, None
+
+    def get_knobs(self) -> List[KnobResponse]:
+        with self.db.get_session() as session:
+            r_knobs = artemis_db.SafeQuery.from_session(session, artemis_db.Knob) \
+                .all()
+
+            if r_knobs.is_error:
+                raise errors.InternalServerError(caused_by=r_knobs.unwrap_error())
+
+            return [
+                KnobResponse(name=knob.knobname, value=knob.value)
+                for knob in r_knobs.unwrap()
+            ]
+
+    def get_knob(self, knobname: str) -> Optional[KnobResponse]:
+        with self.db.get_session() as session:
+            r_knob = artemis_db.SafeQuery.from_session(session, artemis_db.Knob) \
+                .filter(artemis_db.Knob.knobname == knobname) \
+                .one_or_none()
+
+            if r_knob.is_error:
+                raise errors.InternalServerError(caused_by=r_knob.unwrap_error())
+
+            knob_record = r_knob.unwrap()
+
+            if knob_record is None:
+                return None
+
+            return KnobResponse(
+                name=knob_record.knobname,
+                value=knob_record.value
+            )
+
+    def set_knob(self, knobname: str, value: str, logger: gluetool.log.ContextAdapter) -> None:
+        with self.db.get_session() as session:
+            artemis_db.upsert(
+                session,
+                artemis_db.Knob,
+                {
+                    artemis_db.Knob.knobname: knobname
+                },
+                insert_data={
+                    artemis_db.Knob.value: value
+                },
+                update_data={
+                    'value': value
+                }
+            )
+
+    def delete_knob(self, logger: gluetool.log.ContextAdapter, knobname: str) -> None:
+        with self.db.get_session() as session:
+            perform_safe_db_change(
+                logger,
+                session,
+                sqlalchemy.delete(artemis_db.Knob.__table__).where(artemis_db.Knob.knobname == knobname)
+            )
+
+
+class KnobManagerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is KnobManager or parameter.annotation == 'KnobManager'
+
+    def resolve(self, db: artemis_db.DB) -> KnobManager:
+        return KnobManager(db)
+
+
 #
 # Routes
 #
@@ -870,6 +997,7 @@ def run_app() -> molten.app.App:
         GuestRequestManagerComponent(),
         GuestEventManagerComponent(),
         SnapshotRequestManagerComponent(),
+        KnobManagerComponent(),
         AuthContextComponent(),
         MetricsComponent(metrics_tree)
     ]
@@ -903,6 +1031,12 @@ def run_app() -> molten.app.App:
             Route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
             Route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
             Route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
+        ]),
+        Include('/knobs', [
+            Route('/', KnobManager.entry_get_knobs, method='GET'),
+            Route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+            Route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+            Route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
         ]),
         Route('/metrics', get_metrics),
         Route('/about', get_about),
