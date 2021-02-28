@@ -3,7 +3,8 @@ import dataclasses
 import os
 import re
 import threading
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -12,7 +13,7 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import wait
 from jinja2 import Template
 
-from .. import Failure
+from .. import Failure, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
@@ -23,6 +24,7 @@ from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfoType, PoolResour
 # Custom typing types
 #
 BlockDeviceMappingsType = List[Dict[str, Any]]
+InstanceOwnerType = Tuple[Dict[str, Any], str]
 
 #
 # All these defautls should go to configuration later
@@ -57,16 +59,34 @@ AWS_INSTANCE_SPECIFICATION = Template("""
 }
 """)
 
+#: How long, in seconds, is an instance allowed to stay in `pending` state until cancelled and reprovisioned.
+KNOB_PENDING_TIMEOUT: Knob[int] = Knob(
+    'aws.pending-timeout',
+    has_db=False,
+    envvar='ARTEMIS_AWS_PENDING_TIMEOUT',
+    envvar_cast=int,
+    default=600
+)
+
+#: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
+KNOB_UPDATE_TICK: Knob[int] = Knob(
+    'aws.update.tick',
+    has_db=False,
+    envvar='ARTEMIS_AWS_UPDATE_TICK',
+    envvar_cast=int,
+    default=30
+)
+
 
 class FailedSpotRequest(Failure):
     def __init__(
         self,
         message: str,
-        spot_request_id: str,
+        spot_instance_id: str,
         **kwargs: Any
     ):
         super(FailedSpotRequest, self).__init__(message, **kwargs)
-        self.spot_request_id = spot_request_id
+        self.spot_instance_id = spot_instance_id
 
 
 @dataclasses.dataclass
@@ -232,6 +252,40 @@ class AWSDriver(PoolDriver):
             return Error(failure)
 
         return r_image
+
+    def _describe_instance(
+        self,
+        guest_request: GuestRequest
+    ) -> Result[InstanceOwnerType, Failure]:
+
+        aws_options = [
+            'ec2',
+            'describe-instances',
+            '--instance-id={}'.format(AWSPoolData.unserialize(guest_request).instance_id)
+        ]
+
+        r_output = self._aws_command(aws_options, key='Reservations')
+
+        # command returned an unxpected result
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        output = r_output.unwrap()
+
+        # get instance info from command output
+        try:
+            instance = output[0]['Instances'][0]
+            owner = output[0]['OwnerId']
+        except (KeyError, IndexError) as error:
+            return Error(
+                Failure.from_exc(
+                    'Failed to parse instance from output',
+                    error,
+                    output=output
+                )
+            )
+
+        return Ok((instance, owner))
 
     def _aws_command(self, args: List[str], key: Optional[str] = None) -> Result[Any, Failure]:
         """
@@ -427,15 +481,16 @@ class AWSDriver(PoolDriver):
         if r_spot_request.is_error:
             return r_spot_request
 
-        spot_request_id = r_spot_request.unwrap()[0]['SpotInstanceRequestId']
-        logger.info("spot instance request '{}'".format(spot_request_id))
+        spot_instance_id = r_spot_request.unwrap()[0]['SpotInstanceRequestId']
+        logger.info("spot instance request '{}'".format(spot_instance_id))
 
-        # wait until spot request fullfilled
+        # wait until spot request fullfilled, accept busy waiting as this should take only few seconds
+        # TODO: remove busy waiting later
         def _check_spot_request_fulfilled() -> Result[Any, Failure]:
             # wait for request to be fulfilled
             r_spot_status = self._aws_command([
                 'ec2', 'describe-spot-instance-requests',
-                '--spot-instance-request-ids={}'.format(spot_request_id)
+                '--spot-instance-request-ids={}'.format(spot_instance_id)
             ], key='SpotInstanceRequests')
 
             # Command returned error, there is no point to continue, return None
@@ -460,63 +515,109 @@ class AWSDriver(PoolDriver):
         )
 
         if instance_id is None:
-            return Error(FailedSpotRequest('Failed to get spot instance fullfillment state', spot_request_id))
+            return Error(FailedSpotRequest('Failed to get spot instance fullfillment state', spot_instance_id))
 
-        logger.info("instance id '{}'".format(instance_id))
-
-        # wait until instance running
-        def _check_instance_running() -> Result[Any, Failure]:
-            # wait for request to be fulfilled
-            r_instance = self._aws_command([
-                'ec2', 'describe-instances',
-                '--instance-id={}'.format(instance_id)
-            ], key='Reservations')
-
-            # command returned an unxpected result
-            if r_instance.is_error:
-                r_instance.unwrap_error().log(logger.error, label='provisioning failed')
-                return Ok(None)
-
-            instance = r_instance.unwrap()[0]['Instances'][0]
-            owner = r_instance.unwrap()[0]['OwnerId']
-
-            # return an instance if it became 'running'
-            if instance['State']['Name'] == 'running':
-                return Ok((instance, owner))
-
-            return Error(Failure('Instance in state {}'.format(instance['State']['Name'])))
-
-        logger.info('waiting for instance to be running for {}s, tick each {}s'.format(
-            self.pool_config['instance-running-timeout'], self.pool_config['instance-running-tick']
+        # instance state is "pending" after launch
+        # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
+        logger.info('acquired instance status {}:{}'.format(
+            instance_id,
+            "pending"
         ))
-        r_wait_instance = wait(
-            'wait for for instance to be running', _check_instance_running,
-            timeout=int(self.pool_config['instance-running-timeout']),
-            tick=int(self.pool_config['instance-running-tick'])
-        )
 
-        if r_wait_instance is None:
-            return Error(FailedSpotRequest('Failed to get spot instance state', spot_request_id))
+        # There is no chance that the guest will be ready in this step
+        return Ok(ProvisioningProgress(
+            is_acquired=False,
+            pool_data=AWSPoolData(instance_id=instance_id, spot_instance_id=spot_instance_id),
+            delay_update=KNOB_UPDATE_TICK.value
+        ))
 
-        instance, owner = r_wait_instance
+    def update_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        environment: Environment,
+        master_key: SSHKey,
+        cancelled: Optional[threading.Event] = None
+    ) -> Result[ProvisioningProgress, Failure]:
 
-        self.info('instance succesfully provisioned and it has become running')
+        r_output = self._describe_instance(guest_request)
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        instance, owner = r_output.unwrap()  # type: InstanceOwnerType
+
+        status = instance['State']['Name']
+
+        pool_data = AWSPoolData.unserialize(guest_request)
+
+        logger.info('current instance status {}:{}'.format(
+            pool_data.instance_id,
+            status
+        ))
+
+        def _reprovision(msg: str) -> Result[ProvisioningProgress, Failure]:
+            logger.warning(msg)
+
+            r_acquire = self._do_acquire_guest(logger, session, guest_request, environment, master_key)
+
+            if r_acquire.is_ok:
+                logger.info('successfully reprovisioned, releasing the broken instance')
+
+                # We can schedule release only when acquire succeeded. Only successfull acquire
+                # let's us update guest request pool data with new instance ID. If acquire failed,
+                # we keep our broken instance, and enter update guest task later, trying again
+                # to either update or reschedule and drop the failed one.
+                self._dispatch_resource_cleanup(
+                    logger,
+                    instance_id=pool_data.instance_id,
+                    guest_request=guest_request
+                )
+
+            return r_acquire
+
+        # EC2 instance lifecycle documentation
+        # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
+
+        if status == 'terminated' or status == 'shutting-down':
+            return _reprovision('Instance terminated prematurely, provisioning a new one')
+
+        if status == 'pending':
+            try:
+                created_stamp = datetime.strptime(instance['LaunchTime'], '%Y-%m-%dT%H:%M:%S.%fZ')
+
+            except Exception as exc:
+                Failure.from_exc(
+                    'failed to parse "created" timestamp',
+                    exc,
+                    stamp=instance['LaunchTime']
+                ).handle(self.logger)
+
+            else:
+                diff = datetime.utcnow() - created_stamp
+
+                if diff.total_seconds() > KNOB_PENDING_TIMEOUT.value:
+                    return _reprovision("instance stuck in 'pending' state for {}, provisioning a new one".format(diff))
+
+            return Ok(ProvisioningProgress(
+                is_acquired=False,
+                pool_data=pool_data,
+                delay_update=KNOB_UPDATE_TICK.value
+            ))
 
         # tag the instance if requested
         # TODO: move these into configuration. Before that, we need to add support for templates in tags, so we
         # could generate tags like `Name`. But it really belongs to configuration.
         self._tag_instance(session, guest_request, instance, owner, tags={
-            'Name': '{}::{}'.format(instance['PrivateIpAddress'], image.name),
-            'SpotRequestId': spot_request_id
+            'Name': '{}::{}'.format(instance['PrivateIpAddress'], instance['ImageId']),
+            'SpotRequestId': pool_data.spot_instance_id,
         })
 
         return Ok(ProvisioningProgress(
             is_acquired=True,
-            address=instance['PrivateIpAddress'],
-            pool_data=AWSPoolData(
-                instance_id=instance['InstanceId'],
-                spot_instance_id=spot_request_id
-            )
+            pool_data=pool_data,
+            address=instance['PrivateIpAddress']
         ))
 
     def _tag_instance(
@@ -543,7 +644,7 @@ class AWSDriver(PoolDriver):
             self.debug('Skipping tagging as no tags specified.')
             return
 
-        # we need ARN of the instnace for tagging
+        # we need ARN of the instance for tagging
         arn = 'arn:aws:ec2:{}:{}:instance/{}'.format(
             # region can be transformed from availability zone by omiting the last character
             self.pool_config['availability-zone'][:-1],
@@ -580,10 +681,28 @@ class AWSDriver(PoolDriver):
         :param Key key: master key to upload to the guest.
         :param threading.Event cancelled: if set, method should cancel its operation, release
             resources, and return.
-        :rtype: result.Result[Guest, str]
+        :rtype: result.Result[Guest, Failure]
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
         """
+        return self._do_acquire_guest(
+            logger,
+            session,
+            guest_request,
+            environment,
+            master_key,
+            cancelled
+        )
+
+    def _do_acquire_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        environment: Environment,
+        master_key: SSHKey,
+        cancelled: Optional[threading.Event] = None
+    ) -> Result[ProvisioningProgress, Failure]:
 
         logger.info('provisioning environment {}'.format(environment.serialize_to_json()))
 
@@ -614,7 +733,7 @@ class AWSDriver(PoolDriver):
             if isinstance(r_spot_instance.error, FailedSpotRequest):
                 self._aws_command([
                     'ec2', 'cancel-spot-instance-requests',
-                    '--spot-instance-request-ids={}'.format(r_spot_instance.error.spot_request_id)
+                    '--spot-instance-request-ids={}'.format(r_spot_instance.error.spot_instance_id)
                 ])
 
                 return Error(Failure(r_spot_instance.error.message))
