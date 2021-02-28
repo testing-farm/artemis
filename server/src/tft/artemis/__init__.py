@@ -30,7 +30,6 @@ import ruamel.yaml.compat
 import sqlalchemy.orm.session
 import stackprinter
 from gluetool.result import Error, Ok, Result
-from mypy_extensions import VarArg
 from sqlalchemy.orm.session import Session
 
 __VERSION__ = pkg_resources.get_distribution('tft-artemis').version
@@ -1209,7 +1208,7 @@ CONTEXT_PROVIDERS: Dict[Tuple[str, Any], contextvars.ContextVar[Any]] = {
 }
 
 
-def with_context(fn: Callable[..., T]) -> Callable[['VarArg(Any)'], T]:  # type: ignore  # VarArg isn't a problem
+def with_context(fn: Callable[..., T]) -> Callable[..., T]:
     """
     Decorated function is injected with context variables by specifying them as parameters with known names and types.
 
@@ -1223,30 +1222,33 @@ def with_context(fn: Callable[..., T]) -> Callable[['VarArg(Any)'], T]:  # type:
     .. code-block:: python
 
        @with_context
-       def foo(logger: ContextAdapter) -> str:
-           return 'bar'
+       def foo(i: int, logger: ContextAdapter, bar: Optional[str] = 'baz') -> str:
+           return str(i)
 
-        foo()  # `foo(logger=LOGGER.get())` on background
+        foo(1)  # `foo(1, logger=LOGGER.get(), bar='baz')` on background
 
     .. warning::
 
-       At this moment, the decorator works with methods that accept only ``self`` and nothing else. The problem lies
-       in extending the support to any number or type of arguments but preserving the assurance type annotations
-       provide. Therefore, the use is limited.
+       At this moment, the type annotations are not enough to express the optionality of some keyword
+       arguments - not their values, but the arguments themselves can be missing. This together with
+       some extensions that will land in Python 3.10 makes it hard to properly type this decorator
+       and the decorated function.
+
+       This means that decorated functions accept any positional and keyword arguments as far as type
+       checking machinery is concerned. Which is what it does under the hood, but on the outside, the
+       signature should rather prevent such calls instead of allowing them :/
     """
 
     annotation = fn.__annotations__
 
     @functools.wraps(fn)
-    def wrapper(self: Any) -> T:
-        kwargs: Dict[str, Any] = {}
-
+    def wrapper(*args: Any, **kwargs: Any) -> T:
         for (name, type_), var in CONTEXT_PROVIDERS.items():
             if name not in annotation or annotation[name] is not type_:
                 continue
 
             kwargs[name] = var.get()
 
-        return fn(self, **kwargs)
+        return fn(*args, **kwargs)
 
     return wrapper
