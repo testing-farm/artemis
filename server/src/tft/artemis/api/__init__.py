@@ -376,7 +376,7 @@ class GuestRequestManager:
             )
 
             # update metrics counter for total guest requests
-            metrics.ProvisioningMetrics.inc_requested(session)
+            metrics.ProvisioningMetrics.inc_requested()
 
         gr = self.get_by_guestname(guestname)
 

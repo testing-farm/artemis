@@ -455,7 +455,7 @@ def run_routing_policies(
 
         r = policy(logger, session, ruling.allowed_pools, guest_request)
 
-        RoutingMetrics.inc_policy_called(session, policy_name)
+        RoutingMetrics.inc_policy_called(policy_name)
 
         if r.is_error:
             return Error(Failure(
@@ -467,9 +467,9 @@ def run_routing_policies(
 
         if policy_ruling.cancel:
             # Mark all input pools are excluded
-            map(lambda x: RoutingMetrics.inc_pool_excluded(session, policy_name, x.poolname), ruling.allowed_pools)
+            map(lambda x: RoutingMetrics.inc_pool_excluded(policy_name, x.poolname), ruling.allowed_pools)
 
-            RoutingMetrics.inc_policy_canceled(session, policy_name)
+            RoutingMetrics.inc_policy_canceled(policy_name)
 
             ruling.allowed_pools = []
             ruling.cancel = True
@@ -479,10 +479,10 @@ def run_routing_policies(
         # Store ruling metrics before we update ruling container with results from the policy.
         for pool in ruling.allowed_pools:
             if pool in policy_ruling.allowed_pools:
-                RoutingMetrics.inc_pool_allowed(session, policy_name, pool.poolname)
+                RoutingMetrics.inc_pool_allowed(policy_name, pool.poolname)
 
             else:
-                RoutingMetrics.inc_pool_excluded(session, policy_name, pool.poolname)
+                RoutingMetrics.inc_pool_excluded(policy_name, pool.poolname)
 
         # Now we can update our container with up-to-date results.
         ruling.allowed_pools = policy_ruling.allowed_pools

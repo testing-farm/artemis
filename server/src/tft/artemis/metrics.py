@@ -298,6 +298,11 @@ class ProvisioningMetrics(MetricsBase):
     Provisioning metrics.
     """
 
+    _KEY_PROVISIONING_REQUESTED = 'metrics.provisioning.requested'
+    _KEY_PROVISIONING_SUCCESS = 'metrics.provisioning.success'
+    _KEY_FAILOVER = 'metrics.provisioning.failover'
+    _KEY_FAILOVER_SUCCESS = 'metrics.provisioning.failover.success'
+
     requested: int = 0
     current: int = 0
     success: Dict[str, int] = dataclasses.field(default_factory=dict)
@@ -308,122 +313,103 @@ class ProvisioningMetrics(MetricsBase):
     guest_ages: List[Tuple[GuestState, Optional[str], datetime.timedelta]] = dataclasses.field(default_factory=list)
 
     @staticmethod
+    @with_context
     def inc_requested(
-        session: sqlalchemy.orm.session.Session
+        cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase :py:attr:`requested` metric by 1.
 
-        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        upsert_inc_metric(session, artemis_db.Metrics, {artemis_db.Metrics.metric: 'requested'})
+        inc_metric(cache, ProvisioningMetrics._KEY_PROVISIONING_REQUESTED)
         return Ok(None)
 
     @staticmethod
+    @with_context
     def inc_success(
-        session: sqlalchemy.orm.session.Session,
-        pool: str
+        pool: str,
+        cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase :py:attr:`success` metric by 1.
 
-        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         :param pool: pool that provided the instance.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        upsert_inc_metric(
-            session,
-            artemis_db.MetricsProvisioningSuccess,
-            {
-                artemis_db.MetricsProvisioningSuccess.pool: pool
-            }
-        )
-
+        inc_metric_field(cache, ProvisioningMetrics._KEY_PROVISIONING_SUCCESS, pool)
         return Ok(None)
 
     @staticmethod
+    @with_context
     def inc_failover(
-        session: sqlalchemy.orm.session.Session,
         from_pool: str,
-        to_pool: str
+        to_pool: str,
+        cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase pool failover metric by 1.
 
-        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         :param from_pool: name of the originating pool.
         :param to_pool: name of the replacement pool.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        upsert_inc_metric(
-            session,
-            artemis_db.MetricsFailover,
-            {
-                artemis_db.MetricsFailover.from_pool: from_pool,
-                artemis_db.MetricsFailover.to_pool: to_pool
-            }
-        )
+        inc_metric_field(cache, ProvisioningMetrics._KEY_FAILOVER, '{}:{}'.format(from_pool, to_pool))
         return Ok(None)
 
     @staticmethod
+    @with_context
     def inc_failover_success(
-        session: sqlalchemy.orm.session.Session,
         from_pool: str,
-        to_pool: str
+        to_pool: str,
+        cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase successfull pool failover meric by 1.
 
-        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         :param from_pool: name of the originating pool.
         :param to_pool: name of the replacement pool.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        upsert_inc_metric(
-            session,
-            artemis_db.MetricsFailoverSuccess,
-            {
-                artemis_db.MetricsFailoverSuccess.from_pool: from_pool,
-                artemis_db.MetricsFailoverSuccess.to_pool: to_pool
-            }
-        )
+        inc_metric_field(cache, ProvisioningMetrics._KEY_FAILOVER_SUCCESS, '{}:{}'.format(from_pool, to_pool))
         return Ok(None)
 
     @with_context
-    def sync(self, session: sqlalchemy.orm.session.Session) -> None:
+    def sync(self, cache: redis.Redis, session: sqlalchemy.orm.session.Session) -> None:
         """
         Load values from database and update this container with up-to-date values..
 
         :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         """
 
         NOW = datetime.datetime.utcnow()
 
         current_record = session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
 
-        requested_record = artemis_db.Query \
-            .from_session(session, artemis_db.Metrics) \
-            .filter(artemis_db.Metrics.metric == 'requested') \
-            .one_or_none()
-
         self.current = current_record.scalar()
-        self.requested = requested_record.count if requested_record else 0
+        self.requested = get_metric(cache, self._KEY_PROVISIONING_REQUESTED) or 0
         self.success = {
-            record.pool: record.count
-            for record in artemis_db.Query.from_session(session, artemis_db.MetricsProvisioningSuccess).all()
+            poolname: count
+            for poolname, count in get_metric_fields(cache, self._KEY_PROVISIONING_SUCCESS).items()
         }
+        # fields are in form `from_pool:to_pool`
         self.failover = {
-            (record.from_pool, record.to_pool): record.count
-            for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailover).all()
+            cast(Tuple[str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_FAILOVER).items()
         }
+        # fields are in form `from_pool:to_pool`
         self.failover_success = {
-            (record.from_pool, record.to_pool): record.count
-            for record in artemis_db.Query.from_session(session, artemis_db.MetricsFailoverSuccess).all()
+            cast(Tuple[str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_FAILOVER_SUCCESS).items()
         }
         # Using `query` directly, because we need just limited set of fields, and we need our `Query`
         # and `SafeQuery` to support this functionality (it should be just a matter of correct types).
@@ -519,125 +505,106 @@ class RoutingMetrics(MetricsBase):
     Routing metrics.
     """
 
+    _KEY_CALLS = 'metrics.routing.policy.calls'
+    _KEY_CANCELLATIONS = 'metrics.routing.policy.cancellations'
+    _KEY_RULINGS = 'metrics.routing.policy.rulings'
+
     policy_calls: Dict[str, int] = dataclasses.field(default_factory=dict)
     policy_cancellations: Dict[str, int] = dataclasses.field(default_factory=dict)
-    policy_rulings: Dict[Tuple[str, str, bool], int] = dataclasses.field(default_factory=dict)
+    policy_rulings: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
 
     @staticmethod
+    @with_context
     def inc_policy_called(
-        session: sqlalchemy.orm.session.Session,
-        policy_name: str
+        policy_name: str,
+        cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "policy called to make ruling" metric by 1.
 
-        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         :param policy_name: policy that was called to make ruling.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        upsert_inc_metric(
-            session,
-            artemis_db.MetricsPolicyCalls,
-            {
-                artemis_db.MetricsPolicyCalls.policy_name: policy_name
-            }
-        )
+        inc_metric_field(cache, RoutingMetrics._KEY_CALLS, policy_name)
         return Ok(None)
 
     @staticmethod
+    @with_context
     def inc_policy_canceled(
-        session: sqlalchemy.orm.session.Session,
-        policy_name: str
+        policy_name: str,
+        cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "policy canceled a guest request" metric by 1.
 
-        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         :param policy_name: policy that made the decision.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        upsert_inc_metric(
-            session,
-            artemis_db.MetricsPolicyCancellations,
-            {
-                artemis_db.MetricsPolicyCancellations.policy_name: policy_name
-            }
-        )
+        inc_metric_field(cache, RoutingMetrics._KEY_CANCELLATIONS, policy_name)
         return Ok(None)
 
     @staticmethod
+    @with_context
     def inc_pool_allowed(
-        session: sqlalchemy.orm.session.Session,
         policy_name: str,
-        pool_name: str
+        pool_name: str,
+        cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "pool allowed by policy" metric by 1.
 
-        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         :param policy_name: policy that made the decision.
         :param pool_name: pool that was allowed.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        upsert_inc_metric(
-            session,
-            artemis_db.MetricsPolicyRulings,
-            {
-                artemis_db.MetricsPolicyRulings.policy_name: policy_name,
-                artemis_db.MetricsPolicyRulings.pool_name: pool_name,
-                artemis_db.MetricsPolicyRulings.allowed: True
-            }
-        )
+        inc_metric_field(cache, RoutingMetrics._KEY_RULINGS, '{}:{}:yes'.format(policy_name, pool_name))
         return Ok(None)
 
     @staticmethod
+    @with_context
     def inc_pool_excluded(
-        session: sqlalchemy.orm.session.Session,
         policy_name: str,
-        pool_name: str
+        pool_name: str,
+        cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "pool excluded by policy" metric by 1.
 
-        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         :param policy_name: policy that made the decision.
         :param pool_name: pool that was excluded.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        upsert_inc_metric(
-            session,
-            artemis_db.MetricsPolicyRulings,
-            {
-                artemis_db.MetricsPolicyRulings.policy_name: policy_name,
-                artemis_db.MetricsPolicyRulings.pool_name: pool_name,
-                artemis_db.MetricsPolicyRulings.allowed: False
-            }
-        )
+        inc_metric_field(cache, RoutingMetrics._KEY_RULINGS, '{}:{}:no'.format(policy_name, pool_name))
         return Ok(None)
 
     @with_context
-    def sync(self, session: sqlalchemy.orm.session.Session) -> None:
+    def sync(self, cache: redis.Redis) -> None:
         """
         Load values from database and update this container with up-to-date values..
 
-        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         """
 
         self.policy_calls = {
-            record.policy_name: record.count
-            for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyCalls).all()
+            field: count
+            for field, count in get_metric_fields(cache, self._KEY_CALLS).items()
         }
         self.policy_cancellations = {
-            record.policy_name: record.count
-            for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyCancellations).all()
+            field: count
+            for field, count in get_metric_fields(cache, self._KEY_CANCELLATIONS).items()
         }
+        # fields are in form `policy:pool:allowed`
         self.policy_rulings = {
-            (record.policy_name, record.pool_name, record.allowed): record.count
-            for record in artemis_db.Query.from_session(session, artemis_db.MetricsPolicyRulings).all()
+            cast(Tuple[str, str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_RULINGS).items()
         }
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -681,7 +648,7 @@ class RoutingMetrics(MetricsBase):
 
         for (policy_name, pool_name, allowed), count in self.policy_rulings.items():
             self.OVERALL_POLICY_RULINGS_COUNT \
-                .labels(policy=policy_name, pool=pool_name, allowed='yes' if allowed else 'no') \
+                .labels(policy=policy_name, pool=pool_name, allowed=allowed) \
                 ._value.set(count)
 
 

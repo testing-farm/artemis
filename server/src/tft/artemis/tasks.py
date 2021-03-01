@@ -1523,11 +1523,7 @@ def _handle_successful_failover(
 
     if previous_poolname and previous_poolname != poolname:
         logger.warning('successful failover - from pool {} to {}'.format(previous_poolname, poolname))
-        metrics.ProvisioningMetrics.inc_failover_success(
-            session=session,
-            from_pool=previous_poolname,
-            to_pool=poolname
-        )
+        metrics.ProvisioningMetrics.inc_failover_success(previous_poolname, poolname)
 
 
 def do_release_pool_resources(
@@ -1874,7 +1870,7 @@ def do_guest_request_prepare_finalize(
     assert workspace.gr
     assert workspace.gr.poolname is not None
 
-    metrics.ProvisioningMetrics.inc_success(session, workspace.gr.poolname)
+    metrics.ProvisioningMetrics.inc_success(workspace.gr.poolname)
 
     return handle_success('finished-task')
 
@@ -2319,7 +2315,7 @@ def do_route_guest_request(
     # New pool was chosen - log failover
     if workspace.gr and current_pool and new_pool != current_pool:
         logger.warning('failover - trying {} pool instead of {}'.format(new_pool, current_pool))
-        metrics.ProvisioningMetrics.inc_failover(session=session, from_pool=current_pool, to_pool=new_pool)
+        metrics.ProvisioningMetrics.inc_failover(current_pool, new_pool)
 
     return handle_success('finished-task')
 
