@@ -500,9 +500,20 @@ class BeakerDriver(PoolDriver):
         )
 
         if r_query_instances.is_error:
-            return Error(r_query_instances.unwrap_error())
+            failure = r_query_instances.unwrap_error()
+            command_output = failure.details.get('command_output', None)
 
-        raw_machines, _ = r_query_instances.unwrap()
+            if command_output and command_output.stderr \
+               and command_output.stderr.decode('utf-8').strip().lower() == 'nothing matches':
+                # This is a a valid result, meaning "0 machines". Setting our "raw output" to a corresponding value
+                # instead of adding some special flag. Empty string has 0 lines, 0 machines...
+                raw_machines = ''
+
+            else:
+                return Error(failure)
+
+        else:
+            raw_machines, _ = r_query_instances.unwrap()
 
         if raw_machines:
             resources.usage.instances = len(raw_machines.splitlines())
