@@ -25,6 +25,16 @@ Counters are emitted as two distinct metrics, `foo_total` and `foo_created`, to 
 * `artemis_identity` (gauge): Artemis identity info. Labels provide information about identity aspects.
 * `artemis_package_info` (gauge): Artemis packaging info. Labels provide information about package versions.
 
+=== Messages and tasks
+
+* `overall_message_count` (counter): Overall total number of messages processed by queue and actor.
+* `overall_errored_message_count` (counter): Overall total number of errored messages by queue and actor.
+* `overall_retried_message_count` (counter): Overall total number of retried messages by queue and actor.
+* `overall_rejected_message_count` (counter): Overall total number of rejected messages by queue and actor.
+* `current_message_count` (gauge): Current number of messages being processed by queue and actor.
+* `current_delayed_message_count` (gauge): Current number of messages being delayed by queue and actor.
+* `message_duration_milliseconds` (histogram): The time spent processing messages by queue and actor.
+
 === API server HTTP traffic
 
 * `http_requests` (counter): Request count by method, path and status line.

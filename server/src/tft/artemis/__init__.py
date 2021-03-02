@@ -953,6 +953,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
             dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
             dramatiq.middleware.callbacks.Callbacks(),
             dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
+            artemis_middleware.Prometheus(),
             artemis_middleware.Retries(),
             periodiq.PeriodiqMiddleware()
         ])
@@ -977,6 +978,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
                 dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
                 dramatiq.middleware.callbacks.Callbacks(),
                 dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
+                artemis_middleware.Prometheus(),
                 artemis_middleware.Retries(),
                 periodiq.PeriodiqMiddleware()
             ],

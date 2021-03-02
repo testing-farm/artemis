@@ -26,7 +26,7 @@ import sqlalchemy
 import sqlalchemy.orm.session
 import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
-from prometheus_client import CollectorRegistry, Counter, Gauge, Info, generate_latest
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
 
 from . import __VERSION__, DATABASE, SESSION, Failure
 from . import db as artemis_db
@@ -46,6 +46,19 @@ GUEST_AGE_BUCKETS = \
     list(range(300, 3600, 300)) \
     + list(range(3600, 49 * 3600, 3600)) \
     + [prometheus_client.utils.INF]
+
+
+# Message processing time buckets, in milliseconds. Spanning from 5 milliseconds up to 900 seconds.
+# Taken from the Prometheus middleware Dramatiq provides - not suited for our needs, but the bucket
+# setup is not incompatible with our architecture.
+MESSAGE_DURATION_BUCKETS = (
+    5, 10, 25, 50, 75,
+    100, 250, 500, 750,
+    1000, 2500, 5000, 7500,
+    10000, 30000, 60000,
+    600000, 900000,
+    prometheus_client.utils.INF
+)
 
 
 def reset_counters(metric: Union[Counter, Gauge]) -> None:
@@ -653,6 +666,303 @@ class RoutingMetrics(MetricsBase):
 
 
 @dataclasses.dataclass
+class TaskMetrics(MetricsBase):
+    """
+    Task and actor metrics.
+    """
+
+    overall_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    overall_errored_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    overall_retried_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    overall_rejected_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    current_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    current_delayed_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    message_durations: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
+
+    _KEY_OVERALL_MESSAGES = 'metrics.tasks.messages.overall'
+    _KEY_OVERALL_ERRORED_MESSAGES = 'metrics.tasks.messages.overall.errored'
+    _KEY_OVERALL_RETRIED_MESSAGES = 'metrics.tasks.messages.overall.retried'
+    _KEY_OVERALL_REJECTED_MESSAGES = 'metrics.tasks.messages.overall.rejected'
+    _KEY_CURRENT_MESSAGES = 'metrics.tasks.messages.current'
+    _KEY_CURRENT_DELAYED_MESSAGES = 'metrics.tasks.messages.current.delayed'
+    _KEY_MESSAGE_DURATIONS = 'metrics.tasks.messages.durations'
+
+    @staticmethod
+    @with_context
+    def inc_overall_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment number of all encountered messages.
+
+        :param queue: name of the queue the message belongs to.
+        :param actor: name of the actor requested by the message.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(cache, TaskMetrics._KEY_OVERALL_MESSAGES, '{}:{}'.format(queue, actor))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_overall_errored_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment number of all errored messages.
+
+        :param queue: name of the queue the message belongs to.
+        :param actor: name of the actor requested by the message.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(cache, TaskMetrics._KEY_OVERALL_ERRORED_MESSAGES, '{}:{}'.format(queue, actor))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_overall_retried_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment number of all retried messages.
+
+        :param queue: name of the queue the message belongs to.
+        :param actor: name of the actor requested by the message.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(cache, TaskMetrics._KEY_OVERALL_RETRIED_MESSAGES, '{}:{}'.format(queue, actor))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_overall_rejected_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment number of all rejected messages.
+
+        :param queue: name of the queue the message belongs to.
+        :param actor: name of the actor requested by the message.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(cache, TaskMetrics._KEY_OVERALL_REJECTED_MESSAGES, '{}:{}'.format(queue, actor))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_current_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment number of messages currently being processed.
+
+        :param queue: name of the queue the message belongs to.
+        :param actor: name of the actor requested by the message.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(cache, TaskMetrics._KEY_CURRENT_MESSAGES, '{}:{}'.format(queue, actor))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def dec_current_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Decrement number of all messages currently being processed.
+
+        :param queue: name of the queue the message belongs to.
+        :param actor: name of the actor requested by the message.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        dec_metric_field(cache, TaskMetrics._KEY_CURRENT_MESSAGES, '{}:{}'.format(queue, actor))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_current_delayed_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment number of delayed messages.
+
+        :param queue: name of the queue the message belongs to.
+        :param actor: name of the actor requested by the message.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, '{}:{}'.format(queue, actor))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def dec_current_delayed_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Decrement number of delayed messages.
+
+        :param queue: name of the queue the message belongs to.
+        :param actor: name of the actor requested by the message.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        dec_metric_field(cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, '{}:{}'.format(queue, actor))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_message_durations(queue: str, actor: str, duration: int, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment number of messages in a duration bucket by one.
+
+        The bucket is determined by the upper bound of the given ``duration``.
+
+        :param queue: name of the queue the message belongs to.
+        :param actor: name of the actor requested by the message.
+        :param duration: how long, in milliseconds, took actor to finish the task.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        bucket = min([threshold for threshold in MESSAGE_DURATION_BUCKETS if threshold > duration])
+
+        inc_metric_field(cache, TaskMetrics._KEY_MESSAGE_DURATIONS, '{}:{}:{}'.format(queue, actor, bucket))
+
+        return Ok(None)
+
+    @with_context
+    def sync(self, cache: redis.Redis) -> None:
+        """
+        Load values from database and update this container with up-to-date values..
+
+        :param cache: cache instance to use for cache access.
+        """
+
+        # queue:actor => count
+        self.overall_message_count = {
+            cast(Tuple[str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_OVERALL_MESSAGES).items()
+        }
+        self.overall_errored_message_count = {
+            cast(Tuple[str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_OVERALL_ERRORED_MESSAGES).items()
+        }
+        self.overall_retried_message_count = {
+            cast(Tuple[str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_OVERALL_RETRIED_MESSAGES).items()
+        }
+        self.overall_rejected_message_count = {
+            cast(Tuple[str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_OVERALL_REJECTED_MESSAGES).items()
+        }
+        self.current_message_count = {
+            cast(Tuple[str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_CURRENT_MESSAGES).items()
+        }
+        self.current_delayed_message_count = {
+            cast(Tuple[str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_CURRENT_DELAYED_MESSAGES).items()
+        }
+        # queue:actor:bucket => count
+        self.message_durations = {
+            cast(Tuple[str, str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_MESSAGE_DURATIONS).items()
+        }
+
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Register instances of Prometheus metrics with the given registry..
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
+        self.OVERALL_MESSAGE_COUNT = Counter(
+            'overall_message_count',
+            'Overall total number of messages processed by queue and actor.',
+            ['queue_name', 'actor_name'],
+            registry=registry
+        )
+
+        self.OVERALL_ERRORED_MESSAGE_COUNT = Counter(
+            'overall_errored_message_count',
+            'Overall total number of errored messages by queue and actor.',
+            ['queue_name', 'actor_name'],
+            registry=registry
+        )
+
+        self.OVERALL_RETRIED_MESSAGE_COUNT = Counter(
+            'overall_retried_message_count',
+            'Overall total number of retried messages by queue and actor.',
+            ['queue_name', 'actor_name'],
+            registry=registry
+        )
+
+        self.OVERALL_REJECTED_MESSAGE_COUNT = Counter(
+            'overall_rejected_message_count',
+            'Overall total number of rejected messages by queue and actor.',
+            ['queue_name', 'actor_name'],
+            registry=registry
+        )
+
+        self.CURRENT_MESSAGE_COUNT = Gauge(
+            'current_message_count',
+            'Current number of messages being processed by queue and actor.',
+            ['queue_name', 'actor_name'],
+            registry=registry
+        )
+
+        self.CURRENT_DELAYED_MESSAGE_COUNT = Gauge(
+            'current_delayed_message_count',
+            'Current number of messages being delayed by queue and actor.',
+            ['queue_name', 'actor_name'],
+            registry=registry
+        )
+
+        self.MESSAGE_DURATIONS = Histogram(
+            'message_duration_milliseconds',
+            'The time spent processing messages by queue and actor.',
+            ['queue_name', 'actor_name'],
+            buckets=MESSAGE_DURATION_BUCKETS,
+            registry=registry,
+        )
+
+    @with_context
+    def update_prometheus(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        """
+
+        def _update_counter(prom_metric: Counter, source: Dict[Tuple[str, str], int]) -> None:
+            reset_counters(prom_metric)
+
+            for (queue_name, actor_name), count in source.items():
+                prom_metric.labels(queue_name=queue_name, actor_name=actor_name)._value.set(count)
+
+        _update_counter(self.OVERALL_MESSAGE_COUNT, self.overall_message_count)
+        _update_counter(self.OVERALL_ERRORED_MESSAGE_COUNT, self.overall_errored_message_count)
+        _update_counter(self.OVERALL_REJECTED_MESSAGE_COUNT, self.overall_rejected_message_count)
+        _update_counter(self.OVERALL_RETRIED_MESSAGE_COUNT, self.overall_retried_message_count)
+        _update_counter(self.CURRENT_MESSAGE_COUNT, self.current_message_count)
+        _update_counter(self.CURRENT_DELAYED_MESSAGE_COUNT, self.current_delayed_message_count)
+
+        # Reset all duration buckets and sums first
+        for labeled_metric in self.MESSAGE_DURATIONS._metrics.values():
+            labeled_metric._sum.set(0)
+
+            for i, _ in enumerate(self.MESSAGE_DURATIONS._upper_bounds):
+                labeled_metric._buckets[i].set(0)
+
+        # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
+        # since we don't track the exact duration, just what bucket it falls into.
+        for (queue_name, actor_name, bucket_threshold), count in self.message_durations.items():
+            bucket_index = MESSAGE_DURATION_BUCKETS.index(int(bucket_threshold))
+
+            self.MESSAGE_DURATIONS.labels(queue_name, actor_name)._buckets[bucket_index].set(count)
+            self.MESSAGE_DURATIONS.labels(queue_name, actor_name)._sum.inc(float(bucket_threshold) * count)
+
+
+@dataclasses.dataclass
 class Metrics(MetricsBase):
     """
     Global metrics that don't fit anywhere else, and also a root of the tree of metrics.
@@ -662,6 +972,7 @@ class Metrics(MetricsBase):
     pools: PoolsMetrics = PoolsMetrics()
     provisioning: ProvisioningMetrics = ProvisioningMetrics()
     routing: RoutingMetrics = RoutingMetrics()
+    tasks: TaskMetrics = TaskMetrics()
 
     # Registry this tree of metrics containers is tied to.
     _registry: Optional[CollectorRegistry] = None
@@ -675,6 +986,7 @@ class Metrics(MetricsBase):
         self.pools.sync()
         self.provisioning.sync()
         self.routing.sync()
+        self.tasks.sync()
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
@@ -704,6 +1016,7 @@ class Metrics(MetricsBase):
         self.pools.register_with_prometheus(registry)
         self.provisioning.register_with_prometheus(registry)
         self.routing.register_with_prometheus(registry)
+        self.tasks.register_with_prometheus(registry)
 
         # Since these values won't ever change, we can already set metrics and be done with it.
         self.PACKAGE_INFO.info({
@@ -725,6 +1038,7 @@ class Metrics(MetricsBase):
         self.pools.update_prometheus()
         self.provisioning.update_prometheus()
         self.routing.update_prometheus()
+        self.tasks.update_prometheus()
 
     @with_context
     def render_prometheus_metrics(self, db: artemis_db.DB) -> bytes:

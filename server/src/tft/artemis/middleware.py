@@ -1,12 +1,14 @@
 import datetime
 import inspect
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
+import dramatiq.broker
 import dramatiq.message
+import dramatiq.middleware
 import dramatiq.middleware.retries
 import gluetool.log
-from dramatiq.common import compute_backoff
+from dramatiq.common import compute_backoff, current_millis
 
 from .guest import GuestLogger
 
@@ -150,3 +152,67 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         logger.info("retries: message={} backoff={} retrying_at='{}'".format(message.message_id, backoff, retry_at))
 
         broker.enqueue(message, delay=backoff)
+
+
+class Prometheus(dramatiq.middleware.Middleware):  # type: ignore  # Class cannot subclass 'Middleware'
+    def __init__(self) -> None:
+        super(Prometheus, self).__init__()
+
+        self._delayed_messages: Set[str] = set()
+        self._message_start_times: Dict[str, int] = {}
+
+    def after_nack(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+        from .metrics import TaskMetrics
+
+        TaskMetrics.inc_overall_rejected_messages(message.queue_name, message.actor_name)
+
+    def after_enqueue(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message, delay: int) -> None:
+        from .metrics import TaskMetrics
+
+        if "retries" in message.options:
+            TaskMetrics.inc_overall_retried_messages(message.queue_name, message.actor_name)
+
+    def before_delay_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+        from .metrics import TaskMetrics
+
+        self._delayed_messages.add(message.message_id)
+
+        TaskMetrics.inc_current_delayed_messages(message.queue_name, message.actor_name)
+
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+        from .metrics import TaskMetrics
+
+        labels = (message.queue_name, message.actor_name)
+
+        if message.message_id in self._delayed_messages:
+            self._delayed_messages.remove(message.message_id)
+
+            TaskMetrics.dec_current_delayed_messages(message.queue_name, message.actor_name)
+
+        TaskMetrics.inc_current_messages(*labels)
+
+        self._message_start_times[message.message_id] = current_millis()
+
+    def after_process_message(
+        self,
+        broker: dramatiq.broker.Broker,
+        message: dramatiq.message.Message,
+        *,
+        result: Optional[Any] = None,
+        exception: Optional[Any] = None
+    ) -> None:
+        from .metrics import TaskMetrics
+
+        labels = (message.queue_name, message.actor_name)
+
+        message_start_time = self._message_start_times.pop(message.message_id, current_millis())
+        message_duration = current_millis() - message_start_time
+        TaskMetrics.inc_message_durations(message.queue_name, message.actor_name, message_duration)
+
+        TaskMetrics.dec_current_messages(*labels)
+        TaskMetrics.inc_overall_messages(*labels)
+
+        if exception is not None:
+            TaskMetrics.inc_overall_errored_messages(*labels)
+
+    after_skip_message = after_process_message
