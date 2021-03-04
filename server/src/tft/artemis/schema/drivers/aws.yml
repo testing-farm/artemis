@@ -1,0 +1,75 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: AWS driver schema
+
+type: object
+
+properties:
+
+  access-key-id:
+    type: string
+
+  availability-zone:
+    type: string
+
+  capabilities:
+    type: object
+
+  command:
+    type: string
+
+  default-instance-type:
+    type: string
+
+  default-root-disk-size:
+    type: integer
+
+  default-region:
+    type: string
+
+  instance-running-tick:
+    type: integer
+
+  instance-running-timeout:
+    type: integer
+
+  master-key-name:
+    type: string
+
+  post-install-script:
+    type: string
+
+  secret-access-key:
+    type: string
+
+  security-group:
+    type: string
+
+  spot-price-bid-percentage:
+    type: integer
+
+  spot-request-tick:
+    type: integer
+
+  spot-request-timeout:
+    type: integer
+
+  subnet-id:
+    type: string
+
+additionalProperties: false
+
+required:
+- access-key-id
+- availability-zone
+- command
+- default-instance-type
+- default-region
+- instance-running-tick
+- instance-running-timeout
+- master-key-name
+- secret-access-key
+- security-group
+- spot-price-bid-percentage
+- spot-request-tick
+- spot-request-timeout
+- subnet-id

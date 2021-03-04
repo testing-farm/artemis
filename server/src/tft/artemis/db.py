@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -15,6 +16,8 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, Iterator, List, 
 
 import gluetool.glue
 import gluetool.log
+import jsonschema
+import pkg_resources
 import sqlalchemy
 import sqlalchemy.event
 import sqlalchemy.ext.declarative
@@ -898,6 +901,37 @@ class DB:
             return DB.instance
 
 
+def validate_config(logger: gluetool.log.ContextAdapter, server_config: Dict[str, Any]) -> bool:
+    schema_dir = pkg_resources.resource_filename('tft.artemis', 'schema')
+    config_valid = True
+
+    schema = gluetool.utils.load_yaml(os.path.join(schema_dir, 'common.yml'), loader_type='safe')
+
+    try:
+        jsonschema.validate(server_config, schema)
+    except jsonschema.exceptions.ValidationError as e:
+        config_valid = False
+        logger.error('config: {}'.format(e.message))
+
+    for pool in server_config.get('pools', []):
+        filename = os.path.join(schema_dir, 'drivers', pool['driver'] + '.yml')
+
+        if os.path.isfile(filename):
+            driver_schema = gluetool.utils.load_yaml(filename, loader_type='safe')
+
+            try:
+                jsonschema.validate(pool['parameters'], driver_schema)
+            except jsonschema.exceptions.ValidationError as e:
+                config_valid = False
+                logger.error('config: pool {}: {}'.format(pool['name'], e.message))
+        else:
+            config_valid = False
+            logger.error('config: pool {}: Could not load schema for {} driver.'
+                         'Are you using an existing driver?'.format(pool['name'], pool['driver']))
+
+    return config_valid
+
+
 def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
     from .drivers import GuestTagsType
 
@@ -910,6 +944,10 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
     # Adding system and pool tags. We do not want to overwrite the existing value, only add those
     # that are missing. Artemis' default example of configuration tries to add as little as possible,
     # which means we probably don't return any tag user might have removed.
+    if not validate_config(logger, server_config):
+        logger.error('Configuration schema validation failed')
+        sys.exit(1)
+
     with db.get_session() as session:
         all_tags = Query.from_session(session, GuestTag).all()
 

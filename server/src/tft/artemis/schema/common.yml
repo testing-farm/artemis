@@ -1,0 +1,131 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: Server configuration schema
+type: object
+
+properties:
+
+  users:
+    type: array
+
+    items:
+      type: object
+      properties:
+
+        name:
+          type: string
+
+        role:
+          type: string
+          enum:
+            - admin
+            - user
+
+      required:
+        - name
+
+    minItems: 1
+
+  ssh-keys:
+    type: array
+
+    items:
+      type: object
+
+      properties:
+
+        name:
+          type: string
+
+        owner:
+          type: string
+
+        file:
+          type: string
+
+      required:
+        - name
+        - owner
+        - file
+
+    minItems: 1
+
+  priority-groups:
+    type: array
+
+    items:
+      type: object
+
+      properties:
+        name:
+          type: string
+
+      required:
+       - name
+
+  guest_tags:
+    type: object
+
+    patternProperties:
+      ^.*$:
+        type: string
+
+  pools:
+    type: array
+
+    items:
+      type: object
+
+      properties:
+
+        driver:
+          type: string
+
+        guest_tags:
+          type: object
+
+          patternProperties:
+            ^.*$:
+              type: string
+
+        name:
+          type: string
+
+        parameters:
+          type: object
+
+          properties:
+
+            capabilities:
+              type: object
+
+              properties:
+
+                supported-architectures:
+                  anyOf:
+                    - type: array
+                      items:
+                        type: string
+                    - type: string
+                      enum:
+                        - "any"
+
+                supports-snapshots:
+                  type: boolean
+
+              required:
+                - supported-architectures
+                - supports-snapshots
+
+          required:
+            - capabilities
+
+      required:
+        - name
+        - driver
+        - parameters
+
+additionalProperties: false
+
+required:
+  - users
+  - ssh-keys

@@ -1,0 +1,75 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: Openstack pool driver config schema
+
+type: object
+
+properties:
+
+  api-version:
+    type: string
+
+  auth-url:
+    type: string
+
+  capabilities:
+    type: object
+
+  default-flavor:
+    type: string
+
+  ip-version:
+    type: string
+    enum:
+    - '4'
+    - '6'
+
+  master-key-name:
+    type: string
+
+  network-regex:
+    type: string
+
+  password:
+    type: string
+
+  post-install-script:
+    type: string
+
+  project-domain-id:
+    type: string
+
+  project-domain-name:
+    type: string
+
+  project-name:
+    type: string
+
+  security-group:
+    type: string
+
+  user-domain-name:
+    type: string
+
+  username:
+    type: string
+
+additionalProperties: false
+
+allOf:
+- required:
+  - username
+  - password
+  - auth-url
+  - project-name
+  - user-domain-name
+  - api-version
+  - master-key-name
+  - default-flavor
+  - network-regex
+  - ip-version
+  - security-group
+- anyOf:
+  - required:
+    - project-domain-id
+  - required:
+    - project-domain-name

@@ -1,0 +1,26 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: Beaker pool driver schema
+
+type: object
+
+properties:
+
+  username:
+    type: string
+
+  password:
+    type: string
+
+  post-install-script:
+    type: string
+
+  capabilities:
+    type: object
+
+additionalProperties: false
+
+required: []
+# TODO: username/password are more or less optional, as long as Artemis has access to Kerberos.
+# If they are specified, we need both.
+#  - username
+#  - password
