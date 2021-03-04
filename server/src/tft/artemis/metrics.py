@@ -1214,10 +1214,12 @@ def get_metric(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `get` with `cast` calls.
 
-    return int(cast(
-        Callable[[str], bytes],
+    value = cast(
+        Callable[[str], Optional[bytes]],
         cache.get
-    )(metric))
+    )(metric)
+
+    return value if value is None else int(value)
 
 
 def set_metric(
@@ -1260,10 +1262,15 @@ def get_metric_fields(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `hgetall` with `cast` calls.
 
+    values = cast(
+        Callable[[str], Optional[Dict[bytes, bytes]]],
+        cache.hgetall
+    )(metric)
+
+    if values is None:
+        return {}
+
     return {
         field.decode(): int(count)
-        for field, count in cast(
-            Callable[[str], Dict[bytes, bytes]],
-            cache.hgetall
-        )(metric).items()
+        for field, count in values.items()
     }
