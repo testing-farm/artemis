@@ -6,7 +6,8 @@ import os
 import traceback as _traceback
 import urllib.parse
 from types import FrameType, TracebackType
-from typing import Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, TypeVar, \
+    Union, cast
 
 import dramatiq
 import dramatiq.brokers.rabbitmq
@@ -47,6 +48,9 @@ from . import db as artemis_db  # noqa: E402
 from . import middleware as artemis_middleware  # noqa: E402
 from . import vault as artemis_vault  # noqa: E402
 from .environment import Environment  # noqa: E402
+
+if TYPE_CHECKING:
+    from .drivers import PoolDriver
 
 stackprinter.set_excepthook(
     style='darkbg2',
@@ -527,6 +531,8 @@ class KnobSourceEnv(KnobSource[T]):
     """
     Read knob value from an environment variable.
 
+    This is a base class for sources that read the values from the environment and provides necessary primitives.
+
     :param envvar: name of the environment variable.
     :param type_cast: a callback used to cast the raw string to the correct type.
     """
@@ -537,12 +543,12 @@ class KnobSourceEnv(KnobSource[T]):
         self.envvar = envvar
         self.type_cast = type_cast
 
-    def get_value(self, *args: Any) -> Result[Optional[T], Failure]:
-        if self.envvar not in os.environ:
+    def _fetch_from_env(self, envvar: str) -> Result[Optional[T], Failure]:
+        if envvar not in os.environ:
             return Ok(None)
 
         return Ok(
-            self.type_cast(os.environ[self.envvar])
+            self.type_cast(os.environ[envvar])
         )
 
     def to_repr(self) -> List[str]:
@@ -550,6 +556,50 @@ class KnobSourceEnv(KnobSource[T]):
             'envvar="{}"'.format(self.envvar),
             'envvar-type-cast={}'.format(self.type_cast.__name__)
         ]
+
+
+class KnobSourceEnvGlobal(KnobSourceEnv[T]):
+    """
+    Read knob value from an environment variable.
+
+    :param envvar: name of the environment variable.
+    :param type_cast: a callback used to cast the raw string to the correct type.
+    """
+
+    def get_value(self, *args: Any) -> Result[Optional[T], Failure]:
+        return self._fetch_from_env(self.envvar)
+
+
+class KnobSourceEnvPerPool(KnobSourceEnv[T]):
+    """
+    Read knob value from an environment variable.
+
+    When the parent knob is enabled to provide pool-specific values (via ``per_pool=True``),
+    then the environment variable is tweaked to allow per-pool setup:
+
+    * ``${original envvar}_${poolname}``
+    * ``${original envvar}``
+
+    :param envvar: name of the environment variable.
+    :param type_cast: a callback used to cast the raw string to the correct type.
+    """
+
+    def get_value(  # type: ignore  # match parent
+        self,
+        pool: 'PoolDriver',
+        *args: Any
+    ) -> Result[Optional[T], Failure]:
+        r_value = self._fetch_from_env('{}_{}'.format(self.envvar, pool.poolname))
+
+        if r_value.is_error:
+            return r_value
+
+        value = r_value.unwrap()
+
+        if value is not None:
+            return r_value
+
+        return self._fetch_from_env(self.envvar)
 
 
 class KnobSourceDefault(KnobSource[T]):
@@ -578,15 +628,17 @@ class KnobSourceDB(KnobSource[T]):
     Read knob value from a database.
 
     Values are stored as JSON blobs, to preserve their types.
+
+    This is a base class for sources that read the values from the database and provides necessary primitives.
     """
 
-    def get_value(self, session: Session, *args) -> Result[Optional[T], Failure]:  # type: ignore  # match parent
+    def _fetch_from_db(self, session: Session, knobname: str) -> Result[Optional[T], Failure]:
         from . import Failure
         from .db import Knob as KnobRecord
         from .db import SafeQuery
 
         r = SafeQuery.from_session(session, KnobRecord) \
-            .filter(KnobRecord.knobname == self.knob.knobname) \
+            .filter(KnobRecord.knobname == knobname) \
             .one_or_none()
 
         if r.is_error:
@@ -595,13 +647,13 @@ class KnobSourceDB(KnobSource[T]):
                 caused_by=r.unwrap_error()
             ))
 
-        knob = r.unwrap()
+        record = r.unwrap()
 
-        if not knob:
+        if not record:
             return Ok(None)
 
         try:
-            return Ok(cast(T, json.loads(knob.value)))
+            return Ok(cast(T, json.loads(record.value)))
 
         except json.JSONDecodeError as exc:
             return Error(Failure.from_exc('Cannot decode knob value', exc))
@@ -610,6 +662,45 @@ class KnobSourceDB(KnobSource[T]):
         return [
             'has-db=yes'
         ]
+
+
+class KnobSourceDBGlobal(KnobSourceDB[T]):
+    """
+    Read knob value from a database.
+    """
+
+    def get_value(self, session: Session, *args) -> Result[Optional[T], Failure]:  # type: ignore  # match parent
+        return self._fetch_from_db(session, self.knob.knobname)
+
+
+class KnobSourceDBPerPool(KnobSourceDB[T]):
+    """
+    Read knob value from a database.
+
+    When the parent knob is enabled to provide pool-specific values (via ``per_pool=True``),
+    then a special knob names are searched in the database instead of the original one:
+
+    * ``pool.${poolname}.${original knob name}``
+    * ``pool-defaults.${original knob name}``
+    """
+
+    def get_value(  # type: ignore  # match parent
+        self,
+        session: Session,
+        pool: 'PoolDriver',
+        *args: Any
+    ) -> Result[Optional[T], Failure]:
+        r_value = self._fetch_from_db(session, 'pool.{}.{}'.format(pool.poolname, self.knob.knobname))
+
+        if r_value.is_error:
+            return r_value
+
+        value = r_value.unwrap()
+
+        if value is not None:
+            return r_value
+
+        return self._fetch_from_db(session, 'pool-defaults.{}'.format(self.knob.knobname))
 
 
 class KnobSourceActual(KnobSource[T]):
@@ -670,6 +761,9 @@ class Knob(Generic[T]):
            # This knob is not backed by a database.
            has_db=False,
 
+           # This knob does not support pool-specific values.
+           per_pool=False,
+
            # This knob gets its value from the following environment variable. It is necessary to provide
            # a callback that casts the raw string value to the proper type.
            envvar='ARTEMIS_LOG_JSON',
@@ -704,6 +798,7 @@ class Knob(Generic[T]):
 
     :param knobname: name of the knob. It is used for presentation and as a key when the database is involved.
     :param has_db: if set, the value may also be stored in the database.
+    :param per_pool: if set, the knob may provide pool-specific values.
     :param envvar: if set, it is the name of the environment variable providing the value.
     :param envvar_cast: a callback used to cast the raw environment variable content to the correct type.
         Required when ``envvar`` is set.
@@ -715,6 +810,7 @@ class Knob(Generic[T]):
         self,
         knobname: str,
         has_db: bool = True,
+        per_pool: bool = False,
         envvar: Optional[str] = None,
         envvar_cast: Optional[Callable[[str], T]] = None,
         actual: Optional[T] = None,
@@ -723,14 +819,24 @@ class Knob(Generic[T]):
         self.knobname = knobname
         self._sources: List[KnobSource[T]] = []
 
+        self.per_pool = per_pool
+
         if has_db:
-            self._sources.append(KnobSourceDB(self))
+            if per_pool:
+                self._sources.append(KnobSourceDBPerPool(self))
+
+            else:
+                self._sources.append(KnobSourceDBGlobal(self))
 
         if envvar is not None:
             if not envvar_cast:
                 raise Exception('Knob {} defined with envvar but no envvar_cast'.format(knobname))
 
-            self._sources.append(KnobSourceEnv(self, envvar, envvar_cast))
+            if per_pool:
+                self._sources.append(KnobSourceEnvPerPool(self, envvar, envvar_cast))
+
+            else:
+                self._sources.append(KnobSourceEnvGlobal(self, envvar, envvar_cast))
 
         if actual is not None:
             self._sources.append(KnobSourceActual(self, actual))
@@ -748,7 +854,7 @@ class Knob(Generic[T]):
         # as it depends on envvar, actual or default value. For such knobs, we provide a shortcut,
         # easy-to-use `value` attribute - no `Result`, no `unwrap()` - given the possible sources,
         # it should never fail to get a value from such sources.
-        if not has_db:
+        if not has_db and not per_pool:
             value, failure = self._get_value()
 
             # If we fail to get value from envvar/default sources, then something is wrong. Maybe there's
@@ -764,9 +870,16 @@ class Knob(Generic[T]):
             self.value = value
 
     def __repr__(self) -> str:
+        traits: List[str] = []
+
+        if self.per_pool:
+            traits += ['per-pool=yes']
+
+        traits += sum([source.to_repr() for source in self._sources], [])
+
         return '<Knob: {}: {}>'.format(
             self.knobname,
-            ', '.join(sum([source.to_repr() for source in self._sources], []))
+            ', '.join(traits)
         )
 
     def _get_value(self, *args: Any) -> Tuple[Optional[T], Optional[Failure]]:
