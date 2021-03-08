@@ -958,7 +958,7 @@ class TaskMetrics(MetricsBase):
         for (queue_name, actor_name, bucket_threshold), count in self.message_durations.items():
 
             bucket_index = MESSAGE_DURATION_BUCKETS.index(
-                'inf' if bucket_threshold == 'inf' else int(bucket_threshold)
+                prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
             )
 
             self.MESSAGE_DURATIONS.labels(queue_name, actor_name)._buckets[bucket_index].set(count)
