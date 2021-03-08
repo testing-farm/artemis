@@ -956,7 +956,10 @@ class TaskMetrics(MetricsBase):
         # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
         # since we don't track the exact duration, just what bucket it falls into.
         for (queue_name, actor_name, bucket_threshold), count in self.message_durations.items():
-            bucket_index = MESSAGE_DURATION_BUCKETS.index(int(bucket_threshold))
+
+            bucket_index = MESSAGE_DURATION_BUCKETS.index(
+                'inf' if bucket_threshold == 'inf' else int(bucket_threshold)
+            )
 
             self.MESSAGE_DURATIONS.labels(queue_name, actor_name)._buckets[bucket_index].set(count)
             self.MESSAGE_DURATIONS.labels(queue_name, actor_name)._sum.inc(float(bucket_threshold) * count)
