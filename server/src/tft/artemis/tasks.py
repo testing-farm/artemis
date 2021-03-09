@@ -1,4 +1,5 @@
 import concurrent.futures
+import datetime
 import json
 import os
 import random
@@ -1862,6 +1863,11 @@ def do_guest_request_prepare_finalize(
         return workspace.result
 
     logger.info('successfully provisioned')
+
+    # calculate provisioning duration time
+    assert workspace.gr is not None
+    provisioning_duration = (datetime.datetime.utcnow() - workspace.gr.ctime).total_seconds()
+    logger.info("provisioning duration: {}s".format(provisioning_duration))
 
     # check if this was a failover and mark it in metrics
     _handle_successful_failover(logger, session, workspace)
