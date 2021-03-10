@@ -1897,6 +1897,9 @@ def do_guest_request_prepare_finalize(
     provisioning_duration = (datetime.datetime.utcnow() - workspace.gr.ctime).total_seconds()
     logger.info("provisioning duration: {}s".format(provisioning_duration))
 
+    # update provisioning duration metrics
+    metrics.ProvisioningMetrics.inc_provisioning_durations(provisioning_duration)
+
     # check if this was a failover and mark it in metrics
     _handle_successful_failover(logger, session, workspace)
 

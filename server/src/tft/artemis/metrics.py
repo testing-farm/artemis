@@ -64,6 +64,14 @@ MESSAGE_DURATION_BUCKETS = (
 )
 
 
+# Machine provisioning time buckets, in seconds. Spanning from 60 seconds up to 24 hours.
+# First hour split by minute, next 23 hours, by hour
+PROVISION_DURATION_BUCKETS = \
+    list(range(60, 3600, 60)) \
+    + list(range(3600, 23 * 3600 + 3600, 3600)) \
+    + [prometheus_client.utils.INF]
+
+
 def reset_counters(metric: Union[Counter, Gauge]) -> None:
     """
     Reset each existing labeled metric to zero. After that, we can use ``inc()`` again.
@@ -586,6 +594,7 @@ class ProvisioningMetrics(MetricsBase):
     _KEY_PROVISIONING_SUCCESS = 'metrics.provisioning.success'
     _KEY_FAILOVER = 'metrics.provisioning.failover'
     _KEY_FAILOVER_SUCCESS = 'metrics.provisioning.failover.success'
+    _KEY_PROVISIONING_DURATIONS = 'metrics.provisioning.durations'
 
     requested: int = 0
     current: int = 0
@@ -595,6 +604,7 @@ class ProvisioningMetrics(MetricsBase):
 
     # We want to maybe point fingers on pools where guests are stuck, so include pool name and state as labels.
     guest_ages: List[Tuple[GuestState, Optional[str], datetime.timedelta]] = dataclasses.field(default_factory=list)
+    provisioning_durations: Dict[str, int] = dataclasses.field(default_factory=dict)
 
     @staticmethod
     @with_context
@@ -666,6 +676,25 @@ class ProvisioningMetrics(MetricsBase):
         inc_metric_field(cache, ProvisioningMetrics._KEY_FAILOVER_SUCCESS, '{}:{}'.format(from_pool, to_pool))
         return Ok(None)
 
+    @staticmethod
+    @with_context
+    def inc_provisioning_durations(duration: int, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment provisioning duration bucket by one.
+
+        The bucket is determined by the upper bound of the given ``duration``.
+
+        :param duration: how long, in milliseconds, took actor to finish the task.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        bucket = min([threshold for threshold in PROVISION_DURATION_BUCKETS if threshold > duration])
+
+        inc_metric_field(cache, ProvisioningMetrics._KEY_PROVISIONING_DURATIONS, '{}'.format(bucket))
+
+        return Ok(None)
+
     @with_context
     def sync(self, cache: redis.Redis, session: sqlalchemy.orm.session.Session) -> None:
         """
@@ -708,6 +737,10 @@ class ProvisioningMetrics(MetricsBase):
                 ).all()
             )
         ]
+        self.provisioning_durations = {
+            field: count
+            for field, count in get_metric_fields(cache, self._KEY_PROVISIONING_DURATIONS).items()
+        }
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
@@ -756,6 +789,14 @@ class ProvisioningMetrics(MetricsBase):
             registry=registry
         )
 
+        self.PROVISION_DURATIONS = Histogram(
+            'provisioning_duration_seconds',
+            'The time spent provisioning a machine.',
+            [],
+            buckets=PROVISION_DURATION_BUCKETS,
+            registry=registry,
+        )
+
     def update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
@@ -781,6 +822,21 @@ class ProvisioningMetrics(MetricsBase):
             age_threshold = min([threshold for threshold in GUEST_AGE_BUCKETS if threshold > age.total_seconds()])
 
             self.GUEST_AGES.labels(state=state, pool=poolname, age_threshold=age_threshold).inc()
+
+        # Reset all duration buckets and sums first - no labels, therefore touching metric instance directly
+        self.PROVISION_DURATIONS._sum.set(0)
+
+        for i, _ in enumerate(self.PROVISION_DURATIONS._upper_bounds):
+            self.PROVISION_DURATIONS._buckets[i].set(0)
+
+        # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
+        # since we don't track the exact duration, just what bucket it falls into.
+        for bucket_threshold, count in self.provisioning_durations.items():
+            bucket_index = PROVISION_DURATION_BUCKETS.index(
+                prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
+            )
+            self.PROVISION_DURATIONS._buckets[bucket_index].set(count)
+            self.PROVISION_DURATIONS._sum.inc(int(bucket_threshold) * count)
 
 
 @dataclasses.dataclass
