@@ -11,7 +11,7 @@ error() { echo "$@"; exit 1; }
 [ -z "$WAIT_TICK" ] && WAIT_TICK=1
 
 check_redis() {
-    timeout 1 (printf "PING\r\n";) | nc -w 1 127.0.0.1 6379 | grep -q PONG
+    timeout 1 printf "PING\r\n" | nc -w 1 127.0.0.1 6379 | grep -q PONG
     return $?
 }
 
