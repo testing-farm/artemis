@@ -748,9 +748,9 @@ def _update_guest_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     guestname: str,
-    current_state: GuestState,
     new_state: GuestState,
-    set_values: Optional[Dict[str, Union[str, int]]] = None,
+    current_state: Optional[GuestState] = None,
+    set_values: Optional[Dict[str, Union[str, int, None]]] = None,
     current_pool_data: Optional[str] = None,
     **details: Any
 ) -> Result[bool, Failure]:
@@ -758,12 +758,14 @@ def _update_guest_state(
         logger,
         session,
         guestname=guestname,
-        current_state=current_state.value,
+        current_state=current_state.value if current_state is not None else None,
         new_state=new_state.value,
         **details
     )
 
-    logger.warning('state switch: {} => {}'.format(current_state.value, new_state.value))
+    current_state_label = current_state.value if current_state is not None else '<ignored>'
+
+    logger.warning('state switch: {} => {}'.format(current_state_label, new_state.value))
 
     if set_values:
         values = set_values
@@ -776,31 +778,28 @@ def _update_guest_state(
             'state': new_state.value
         }
 
-    if current_pool_data:
-        query = sqlalchemy \
-            .update(GuestRequest.__table__) \
-            .where(GuestRequest.guestname == guestname) \
-            .where(GuestRequest.state == current_state.value) \
-            .where(GuestRequest.pool_data == current_pool_data) \
-            .values(**values)
+    query = sqlalchemy \
+        .update(GuestRequest.__table__) \
+        .where(GuestRequest.guestname == guestname)
 
-    else:
-        query = sqlalchemy \
-            .update(GuestRequest.__table__) \
-            .where(GuestRequest.guestname == guestname) \
-            .where(GuestRequest.state == current_state.value) \
-            .values(**values)
+    if current_state is not None:
+        query = query.where(GuestRequest.state == current_state.value)
+
+    if current_pool_data:
+        query = query.where(GuestRequest.pool_data == current_pool_data)
+
+    query = query.values(**values)
 
     r = safe_db_change(logger, session, query)
 
     if r.is_ok:
         if r.value is True:
-            logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
+            logger.warning('state switch: {} => {}: succeeded'.format(current_state_label, new_state.value))
 
             handle_success('state-changed')
 
         else:
-            logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
+            logger.warning('state switch: {} => {}: failed'.format(current_state_label, new_state.value))
 
             handle_failure(
                 Error(Failure('failed to switch guest state')),
@@ -812,7 +811,7 @@ def _update_guest_state(
     failure = r.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        logger.warning('state switch: {} => {}: no result found'.format(current_state.value, new_state.value))
+        logger.warning('state switch: {} => {}: no result found'.format(current_state_label, new_state.value))
 
         return Ok(False)
 
@@ -1267,7 +1266,14 @@ class Workspace:
 
         self.guest_events = events
 
-    def update_guest_state(self, *args: Any, **kwargs: Any) -> None:
+    def update_guest_state(
+        self,
+        new_state: GuestState,
+        current_state: Optional[GuestState] = None,
+        set_values: Optional[Dict[str, Union[str, int, None]]] = None,
+        current_pool_data: Optional[str] = None,
+        **details: Any
+    ) -> None:
         """
         Updates guest state with given values.
 
@@ -1285,8 +1291,11 @@ class Workspace:
             self.logger,
             self.session,
             self.guestname,
-            *args,
-            **kwargs
+            new_state,
+            current_state=current_state,
+            set_values=set_values,
+            current_pool_data=current_pool_data,
+            **details
         )
 
         if r.is_error:
@@ -1297,7 +1306,13 @@ class Workspace:
             self.result = self.handle_failure(Error(Failure('foo')), 'failed to update guest state')
             return
 
-    def update_snapshot_state(self, *args: Any, **kwargs: Any) -> None:
+    def update_snapshot_state(
+        self,
+        current_state: GuestState,
+        new_state: GuestState,
+        set_values: Optional[Dict[str, Any]] = None,
+        **details: Any
+    ) -> None:
         """
         Updates snapshot state with given values.
 
@@ -1317,8 +1332,10 @@ class Workspace:
             self.session,
             self.snapshotname,
             self.guestname,
-            *args,
-            **kwargs
+            current_state,
+            new_state,
+            set_values=set_values,
+            **details
         )
 
         if r.is_error:
@@ -1329,38 +1346,13 @@ class Workspace:
             self.result = self.handle_failure(Error(Failure('foo')), 'failed to update guest state')
             return
 
-    def grab_guest_request(self, *args: Any, **kwargs: Any) -> None:
-        """
-        "Grab" the guest for task by changing its state.
-
-        **OUTCOMES:**
-
-          * ``SUCCESS`` if the guest does not exist or is not in the given state.
-          * ``FAIL``
-        """
-
-        if self.result:
-            return
-
-        assert self.guestname
-
-        r = _update_guest_state(
-            self.logger,
-            self.session,
-            self.guestname,
-            *args,
-            **kwargs
-        )
-
-        if r.is_error:
-            self.result = self.handle_failure(r, 'failed to grab guest request')
-            return
-
-        if not r.unwrap():
-            self.result = SUCCESS
-            return
-
-    def grab_snapshot_request(self, *args: Any, **kwargs: Any) -> None:
+    def grab_snapshot_request(
+        self,
+        current_state: GuestState,
+        new_state: GuestState,
+        set_values: Optional[Dict[str, Any]] = None,
+        **details: Any
+    ) -> None:
         """
         "Grab" the snapshot for task by changing its state.
 
@@ -1381,8 +1373,10 @@ class Workspace:
             self.session,
             self.snapshotname,
             self.guestname,
-            *args,
-            **kwargs
+            current_state,
+            new_state,
+            set_values=set_values,
+            **details
         )
 
         if r.is_error:
@@ -1393,15 +1387,15 @@ class Workspace:
             self.result = SUCCESS
             return
 
-    def ungrab_guest_request(self, *args: Any, **kwargs: Any) -> None:
+    def ungrab_guest_request(self, current_state: GuestState, new_state: GuestState) -> None:
         assert self.guestname
 
         r = _update_guest_state(
             self.logger,
             self.session,
             self.guestname,
-            *args,
-            **kwargs
+            new_state,
+            current_state=current_state
         )
 
         if r.is_error:
@@ -1413,7 +1407,13 @@ class Workspace:
 
         assert False, 'unreachable'
 
-    def ungrab_snapshot_request(self, *args: Any, **kwargs: Any) -> None:
+    def ungrab_snapshot_request(
+        self,
+        current_state: GuestState,
+        new_state: GuestState,
+        set_values: Optional[Dict[str, Any]] = None,
+        **details: Any
+    ) -> None:
         assert self.snapshotname
         assert self.guestname
 
@@ -1422,8 +1422,10 @@ class Workspace:
             self.session,
             self.snapshotname,
             self.guestname,
-            *args,
-            **kwargs
+            current_state,
+            new_state,
+            set_values=set_values,
+            **details
         )
 
         if r.is_error:
@@ -1646,8 +1648,8 @@ def do_handle_provisioning_chain_tail(
             return RESCHEDULE
 
     workspace.update_guest_state(
-        current_state,
         new_state,
+        current_state=current_state,
         set_values={
             'poolname': None,
             'pool_data': json.dumps({})
@@ -1855,8 +1857,8 @@ def do_guest_request_prepare_finalize(
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
 
     workspace.update_guest_state(
-        GuestState.PREPARING,
-        GuestState.READY
+        GuestState.READY,
+        current_state=GuestState.PREPARING
     )
 
     if workspace.result:
@@ -2039,7 +2041,7 @@ def do_update_guest_request(
     if not provisioning_progress.is_acquired:
         workspace.update_guest_state(
             GuestState.PROMISED,
-            GuestState.PROMISED,
+            current_state=GuestState.PROMISED,
             set_values={
                 'pool_data': provisioning_progress.pool_data.serialize()
             },
@@ -2060,8 +2062,8 @@ def do_update_guest_request(
     assert provisioning_progress.address
 
     workspace.update_guest_state(
-        GuestState.PROMISED,
         GuestState.PREPARING,
+        current_state=GuestState.PROMISED,
         set_values={
             'address': provisioning_progress.address,
             'pool_data': provisioning_progress.pool_data.serialize()
@@ -2164,8 +2166,8 @@ def do_acquire_guest_request(
     # save guest's address. In both cases, we must be sure nobody else did any changes before us.
     if not provisioning_progress.is_acquired:
         workspace.update_guest_state(
-            GuestState.PROVISIONING,
             GuestState.PROMISED,
+            current_state=GuestState.PROVISIONING,
             set_values={
                 'pool_data': provisioning_progress.pool_data.serialize()
             }
@@ -2185,8 +2187,8 @@ def do_acquire_guest_request(
     assert provisioning_progress.address
 
     workspace.update_guest_state(
-        GuestState.PROVISIONING,
         GuestState.PREPARING,
+        current_state=GuestState.PROVISIONING,
         set_values={
             'address': provisioning_progress.address,
             'pool_data': provisioning_progress.pool_data.serialize()
@@ -2275,8 +2277,8 @@ def do_route_guest_request(
         handle_success('routing-cancelled')
 
         workspace.update_guest_state(
-            GuestState.ROUTING,
-            GuestState.ERROR
+            GuestState.ERROR,
+            current_state=GuestState.ROUTING
         )
 
         if workspace.result:
@@ -2300,8 +2302,8 @@ def do_route_guest_request(
 
     # Mark request as suitable for provisioning.
     workspace.update_guest_state(
-        GuestState.ROUTING,
         GuestState.PROVISIONING,
+        current_state=GuestState.ROUTING,
         set_values={
             'poolname': pool.poolname
         },
@@ -2470,8 +2472,8 @@ def do_create_snapshot_start_guest(
         return handle_success('finished-task')
 
     workspace.update_guest_state(
-        GuestState.STARTING,
         GuestState.READY,
+        current_state=GuestState.STARTING
     )
 
     if workspace.result:
@@ -2578,8 +2580,8 @@ def do_update_snapshot(
         return handle_failure(r_start, 'failed to start guest')
 
     workspace.update_guest_state(
-        GuestState.STOPPED,
-        GuestState.STARTING
+        GuestState.STARTING,
+        current_state=GuestState.STOPPED
     )
 
     if workspace.result:
@@ -2695,8 +2697,8 @@ def do_create_snapshot_create(
         return handle_failure(r_start, 'failed to start guest')
 
     workspace.update_guest_state(
-        GuestState.STOPPED,
-        GuestState.STARTING
+        GuestState.STARTING,
+        current_state=GuestState.STOPPED
     )
 
     if workspace.result:
@@ -2780,8 +2782,8 @@ def do_create_snapshot_stop_guest(
         return handle_success('finished-task')
 
     workspace.update_guest_state(
-        GuestState.STOPPING,
         GuestState.STOPPED,
+        current_state=GuestState.STOPPING
     )
 
     if workspace.result:
@@ -2858,8 +2860,8 @@ def do_create_snapshot(
             return
 
         workspace.update_guest_state(
-            GuestState.STOPPING,
             GuestState.STARTING,
+            current_state=GuestState.STOPPING
         )
 
         workspace.dispatch_task(create_snapshot_start_guest, guestname, snapshotname)
@@ -2867,8 +2869,8 @@ def do_create_snapshot(
         handle_failure(r, 'failed to undo snapshot create')
 
     workspace.update_guest_state(
-        GuestState.READY,
         GuestState.STOPPING,
+        current_state=GuestState.READY
     )
 
     if workspace.result:
