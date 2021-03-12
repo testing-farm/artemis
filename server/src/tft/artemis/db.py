@@ -460,6 +460,7 @@ class User(Base):
 
     sshkeys = relationship('SSHKey', back_populates='owner')
     guests = relationship('GuestRequest', back_populates='owner')
+    shelves = relationship('Shelf', back_populates='owner')
 
     @staticmethod
     def hash_token(token: str) -> str:
@@ -552,6 +553,7 @@ class GuestRequest(Base):
     ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
     priorityname = Column(String(250), ForeignKey('priority_groups.name'), nullable=True)
     poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
+    shelfname = Column(String(), ForeignKey('shelves.shelfname'), nullable=True)
 
     @property
     def environment(self) -> 'Environment':
@@ -617,6 +619,7 @@ class GuestRequest(Base):
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
+    shelf = relationship('Shelf', back_populates='guests')
 
     def log_event(
         self,
@@ -771,6 +774,18 @@ class SnapshotRequest(Base):
     state = Column(Enum(GuestState), nullable=False)
 
     start_again = Column(Boolean(), nullable=False)
+
+
+class Shelf(Base):
+    __tablename__ = 'shelves'
+
+    shelfname = Column(String(), primary_key=True, nullable=False)
+    ownername = Column(String(), ForeignKey('users.username'), nullable=False)
+
+    # state = Column(Enum(UserRoles), nullable=False, server_default=UserRoles.USER.value)
+
+    owner = relationship('User', back_populates='shelves')
+    guests = relationship('GuestRequest', back_populates='shelf')
 
 
 class GuestTag(Base):

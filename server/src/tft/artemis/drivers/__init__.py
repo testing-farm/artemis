@@ -994,6 +994,31 @@ class PoolDriver(gluetool.log.LoggerMixin):
             state=GuestLogState.ERROR
         ))
 
+    def shelve_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        """
+        Perform steps necessary when putting a guest request "on shelf", i.e. not releasing its resources, keeping
+        it around but not being used by any user at the moment.
+        """
+
+        pass
+
+    def unshelve_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        """
+        Perform steps necessary when removing a guest request "from shelf", i.e. it is going to be used again.
+        """
+
+        pass
+
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         capabilities = PoolCapabilities()
 

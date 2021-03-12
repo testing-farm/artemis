@@ -812,3 +812,55 @@ def cmd_user_token_reset(
         cfg.logger.error('failed to reset token: {}'.format(response.text))
 
     print(prettify_yaml(True, response.json()))
+
+
+@cli_root.group(name='shelf', short_help='Shelf management commands')
+@click.pass_obj
+def cmd_shelf(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_shelf.command(name='list', short_help='List all shelves')
+@click.pass_obj
+def cmd_shelf_list(cfg: Configuration) -> None:
+    print(prettify_yaml(True, artemis_inspect(cfg, 'shelves', '').json()))
+
+
+@cmd_shelf.command(name='inspect', short_help='Inspect a shelf')
+@click.argument('shelfname', required=True, type=str)
+@click.pass_obj
+def cmd_shelf_inspect(
+    cfg: Configuration,
+    shelfname: str
+) -> None:
+    print(prettify_yaml(True, artemis_inspect(cfg, 'shelves', shelfname).json()))
+
+
+@cmd_shelf.command(name='create', short_help='Create a shelf')
+@click.argument('shelfname', required=True, type=str)
+@click.pass_obj
+def cmd_shelf_create(
+        cfg: Configuration,
+        shelfname: str
+) -> None:
+    print(prettify_yaml(True, artemis_create(
+        cfg,
+        'shelves/{}'.format(shelfname),
+        {}
+    ).json()))
+
+
+@cmd_shelf.command(name='delete', short_help='Delete a shelf')
+@click.argument('shelfname', required=True, type=str)
+@click.pass_obj
+def cmd_shelf_delete(
+    cfg: Configuration,
+    shelfname: str
+) -> None:
+    response = artemis_delete(cfg, 'shelves', shelfname, logger=cfg.logger)
+
+    if response.status_code == 404:
+        cfg.logger.error('shelf "{}" does not exist'.format(shelfname))
+
+    if response.ok:
+        cfg.logger.info('shelf "{}" has been removed'.format(shelfname))

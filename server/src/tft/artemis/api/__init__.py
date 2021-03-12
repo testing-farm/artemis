@@ -298,6 +298,16 @@ class GuestRequest:
 
 
 @molten.schema
+class GuestRequest_v0_0_25:
+    keyname: str
+    environment: Dict[str, Optional[Any]]
+    priority_group: Optional[str]
+    user_data: Optional[Dict[str, Optional[str]]]
+    post_install_script: Optional[str]
+    shelfname: Optional[str]
+
+
+@molten.schema
 class GuestSSHInfo:
     username: str
     port: int
@@ -551,7 +561,7 @@ class GuestRequestManager:
 
     def create(
         self,
-        guest_request: GuestRequest,
+        guest_request: Union[GuestRequest, GuestRequest_v0_0_25],
         ownername: str,
         logger: gluetool.log.ContextAdapter,
         environment_schema: JSONSchemaType
@@ -581,24 +591,29 @@ class GuestRequestManager:
             }
 
         with self.db.get_session() as session:
+            values = {
+                'guestname': guestname,
+                '_environment': environment.serialize_to_json(),
+                'ownername': DEFAULT_GUEST_REQUEST_OWNER,
+                'ssh_keyname': guest_request.keyname,
+                'ssh_port': DEFAULT_SSH_PORT,
+                'ssh_username': DEFAULT_SSH_USERNAME,
+                'priorityname': guest_request.priority_group,
+                'poolname': None,
+                'pool_data': json.dumps({}),
+                'user_data': json.dumps(guest_request.user_data),
+                'state': GuestState.ROUTING.value,
+                'skip_prepare_verify_ssh': guest_request.skip_prepare_verify_ssh,
+                'post_install_script': guest_request.post_install_script,
+            }
+
+            if isinstance(guest_request, GuestRequest_v0_0_25):
+                values['shelfname'] = guest_request.shelfname
+
             perform_safe_db_change(
                 guest_logger,
                 session,
-                sqlalchemy.insert(artemis_db.GuestRequest.__table__).values(
-                    guestname=guestname,
-                    _environment=environment.serialize_to_json(),
-                    ownername=DEFAULT_GUEST_REQUEST_OWNER,
-                    ssh_keyname=guest_request.keyname,
-                    ssh_port=DEFAULT_SSH_PORT,
-                    ssh_username=DEFAULT_SSH_USERNAME,
-                    priorityname=guest_request.priority_group,
-                    poolname=None,
-                    pool_data=json.dumps({}),
-                    user_data=json.dumps(guest_request.user_data),
-                    state=GuestState.ROUTING,
-                    skip_prepare_verify_ssh=guest_request.skip_prepare_verify_ssh,
-                    post_install_script=guest_request.post_install_script,
-                ),
+                sqlalchemy.insert(artemis_db.GuestRequest.__table__).values(**values),
                 conflict_error=errors.InternalServerError,
                 failure_details=failure_details
             )
@@ -1301,6 +1316,219 @@ class CacheManager:
         return self._get_pool_object_infos(logger, poolname, 'get_cached_pool_flavor_infos')
 
 
+@molten.schema
+@dataclasses.dataclass
+class ShelfResponse:
+    shelfname: str
+    ownername: str
+
+    @classmethod
+    def from_db(cls, shelf: artemis_db.Shelf) -> 'ShelfResponse':
+        return cls(
+            shelfname=shelf.shelfname,
+            ownername=shelf.ownername
+        )
+
+
+class ShelfManager:
+    def __init__(self, db: artemis_db.DB) -> None:
+        self.db = db
+
+    def _get_shelf(self, session: sqlalchemy.orm.session.Session, shelfname: str) -> artemis_db.Shelf:
+        r_shelf = artemis_db.SafeQuery.from_session(session, artemis_db.Shelf) \
+            .filter(artemis_db.Shelf.shelfname == shelfname) \
+            .one_or_none()
+
+        if r_shelf.is_error:
+            raise errors.InternalServerError(caused_by=r_shelf.unwrap_error())
+
+        shelf = r_shelf.unwrap()
+
+        if not shelf:
+            raise errors.NoSuchEntityError()
+
+        return shelf
+
+    @staticmethod
+    def entry_get_shelves(manager: 'ShelfManager') -> List[ShelfResponse]:
+        with manager.db.get_session() as session:
+            r_shelves = artemis_db.SafeQuery.from_session(session, artemis_db.Shelf).all()
+
+            if r_shelves.is_error:
+                raise errors.InternalServerError(caused_by=r_shelves.unwrap_error())
+
+            return [
+                ShelfResponse.from_db(user)
+                for user in r_shelves.unwrap()
+            ]
+
+    @staticmethod
+    def entry_get_shelf(manager: 'ShelfManager', shelfname: str) -> ShelfResponse:
+        with manager.db.get_session() as session:
+            return ShelfResponse.from_db(manager._get_shelf(session, shelfname))
+
+    @staticmethod
+    def entry_create_shelf(
+        manager: 'ShelfManager',
+        logger: gluetool.log.ContextAdapter,
+        shelfname: str
+    ) -> Tuple[str, ShelfResponse]:
+        with manager.db.get_session() as session:
+            perform_safe_db_change(
+                logger,
+                session,
+                sqlalchemy.insert(artemis_db.Shelf.__table__).values(
+                    shelfname=shelfname,
+                    # TODO: set ownername
+                    ownername=DEFAULT_GUEST_REQUEST_OWNER
+                )
+            )
+
+        return HTTP_201, manager.entry_get_shelf(manager, shelfname)
+
+    @staticmethod
+    def entry_delete_shelf(
+        manager: 'ShelfManager',
+        logger: gluetool.log.ContextAdapter,
+        shelfname: str
+    ) -> Tuple[str, None]:
+        with manager.db.get_session() as session:
+            guest_count_subquery = session.query(  # type: ignore # untyped function "query"
+                sqlalchemy.func.count(artemis_db.GuestRequest.guestname).label('guest_count')
+            ).filter(
+                artemis_db.GuestRequest.shelfname == shelfname
+            ).subquery('t')
+
+            query = sqlalchemy \
+                .delete(artemis_db.Shelf.__table__) \
+                .where(artemis_db.Shelf.shelfname == shelfname) \
+                .where(guest_count_subquery.c.guest_count == 0)
+
+            # The query can miss either with existing guests, or when the shelf has been removed from DB already.
+            # The "gone already" situation could be better expressed by returning "404 Not Found", but we can't tell
+            # which of these two situations caused the change to go vain, therefore returning general "409 Conflict",
+            # expressing our believe user should resolve the conflict and try again.
+            perform_safe_db_change(
+                logger,
+                session,
+                query,
+                failure_details={
+                    'shelfname': shelfname
+                }
+            )
+
+        return HTTP_204, None
+
+    @staticmethod
+    def entry_shelve_guest(
+        manager: 'ShelfManager',
+        logger: gluetool.log.ContextAdapter,
+        guestname: str,
+        shelfname: str
+    ) -> Tuple[str, None]:
+        from ..tasks import dispatch_task, get_guest_logger, shelve_guest_request
+
+        failure_details = {
+            'guestname': guestname
+        }
+
+        guest_logger = get_guest_logger('shelve-guest-request', logger, guestname)
+
+        with manager.db.get_session() as session:
+            r_guest_request = artemis_db.SafeQuery \
+                .from_session(session, artemis_db.GuestRequest) \
+                .filter(artemis_db.GuestRequest.guestname == guestname) \
+                .one_or_none()
+
+            if r_guest_request.is_error:
+                raise errors.InternalServerError(
+                    logger=guest_logger,
+                    caused_by=r_guest_request.unwrap_error(),
+                    failure_details=failure_details
+                )
+
+            guest_request = r_guest_request.unwrap()
+
+            if guest_request is None:
+                raise errors.NoSuchEntityError(
+                    logger=guest_logger,
+                    failure_details=failure_details
+                )
+
+            if guest_request.state not in (GuestState.READY, GuestState.SHELVING):
+                raise errors.ConflictError(
+                    logger=guest_logger,
+                    failure_details=failure_details
+                )
+
+            if guest_request.state == GuestState.READY:
+                snapshot_count_subquery = session.query(  # type: ignore # untyped function "query"
+                    sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
+                ).filter(
+                    artemis_db.SnapshotRequest.guestname == guestname
+                ).subquery('t')
+
+                shelf_count_subquery = session.query(  # type: ignore # untyped function "query"
+                    sqlalchemy.func.count(artemis_db.Shelf.shelfname).label('shelf_count')
+                ).filter(
+                    artemis_db.Shelf.shelfname == shelfname
+                ).subquery('s')
+
+                query = sqlalchemy \
+                    .update(artemis_db.GuestRequest.__table__) \
+                    .where(artemis_db.GuestRequest.guestname == guestname) \
+                    .where(artemis_db.GuestRequest.state == GuestState.READY) \
+                    .where(
+                        artemis_db.GuestRequest.shelfname == None  # noqa: E711
+                        or artemis_db.GuestRequest.shelfname == shelfname  # noqa: W503
+                    ) \
+                    .where(snapshot_count_subquery.c.snapshot_count == 0) \
+                    .where(shelf_count_subquery.c.shelf_count == 1) \
+                    .values(
+                        state=GuestState.SHELVING.value,
+                        shelfname=shelfname
+                    )
+
+                # The query can miss either with existing snapshots, or when the guest request has been
+                # removed from DB already or changed its state. The "gone already" situation could be better
+                # expressed by returning "404 Not Found", but we can't tell which of these situations caused
+                # the change to go vain, therefore returning general "409 Conflict", expressing our believe
+                # user should resolve the conflict and try again.
+                perform_safe_db_change(guest_logger, session, query)
+
+                log_guest_event(guest_logger, session, guestname, 'shelving')
+
+            # We got another request for shelving - is it a retrye because dispatching the task failed? For that
+            # to be true, shelfname must be the same.
+            elif guest_request.shelfname != shelfname:
+                raise errors.ConflictError(
+                    logger=guest_logger,
+                    failure_details=failure_details
+                )
+
+            r_dispatch = dispatch_task(guest_logger, shelve_guest_request, guestname, shelfname)
+
+            if r_dispatch.is_error:
+                raise errors.InternalServerError(
+                    logger=guest_logger,
+                    caused_by=r_dispatch.unwrap_error(),
+                    failure_details=failure_details
+                )
+
+        return HTTP_204, None
+
+
+class ShelfManagerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is ShelfManager or parameter.annotation == 'ShelfManager'
+
+    def resolve(self, db: artemis_db.DB) -> ShelfManager:
+        return ShelfManager(db)
+
+
 class UserManager:
     """
     Manager class for operations involving management of user accounts.
@@ -1514,7 +1742,7 @@ def get_guest_requests(manager: GuestRequestManager, request: Request) -> Tuple[
     return HTTP_200, manager.get_guest_requests()
 
 
-def create_guest_request_v0_0_24(
+def create_guest_request_v0_0_25(
     guest_request: GuestRequest,
     manager: GuestRequestManager,
     request: Request,
@@ -1531,7 +1759,7 @@ def create_guest_request_v0_0_24(
     else:
         ownername = DEFAULT_GUEST_REQUEST_OWNER
 
-    return HTTP_201, manager.create(guest_request, ownername, logger, ENVIRONMENT_SCHEMAS['v0.0.24'])
+    return HTTP_201, manager.create(guest_request, ownername, logger, ENVIRONMENT_SCHEMAS['v0.0.25'])
 
 
 def create_guest_request_v0_0_20(
@@ -2007,6 +2235,61 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
     return wrapper
 
 
+# NEW: shelves management
+@route_generator
+def generate_routes_v0_0_25(
+    create_route: CreateRouteCallbackType,
+    name_prefix: str,
+    metadata: Any
+) -> List[Union[Route, Include]]:
+    return [
+        Include('/guests', [
+            create_route('/', get_guest_requests, method='GET'),
+            create_route('/', create_guest_request_v0_0_79, method='POST'),
+            create_route('/{guestname}', get_guest_request),
+            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/events', get_events),
+            create_route('/{guestname}/events', get_guest_events),
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST'),
+            create_route('/{guestname}/shelve/{shelfname}', ShelfManager.entry_shelve_guest, method='POST')
+        ]),
+        Include('/knobs', [
+            create_route('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+        ]),
+        Include('/users', [
+            create_route('/', UserManager.entry_get_users, method='GET'),
+            create_route('/{username}', UserManager.entry_get_user, method='GET'),
+            create_route('/{username}', UserManager.entry_create_user, method='POST'),
+            create_route('/{username}', UserManager.entry_delete_user, method='DELETE'),
+            create_route('/{username}/tokens/{tokentype}/reset', UserManager.entry_reset_token, method='POST')
+        ]),
+        Include('/shelves', [
+            create_route('/', ShelfManager.entry_get_shelves, method='GET'),
+            create_route('/{shelfname}', ShelfManager.entry_get_shelf, method='GET'),
+            create_route('/{shelfname}', ShelfManager.entry_create_shelf, method='POST'),
+            create_route('/{shelfname}', ShelfManager.entry_delete_shelf, method='DELETE')
+        ]),
+        create_route('/metrics', get_metrics),
+        create_route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [  # noqa: FS003
+                create_route('/image-info', CacheManager.entry_pool_image_info),
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
+            ])
+        ]),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
+        create_route('/_schema', OpenAPIHandler(metadata=metadata))
+    ]
+
+
 # NEW: allow skipping verify-ssh steps
 @route_generator
 def generate_routes_v0_0_24(
@@ -2266,8 +2549,8 @@ def generate_routes_v0_0_17(
 #: API versions. Based on this list, routes are created with proper endpoints, and possibly redirected
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
-    # NEW: allow skipping verify-ssh steps
-    ('v0.0.24', generate_routes_v0_0_24, [
+    # NEW: shelves management
+    ('v0.0.25', generate_routes_v0_0_25, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
         'current',
@@ -2276,6 +2559,8 @@ API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
         # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
         'toplevel'
     ]),
+    # NEW: allow skipping verify-ssh steps
+    ('v0.0.24', generate_routes_v0_0_24, []),
     # NEW: user management
     ('v0.0.21', generate_routes_v0_0_21, []),
     # NEW: guest logs
@@ -2325,6 +2610,7 @@ def run_app() -> molten.app.App:
         KnobManagerComponent(),
         CacheManagerComponent(),
         UserManagerComponent(),
+        ShelfManagerComponent(),
         AuthContextComponent(),
         MetricsComponent(metrics_tree)
     ]

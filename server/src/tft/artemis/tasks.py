@@ -1369,7 +1369,11 @@ class Workspace:
         self.pool: Optional[PoolDriver] = None
         self.guest_events: Optional[List[GuestEvent]] = None
 
-    def load_guest_request(self, guestname: str, state: Optional[GuestState] = None) -> None:
+    def load_guest_request(
+        self,
+        guestname: str,
+        state: Optional[GuestState] = None
+    ) -> None:
         """
         Load a guest request from a database, as long as it is in a given state.
 
@@ -1860,6 +1864,44 @@ def _handle_successful_failover(
         metrics.ProvisioningMetrics.inc_failover_success(previous_poolname, poolname)
 
 
+def test_guest_alive(
+    logger: gluetool.log.ContextAdapter,
+    guest_request: GuestRequest,
+    timeout: int,
+    poolname: str
+) -> Result[bool, Failure]:
+    # Avoid circular imports
+    from .drivers import run_remote
+
+    r_master_key = _get_master_key()
+
+    if r_master_key.is_error:
+        return Error(r_master_key.unwrap_error())
+
+    r_ssh = run_remote(
+        logger,
+        guest_request,
+        ['bash', '-c', 'echo ping'],
+        key=r_master_key.unwrap(),
+        ssh_timeout=timeout,
+        poolname=poolname,
+        commandname='prepare-verify-ssh.shell-ping'
+    )
+
+    if r_ssh.is_error:
+        return Error(r_ssh.unwrap_error())
+
+    ssh_output = r_ssh.unwrap()
+
+    if ssh_output.stdout.strip() != 'ping':
+        return Error(Failure(
+            'did not receive expected response',
+            command_output=ssh_output.process_output
+        ))
+
+    return Ok(True)
+
+
 class TailHandler:
     def get_failure_details(
         self,
@@ -2184,6 +2226,107 @@ def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional
     )
 
 
+def do_handle_shelving_chain_tail(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    shelfname: str,
+    message: str
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        shelfname=shelfname,
+        task='shelving-tail'
+    )
+
+    handle_success('entered-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+
+    failure = Failure(
+        message,
+        guestname=guestname,
+        shelfname=shelfname
+    )
+
+    failure.handle(logger)
+
+    log_error_guest_event(logger, session, guestname, message, failure)
+
+    workspace.dispatch_task(release_guest_request, guestname)
+
+    if workspace.result:
+        return workspace.result
+
+    return handle_success('finished-task')
+
+
+def handle_shelving_chain_tail(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    guestname: str,
+    shelfname: str,
+    actor: Actor
+) -> bool:
+    cancel = threading.Event()
+
+    if actor.actor_name == shelf_keep_alive.actor_name:
+        r = do_handle_shelving_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            shelfname,
+            'failed to verify guest is still alive'
+        )
+
+    elif actor.actor_name == shelve_guest_request.actor_name:
+        r = do_handle_shelving_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            shelfname,
+            'failed to shelve guest request'
+        )
+
+    else:
+        Failure(
+            'actor not covered by shelving chain tail',
+            guestname=guestname,
+            shelfname=shelfname,
+            actor_name=actor.actor_name
+        ).handle(logger)
+
+        return False
+
+    if r.is_ok:
+        if r is SUCCESS:
+            return True
+
+        if r is RESCHEDULE:
+            return False
+
+        Failure(
+            'unexpected result of shelving chain tail',
+            guestname=guestname,
+            shelfname=shelfname,
+            actor_name=actor.actor_name
+        ).handle(logger)
+
+        return False
+
+    # Failures were already handled by this point
+    return False
+
+
 def do_update_guest_log(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -2383,9 +2526,6 @@ def do_prepare_verify_ssh(
     cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
-    # Avoid circular imports
-    from .drivers import run_remote
-
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,
         session,
@@ -2420,28 +2560,10 @@ def do_prepare_verify_ssh(
     if r_ssh_timeout.is_error:
         return handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')
 
-    r_ssh = run_remote(
-        logger,
-        workspace.gr,
-        ['bash', '-c', 'echo ping'],
-        key=r_master_key.unwrap(),
-        ssh_timeout=r_ssh_timeout.unwrap(),
-        poolname=workspace.pool.poolname,
-        commandname='prepare-verify-ssh.shell-ping'
-    )
+    r_alive = test_guest_alive(logger, workspace.gr, r_ssh_timeout.unwrap(), workspace.pool.poolname)
 
-    if r_ssh.is_error:
-        return handle_failure(r_ssh, 'failed to verify SSH')
-
-    ssh_output = r_ssh.unwrap()
-
-    if ssh_output.stdout.strip() != 'ping':
-        failure = Failure(
-            'did not receive expected response',
-            command_output=ssh_output.process_output
-        )
-
-        return handle_failure(Error(failure), 'failed to verify SSH')
+    if r_alive.is_error:
+        return handle_failure(r_alive, 'failed to verify SSH')
 
     return handle_success('finished-task')
 
@@ -2775,6 +2897,107 @@ def release_guest_request(guestname: str) -> None:
         cast(DoerType, do_release_guest_request),
         logger=get_guest_logger('release-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
+    )
+
+
+def do_shelf_keep_alive(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    shelfname: str
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        shelfname=shelfname,
+        task='shelf-keep-alive'
+    )
+
+    handle_success('entered-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, state=GuestState.SHELVED)
+    workspace.load_gr_pool()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+    assert workspace.pool
+
+    if workspace.gr.shelfname != shelfname:
+        return handle_success('finished-task')
+
+    r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=session, pool=workspace.pool)
+
+    if r_ssh_timeout.is_error:
+        return handle_failure(r_ssh_timeout, 'failed to obtain SSH timeout')
+
+    r_alive = test_guest_alive(logger, workspace.gr, r_ssh_timeout.unwrap(), workspace.pool.poolname)
+
+    if r_alive.is_error:
+        return handle_failure(r_alive, 'failed to verify guest is alive')
+
+    return handle_success('finished-task')
+
+
+@task()
+def shelf_keep_alive(guestname: str, shelfname: str) -> None:
+    task_core(
+        cast(DoerType, do_shelf_keep_alive),
+        logger=get_guest_logger('shelf-keep-alive', _ROOT_LOGGER, guestname),
+        doer_args=(guestname, shelfname)
+    )
+
+
+def do_shelve_guest_request(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    shelfname: str
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        shelfname=shelfname,
+        task='shelve-guest-request'
+    )
+
+    handle_success('entered-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, state=GuestState.SHELVING)
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+
+    workspace.dispatch_task(shelf_keep_alive, guestname, shelfname, delay=600)
+
+    workspace.update_guest_state(
+        GuestState.SHELVED,
+        current_state=GuestState.SHELVING,
+    )
+
+    if workspace.result:
+        return workspace.result
+
+    return handle_success('finished-task')
+
+
+@task()
+def shelve_guest_request(guestname: str, shelfname: str) -> None:
+    task_core(
+        cast(DoerType, do_shelve_guest_request),
+        logger=get_guest_logger('shelve-guest-request', _ROOT_LOGGER, guestname),
+        doer_args=(guestname, shelfname)
     )
 
 

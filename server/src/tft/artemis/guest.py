@@ -33,6 +33,12 @@ class GuestState(enum.Enum):
     #: Provisioning is done, there is a guest available for SSH connections.
     READY = 'ready'
 
+    #: The guest is being put on a shelf.
+    SHELVING = 'shelving'
+
+    #: The guest is sitting on a shelf.
+    SHELVED = 'shelved'
+
     #: The guest has been released by the user, and it's resources may be released by its pool's driver.
     CONDEMNED = 'condemned'
 
