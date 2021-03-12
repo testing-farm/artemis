@@ -1,0 +1,13 @@
+---
+
+# a default section is used when there is no configuration
+
+section: null
+
+kwargs:
+  default_commands:
+    - a default command
+
+expected:
+  default:
+    - a default command

@@ -1,0 +1,4 @@
+---
+
+name: install_mbs_build_execute
+description: Install RHEL-8 module from Module Building Service (MBS), using On Demand Compose Service (ODCS) to generate repo. It is not using Ansible to install the module.

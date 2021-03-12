@@ -1,0 +1,4 @@
+---
+
+name: semaphore
+description: Checks state of services monitored by Semaphore, and apply necessary actions.

@@ -1,0 +1,17 @@
+---
+
+name: copr
+description: Provide Copr task details to other modules
+dependencies:
+  ansible_tasks:
+    #
+    # Specfile building
+    #
+    - name: "%post: inject system rpmUtils package into virtualenv"
+      lineinfile:
+        dest: "{{ SPECFILE }}"
+        regexp: "^ln -s /usr/lib/python2.7/site-packages/rpmUtils %GLUETOOL_BASE/"
+        line: "# added by 'copr' module\nln -s /usr/lib/python2.7/site-packages/rpmUtils %GLUETOOL_BASE/lib/python2.7/site-packages/rpmUtils\n"
+        state: present
+        insertafter: "^# TASK: POST-START"
+      when: BUILDING_SPECFILE is defined

@@ -1,0 +1,7 @@
+---
+
+name: rpminspect-job
+description: Jenkins rpminspect job
+dependencies:
+  pip:
+    - jenkins-job-builder==1.6.2

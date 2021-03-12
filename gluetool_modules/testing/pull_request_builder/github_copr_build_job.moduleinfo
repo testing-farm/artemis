@@ -1,0 +1,7 @@
+---
+
+name: github-copr-build-job
+description: Triggers ci-test-github-copr_build jenkins job
+dependencies:
+  pip:
+    - jenkins-job-builder==1.6.2

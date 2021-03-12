@@ -1,0 +1,4 @@
+---
+
+name: tedude
+description: "TeDuDe checks if all bugs mentioned in the changelog meet Testing During Development workflow's requirements."

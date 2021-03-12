@@ -1,0 +1,7 @@
+---
+
+name: pagure-brew-build-job
+description: Triggers jenkins ci-test-pagure-brew_build
+dependencies:
+  pip:
+    - jenkins-job-builder==1.6.2

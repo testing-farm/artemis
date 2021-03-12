@@ -1,0 +1,87 @@
+---
+
+name: koji
+description: Provide Koji task details to other modules
+dependencies:
+  yum:
+    - brewkoji
+    - koji
+    - python2-koji
+    - python2-rpm
+    - yum
+  pip:
+    # We'd like to install Python koji from a package (e.g. the released one), but all these dependencies
+    # end up in the "install_requires" entry of setup.py, and setuptools cannot handle it. Anything but pure
+    # package name with the version is a cause of error - these must be placed in "dependency_links", which
+    # dep-list module does not handle. Therefore this koji package is listed statically in setup.py for now,
+    # which will change when we move on to dynamically generated list, with proper fix for dep-list and
+    # related tools (e.g. Docker image building playbook)
+    # - https://releases.pagure.org/koji/koji-1.16.0.tar.bz2
+    - pyOpenSSL==17.0.0
+    - beautifulsoup4==4.6.3
+    - rpm-py-installer==0.7.1
+
+  ansible_tasks:
+    #
+    # Specfile building
+    #
+
+    # These are now solved by composetest module which installs koji as a Python package, and new requirement
+    # of "rpm-py-installer" package. Let's see how that's going to work, hence not removing these possibly no
+    # longer needed tasks.
+
+    # Needed for rpm-py-installer
+    - name: "BuildRequires: add rpm-devel"
+      lineinfile:
+        dest: "{{ SPECFILE }}"
+        regexp: "^BuildRequires: rpm-devel"
+        line: "# added by 'koji-fedora' module\nBuildRequires: rpm-devel\n"
+        state: present
+        insertbefore: "^# TASK: GLOBAL-BEFORE-DESCRIPTION"
+      when: BUILDING_SPECFILE is defined
+
+    # Needed for rpm-py-installer
+    - name: "Requires: add rpm-devel"
+      lineinfile:
+        dest: "{{ SPECFILE }}"
+        regexp: "^Requires: rpm-devel"
+        line: "# added by 'koji-fedora' module\nRequires: rpm-devel\n"
+        state: present
+        insertbefore: "^# TASK: GLOBAL-BEFORE-DESCRIPTION"
+      when: BUILDING_SPECFILE is defined
+
+    #- name: "%post: inject system koji package into virtualenv"
+    #  lineinfile:
+    #    dest: "{{ SPECFILE }}"
+    #    regexp: "^ln -s /usr/lib/python2.7/site-packages/koji %GLUETOOL_BASE/"
+    #    line: "# added by 'koji_fedora' module\nln -s /usr/lib/python2.7/site-packages/koji %GLUETOOL_BASE/lib/python2.7/site-packages/koji\n"
+    #    state: present
+    #    insertafter: "^# TASK: POST-START"
+    #  when: BUILDING_SPECFILE is defined
+
+    #- name: "%post: inject system koji_cli package into virtualenv"
+    #  lineinfile:
+    #    dest: "{{ SPECFILE }}"
+    #    regexp: "^ln -s /usr/lib/python2.7/site-packages/koji_cli %GLUETOOL_BASE/"
+    #    line: "# added by 'koji_fedora' module\nln -s /usr/lib/python2.7/site-packages/koji_cli %GLUETOOL_BASE/lib/python2.7/site-packages/koji_cli\n"
+    #    state: present
+    #    insertafter: "^# TASK: POST-START"
+    #  when: BUILDING_SPECFILE is defined
+
+    #- name: "%post: inject system rpm package into virtualenv"
+    #  lineinfile:
+    #    dest: "{{ SPECFILE }}"
+    #    regexp: "^ln -s /lib64/python2.7/site-packages/rpm %GLUETOOL_BASE/"
+    #    line: "# added by 'koji_fedora' module\nln -s /lib64/python2.7/site-packages/rpm %GLUETOOL_BASE/lib/python2.7/site-packages/rpm\n"
+    #    state: present
+    #    insertafter: "^# TASK: POST-START"
+    #  when: BUILDING_SPECFILE is defined
+
+    - name: "%post: inject system rpmUtils package into virtualenv"
+      lineinfile:
+        dest: "{{ SPECFILE }}"
+        regexp: "^ln -s /usr/lib/python2.7/site-packages/rpmUtils %GLUETOOL_BASE/"
+        line: "# added by 'koji_fedora' module\nln -s /usr/lib/python2.7/site-packages/rpmUtils %GLUETOOL_BASE/lib/python2.7/site-packages/rpmUtils\n"
+        state: present
+        insertafter: "^# TASK: POST-START"
+      when: BUILDING_SPECFILE is defined

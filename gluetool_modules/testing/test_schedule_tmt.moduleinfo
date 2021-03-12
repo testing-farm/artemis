@@ -1,0 +1,13 @@
+---
+
+name: test-schedule-tmt
+description: "Create and run TMT test schedule entries for ``test-scheduler`` and ``test-schedule-runner`` modules."
+
+dependencies:
+    repo:
+        - name: fedora-updates-testing
+          metalink: https://mirrors.fedoraproject.org/metalink?repo=updates-testing-f$releasever&arch=$basearch
+          enabled: 1
+          includepkgs: tmt*
+    yum:
+        - tmt-all

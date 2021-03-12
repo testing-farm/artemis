@@ -1,0 +1,32 @@
+---
+- rule: NO_BUGS_FOUND
+  result: passed
+  message: 'No bugs have been found in the changelog. This is acceptable.'
+
+- rule: BUG_NOT_FOUND
+  result: failed
+  message: 'Could not get bugzilla data. Hint: private/embargoed bug?'
+
+- rule: >
+    'cf_devel_whiteboard' not in ATTRIBUTE_NAMES
+  result: failed
+  message: 'Could not access required attribute, wrong attribute or insufficent bugzilla permissions?'
+
+- rule: >
+    'ci_tests_implemented' in ATTRIBUTES['cf_devel_whiteboard']
+  result: passed
+  message: 'ci_tests_implemented: CI Gating tests are implemented.'
+
+- rule: >
+    'requires_ci_gating-' in ATTRIBUTES['cf_devel_whiteboard']
+  result: passed
+  message: 'requires_ci_gating-: CI Gating tests are not required.'
+
+- rule: >
+    'requires_ci_gating+' in ATTRIBUTES['cf_devel_whiteboard']
+  result: failed
+  message: 'requires_ci_gating+: CI Gating tests are required but not implemented.'
+
+- rule: "True"
+  result: failed
+  message: 'CI Gating tests decission is missing.'

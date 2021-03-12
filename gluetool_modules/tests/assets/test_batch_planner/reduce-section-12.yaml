@@ -1,0 +1,33 @@
+---
+
+# flags should work in structured sections
+
+section:
+  set1:
+    - BUILD_TARGET.match('dummy-target')
+    - apply-all: False
+    - a command
+
+  set2:
+    - BUILD_TARGET.match('another-dummy-target')
+    - another command
+
+  set3:
+    - BUILD_TARGET.match('dummy-target')
+    - options: foo
+    - completerly different command
+
+  default:
+    - yet another command
+
+kwargs:
+  all_commands:
+    - and one more
+
+expected:
+  set1:
+    - a command
+
+  set3:
+    - completerly different command foo
+    - and one more

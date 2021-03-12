@@ -1,0 +1,19 @@
+---
+
+name: install_mbs_build
+description: Install RHEL-8 module from Module Building Service (MBS), using On Demand Compose Service (ODCS) to generate repo.
+
+dependencies:
+  yum:
+    - odcs-client
+    - autoconf
+    - automake
+    - libtool
+    - python-devel
+    - redhat-rpm-config
+    - make
+    - gcc
+    - python
+
+  pip:
+    - jq

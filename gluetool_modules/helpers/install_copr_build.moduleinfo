@@ -1,0 +1,4 @@
+---
+
+name: install-copr-build
+description: "Install build packages on given guest."

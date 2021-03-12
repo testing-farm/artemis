@@ -1,0 +1,10 @@
+flake8==3.7.8
+yamllint==1.16.0
+pytest-flake8==1.0.4
+pytest-cov==2.7.1
+pytest-catchlog==1.2.2
+pytest-mock==1.10.4
+pytest==4.6.5
+
+pylint
+pytest-pylint

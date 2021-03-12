@@ -1,0 +1,633 @@
+---
+
+# Represents common task for a scratch build.
+
+getAPIVersion: Mock Koji Session 1.0
+
+getBuildTarget:
+  rhel-7.3-z-candidate:
+    dest_tag: 9866
+    build_tag: 9867
+    build_tag_name: rhel-7.3-z-build
+    dest_tag_name: rhel-7.3-z-candidate
+    id: 3150
+    name: rhel-7.3-z-candidate
+
+getTaskInfo:
+  16311217:
+    weight: 0.2
+    parent:
+    completion_time: '2018-05-16 08:28:50.659155'
+    request:
+      - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+      - rhel-7.3-z-candidate
+      - scratch: true
+    start_time: '2018-05-16 08:22:30.017789'
+    start_ts: 1526458950.01779
+    state: 2
+    awaited:
+    label:
+    priority: 20
+    channel_id: 11
+    waiting: false
+    create_time: '2018-05-16 08:22:21.598995'
+    id: 16311217
+    create_ts: 1526458941.59899
+    owner: 2228
+    host_id: 150
+    completion_ts: 1526459330.65915
+    arch: noarch
+    method: build
+  6935377:
+    request:
+      - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+      - rhel-7.3-z-candidate
+      - scratch: true
+    waiting: false
+    state: 2
+    id: 6935377
+    method: build
+
+getTaskChildren:
+  16311217:
+    - weight: 2.002386748125
+      parent: 16311217
+      completion_time: '2018-05-16 08:26:19.719041'
+      request:
+        - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+        - 9867
+        - aarch64
+        - false
+        - repo_id: 2501209
+      start_time: '2018-05-16 08:23:06.934819'
+      start_ts: 1526458986.93482
+      state: 2
+      awaited: false
+      label: aarch64
+      priority: 19
+      channel_id: 11
+      waiting:
+      create_time: '2018-05-16 08:22:38.286582'
+      id: 16311221
+      create_ts: 1526458958.28658
+      owner: 2228
+      host_id: 162
+      completion_ts: 1526459179.71904
+      arch: aarch64
+      method: buildArch
+    - weight: 2.002386748125
+      parent: 16311217
+      completion_time: '2018-05-16 08:24:05.850883'
+      request:
+        - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+        - 9867
+        - i686
+        - false
+        - repo_id: 2501209
+      start_time: '2018-05-16 08:22:50.369436'
+      start_ts: 1526458970.36944
+      state: 2
+      awaited: false
+      label: i686
+      priority: 19
+      channel_id: 11
+      waiting:
+      create_time: '2018-05-16 08:22:41.478214'
+      id: 16311223
+      create_ts: 1526458961.47821
+      owner: 2228
+      host_id: 177
+      completion_ts: 1526459045.85088
+      arch: i386
+      method: buildArch
+    - weight: 2.002386748125
+      parent: 16311217
+      completion_time: '2018-05-16 08:26:29.581401'
+      request:
+        - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+        - 9867
+        - ppc
+        - true
+        - repo_id: 2501209
+      start_time: '2018-05-16 08:22:44.390845'
+      start_ts: 1526458964.39085
+      state: 2
+      awaited: false
+      label: ppc
+      priority: 19
+      channel_id: 11
+      waiting:
+      create_time: '2018-05-16 08:22:33.438489'
+      id: 16311218
+      create_ts: 1526458953.43849
+      owner: 2228
+      host_id: 146
+      completion_ts: 1526459189.5814
+      arch: ppc
+      method: buildArch
+    - weight: 2.002386748125
+      parent: 16311217
+      completion_time: '2018-05-16 08:26:16.105541'
+      request:
+        - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+        - 9867
+        - ppc64
+        - false
+        - repo_id: 2501209
+      start_time: '2018-05-16 08:22:46.857700'
+      start_ts: 1526458966.8577
+      state: 2
+      awaited: false
+      label: ppc64
+      priority: 19
+      channel_id: 11
+      waiting:
+      create_time: '2018-05-16 08:22:39.862731'
+      id: 16311222
+      create_ts: 1526458959.86273
+      owner: 2228
+      host_id: 105
+      completion_ts: 1526459176.10554
+      arch: ppc64
+      method: buildArch
+    - weight: 2.002386748125
+      parent: 16311217
+      completion_time: '2018-05-16 08:28:20.950267'
+      request:
+        - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+        - 9867
+        - ppc64le
+        - false
+        - repo_id: 2501209
+      start_time: '2018-05-16 08:22:37.414224'
+      start_ts: 1526458957.41422
+      state: 2
+      awaited: false
+      label: ppc64le
+      priority: 19
+      channel_id: 11
+      waiting:
+      create_time: '2018-05-16 08:22:36.849456'
+      id: 16311220
+      create_ts: 1526458956.84946
+      owner: 2228
+      host_id: 209
+      completion_ts: 1526459300.95027
+      arch: ppc64le
+      method: buildArch
+    - weight: 2.002386748125
+      parent: 16311217
+      completion_time: '2018-05-16 08:25:36.376205'
+      request:
+        - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+        - 9867
+        - s390
+        - false
+        - repo_id: 2501209
+      start_time: '2018-05-16 08:22:44.987305'
+      start_ts: 1526458964.9873
+      state: 2
+      awaited: false
+      label: s390
+      priority: 19
+      channel_id: 11
+      waiting:
+      create_time: '2018-05-16 08:22:35.416908'
+      id: 16311219
+      create_ts: 1526458955.41691
+      owner: 2228
+      host_id: 218
+      completion_ts: 1526459136.3762
+      arch: s390
+      method: buildArch
+    - weight: 2.002386748125
+      parent: 16311217
+      completion_time: '2018-05-16 08:24:45.229133'
+      request:
+        - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+        - 9867
+        - s390x
+        - false
+        - repo_id: 2501209
+      start_time: '2018-05-16 08:23:02.841386'
+      start_ts: 1526458982.84139
+      state: 2
+      awaited: false
+      label: s390x
+      priority: 19
+      channel_id: 11
+      waiting:
+      create_time: '2018-05-16 08:22:43.003346'
+      id: 16311224
+      create_ts: 1526458963.00335
+      owner: 2228
+      host_id: 221
+      completion_ts: 1526459085.22913
+      arch: s390x
+      method: buildArch
+    - weight: 2.002386748125
+      parent: 16311217
+      completion_time: '2018-05-16 08:25:34.232999'
+      request:
+        - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+        - 9867
+        - x86_64
+        - false
+        - repo_id: 2501209
+      start_time: '2018-05-16 08:22:54.262681'
+      start_ts: 1526458974.26268
+      state: 2
+      awaited: false
+      label: x86_64
+      priority: 19
+      channel_id: 11
+      waiting:
+      create_time: '2018-05-16 08:22:44.682266'
+      id: 16311225
+      create_ts: 1526458964.68227
+      owner: 2228
+      host_id: 110
+      completion_ts: 1526459134.233
+      arch: x86_64
+      method: buildArch
+  6935377:
+    - weight: 2.002386748125
+      id: 6935377
+      method: buildArch
+      request:
+      - cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7.src.rpm
+      - 9867
+      - x86_64
+      - false
+      - repo_id: 2501209
+
+listTaskOutput:
+  16311218:
+    - root.log
+    - mock_output.log
+    - state.log
+    - build.log
+    - flex-doc-2.5.37-3.el7_3.ppc.rpm
+    - flex-devel-2.5.37-3.el7_3.ppc.rpm
+    - flex-2.5.37-3.el7_3.ppc.rpm
+    - flex-debuginfo-2.5.37-3.el7_3.ppc.rpm
+    - flex-2.5.37-3.el7_3.src.rpm
+  16311219:
+    - root.log
+    - build.log
+    - state.log
+    - mock_output.log
+    - flex-2.5.37-3.el7_3.s390.rpm
+    - flex-doc-2.5.37-3.el7_3.s390.rpm
+    - flex-devel-2.5.37-3.el7_3.s390.rpm
+    - flex-debuginfo-2.5.37-3.el7_3.s390.rpm
+  16311220:
+    - root.log
+    - build.log
+    - state.log
+    - mock_output.log
+    - flex-2.5.37-3.el7_3.ppc64le.rpm
+    - flex-debuginfo-2.5.37-3.el7_3.ppc64le.rpm
+    - flex-devel-2.5.37-3.el7_3.ppc64le.rpm
+    - flex-doc-2.5.37-3.el7_3.ppc64le.rpm
+  16311221:
+    - root.log
+    - build.log
+    - state.log
+    - mock_output.log
+    - flex-devel-2.5.37-3.el7_3.aarch64.rpm
+    - flex-doc-2.5.37-3.el7_3.aarch64.rpm
+    - flex-2.5.37-3.el7_3.aarch64.rpm
+    - flex-debuginfo-2.5.37-3.el7_3.aarch64.rpm
+  16311222:
+    - mock_output.log
+    - root.log
+    - state.log
+    - build.log
+    - flex-debuginfo-2.5.37-3.el7_3.ppc64.rpm
+    - flex-doc-2.5.37-3.el7_3.ppc64.rpm
+    - flex-devel-2.5.37-3.el7_3.ppc64.rpm
+    - flex-2.5.37-3.el7_3.ppc64.rpm
+  16311223:
+    - root.log
+    - build.log
+    - state.log
+    - mock_output.log
+    - flex-2.5.37-3.el7_3.i686.rpm
+    - flex-doc-2.5.37-3.el7_3.i686.rpm
+    - flex-debuginfo-2.5.37-3.el7_3.i686.rpm
+    - flex-devel-2.5.37-3.el7_3.i686.rpm
+  16311224:
+    - root.log
+    - build.log
+    - state.log
+    - mock_output.log
+    - flex-doc-2.5.37-3.el7_3.s390x.rpm
+    - flex-debuginfo-2.5.37-3.el7_3.s390x.rpm
+    - flex-devel-2.5.37-3.el7_3.s390x.rpm
+    - flex-2.5.37-3.el7_3.s390x.rpm
+  16311225:
+    - root.log
+    - build.log
+    - state.log
+    - mock_output.log
+    - flex-debuginfo-2.5.37-3.el7_3.x86_64.rpm
+    - flex-doc-2.5.37-3.el7_3.x86_64.rpm
+    - flex-2.5.37-3.el7_3.x86_64.rpm
+    - flex-devel-2.5.37-3.el7_3.x86_64.rpm
+  6935377:
+    - root.log
+    - build.log
+    - state.log
+    - mock_output.log
+    - flex-debuginfo-2.5.37-3.el7_3.x86_64.rpm
+    - flex-doc-2.5.37-3.el7_3.x86_64.rpm
+    - flex-2.5.37-3.el7_3.x86_64.rpm
+    - flex-devel-2.5.37-3.el7_3.x86_64.rpm
+
+getTaskResult:
+  16311218:
+    rpms:
+      - flex-doc-2.5.37-3.el7_3.ppc.rpm
+      - flex-devel-2.5.37-3.el7_3.ppc.rpm
+      - flex-2.5.37-3.el7_3.ppc.rpm
+      - flex-debuginfo-2.5.37-3.el7_3.ppc.rpm
+      - flex-2.5.37-3.el7_3.src.rpm
+  16311219:
+    rpms:
+      - flex-2.5.37-3.el7_3.s390.rpm
+      - flex-doc-2.5.37-3.el7_3.s390.rpm
+      - flex-devel-2.5.37-3.el7_3.s390.rpm
+      - flex-debuginfo-2.5.37-3.el7_3.s390.rpm
+  16311220:
+    rpms:
+      - flex-2.5.37-3.el7_3.ppc64le.rpm
+      - flex-debuginfo-2.5.37-3.el7_3.ppc64le.rpm
+      - flex-devel-2.5.37-3.el7_3.ppc64le.rpm
+      - flex-doc-2.5.37-3.el7_3.ppc64le.rpm
+  16311221:
+    rpms:
+      - flex-devel-2.5.37-3.el7_3.aarch64.rpm
+      - flex-doc-2.5.37-3.el7_3.aarch64.rpm
+      - flex-2.5.37-3.el7_3.aarch64.rpm
+      - flex-debuginfo-2.5.37-3.el7_3.aarch64.rpm
+  16311222:
+    rpms:
+      - flex-debuginfo-2.5.37-3.el7_3.ppc64.rpm
+      - flex-doc-2.5.37-3.el7_3.ppc64.rpm
+      - flex-devel-2.5.37-3.el7_3.ppc64.rpm
+      - flex-2.5.37-3.el7_3.ppc64.rpm
+  16311223:
+    rpms:
+      - flex-2.5.37-3.el7_3.i686.rpm
+      - flex-doc-2.5.37-3.el7_3.i686.rpm
+      - flex-debuginfo-2.5.37-3.el7_3.i686.rpm
+      - flex-devel-2.5.37-3.el7_3.i686.rpm
+  16311224:
+    rpms:
+      - flex-doc-2.5.37-3.el7_3.s390x.rpm
+      - flex-debuginfo-2.5.37-3.el7_3.s390x.rpm
+      - flex-devel-2.5.37-3.el7_3.s390x.rpm
+      - flex-2.5.37-3.el7_3.s390x.rpm
+  16311225:
+    rpms:
+      - flex-debuginfo-2.5.37-3.el7_3.x86_64.rpm
+      - flex-doc-2.5.37-3.el7_3.x86_64.rpm
+      - flex-2.5.37-3.el7_3.x86_64.rpm
+      - flex-devel-2.5.37-3.el7_3.x86_64.rpm
+  6935377:
+    rpms:
+      - flex-debuginfo-2.5.37-3.el7_3.x86_64.rpm
+      - flex-doc-2.5.37-3.el7_3.x86_64.rpm
+      - flex-2.5.37-3.el7_3.x86_64.rpm
+      - flex-devel-2.5.37-3.el7_3.x86_64.rpm
+
+getUser:
+  2228:
+    status: 0
+    usertype: 0
+    id: 2228
+    name: mprchlik
+
+listTagged:
+  rhel-7.3-z-candidate:
+    - build_id: 330164
+      tag_name: rhel-7.0
+      owner_name: dmach
+      package_name: flex
+      task_id: 6935377
+      volume_name: DEFAULT
+      start_time:
+      creation_event_id: 8372775
+      creation_time: '2014-01-24 16:52:57.530880'
+      epoch:
+      tag_id: 3662
+      name: flex
+      completion_time: '2014-01-24 17:00:08.021742'
+      state: 1
+      version: 2.5.37
+      volume_id: 0
+      release: 3.el7
+      package_id: 472
+      owner_id: 446
+      id: 330164
+      nvr: flex-2.5.37-3.el7
+    - build_id: 321266
+      tag_name: rhel-7.0
+      owner_name: dmach
+      package_name: flex
+      task_id: 6780498
+      volume_name: DEFAULT
+      start_time:
+      creation_event_id: 8200108
+      creation_time: '2013-12-27 16:26:03.546141'
+      epoch:
+      tag_id: 3662
+      name: flex
+      completion_time: '2013-12-27 16:32:14.916365'
+      state: 1
+      version: 2.5.37
+      volume_id: 0
+      release: 2.el7
+      package_id: 472
+      owner_id: 446
+      id: 321266
+      nvr: flex-2.5.37-2.el7
+
+
+
+
+dummies:
+
+  listBuilds:
+    - package_name: bash
+      extra:
+      creation_time: '2016-09-30 08:22:42.639802'
+      completion_time: '2016-09-30 08:34:58.935735'
+      package_id: 1088
+      build_id: 805705
+      state: 1
+      source:
+      epoch:
+      version: 4.3.43
+      completion_ts: 1475224498.93573
+      owner_id: 3543
+      owner_name: svashisht
+      nvr: bash-4.3.43-4.fc25
+      start_time: '2016-09-30 08:22:42.639802'
+      creation_event_id: 18507215
+      start_ts: 1475223762.6398
+      volume_id: 0
+      creation_ts: 1475223762.6398
+      name: bash
+      task_id: 15869828
+      volume_name: DEFAULT
+      release: 4.fc25
+
+  listTagged:
+    f25:
+      - build_id: 805705
+        tag_name: f25
+        owner_name: svashisht
+        package_name: bash
+        task_id: 15869828
+        volume_name: DEFAULT
+        start_time: '2016-09-30 08:22:42.639802'
+        creation_event_id: 18507215
+        creation_time: '2016-09-30 08:22:42.639802'
+        epoch:
+        tag_id: 335
+        name: bash
+        completion_time: '2016-09-30 08:34:58.935735'
+        state: 1
+        version: 4.3.43
+        volume_id: 0
+        release: 4.fc25
+        package_id: 1088
+        owner_id: 3543
+        id: 805705
+        nvr: bash-4.3.43-4.fc25
+
+    f25-updates-candidate:
+      - build_id: 805705
+        tag_name: f25
+        owner_name: svashisht
+        package_name: bash
+        task_id: 15869828
+        volume_name: DEFAULT
+        start_time: '2016-09-30 08:22:42.639802'
+        creation_event_id: 18507215
+        creation_time: '2016-09-30 08:22:42.639802'
+        epoch:
+        tag_id: 335
+        name: bash
+        completion_time: '2016-09-30 08:34:58.935735'
+        state: 1
+        version: 4.3.43
+        volume_id: 0
+        release: 4.fc25
+        package_id: 1088
+        owner_id: 3543
+        id: 805705
+        nvr: bash-4.3.43-4.fc25
+      - build_id: 803100
+        tag_name: f25
+        owner_name: dkaspar
+        package_name: bash
+        task_id: 15736657
+        volume_name: DEFAULT
+        start_time: '2016-09-21 16:37:41.029482'
+        creation_event_id: 18340610
+        creation_time: '2016-09-21 16:37:41.029482'
+        epoch:
+        tag_id: 335
+        name: bash
+        completion_time: '2016-09-21 16:50:55.639468'
+        state: 1
+        version: 4.3.43
+        volume_id: 0
+        release: 3.fc25
+        package_id: 1088
+        owner_id: 3298
+        id: 803100
+        nvr: bash-4.3.43-3.fc25
+      - build_id: 774971
+        tag_name: f25
+        owner_name: svashisht
+        package_name: bash
+        task_id: 14620392
+        volume_name: DEFAULT
+        start_time: '2016-06-23 14:08:22.809162'
+        creation_event_id: 16869827
+        creation_time: '2016-06-23 14:08:22.809162'
+        epoch:
+        tag_id: 335
+        name: bash
+        completion_time: '2016-06-23 14:20:05.194474'
+        state: 1
+        version: 4.3.43
+        volume_id: 0
+        release: 1.fc25
+        package_id: 1088
+        owner_id: 3543
+        id: 774971
+        nvr: bash-4.3.43-1.fc25
+
+  getBuild:
+    805705:
+      package_name: bash
+      extra:
+      creation_time: '2016-09-30 08:22:42.639802'
+      completion_time: '2016-09-30 08:34:58.935735'
+      package_id: 1088
+      id: 805705
+      build_id: 805705
+      state: 1
+      source:
+      epoch:
+      version: 4.3.43
+      completion_ts: 1475224498.93573
+      owner_id: 3543
+      owner_name: svashisht
+      nvr: bash-4.3.43-4.fc25
+      start_time: '2016-09-30 08:22:42.639802'
+      creation_event_id: 18507215
+      start_ts: 1475223762.6398
+      volume_id: 0
+      creation_ts: 1475223762.6398
+      name: bash
+      task_id: 15869828
+      volume_name: DEFAULT
+      release: 4.fc25
+    bash-4.3.43-4.fc25:
+      package_name: bash
+      extra:
+      creation_time: '2016-09-30 08:22:42.639802'
+      completion_time: '2016-09-30 08:34:58.935735'
+      package_id: 1088
+      id: 805705
+      build_id: 805705
+      state: 1
+      source:
+      epoch:
+      version: 4.3.43
+      completion_ts: 1475224498.93573
+      owner_id: 3543
+      owner_name: svashisht
+      nvr: bash-4.3.43-4.fc25
+      start_time: '2016-09-30 08:22:42.639802'
+      creation_event_id: 18507215
+      start_ts: 1475223762.6398
+      volume_id: 0
+      creation_ts: 1475223762.6398
+      name: bash
+      task_id: 15869828
+      volume_name: DEFAULT
+      release: 4.fc25
+
+
+
+
+
+
+

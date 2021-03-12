@@ -1,0 +1,14 @@
+description: |
+  Test gluetool-moduoles installation on rhel8.
+
+provision+:
+  image: registry.centos.org/centos/centos:8
+
+prepare:
+  how: shell
+  script:
+    - yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+    - yum install -y ansible autoconf automake gcc git krb5-devel libcurl-devel libtool
+    - yum install -y libxml2-devel make openssl-devel popt-devel postgresql-devel python2-devel
+    # we install poetry via python3, which has less bugs as with python2
+    - yum install -y python3

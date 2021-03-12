@@ -1,0 +1,4 @@
+---
+
+name: test-schedule-sti
+description: "Create test schedule entries for ``test-scheduler`` module by inspecting STI configuration."

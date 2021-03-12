@@ -1,0 +1,10 @@
+---
+
+section:
+  - a command
+  - another command
+
+expected:
+  default:
+    - a command
+    - another command

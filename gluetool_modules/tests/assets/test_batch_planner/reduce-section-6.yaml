@@ -1,0 +1,13 @@
+---
+
+# ignore unknown flags
+
+section:
+  - foo: bar
+  - a command
+  - another command
+
+expected:
+  default:
+    - a command
+    - another command

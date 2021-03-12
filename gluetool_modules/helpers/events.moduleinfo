@@ -1,0 +1,6 @@
+---
+
+name: events
+description: |
+  Let modules trigger and react to arbitrary events, defined by modules. Other modules can subscribe
+  to events and run their code in reaction.

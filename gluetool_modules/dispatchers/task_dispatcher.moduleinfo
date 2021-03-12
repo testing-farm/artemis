@@ -1,0 +1,5 @@
+---
+
+name: task-dispatcher
+aliases: koji-dispatcher, brew-dispatcher, copr-dispatcher
+description: "Configurable task dispatcher"

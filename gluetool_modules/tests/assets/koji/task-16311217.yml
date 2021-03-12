@@ -1,0 +1,63 @@
+---
+
+# This is a Brew task yet we're testing Koji API, therefore the module uses
+# Koji configuration - hence the Koji URLs
+
+build_id: null
+component: flex
+dist_git_repository_name: flex
+destination_tag: rhel-7.3-z-candidate
+full_name: task '16311217' build 'flex-2.5.37-3.el7_3' target 'rhel-7.3-z-candidate' (scratch)
+has_artifacts: True
+rpm_urls:
+  - 'https://kojipkgs.fedoraproject.org/work/flex-devel-2.5.37-3.el7_3.aarch64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-doc-2.5.37-3.el7_3.aarch64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-2.5.37-3.el7_3.aarch64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-debuginfo-2.5.37-3.el7_3.aarch64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-2.5.37-3.el7_3.i686.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-doc-2.5.37-3.el7_3.i686.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-debuginfo-2.5.37-3.el7_3.i686.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-devel-2.5.37-3.el7_3.i686.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-doc-2.5.37-3.el7_3.ppc.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-devel-2.5.37-3.el7_3.ppc.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-2.5.37-3.el7_3.ppc.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-debuginfo-2.5.37-3.el7_3.ppc.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-2.5.37-3.el7_3.src.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-debuginfo-2.5.37-3.el7_3.ppc64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-doc-2.5.37-3.el7_3.ppc64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-devel-2.5.37-3.el7_3.ppc64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-2.5.37-3.el7_3.ppc64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-2.5.37-3.el7_3.ppc64le.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-debuginfo-2.5.37-3.el7_3.ppc64le.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-devel-2.5.37-3.el7_3.ppc64le.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-doc-2.5.37-3.el7_3.ppc64le.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-2.5.37-3.el7_3.s390.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-doc-2.5.37-3.el7_3.s390.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-devel-2.5.37-3.el7_3.s390.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-debuginfo-2.5.37-3.el7_3.s390.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-doc-2.5.37-3.el7_3.s390x.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-debuginfo-2.5.37-3.el7_3.s390x.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-devel-2.5.37-3.el7_3.s390x.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-2.5.37-3.el7_3.s390x.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-debuginfo-2.5.37-3.el7_3.x86_64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-doc-2.5.37-3.el7_3.x86_64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-2.5.37-3.el7_3.x86_64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/work/flex-devel-2.5.37-3.el7_3.x86_64.rpm'
+issuer: mprchlik
+owner: mprchlik
+latest: flex-2.5.37-3.el7
+nvr: flex-2.5.37-3.el7_3
+pkgs_url: https://kojipkgs.fedoraproject.org
+release: 3.el7_3
+scratch: true
+short_name: '16311217:S:flex-2.5.37-3.el7_3'
+source: cli-build/1526458933.094723.gjtyjVKt/flex-2.5.37-3.el7_3.src.rpm
+srpm_names:
+  - flex-2.5.37-3.el7_3.src.rpm
+srpm_urls:
+  - https://kojipkgs.fedoraproject.org/work/tasks/1218/16311218/flex-2.5.37-3.el7_3.src.rpm
+target: rhel-7.3-z-candidate
+id: 16311217
+dispatch_id: 16311217
+url: https://koji.fedoraproject.org/koji/taskinfo?taskID=16311217
+version: 2.5.37

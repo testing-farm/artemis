@@ -1,0 +1,27 @@
+commit 24b2f85e1eb3be56c02e9d56f5ac916b7c54396b (HEAD -> rhel-8.2.0, origin/rhel-8.2.0, origin/private-mvadkert)
+Author: Miroslav Vadkerti <mvadkert@redhat.com>
+Date:   Tue Dec 17 23:35:25 2019 +0100
+
+    systemd: fix ci.fmf configuration
+
+    Forrect tags and add required execution method.
+
+    Related: #1781770
+
+    Signed-off-by: Miroslav Vadkerti <mvadkert@redhat.com>
+
+commit 56966f2571cdf294c29708746546cfe8914f444f
+Author: Lukas Nykryn <lnykryn@redhat.com>
+Date:   Tue Dec 17 12:29:28 2019 +0100
+
+    systemd-239-22
+
+    Resolves: #1777110,#1702565
+
+commit b795f9a20985d1a29987fcbd5e32b8c0331ce374
+Author: Frantisek Sumsal <fsumsal@redhat.com>
+Date:   Tue Dec 10 16:45:35 2019 +0100
+
+    Initial FMF L2 metadata
+
+    Related: #1781770

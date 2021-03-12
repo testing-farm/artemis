@@ -1,0 +1,10 @@
+/tests/core/docs:
+    result: pass
+    log:
+    - logs/tests/core/docs/out.log
+    - logs/tests/core/docs/journal.txt
+/tests/core/dry:
+    result: pass
+    log:
+    - logs/tests/core/dry/out.log
+    - logs/tests/core/dry/journal.txt

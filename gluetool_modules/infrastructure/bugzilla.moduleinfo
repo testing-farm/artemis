@@ -1,0 +1,7 @@
+---
+
+name: bugzilla
+description: Provides access to a Bugzilla instance.
+dependencies:
+  pip:
+    - python-bugzilla == 2.3.0

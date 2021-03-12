@@ -1,0 +1,32 @@
+---
+
+# with matching, section reduces to just a few sets
+
+section:
+  set1:
+    - BUILD_TARGET.match('dummy-target')
+    - a command
+
+  set2:
+    - BUILD_TARGET.match('another-dummy-target')
+    - another command
+
+  set3:
+    - BUILD_TARGET.match('dummy-target')
+    - completerly different command
+
+  default:
+    - yet another command
+
+kwargs:
+  all_commands:
+    - and one more
+
+expected:
+  set1:
+    - a command
+    - and one more
+
+  set3:
+    - completerly different command
+    - and one more

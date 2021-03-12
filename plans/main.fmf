@@ -1,0 +1,20 @@
+---
+provision:
+    how: container
+
+execute:
+    how: tmt
+    script:
+      - curl -sSLO https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py
+      - python3 get-poetry.py --version 1.1.4
+      # NOTE:
+      #   We have seen issues with Poetry and default parallel installation.
+      #
+      #       https://github.com/python-poetry/poetry/issues/3010
+      #
+      #   It is less likely to happen with Python3, in case it does, enable this configuration
+      #   option which disables the new installer and also the parallel installation.
+      # - ~/.poetry/bin/poetry config experimental.new-installer false
+      - ~/.poetry/bin/poetry install
+      - ~/.poetry/bin/poetry run /usr/bin/ansible-playbook inject-extra-requirements.yml
+      - ~/.poetry/bin/poetry run citool -l |& grep koji

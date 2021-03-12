@@ -1,0 +1,7 @@
+Gluetool Modules Collection
+===========================
+
+.. toctree::
+   :maxdepth: 1
+
+{modules}

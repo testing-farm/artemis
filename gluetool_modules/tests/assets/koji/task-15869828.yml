@@ -1,0 +1,37 @@
+---
+
+baseline: None
+build_id: 805705
+component: 'bash'
+dist_git_repository_name: 'bash'
+destination_tag: 'f25-updates-candidate'
+full_name: task '15869828' build 'bash-4.3.43-4.fc25' target 'f25-candidate'
+has_artifacts: True
+issuer: 'svashisht'
+owner: 'svashisht'
+latest: 'bash-4.3.43-3.fc25'
+nvr: 'bash-4.3.43-4.fc25'
+pkgs_url: 'https://kojipkgs.fedoraproject.org'
+release: '4.fc25'
+scratch: false
+short_name: '15869828:bash-4.3.43-4.fc25'
+source: 'git://pkgs.fedoraproject.org/rpms/bash?#b1104ec130056866f3bdce51a3f77685b702fbde'
+srpm_names:
+  - 'bash-4.3.43-4.fc25.src.rpm'
+srpm_urls:
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/src/bash-4.3.43-4.fc25.src.rpm'
+rpm_urls:
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/armv7hl/bash-4.3.43-4.fc25.armv7hl.rpm'
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/armv7hl/bash-doc-4.3.43-4.fc25.armv7hl.rpm'
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/armv7hl/bash-debuginfo-4.3.43-4.fc25.armv7hl.rpm'
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/x86_64/bash-4.3.43-4.fc25.x86_64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/x86_64/bash-debuginfo-4.3.43-4.fc25.x86_64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/x86_64/bash-doc-4.3.43-4.fc25.x86_64.rpm'
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/i686/bash-doc-4.3.43-4.fc25.i686.rpm'
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/i686/bash-debuginfo-4.3.43-4.fc25.i686.rpm'
+  - 'https://kojipkgs.fedoraproject.org/packages/bash/4.3.43/4.fc25/i686/bash-4.3.43-4.fc25.i686.rpm'
+target: 'f25-candidate'
+id: 15869828
+dispatch_id: 15869828
+url: 'https://koji.fedoraproject.org/koji/taskinfo?taskID=15869828'
+version: '4.3.43'

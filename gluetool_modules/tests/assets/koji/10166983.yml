@@ -1,0 +1,25 @@
+---
+
+getAPIVersion: Mock Koji Session 1.0
+
+getTaskInfo:
+  10166983:
+    weight: 0.1
+    parent:
+    completion_time: '2015-06-19 19:20:36.986478'
+    start_time: '2015-06-19 19:13:24.009612'
+    start_ts: 1434741204.00961
+    state: 2
+    awaited:
+    label:
+    priority: 15
+    channel_id: 2
+    waiting: false
+    create_time: '2015-06-19 19:13:22.764865'
+    id: 10166983
+    create_ts: 1434741202.76486
+    owner: 129
+    host_id: 71
+    completion_ts: 1434741636.98648
+    arch: noarch
+    method: newRepo

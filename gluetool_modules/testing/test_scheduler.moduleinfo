@@ -1,0 +1,8 @@
+---
+
+name: test-scheduler
+description: test-scheduler
+dependencies:
+  pip:
+    - beautifulsoup4==4.6.3
+    - "futures==3.2.0; python_version == '2.7'"

@@ -1,0 +1,8 @@
+---
+
+name: pagure-srpm
+description: Makes source rpm from pagure pull request
+
+dependencies:
+  pip:
+    - urlgrabber==3.10.2

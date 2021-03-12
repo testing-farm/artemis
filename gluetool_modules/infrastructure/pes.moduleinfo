@@ -1,0 +1,8 @@
+---
+
+name: pes
+description: Provides api to Package Evolution Service
+
+dependecies:
+  pip:
+    - jq

@@ -1,0 +1,12 @@
+/install:
+    result: pass
+    log:
+    - logs/install/out.log
+/update:
+    result: fail
+    log:
+    - logs/update/out.log
+# test if `log` can be also a string as defined in the standard
+/remove:
+    result: error
+    log: logs/remove/out.log

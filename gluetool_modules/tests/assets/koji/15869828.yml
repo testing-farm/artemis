@@ -1,0 +1,670 @@
+---
+
+# Represents common task for a non-scratch build.
+
+getAPIVersion: Mock Koji Session 1.0
+
+getBuildTarget:
+  f25-candidate:
+    dest_tag_name: f25-updates-candidate
+
+getTaskInfo:
+  15869828:
+      weight: 0.2
+      parent:
+      completion_time: '2016-09-30 08:35:21.640601'
+      start_time: '2016-09-30 08:20:42.560345'
+      start_ts: 1475223642.56034
+      state: 2
+      awaited:
+      label:
+      priority: 20
+      channel_id: 1
+      waiting: false
+      create_time: '2016-09-30 08:20:37.164862'
+      id: 15869828
+      create_ts: 1475223637.16486
+      owner: 3543
+      host_id: 149
+      completion_ts: 1475224521.6406
+      arch: noarch
+      method: build
+      request:
+        - git://pkgs.fedoraproject.org/rpms/bash?#b1104ec130056866f3bdce51a3f77685b702fbde
+        - f25-candidate
+        - {}
+  15869827:
+      weight: 0.2
+      parent:
+      completion_time: '2016-09-30 08:35:21.640601'
+      start_time: '2016-09-30 08:20:42.560345'
+      start_ts: 1475223642.56034
+      state: 2
+      awaited:
+      label:
+      priority: 20
+      channel_id: 1
+      waiting: false
+      create_time: '2016-09-30 08:20:37.164862'
+      id: 15869827
+      create_ts: 1475223637.16486
+      owner: 3543
+      host_id: 149
+      completion_ts: 1475224521.6406
+      arch: noarch
+      method: build
+      request:
+        - git://pkgs.fedoraproject.org/rpms/bash?#b1104ec130056866f3bdce51a3f77685b702fbdf
+        - f24-candidate
+        - {}
+
+  15736657:
+    id: 15736657
+    waiting: false
+    state: 2
+    method: build
+    request:
+    - git://pkgs.fedoraproject.org/rpms/bash?#b1104ec130056866f3bdce51a3f77685b702fbde
+    - f25-candidate
+    - {}
+
+listBuilds:
+  15869828:
+    - package_name: bash
+      extra:
+      creation_time: '2016-09-30 08:22:42.639802'
+      completion_time: '2016-09-30 08:34:58.935735'
+      package_id: 1088
+      build_id: 805705
+      state: 1
+      source: 'git://pkgs.fedoraproject.org/rpms/bash?#b1104ec130056866f3bdce51a3f77685b702fbde'
+      epoch:
+      version: 4.3.43
+      completion_ts: 1475224498.93573
+      owner_id: 3543
+      owner_name: svashisht
+      nvr: bash-4.3.43-4.fc25
+      start_time: '2016-09-30 08:22:42.639802'
+      creation_event_id: 18507215
+      start_ts: 1475223762.6398
+      volume_id: 0
+      creation_ts: 1475223762.6398
+      name: bash
+      task_id: 15869828
+      volume_name: DEFAULT
+      release: 4.fc25
+  15869827:
+    - package_name: bash
+      extra:
+      creation_time: '2016-09-30 08:22:42.639802'
+      completion_time: '2016-09-30 08:34:58.935735'
+      package_id: 1088
+      build_id: 805706
+      state: 1
+      source: 'git://pkgs.fedoraproject.org/rpms/bash?#b1104ec130056866f3bdce51a3f77685b702fbde'
+      epoch:
+      version: 4.2.43
+      completion_ts: 1475224498.93573
+      owner_id: 3543
+      owner_name: svashisht
+      nvr: bash-4.2.43-4.fc24
+      start_time: '2016-09-30 08:22:42.639802'
+      creation_event_id: 18507215
+      start_ts: 1475223762.6398
+      volume_id: 0
+      creation_ts: 1475223762.6398
+      name: bash
+      task_id: 15869828
+      volume_name: DEFAULT
+      release: 4.fc24
+
+  15736657:
+    - package_name: bash
+      extra:
+      creation_time: '2016-09-30 08:22:42.639802'
+      completion_time: '2016-09-30 08:34:58.935735'
+      package_id: 1088
+      build_id: 805705
+      state: 1
+      source:
+      epoch:
+      version: 4.3.43
+      completion_ts: 1475224498.93573
+      owner_id: 3543
+      owner_name: svashisht
+      nvr: bash-4.3.43-3.fc25
+      start_time: '2016-09-30 08:22:42.639802'
+      creation_event_id: 18507215
+      start_ts: 1475223762.6398
+      volume_id: 0
+      creation_ts: 1475223762.6398
+      name: bash
+      task_id: 15736657
+      volume_name: DEFAULT
+      release: 3.fc25
+
+getTaskChildren:
+  15869828:
+    - weight: 1.62617932146
+      parent: 15869828
+      completion_time: '2016-09-30 08:28:25.773374'
+      request:
+        - tasks/9830/15869830/bash-4.3.43-4.fc25.src.rpm
+        - 342
+        - x86_64
+        - false
+        - repo_id: 644740
+      start_time: '2016-09-30 08:22:49.831805'
+      start_ts: 1475223769.8318
+      state: 2
+      awaited: false
+      label: x86_64
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2016-09-30 08:22:43.715990'
+      id: 15869858
+      create_ts: 1475223763.71599
+      owner: 3543
+      host_id: 62
+      completion_ts: 1475224105.77337
+      arch: x86_64
+      method: buildArch
+    - weight: 1.62617932146
+      parent: 15869828
+      completion_time: '2016-09-30 08:29:03.383807'
+      request:
+        - tasks/9830/15869830/bash-4.3.43-4.fc25.src.rpm
+        - 342
+        - i686
+        - false
+        - repo_id: 644740
+      start_time: '2016-09-30 08:22:53.434061'
+      start_ts: 1475223773.43406
+      state: 2
+      awaited: false
+      label: i686
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2016-09-30 08:22:44.257564'
+      id: 15869859
+      create_ts: 1475223764.25756
+      owner: 3543
+      host_id: 154
+      completion_ts: 1475224143.38381
+      arch: i386
+      method: buildArch
+    - weight: 1.0
+      parent: 15869828
+      completion_time: '2016-09-30 08:22:27.130174'
+      request:
+        - git://pkgs.fedoraproject.org/rpms/bash?#b1104ec130056866f3bdce51a3f77685b702fbde
+        - 342
+        - repo_id: 644740
+      start_time: '2016-09-30 08:20:51.750138'
+      start_ts: 1475223651.75014
+      state: 2
+      awaited: false
+      label: srpm
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2016-09-30 08:20:45.545231'
+      id: 15869830
+      create_ts: 1475223645.54523
+      owner: 3543
+      host_id: 162
+      completion_ts: 1475223747.13017
+      arch: noarch
+      method: buildSRPMFromSCM
+    - weight: 1.0
+      parent: 15869828
+      completion_time: '2016-09-30 08:35:10.446734'
+      request:
+        - 337
+        - 805705
+        - false
+        -
+        - true
+      start_time: '2016-09-30 08:35:07.226981'
+      start_ts: 1475224507.22698
+      state: 2
+      awaited: false
+      label: tag
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2016-09-30 08:35:00.763597'
+      id: 15870074
+      create_ts: 1475224500.7636
+      owner: 3543
+      host_id: 158
+      completion_ts: 1475224510.44673
+      arch: noarch
+      method: tagBuild
+    - weight: 1.62617932146
+      parent: 15869828
+      completion_time: '2016-09-30 08:34:35.462358'
+      request:
+        - tasks/9830/15869830/bash-4.3.43-4.fc25.src.rpm
+        - 342
+        - armv7hl
+        - true
+        - repo_id: 644740
+      start_time: '2016-09-30 08:22:52.066813'
+      start_ts: 1475223772.06681
+      state: 2
+      awaited: false
+      label: armv7hl
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2016-09-30 08:22:43.182336'
+      id: 15869857
+      create_ts: 1475223763.18234
+      owner: 3543
+      host_id: 140
+      completion_ts: 1475224475.46236
+      arch: armhfp
+      method: buildArch
+
+listTaskOutput:
+  15869858: []
+  15869859: []
+  15869857: []
+
+getUser:
+  3543:
+    status: 0
+    usertype: 0
+    id: 3543
+    name: svashisht
+    krb_principal:
+
+getFullInheritance:
+  f25-candidate:
+    - name: f24-candidate
+  f25-updates-candidate:
+    - name: f24-candidate
+
+listTagged:
+  f25:
+    - build_id: 805705
+      tag_name: f25
+      owner_name: svashisht
+      package_name: bash
+      task_id: 15869828
+      volume_name: DEFAULT
+      start_time: '2016-09-30 08:22:42.639802'
+      creation_event_id: 18507215
+      creation_time: '2016-09-30 08:22:42.639802'
+      epoch:
+      tag_id: 335
+      name: bash
+      completion_time: '2016-09-30 08:34:58.935735'
+      state: 1
+      version: 4.3.43
+      volume_id: 0
+      release: 4.fc25
+      package_id: 1088
+      owner_id: 3543
+      id: 805705
+      nvr: bash-4.3.43-4.fc25
+
+  f25-updates-candidate:
+
+  f25-candidate:
+    - build_id: 805705
+      tag_name: f25
+      owner_name: svashisht
+      package_name: bash
+      task_id: 15869828
+      volume_name: DEFAULT
+      start_time: '2016-09-30 08:22:42.639802'
+      creation_event_id: 18507215
+      creation_time: '2016-09-30 08:22:42.639802'
+      epoch:
+      tag_id: 335
+      name: bash
+      completion_time: '2016-09-30 08:34:58.935735'
+      state: 1
+      version: 4.3.43
+      volume_id: 0
+      release: 4.fc25
+      package_id: 1088
+      owner_id: 3543
+      id: 805705
+      nvr: bash-4.3.43-4.fc25
+    - build_id: 803100
+      tag_name: f25
+      owner_name: dkaspar
+      package_name: bash
+      task_id: 15736657
+      volume_name: DEFAULT
+      start_time: '2016-09-21 16:37:41.029482'
+      creation_event_id: 18340610
+      creation_time: '2016-09-21 16:37:41.029482'
+      epoch:
+      tag_id: 335
+      name: bash
+      completion_time: '2016-09-21 16:50:55.639468'
+      state: 1
+      version: 4.3.43
+      volume_id: 0
+      release: 3.fc25
+      package_id: 1088
+      owner_id: 3298
+      id: 803100
+      nvr: bash-4.3.43-3.fc25
+    - build_id: 774971
+      tag_name: f25
+      owner_name: svashisht
+      package_name: bash
+      task_id: 14620392
+      volume_name: DEFAULT
+      start_time: '2016-06-23 14:08:22.809162'
+      creation_event_id: 16869827
+      creation_time: '2016-06-23 14:08:22.809162'
+      epoch:
+      tag_id: 335
+      name: bash
+      completion_time: '2016-06-23 14:20:05.194474'
+      state: 1
+      version: 4.3.43
+      volume_id: 0
+      release: 1.fc25
+      package_id: 1088
+      owner_id: 3543
+      id: 774971
+      nvr: bash-4.3.43-1.fc25
+  f24-candidate:
+    - build_id: 805704
+      tag_name: f24
+      owner_name: svashisht
+      package_name: bash
+      task_id: 15869827
+      volume_name: DEFAULT
+      start_time: '2016-09-30 08:22:42.639802'
+      creation_event_id: 18507215
+      creation_time: '2016-09-30 08:22:42.639802'
+      epoch:
+      tag_id: 335
+      name: bash
+      completion_time: '2016-09-30 08:34:58.935735'
+      state: 1
+      version: 4.2.43
+      volume_id: 0
+      release: 4.fc25
+      package_id: 1088
+      owner_id: 3543
+      id: 805705
+      nvr: bash-4.2.43-4.fc24
+
+
+getBuild:
+  805705:
+    package_name: bash
+    extra:
+    creation_time: '2016-09-30 08:22:42.639802'
+    completion_time: '2016-09-30 08:34:58.935735'
+    package_id: 1088
+    id: 805705
+    build_id: 805705
+    state: 1
+    source:
+    epoch:
+    version: 4.3.43
+    completion_ts: 1475224498.93573
+    owner_id: 3543
+    owner_name: svashisht
+    nvr: bash-4.3.43-4.fc25
+    start_time: '2016-09-30 08:22:42.639802'
+    creation_event_id: 18507215
+    start_ts: 1475223762.6398
+    volume_id: 0
+    creation_ts: 1475223762.6398
+    name: bash
+    task_id: 15869828
+    volume_name: DEFAULT
+    release: 4.fc25
+  bash-4.3.43-4.fc25:
+    package_name: bash
+    extra:
+    creation_time: '2016-09-30 08:22:42.639802'
+    completion_time: '2016-09-30 08:34:58.935735'
+    package_id: 1088
+    id: 805705
+    build_id: 805705
+    state: 1
+    source:
+    epoch:
+    version: 4.3.43
+    completion_ts: 1475224498.93573
+    owner_id: 3543
+    owner_name: svashisht
+    nvr: bash-4.3.43-4.fc25
+    start_time: '2016-09-30 08:22:42.639802'
+    creation_event_id: 18507215
+    start_ts: 1475223762.6398
+    volume_id: 0
+    creation_ts: 1475223762.6398
+    name: bash
+    task_id: 15869828
+    volume_name: DEFAULT
+    release: 4.fc25
+  805701:
+    package_name: bash
+    extra:
+    creation_time: '2016-09-30 08:22:42.639802'
+    completion_time: '2016-09-30 08:34:58.935735'
+    package_id: 1088
+    id: 805701
+    build_id: 805701
+    state: 1
+    source:
+    epoch:
+    version: 1.1.1
+    completion_ts: 1475224498.93573
+    owner_id: 3543
+    owner_name: svashisht
+    nvr: bash-1.1.1-1.fc1
+    start_time: '2016-09-30 08:22:42.639802'
+    creation_event_id: 18507215
+    start_ts: 1475223762.6398
+    volume_id: 0
+    creation_ts: 1475223762.6398
+    name: bash
+    task_id: 15869828
+    volume_name: DEFAULT
+    release: 1.fc1
+  bash-1.1.1-1.fc1:
+    package_name: bash
+    extra:
+    creation_time: '2016-09-30 08:22:42.639802'
+    completion_time: '2016-09-30 08:34:58.935735'
+    package_id: 1088
+    id: 805701
+    build_id: 805701
+    state: 1
+    source:
+    epoch:
+    version: 1.1.1
+    completion_ts: 1475224498.93573
+    owner_id: 3543
+    owner_name: svashisht
+    nvr: bash-1.1.1-1.fc1
+    start_time: '2016-09-30 08:22:42.639802'
+    creation_event_id: 18507215
+    start_ts: 1475223762.6398
+    volume_id: 0
+    creation_ts: 1475223762.6398
+    name: bash
+    task_id: 15869828
+    volume_name: DEFAULT
+    release: 1.fc1
+
+
+
+listBuildRPMs:
+  805705:
+    - build_id: 805705
+      nvr: bash-4.3.43-4.fc25
+      name: bash
+      extra:
+      external_repo_id: 0
+      buildtime: 1475223974
+      arch: src
+      id: 8134206
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546091
+      payloadhash: 65a1a37250ebb4033412f9a97478f8a7
+      external_repo_name: INTERNAL
+      size: 8065870
+    - build_id: 805705
+      nvr: bash-4.3.43-4.fc25
+      name: bash
+      extra:
+      external_repo_id: 0
+      buildtime: 1475224447
+      arch: armv7hl
+      id: 8134207
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546091
+      payloadhash: 010e8ee35a59f85666fc378099ab16bc
+      external_repo_name: INTERNAL
+      size: 1434826
+    - build_id: 805705
+      nvr: bash-doc-4.3.43-4.fc25
+      name: bash-doc
+      extra:
+      external_repo_id: 0
+      buildtime: 1475224447
+      arch: armv7hl
+      id: 8134208
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546091
+      payloadhash: 9cc28185a75e05f467fb4ae14acae2e3
+      external_repo_name: INTERNAL
+      size: 1259442
+    - build_id: 805705
+      nvr: bash-debuginfo-4.3.43-4.fc25
+      name: bash-debuginfo
+      extra:
+      external_repo_id: 0
+      buildtime: 1475224447
+      arch: armv7hl
+      id: 8134209
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546091
+      payloadhash: 1434a0fa6aea19f4c5bbdbf461e58454
+      external_repo_name: INTERNAL
+      size: 1554602
+    - build_id: 805705
+      nvr: bash-4.3.43-4.fc25
+      name: bash
+      extra:
+      external_repo_id: 0
+      buildtime: 1475224092
+      arch: x86_64
+      id: 8134210
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546090
+      payloadhash: 0d4cc26efc0541fbecae93f86f35763c
+      external_repo_name: INTERNAL
+      size: 1487334
+    - build_id: 805705
+      nvr: bash-debuginfo-4.3.43-4.fc25
+      name: bash-debuginfo
+      extra:
+      external_repo_id: 0
+      buildtime: 1475224092
+      arch: x86_64
+      id: 8134211
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546090
+      payloadhash: 51acbfe0c610ca7cebfcdb6fbddf06b7
+      external_repo_name: INTERNAL
+      size: 1587742
+    - build_id: 805705
+      nvr: bash-doc-4.3.43-4.fc25
+      name: bash-doc
+      extra:
+      external_repo_id: 0
+      buildtime: 1475224092
+      arch: x86_64
+      id: 8134212
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546090
+      payloadhash: cd69c0c3561e766f03d3ae57d86f71da
+      external_repo_name: INTERNAL
+      size: 1259394
+    - build_id: 805705
+      nvr: bash-doc-4.3.43-4.fc25
+      name: bash-doc
+      extra:
+      external_repo_id: 0
+      buildtime: 1475224129
+      arch: i686
+      id: 8134213
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546092
+      payloadhash: 76bc12d00e54c11d1b06da8df844025b
+      external_repo_name: INTERNAL
+      size: 1259426
+    - build_id: 805705
+      nvr: bash-debuginfo-4.3.43-4.fc25
+      name: bash-debuginfo
+      extra:
+      external_repo_id: 0
+      buildtime: 1475224129
+      arch: i686
+      id: 8134214
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546092
+      payloadhash: 0da76051ce2a3ac5cb6d88d6cc7cc941
+      external_repo_name: INTERNAL
+      size: 1552234
+    - build_id: 805705
+      nvr: bash-4.3.43-4.fc25
+      name: bash
+      extra:
+      external_repo_id: 0
+      buildtime: 1475224129
+      arch: i686
+      id: 8134215
+      epoch:
+      version: 4.3.43
+      metadata_only: false
+      release: 4.fc25
+      buildroot_id: 6546092
+      payloadhash: bda84c28eb7b9f0248ed9e94e7804e0f
+      external_repo_name: INTERNAL
+      size: 1492530

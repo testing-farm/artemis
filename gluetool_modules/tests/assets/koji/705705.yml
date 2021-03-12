@@ -1,0 +1,8 @@
+---
+
+# Represents a build which does not exist - API returns null.
+
+getAPIVersion: Mock Koji Session 1.0
+
+getBuild:
+  705705: null

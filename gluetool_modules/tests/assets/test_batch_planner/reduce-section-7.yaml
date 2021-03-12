@@ -1,0 +1,17 @@
+---
+
+# disabling 'apply-all'
+
+section:
+  - apply-all: False
+  - a command
+  - another command
+
+kwargs:
+  all_commands:
+    - yet another command
+
+expected:
+  default:
+    - a command
+    - another command

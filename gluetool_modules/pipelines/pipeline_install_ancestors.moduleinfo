@@ -1,0 +1,4 @@
+---
+
+name: pipeline-install-ancestors
+description: Installs package ancestors in a separate pipeline.

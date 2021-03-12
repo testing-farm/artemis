@@ -1,0 +1,13 @@
+---
+
+- event: dummy-event
+
+- event: dummy-event-2
+  some-unknown-action:
+    - foo
+
+- event: dummy-event-3
+  execute-commands:
+    - command-1
+    - command-2
+

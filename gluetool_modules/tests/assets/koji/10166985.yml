@@ -1,0 +1,29 @@
+---
+
+# Represents a task with wrong number of fields under `request` key
+
+getAPIVersion: Mock Koji Session 1.0
+
+getTaskInfo:
+  10166985:
+    weight: 1.0
+    parent: 10166951
+    completion_time: '2015-06-19 19:13:24.310534'
+    request:
+      - just a single field
+    start_time: '2015-06-19 19:13:23.418989'
+    start_ts: 1434741203.41899
+    state: 2
+    awaited: false
+    label: tag
+    priority: 19
+    channel_id: 1
+    waiting:
+    create_time: '2015-06-19 19:13:23.203915'
+    id: 10166985
+    create_ts: 1434741203.20392
+    owner: 2844
+    host_id: 156
+    completion_ts: 1434741204.31053
+    arch: noarch
+    method: tagBuild

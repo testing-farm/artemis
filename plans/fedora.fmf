@@ -1,0 +1,18 @@
+description: |
+  Test gluetool-modules installation on Fedora latest.
+
+provision+:
+  image: registry.fedoraproject.org/fedora:32
+
+prepare:
+  how: shell
+  script:
+    - dnf install -y ansible autoconf automake gcc git krb5-devel libcurl-devel
+    - dnf install -y libpq-devel libtool libxml2-devel make openssl-devel
+    - dnf install -y popt-devel postgresql-devel python3-libselinux python2-devel
+    - dnf install -y python-unversioned-command redhat-rpm-config
+    # Note: python2-virtualenv is not available on Fedora anymore, we need to install it from pip
+    - dnf install -y python2
+    - python2 -m ensurepip
+    - pip2 install -U 'pip<20.3'
+    - pip2 install --user virtualenv
