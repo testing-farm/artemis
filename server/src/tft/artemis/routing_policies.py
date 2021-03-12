@@ -55,7 +55,7 @@ class PolicyWrapperType(Protocol):
 #: A time, in seconds, after which a guest request is cancelled if provisioning haven't succeeded.
 KNOB_ROUTE_REQUEST_MAX_TIME: Knob[int] = Knob(
     'route.request.max-time',
-    has_db=False,
+    has_db=True,
     envvar='ARTEMIS_ROUTE_REQUEST_MAX_TIME',
     envvar_cast=int,
     default=6 * 3600
@@ -65,7 +65,7 @@ KNOB_ROUTE_REQUEST_MAX_TIME: Knob[int] = Knob(
 #: for said guest request again.
 KNOB_ROUTE_POOL_FORGIVING_TIME: Knob[int] = Knob(
     'route.pool.forgiving-time',
-    has_db=False,
+    has_db=True,
     envvar='ARTEMIS_ROUTE_POOL_FORGIVING_TIME',
     envvar_cast=int,
     default=10 * 60
@@ -74,7 +74,7 @@ KNOB_ROUTE_POOL_FORGIVING_TIME: Knob[int] = Knob(
 #: A percentage part of pool resource that, when reached, marks pool as depleted and not eligible for provisioning.
 KNOB_ROUTE_POOL_RESOURCE_THRESHOLD: Knob[float] = Knob(
     'route.pool.resource-threshold',
-    has_db=False,
+    has_db=True,
     envvar='ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD',
     envvar_cast=float,
     default=90.0
@@ -337,7 +337,12 @@ def policy_one_attempt_forgiving(
     if not events:
         return Ok(PolicyRuling(allowed_pools=pools))
 
-    threshold = datetime.datetime.utcnow() - datetime.timedelta(seconds=KNOB_ROUTE_POOL_FORGIVING_TIME.value)
+    r_time = KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session)
+
+    if r_time.is_error:
+        return Error(r_time.unwrap_error())
+
+    threshold = datetime.datetime.utcnow() - datetime.timedelta(seconds=r_time.unwrap())
 
     error_pools = [
         event.details_unserialized['failure'].get('poolname')
@@ -371,7 +376,12 @@ def policy_timeout_reached(
     if not events:
         return Ok(PolicyRuling(allowed_pools=pools))
 
-    validity = events[0].updated + datetime.timedelta(seconds=KNOB_ROUTE_REQUEST_MAX_TIME.value)
+    r_time = KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session)
+
+    if r_time.is_error:
+        return Error(r_time.unwrap_error())
+
+    validity = events[0].updated + datetime.timedelta(seconds=r_time.unwrap())
 
     logger.info('event created {}, valid until {}'.format(str(events[0].updated), str(validity)))
 
@@ -405,7 +415,12 @@ def policy_enough_resources(
 
     log_dict(logger.info, 'pool metrics', pool_metrics)
 
-    threshold = KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.value / 100.0
+    r_threshold = KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session)
+
+    if r_threshold.is_error:
+        return Error(r_threshold.unwrap_error())
+
+    threshold = r_threshold.unwrap() / 100.0
 
     def has_enough(pool: PoolDriver, metrics: PoolMetrics) -> bool:
         def is_enough(metric_name: str, limit: int, usage: int) -> bool:

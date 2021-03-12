@@ -13,10 +13,12 @@ This can be often reduced to using a helper function with the core of the test, 
 just a couple of parameters - together with fixtures, this makes the actual tests much simpler.
 """
 
+import collections
 import datetime
 import json
 
 import pytest
+import sqlalchemy
 from gluetool.result import Error, Ok
 from mock import MagicMock
 
@@ -25,36 +27,66 @@ import tft.artemis.db
 import tft.artemis.routing_policies
 from tft.artemis.metrics import PoolMetrics
 
-TIMEOUT_REACHED_AGE_TOO_YOUNG = tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.value / 2
-TIMEOUT_REACHED_AGE_TOO_OLD = tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.value * 2
 
-ONE_ATTEMPT_FORGIVING_TOO_YOUNG = tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.value / 2
-ONE_ATTEMPT_FORGIVING_TOO_OLD = tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.value * 2
+# Routing knobs do have a DB source, therefore we cannot acquire their value right away
+# but we have to rather query them when needed.
+def TIMEOUT_REACHED_AGE_TOO_YOUNG(session: sqlalchemy.orm.session.Session) -> int:
+    return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session).unwrap() / 2
 
-ENOUGH_RESOURCES_EXCESS_MULTIPLIER = tft.artemis.routing_policies.KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.value + 10
+
+def TIMEOUT_REACHED_AGE_TOO_OLD(session: sqlalchemy.orm.session.Session) -> int:
+    return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session).unwrap() * 2
+
+
+def ONE_ATTEMPT_FORGIVING_TOO_YOUNG(session: sqlalchemy.orm.session.Session) -> int:
+    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session).unwrap() / 2
+
+
+def ONE_ATTEMPT_FORGIVING_TOO_OLD(session: sqlalchemy.orm.session.Session) -> int:
+    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session).unwrap() * 2
+
+
+def ENOUGH_RESOURCES_EXCESS_MULTIPLIER(session: sqlalchemy.orm.session.Session) -> float:
+    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session).unwrap() + 10
+
+
+MockInputs = collections.namedtuple(
+    'MockInputs', ['logger', 'session', 'pools', 'guest_request']
+)
 
 
 @pytest.fixture
 def mock_inputs():
-    inputs = (
-        MagicMock(name='logger<mock>'),
-        MagicMock(
+    inputs = MockInputs(
+        logger=MagicMock(name='logger<mock>'),
+        session=MagicMock(
             name='session<mock>',
             bind=MagicMock(
                 dialect=MagicMock()
-            )
+            ),
+            # Mocks session.query().filter(...).one_or_none() called by knobs' DB source, to pretend
+            # the mock has no record in the database. Yes, it is that ugly.
+            query=MagicMock(
+                return_value=MagicMock(
+                    filter=MagicMock(
+                        return_value=MagicMock(
+                            one_or_none=MagicMock(return_value=None)
+                        )
+                    )
+                )
+            ),
         ),
-        [
+        pools=[
             MagicMock(name='pool_foo<mock>', poolname='dummy-pool'),
             MagicMock(name='pool_bar<mock>', poolname='not-so-dummy-pool'),
             MagicMock(name='pool_baz<mock>', poolname='another-cool-pool')
         ],
-        MagicMock(name='guest_request<mock>')
+        guest_request=MagicMock(name='guest_request<mock>')
     )
 
     # We need `dialect` mock to have attribute `name` but it cannot be done by passing `name=...` to `MagiMock()`,
     # it must be done afterward.
-    inputs[1].bind.dialect.name = 'postgresql'
+    inputs.session.bind.dialect.name = 'postgresql'
 
     return inputs
 
@@ -512,11 +544,11 @@ def do_test_policy_timeout_reached(mock_inputs, empty_events=False, age=None):
 
     assert isinstance(ruling, tft.artemis.routing_policies.PolicyRuling)
 
-    if age == TIMEOUT_REACHED_AGE_TOO_OLD:
+    if age == TIMEOUT_REACHED_AGE_TOO_OLD(mock_session):
         assert ruling.cancel is True
         assert ruling.allowed_pools == []
 
-    elif age == TIMEOUT_REACHED_AGE_TOO_YOUNG:
+    elif age == TIMEOUT_REACHED_AGE_TOO_YOUNG(mock_session):
         assert ruling.cancel is False
         assert ruling.allowed_pools == mock_pools
 
@@ -528,14 +560,14 @@ def do_test_policy_timeout_reached(mock_inputs, empty_events=False, age=None):
 def test_policy_timeout_reached(mock_inputs):
     do_test_policy_timeout_reached(
         mock_inputs,
-        age=TIMEOUT_REACHED_AGE_TOO_OLD
+        age=TIMEOUT_REACHED_AGE_TOO_OLD(mock_inputs.session)
     )
 
 
 def test_policy_timeout_reached_no_trigger(mock_inputs):
     do_test_policy_timeout_reached(
         mock_inputs,
-        age=TIMEOUT_REACHED_AGE_TOO_YOUNG
+        age=TIMEOUT_REACHED_AGE_TOO_YOUNG(mock_inputs.session)
     )
 
 
@@ -585,14 +617,14 @@ def do_policy_one_attempt_forgiving(mock_inputs, empty_events=False, age=None):
 def test_policy_one_attempt_forgiving(mock_inputs):
     do_policy_one_attempt_forgiving(
         mock_inputs,
-        age=ONE_ATTEMPT_FORGIVING_TOO_YOUNG
+        age=ONE_ATTEMPT_FORGIVING_TOO_YOUNG(mock_inputs.session)
     )
 
 
 def test_policy_one_attempt_forgiving_no_trigger(mock_inputs):
     do_policy_one_attempt_forgiving(
         mock_inputs,
-        age=ONE_ATTEMPT_FORGIVING_TOO_OLD
+        age=ONE_ATTEMPT_FORGIVING_TOO_OLD(mock_inputs.session)
     )
 
 
@@ -628,7 +660,7 @@ def do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=None, o
         mock_metrics.append(mock_pool_metrics)
 
     if one_crowded is True:
-        mock_metrics[1].resources.usage.cores = 100 * ENOUGH_RESOURCES_EXCESS_MULTIPLIER
+        mock_metrics[1].resources.usage.cores = 100 * ENOUGH_RESOURCES_EXCESS_MULTIPLIER(mock_session)
 
     if pool_count is not None:
         mock_pools = mock_pools[:pool_count]
