@@ -1,0 +1,7 @@
+---
+
+name: tedude-job
+description: Jenkins tedude job
+dependencies:
+  pip:
+    - jenkins-job-builder==1.6.2

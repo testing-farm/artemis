@@ -1,0 +1,11 @@
+---
+outcome: PASSED
+results:
+  - name: /tests/core/docs
+    result: passed
+    log: passed/execute/logs/tests/core/docs/out.log
+    artifacts_dir: passed/execute/logs/tests/core/docs
+  - name: /tests/core/dry
+    result: passed
+    log: passed/execute/logs/tests/core/dry/out.log
+    artifacts_dir: passed/execute/logs/tests/core/dry

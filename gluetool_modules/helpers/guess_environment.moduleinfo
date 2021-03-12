@@ -1,0 +1,7 @@
+---
+
+name: guess-environment
+description: "Guess distro/image/product from build target of a brew build"
+dependencies:
+  pip:
+    - beautifulsoup4==4.6.3

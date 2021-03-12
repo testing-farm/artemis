@@ -1,0 +1,45 @@
+---
+
+# Represents tasks of wrong type
+
+getAPIVersion: Mock Koji Session 1.0
+
+getTaskInfo:
+  20171466:
+    weight: 2.0
+    parent:
+    completion_time: '2017-06-25 19:50:05.728386'
+    start_time: '2017-06-25 19:41:04.217509'
+    start_ts: 1498419664.21751
+    state: 2
+    awaited:
+    label:
+    priority: 15
+    channel_id: 9
+    waiting:
+    create_time: '2017-06-25 19:40:54.586544'
+    id: 20171466
+    create_ts: 1498419654.58654
+    owner: 3445
+    host_id: 234
+    completion_ts: 1498420205.72839
+    arch: ppc64le
+    method: runroot
+    request:
+      - f27-build
+      - ppc64le
+      - rm -f /var/lib/rpm/__db*; rm -rf /var/cache/yum/*; set -x; pungi-make-ostree tree
+        --log-dir=/mnt/koji/compose/cd//logs/20170625-19-16/ppc64le/ --treefile=/mnt/koji/compose/cd/fedora-atomic/fedora-atomic-docker-host.json
+        --repo=/mnt/koji/atomic-cd/
+      - repo_id:
+        weight:
+        __starstar: true
+        mounts:
+          - /mnt/koji/compose/cd/
+          - /mnt/koji/atomic-cd/
+        new_chroot: true
+        packages:
+          - pungi
+          - ostree
+          - rpm-ostree
+        skip_setarch: false

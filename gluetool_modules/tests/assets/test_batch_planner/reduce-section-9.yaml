@@ -1,0 +1,12 @@
+---
+
+# command sets without flags raise exception
+
+section:
+  set1:
+    - a command
+    - another command
+
+raises:
+  klass: gluetool_modules.helpers.rules_engine.RulesSyntaxError
+  match: "Cannot parse rules"

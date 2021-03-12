@@ -1,0 +1,78 @@
+state_reason: 'null'
+component_builds:
+  - 38974
+  - 38972
+  - 38971
+  - 38973
+name: rust-toolset
+stream: rhel8
+time_submitted: '2018-11-05T23:43:59Z'
+tasks:
+    rpms:
+        rust-toolset:
+            state: 1
+            nvr: rust-toolset-1.28.0-1.module+el8+2178+cc252a44
+            task_id: 19069917
+            state_reason: ''
+        module-build-macros:
+            state: 1
+            nvr: module-build-macros-0.1-1.module+el8+2178+cc252a44
+            task_id: 19069801
+            state_reason: ''
+        rust:
+            state: 1
+            nvr: rust-1.28.0-1.module+el8+2178+cc252a44
+            task_id: 19069916
+            state_reason: ''
+        cargo-vendor:
+            state: 1
+            nvr: cargo-vendor-0.1.15-3.module+el8+2176+447ca617
+            task_id: 19068986
+            state_reason: Reused component from previous module build
+scratch: false
+version: '820181105234334'
+time_modified: '2018-11-06T03:25:57Z'
+state_name: ready
+scmurl: git://pkgs.devel.redhat.com/modules/rust-toolset?#7981ffe74ef8badda5dfcc5407fb2d9a84af0d62
+state: 5
+modulemd: "---\ndocument: modulemd\nversion: 2\ndata:\n  name: rust-toolset\n  stream:\
+    \ rhel8\n  version: 820181105234334\n  context: b09eea91\n  summary: Rust\n  description:\
+    \ >-\n    Rust Toolset\n  license:\n    module:\n    - MIT\n  xmd:\n    mbs:\n\
+    \      scmurl: git://pkgs.devel.redhat.com/modules/rust-toolset?#7981ffe74ef8badda5dfcc5407fb2d9a84af0d62\n\
+    \      buildrequires:\n        platform:\n          stream: el8\n          filtered_rpms:\
+    \ []\n          version: 2\n          koji_tag: module-rhel-8.0.0-build\n    \
+    \      context: 00000000\n          ref: virtual\n        llvm-toolset:\n    \
+    \      stream: rhel8\n          filtered_rpms: []\n          version: 820181030213659\n\
+    \          koji_tag: module-llvm-toolset-rhel8-820181030213659-9edba152\n    \
+    \      context: 9edba152\n          ref: 32f47423126c0c2cc8b3cb0d3711da2b6999c9aa\n\
+    \        rust-toolset:\n          stream: rhel8\n          filtered_rpms: []\n\
+    \          version: 820181105191008\n          koji_tag: module-rust-toolset-rhel8-820181105191008-b09eea91\n\
+    \          context: b09eea91\n          ref: 14bbba9cd56090bb4cb350cebaeebd6804abdd6d\n\
+    \      mse: TRUE\n      rpms:\n        cargo-vendor:\n          ref: bac28fbd3452f187aa2c154e604898c0cef32437\n\
+    \        rust:\n          ref: 13df2ea8a6f55619da6c030e4452f0170fcd3530\n    \
+    \    rust-toolset:\n          ref: fc700a92b0484d05ccb70e7f0de0bc4891c48efd\n\
+    \      commit: 7981ffe74ef8badda5dfcc5407fb2d9a84af0d62\n  dependencies:\n  -\
+    \ buildrequires:\n      llvm-toolset: [rhel8]\n      platform: [el8]\n      rust-toolset:\
+    \ [rhel8]\n    requires:\n      llvm-toolset: [rhel8]\n      platform: [el8]\n\
+    \  profiles:\n    default:\n      rpms:\n      - rust-toolset\n  api:\n    rpms:\n\
+    \    - cargo\n    - cargo-doc\n    - cargo-vendor\n    - rls-preview\n    - rust\n\
+    \    - rust-analysis\n    - rust-doc\n    - rust-gdb\n    - rust-lldb\n    - rust-src\n\
+    \    - rust-std-static\n    - rustfmt-preview\n  components:\n    rpms:\n    \
+    \  cargo-vendor:\n        rationale: Tool for bundling Rust dependencies\n   \
+    \     repository: git://pkgs.devel.redhat.com/rpms/cargo-vendor\n        cache:\
+    \ http://pkgs.devel.redhat.com/repo/pkgs/cargo-vendor\n        ref: stream-rhel-8\n\
+    \        buildorder: 1\n        arches: [aarch64, i686, ppc64le, s390x, x86_64]\n\
+    \      rust:\n        rationale: Rust compiler and tools\n        repository:\
+    \ git://pkgs.devel.redhat.com/rpms/rust\n        cache: http://pkgs.devel.redhat.com/repo/pkgs/rust\n\
+    \        ref: stream-rhel-8\n        arches: [aarch64, i686, ppc64le, s390x, x86_64]\n\
+    \      rust-toolset:\n        rationale: Meta package for rust-toolset.\n    \
+    \    repository: git://pkgs.devel.redhat.com/rpms/rust-toolset\n        cache:\
+    \ http://pkgs.devel.redhat.com/repo/pkgs/rust-toolset\n        ref: stream-rhel-8\n\
+    \        arches: [aarch64, i686, ppc64le, s390x, x86_64]\n...\n"
+koji_tag: module-rust-toolset-rhel8-820181105234334-b09eea91
+time_completed: '2018-11-06T03:25:28Z'
+context: b09eea91
+owner: jistone
+siblings: []
+id: 2178
+rebuild_strategy: only-changed

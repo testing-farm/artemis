@@ -1,0 +1,139 @@
+---
+
+stages:
+  - test
+  - build-docker
+  - deploy
+
+# Use our custom image. See https://gitlab.com/testing-farm/images/-/tree/master/python-ci-image
+image: "quay.io/testing-farm/python-ci-image:fedora-based-image"
+
+#
+# Some of the jobs require locale to be set, some fail with is. Those which need it can inherit this section.
+#
+.locale:
+  variables:
+    # See https://click.palletsprojects.com/en/7.x/python3/#python-3-surrogate-handling
+    # Export these for Python 3.6 - from 3.7 forward, Python is smarter when picking
+    # default locales.
+    LC_ALL: "en_US.utf8"
+    LANG: "en_US.utf8"
+
+#
+# TEST steps
+#
+.tests:
+  extends: .locale
+  before_script:
+    - dnf -y install krb5-devel libcurl-devel popt-devel postgresql-devel
+
+# Run unit tests
+#
+# Note: this step also generates coverage report (HTML).
+unit-tests:
+  extends: .tests
+  stage: test
+  script:
+    - tox -v -e py27-unit-tests -- --cov=gluetool_modules --cov-report=html:coverage-report
+  artifacts:
+    paths:
+      - coverage-report
+
+# Static analysis - pylint, flake8
+static-analysis:
+  extends: .tests
+  stage: test
+  script:
+    - tox -v -e py27-static-analysis
+
+# Static analysis - coala
+#
+# Note: coala integration is better done directly via gitlab's docker support
+static-analysis-coala:
+  stage: test
+  image: quay.io/testing-farm/coala:latest
+  script:
+    - /usr/bin/coala --non-interactive --config .coafile
+
+# Static analysis - type checks
+type-check:
+  stage: test
+  script:
+    - tox -v -e type-check
+
+# Installation Fedora
+installation-fedora:
+  stage: test
+  image: registry.fedoraproject.org/fedora:32
+  script:
+    - dnf -y install python3-pip git
+    - pip3 install git+https://github.com/psss/tmt.git
+    - tmt run -adddvvv provision -h local plan --name /plans/fedora
+
+# Installation Centos8
+installation-centos8:
+  stage: test
+  image: registry.centos.org/centos/centos:8
+  script:
+    - dnf -y install python3-pip git
+    - pip3 install git+https://github.com/psss/tmt.git
+    - tmt run -adddvvv provision -h local plan --name /plans/centos8
+
+# Installation RHEL8
+installation-rhel8:
+  stage: test
+  # using universal base images for RHEL8
+  # https://access.redhat.com/articles/4238681
+  image: registry.access.redhat.com/ubi8/ubi
+  script:
+    - dnf -y install python3-pip git
+    - pip3 install git+https://github.com/psss/tmt.git
+    - tmt run -adddvvv provision -h local plan --name /plans/rhel8
+
+# Generate documentation from the sources
+#
+# Note: executed for all commits in all branches to make sure it is actually possible
+# to generate the documentation - serves as a sort of a "test" on its own. citool
+# uses docstrings to generate command-line help, it is useful to check whether these
+# docstrings are readable and sane.
+generate-docs:
+  extends: .tests
+  stage: test
+  script:
+    - tox -v -e py27-doctest -- ./docs
+  artifacts:
+    paths:
+      - .tox/py27-doctest/tmp/docs/build/html
+
+#
+# BUILD steps
+#
+
+# Trigger Docker build
+build-docker-images:
+  stage: build-docker
+  extends: .locale
+  only:
+    - master@baseos-qe/gluetool-modules
+  script:
+    - tower-cli workflow_job launch --monitor -W "[BaseOS CI] [build] [docker] Production chain" | tee tower_output.log
+    - grep 'failed' tower_output.log && { echo 'At least one of subtasks failed!'; exit 1; } || exit 0
+
+build-docker-images-devel:
+  stage: build-docker
+  extends: .locale
+  only:
+    - devel@baseos-qe/gluetool-modules
+  script:
+    - tower-cli workflow_job launch --monitor -W "[BaseOS CI] [build] [docker] Devel chain" | tee tower_output.log
+    - grep 'failed' tower_output.log && { echo 'At least one of subtasks failed!'; exit 1; } || exit 0
+
+# Trigger staging deployment
+deploy-to-staging:
+  stage: deploy
+  extends: .locale
+  only:
+    - devel@baseos-qe/gluetool-modules
+  script:
+    - tower-cli workflow_job launch --monitor -W "[BaseOS CI] [deploy] [staging] Image" | tee tower_output.log
+    - grep 'failed' tower_output.log && { echo 'At least one of subtasks failed!'; exit 1; } || exit 0

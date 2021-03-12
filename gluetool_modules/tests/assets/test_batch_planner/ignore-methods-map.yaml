@@ -1,0 +1,9 @@
+---
+- rule: PRIMARY_TASK.ARTIFACT_NAMESPACE == 'redhat-module' and PRIMARY_TASK.component == '389-ds'
+  ignore-methods:
+    - sti
+
+- rule: PRIMARY_TASK.ARTIFACT_NAMESPACE == 'redhat-module' and PRIMARY_TASK.component == 'llvm-toolset'
+  ignore-methods:
+    - static-config
+    - sti

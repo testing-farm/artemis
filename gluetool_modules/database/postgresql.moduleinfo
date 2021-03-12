@@ -1,0 +1,9 @@
+---
+
+name: postgresql
+description: Connect to PostgreSQL database
+dependencies:
+  yum:
+    - postgresql
+  pip:
+    - psycopg2==2.8.3

@@ -1,0 +1,17 @@
+---
+
+# a "all" section is added
+
+section:
+  - a command
+  - another command
+
+kwargs:
+  all_commands:
+    - a default command
+
+expected:
+  default:
+    - a command
+    - another command
+    - a default command

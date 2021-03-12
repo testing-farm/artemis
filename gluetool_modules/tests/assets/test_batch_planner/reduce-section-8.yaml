@@ -1,0 +1,18 @@
+---
+
+# use "flags" option
+
+section:
+  - options: bar baz
+  - a command
+  - another command
+
+kwargs:
+  all_commands:
+    - yet another command
+
+expected:
+  default:
+    - a command bar baz
+    - another command bar baz
+    - yet another command

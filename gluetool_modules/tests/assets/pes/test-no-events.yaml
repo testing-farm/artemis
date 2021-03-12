@@ -1,0 +1,5 @@
+---
+package: bash
+status_code: 404
+response: 404.json
+ancestors: []

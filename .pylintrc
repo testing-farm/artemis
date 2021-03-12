@@ -1,0 +1,11 @@
+[MASTER]
+load-plugins = gluetool.pylint
+
+[BASIC]
+
+
+# Disable *all* Pylint's checkers, but re-enable gluetool's custom checkers. The actual way how to achieve that
+# is a bit weird, "disable everything" and "enable some" are executed as steps by Pylint configuration. It works.
+[MESSAGE CONTROL]
+disable=R,C,W,E
+enable=E7631,E7632,E7633,E7621,E7611

@@ -1,0 +1,27 @@
+---
+
+build_id: null
+component: 'bash'
+dist_git_repository_name: 'bash'
+destination_tag: 'f27-pending'
+full_name: "task '20166983' build 'bash-4.4.12-5.fc26' target 'rawhide' (scratch) (no artifacts)"
+issuer: 'mvadkert'
+has_artifacts: False
+owner: 'mvadkert'
+latest: 'bash-4.4.19-1.fc27'
+nvr: 'bash-4.4.12-5.fc26'
+pkgs_url: 'https://kojipkgs.fedoraproject.org'
+release: '5.fc26'
+scratch: True
+short_name: '20166983:S:bash-4.4.12-5.fc26'
+source: 'cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm'
+srpm_names:
+  - 'bash-4.4.12-5.fc26.src.rpm'
+# srcrpm_url: 'https://kojipkgs.fedoraproject.org/work/tasks/9857/15869857/bash-4.4.12-5.fc26.src.rpm'
+srpm_urls: []
+target: rawhide
+id: 20166983
+dispatch_id: 20166983
+url: 'https://koji.fedoraproject.org/koji/taskinfo?taskID=20166983'
+version: '4.4.12'
+

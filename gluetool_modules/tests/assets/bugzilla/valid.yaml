@@ -1,0 +1,32 @@
+---
+getbugs:
+  1732381:
+    id: 1732381
+    bug_id: 1732381
+    priority: medium
+    severity: medium
+    summary: "SELinux: mariadb-server-galera"
+    notinteresting: nothing
+    external_bugs:
+      - ext_bz_bug_id: 218225
+        ext_bz_id: 69
+        ext_description: /CoreOS/selinux-policy/Regression/mysqld-and-similar
+      - ext_bz_bug_id: RHELPLAN-24568
+        ext_bz_id: 122
+        ext_description: None
+      - bug_id: 1732381
+        ext_bz_bug_id: "RHBA-2019:3547"
+        ext_bz_id: 139
+        ext_description: None
+
+bugzilla_attributes:
+  1732381:
+    bug_id: 1732381
+    priority: medium
+    severity: medium
+    summary: "SELinux: mariadb-server-galera"
+
+tcms_tests:
+  1732381:
+    - id: 218225
+      description: /CoreOS/selinux-policy/Regression/mysqld-and-similar

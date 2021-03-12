@@ -1,0 +1,11 @@
+---
+
+name: copr-builder
+description: Triggers new copr build
+
+dependecies:
+  yum:
+    - copr-cli
+    - make
+  pip:
+    - six

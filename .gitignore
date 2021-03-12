@@ -1,0 +1,25 @@
+**/*~
+**/*.pyc
+**/*.pyo
+
+build
+dist
+
+libatt.egg-info
+*.sw[a-z]
+.ropeproject
+*.egg-info
+.eggs
+.cache
+.tox
+
+# coverage data files
+**/.coverage*
+
+# auto-generated *.rst docs
+docs/source/gluetool_modules.*
+docs/source/modules.rst
+docs/source/module_parsers.py
+
+# Ansible "retry" files
+*.retry

@@ -1,0 +1,19 @@
+---
+
+name: mbs
+description: Provide MBS build details to other modules
+
+dependencies:
+  yum:
+    - odcs-client
+    - autoconf
+    - automake
+    - libtool
+    - python-devel
+    - redhat-rpm-config
+    - make
+    - gcc
+    - python
+
+  pip:
+    - jq

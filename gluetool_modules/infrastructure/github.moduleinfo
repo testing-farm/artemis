@@ -1,0 +1,9 @@
+---
+
+name: github
+description: Wrapper of GitHub API
+
+dependecies:
+  pip:
+    - requests
+    - six

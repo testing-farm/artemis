@@ -1,0 +1,385 @@
+[
+    {
+        "action": 4,
+        "created": "2018-10-05T13:28:23.164224Z",
+        "id": 1025,
+        "in_packageset": {
+            "package": [
+                {
+                    "name": "python-ipaddress",
+                    "repository": "rhel7-base"
+                }
+            ],
+            "set_id": 3472,
+            "srpm": [
+                "python-ipaddress"
+            ]
+        },
+        "internal_notes": "python2-ipaddress was a port of the python 3.3+ ipaddress module. It is now available either in the base python3 package or in python27 module.",
+        "links": [],
+        "migration_notes": "",
+        "modified": "2019-03-14T11:24:46.881742Z",
+        "out_packageset": {
+            "package": [
+                {
+                    "name": "python2-ipaddress",
+                    "repository": "rhel8-AppStream"
+                },
+                {
+                    "name": "python3-libs",
+                    "repository": "rhel8-BaseOS"
+                }
+            ],
+            "set_id": 3473,
+            "srpm": [
+                "python-ipaddress",
+                "python3"
+            ]
+        },
+        "release": {
+            "major_version": 8,
+            "minor_version": 0,
+            "os_name": "RHEL",
+            "tag": null,
+            "z_stream": null
+        },
+        "release_notes": "",
+        "sst": "sst_identity_management",
+        "title": "The python-ipaddress package has been split into the python2-ipaddress, python3 packages",
+        "warnings": []
+    },
+    {
+        "action": 3,
+        "created": "2018-10-19T11:25:30.902315Z",
+        "id": 2327,
+        "in_packageset": {
+            "package": [
+                {
+                    "name": "python",
+                    "repository": "rhel7-base"
+                }
+            ],
+            "set_id": 3815,
+            "srpm": [
+                "python"
+            ]
+        },
+        "internal_notes": "platform-python package is now available for applications that need python and are part of the OS, it replaces python package",
+        "links": [],
+        "migration_notes": "",
+        "modified": "2018-11-21T12:46:41.881810Z",
+        "out_packageset": {
+            "package": [
+                {
+                    "name": "platform-python",
+                    "repository": "rhel8-BaseOS"
+                }
+            ],
+            "set_id": 5476,
+            "srpm": [
+                "python3"
+            ]
+        },
+        "release": {
+            "major_version": 8,
+            "minor_version": 0,
+            "os_name": "RHEL",
+            "tag": null,
+            "z_stream": null
+        },
+        "release_notes": "",
+        "sst": "sst_cs_apps",
+        "title": "The platform-python package is present",
+        "warnings": []
+    },
+    {
+        "action": 3,
+        "created": "2018-10-04T15:03:20.408286Z",
+        "id": 812,
+        "in_packageset": {
+            "package": [
+                {
+                    "name": "python-enum34",
+                    "repository": "rhel7-base"
+                }
+            ],
+            "set_id": 1263,
+            "srpm": [
+                "python-enum34"
+            ]
+        },
+        "internal_notes": "Python 2 Enum backport is included in base python3 package",
+        "links": [],
+        "migration_notes": "",
+        "modified": "2018-12-18T07:26:52.403553Z",
+        "out_packageset": {
+            "package": [
+                {
+                    "name": "python3-libs",
+                    "repository": "rhel8-BaseOS"
+                }
+            ],
+            "set_id": 1264,
+            "srpm": [
+                "python3"
+            ]
+        },
+        "release": {
+            "major_version": 8,
+            "minor_version": 0,
+            "os_name": "RHEL",
+            "tag": null,
+            "z_stream": null
+        },
+        "release_notes": "",
+        "sst": "sst_identity_management",
+        "title": "The python-enum34 package has been replaced by python3",
+        "warnings": []
+    },
+    {
+        "action": 4,
+        "created": "2018-09-26T20:08:43.800056Z",
+        "id": 526,
+        "in_packageset": {
+            "package": [
+                {
+                    "name": "python-libs",
+                    "repository": "rhel7-base"
+                }
+            ],
+            "set_id": 720,
+            "srpm": [
+                "python"
+            ]
+        },
+        "internal_notes": "python-libs split to python3-libs and python2-libs",
+        "links": [],
+        "migration_notes": null,
+        "modified": "2018-11-21T12:50:51.166943Z",
+        "out_packageset": {
+            "package": [
+                {
+                    "name": "python2-libs",
+                    "repository": "rhel8-BaseOS"
+                },
+                {
+                    "name": "python3-libs",
+                    "repository": "rhel8-BaseOS"
+                }
+            ],
+            "set_id": 721,
+            "srpm": [
+                "python2",
+                "python3"
+            ]
+        },
+        "release": {
+            "major_version": 8,
+            "minor_version": 0,
+            "os_name": "RHEL",
+            "tag": null,
+            "z_stream": null
+        },
+        "release_notes": null,
+        "sst": "sst_cs_apps",
+        "title": "python-libs split to python3-libs and python2-libs",
+        "warnings": []
+    },
+    {
+        "action": 4,
+        "created": "2018-09-26T20:09:59.124645Z",
+        "id": 542,
+        "in_packageset": {
+            "package": [
+                {
+                    "name": "python-test",
+                    "repository": "rhel7-optional"
+                }
+            ],
+            "set_id": 754,
+            "srpm": [
+                "python"
+            ]
+        },
+        "internal_notes": "python-test split to python3-test and python2-test",
+        "links": [],
+        "migration_notes": null,
+        "modified": "2018-11-21T12:50:26.378800Z",
+        "out_packageset": {
+            "package": [
+                {
+                    "name": "python2-test",
+                    "repository": "rhel8-BaseOS"
+                },
+                {
+                    "name": "python3-test",
+                    "repository": "rhel8-BaseOS"
+                }
+            ],
+            "set_id": 755,
+            "srpm": [
+                "python2",
+                "python3"
+            ]
+        },
+        "release": {
+            "major_version": 8,
+            "minor_version": 0,
+            "os_name": "RHEL",
+            "tag": null,
+            "z_stream": null
+        },
+        "release_notes": null,
+        "sst": "sst_cs_apps",
+        "title": "python-test split to python3-test and python2-test",
+        "warnings": []
+    },
+    {
+        "action": 4,
+        "created": "2018-09-26T20:10:01.226843Z",
+        "id": 543,
+        "in_packageset": {
+            "package": [
+                {
+                    "name": "tkinter",
+                    "repository": "rhel7-optional"
+                }
+            ],
+            "set_id": 756,
+            "srpm": [
+                "python"
+            ]
+        },
+        "internal_notes": "tkinter split to python3-tkinter and python2-tkinter",
+        "links": [],
+        "migration_notes": null,
+        "modified": "2018-11-21T12:50:26.271026Z",
+        "out_packageset": {
+            "package": [
+                {
+                    "name": "python2-tkinter",
+                    "repository": "rhel8-AppStream"
+                },
+                {
+                    "name": "python3-tkinter",
+                    "repository": "rhel8-AppStream"
+                }
+            ],
+            "set_id": 757,
+            "srpm": [
+                "python2",
+                "python3"
+            ]
+        },
+        "release": {
+            "major_version": 8,
+            "minor_version": 0,
+            "os_name": "RHEL",
+            "tag": null,
+            "z_stream": null
+        },
+        "release_notes": null,
+        "sst": "sst_cs_apps",
+        "title": "The tkinter package has been split to python3-tkinter,python2-tkinter",
+        "warnings": []
+    },
+    {
+        "action": 0,
+        "created": "2018-09-26T19:32:26.582499Z",
+        "id": 383,
+        "in_packageset": {
+            "package": [
+                {
+                    "name": "python3-idle",
+                    "repository": "rhel8-AppStream"
+                }
+            ],
+            "set_id": 512,
+            "srpm": [
+                "python3"
+            ]
+        },
+        "internal_notes": "package python3-idle was added",
+        "links": [],
+        "migration_notes": null,
+        "modified": "2018-11-21T12:50:29.195620Z",
+        "out_packageset": null,
+        "release": {
+            "major_version": 8,
+            "minor_version": 0,
+            "os_name": "RHEL",
+            "tag": null,
+            "z_stream": null
+        },
+        "release_notes": null,
+        "sst": null,
+        "title": "The python3-idle package is present",
+        "warnings": []
+    },
+    {
+        "action": 0,
+        "created": "2018-10-19T11:51:18.671059Z",
+        "id": 2329,
+        "in_packageset": {
+            "package": [
+                {
+                    "name": "platform-python-devel",
+                    "repository": "rhel8-AppStream"
+                }
+            ],
+            "set_id": 3819,
+            "srpm": [
+                "python3"
+            ]
+        },
+        "internal_notes": "platform-python-* packages are now available for applications that need python and are part of the OS",
+        "links": [],
+        "migration_notes": "",
+        "modified": "2018-11-21T12:48:04.500216Z",
+        "out_packageset": null,
+        "release": {
+            "major_version": 8,
+            "minor_version": 0,
+            "os_name": "RHEL",
+            "tag": null,
+            "z_stream": null
+        },
+        "release_notes": "",
+        "sst": "sst_cs_apps",
+        "title": "The platform-python-devel package is present",
+        "warnings": []
+    },
+    {
+        "action": 0,
+        "created": "2018-10-19T11:50:54.729022Z",
+        "id": 2328,
+        "in_packageset": {
+            "package": [
+                {
+                    "name": "platform-python-debug",
+                    "repository": "rhel8-AppStream"
+                }
+            ],
+            "set_id": 3818,
+            "srpm": [
+                "python3"
+            ]
+        },
+        "internal_notes": "platform-python-* packages are now available for applications that need python and are part of the OS",
+        "links": [],
+        "migration_notes": "",
+        "modified": "2018-11-21T12:48:04.580377Z",
+        "out_packageset": null,
+        "release": {
+            "major_version": 8,
+            "minor_version": 0,
+            "os_name": "RHEL",
+            "tag": null,
+            "z_stream": null
+        },
+        "release_notes": "",
+        "sst": "sst_cs_apps",
+        "title": "The platform-python-debug package is present",
+        "warnings": []
+    }
+]

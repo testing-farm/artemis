@@ -1,0 +1,11 @@
+---
+
+name: test-schedule-runner-sti
+description: Run Standard Test Interface tests on the provisioned guests
+dependencies:
+  yum:
+    - standard-test-roles
+  pip:
+    - inotify==0.2.10
+    - six==1.11.0
+    - 'futures==3.2.0; python_version == "2.7"'

@@ -1,0 +1,24 @@
+---
+
+# with no match, default should be used
+
+section:
+  set1:
+    - BUILD_TARGET.match('dummy-target-foo')
+    - a command
+
+  set2:
+    - BUILD_TARGET.match('dummy-target-bar')
+    - another command
+
+  default:
+    - yet another command
+
+kwargs:
+  all_commands:
+    - and one more
+
+expected:
+  default:
+    - yet another command
+    - and one more

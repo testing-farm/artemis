@@ -1,0 +1,7 @@
+---
+
+name: mysql
+description: Provides access to MySQL servers and databases.
+dependencies:
+  pip:
+    - mysql-connector-python==8.0.13

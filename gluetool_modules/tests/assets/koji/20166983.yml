@@ -1,0 +1,321 @@
+---
+
+# Represents task for a scratch build.
+
+getAPIVersion: Mock Koji Session 1.0
+
+getBuildTarget:
+  rawhide:
+    dest_tag_name: f27-pending
+
+getTaskInfo:
+  20166983:
+    weight: 0.2
+    parent:
+    completion_time: '2017-06-25 13:32:53.907567'
+    start_time: '2017-06-25 13:23:04.994390'
+    start_ts: 1498396984.99439
+    state: 2
+    awaited:
+    label:
+    priority: 20
+    channel_id: 1
+    waiting: false
+    create_time: '2017-06-25 13:23:02.037841'
+    id: 20166983
+    create_ts: 1498396982.03784
+    owner: 3823
+    host_id: 205
+    completion_ts: 1498397573.90757
+    arch: noarch
+    method: build
+    request:
+      - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm
+      - rawhide
+      - scratch: true
+  25004470:
+    id: 25004470
+    waiting: false
+    state: 2
+    method: build
+    request:
+      - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm
+      - rawhide
+      - scratch: true
+
+listBuilds:
+  - package_name: bash
+    extra:
+    creation_time: '2016-09-30 08:22:42.639802'
+    completion_time: '2016-09-30 08:34:58.935735'
+    package_id: 1088
+    build_id: 805705
+    state: 1
+    source:
+    epoch:
+    version: 4.3.43
+    completion_ts: 1475224498.93573
+    owner_id: 3543
+    owner_name: svashisht
+    nvr: bash-4.3.43-4.fc25
+    start_time: '2016-09-30 08:22:42.639802'
+    creation_event_id: 18507215
+    start_ts: 1475223762.6398
+    volume_id: 0
+    creation_ts: 1475223762.6398
+    name: bash
+    task_id: 15869828
+    volume_name: DEFAULT
+    release: 4.fc25
+
+getTaskChildren:
+  20166983:
+    - weight: 1.64021427333333
+      parent: 20166983
+      completion_time: '2017-06-25 13:27:55.891785'
+      request:
+        - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm
+        - 425
+        - i686
+        - false
+        - repo_id: 763209
+      start_time: '2017-06-25 13:23:07.497014'
+      start_ts: 1498396987.49701
+      state: 2
+      awaited: false
+      label: i686
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2017-06-25 13:23:06.638948'
+      id: 20166989
+      create_ts: 1498396986.63895
+      owner: 3823
+      host_id: 65
+      completion_ts: 1498397275.89178
+      arch: i386
+      method: buildArch
+    - weight: 1.64021427333333
+      parent: 20166983
+      completion_time: '2017-06-25 13:27:55.211218'
+      request:
+        - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm
+        - 425
+        - x86_64
+        - true
+        - repo_id: 763209
+      start_time: '2017-06-25 13:23:06.585140'
+      start_ts: 1498396986.58514
+      state: 2
+      awaited: false
+      label: x86_64
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2017-06-25 13:23:06.217184'
+      id: 20166985
+      create_ts: 1498396986.21718
+      owner: 3823
+      host_id: 75
+      completion_ts: 1498397275.21122
+      arch: x86_64
+      method: buildArch
+    - weight: 1.64021427333333
+      parent: 20166983
+      completion_time: '2017-06-25 13:28:03.289477'
+      request:
+        - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm
+        - 425
+        - s390x
+        - false
+        - repo_id: 763209
+      start_time: '2017-06-25 13:23:12.115206'
+      start_ts: 1498396992.11521
+      state: 2
+      awaited: false
+      label: s390x
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2017-06-25 13:23:06.695096'
+      id: 20166990
+      create_ts: 1498396986.6951
+      owner: 3823
+      host_id: 312
+      completion_ts: 1498397283.28948
+      arch: s390x
+      method: buildArch
+    - weight: 1.64021427333333
+      parent: 20166983
+      completion_time: '2017-06-25 13:28:50.843224'
+      request:
+        - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm
+        - 425
+        - ppc64
+        - false
+        - repo_id: 763209
+      start_time: '2017-06-25 13:23:08.599444'
+      start_ts: 1498396988.59944
+      state: 2
+      awaited: false
+      label: ppc64
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2017-06-25 13:23:06.592484'
+      id: 20166988
+      create_ts: 1498396986.59248
+      owner: 3823
+      host_id: 227
+      completion_ts: 1498397330.84322
+      arch: ppc64
+      method: buildArch
+    - weight: 1.64021427333333
+      parent: 20166983
+      completion_time: '2017-06-25 13:31:15.029417'
+      request:
+        - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm
+        - 425
+        - aarch64
+        - false
+        - repo_id: 763209
+      start_time: '2017-06-25 13:23:07.197000'
+      start_ts: 1498396987.197
+      state: 2
+      awaited: false
+      label: aarch64
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2017-06-25 13:23:06.534989'
+      id: 20166987
+      create_ts: 1498396986.53499
+      owner: 3823
+      host_id: 215
+      completion_ts: 1498397475.02942
+      arch: aarch64
+      method: buildArch
+    - weight: 1.64021427333333
+      parent: 20166983
+      completion_time: '2017-06-25 13:32:33.393778'
+      request:
+        - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm
+        - 425
+        - armv7hl
+        - false
+        - repo_id: 763209
+      start_time: '2017-06-25 13:23:08.121806'
+      start_ts: 1498396988.12181
+      state: 2
+      awaited: false
+      label: armv7hl
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2017-06-25 13:23:06.801171'
+      id: 20166991
+      create_ts: 1498396986.80117
+      owner: 3823
+      host_id: 300
+      completion_ts: 1498397553.39378
+      arch: armhfp
+      method: buildArch
+    - weight: 1.64021427333333
+      parent: 20166983
+      completion_time: '2017-06-25 13:28:49.745042'
+      request:
+        - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.12-5.fc26.src.rpm
+        - 425
+        - ppc64le
+        - false
+        - repo_id: 763209
+      start_time: '2017-06-25 13:23:07.732503'
+      start_ts: 1498396987.7325
+      state: 2
+      awaited: false
+      label: ppc64le
+      priority: 19
+      channel_id: 1
+      waiting:
+      create_time: '2017-06-25 13:23:06.467356'
+      id: 20166986
+      create_ts: 1498396986.46736
+      owner: 3823
+      host_id: 245
+      completion_ts: 1498397329.74504
+      arch: ppc64le
+      method: buildArch
+  25004470:
+    - method: buildArch
+      id: 25004470
+      request:
+      - cli-build/1498396792.492652.jYJCrkUF/bash-4.4.19-1.fc27.src.rpm
+      - 425
+      - ppc64le
+      - false
+      - repo_id: 763209
+
+listTaskOutput:
+  20166989: []
+  20166985: []
+  20166990: []
+  20166988: []
+  20166987: []
+  20166991: []
+  20166986: []
+  25004470: []
+
+getUser:
+  3823:
+    status: 0
+    usertype: 0
+    id: 3823
+    name: mvadkert
+    krb_principal:
+
+listTagged:
+  f27-pending:
+  rawhide:
+    - build_id: 1044142
+      tag_name: f27-updates
+      owner_name: svashisht
+      package_name: bash
+      task_id: 25004470
+      volume_name: DEFAULT
+      start_time: '2018-02-13 14:06:25.397710'
+      creation_event_id: 31002627
+      creation_time: '2018-02-13 14:06:25.397710'
+      epoch:
+      tag_id: 418
+      name: bash
+      completion_time: '2018-02-13 14:14:37.598029'
+      state: 1
+      version: 4.4.19
+      volume_id: 0
+      release: 1.fc27
+      package_id: 1088
+      owner_id: 3543
+      id: 1044142
+      nvr: bash-4.4.19-1.fc27
+    - build_id: 1013222
+      tag_name: f27-updates
+      owner_name: svashisht
+      package_name: bash
+      task_id: 23991627
+      volume_name: DEFAULT
+      start_time: '2018-01-04 09:46:15.592043'
+      creation_event_id: 29769257
+      creation_time: '2018-01-04 09:46:15.592043'
+      epoch:
+      tag_id: 418
+      name: bash
+      completion_time: '2018-01-04 09:54:03.516586'
+      state: 1
+      version: 4.4.12
+      volume_id: 0
+      release: 13.fc27
+      package_id: 1088
+      owner_id: 3543
+      id: 1013222
+      nvr: bash-4.4.12-13.fc27
+

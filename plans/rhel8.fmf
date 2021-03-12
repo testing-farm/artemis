@@ -1,0 +1,22 @@
+description: |
+  Test gluetool-moduoles installation on rhel8.
+
+provision+:
+  image: registry.access.redhat.com/ubi8/ubi
+
+prepare:
+  how: shell
+  script:
+    - yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+    - yum install -y autoconf automake gcc git krb5-devel libcurl-devel libtool
+    - yum install -y libxml2-devel make openssl-devel postgresql-devel python2-devel
+    # we install poetry via python3, which has less bugs as with python2
+    - yum install -y python3
+    # popt devel is only available in Centos8 :(
+    - yum install -y http://mirror.centos.org/centos/8/BaseOS/x86_64/os/Packages/popt-devel-1.16-14.el8.x86_64.rpm
+    # well latest ansible requires latest pip ...
+    - pip3 install -U pip
+    # unfortunately installing Ansible on RHEL8 from EPEL does not work :( nothing provides python3-jmespath needed
+    # so install it from pip instead, make sure it is linked from the expected location
+    - pip3 install ansible
+    - ln -s /usr/local/bin/ansible-playbook /usr/bin/ansible-playbook

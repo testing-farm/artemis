@@ -1,0 +1,91 @@
+commit 4bb4115c0fedabe2273f5d2ddb73ccc4169503fc
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Tue Feb 18 09:29:19 2020 +0100
+
+    * Tue Feb 18 2020 Lukas Vrabec <lvrabec@redhat.com> - 3.14.3-40
+    - Update virt_read_qemu_pid_files inteface
+    Resolves: rhbz#1782925
+
+commit c89edffc94ae49c71deaf44424e76ea18a7afd5a
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Sun Feb 16 00:04:50 2020 +0100
+
+    * Sat Feb 15 2020 Lukas Vrabec <lvrabec@redhat.com> - 3.14.3-39
+    - Allow vhostmd communication with hosted virtual machines
+    - Add and update virt interfaces
+    Resolves: rhbz#1782925
+
+commit 89be8a5c708022f0f737d1bfec835c7c7d79371c
+Author: Zdenek Pytela <zpytela@redhat.com>
+Date:   Tue Jan 28 14:52:04 2020 +0100
+
+    * Tue Jan 28 2020 Zdenek Pytela <zpytela@redhat.com> - 3.14.3-38
+    - Dontaudit timedatex_t read file_contexts_t and validate security contexts
+    Resolves: rhbz#1779098
+
+commit 4538d650039cbfed73262ef2db34e4b3546bef1e
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Tue Jan 21 16:21:43 2020 +0100
+
+    * Tue Jan 21 2020 Lukas Vrabec <lvrabec@redhat.com> - 3.14.3-37
+    - Make stratisd_t domain unconfined for RHEL-8.2
+    Resolves: rhbz#1791557
+    - stratisd_t policy updates
+    Resolves: rhbz#1791557
+
+commit e8f358e3dcd4cf7d9355f17cd15b9cf492f2e4b1
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Thu Jan 16 16:36:31 2020 +0100
+
+    * Thu Jan 16 2020 Lukas Vrabec <lvrabec@redhat.com> - 3.14.3-36
+    - Label /stratis as stratisd_data_t
+    Resolves: rhbz#1791557
+
+commit 35a63332fc15cdc209c61b04376c9fc582558262
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Tue Jan 14 13:01:05 2020 +0100
+
+    * Tue Jan 14 2020 Lukas Vrabec <lvrabec@redhat.com> - 3.14.3-35
+    - Allow stratisd_t domain to read/write fixed disk devices and removable devices.
+    Resolves: rhbz#1790795
+
+commit 3cdd3cdef339c19d73e2129f932bf92968eb903c
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Mon Jan 13 18:43:46 2020 +0100
+
+    Add missing selinux-policy sources.
+    Resolves: rhbz#1787298
+
+commit fefb52f12ae2b855c1332736b1df8883ce441a32
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Mon Jan 13 18:12:21 2020 +0100
+
+    * Mon Jan 13 2020 Lukas Vrabec <lvrabec@redhat.com> - 3.14.3-34
+    - Added macro for stratisd to chat over dbus
+    - Add dac_override capability to stratisd_t domain
+    - Allow userdomain to chat with stratisd over dbus.
+    Resolves: rhbz#1787298
+
+commit 17faafe2f11e8020040b56d55c620d24b7981832
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Fri Jan 10 14:41:35 2020 +0100
+
+    * Fri Jan 10 2020 Lukas Vrabec <lvrabec@redhat.com> - 3.14.3-33
+    - Update files_create_var_lib_dirs() interface to allow caller domain also set attributes of var_lib_t directory
+    Resolves: rhbz#1778126
+
+commit daa897a9a8de1aba56b994bc4f15f96aff74123f
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Wed Jan 8 23:02:30 2020 +0100
+
+    * Wed Jan 08 2020 Lukas Vrabec <lvrabec@redhat.com> - 3.14.3-32
+    - Allow create udp sockets for abrt_upload_watch_t domains
+    Resolves: rhbz#1777761
+
+commit 2fdb174d8286917fa54b613d4356b3b228ec978c
+Author: Lukas Vrabec <lvrabec@redhat.com>
+Date:   Wed Jan 8 13:44:38 2020 +0100
+
+    * Wed Jan 08 2020 Lukas Vrabec <lvrabec@redhat.com> - 3.14.3-31
+    - Allow sssd_t domain to read kernel net sysctls
+    Resolves: rhbz#1777042

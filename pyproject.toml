@@ -1,0 +1,169 @@
+[tool.poetry]
+name = "gluetool-modules"
+version = "0.9.0"
+description = "Collection of gluetool modules used by Testing Farm Team."
+homepage = "https://gluetool-modules.readthedocs.io"
+repository = "https://gitlab.com/gluetool/modules"
+authors = [
+    "Evgeny Fedin <<efedin@redhat.com>>",
+    "Anna Khaitovich <<akhaitov@redhat.com>>",
+    "Martin Kluson <<mkluson@redhat.com>>",
+    "Ondrej Ptak <<optak@redhat.com>>",
+    "Milos Prchlik <<mprchlik@redhat.com>>",
+    "Miroslav Vadkerti <<mvadkert@redhat.com>>"
+]
+license = "Apache-2.0"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: ISC License (ISCL)",
+    "Operating System :: POSIX",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 2.7",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System",
+    "Topic :: System :: Archiving :: Packaging",
+    "Topic :: System :: Installation/Setup",
+    "Topic :: System :: Shells",
+    "Topic :: System :: Software Distribution",
+    "Topic :: Terminals"
+]
+include = ["gluetool_modules/py.typed"]
+
+[tool.poetry.scripts]
+citool = "gluetool_modules.tools.citool:run"
+
+[tool.poetry.plugins."gluetool.modules"]
+ansible = "gluetool_modules.helpers.ansible:Ansible"
+artemis = "gluetool_modules.provision.artemis:ArtemisProvisioner"
+brew-builder = "gluetool_modules.testing.pull_request_builder.brew_builder:BrewBuilder"
+brew-build-task-params = "gluetool_modules.helpers.brew_build_task_params:BrewBuildOptions"
+brew = "gluetool_modules.infrastructure.koji_fedora:Brew"
+bugzilla = "gluetool_modules.infrastructure.bugzilla:Bugzilla"
+build-dependencies = "gluetool_modules.helpers.build_dependencies:BuildDependencies"
+coldstore = "gluetool_modules.helpers.coldstore:ColdStore"
+compose-url = "gluetool_modules.helpers.compose_url:ComposeUrl"
+copr = "gluetool_modules.infrastructure.copr:Copr"
+copr-builder = "gluetool_modules.testing.pull_request_builder.copr_builder:CoprBuilder"
+dashboard = "gluetool_modules.helpers.dashboard:Dashboard"
+dist-git = "gluetool_modules.infrastructure.distgit:DistGit"
+docker = "gluetool_modules.infrastructure._docker:Docker"
+docker-provisioner = "gluetool_modules.provision.docker:DockerProvisioner"
+envinject = "gluetool_modules.helpers.envinject:EnvInject"
+events = "gluetool_modules.helpers.events:Events"
+execute-command = "gluetool_modules.helpers.execute_command:ExecuteCommand"
+github = "gluetool_modules.infrastructure.github:GitHub"
+github-copr-build-job = "gluetool_modules.testing.pull_request_builder.github_copr_build_job:CoprBuildJob"
+guess-environment = "gluetool_modules.helpers.guess_environment:GuessEnvironment"
+guest-setup = "gluetool_modules.helpers.guest_setup:GuestSetup"
+install-copr-build = "gluetool_modules.helpers.install_copr_build:InstallCoprBuild"
+install-mbs-build-execute = "gluetool_modules.helpers.install_mbs_build_execute:InstallMBSBuild"
+install-mbs-build = "gluetool_modules.helpers.install_mbs_build:InstallMBSBuild"
+jenkins-build-name = "gluetool_modules.helpers.jenkins.jenkins_build_name:JenkinsBuildName"
+jenkins = "gluetool_modules.infrastructure.jenkins:CIJenkins"
+koji = "gluetool_modules.infrastructure.koji_fedora:Koji"
+mbs = "gluetool_modules.infrastructure.mbs:MBS"
+memcached = "gluetool_modules.infrastructure.memcached:Memcached"
+mysql = "gluetool_modules.database._mysql:MySQL"
+notes = "gluetool_modules.helpers.notes:Notes"
+pagure-brew-build-job = "gluetool_modules.testing.pull_request_builder.pagure_brew_build_job:BrewBuildJob"
+pagure = "gluetool_modules.infrastructure.pagure:Pagure"
+pagure-srpm = "gluetool_modules.helpers.pagure_srpm:PagureSRPM"
+pes = "gluetool_modules.infrastructure.pes:PES"
+pipeline-install-ancestors = "gluetool_modules.pipelines.pipeline_install_ancestors:PipelineInstallAncestors"
+pipeline-state-reporter = "gluetool_modules.helpers.pipeline_state_reporter:PipelineStateReporter"
+postgresql = "gluetool_modules.database.postgresql:PostgreSQL"
+rpminspect = "gluetool_modules.static_analysis.rpminspect.rpminspect:CIRpminspect"
+rpminspect-job = "gluetool_modules.static_analysis.rpminspect.rpminspect_job:RpminspectJob"
+rules-engine = "gluetool_modules.helpers.rules_engine:RulesEngine"
+semaphore = "gluetool_modules.infrastructure.semaphore:Semaphore"
+smtp = "gluetool_modules.helpers.smtp:SMTP"
+static-guest = "gluetool_modules.infrastructure.static_guest:CIStaticGuest"
+system-roles-job = "gluetool_modules.testing.system_roles_job:SystemRolesJob"
+task-dispatcher = "gluetool_modules.dispatchers.task_dispatcher:TaskDispatcher"
+tedude = "gluetool_modules.testing.tedude:TeDuDe"
+tedude-job = "gluetool_modules.testing.tedude_job:TeDuDeJob"
+test-batch-planner = "gluetool_modules.dispatchers.test_batch_planner:TestBatchPlanner"
+testing-results = "gluetool_modules.testing.testing_results:TestingResults"
+testing-thread = "gluetool_modules.helpers.testing_thread:TestingThread"
+test-schedule-report = "gluetool_modules.testing.test_schedule_report:TestScheduleReport"
+test-scheduler = "gluetool_modules.testing.test_scheduler:TestScheduler"
+test-scheduler-sti = "gluetool_modules.testing.test_scheduler_sti:TestSchedulerSTI"
+test-scheduler-system-roles = "gluetool_modules.testing.test_scheduler_system_roles:TestSchedulerSystemRoles"
+test-schedule-runner = "gluetool_modules.testing.test_schedule_runner:TestScheduleRunner"
+test-schedule-runner-sti = "gluetool_modules.testing.test_schedule_runner_sti:STIRunner"
+test-scheduler-upgrades = "gluetool_modules.testing.test_scheduler_upgrades:TestSchedulerUpgrades"
+test-schedule-tmt = "gluetool_modules.testing.test_schedule_tmt:TestScheduleTMT"
+trigger-message = "gluetool_modules.helpers.trigger_message:TriggerMessage"
+url-shortener = "gluetool_modules.helpers.url_shortener:URLShortener"
+
+[tool.poetry.dependencies]
+python = "~2.7"
+
+ansible = "2.8.5"
+# NOTE: without this dependency the installation will fail with
+#  "The 'backports-abc>=0.4' distribution was not found and is required by tornado"
+backports-abc = "^0.5"
+cmd2 = "0.8.6"
+# NOTE: current sphinxarg.ext requires this version, 0.8.1 and later introduced breaking change
+#  https://github.com/readthedocs/commonmark.py/issues/137
+commonmark = "0.8.0"
+docker = "3.5.1"
+docker-pycreds = "0.3.0"
+docutils = "0.14"
+enum34 = "1.1.6"
+fmf = "0.6.1"
+future = "0.16.0"
+futures = "3.2.0"
+gitdb2 = "2.0.6"
+GitPython = "2.1.15"
+gluetool = "^1.25"
+inotify = "0.2.10"
+jaeger-client = "4.0.0"
+jenkinsapi = "0.3.8"
+jenkins-job-builder = "1.6.2"
+jinja2 = "2.10"
+jq = "0.1.6"
+koji = "^1.22"
+mako = "1.0.6"
+mysql-connector-python = "8.0.13"
+packaging = "17.1"
+proton = "0.8.8"
+psycopg2 = "2.8.3"
+pycurl = "^7.43.0"
+pymemcache = "2.0.0"
+pyOpenSSL = "17.0.0"
+python-bugzilla = "2.3.0"
+python-dateutil = "2.7.1"
+python-qpid-proton = "0.18.1"
+requestsexceptions = "1.2.0"
+requests-kerberos = "0.11.0"
+rpm-py-installer = "0.7.1"
+simplejson = "^3.17.2"
+sphinx = "1.5.2"
+sphinx-argparse = "0.2.0"
+sphinxcontrib-programoutput = "0.11"
+
+[tool.poetry.dev-dependencies]
+flake8 = "3.7.8"
+pylint = "1.9.5"
+pytest = "4.6.5"
+pytest-catchlog = "1.2.2"
+pytest-cov = "2.7.1"
+pytest-flake8 = "1.0.4"
+pytest-mock = "1.10.4"
+pytest-pylint = "0.14.1"
+tox = "3.8.6"
+yamllint = "1.16.0"
+
+[tool.poetry.urls]
+"Bug Tracker" = "https://gitlab.com/testing-farm/gluetool-modules/issues"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"

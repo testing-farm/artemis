@@ -1,0 +1,19 @@
+---
+
+name: publisher-umb-bus
+description: "Notification module - Unified message bus (UMB)"
+dependencies:
+  pip:
+    - proton==0.8.8
+    - python-qpid-proton==0.18.1
+
+  ansible_tasks:
+    # to build python-qpid-proto with SSL support
+    - name: "Requires: add openssl-devel"
+      lineinfile:
+        dest: "{{ SPECFILE }}"
+        regexp: "^Requires: openssl-devel"
+        line: "# added by 'publisher-umb-bus' module\nRequires: openssl-devel\n"
+        state: present
+        insertbefore: "^# TASK: GLOBAL-BEFORE-DESCRIPTION"
+      when: BUILDING_SPECFILE is defined

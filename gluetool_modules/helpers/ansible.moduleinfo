@@ -1,0 +1,7 @@
+---
+
+name: ansible
+description: Run ansible playbooks
+dependencies:
+  pip:
+    - ansible==2.8.5

@@ -1,0 +1,15 @@
+---
+outcome: FAILED
+results:
+  - name: /install
+    result: passed
+    log: error/execute/logs/install/out.log
+    artifacts_dir: error/execute/logs/install
+  - name: /update
+    result: failed
+    log: error/execute/logs/update/out.log
+    artifacts_dir: error/execute/logs/update
+  - name: /remove
+    result: error
+    log: error/execute/logs/remove/out.log
+    artifacts_dir: error/execute/logs/remove

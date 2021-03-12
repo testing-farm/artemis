@@ -1,0 +1,4 @@
+---
+status_code: 500
+# note: response is not important in this test ...
+response: 404.json

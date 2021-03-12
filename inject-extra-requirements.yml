@@ -1,0 +1,104 @@
+---
+
+#
+# There's is *no* way around it - some modules have extra requirements, like Python packages that
+# are not available for pip, or system libraries that must be injected into the virtualenv. For
+# distribution, we expect moduleinfos to solve this, providing necessary tasks to solve such
+# situations when building RPMs or Docker images. In developer's environment, we have this playbook.
+# It's up to the developers to keep it in sync with corresponding moduleinfos.
+#
+
+- hosts: 127.0.0.1
+  connection: local
+
+  vars:
+    pycurl_ssl_library: "nss"
+    citool_installation_method: "develop"
+
+  tasks:
+    #
+    # Check whether installation runs inside an active virtualenv
+    #
+    - name: "Find virtualenv path"
+      set_fact:
+        virtualenv_path: "{{ lookup('env', 'VIRTUAL_ENV') }}"
+
+    - fail:
+        msg: "This playbook must run inside a virtual environment!"
+      when: virtualenv_path == ""
+
+    - debug:
+        msg: "Running inside virtualenv '{{ virtualenv_path }}'"
+
+    #
+    # Check whether installation uses non-virtualenv ansible
+    #
+    - fail:
+        msg: "This playbook must be run using system Ansible (/usr/bin/ansible-playbook or similar)!"
+      when: ansible_playbook_python is not defined or not (ansible_playbook_python | regex_search("^/usr/bin/python.*$"))
+
+    #
+    # Check necessary system packages
+    #
+    - name: "Check whether cURL development pieces are available"
+      stat:
+        path: "/usr/bin/curl-config"
+      register: libcurl_devel_present
+
+    - fail:
+        msg: "Install package providing cURL development tools (e.g. libcurl-devel or similar)"
+      when: libcurl_devel_present.stat.isreg is not defined or not libcurl_devel_present.stat.isreg
+
+    - name: "Check whether libxml2 development pieces are available"
+      stat:
+        path: "/usr/bin/xml2-config"
+      register: libxml2_devel_present
+
+    - fail:
+        msg: "Install package providing libXML2 development tools (e.g. libxml2-devel or similar)"
+      when: libxml2_devel_present.stat.isreg is not defined or not libxml2_devel_present.stat.isreg
+
+    - name: "Check whether OpenSSL development pieces are available"
+      stat:
+        path: "/usr/include/openssl/ssl.h"
+      register: openssl_devel_present
+
+    - fail:
+        msg: "Install package providing OpenSSL development tools (e.g. openssl-devel, compat-openssl10-devel or similar)"
+      when: openssl_devel_present.stat.isreg is not defined or not openssl_devel_present.stat.isreg
+
+    - name: "Make sure that autoconf, automake and libtool are installed"
+      shell: "rpm -q {{ item }}"
+      with_items:
+      - autoconf
+      - automake
+      - libtool
+
+    #
+    # Modify `activate` script to set additional variables
+    #
+    - name: "Detect libcurl dependecies library"
+      # not that on RHEL8/Centos8 package installed is libcurl-minimal
+      command: rpm -qaR libcurl*
+      args:
+        warn: false
+      register: libcurl_deps
+
+    - name: "Set pycurl_ssl_library to openssl if libcurl compiled against libssl.so"
+      set_fact:
+        pycurl_ssl_library: "openssl"
+      when: libcurl_deps.stdout.find("OPENSSL_") != -1
+
+    - name: "Force PycURL to use chosen library: '{{ pycurl_ssl_library }}'"
+      lineinfile:
+        dest: "{{ virtualenv_path }}/bin/activate"
+        state: present
+        insertafter: EOF
+        regexp: '^export PYCURL_SSL_LIBRARY=.*$'
+        line: 'export PYCURL_SSL_LIBRARY={{ pycurl_ssl_library }}'
+
+    - name: "Reinstall pycurl with correct backend"
+      shell: |
+        pycurl=$(pip list --format=freeze | grep pycurl)
+        pip uninstall -y pycurl
+        PYCURL_SSL_LIBRARY={{ pycurl_ssl_library }} pip install --no-cache-dir $pycurl
