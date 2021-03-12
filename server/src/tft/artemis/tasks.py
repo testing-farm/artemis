@@ -1622,7 +1622,8 @@ def is_provisioning_tail_task(actor: Actor) -> bool:
     """
 
     return actor.actor_name in (
-        guest_request_prepare_finalize.actor_name,
+        guest_request_prepare_finalize_pre_connect.actor_name,
+        guest_request_prepare_finalize_post_connect.actor_name,
         prepare_verify_ssh.actor_name,
         acquire_guest_request.actor_name,
         update_guest_request.actor_name,
@@ -1740,7 +1741,19 @@ def handle_provisioning_chain_tail(
         )
 
     # for post-acquire prepare chain final task, revert to ROUTING
-    elif actor.actor_name == guest_request_prepare_finalize.actor_name:
+    elif actor.actor_name == guest_request_prepare_finalize_pre_connect.actor_name:
+        r = do_handle_provisioning_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            GuestState.PREPARING,
+            GuestState.ROUTING
+        )
+
+    # for post-acquire prepare chain final task, revert to ROUTING
+    elif actor.actor_name == guest_request_prepare_finalize_post_connect.actor_name:
         r = do_handle_provisioning_chain_tail(
             logger,
             db,
@@ -1863,7 +1876,7 @@ def prepare_verify_ssh(guestname: str) -> None:
     )
 
 
-def do_guest_request_prepare_finalize(
+def do_guest_request_prepare_finalize_pre_connect(
     logger: gluetool.log.ContextAdapter,
     db: DB,
     session: sqlalchemy.orm.session.Session,
@@ -1874,10 +1887,50 @@ def do_guest_request_prepare_finalize(
         logger,
         session,
         guestname=guestname,
-        task='prepare-finalize'
+        task='prepare-finalize-pre-connect'
     )
 
     handle_success('enter-task')
+
+    logger.info('pre-connect preparation steps complete')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, state=GuestState.PREPARING)
+
+    dispatch_preparing_post_connect(logger, workspace)
+
+    if workspace.result:
+        return workspace.result
+
+    return handle_success('finished-task')
+
+
+@dramatiq.actor(**actor_kwargs('GUEST_REQUEST_PREPARE_FINALIZE_PRE_CONNECT'))  # type: ignore  # Untyped decorator
+def guest_request_prepare_finalize_pre_connect(guestname: str) -> None:
+    task_core(  # type: ignore  # Argument 1 has incompatible type
+        do_guest_request_prepare_finalize_pre_connect,
+        logger=get_guest_logger('guest-request-prepare-finalize-pre-connect', _ROOT_LOGGER, guestname),
+        doer_args=(guestname,)
+    )
+
+
+def do_guest_request_prepare_finalize_post_connect(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='prepare-finalize-post-connect'
+    )
+
+    handle_success('enter-task')
+
+    logger.info('post-connect preparation steps complete')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
@@ -1912,21 +1965,23 @@ def do_guest_request_prepare_finalize(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('GUEST_REQUEST_PREPARE_FINALIZE'))  # type: ignore  # Untyped decorator
-def guest_request_prepare_finalize(guestname: str) -> None:
+@dramatiq.actor(**actor_kwargs('GUEST_REQUEST_PREPARE_FINALIZE_POST_CONNECT'))  # type: ignore  # Untyped decorator
+def guest_request_prepare_finalize_post_connect(guestname: str) -> None:
     task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_guest_request_prepare_finalize,
-        logger=get_guest_logger('guest-request-prepare-finalize', _ROOT_LOGGER, guestname),
+        do_guest_request_prepare_finalize_post_connect,
+        logger=get_guest_logger('guest-request-prepare-finalize-post-connect', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
 
 
-def dispatch_preparing(
+def dispatch_preparing_pre_connect(
     logger: gluetool.log.ContextAdapter,
     workspace: Workspace,
 ) -> None:
     """
     Helper for dispatching post-acquire chain of tasks.
+
+    Tier 1: verify the basic accessibility of the guest.
     """
 
     workspace.dispatch_group(
@@ -1934,9 +1989,31 @@ def dispatch_preparing(
             prepare_verify_ssh
         ],
         workspace.guestname,
-        on_complete=guest_request_prepare_finalize,
+        on_complete=guest_request_prepare_finalize_pre_connect,
         delay=KNOB_DISPATCH_PREPARE_DELAY.value
     )
+
+
+def dispatch_preparing_post_connect(
+    logger: gluetool.log.ContextAdapter,
+    workspace: Workspace,
+) -> None:
+    """
+    Helper for dispatching post-acquire chain of tasks.
+
+    Tier 2: additional preparation possible once we established it is possible to access the guest.
+    """
+
+    # At this moment, there is no post-connect task - but there will be! - so we schedule the post-connect
+    # finalization right away.
+    workspace.dispatch_task(guest_request_prepare_finalize_post_connect, workspace.guestname)
+
+    # workspace.dispatch_group(
+    #     [
+    #     ],
+    #     workspace.guestname,
+    #     on_complete=guest_request_prepare_finalize_post_connect
+    # )
 
 
 def do_release_guest_request(
@@ -2120,7 +2197,7 @@ def do_update_guest_request(
 
     logger.info('successfully acquired')
 
-    dispatch_preparing(logger, workspace)
+    dispatch_preparing_pre_connect(logger, workspace)
 
     if workspace.result:
         _undo_guest_update()
@@ -2260,7 +2337,7 @@ def do_acquire_guest_request(
 
     logger.info('successfully acquired')
 
-    dispatch_preparing(logger, workspace)
+    dispatch_preparing_pre_connect(logger, workspace)
 
     if workspace.result:
         _undo_guest_acquire()
