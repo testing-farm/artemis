@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import dataclasses
 import datetime
+import enum
 import json
 import os
 import re
@@ -105,14 +106,29 @@ class PoolData:
         return cls(**json.loads(guest_request.pool_data))  # type: ignore
 
 
+class ProvisioningState(enum.Enum):
+    """
+    State of the provisioning. Used by drivers to notify the core workflow about the progress.
+    """
+
+    #: Provisioning is still incomplete, yet progressing without issues.
+    PENDING = 'pending'
+
+    #: Provisioning is complete.
+    COMPLETE = 'complete'
+
+    #: For some driver-specirfic reasons, the provisioning should be cancelled.
+    CANCEL = 'cancel'
+
+
 @dataclasses.dataclass
 class ProvisioningProgress:
     """
     Container for reporting provisioning progress by drivers.
     """
 
-    #: Whether the provisioning is complete.
-    is_acquired: bool
+    #: State of the provisioning.
+    state: ProvisioningState
 
     #: Pool-specific data drivers wishes to store for the guest request in question.
     pool_data: PoolData

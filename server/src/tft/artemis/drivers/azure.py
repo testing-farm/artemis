@@ -10,8 +10,8 @@ from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, create_tempfile, \
-    run_cli_tool, vm_info_to_ip
+from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
+    create_tempfile, run_cli_tool, vm_info_to_ip
 
 #: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
@@ -143,22 +143,11 @@ class AzureDriver(PoolDriver):
         ))
 
         if status == 'failed':
-            logger.warning('Instance ended up in failed state')
-
-            r_acquire = self._do_acquire_guest(logger, session, guest_request, environment, master_key)
-
-            if r_acquire.is_ok:
-                logger.info('successfully reprovisioned, releasing the broken instance')
-
-                r_acquire.unwrap().pool_failures.append(Failure('instance status dropped to "failed"'))
-
-                # We can schedule release only when acquire succeeded. Only successfull acquire
-                # let's us update guest request pool data with new instance ID. If acquire failed,
-                # we keep our broken instance, and enter update guest task later, trying again
-                # to either update or reschedule and drop the failed one.
-                self.release_guest(logger, guest_request)
-
-            return r_acquire
+            return Ok(ProvisioningProgress(
+                state=ProvisioningState.CANCEL,
+                pool_data=AzurePoolData.unserialize(guest_request),
+                pool_failures=[Failure('instance ended up in "failed" state')]
+            ))
 
         r_ip_address = vm_info_to_ip(output, 'publicIps', r'((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*')
 
@@ -166,7 +155,7 @@ class AzureDriver(PoolDriver):
             return Error(r_ip_address.unwrap_error())
 
         return Ok(ProvisioningProgress(
-            is_acquired=True,
+            state=ProvisioningState.COMPLETE,
             pool_data=AzurePoolData.unserialize(guest_request),
             address=r_ip_address.unwrap()
         ))
@@ -481,7 +470,7 @@ class AzureDriver(PoolDriver):
 
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
-            is_acquired=False,
+            state=ProvisioningState.PENDING,
             pool_data=AzurePoolData(
                 instance_id=output['id'],
                 instance_name=tags['ArtemisGuestLabel'],

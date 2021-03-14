@@ -20,7 +20,7 @@ from typing_extensions import Protocol
 from . import DATABASE, LOGGER, SESSION, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
     log_guest_event, metrics, safe_call, safe_db_change
 from .db import DB, GuestEvent, GuestRequest, Pool, Query, SnapshotRequest, SSHKey
-from .drivers import PoolData, PoolDriver, PoolLogger
+from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver
 from .drivers import beaker as beaker_driver
@@ -2064,7 +2064,7 @@ def do_update_guest_request(
     for failure in provisioning_progress.pool_failures:
         handle_failure(Error(failure), 'pool encountered failure during update')
 
-    if not provisioning_progress.is_acquired:
+    if provisioning_progress.state == ProvisioningState.PENDING:
         workspace.update_guest_state(
             GuestState.PROMISED,
             current_state=GuestState.PROMISED,
@@ -2084,6 +2084,19 @@ def do_update_guest_request(
         logger.info('scheduled update')
 
         return handle_success('finished-task')
+
+    elif provisioning_progress.state == ProvisioningState.CANCEL:
+        logger.info('provisioning cancelled')
+
+        workspace.pool.release_guest(logger, workspace.gr)
+
+        if workspace.result:
+            return workspace.result
+
+        if handle_provisioning_chain_tail(logger, db, session, workspace.gr.guestname, update_guest_request):
+            return handle_success('finished-task')
+
+        return RESCHEDULE
 
     assert provisioning_progress.address
 
@@ -2190,7 +2203,7 @@ def do_acquire_guest_request(
     # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
     # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
     # save guest's address. In both cases, we must be sure nobody else did any changes before us.
-    if not provisioning_progress.is_acquired:
+    if provisioning_progress.state == ProvisioningState.PENDING:
         workspace.update_guest_state(
             GuestState.PROMISED,
             current_state=GuestState.PROVISIONING,
@@ -2209,6 +2222,19 @@ def do_acquire_guest_request(
         logger.info('scheduled update')
 
         return handle_success('finished-task')
+
+    elif provisioning_progress.state == ProvisioningState.CANCEL:
+        logger.info('provisioning cancelled')
+
+        workspace.pool.release_guest(logger, workspace.gr)
+
+        if workspace.result:
+            return workspace.result
+
+        if handle_provisioning_chain_tail(logger, db, session, workspace.gr.guestname, acquire_guest_request):
+            return handle_success('finished-task')
+
+        return RESCHEDULE
 
     assert provisioning_progress.address
 
@@ -2572,7 +2598,7 @@ def do_update_snapshot(
 
         handle_failure(r, 'failed to undo guest update')
 
-    if not provisioning_progress.is_acquired:
+    if provisioning_progress.state == ProvisioningState.PENDING:
         workspace.update_snapshot_state(
             GuestState.PROMISED,
             GuestState.PROMISED,
@@ -2689,7 +2715,7 @@ def do_create_snapshot_create(
 
         handle_failure(r, 'failed to undo snapshot create')
 
-    if not provisioning_progress.is_acquired:
+    if provisioning_progress.state == ProvisioningState.PENDING:
         workspace.update_snapshot_state(
             GuestState.CREATING,
             GuestState.PROMISED,

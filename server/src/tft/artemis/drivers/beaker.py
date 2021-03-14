@@ -16,8 +16,8 @@ from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, create_tempfile, \
-    run_cli_tool
+from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
+    create_tempfile, run_cli_tool
 
 NodeRefType = Any
 
@@ -411,14 +411,14 @@ class BeakerDriver(PoolDriver):
                 return Error(r_guest_address.unwrap_error())
 
             return Ok(ProvisioningProgress(
-                is_acquired=True,
+                state=ProvisioningState.COMPLETE,
                 pool_data=BeakerPoolData.unserialize(guest_request),
                 address=r_guest_address.unwrap()
             ))
 
         if job_status.lower() == 'new':
             return Ok(ProvisioningProgress(
-                is_acquired=False,
+                state=ProvisioningState.PENDING,
                 pool_data=BeakerPoolData.unserialize(guest_request),
                 delay_update=KNOB_UPDATE_TICK.value
             ))
@@ -434,7 +434,7 @@ class BeakerDriver(PoolDriver):
                 return Error(r_reschedule_job.unwrap_error())
 
             return Ok(ProvisioningProgress(
-                is_acquired=False,
+                state=ProvisioningState.PENDING,
                 pool_data=BeakerPoolData(job_id=r_reschedule_job.unwrap()),
                 delay_update=KNOB_UPDATE_TICK.value
             ))
@@ -490,7 +490,7 @@ class BeakerDriver(PoolDriver):
         # we can't use a thread for so large amount of time.
 
         return Ok(ProvisioningProgress(
-            is_acquired=False,
+            state=ProvisioningState.PENDING,
             pool_data=BeakerPoolData(job_id=r_create_job.unwrap()),
             delay_update=KNOB_UPDATE_TICK.value
         ))

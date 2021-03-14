@@ -18,7 +18,7 @@ from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
 from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, \
-    run_cli_tool
+    ProvisioningState, run_cli_tool
 
 #
 # Custom typing types
@@ -511,7 +511,7 @@ class AWSDriver(PoolDriver):
 
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
-            is_acquired=False,
+            state=ProvisioningState.PENDING,
             pool_data=AWSPoolData(instance_id=instance_id, spot_instance_id=spot_instance_id),
             delay_update=KNOB_UPDATE_TICK.value
         ))
@@ -542,31 +542,15 @@ class AWSDriver(PoolDriver):
             status
         ))
 
-        def _reprovision(msg: str) -> Result[ProvisioningProgress, Failure]:
-            logger.warning(msg)
-
-            r_acquire = self._do_acquire_guest(logger, session, guest_request, environment, master_key)
-
-            if r_acquire.is_ok:
-                logger.info('successfully reprovisioned, releasing the broken instance')
-
-                # We can schedule release only when acquire succeeded. Only successfull acquire
-                # let's us update guest request pool data with new instance ID. If acquire failed,
-                # we keep our broken instance, and enter update guest task later, trying again
-                # to either update or reschedule and drop the failed one.
-                self._dispatch_resource_cleanup(
-                    logger,
-                    instance_id=pool_data.instance_id,
-                    guest_request=guest_request
-                )
-
-            return r_acquire
-
         # EC2 instance lifecycle documentation
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
 
         if status == 'terminated' or status == 'shutting-down':
-            return _reprovision('Instance terminated prematurely, provisioning a new one')
+            return Ok(ProvisioningProgress(
+                state=ProvisioningState.CANCEL,
+                pool_data=AWSPoolData.unserialize(guest_request),
+                pool_failures=[Failure('instance terminated prematurely')]
+            ))
 
         if status == 'pending':
             try:
@@ -583,10 +567,14 @@ class AWSDriver(PoolDriver):
                 diff = datetime.utcnow() - created_stamp
 
                 if diff.total_seconds() > KNOB_PENDING_TIMEOUT.value:
-                    return _reprovision("instance stuck in 'pending' state for {}, provisioning a new one".format(diff))
+                    return Ok(ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=AWSPoolData.unserialize(guest_request),
+                        pool_failures=[Failure('instance stuck in "pending" for too long')]
+                    ))
 
             return Ok(ProvisioningProgress(
-                is_acquired=False,
+                state=ProvisioningState.PENDING,
                 pool_data=pool_data,
                 delay_update=KNOB_UPDATE_TICK.value
             ))
@@ -600,7 +588,7 @@ class AWSDriver(PoolDriver):
         })
 
         return Ok(ProvisioningProgress(
-            is_acquired=True,
+            state=ProvisioningState.COMPLETE,
             pool_data=pool_data,
             address=instance['PrivateIpAddress']
         ))

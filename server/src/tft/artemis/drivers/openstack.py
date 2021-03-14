@@ -13,8 +13,8 @@ from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, create_tempfile, \
-    run_cli_tool
+from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
+    create_tempfile, run_cli_tool
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
@@ -378,7 +378,7 @@ class OpenStackDriver(PoolDriver):
 
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
-            is_acquired=False,
+            state=ProvisioningState.PENDING,
             pool_data=OpenStackPoolData(instance_id=instance_id),
             delay_update=KNOB_UPDATE_TICK.value
         ))
@@ -479,7 +479,7 @@ class OpenStackDriver(PoolDriver):
             return Error(r_output.value)
 
         return Ok(ProvisioningProgress(
-            is_acquired=False,
+            state=ProvisioningState.PENDING,
             pool_data=OpenStackPoolData.unserialize(guest_request),
             delay_update=KNOB_UPDATE_TICK.value
         ))
@@ -506,13 +506,13 @@ class OpenStackDriver(PoolDriver):
 
         if status != 'active':
             return Ok(ProvisioningProgress(
-                is_acquired=False,
+                state=ProvisioningState.PENDING,
                 pool_data=OpenStackPoolData.unserialize(guest_request),
                 delay_update=KNOB_UPDATE_TICK.value
             ))
 
         return Ok(ProvisioningProgress(
-            is_acquired=True,
+            state=ProvisioningState.COMPLETE,
             pool_data=OpenStackPoolData.unserialize(guest_request)
         ))
 
@@ -604,30 +604,12 @@ class OpenStackDriver(PoolDriver):
             status
         ))
 
-        def _reprovision(msg: str) -> Result[ProvisioningProgress, Failure]:
-            logger.warning(msg)
-
-            r_acquire = self._do_acquire_guest(logger, session, guest_request, environment, master_key)
-
-            if r_acquire.is_ok:
-                logger.info('successfully reprovisioned, releasing the broken instance')
-
-                r_acquire.unwrap().pool_failures.append(Failure(msg))
-
-                # We can schedule release only when acquire succeeded. Only successfull acquire
-                # let's us update guest request pool data with new instance ID. If acquire failed,
-                # we keep our broken instance, and enter update guest task later, trying again
-                # to either update or reschedule and drop the failed one.
-                self._dispatch_resource_cleanup(
-                    logger,
-                    instance_id=OpenStackPoolData.unserialize(guest_request).instance_id,
-                    guest_request=guest_request
-                )
-
-            return r_acquire
-
         if status == 'error':
-            return _reprovision('instance ended up in "ERROR" state')
+            return Ok(ProvisioningProgress(
+                state=ProvisioningState.CANCEL,
+                pool_data=OpenStackPoolData.unserialize(guest_request),
+                pool_failures=[Failure('instance ended up in "ERROR" state')]
+            ))
 
         if status == 'build' and 'created' in output:
             try:
@@ -644,10 +626,14 @@ class OpenStackDriver(PoolDriver):
                 diff = datetime.utcnow() - created_stamp
 
                 if diff.total_seconds() > KNOB_BUILD_TIMEOUT.value:
-                    return _reprovision('instance stuck in "BUILD" for too long')
+                    return Ok(ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=OpenStackPoolData.unserialize(guest_request),
+                        pool_failures=[Failure('instance stuck in "BUILD" for too long')]
+                    ))
 
             return Ok(ProvisioningProgress(
-                is_acquired=False,
+                state=ProvisioningState.PENDING,
                 pool_data=OpenStackPoolData.unserialize(guest_request),
                 delay_update=KNOB_UPDATE_TICK.value
             ))
@@ -659,7 +645,7 @@ class OpenStackDriver(PoolDriver):
         ip_address = r_ip_address.unwrap()
 
         return Ok(ProvisioningProgress(
-            is_acquired=True,
+            state=ProvisioningState.COMPLETE,
             pool_data=OpenStackPoolData.unserialize(guest_request),
             address=ip_address
         ))
