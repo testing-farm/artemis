@@ -6,7 +6,7 @@ stages:
   - deploy
 
 # Use our custom image. See https://gitlab.com/testing-farm/images/-/tree/master/python-ci-image
-image: "quay.io/testing-farm/python-ci-image:fedora-based-image"
+image: "quay.io/testing-farm/python-ci-image"
 
 #
 # Some of the jobs require locale to be set, some fail with is. Those which need it can inherit this section.
