@@ -192,35 +192,20 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         imagename: str
     ) -> Result[PoolImageInfoType, Failure]:
-        r_images = self._aws_command(['ec2', 'describe-images', '--owner=self'], key='Images')
+        r_ii = self.get_pool_image_info(imagename)
 
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
+        if r_ii.is_error:
+            return Error(r_ii.unwrap_error())
 
-        images = r_images.unwrap()
+        ii = r_ii.unwrap()
 
-        suitable_images = [image for image in images if image['Name'] == imagename]
-
-        if not suitable_images:
+        if ii is None:
             return Error(Failure(
                 'cannot find image by name',
-                imagename=imagename,
-                available_images=[image['Name'] for image in images]
+                imagename=imagename
             ))
 
-        try:
-            return Ok(PoolImageInfoType(
-                name=imagename,
-                id=suitable_images[0]['ImageId']
-            ))
-
-        except KeyError as exc:
-            return Error(Failure.from_exc(
-                'malformed image description',
-                exc,
-                imagename=imagename,
-                image_info=suitable_images[0]
-            ))
+        return Ok(ii)
 
     def _env_to_instance_type(self, environment: Environment) -> Result[Any, Failure]:
         # TODO: in the future we will here translate the environment into an instance type
@@ -767,3 +752,22 @@ class AWSDriver(PoolDriver):
             return Error(r_cleanup.unwrap_error())
 
         return Ok(True)
+
+    def fetch_pool_image_info(self) -> Result[List[PoolImageInfoType], Failure]:
+        r_images = self._aws_command(['ec2', 'describe-images', '--owner=self'], key='Images')
+
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
+
+        try:
+            return Ok([
+                PoolImageInfoType(name=image['Name'], id=image['ImageId'])
+                for image in r_images.unwrap()
+            ])
+
+        except KeyError as exc:
+            return Error(Failure.from_exc(
+                'malformed image description',
+                exc,
+                image_info=r_images.unwrap()
+            ))
