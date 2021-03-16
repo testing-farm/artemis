@@ -5,6 +5,7 @@ import collections
 import re
 import six
 import sys
+import os
 
 import gluetool
 import gluetool_modules.libs
@@ -18,7 +19,7 @@ from gluetool_modules.libs.guest import NetworkedGuest
 
 from gluetool_modules.libs.testing_environment import TestingEnvironment
 
-from typing import Any, Dict, List, Optional, Tuple, cast  # noqa
+from typing import Any, Dict, List, Optional, Tuple, cast, Union  # noqa
 
 DEFAULT_PRIORIY_GROUP = 'default-priority'
 DEFAULT_READY_TIMEOUT = 300
@@ -99,7 +100,10 @@ class ArtemisAPI(object):
         self.check_if_artemis()
 
     def api_call(self, endpoint, method='GET', expected_status_code=200, data=None):
-        # type: (str, str, int, Optional[Dict[str, Any]]) -> Any
+        # type: (str, str, Union[int, List[int]], Optional[Dict[str, Any]]) -> Any
+
+        if not isinstance(expected_status_code, list):
+            expected_status_code = [expected_status_code]
 
         def _api_call():
             # type: () -> Result[Any, str]
@@ -120,7 +124,8 @@ class ArtemisAPI(object):
                     return Result.Error('Connecton aborted: {}'.format(error_string))
                 six.reraise(*sys.exc_info())
 
-            if response.status_code == expected_status_code:
+            assert isinstance(expected_status_code, list)
+            if response.status_code in expected_status_code:
                 return Result.Ok(response)
 
             return Result.Error('Artemis API error: {}'.format(ArtemisAPIError(response)))
@@ -245,7 +250,7 @@ class ArtemisAPI(object):
         :returns: Artemis API response or ``None`` in case of failure.
         '''
 
-        return self.api_call('guests/{}'.format(guest_id), method='DELETE', expected_status_code=204)
+        return self.api_call('guests/{}'.format(guest_id), method='DELETE', expected_status_code=[200, 204])
 
     def create_snapshot(self, guest_id, start_again=True):
         # type: (str, bool) -> Any
@@ -318,7 +323,7 @@ class ArtemisAPI(object):
 
         return self.api_call('guests/{}/snapshots/{}'.format(guest_id, snapshot_id),
                              method='DELETE',
-                             expected_status_code=204)
+                             expected_status_code=[200, 204])
 
 
 class ArtemisSnapshot(LoggerMixin):
@@ -642,6 +647,9 @@ class ArtemisProvisioner(gluetool.Module):
                 'metavar': 'POOL',
                 'type': str
             },
+            'playbook': {
+                'help': 'Ansible playbook to run after the guest became ready, before alive checks.',
+            },
             'setup-provisioned': {
                 'help': "Setup guests after provisioning them. See 'guest-setup' module",
                 'action': 'store_true'
@@ -762,7 +770,7 @@ class ArtemisProvisioner(gluetool.Module):
         '''
 
         return ProvisionerCapabilities(
-            available_arches=gluetool_modules.libs.ANY
+            available_arches=['x86_64', 'ppc64le', 's390x', 'aarch64']
         )
 
     def provision_guest(self,
@@ -822,6 +830,38 @@ class ArtemisProvisioner(gluetool.Module):
             response = self.api.inspect_guest(guest.artemis_id)
             guest.hostname = response['address']
             guest.info("Guest is ready: {}".format(guest))
+
+            if self.option('playbook'):
+                self.require_shared('run_playbook')
+
+                env_variables = os.environ.copy()
+                env_variables.update({'ANSIBLE_SSH_RETRIES': '60'})
+
+                self.shared(
+                    'run_playbook',
+                    gluetool.utils.normalize_path(self.option('playbook')),
+                    guest,
+                    env=env_variables,
+                    variables={
+                        'IMAGE_NAME': environment.compose
+                    }
+                )
+
+            if self.option('playbook'):
+                self.require_shared('run_playbook')
+
+                env_variables = os.environ.copy()
+                env_variables.update({'ANSIBLE_SSH_RETRIES': '60'})
+
+                self.shared(
+                    'run_playbook',
+                    gluetool.utils.normalize_path(self.option('playbook')),
+                    guest,
+                    env=env_variables,
+                    variables={
+                        'IMAGE_NAME': environment.compose
+                    }
+                )
 
             guest._wait_alive(self.option('activation-timeout'), self.option('activation-tick'),
                               self.option('echo-timeout'), self.option('echo-tick'),

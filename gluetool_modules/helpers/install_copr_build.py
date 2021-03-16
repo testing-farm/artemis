@@ -13,6 +13,9 @@ from gluetool_modules.libs.sut_installation import SUTInstallation
 from typing import Any, List, Optional  # noqa
 from gluetool_modules.libs.guest import Guest
 
+# accepted artifact types from testing farm request
+TESTING_FARM_ARTIFACT_TYPES = ['fedora-copr-build']
+
 
 class InstallCoprBuild(gluetool.Module):
     """
@@ -32,10 +35,12 @@ class InstallCoprBuild(gluetool.Module):
 
     shared_functions = ('setup_guest',)
 
+    def __init__(self, *args, **kwargs):
+        super(InstallCoprBuild, self).__init__(*args, **kwargs)
+        self.request_builds = []
+
     def setup_guest(self, guest, stage=GuestSetupStage.PRE_ARTIFACT_INSTALLATION, log_dirpath=None, **kwargs):
         # type: (Guest, Optional[str], **Any) -> SetupGuestReturnType
-
-        self.require_shared('primary_task')
 
         log_dirpath = guest_setup_log_dirpath(guest, log_dirpath)
 
@@ -56,6 +61,15 @@ class InstallCoprBuild(gluetool.Module):
         if stage != GuestSetupStage.ARTIFACT_INSTALLATION:
             return r_overloaded_guest_setup_output
 
+        if self.request_builds:
+            primary_task = self.request_builds[0]
+        else:
+            primary_task = self.shared('primary_task')
+
+        # no artifact to install
+        if not primary_task:
+            return r_overloaded_guest_setup_output
+
         guest_setup_output = r_overloaded_guest_setup_output.unwrap() or []
 
         installation_log_dirpath = os.path.join(
@@ -63,11 +77,9 @@ class InstallCoprBuild(gluetool.Module):
             '{}-{}'.format(self.option('log-dir-name'), guest.name)
         )
 
-        primary_task = self.shared('primary_task')
-
         sut_installation = SUTInstallation(self, installation_log_dirpath, primary_task, logger=guest.logger)
 
-        sut_installation.add_step('Download copr repository', 'curl -v {} --output /etc/yum.repos.d/copr_build.repo',
+        sut_installation.add_step('Download copr repository', 'curl {} --output /etc/yum.repos.d/copr_build.repo',
                                   items=primary_task.repo_url)
 
         # reinstall command has to be called for each rpm separately, hence list of rpms is used
@@ -107,3 +119,24 @@ class InstallCoprBuild(gluetool.Module):
             ))
 
         return Ok(guest_setup_output)
+
+    def execute(self):
+        # we definitely need these shared functions available for the module to function
+        self.require_shared('primary_task', 'tasks')
+
+        # if no testing farm request, nothing to initialize from
+        if not self.has_shared('testing_farm_request'):
+            return
+
+        # extract ids from the request
+        self.request = self.shared('testing_farm_request')
+
+        if not self.request.environments_requested[0]['artifacts']:
+            return
+
+        artifact_ids = [
+            artifact['id'] for artifact in self.request.environments_requested[0]['artifacts']
+            if artifact['type'] in TESTING_FARM_ARTIFACT_TYPES
+        ]
+
+        self.request_builds = self.shared('tasks', task_ids=artifact_ids)

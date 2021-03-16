@@ -180,10 +180,12 @@ class DistGit(gluetool.Module):
     Module provides details of a dist-git repository. The repository is made available via the shared
     function ``dist_git_repository``, which returns an instance of py:class:`DistGitRepository` class.
 
-    The module supports currently one method for resolving the dist-git repository details:
+    The module supports currently these methods for resolving the dist-git repository details:
 
     * ``artifact``: Resolve dist-git repository for the primary artifact in the pipeline. If some of the options
                     ``branch``, ``ref``, ``web-url`` or ``clone-url`` are specified they override the resolved values.
+
+    * ``force``: Resolved dist-git repository from given parameters, primary artifact is not required in the pipeline.
 
     The shared function ``dist_git_bugs`` finds all the bugs mentioned in commit logs from a previous version
     of the package. The previous version of the package is provided via primary task's ``baseline`` property. See
@@ -205,7 +207,7 @@ class DistGit(gluetool.Module):
         ('General options', {
             'method': {
                 'help': 'What method to use for resolving dist-git repository (default: %(default)s).',
-                'choices': ('artifact',),
+                'choices': ('artifact', 'request', 'force'),
                 'default': 'artifact'
             },
         }),
@@ -248,7 +250,7 @@ class DistGit(gluetool.Module):
             }
         }),
         ("Options related to discovering bugs from commit logs", {
-            'regex-bugzilla': {
+            'ex-bugzilla': {
                 'help': 'Regular expression for matching bugzilla in commit logs'
             },
             'regex-resolves': {
@@ -302,6 +304,12 @@ class DistGit(gluetool.Module):
 
         return self.option('branch') or self.branch_map.match(task.target)
 
+    def _force_branch(self, *args):
+        return self.option('branch')
+
+    def _request_branch(self, *args):
+        return None
+
     def _artifact_ref(self, task):
         # if branch is specified, we cannot use also ref, conflict of both checked in sanity
         if self.option('branch'):
@@ -309,8 +317,23 @@ class DistGit(gluetool.Module):
 
         return self.option('ref') or task.distgit_ref
 
+    def _force_ref(self, *args):
+        return self.option('ref')
+
+    def _request_ref(self, request):
+        return request.ref
+
     def _artifact_clone_url(self, task):
         return self.option('clone-url') or self.clone_url_map.match(task.ARTIFACT_NAMESPACE)
+
+    def _force_clone_url(self, *args):
+        return self.option('clone-url')
+
+    def _request_clone_url(self, request):
+        return request.url
+
+    def _request_clone_args(self, request):
+        return normalize_shell_option(self.option('clone-args'))
 
     def _artifact_web_url(self, task):
         return self.option('web-url') or self.web_url_map.match(task.ARTIFACT_NAMESPACE)
@@ -318,24 +341,39 @@ class DistGit(gluetool.Module):
     def _artifact_clone_args(self, task):
         return normalize_shell_option(self.option('clone-args'))
 
+    def _force_web_url(self, *args):
+        return self.option('web-url')
+
+    def _request_web_url(self, *args):
+        return None
+
     _methods_branch = {
         'artifact': _artifact_branch,
+        'force': _force_branch,
+        'request': _request_branch
     }
 
     _methods_ref = {
         'artifact': _artifact_ref,
+        'force': _force_ref,
+        'request': _request_ref
     }
 
     _methods_clone_url = {
         'artifact': _artifact_clone_url,
+        'force': _force_clone_url,
+        'request': _request_clone_url
     }
 
     _methods_web_url = {
         'artifact': _artifact_web_url,
+        'force': _force_web_url,
+        'request': _request_web_url
     }
 
     _methods_clone_args = {
         'artifact': _artifact_clone_args,
+        'request': _request_clone_args
     }
 
     def sanity(self):
@@ -345,8 +383,11 @@ class DistGit(gluetool.Module):
             ('web-url-map', 'web-url')
         ]
 
-        if not all([self.option(option[0]) or self.option(option[1]) for option in required_options]):
-            raise IncompatibleOptionsError("missing required options for method 'artifact'")
+        method = self.option('method')
+
+        if method == 'artifact':
+            if not all([self.option(option[0]) or self.option(option[1]) for option in required_options]):
+                raise IncompatibleOptionsError("missing required options for method 'artifact'")
 
         if self.option('ref') and self.option('branch'):
             raise IncompatibleOptionsError("You can use only one of 'ref' or 'branch'")
@@ -390,7 +431,7 @@ class DistGit(gluetool.Module):
 
         getter = getattr(self, '_methods_{}'.format(name))[self.option('method')]
 
-        value = getter(self, self.shared('primary_task'))
+        value = getter(self, self.shared('primary_task') or self.shared('testing_farm_request'))
 
         if not value:
             if error_message:
@@ -450,12 +491,7 @@ class DistGit(gluetool.Module):
         return bugs
 
     def execute(self):
-        self.require_shared('primary_task')
-        task = self.shared('primary_task')
         path = normalize_path(self.option('git-repo-path')) if self.option('git-repo-path') else None
-
-        if not task:
-            raise gluetool.GlueError('No task available, cannot continue')
 
         # Gather repository parameters. Some of them may be missing - ref and branch - because we can
         # use defaults (like `HEAD` and `master`), some are required. Selects correct getter, based on
@@ -463,17 +499,30 @@ class DistGit(gluetool.Module):
         kwargs = {
             'clone_url': self._acquire_param('clone_url', error_message='Could not acquire dist-git clone URL'),
             'clone_args': self._acquire_param('clone_args'),
-            'web_url': self._acquire_param('web_url', error_message='Could not acquire dist-git web URL'),
+            'web_url': self._acquire_param('web_url'),
             'branch': self._acquire_param('branch'),
             'ref': self._acquire_param('ref'),
             'path': path
-
         }
 
-        self._repository = DistGitRepository(self.logger, task.component, **kwargs)
+        if self.option('method') == 'artifact':
+            self.require_shared('primary_task')
+            task = self.shared('primary_task')
+            if not task:
+                raise gluetool.GlueError('No task available, cannot continue')
+
+            self._repository = DistGitRepository(self.logger, task.component, **kwargs)
+
+        elif self.option('method') == 'request':
+            self.require_shared('testing_farm_request')
+
+            self._repository = DistGitRepository(self.logger, 'repository', **kwargs)
+ 
+        else:
+            self._repository = DistGitRepository(self.logger, 'repository', **kwargs)
 
         self.info("dist-git repository {}, branch {}, ref {}".format(
-            self._repository.web_url,
+            self._repository.web_url or self._repository.clone_url,
             self._repository.branch if self._repository.branch else 'not specified',
             self._repository.ref if self._repository.ref else 'not specified'
         ))

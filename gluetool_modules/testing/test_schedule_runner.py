@@ -168,7 +168,8 @@ class TestScheduleRunner(gluetool.Module):
 
             schedule_entry.guest_setup_outputs[stage] = results
 
-            schedule_entry.log_guest_setup_outputs(self, log_fn=schedule_entry.info)
+            if results:
+                schedule_entry.log_guest_setup_outputs(self, log_fn=schedule_entry.info)
 
             if not exc:
                 return

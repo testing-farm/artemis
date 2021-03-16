@@ -12,6 +12,7 @@ libatt.egg-info
 .eggs
 .cache
 .tox
+.mypy_cache
 
 # coverage data files
 **/.coverage*

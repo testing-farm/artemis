@@ -8,7 +8,7 @@ from gluetool import SoftGlueError
 from gluetool.log import log_dict
 from gluetool.result import Ok, Error
 from gluetool.utils import Result
-from gluetool_modules.libs.sentry import PrimaryTaskFingerprintsMixin
+from gluetool_modules.libs.sentry import ArtifactFingerprintsMixin
 from gluetool_modules.libs import run_and_log
 
 from jq import jq
@@ -35,18 +35,18 @@ StepCallbackType = Callable[[str, gluetool.utils.ProcessOutput], None]
 SUTStep = collections.namedtuple('SUTStep', ['label', 'command', 'items', 'ignore_exception', 'callback'])
 
 
-class SUTInstallationFailedError(PrimaryTaskFingerprintsMixin, SoftGlueError):
-    def __init__(self, task, guest, items=None, reason=None, installation_logs=None, installation_logs_location=None):
+class SUTInstallationFailedError(ArtifactFingerprintsMixin, SoftGlueError):
+    def __init__(self, artifact, guest, items=None, reason=None, installation_logs=None, installation_logs_location=None):
         # type: (Any, gluetool_modules.libs.guest.Guest, Any, Optional[str], Optional[str], Optional[str]) -> None
 
         if reason:
             super(SUTInstallationFailedError, self).__init__(
-                task,
+                artifact,
                 'Test environment installation failed: {}'.format(reason)
             )
         else:
             super(SUTInstallationFailedError, self).__init__(
-                task,
+                artifact,
                 'Test environment installation failed: reason unknown, please escalate'
             )
 
@@ -59,12 +59,12 @@ class SUTInstallationFailedError(PrimaryTaskFingerprintsMixin, SoftGlueError):
 
 class SUTInstallation(object):
 
-    def __init__(self, module, log_dirpath, primary_task, logger=None):
+    def __init__(self, module, log_dirpath, artifact, logger=None):
         # type: (gluetool.Module, str, Any, Optional[gluetool.log.ContextAdapter]) -> None
 
         self.module = module
         self.log_dirpath = log_dirpath
-        self.primary_task = primary_task
+        self.artifact = artifact
         self.steps = []  # type: List[SUTStep]
         self.logger = logger or gluetool.log.Logging.get_logger()
 
@@ -117,7 +117,7 @@ class SUTInstallation(object):
                 if command_failed and not step.ignore_exception:
                     return Error(
                         SUTInstallationFailedError(
-                            self.primary_task,
+                            self.artifact,
                             guest,
                             reason=error_message,
                             installation_logs=self.log_dirpath,
@@ -150,7 +150,7 @@ class SUTInstallation(object):
 
                     return Error(
                         SUTInstallationFailedError(
-                            self.primary_task,
+                            self.artifact,
                             guest,
                             items=item,
                             reason=error_message,
@@ -161,7 +161,7 @@ class SUTInstallation(object):
 
                 return Error(
                     SUTInstallationFailedError(
-                        self.primary_task,
+                        self.artifact,
                         guest,
                         items=item,
                         installation_logs=self.log_dirpath,
@@ -174,7 +174,7 @@ class SUTInstallation(object):
 
 def check_ansible_sut_installation(ansible_output,  # type: Dict[str, Any]
                                    guest,  # type: gluetool_modules.libs.guest.NetworkedGuest
-                                   primary_task,  # type: Any
+                                   artifact,  # type: Any
                                    logger=None  # type: Optional[gluetool.log.ContextAdapter]
                                   ):  # noqa
     # type: (...) -> None
@@ -184,7 +184,7 @@ def check_ansible_sut_installation(ansible_output,  # type: Dict[str, Any]
 
     :param ansible_output: output (in json format) to be checked
     :param guest: guest where playbook was run
-    :param primary_task: Object covering installed artifact
+    :param artifact: Object covering installed artifact
     :param logger: Logger object used to log
     :raises SUTInstallationFailedError: if some of ansible installation tasks failed
     """
@@ -222,4 +222,4 @@ def check_ansible_sut_installation(ansible_output,  # type: Dict[str, Any]
     failed_modules = first_fail['items']
 
     guest.warn('Following items have not been installed: {}'.format(','.join(failed_modules)))
-    raise SUTInstallationFailedError(primary_task, guest, failed_modules)
+    raise SUTInstallationFailedError(artifact, guest, failed_modules)

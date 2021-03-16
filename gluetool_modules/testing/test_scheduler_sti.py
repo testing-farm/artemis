@@ -97,7 +97,7 @@ class TestSchedulerSTI(gluetool.Module):
 
     shared_functions = ['create_test_schedule']
 
-    def _playbooks_from_dist_git(self, repodir):
+    def _playbooks_from_dist_git(self, repodir, tests=None):
         # type: (str) -> List[str]
         """
         Return STI playbooks (tests) from dist-git.
@@ -105,7 +105,7 @@ class TestSchedulerSTI(gluetool.Module):
         :param str repodir: clone of a dist-git repository.
         """
 
-        playbooks = glob.glob('{}/{}'.format(repodir, self.option('sti-tests')))
+        playbooks = glob.glob('{}/{}'.format(repodir, tests or self.option('sti-tests')))
 
         if not playbooks:
             raise gluetool_modules.libs.test_schedule.EmptyTestScheduleError(self.shared('primary_task'))
@@ -124,6 +124,8 @@ class TestSchedulerSTI(gluetool.Module):
             At this moment, only ``arch`` property is obeyed.
         :returns: a test schedule consisting of :py:class:`TestScheduleEntry` instances.
         """
+
+        playbooks = []
 
         if not testing_environment_constraints:
             self.warn('STI scheduler does not support open constraints', sentry=True)
@@ -147,7 +149,13 @@ class TestSchedulerSTI(gluetool.Module):
                 prefix='dist-git-{}-{}-'.format(repository.package, repository.branch)
             )
 
-            playbooks = self._playbooks_from_dist_git(repodir)
+            if self.has_shared('testing_farm_request') and self.shared('testing_farm_request').playbooks:
+                # TODO: strings from API are unicode, this will need change to be Python3 compatible
+                for tests in [playbook.encode('utf-8') for playbook in self.shared('testing_farm_request').playbooks]:
+                    playbooks.extend(self._playbooks_from_dist_git(repodir, tests))
+
+            else:
+                playbooks = self._playbooks_from_dist_git(repodir)
 
         gluetool.log.log_dict(self.info, 'creating schedule for {} playbooks'.format(len(playbooks)), playbooks)
 

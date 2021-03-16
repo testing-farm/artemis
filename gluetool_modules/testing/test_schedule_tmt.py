@@ -14,7 +14,7 @@ from gluetool import GlueError, GlueCommandError, Module
 from gluetool.action import Action
 from gluetool.log import Logging, format_blob, log_blob, log_dict
 from gluetool.log import ContextAdapter, LoggingFunctionType  # Ignore PyUnusedCodeBear
-from gluetool.utils import Command, load_yaml, new_xml_element, dict_update
+from gluetool.utils import Command, cached_property, load_yaml, new_xml_element, dict_update
 
 from gluetool_modules.libs import create_inspect_callback, sort_children
 from gluetool_modules.libs.artifacts import artifacts_location
@@ -69,6 +69,18 @@ PLAN_OUTCOME = {
     0: TestScheduleResult.PASSED,
     1: TestScheduleResult.FAILED,
     2: TestScheduleResult.FAILED,
+}
+
+# Result weight to TestScheduleResult outcome
+#
+#     https://tmt.readthedocs.io/en/latest/overview.html#exit-codes
+#
+# All tmt errors are connected to tests or config, so only higher return code than 3
+# is treated as error
+PLAN_OUTCOME_WITH_ERROR = {
+    0: TestScheduleResult.PASSED,
+    1: TestScheduleResult.FAILED,
+    2: TestScheduleResult.ERROR,
 }
 
 # Results YAML file, contains list of test run results, relative to plan workdir
@@ -142,8 +154,8 @@ PlanRun = NamedTuple('PlanRun', (
 ))
 
 
-def gather_plan_results(schedule_entry, work_dir):
-    # type: (TestScheduleEntry, str) -> Tuple[TestScheduleResult, List[TestResult]]
+def gather_plan_results(schedule_entry, work_dir, recognize_errors=False):
+    # type: (TestScheduleEntry, str, bool) -> Tuple[TestScheduleResult, List[TestResult]]
     """
     Extracts plan results from tmt logs.
 
@@ -174,6 +186,18 @@ def gather_plan_results(schedule_entry, work_dir):
         schedule_entry.warn('Could not load results.yaml file: {}'.format(error))
         return TestScheduleResult.ERROR, results
 
+    # no results means a failure user needs to investigate
+    if not results:
+        tmt_log_filepath = os.path.join(work_dir, TMT_LOG)
+        return TestScheduleResult.FAILED, [
+            TestResult(
+                schedule_entry.id,
+                RESULT_OUTCOME['fail'],
+                tmt_log_filepath,
+                os.path.split(tmt_log_filepath)[0]
+            )
+        ]
+
     # iterate through all the test results and create TestResult for each
     for name, data in results.iteritems():
 
@@ -201,6 +225,9 @@ def gather_plan_results(schedule_entry, work_dir):
     # count the maximum result weight encountered, i.e. the overall result
     max_weight = max(RESULT_WEIGHT[data['result']] for _, data in results.iteritems())
 
+    if recognize_errors:
+        return PLAN_OUTCOME_WITH_ERROR[max_weight], results
+
     return PLAN_OUTCOME[max_weight], test_results
 
 
@@ -212,6 +239,8 @@ class TestScheduleTMT(Module):
 
     It executes each plan in a separate schedule entry using ``tmt run``. For execution it uses ``how=connect``
     for the provision step.
+
+    By default `tmt` errors are treated as test failures, use `--recognize-errors` option to treat them as errors.
     """
 
     name = 'test-schedule-tmt'
@@ -225,7 +254,17 @@ class TestScheduleTMT(Module):
             'plan-filter': {
                 'help': "Use the given filter passed to 'tmt plan ls --filter'. See pydoc fmf.filter for details.",
                 'metavar': 'FILTER'
+            },
+            'how': {
+                'help': 'How to run provisioning - connect plugin or local plugin (default: %(default)s).',
+                'default': 'local'
             }
+        }),
+        ('Result options', {
+            'recognize-errors': {
+                'help': 'If set, the error from tmt is recognized as test error (default: %(default)s).',
+                'action': 'store_true',
+            },
         })
     ]
 
@@ -234,6 +273,23 @@ class TestScheduleTMT(Module):
     def __init__(self, *args, **kwargs):
         # type: (*Any, **Any) -> None
         super(TestScheduleTMT, self).__init__(*args, **kwargs)
+
+    @cached_property
+    def _tmt_context_options(self):
+        # type: () -> List[str]
+        context = self.shared('tmt_context')
+
+        if not context:
+            return []
+
+        options = []  # type: List[str]
+
+        for name, value in context.iteritems():
+            options += [
+                '-c', '{}={}'.format(name, value)
+            ]
+
+        return options
 
     def _plans_from_dist_git(self, repodir, filter=None):
         # type: (str, Optional[str]) -> List[str]
@@ -244,18 +300,33 @@ class TestScheduleTMT(Module):
         :param str filter: use the given filter when listing plans.
         """
 
-        command = [self.option('command'), 'plan', 'ls']
+        command = [
+            self.option('command')
+        ]
+
+        if self._tmt_context_options:
+            command.extend(self._tmt_context_options)
+
+        command.extend(['plan', 'ls'])
 
         if filter:
-            command.append(['--filter', filter])
+            command.extend(['--filter', filter])
+
+        # by default we add enabled:true
+        else:
+            command.extend(['--filter', 'enabled:true'])
 
         try:
             tmt_output = Command(command).run(cwd=repodir)
 
         except GlueCommandError as exc:
-            assert exc.output.stderr
-            log_blob(self.error, "Failed to get list of plans".format(command), exc.output.stderr)
-            six.reraise(*sys.exc_info())
+            # workaround until tmt prints errors properly to stderr
+            log_blob(
+                self.error,
+                "Failed to get list of plans",
+                exc.output.stderr or exc.output.stdout
+            )
+            raise GlueError('Failed to list plans, TMT metadata are absent or corrupted.')
 
         assert tmt_output.stdout
 
@@ -395,9 +466,13 @@ class TestScheduleTMT(Module):
             self.option('command')
         ]
 
+        if self._tmt_context_options:
+            command.extend(self._tmt_context_options)
+
         command += [
             'run',
             '--all',
+            '--verbose',
             '--id', os.path.abspath(work_dirpath)
         ]
 
@@ -406,17 +481,28 @@ class TestScheduleTMT(Module):
                 '-e', '{}={}'.format(name, value)
             ]
 
-        command += [
-            # `provision` step
-            'provision',
-            '--how', 'connect',
-            '--guest', schedule_entry.guest.hostname,
-            '--key', schedule_entry.guest.key,
+        if self.option('how') == 'local':
+            command += [
+                # `provision` step
+                'provision',
 
-            # `plan` step
-            'plan',
-            '--name', schedule_entry.plan
-        ]
+                # `plan` step
+                'plan',
+                '--name', schedule_entry.plan
+            ]
+
+        else:
+            command += [
+                # `provision` step
+                'provision',
+                '--how', 'connect',
+                '--guest', schedule_entry.guest.hostname,
+                '--key', schedule_entry.guest.key,
+
+                # `plan` step
+                'plan',
+                '--name', schedule_entry.plan
+            ]
 
         def _save_output(output):
             # type: (gluetool.utils.ProcessOutput) -> None
@@ -444,26 +530,27 @@ class TestScheduleTMT(Module):
         except GlueCommandError as exc:
             tmt_output = exc.output
 
-            # check if tmt failed to produce results
-            if tmt_output.exit_code == TMTExitCodes.RESULTS_MISSING:
-                schedule_entry.warn('tmt did not produce results, skipping results evaluation')
-
-                log_blob(
-                    schedule_entry.error,
-                    'tmt execution failed with exit code {}'.format(tmt_output.exit_code),
-                    tmt_output.stderr if tmt_output.stderr else ''
-                )
-
-                return TestScheduleResult.ERROR, []
-
-            self.info('tmt produced results with exit code {}'.format(tmt_output.exit_code))
-
         finally:
             if tmt_output:
                 _save_output(tmt_output)
 
+        self.info('tmt exited with code {}'.format(tmt_output.exit_code))
+
+        # check if tmt failed to produce results
+        if tmt_output.exit_code == TMTExitCodes.RESULTS_MISSING:
+            schedule_entry.warn('tmt did not produce results, skipping results evaluation')
+
+            return TestScheduleResult.FAILED, [
+                TestResult(
+                    schedule_entry.id,
+                    RESULT_OUTCOME['fail'],
+                    tmt_log_filepath,
+                    os.path.split(tmt_log_filepath)[0]
+                )
+            ]
+
         # gather and return overall plan run result and test results
-        return gather_plan_results(schedule_entry, work_dirpath)
+        return gather_plan_results(schedule_entry, work_dirpath, self.option('recognize-errors'))
 
     def run_test_schedule_entry(self, schedule_entry):
         # type: (TestScheduleEntry) -> None
@@ -517,7 +604,8 @@ class TestScheduleTMT(Module):
             # type: (Any, str, Any, Any, bool) -> Any
             parent_elem = new_xml_element('testing-environment', _parent=test_case, name=name)
             new_xml_element('property', _parent=parent_elem, name='arch', value=arch)
-            new_xml_element('property', _parent=parent_elem, name='compose', value=compose)
+            if compose:
+                new_xml_element('property', _parent=parent_elem, name='compose', value=compose)
             new_xml_element('property', _parent=parent_elem, name='snapshots', value=str(snapshots))
 
         if schedule_entry.runner_capability != 'tmt':

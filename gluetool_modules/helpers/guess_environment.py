@@ -35,6 +35,9 @@ class GuessEnvironment(gluetool.Module):
     * ``autodetect``: module will use artifact to deduce as many properties possible
       using mapping files (``--{distro,compose, image,product,wow-relevancy-distro}-pattern-map``)
 
+    * ``testing-farm-request``: module will use Testing Farm's request to deduce compose. Other properties
+      are not deducable from the request.
+
     * ``force``: instead of autodetection, use specified properties. Use ``--compose``, ``--distro``,
       ``--image``, ``--product`` and ``--wow-relevancy-distro`` options to set actual values.
 
@@ -67,7 +70,7 @@ class GuessEnvironment(gluetool.Module):
         ('Methods', {
             'compose-method': {
                 'help': 'What method to use for compose "guessing" (default: %(default)s).',
-                'choices': ('autodetect', 'target-autodetection', 'force'),
+                'choices': ('autodetect', 'target-autodetection', 'force', 'testing-farm-request'),
                 'default': 'autodetect'
             },
             'distro-method': {
@@ -533,9 +536,24 @@ class GuessEnvironment(gluetool.Module):
         if not result:
             raise GlueError("Failed to autodetect '{}', no match found".format(source['type']))
 
+    def _guess_testing_farm_request(self, source):
+        # type: (Dict[str, Union[str, List[str]]]) -> None
+        self.require_shared('testing_farm_request')
+
+        request = self.shared('testing_farm_request')
+
+        if source['type'] == 'compose':
+            source['result'] = [
+                environment['os']['compose']
+                for environment in request.environments_requested
+            ]
+        else:
+            source['result'] = ['<not available>']
+
     _methods = {
         'autodetect': _guess_target_autodetect,
         'force': _guess_force,
+        'testing-farm-request': _guess_testing_farm_request,
         'target-autodetection': _guess_target_autodetect,
         'recent': _guess_recent,  # Only for images
         'nightly': _guess_nightly,  # Only for distro
