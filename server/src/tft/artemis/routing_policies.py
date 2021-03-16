@@ -12,8 +12,9 @@ from typing_extensions import Protocol
 
 from . import Failure, Knob
 from .db import GuestRequest
-from .drivers import PoolCapabilities, PoolDriver, PoolMetrics
+from .drivers import PoolCapabilities, PoolDriver
 from .environment import Environment
+from .metrics import PoolMetrics
 
 
 @dataclasses.dataclass
@@ -154,6 +155,18 @@ def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[Pool
     ])
 
 
+def collect_pool_metrics(pools: List[PoolDriver]) -> Result[List[Tuple[PoolDriver, PoolMetrics]], Failure]:
+    pool_metrics = [
+        (pool, PoolMetrics(pool.poolname))
+        for pool in pools
+    ]
+
+    for _, metrics in pool_metrics:
+        metrics.sync()
+
+    return Ok(pool_metrics)
+
+
 def create_preferrence_filter_by_driver_class(policy_name: str, *preferred_drivers: Type[PoolDriver]) -> PolicyType:
     @policy_boilerplate
     def policy(
@@ -286,10 +299,12 @@ def policy_least_crowded(
     if len(pools) <= 1:
         return Ok(PolicyRuling(allowed_pools=pools))
 
-    pool_metrics = [
-        (pool, pool.metrics(logger, session))
-        for pool in pools
-    ]
+    r_pool_metrics = collect_pool_metrics(pools)
+
+    if r_pool_metrics.is_error:
+        return Error(r_pool_metrics.unwrap_error())
+
+    pool_metrics = r_pool_metrics.unwrap()
 
     log_dict(logger.debug, 'pool metrics', pool_metrics)
 
@@ -381,10 +396,12 @@ def policy_enough_resources(
     if len(pools) <= 1:
         return Ok(PolicyRuling(allowed_pools=pools))
 
-    pool_metrics = [
-        (pool, pool.metrics(logger, session))
-        for pool in pools
-    ]
+    r_pool_metrics = collect_pool_metrics(pools)
+
+    if r_pool_metrics.is_error:
+        return Error(r_pool_metrics.unwrap_error())
+
+    pool_metrics = r_pool_metrics.unwrap()
 
     log_dict(logger.info, 'pool metrics', pool_metrics)
 

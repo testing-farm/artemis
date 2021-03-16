@@ -15,6 +15,7 @@ to its offsprings.
 
 import dataclasses
 import datetime
+import enum
 import os
 import platform
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
@@ -30,11 +31,8 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info
 
 from . import __VERSION__, DATABASE, SESSION, Failure
 from . import db as artemis_db
-from . import safe_call
-from . import tasks as artemis_tasks
-from . import with_context
+from . import safe_call, with_context
 from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
-from .drivers import PoolMetrics
 from .guest import GuestState
 
 # Guest age buckets are not all same, but:
@@ -223,15 +221,244 @@ class DBMetrics(MetricsBase):
         self.pool.update_prometheus()
 
 
+class PoolResourcesMetricsDimensions(enum.Enum):
+    """
+    Which of the pool resource metrics to track, limits or usage.
+    """
+
+    LIMITS = 'LIMITS'
+    USAGE = 'USAGE'
+
+
 @dataclasses.dataclass
-class PoolsMetrics(MetricsBase):
+class PoolResources(MetricsBase):
     """
-    Pool metrics.
+    Describes current values of pool resources.
+
+    The class is intentionally left "dimension-less", not tied to limits nor usage side of the equation, as the
+    actual resource types do not depend on this information.
+
+    All fields are optional, leaving them unset signals the pool driver is not able/not interested in tracking
+    the given field.
+
+    This is a main class we use for transporting resources metrics between
+    interested parties.
     """
 
-    # here is the space left for global pool-related metrics.
+    _KEY = 'metrics.pool.{poolname}.resources.{dimension}'
 
-    metrics: Dict[str, PoolMetrics] = dataclasses.field(default_factory=dict)
+    instances: Optional[int]
+    """
+    Number of instances (or machines, VMs, servers, etc. - depending on pool's
+    terminology).
+    """
+
+    cores: Optional[int]
+    """
+    Number of CPU cores. Given the virtual nature of many pools, cores are more
+    common commodity than CPUs.
+    """
+
+    memory: Optional[int]
+    """
+    Size of RAM, in bytes.
+    """
+
+    diskspace: Optional[int]
+    """
+    Size of disk space, in bytes.
+    """
+
+    snapshots: Optional[int]
+    """
+    Number of instance snapshots.
+    """
+
+    def __init__(self, poolname: str, dimension: PoolResourcesMetricsDimensions) -> None:
+        """
+        Resource metrics of a particular pool.
+
+        :param poolname: name of the pool whose metrics we're tracking.
+        :param dimension: whether this instance describes limits or usage.
+        """
+
+        super(PoolResources, self).__init__()
+
+        self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)
+
+        self.instances = None
+        self.cores = None
+        self.memory = None
+        self.diskspace = None
+        self.snapshots = None
+
+    @with_context
+    def sync(self, cache: redis.Redis) -> None:
+        """
+        Load values from database and update this container with up-to-date values..
+
+        :param cache: cache instance to use for cache access.
+        """
+
+        for metric_field in dataclasses.fields(self):
+            setattr(self, metric_field.name, get_metric(cache, '{}.{}'.format(self._key, metric_field.name)))
+
+    @with_context
+    def store(self, cache: redis.Redis) -> None:
+        """
+        Store currently carried values in the storage.
+
+        :param cache: cache instance to use for cache access.
+        """
+
+        for metric_field in dataclasses.fields(self):
+            set_metric(cache, '{}.{}'.format(self._key, metric_field.name), getattr(self, metric_field.name))
+
+
+class PoolResourcesUsage(PoolResources):
+    """
+    Describes current usage of pool resources.
+    """
+
+    def __init__(self, poolname: str) -> None:
+        """
+        Resource usage of a particular pool.
+
+        :param poolname: name of the pool whose metrics we're tracking.
+        """
+
+        super(PoolResourcesUsage, self).__init__(poolname, PoolResourcesMetricsDimensions.USAGE)
+
+
+class PoolResourcesLimits(PoolResources):
+    """
+    Describes current limits of pool resources.
+    """
+
+    def __init__(self, poolname: str) -> None:
+        """
+        Resource limits of a particular pool.
+
+        :param poolname: name of the pool whose metrics we're tracking.
+        """
+
+        super(PoolResourcesLimits, self).__init__(poolname, PoolResourcesMetricsDimensions.LIMITS)
+
+
+@dataclasses.dataclass
+class PoolResourcesDepleted:
+    """
+    Describes whether and which pool resources have been depleted.
+    """
+
+    instances: bool = False
+    cores: bool = False
+    memory: bool = False
+    diskspace: bool = False
+    snapshots: bool = False
+
+    def is_depleted(self) -> bool:
+        """
+        Test whether any of resources is marked as depleted.
+
+        :returns: ``True`` if any of resources is marked as depleted, ``False`` otherwise.
+        """
+
+        return any(dataclasses.asdict(self).values())
+
+    def depleted_resources(self) -> List[str]:
+        """
+        Collect depleted resources.
+
+        :returns: list of names of depleted resources.
+        """
+
+        return [
+            field.name
+            for field in dataclasses.fields(self)
+            if getattr(self, field.name) is True
+        ]
+
+
+@dataclasses.dataclass
+class PoolResourcesMetrics(MetricsBase):
+    """
+    Describes resources of a pool, both limits and usage.
+    """
+
+    limits: PoolResourcesLimits
+    usage: PoolResourcesUsage
+
+    def __init__(self, poolname: str) -> None:
+        """
+        Resource metrics of a particular pool.
+
+        :param poolname: name of the pool whose metrics we're tracking.
+        """
+
+        self.limits = PoolResourcesLimits(poolname)
+        self.usage = PoolResourcesUsage(poolname)
+
+    def sync(self) -> None:
+        """
+        Load values from database and update this container with up-to-date values..
+        """
+
+        self.limits.sync()
+        self.usage.sync()
+
+    def get_depletion(
+        self,
+        is_enough: Callable[[str, int, int], bool]
+    ) -> PoolResourcesDepleted:
+        """
+        Compare limits and usage and yield :py:class:`PoolResourcesDepleted` instance describing depleted resources.
+
+        :param is_enough: a callback called for every resource, with resource name,
+            its limit and usage as arguments. Returns ``True`` when there is enough
+            resources, ``False`` otherwise.
+        :returns: :py:class:`PoolResourcesDepleted` instance listing which resources are depleted.
+        """
+
+        delta = PoolResourcesDepleted()
+
+        for field in dataclasses.fields(self.limits):
+            limit, usage = getattr(self.limits, field.name), getattr(self.usage, field.name)
+
+            # Skip undefined values: if left undefined, pool does not care about this dimension.
+            if not limit or not usage:
+                continue
+
+            setattr(delta, field.name, not is_enough(field.name, limit, usage))
+
+        return delta
+
+
+@dataclasses.dataclass
+class PoolMetrics(MetricsBase):
+    """
+    Metrics of a particular pool.
+    """
+
+    poolname: str
+
+    resources: PoolResourcesMetrics
+
+    current_guest_request_count: int
+    current_guest_request_count_per_state: Dict[GuestState, int]
+
+    def __init__(self, poolname: str) -> None:
+        """
+        Metrics of a particular pool.
+
+        :param poolname: name of the pool whose metrics we're tracking.
+        """
+
+        self.poolname = poolname
+        self.resources = PoolResourcesMetrics(poolname)
+
+        self.current_guest_request_count = 0
+        self.current_guest_request_count_per_state = {}
 
     @with_context
     def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
@@ -242,10 +469,49 @@ class PoolsMetrics(MetricsBase):
         :param session: DB session to use for DB access.
         """
 
-        self.metrics = {
-            pool.poolname: pool.metrics(logger, session)
-            for pool in artemis_tasks.get_pools(logger, session)
+        self.resources.sync()
+
+        current_guests = artemis_db.Query.from_session(session, artemis_db.GuestRequest) \
+            .filter(artemis_db.GuestRequest.poolname == self.poolname) \
+            .all()
+
+        self.current_guest_request_count = len(current_guests)
+
+        self.current_guest_request_count_per_state = {
+            state: len([guest for guest in current_guests if guest.state == state.value])
+            for state in GuestState
         }
+
+
+@dataclasses.dataclass
+class PoolsMetrics(MetricsBase):
+    """
+    General metrics shared by pools, and per-pool metrics.
+    """
+
+    # here is the space left for global pool-related metrics.
+
+    pools: Dict[str, PoolMetrics] = dataclasses.field(default_factory=dict)
+
+    @with_context
+    def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+        """
+        Load values from database and update this container with up-to-date values..
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        """
+
+        # Avoid circullar imports
+        from .tasks import get_pools
+
+        self.pools = {
+            pool.poolname: PoolMetrics(pool.poolname)
+            for pool in get_pools(logger, session)
+        }
+
+        for metrics in self.pools.values():
+            metrics.sync()
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
@@ -280,7 +546,7 @@ class PoolsMetrics(MetricsBase):
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        for poolname, pool_metrics in self.metrics.items():
+        for poolname, pool_metrics in self.pools.items():
             for state in pool_metrics.current_guest_request_count_per_state:
                 self.CURRENT_GUEST_REQUEST_COUNT \
                     .labels(poolname, state.value) \

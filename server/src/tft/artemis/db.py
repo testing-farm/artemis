@@ -18,7 +18,7 @@ import sqlalchemy
 import sqlalchemy.ext.declarative
 import sqlalchemy.sql.expression
 from gluetool.result import Error, Ok, Result
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
 
@@ -727,69 +727,6 @@ class Metrics(Base):
     metric = Column(String(250), primary_key=True, nullable=False)
     count = Column(Integer, default=0)
     updated = Column(DateTime, default=datetime.datetime.utcnow)
-
-
-class PoolResourcesMetricsDimensions(enum.Enum):
-    LIMITS = 'LIMITS'
-    USAGE = 'USAGE'
-
-
-class PoolResourcesMetrics(Base):
-    """
-    Metrics tracking pool resources. For each pool, two records exist, tracking two "dimensions",
-    :py:attr:`PoolResourcesMetricsDimensions.LIMITS` and :py:attr:`PoolResourcesMetricsDimensions.USAGE`.
-    """
-
-    __tablename__ = 'metrics_pool_resources'
-
-    poolname = Column(String(250), primary_key=True, nullable=False)
-    dimension = Column(Enum(PoolResourcesMetricsDimensions), primary_key=True, nullable=False)
-
-    instances = Column(BigInteger, nullable=True)
-    cores = Column(BigInteger, nullable=True)
-    memory = Column(BigInteger, nullable=True)
-    diskspace = Column(BigInteger, nullable=True)
-    snapshots = Column(BigInteger, nullable=True)
-
-    @classmethod
-    def get_by_pool(
-        cls,
-        session: sqlalchemy.orm.session.Session,
-        poolname: str,
-        dimension: PoolResourcesMetricsDimensions
-    ) -> Optional['PoolResourcesMetrics']:
-        """
-        Retrieve a record for given ``poolname`` and ``dimension``.
-        """
-
-        return Query.from_session(session, PoolResourcesMetrics) \
-            .filter(PoolResourcesMetrics.poolname == poolname) \
-            .filter(PoolResourcesMetrics.dimension == dimension) \
-            .one_or_none()
-
-    @classmethod
-    def get_limits_by_pool(
-        cls,
-        session: sqlalchemy.orm.session.Session,
-        poolname: str
-    ) -> Optional['PoolResourcesMetrics']:
-        """
-        Retrieve a record tracking resources limits for a given ``poolname``.
-        """
-
-        return cls.get_by_pool(session, poolname, PoolResourcesMetricsDimensions.LIMITS)
-
-    @classmethod
-    def get_usage_by_pool(
-        cls,
-        session: sqlalchemy.orm.session.Session,
-        poolname: str
-    ) -> Optional['PoolResourcesMetrics']:
-        """
-        Retrieve a record tracking resources usage for a given ``poolname``.
-        """
-
-        return cls.get_by_pool(session, poolname, PoolResourcesMetricsDimensions.USAGE)
 
 
 class Knob(Base):

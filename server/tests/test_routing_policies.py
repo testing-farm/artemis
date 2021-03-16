@@ -23,6 +23,7 @@ from mock import MagicMock
 import tft.artemis
 import tft.artemis.db
 import tft.artemis.routing_policies
+from tft.artemis.metrics import PoolMetrics
 
 TIMEOUT_REACHED_AGE_TOO_YOUNG = tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.value / 2
 TIMEOUT_REACHED_AGE_TOO_OLD = tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.value * 2
@@ -424,21 +425,30 @@ def test_policy_supports_snapshots_no_trigger(mock_inputs):
     do_test_policy_supports_snapshots(mock_inputs, False, False)
 
 
-def do_test_policy_least_crowded(mock_inputs, pool_count=None, one_crowded=True):
+def do_test_policy_least_crowded(monkeypatch, mock_inputs, pool_count=None, one_crowded=True):
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
+    mock_metrics = []
+
     for mock_pool in mock_pools:
-        mock_pool.metrics = lambda logger, session: tft.artemis.drivers.PoolMetrics(
-            current_guest_request_count=50
-        )
+        mock_pool_metrics = PoolMetrics(mock_pool.poolname)
+        mock_pool_metrics.current_guest_request_count = 50
+
+        mock_metrics.append(mock_pool_metrics)
 
     if one_crowded is True:
-        mock_pools[1].metrics = lambda logger, session: tft.artemis.drivers.PoolMetrics(
-            current_guest_request_count=100
-        )
+        mock_metrics[1].current_guest_request_count = 100
 
     if pool_count is not None:
         mock_pools = mock_pools[:pool_count]
+        mock_metrics = mock_metrics[:pool_count]
+
+    monkeypatch.setattr(tft.artemis.routing_policies, 'collect_pool_metrics', MagicMock(
+        name='collect_pool_metrics<mock>',
+        return_value=Ok([
+            (_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)
+        ])
+    ))
 
     r_ruling = tft.artemis.routing_policies.policy_least_crowded(
         mock_logger,
@@ -464,17 +474,17 @@ def do_test_policy_least_crowded(mock_inputs, pool_count=None, one_crowded=True)
         assert ruling.allowed_pools == mock_pools
 
 
-def test_policy_least_crowded(mock_inputs):
-    do_test_policy_least_crowded(mock_inputs)
+def test_policy_least_crowded(monkeypatch, mock_inputs):
+    do_test_policy_least_crowded(monkeypatch, mock_inputs)
 
 
-def test_policy_least_crowded_one_pool(mock_inputs):
-    do_test_policy_least_crowded(mock_inputs, pool_count=0)
-    do_test_policy_least_crowded(mock_inputs, pool_count=1)
+def test_policy_least_crowded_one_pool(monkeypatch, mock_inputs):
+    do_test_policy_least_crowded(monkeypatch, mock_inputs, pool_count=0)
+    do_test_policy_least_crowded(monkeypatch, mock_inputs, pool_count=1)
 
 
-def test_policy_least_crowded_one_pool_all_worthy(mock_inputs):
-    do_test_policy_least_crowded(mock_inputs, one_crowded=False)
+def test_policy_least_crowded_one_pool_all_worthy(monkeypatch, mock_inputs):
+    do_test_policy_least_crowded(monkeypatch, mock_inputs, one_crowded=False)
 
 
 def do_test_policy_timeout_reached(mock_inputs, empty_events=False, age=None):
@@ -593,47 +603,43 @@ def test_policy_one_attempt_forgiving_no_events(mock_inputs):
     )
 
 
-def do_test_policy_enough_resources(mock_inputs, pool_count=None, one_crowded=True):
+def do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=None, one_crowded=True):
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
+    # TODO: use proper fixture once it lands
+    tft.artemis.CACHE.set(MagicMock(name='cache<mock>'))
+    tft.artemis.SESSION.set(mock_session)
+
+    mock_metrics = []
+
     for mock_pool in mock_pools:
-        mock_pool.metrics = lambda logger, session: tft.artemis.drivers.PoolMetrics(
-            resources=tft.artemis.drivers.PoolResourcesMetrics(
-                limits=tft.artemis.drivers.PoolResourcesLimits(
-                    cores=100,
-                    memory=100,
-                    diskspace=100,
-                    snapshots=100
-                ),
-                usage=tft.artemis.drivers.PoolResourcesUsage(
-                    cores=50,
-                    memory=50,
-                    diskspace=50,
-                    snapshots=50
-                )
-            )
-        )
+        mock_pool_metrics = PoolMetrics(mock_pool.poolname)
+
+        mock_pool_metrics.resources.limits.cores = 100
+        mock_pool_metrics.resources.limits.memory = 100
+        mock_pool_metrics.resources.limits.diskspace = 100
+        mock_pool_metrics.resources.limits.snapshots = 100
+
+        mock_pool_metrics.resources.usage.cores = 50
+        mock_pool_metrics.resources.usage.memory = 50
+        mock_pool_metrics.resources.usage.diskspace = 50
+        mock_pool_metrics.resources.usage.snapshots = 50
+
+        mock_metrics.append(mock_pool_metrics)
 
     if one_crowded is True:
-        mock_pools[1].metrics = lambda logger, session: tft.artemis.drivers.PoolMetrics(
-            resources=tft.artemis.drivers.PoolResourcesMetrics(
-                limits=tft.artemis.drivers.PoolResourcesLimits(
-                    cores=100,
-                    memory=100,
-                    diskspace=100,
-                    snapshots=100
-                ),
-                usage=tft.artemis.drivers.PoolResourcesUsage(
-                    cores=100 * ENOUGH_RESOURCES_EXCESS_MULTIPLIER,
-                    memory=50,
-                    diskspace=50,
-                    snapshots=50
-                )
-            )
-        )
+        mock_metrics[1].resources.usage.cores = 100 * ENOUGH_RESOURCES_EXCESS_MULTIPLIER
 
     if pool_count is not None:
         mock_pools = mock_pools[:pool_count]
+        mock_metrics = mock_metrics[:pool_count]
+
+    monkeypatch.setattr(tft.artemis.routing_policies, 'collect_pool_metrics', MagicMock(
+        name='collect_pool_metrics<mock>',
+        return_value=Ok([
+            (_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)
+        ])
+    ))
 
     r_ruling = tft.artemis.routing_policies.policy_enough_resources(
         mock_logger,
@@ -659,14 +665,14 @@ def do_test_policy_enough_resources(mock_inputs, pool_count=None, one_crowded=Tr
         assert ruling.allowed_pools == mock_pools
 
 
-def test_policy_enough_resources(mock_inputs):
-    do_test_policy_enough_resources(mock_inputs)
+def test_policy_enough_resources(monkeypatch, mock_inputs):
+    do_test_policy_enough_resources(monkeypatch, mock_inputs)
 
 
-def test_policy_enough_resources_one_pool(mock_inputs):
-    do_test_policy_enough_resources(mock_inputs, pool_count=0)
-    do_test_policy_enough_resources(mock_inputs, pool_count=1)
+def test_policy_enough_resources_one_pool(monkeypatch, mock_inputs):
+    do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=0)
+    do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=1)
 
 
-def test_policy_enough_resources_all_worthy(mock_inputs):
-    do_test_policy_enough_resources(mock_inputs, one_crowded=False)
+def test_policy_enough_resources_all_worthy(monkeypatch, mock_inputs):
+    do_test_policy_enough_resources(monkeypatch, mock_inputs, one_crowded=False)

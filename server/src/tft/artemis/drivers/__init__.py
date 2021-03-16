@@ -16,11 +16,9 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from .. import CACHE, Failure, process_output_to_str, safe_call
-from ..db import GuestRequest, GuestTag
-from ..db import PoolResourcesMetrics as PoolResourcesMetricsRecord
-from ..db import PoolResourcesMetricsDimensions, Query, SnapshotRequest, SSHKey
+from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
-from ..guest import GuestState
+from ..metrics import PoolResourcesMetrics
 
 PoolResourcesIDsType = Dict[str, Any]
 GuestTagsType = Dict[str, str]
@@ -86,199 +84,6 @@ class PoolCapabilities(argparse.Namespace):
         # Here we know the attribute must be a list, because we ruled out the `AnyArchitecture` above, but mypy
         # can't deduce it.
         return arch in cast(List[str], self.supported_architectures)
-
-
-@dataclasses.dataclass
-class PoolResources:
-    """
-    Describes current values of pool resources. It is intentionally left
-    "dimension-less", not tied to limits nor usage side of the equation, as the
-    actual resource types do not depend on this information.
-
-    All fields are optional, leaving them unset signals the pool driver is not
-    able/not interested in tracking the given field.
-
-    This is a main class we use for transporting resources metrics between
-    interested parties. On the database boundary, we translate this class
-    to/from database records, represented by
-    :py:class:`PoolResourcesMetricsRecord`.
-    """
-
-    instances: Optional[int] = None
-    """
-    Number of instances (or machines, VMs, servers, etc. - depending on pool's
-    terminology).
-    """
-
-    cores: Optional[int] = None
-    """
-    Number of CPU cores. Given the virtual nature of many pools, cores are more
-    common commodity than CPUs.
-    """
-
-    memory: Optional[int] = None
-    """
-    Size of RAM, in bytes.
-    """
-
-    diskspace: Optional[int] = None
-    """
-    Size of disk space, in bytes.
-    """
-
-    snapshots: Optional[int] = None
-    """
-    Number of instance snapshots.
-    """
-
-    @classmethod
-    def from_db(cls, record: PoolResourcesMetricsRecord) -> 'PoolResources':
-        """
-        Initialize fields from a gien database record.
-        """
-
-        container = cls()
-
-        for field in dataclasses.fields(container):
-            setattr(container, field.name, getattr(record, field.name))
-
-        return container
-
-    def _to_db(
-        self,
-        pool: 'PoolDriver',
-        dimension: PoolResourcesMetricsDimensions,
-    ) -> PoolResourcesMetricsRecord:
-        return PoolResourcesMetricsRecord(
-            poolname=pool.poolname,
-            dimension=dimension.value,
-            **{
-                field.name: getattr(self, field.name)
-                for field in dataclasses.fields(self)
-            }
-        )
-
-    def to_db(self, pool: 'PoolDriver') -> PoolResourcesMetricsRecord:
-        """
-        Convert into a corresponding database record.
-        """
-
-        raise NotImplementedError()
-
-
-class PoolResourcesUsage(PoolResources):
-    """
-    Describes current usage of pool resources.
-    """
-
-    @classmethod
-    def from_db(cls, record: PoolResourcesMetricsRecord) -> 'PoolResourcesUsage':
-        return cast(
-            PoolResourcesUsage,
-            super(PoolResourcesUsage, cls).from_db(record)
-        )
-
-    def to_db(
-        self,
-        pool: 'PoolDriver',
-    ) -> PoolResourcesMetricsRecord:
-        return self._to_db(pool, PoolResourcesMetricsDimensions.USAGE)
-
-
-class PoolResourcesLimits(PoolResources):
-    """
-    Describes current limits of pool resources.
-    """
-
-    @classmethod
-    def from_db(cls, record: PoolResourcesMetricsRecord) -> 'PoolResourcesLimits':
-        return cast(
-            PoolResourcesLimits,
-            super(PoolResourcesLimits, cls).from_db(record)
-        )
-
-    def to_db(
-        self,
-        pool: 'PoolDriver',
-    ) -> PoolResourcesMetricsRecord:
-        return self._to_db(pool, PoolResourcesMetricsDimensions.LIMITS)
-
-
-@dataclasses.dataclass
-class PoolResourcesDepleted:
-    """
-    Describes whether and which pool resources have been depleted.
-    """
-
-    instances: bool = False
-    cores: bool = False
-    memory: bool = False
-    diskspace: bool = False
-    snapshots: bool = False
-
-    def is_depleted(self) -> bool:
-        """
-        Returns ``True`` if any of resources is marked as depleted.
-        """
-
-        return any(dataclasses.asdict(self).values())
-
-    def depleted_resources(self) -> List[str]:
-        """
-        Returns list of resource names of resources which are marked as depleted.
-        """
-
-        return [
-            field.name
-            for field in dataclasses.fields(self)
-            if getattr(self, field.name) is True
-        ]
-
-
-@dataclasses.dataclass
-class PoolResourcesMetrics:
-    """
-    Describes resources of a pool, both limits and usage.
-    """
-
-    limits: PoolResourcesLimits = dataclasses.field(default_factory=PoolResourcesLimits)
-    usage: PoolResourcesUsage = dataclasses.field(default_factory=PoolResourcesUsage)
-
-    def get_depletion(
-        self,
-        is_enough: Callable[[str, int, int], bool]
-    ) -> PoolResourcesDepleted:
-        """
-        Using a test callback, provided by caller, compare limits and usage,
-        and yield :py:class:`PoolResourcesDepleted` instance describing what
-        resources are depleted.
-
-        A test callback ``is_enough`` is called for every resource, with
-        resource name, its limit and usage as arguments, and its job is to
-        decide whether the resource is depleted (``True``) or not (``False``).
-        """
-
-        delta = PoolResourcesDepleted()
-
-        for field in dataclasses.fields(self.limits):
-            limit, usage = getattr(self.limits, field.name), getattr(self.usage, field.name)
-
-            # Skip undefined values: if left undefined, pool does not care about this dimension.
-            if not limit or not usage:
-                continue
-
-            setattr(delta, field.name, not is_enough(field.name, limit, usage))
-
-        return delta
-
-
-@dataclasses.dataclass
-class PoolMetrics:
-    current_guest_request_count: int = 0
-    current_guest_request_count_per_state: Dict[GuestState, int] = \
-        dataclasses.field(default_factory=dict)
-
-    resources: PoolResourcesMetrics = dataclasses.field(default_factory=PoolResourcesMetrics)
 
 
 @dataclasses.dataclass
@@ -692,11 +497,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(tags)
 
-    def current_guests_in_pool(self, session: sqlalchemy.orm.session.Session) -> List[GuestRequest]:
-        return Query.from_session(session, GuestRequest) \
-            .filter(GuestRequest.poolname == self.poolname) \
-            .all()
-
     def fetch_pool_resources_metrics(
         self,
         logger: gluetool.log.ContextAdapter
@@ -710,7 +510,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         its pool's API, and retrieve actual data.
         """
 
-        return Ok(PoolResourcesMetrics())
+        return Ok(PoolResourcesMetrics(self.poolname))
 
     def refresh_pool_resources_metrics(
         self,
@@ -741,70 +541,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         gluetool.log.log_dict(logger.info, 'resources metrics refresh', dataclasses.asdict(resources))
 
-        session.merge(resources.limits.to_db(self))
-        session.merge(resources.usage.to_db(self))
+        resources.limits.store()
+        resources.usage.store()
 
         return Ok(None)
-
-    def get_pool_resources_metrics(
-        self,
-        session: sqlalchemy.orm.session.Session
-    ) -> Result[PoolResourcesMetrics, Failure]:
-        """
-        Retrieve "current" resources metrics, as stored in the database. Given
-        how the metrics are acquired, they will **always** be slightly
-        outdated.
-
-        This is the "reader" - called when needed, it returns what's considered
-        to be the actual metrics. :py:meth:`refresh_pool_resources_metrics` is
-        the corresponding "writer".
-        """
-
-        resources = PoolResourcesMetrics()
-
-        limits_record = PoolResourcesMetricsRecord.get_limits_by_pool(session, self.poolname)
-        usage_record = PoolResourcesMetricsRecord.get_usage_by_pool(session, self.poolname)
-
-        if limits_record:
-            resources.limits = PoolResourcesLimits.from_db(limits_record)
-
-        if usage_record:
-            resources.usage = PoolResourcesUsage.from_db(usage_record)
-
-        return Ok(resources)
-
-    def metrics(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session
-    ) -> PoolMetrics:
-        """ Provide Prometheus metrics about current pool state. """
-
-        assert self.poolname
-        metrics = PoolMetrics()
-
-        current_guests = self.current_guests_in_pool(session)
-        metrics.current_guest_request_count = len(current_guests)
-
-        for state in GuestState:
-            current_guest_count = len([guest for guest in current_guests if guest.state == state.value])
-            metrics.current_guest_request_count_per_state[state] = current_guest_count
-
-        if not self._pool_resources_metrics:
-            r_resources_metrics = self.get_pool_resources_metrics(session)
-
-            if r_resources_metrics.is_error:
-                logger.warning('failed to fetch pool resources metrics')
-
-            else:
-                self._pool_resources_metrics = r_resources_metrics.unwrap()
-
-                metrics.resources = self._pool_resources_metrics
-
-        else:
-            metrics.resources = self._pool_resources_metrics
-
-        return metrics
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfoType], Failure]:
         """

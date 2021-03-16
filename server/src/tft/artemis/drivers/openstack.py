@@ -11,9 +11,10 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
+from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, PoolResourcesMetrics, \
-    ProvisioningProgress, create_tempfile, run_cli_tool
+from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, create_tempfile, \
+    run_cli_tool
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
@@ -720,7 +721,7 @@ class OpenStackDriver(PoolDriver):
         if not isinstance(raw_limits_container, list):
             return Error(Failure('Invalid format of OpenStack limits report'))
 
-        resources = PoolResourcesMetrics()
+        resources = PoolResourcesMetrics(self.poolname)
 
         for entry in raw_limits_container:
             name, value = entry.get('Name'), entry.get('Value')

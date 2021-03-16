@@ -14,9 +14,10 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
+from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, PoolResourcesMetrics, \
-    ProvisioningProgress, create_tempfile, run_cli_tool
+from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, create_tempfile, \
+    run_cli_tool
 
 NodeRefType = Any
 
@@ -521,7 +522,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
-        resources = PoolResourcesMetrics()
+        resources = PoolResourcesMetrics(self.poolname)
 
         r_query_instances = self._run_bkr(
             logger,
