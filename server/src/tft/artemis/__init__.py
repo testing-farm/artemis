@@ -1,3 +1,4 @@
+import contextlib
 import contextvars
 import functools
 import json
@@ -6,7 +7,8 @@ import os
 import traceback as _traceback
 import urllib.parse
 from types import FrameType, TracebackType
-from typing import Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Generator, Generic, Iterator, List, NoReturn, Optional, Tuple, TypeVar, Union, \
+    cast
 
 import dramatiq
 import dramatiq.brokers.rabbitmq
@@ -1254,3 +1256,50 @@ def with_context(fn: Callable[..., T]) -> Callable[..., T]:
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+class _spawn_context:
+    """
+    Helper class for spawning a custom context. We'd like to support additional items being part
+    of the context, by adding them to :py:var:`CONTEXT_PROVIDERS`, but to keep sane type annotations,
+    we'd like to stay away from user-facing ``**kwargs: Any``. Therefor spawning a context is split
+    into two parts:
+
+    * this class that does accept ``**kwargs``, and does the actual job of starting new context with
+      properly set context variables, unroll included,
+    * and :py:func:`context` method which is the user-facing interface - this function does not allow
+      ``**kwargs``, and lists supported context variables.
+
+    To extend :py:func:`context` with new variables, create a new function accepting them which then
+    uses ``_spawn_context`` class under the hood to do the heavy lifting.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._kwargs = kwargs
+        self._tokens: List[Tuple[contextvars.ContextVar[Any], contextvars.Token[Any]]] = []
+
+    def __enter__(self, **kwargs: Any) -> None:
+        for (name, type_), var in CONTEXT_PROVIDERS.items():
+            if name not in self._kwargs:
+                continue
+
+            self._tokens.append((var, var.set(self._kwargs.pop(name))))
+
+    def __exit__(self, *args: Any) -> None:
+        for var, token in self._tokens:
+            var.reset(token)
+
+
+@contextlib.contextmanager
+def context(
+    logger: Optional[gluetool.log.ContextAdapter] = None,
+    db: Optional['artemis_db.DB'] = None,
+    session: Optional[sqlalchemy.orm.session.Session] = None,
+    cache: Optional[redis.Redis] = None
+) -> Iterator[None]:
+    """
+    Spawn new context with context variables set to the given values.
+    """
+
+    with _spawn_context(logger=logger, db=db, session=session, cache=cache):
+        yield

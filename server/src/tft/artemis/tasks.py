@@ -1,14 +1,17 @@
 import concurrent.futures
+import contextlib
+import contextvars
 import datetime
 import json
 import os
 import random
 import threading
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union, cast
 
 import dramatiq
 import gluetool.log
 import periodiq
+import redis
 import sqlalchemy
 import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
@@ -16,8 +19,8 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import DATABASE, LOGGER, SESSION, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
-    log_guest_event, metrics, safe_call, safe_db_change
+from . import CONTEXT_PROVIDERS, DATABASE, LOGGER, SESSION, Failure, Knob, _spawn_context, get_broker, get_db, \
+    get_logger, log_error_guest_event, log_guest_event, metrics, safe_call, safe_db_change
 from .db import DB, GuestEvent, GuestRequest, Pool, Query, SnapshotRequest, SSHKey
 from .drivers import PoolData, PoolDriver, PoolLogger
 from .drivers import aws as aws_driver
@@ -95,6 +98,11 @@ def get_root_db(logger: Optional[gluetool.log.ContextAdapter] = None) -> DB:
         _ROOT_DB = get_db(logger, application_name='artemis-worker')
 
     return _ROOT_DB
+
+
+CANCEL: contextvars.ContextVar[threading.Event] = contextvars.ContextVar('CANCEL', default=threading.Event())
+
+CONTEXT_PROVIDERS[('cancel', threading.Event)] = CANCEL
 
 
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
@@ -298,6 +306,24 @@ class TaskLogger(gluetool.log.ContextAdapter):
 
     def failed(self, failure: Failure) -> None:
         self.error('failed:\n{}'.format(stackprinter.format(failure.exception)))
+
+
+@contextlib.contextmanager
+def context(
+    logger: Optional[gluetool.log.ContextAdapter] = None,
+    db: Optional[DB] = None,
+    session: Optional[sqlalchemy.orm.session.Session] = None,
+    cache: Optional[redis.Redis] = None,
+    cancel: Optional[threading.Event] = None
+) -> Iterator[None]:
+    """
+    Spawn new context with context variables set to the given values.
+
+    Besides global context variables, this helper supports also :py:var:`CANCEL` event used heavily by tasks.
+    """
+
+    with _spawn_context(logger=logger, db=db, session=session, cache=cache, cancel=cancel):
+        yield
 
 
 def create_event_handlers(
