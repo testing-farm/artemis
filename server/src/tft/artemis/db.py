@@ -847,8 +847,8 @@ class DB:
 
                 # declared as class attributes only to avoid typing errors ("DB has no attribute" ...)
                 # those attributes should never be used, use instance attributes only
-                cls.get_session = DB.instance.get_session  # type: Callable[[], Any]
-                cls.engine = DB.instance.engine  # type: sqlalchemy.engine.Engine
+                cls.get_session: Callable[[], Any] = DB.instance.get_session
+                cls.engine: sqlalchemy.engine.Engine = DB.instance.engine
 
             return DB.instance
 

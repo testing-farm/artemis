@@ -34,8 +34,7 @@ class Environment:
         return dataclasses.asdict(self)
 
     @classmethod
-    def unserialize_from_json(cls, serialized: Dict[str, Any]):
-        # type: (...) -> Environment
+    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'Environment':
         """
         Construct a testing environment from a JSON representation of fields and their values.
         """

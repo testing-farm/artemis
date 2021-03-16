@@ -546,7 +546,7 @@ class AWSDriver(PoolDriver):
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        instance, owner = r_output.unwrap()  # type: InstanceOwnerType
+        instance, owner = r_output.unwrap()
 
         status = instance['State']['Name']
 
