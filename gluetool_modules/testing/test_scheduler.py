@@ -128,6 +128,11 @@ class TestScheduler(gluetool.Module):
             'default': 'no',
             'metavar': 'yes|no'
         },
+        'compose-constraint-arches-map': {
+            'help': 'Compose to constraint arches map (default: %(default)s).',
+            'metavar': 'FILE',
+            'default': None
+        },
     }
 
     shared_functions = ['test_schedule']
@@ -163,6 +168,24 @@ class TestScheduler(gluetool.Module):
         # type: () -> bool
 
         return utils.normalize_bool_option(self.option('use-snapshots'))
+
+    @gluetool.utils.cached_property
+    def compose_constraint_arches_map(self):
+        # type: () -> utils.PatternMap
+        return utils.PatternMap(
+            utils.normalize_path(self.option('compose-constraint-arches-map')),
+            logger=self.logger,
+            allow_variables=True
+        )
+
+    def compose_constraint_arches(self, compose):
+        # type: (str) -> Any
+        try:
+            return self.compose_constraint_arches_map.match(compose, multiple=True)
+        except GlueError as exc:
+            self.warn(exc.message)
+            self.warn('Return empty compose constraint arches')
+            return []
 
     def test_schedule(self):
         # type: () -> TestSchedule
@@ -344,7 +367,10 @@ class TestScheduler(gluetool.Module):
         constraints = []  # type: List[TestingEnvironment]
 
         for compose in composes:
-            for arch in constraint_arches:
+
+            compose_constraint_arches = constraint_arches or self.compose_constraint_arches(compose)
+
+            for arch in compose_constraint_arches:
                 constraints += [
                     TestingEnvironment(
                         arch=arch,
