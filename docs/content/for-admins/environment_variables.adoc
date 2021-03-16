@@ -105,3 +105,7 @@ Following variables override defaults specified by `ARTEMIS_ACTOR_DEFAULT_*` var
 Periodically executed tasks accept following variable controlling the schedule:
 
 * `ARTEMIS_ACTOR_*_SCHEDULE` (str): A Cron-like schedule specification, e.g. `*/7 * * * *`. The default value depends on the task.
+
+Prepare stage SSH connection verification timeout is configurable using:
+
+* `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT` (int): Global SSH connection timeout, in seconds. Default: `15`.

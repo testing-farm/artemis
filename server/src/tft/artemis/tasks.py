@@ -175,6 +175,16 @@ KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
 )
 
 
+#: Prepare stage ssh timeout
+KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
+    'actor.verify-ssh.connect-timeout',
+    has_db=True,
+    envvar='ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT',
+    envvar_cast=int,
+    default=15
+)
+
+
 POOL_DRIVERS = {
     'aws': aws_driver.AWSDriver,
     'beaker': beaker_driver.BeakerDriver,
@@ -1837,6 +1847,11 @@ def do_prepare_verify_ssh(
     if r_master_key.is_error:
         return handle_failure(r_master_key, 'failed to fetch master key')
 
+    r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session)
+
+    if r_ssh_timeout.is_error:
+        return handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')
+
     with create_tempfile(file_contents=r_master_key.unwrap().private) as private_key_filepath:
         r_ssh = run_cli_tool(
             logger,
@@ -1845,6 +1860,7 @@ def do_prepare_verify_ssh(
                 '-i', private_key_filepath,
                 '-o', 'UserKnownHostsFile=/dev/null',
                 '-o', 'StrictHostKeyChecking=no',
+                '-o', 'ConnectTimeout={}'.format(r_ssh_timeout.unwrap()),
                 '-l', 'root',
                 workspace.gr.address,
                 'bash -c "echo ping"'
