@@ -1,4 +1,5 @@
 import concurrent.futures
+import contextvars
 import datetime
 import json
 import os
@@ -448,7 +449,21 @@ def run_doer(
 
         logger.debug('submitting task doer {}'.format(fn))
 
-        doer_future = executor.submit(fn, logger, db, session, cancel, *args, **kwargs)
+        # We need to propagate our current context to newly spawned thread. To do that, we need to copy our context,
+        # and then use its `run()` method instead of the function we'd run in our new thread. `run()` would then
+        # do its setup and call our function when context is set properly.
+        thread_context = contextvars.copy_context()
+
+        doer_future = executor.submit(
+            thread_context.run,
+            fn,
+            logger,
+            db,
+            session,
+            cancel,
+            *args,
+            **kwargs
+        )
 
         _wait('doer finished in regular mode')
 
@@ -498,12 +513,23 @@ def task_core(
 
     doer_result: DoerReturnType = Error(Failure('undefined doer result'))
 
+    # Updating context - this function is the entry point into Artemis code, therefore context
+    # is probably left empty or with absolutely wrong objects.
+
+    # TODO: once we get nicer method, set context explicitly here
+    LOGGER.set(logger)
+    DATABASE.set(db)
+
     try:
         if session is None:
             with db.get_session() as session:
+                SESSION.set(session)
+
                 doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
 
         else:
+            SESSION.set(session)
+
             doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
 
     except Exception as exc:
