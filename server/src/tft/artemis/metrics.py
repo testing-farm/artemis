@@ -82,7 +82,7 @@ class MetricsBase:
 
     def sync(self) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
 
         .. note::
 
@@ -95,7 +95,7 @@ class MetricsBase:
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Register instances of Prometheus metrics with the given registry..
+        Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         :raises NotImplementedError: when not implemented by a child class.
@@ -133,7 +133,7 @@ class DBPoolMetrics(MetricsBase):
 
     def sync(self) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
         """
 
         db = DATABASE.get()
@@ -153,7 +153,7 @@ class DBPoolMetrics(MetricsBase):
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Register instances of Prometheus metrics with the given registry..
+        Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
@@ -204,14 +204,14 @@ class DBMetrics(MetricsBase):
 
     def sync(self) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
         """
 
         self.pool.sync()
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Register instances of Prometheus metrics with the given registry..
+        Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
@@ -300,7 +300,7 @@ class PoolResources(MetricsBase):
     @with_context
     def sync(self, cache: redis.Redis) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
 
         :param cache: cache instance to use for cache access.
         """
@@ -406,7 +406,7 @@ class PoolResourcesMetrics(MetricsBase):
 
     def sync(self) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
         """
 
         self.limits.sync()
@@ -468,7 +468,7 @@ class PoolMetrics(MetricsBase):
     @with_context
     def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
 
         :param logger: logger to use for logging.
         :param session: DB session to use for DB access.
@@ -501,7 +501,7 @@ class PoolsMetrics(MetricsBase):
     @with_context
     def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
 
         :param logger: logger to use for logging.
         :param session: DB session to use for DB access.
@@ -520,7 +520,7 @@ class PoolsMetrics(MetricsBase):
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Register instances of Prometheus metrics with the given registry..
+        Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
@@ -669,7 +669,7 @@ class ProvisioningMetrics(MetricsBase):
     @with_context
     def sync(self, cache: redis.Redis, session: sqlalchemy.orm.session.Session) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
 
         :param session: DB session to use for DB access.
         :param cache: cache instance to use for cache access.
@@ -711,7 +711,7 @@ class ProvisioningMetrics(MetricsBase):
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Register instances of Prometheus metrics with the given registry..
+        Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
@@ -872,7 +872,7 @@ class RoutingMetrics(MetricsBase):
     @with_context
     def sync(self, cache: redis.Redis) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
 
         :param cache: cache instance to use for cache access.
         """
@@ -893,7 +893,7 @@ class RoutingMetrics(MetricsBase):
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Register instances of Prometheus metrics with the given registry..
+        Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
@@ -1113,7 +1113,7 @@ class TaskMetrics(MetricsBase):
     @with_context
     def sync(self, cache: redis.Redis) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
 
         :param cache: cache instance to use for cache access.
         """
@@ -1157,7 +1157,7 @@ class TaskMetrics(MetricsBase):
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Register instances of Prometheus metrics with the given registry..
+        Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
@@ -1270,7 +1270,7 @@ class Metrics(MetricsBase):
 
     def sync(self) -> None:
         """
-        Load values from database and update this container with up-to-date values..
+        Load values from the storage and update this container with up-to-date values.
         """
 
         self.db.sync()
@@ -1281,7 +1281,7 @@ class Metrics(MetricsBase):
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
-        Register instances of Prometheus metrics with the given registry..
+        Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
