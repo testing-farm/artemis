@@ -148,8 +148,8 @@ def test_task_core_ok(logger, db, session, caplog, monkeypatch, task_core_args):
         call().unwrap()
     ])
 
-    assert_log(caplog, message='beginning', levelno=logging.WARNING)
-    assert_log(caplog, message='finished', levelno=logging.WARNING)
+    assert_log(caplog, message='beginning', levelno=logging.INFO)
+    assert_log(caplog, message='finished', levelno=logging.INFO)
 
 
 def test_task_core_failure(logger, db, session, caplog, monkeypatch, task_core_args):
@@ -168,7 +168,7 @@ def test_task_core_failure(logger, db, session, caplog, monkeypatch, task_core_a
             doer_kwargs=doer_kwargs
         )
 
-    assert_log(caplog, message='beginning', levelno=logging.WARNING)
+    assert_log(caplog, message='beginning', levelno=logging.INFO)
 
 
 def test_task_core_raises(logger, db, session, caplog, monkeypatch, task_core_args):
@@ -187,7 +187,7 @@ def test_task_core_raises(logger, db, session, caplog, monkeypatch, task_core_ar
             doer_kwargs=doer_kwargs
         )
 
-    assert_log(caplog, message='beginning', levelno=logging.WARNING)
+    assert_log(caplog, message='beginning', levelno=logging.INFO)
     assert_log(
         caplog,
         message=MATCH(r'(?m)message: unhandled doer exception\n(?:.*\n)+    ValueError: dummy exception'),
@@ -209,4 +209,4 @@ def test_task_core_reschedule(logger, db, session, caplog, monkeypatch, task_cor
             doer_kwargs=doer_kwargs
         )
 
-    assert_log(caplog, message='beginning', levelno=logging.WARNING)
+    assert_log(caplog, message='beginning', levelno=logging.INFO)

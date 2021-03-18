@@ -292,10 +292,10 @@ class TaskLogger(gluetool.log.ContextAdapter):
         })
 
     def begin(self) -> None:
-        self.warning('beginning')
+        self.info('beginning')
 
     def finished(self) -> None:
-        self.warning('finished')
+        self.info('finished')
 
     def failed(self, failure: Failure) -> None:
         self.error('failed:\n{}'.format(stackprinter.format(failure.exception)))
