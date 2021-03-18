@@ -15,14 +15,18 @@ class ScriptEngine:
         self.functions: Dict[str, Callable[..., Result[Any, Failure]]] = {}
         self.variables: Dict[str, Callable[..., Result[Any, Failure]]] = {}
 
-    def load_script_file(self, filepath: str) -> None:
+    def load_script_file(self, filepath: str) -> Result[None, Failure]:
         filepath = os.path.expanduser(filepath)
 
         try:
             code = imp.load_source(filepath.replace('/', '_'), filepath)
 
         except Exception as exc:
-            raise Exception('Failed to load script from {}: {}'.format(filepath, exc))
+            return Error(Failure.from_exc(
+                'failed to load script',
+                exc,
+                script_filepath=filepath
+            ))
 
         for member_name in dir(code):
             if member_name.startswith('_'):
@@ -34,6 +38,8 @@ class ScriptEngine:
                 continue
 
             self.functions[member_name] = fn
+
+        return Ok(None)
 
     def load_variables_file(self, filepath: str) -> None:
         variables = gluetool.utils.load_yaml(filepath)
@@ -61,17 +67,33 @@ def hook_engine(hook_name: str) -> Result[ScriptEngine, Failure]:
     hook_callback_name = 'hook_{}'.format(hook_name.upper())
 
     if not script_filepath:
-        return Error(Failure('Hook {} is not defined'.format(hook_name)))
+        return Error(Failure(
+            'hook filepath not defined',
+            hook_name=hook_name,
+            script_filepath=script_filepath
+        ))
 
     script_filepath = os.path.expanduser(script_filepath)
 
     if not os.path.exists(script_filepath):
-        return Error(Failure('Script file {} does not exist'.format(script_filepath)))
+        return Error(Failure(
+            'hook filepath not defined',
+            hook_name=hook_name,
+            script_filepath=script_filepath
+        ))
 
     engine = ScriptEngine()
-    engine.load_script_file(script_filepath)
+    r_load = engine.load_script_file(script_filepath)
+
+    if r_load.is_error:
+        return Error(r_load.unwrap_error())
 
     if hook_callback_name not in engine.functions:
-        return Error(Failure('Hook callback {} is not present in {}'.format(hook_callback_name, script_filepath)))
+        return Error(Failure(
+            'hook callable not found',
+            hook_name=hook_name,
+            script_filepath=script_filepath,
+            callable_name=hook_callback_name
+        ))
 
     return Ok(engine)
