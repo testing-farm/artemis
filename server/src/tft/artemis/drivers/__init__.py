@@ -555,7 +555,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         resources = r_resource_metrics.unwrap()
 
-        gluetool.log.log_dict(logger.info, 'resources metrics refresh', dataclasses.asdict(resources))
+        gluetool.log.log_dict(logger.debug, 'resources metrics refresh', dataclasses.asdict(resources))
 
         resources.limits.store()
         resources.usage.store()
