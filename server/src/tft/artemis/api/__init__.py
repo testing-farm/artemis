@@ -61,6 +61,24 @@ KNOB_API_THREADS: Knob[int] = Knob(
     default=1
 )
 
+#: If enabled, APi server will profile handling of each request, emitting a summary into log.
+KNOB_API_ENABLE_PROFILING: Knob[bool] = Knob(
+    'api.profiling.enabled',
+    has_db=False,
+    envvar='ARTEMIS_API_ENABLE_PROFILING',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+#: How many functions should be included in the summary.
+KNOB_API_PROFILE_LIMIT: Knob[int] = Knob(
+    'api.profiling.limit',
+    has_db=False,
+    envvar='ARTEMIS_API_PROFILING_LIMIT',
+    envvar_cast=int,
+    default=20
+)
+
 #: Protects our metrics tree when updating & rendering to user.
 METRICS_LOCK = threading.Lock()
 
@@ -1063,7 +1081,14 @@ def main() -> NoReturn:
     sys.stdout.flush()
     sys.stderr.flush()
 
-    gunicorn_options = [
+    gunicorn_options: List[str] = []
+
+    if KNOB_API_ENABLE_PROFILING.value is True:
+        gunicorn_options += [
+            '-c', 'src/tft/artemis/api/wsgi_profiler.py'
+        ]
+
+    gunicorn_options += [
         '--bind', '0.0.0.0:8001',
         '--reload',
         '--workers', str(KNOB_API_PROCESSES.value),
