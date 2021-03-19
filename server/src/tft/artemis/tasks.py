@@ -3084,6 +3084,12 @@ def do_refresh_pool_resources_metrics(
     cancel: threading.Event,
     poolname: str
 ) -> DoerReturnType:
+    # TODO: once context hits tasks completely, this won't be needed. Until that, we update it on our own,
+    # to avoid introducing parameters in driver methods.
+    LOGGER.set(logger)
+    DATABASE.set(db)
+    session_unroll = SESSION.set(session)
+
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,
         session,
@@ -3101,6 +3107,10 @@ def do_refresh_pool_resources_metrics(
     # to retry if we fail to schedule it - without this, the "it will run once again anyway" concept
     # breaks down.
     r_pool = _get_pool(logger, session, poolname)
+
+    # From this point forward, the session shouldn't be needed.
+    safe_call(session.rollback)
+    SESSION.reset(session_unroll)
 
     if r_pool.is_error:
         handle_failure(r_pool, 'failed to load pool')
