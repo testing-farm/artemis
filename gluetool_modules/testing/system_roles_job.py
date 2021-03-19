@@ -75,6 +75,11 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
             'help': 'List of ansible playbook filepaths and versions values',
             'action': 'append',
             'default': []
+        },
+        'compose-sub-to-artemis-options': {
+            'help': 'Dictionary of compose substring/artemis options key-value pairs',
+            'action': 'append',
+            'default': []
         }
     })
 
@@ -84,6 +89,21 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
         for pair in self.option('system-roles-ansibles').split(',\n'):
             splitted_pair = pair.split(':')
             mapping[splitted_pair[0]] = splitted_pair[1]
+
+        return mapping
+
+    def compose_sub_to_artemis_options(self):
+        mapping = {}
+
+        if self.option('compose-sub-to-artemis-options'):
+            for pair in self.option('compose-sub-to-artemis-options').split(',\n'):
+                try:
+                    splitted_pair = pair.split(':')
+                    mapping[splitted_pair[0]] = splitted_pair[1]
+                except Exception as exc:
+                    self.error(exc)
+                    self.warning('Pair {} has the invalid format, skipping this one'.format(pair))
+                    continue
 
         return mapping
 
@@ -129,6 +149,10 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
         for compose in composes_to_test_on:
             for ansible_version, ansible_path in self.system_roles_ansibles().items():
                 self.build_params = common_build_params.copy()
+
+                for substring, option in self.compose_sub_to_artemis_options().items():
+                    if substring in compose.lower():
+                        self.build_params['artemis_options'] += option
 
                 self.build_params['guess_environment_options'] += ' --compose-method=force --compose={}'.format(compose)
 
