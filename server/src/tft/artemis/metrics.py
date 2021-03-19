@@ -1295,7 +1295,8 @@ class Metrics(MetricsBase):
         })
 
         self.IDENTITY_INFO.info({
-            'api_node': platform.node()
+            'api_node': platform.node(),
+            'artemis_deployment': os.getenv('ARTEMIS_DEPLOYMENT', '<undefined>')
         })
 
     def update_prometheus(self) -> None:

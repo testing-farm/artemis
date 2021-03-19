@@ -391,6 +391,7 @@ class AboutResponse:
     package_version: str
     image_digest: Optional[str]
     image_url: Optional[str]
+    artemis_deployment: Optional[str]
 
 
 class GuestRequestManager:
@@ -991,7 +992,8 @@ def get_about(request: Request) -> AboutResponse:
     return AboutResponse(
         package_version=__VERSION__,
         image_digest=os.getenv('ARTEMIS_IMAGE_DIGEST'),
-        image_url=os.getenv('ARTEMIS_IMAGE_URL')
+        image_url=os.getenv('ARTEMIS_IMAGE_URL'),
+        artemis_deployment=os.getenv('ARTEMIS_DEPLOYMENT')
     )
 
 
