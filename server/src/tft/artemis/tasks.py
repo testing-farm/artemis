@@ -178,6 +178,7 @@ KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
 #: Prepare stage ssh timeout
 KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     'actor.verify-ssh.connect-timeout',
+    per_pool=True,
     has_db=True,
     envvar='ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT',
     envvar_cast=int,
@@ -1835,19 +1836,21 @@ def do_prepare_verify_ssh(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
+    workspace.load_gr_pool()
 
     if workspace.result:
         return workspace.result
 
     assert workspace.gr
     assert workspace.gr.address
+    assert workspace.pool
 
     r_master_key = _get_ssh_key(logger, session, 'artemis', 'master-key')
 
     if r_master_key.is_error:
         return handle_failure(r_master_key, 'failed to fetch master key')
 
-    r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session)
+    r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=session, pool=workspace.pool)
 
     if r_ssh_timeout.is_error:
         return handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')

@@ -109,3 +109,7 @@ Periodically executed tasks accept following variable controlling the schedule:
 Prepare stage SSH connection verification timeout is configurable using:
 
 * `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT` (int): Global SSH connection timeout, in seconds. Default: `15`.
+
+Besides this variable, it is possible to override the timeout value per pool:
+
+* `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_*` (int): Pool-specific SSH connection timeout value, in seconds. The environmental variable is suffixed with uppercased pool name. For example for pool named `foo` the variable name would be `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_FOO`. If not defined, global value is used.
