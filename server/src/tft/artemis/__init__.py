@@ -1310,7 +1310,7 @@ def log_error_guest_event(
 #: to pass N variables to each and every function plus a big red warning "this may use context variables" should
 #: prevent most of the issues.
 LOGGER: contextvars.ContextVar[gluetool.log.ContextAdapter] = contextvars.ContextVar('LOGGER', default=get_logger())
-DATABASE: contextvars.ContextVar['artemis_db.DB'] = contextvars.ContextVar('DATABASE', default=get_db(LOGGER.get()))
+DATABASE: contextvars.ContextVar['artemis_db.DB'] = contextvars.ContextVar('DATABASE')
 SESSION: contextvars.ContextVar[sqlalchemy.orm.session.Session] = contextvars.ContextVar('SESSION')
 CACHE: contextvars.ContextVar[redis.Redis] = contextvars.ContextVar('CACHE', default=get_cache(LOGGER.get()))
 
