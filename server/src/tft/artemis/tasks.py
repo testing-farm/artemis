@@ -19,8 +19,8 @@ from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
 from . import DATABASE, LOGGER, SESSION, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
-    log_guest_event, metrics, safe_call, safe_db_change
-from .db import DB, GuestEvent, GuestRequest, Pool, Query, SnapshotRequest, SSHKey
+    log_guest_event, metrics, safe_call, safe_db_change, with_context
+from .db import DB, GuestEvent, GuestRequest, Pool, Query, SafeQuery, SnapshotRequest, SSHKey
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver
@@ -1065,31 +1065,30 @@ def get_pools(
     return pools
 
 
+@with_context
 def _get_ssh_key(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
     ownername: str,
-    keyname: str
-) -> Result[SSHKey, Failure]:
-    try:
-        return Ok(
-            Query.from_session(session, SSHKey)
-            .filter(
-                SSHKey.ownername == ownername,
-                SSHKey.keyname == keyname
-            )
-            .one()
-        )
-
-    except sqlalchemy.orm.exc.NoResultFound:
-        return Error(Failure('no key {}:{}'.format(ownername, keyname)))
-
-
-def _get_master_key(
-    logger: gluetool.log.ContextAdapter,
+    keyname: str,
     session: sqlalchemy.orm.session.Session
-) -> Result[SSHKey, Failure]:
-    return _get_ssh_key(logger, session, 'artemis', 'master-key')
+) -> Result[Optional[SSHKey], Failure]:
+    return SafeQuery.from_session(session, SSHKey) \
+        .filter(SSHKey.ownername == ownername) \
+        .filter(SSHKey.keyname == keyname) \
+        .one_or_none()
+
+
+def _get_master_key() -> Result[SSHKey, Failure]:
+    r_master_key = _get_ssh_key('artemis', 'master-key')
+
+    if r_master_key.is_error:
+        return Error(r_master_key.unwrap_error())
+
+    master_key = r_master_key.unwrap()
+
+    if master_key is None:
+        return Error(Failure('failed to find master key'))
+
+    return Ok(master_key)
 
 
 def get_pool_logger(
@@ -1282,12 +1281,7 @@ class Workspace:
 
         assert self.gr
 
-        r = _get_ssh_key(
-            self.logger,
-            self.session,
-            self.gr.ownername,
-            self.gr.ssh_keyname
-        )
+        r = _get_ssh_key(self.gr.ownername, self.gr.ssh_keyname)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to get SSH key')
@@ -1298,6 +1292,16 @@ class Workspace:
             return
 
         self.ssh_key = r.unwrap()
+
+        if self.ssh_key is None:
+            self.result = self.handle_failure(
+                Error(Failure(
+                    'no such SSH key',
+                    ownername=self.gr.ownername,
+                    keyname=self.gr.ssh_keyname
+                )),
+                'failed to find SSH key'
+            )
 
     def load_gr_pool(self) -> None:
         """
@@ -1936,7 +1940,7 @@ def do_prepare_verify_ssh(
     assert workspace.gr.address
     assert workspace.pool
 
-    r_master_key = _get_ssh_key(logger, session, 'artemis', 'master-key')
+    r_master_key = _get_master_key()
 
     if r_master_key.is_error:
         return handle_failure(r_master_key, 'failed to fetch master key')
