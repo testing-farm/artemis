@@ -1252,15 +1252,15 @@ def log_guest_event(
 ) -> Result[None, Failure]:
     """ Create event log record for guest """
 
-    session.add(
-        artemis_db.GuestEvent(
+    r = safe_db_change(
+        logger,
+        session,
+        sqlalchemy.insert(artemis_db.GuestEvent.__table__).values(  # type: ignore  # GuestEvent *has* __table__
             guestname=guestname,
             eventname=eventname,
-            **details
+            details=json.dumps(details)
         )
     )
-
-    r = safe_call(session.commit)
 
     if r.is_error:
         failure = r.unwrap_error()

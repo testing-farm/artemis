@@ -30,6 +30,7 @@ from .. import __VERSION__, DATABASE, LOGGER, FailureDetailsType, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, log_guest_event, metrics, safe_db_change
 from ..guest import GuestState
+from ..tasks import get_snapshot_logger
 from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
@@ -646,25 +647,56 @@ class SnapshotRequestManager:
 
             return SnapshotResponse.from_db(snapshot_request_record)
 
-    def create_snapshot(self, guestname: str, snapshot_request: SnapshotRequest) -> SnapshotResponse:
+    def create_snapshot(
+        self,
+        guestname: str,
+        snapshot_request: SnapshotRequest,
+        logger: gluetool.log.ContextAdapter
+    ) -> SnapshotResponse:
         snapshotname = str(uuid.uuid4())
 
+        failure_details = {
+            'guestname': guestname,
+            'snapshotname': snapshotname
+        }
+
+        snapshot_logger = get_snapshot_logger('create-snapshot-request', logger, guestname, snapshotname)
+
         with self.db.get_session() as session:
-            session.add(
-                artemis_db.SnapshotRequest(
+            perform_safe_db_change(
+                snapshot_logger,
+                session,
+                sqlalchemy.insert(artemis_db.SnapshotRequest.__table__).values(
                     snapshotname=snapshotname,
                     guestname=guestname,
                     poolname=None,
                     state=GuestState.PENDING.value,
                     start_again=snapshot_request.start_again
-                )
+                ),
+                conflict_error=errors.InternalServerError,
+                failure_details=failure_details
             )
 
-        snapshot_response = self.get_snapshot(guestname, snapshotname)
+            log_guest_event(
+                snapshot_logger,
+                session,
+                guestname,
+                'created',
+                snapshotname=snapshotname
+            )
 
-        assert snapshot_response is not None
+        sr = self.get_snapshot(guestname, snapshotname)
 
-        return snapshot_response
+        if sr is None:
+            # Now isn't this just funny... We just created the record, how could it be missing? There's probably
+            # no point in trying to clean up what we started - if the guest is missing, right after we created it,
+            # then things went south. At least it would get logged.
+            raise errors.InternalServerError(
+                logger=snapshot_logger,
+                failure_details=failure_details
+            )
+
+        return sr
 
     def delete_snapshot(self, guestname: str, snapshotname: str, logger: gluetool.log.ContextAdapter) -> None:
         from ..tasks import get_snapshot_logger
@@ -960,8 +992,9 @@ def get_snapshot_request(guestname: str, snapshotname: str, manager: SnapshotReq
 
 def create_snapshot_request(guestname: str,
                             snapshot_request: SnapshotRequest,
-                            manager: SnapshotRequestManager) -> Tuple[str, SnapshotResponse]:
-    return HTTP_201, manager.create_snapshot(guestname, snapshot_request)
+                            manager: SnapshotRequestManager,
+                            logger: gluetool.log.ContextAdapter) -> Tuple[str, SnapshotResponse]:
+    return HTTP_201, manager.create_snapshot(guestname, snapshot_request, logger)
 
 
 def delete_snapshot(
