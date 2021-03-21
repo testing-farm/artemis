@@ -314,32 +314,38 @@ class AzureDriver(PoolDriver):
 
         return Ok(output_stdout)
 
-    def _run_cmd_with_auth(self, options: List[str], json_format: bool = True,
-                           login: bool = True) -> Result[Any, Failure]:
-        if login:
+    def _run_cmd_with_auth(
+        self,
+        options: List[str],
+        json_format: bool = True,
+        with_login: bool = True
+    ) -> Result[Any, Failure]:
+        if with_login:
             login_output = self._login()
+
             if login_output.is_error:
-                return Error(login_output.value)
+                return Error(login_output.unwrap_error())
+
         return self._run_cmd(options, json_format)
 
-    def _login(self) -> Result[Any, Failure]:
+    def _login(self) -> Result[None, Failure]:
         # login if credentials have been passed -> try to login
         if self.pool_config['username'] and self.pool_config['password']:
-            login_output = self._run_cmd(['login', '--username', self.pool_config['username'],
-                                          '--password', self.pool_config['password']])
+            login_output = self._run_cmd([
+                'login',
+                '--username', self.pool_config['username'],
+                '--password', self.pool_config['password']
+            ])
+
             if login_output.is_error:
-                return Error(login_output.value)
-        return Ok(True)
+                return Error(login_output.unwrap_error())
+
+        return Ok(None)
 
     def _show_guest(
         self,
         guest_request: GuestRequest
     ) -> Result[Any, Failure]:
-
-        login_output = self._login()
-        if login_output.is_error:
-            return Error(login_output.value)
-
         r_output = self._run_cmd_with_auth([
             'vm',
             'show',
@@ -348,7 +354,7 @@ class AzureDriver(PoolDriver):
         ])
 
         if r_output.is_error:
-            return Error(r_output.value)
+            return Error(r_output.unwrap_error())
         return Ok(r_output.unwrap())
 
     # NOTE(ivasilev) Borrowed as is with cosmetic changes from openstack driver.
