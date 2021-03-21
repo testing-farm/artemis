@@ -8,15 +8,16 @@ import os
 import re
 import tempfile
 import threading
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Iterator, List, Optional, Type, TypeVar, Union, cast
 
 import gluetool
 import gluetool.log
+import gluetool.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
+from .. import Failure, JSONType, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
@@ -35,6 +36,18 @@ class _AnyArchitecture:
 
 
 AnyArchitecture = _AnyArchitecture()
+
+
+@dataclasses.dataclass
+class CLIOutput:
+    #: CLI tool output.
+    process_output: gluetool.utils.ProcessOutput
+
+    #: Shortcut to :py:attr:`output`.stdout
+    stdout: str
+
+    #: If JSON output was expected by CLI caller, this attribute carries tool output converted to a data structure.
+    json: Optional[JSONType] = None
 
 
 class PoolLogger(gluetool.log.ContextAdapter):
@@ -660,7 +673,7 @@ def run_cli_tool(
     command_scrubber: Optional[Callable[[List[str]], List[str]]] = None,
     allow_empty: bool = True,
     env: Optional[Dict[str, str]] = None
-) -> Result[Tuple[Any, gluetool.utils.ProcessOutput], Failure]:
+) -> Result[CLIOutput, Failure]:
     """
     Run a given command, and return its output.
 
@@ -680,10 +693,8 @@ def run_cli_tool(
     :param allow_empty: under some conditions, the standard output, as returned by Python libraries,
         may be ``None``. If this parameter is unset, such an output would be reported as a failure,
         if set, ``None`` would be converted to an empty string, and processed as any other output.
-    :returns: either a valid result, a tuple of two items, or an error with a :py:class:`Failure` describing
-        the problem. The first item of the tuple is either command's standard output, or, if ``json_output``
-        was set, a datastructure representing command's output after parsing it as JSON structure. The second
-        pair of the tuple is always :py:class:`gluetool.utils.ProcessOutput`.
+    :returns: either a valid result, :py:class:`CLIOutput` instance, or an error with a :py:class:`Failure` describing
+        the problem.
     """
 
     # We have our own no-op scrubber, preserving the command.
@@ -731,7 +742,7 @@ def run_cli_tool(
             ))
 
         try:
-            return Ok((json.loads(output_stdout), output))
+            return Ok(CLIOutput(output, output_stdout, json=json.loads(output_stdout)))
 
         except Exception as exc:
             return Error(Failure.from_exc(
@@ -741,7 +752,7 @@ def run_cli_tool(
                 scrubbed_command=command_scrubber(command)
             ))
 
-    return Ok((output_stdout, output))
+    return Ok(CLIOutput(output, output_stdout))
 
 
 @contextlib.contextmanager

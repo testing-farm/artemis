@@ -2,7 +2,7 @@ import dataclasses
 import os
 import stat
 import threading
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional
 
 import bs4
 import gluetool.log
@@ -16,8 +16,8 @@ from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
-    create_tempfile, run_cli_tool
+from . import CLIOutput, PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, \
+    ProvisioningState, create_tempfile, run_cli_tool
 
 NodeRefType = Any
 
@@ -51,15 +51,14 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         options: List[str]
-    ) -> Result[Tuple[Any, gluetool.utils.ProcessOutput], Failure]:
+    ) -> Result[CLIOutput, Failure]:
         """
         Run bkr command with additional options
 
         :param gluetool.log.ContextAdapter logger: logger to use for logging.
         :param List(str) options: options for the command
-        :returns: either a valid result, a tuple of two items, or an error with a :py:class:`Failure` describing
-            the problem. The first item of the tuple is command's standard output, the second is
-            :py:class:`gluetool.utils.ProcessOutput`.
+        :returns: either a valid result, :py:class:`CLIOutput` instance, or an error with a :py:class:`Failure`
+            describing the problem.
         """
 
         if self.pool_config.get('username') and self.pool_config.get('password'):
@@ -186,16 +185,16 @@ class BeakerDriver(PoolDriver):
         if r_workflow_simple.is_error:
             return Error(r_workflow_simple.unwrap_error())
 
-        stdout, output = r_workflow_simple.unwrap()
+        bkr_output = r_workflow_simple.unwrap()
 
         try:
-            return Ok(bs4.BeautifulSoup(stdout, 'xml'))
+            return Ok(bs4.BeautifulSoup(bkr_output.stdout, 'xml'))
 
         except Exception as exc:
             return Error(Failure.from_exc(
                 'failed to parse job XML',
                 exc,
-                command_output=output
+                command_output=bkr_output.process_output
             ))
 
     def _submit_job(
@@ -227,22 +226,22 @@ class BeakerDriver(PoolDriver):
         if r_job_submit.is_error:
             return Error(r_job_submit.unwrap_error())
 
-        stdout, output = r_job_submit.unwrap()
+        bkr_output = r_job_submit.unwrap()
 
         # Parse job id from output
         try:
             # Submitted: ['J:1806666']
-            first_job_index = stdout.index('\'') + 1
-            last_job_index = len(stdout) - stdout[::-1].index('\'') - 1
+            first_job_index = bkr_output.stdout.index('\'') + 1
+            last_job_index = len(bkr_output.stdout) - bkr_output.stdout[::-1].index('\'') - 1
 
             # J:1806666
-            job_id = stdout[first_job_index:last_job_index]
+            job_id = bkr_output.stdout[first_job_index:last_job_index]
 
         except Exception as exc:
             return Error(Failure.from_exc(
                 'cannot convert job-submit output to job ID',
                 exc,
-                command_output=output
+                command_output=bkr_output.process_output
             ))
 
         logger.info('Job submitted: {}'.format(job_id))
@@ -305,16 +304,16 @@ class BeakerDriver(PoolDriver):
         if r_results.is_error:
             return Error(r_results.unwrap_error())
 
-        stdout, output = r_results.unwrap()
+        bkr_output = r_results.unwrap()
 
         try:
-            return Ok(bs4.BeautifulSoup(stdout, 'xml'))
+            return Ok(bs4.BeautifulSoup(bkr_output.stdout, 'xml'))
 
         except Exception as exc:
             return Error(Failure.from_exc(
                 'failed to parse job results XML',
                 exc,
-                command_output=output
+                command_output=bkr_output.process_output
             ))
 
     def _parse_job_status(
@@ -543,7 +542,7 @@ class BeakerDriver(PoolDriver):
                 return Error(failure)
 
         else:
-            raw_machines, _ = r_query_instances.unwrap()
+            raw_machines = r_query_instances.unwrap().stdout
 
         if raw_machines:
             resources.usage.instances = len(raw_machines.splitlines())

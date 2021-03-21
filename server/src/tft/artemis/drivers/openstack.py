@@ -3,13 +3,13 @@ import re
 import sys
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, Knob, get_cached_item, refresh_cached_set
+from .. import Failure, JSONType, Knob, get_cached_item, refresh_cached_set
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics
@@ -88,7 +88,7 @@ class OpenStackDriver(PoolDriver):
 
         self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)
 
-    def _run_os(self, options: List[str], json_format: bool = True) -> Result[Any, Failure]:
+    def _run_os(self, options: List[str], json_format: bool = True) -> Result[Union[JSONType, str], Failure]:
         """
         Run os command with additional options and return output in json format
 
@@ -126,14 +126,12 @@ class OpenStackDriver(PoolDriver):
 
             return Error(failure)
 
+        cli_output = r_run.unwrap()
+
         if json_format:
-            json_output, _ = r_run.unwrap()
+            return Ok(cli_output.json)
 
-            return Ok(json_output)
-
-        raw_output, _ = r_run.unwrap()
-
-        return Ok(raw_output)
+        return Ok(cli_output.stdout)
 
     def _dispatch_resource_cleanup(
         self,
@@ -262,7 +260,7 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options)
 
         if r_output.is_error:
-            return Error(r_output.value)
+            return Error(r_output.unwrap_error())
 
         return Ok(r_output.unwrap())
 
@@ -275,7 +273,7 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options)
 
         if r_output.is_error:
-            return Error(r_output.value)
+            return Error(r_output.unwrap_error())
 
         return Ok(r_output.unwrap())
 
@@ -433,7 +431,7 @@ class OpenStackDriver(PoolDriver):
         r_stop = self._run_os(os_options, json_format=False)
 
         if r_stop.is_error:
-            return Error(r_stop.value)
+            return Error(r_stop.unwrap_error())
 
         return Ok(True)
 
@@ -447,7 +445,7 @@ class OpenStackDriver(PoolDriver):
         r_start = self._run_os(os_options, json_format=False)
 
         if r_start.is_error:
-            return Error(r_start.value)
+            return Error(r_start.unwrap_error())
 
         return Ok(True)
 
@@ -479,7 +477,7 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options)
 
         if r_output.is_error:
-            return Error(r_output.value)
+            return Error(r_output.unwrap_error())
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
@@ -497,7 +495,7 @@ class OpenStackDriver(PoolDriver):
         r_output = self._show_snapshot(snapshot_request)
 
         if r_output.is_error:
-            return Error(r_output.value)
+            return Error(r_output.unwrap_error())
 
         output = r_output.unwrap()
 
@@ -528,7 +526,7 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options, json_format=False)
 
         if r_output.is_error:
-            return Error(r_output.value)
+            return Error(r_output.unwrap_error())
 
         return Ok(True)
 
@@ -547,7 +545,7 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options, json_format=False)
 
         if r_output.is_error:
-            return Error(r_output.value)
+            return Error(r_output.unwrap_error())
 
         return Ok(True)
 
@@ -689,7 +687,7 @@ class OpenStackDriver(PoolDriver):
             ], json_format=False)
 
             if r_output.is_error:
-                return Error(r_output.value)
+                return Error(r_output.unwrap_error())
 
         return Ok(None)
 
@@ -766,7 +764,7 @@ class OpenStackDriver(PoolDriver):
 
         network_pattern = re.compile(self.pool_config['network-regex'])
 
-        for network in r_networks.unwrap():
+        for network in cast(List[Dict[str, str]], r_networks.unwrap()):
             network_name = network['Network Name']
 
             if not network_pattern.match(network_name):
@@ -786,7 +784,7 @@ class OpenStackDriver(PoolDriver):
         try:
             return Ok([
                 PoolImageInfoType(name=image['Name'], id=image['ID'])
-                for image in r_images.unwrap()
+                for image in cast(List[Dict[str, str]], r_images.unwrap())
             ])
 
         except KeyError as exc:
@@ -825,7 +823,7 @@ class OpenStackDriver(PoolDriver):
         try:
             flavors: Dict[str, FlavorInfo] = {
                 flavor['Name']: FlavorInfo(name=flavor['Name'], id=flavor['ID'])
-                for flavor in r_flavors.unwrap()
+                for flavor in cast(List[Dict[str, str]], r_flavors.unwrap())
             }
 
         except KeyError as exc:

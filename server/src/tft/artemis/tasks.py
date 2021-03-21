@@ -2043,12 +2043,12 @@ def do_prepare_verify_ssh(
     if r_ssh.is_error:
         return handle_failure(r_ssh, 'failed to verify SSH')
 
-    stdout_content, output = r_ssh.unwrap()
+    ssh_output = r_ssh.unwrap()
 
-    if stdout_content.strip() != 'ping':
+    if ssh_output.stdout.strip() != 'ping':
         failure = Failure(
             'did not receive expected response',
-            command_output=output
+            command_output=ssh_output.process_output
         )
 
         return handle_failure(Error(failure), 'failed to verify SSH')

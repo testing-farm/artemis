@@ -3,7 +3,7 @@ import dataclasses
 import os
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -12,7 +12,7 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import wait
 from jinja2 import Template
 
-from .. import Failure, Knob
+from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
@@ -152,7 +152,7 @@ class AWSDriver(PoolDriver):
             ])
 
             if r_output.is_error:
-                return Error(r_output.value)
+                return Error(r_output.unwrap_error())
 
         if 'instance_id' in resource_ids:
             r_output = self._aws_command([
@@ -161,7 +161,7 @@ class AWSDriver(PoolDriver):
             ])
 
             if r_output.is_error:
-                return Error(r_output.value)
+                return Error(r_output.unwrap_error())
 
         return Ok(None)
 
@@ -247,7 +247,7 @@ class AWSDriver(PoolDriver):
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        output = r_output.unwrap()
+        output = cast(List[Dict[str, Any]], r_output.unwrap())
 
         # get instance info from command output
         try:
@@ -264,7 +264,7 @@ class AWSDriver(PoolDriver):
 
         return Ok((instance, owner))
 
-    def _aws_command(self, args: List[str], key: Optional[str] = None) -> Result[Any, Failure]:
+    def _aws_command(self, args: List[str], key: Optional[str] = None) -> Result[JSONType, Failure]:
         """
         Runs command via aws cli and returns a dictionary with command reply.
 
@@ -284,15 +284,18 @@ class AWSDriver(PoolDriver):
         if r_run.is_error:
             return Error(r_run.unwrap_error())
 
-        json_output, output = r_run.unwrap()
+        output = r_run.unwrap()
+
+        if key is None:
+            return Ok(output.json)
 
         try:
-            return Ok(json_output[key] if key else json_output)
+            return Ok(cast(Dict[str, Any], output.json)[key])
 
         except KeyError:
             return Error(Failure(
                 "key '{}' not found in CLI output".format(key),
-                command_output=output,
+                command_output=output.process_output,
                 scrubbed_command=command
             ))
 
@@ -314,9 +317,9 @@ class AWSDriver(PoolDriver):
         ], key='SpotPriceHistory')
 
         if r_spot_price.is_error:
-            return r_spot_price
+            return Error(r_spot_price.unwrap_error())
 
-        prices = r_spot_price.unwrap()
+        prices = cast(List[Dict[str, str]], r_spot_price.unwrap())
 
         log_dict(logger.debug, 'spot prices', prices)
 
@@ -370,9 +373,9 @@ class AWSDriver(PoolDriver):
         r_image = self._aws_command(command, key='Images')
 
         if r_image.is_error:
-            return r_image
+            return Error(r_image.unwrap_error())
 
-        image = r_image.unwrap()
+        image = cast(List[Dict[str, BlockDeviceMappingsType]], r_image.unwrap())
 
         try:
             block_device_mappings = image[0]['BlockDeviceMappings']
@@ -453,9 +456,9 @@ class AWSDriver(PoolDriver):
         ], key='SpotInstanceRequests')
 
         if r_spot_request.is_error:
-            return r_spot_request
+            return Error(r_spot_request.unwrap_error())
 
-        spot_instance_id = r_spot_request.unwrap()[0]['SpotInstanceRequestId']
+        spot_instance_id = cast(List[Dict[str, str]], r_spot_request.unwrap())[0]['SpotInstanceRequestId']
         logger.info("spot instance request '{}'".format(spot_instance_id))
 
         # wait until spot request fullfilled, accept busy waiting as this should take only few seconds
@@ -472,7 +475,7 @@ class AWSDriver(PoolDriver):
                 r_spot_status.unwrap_error().log(logger.error, label='provisioning failed')
                 return Ok(None)
 
-            spot_request_result = r_spot_status.unwrap()[0]
+            spot_request_result = cast(List[Dict[str, Any]], r_spot_status.unwrap())[0]
 
             if spot_request_result['Status']['Code'] == 'fulfilled':
                 # note: we are returning a result as the value
@@ -745,7 +748,7 @@ class AWSDriver(PoolDriver):
                         'PlatformDetails': image['PlatformDetails']
                     }
                 )
-                for image in r_images.unwrap()
+                for image in cast(List[Dict[str, str]], r_images.unwrap())
             ])
 
         except KeyError as exc:

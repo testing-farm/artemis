@@ -84,6 +84,15 @@ T = TypeVar('T')
 
 FailureDetailsType = Dict[str, Any]
 
+#: Represents a data structure created from a JSON input. The main purpose of this type to allow tracking of such data
+#: instead of very open and easy to misunderstand ``Any``. A particular name is easier to follow in the code.
+#:
+#: Since JSON can be as simple as a single integer, ``79``, the type covers the primitive types, too. In reality,
+#: our code will encounter mostly complex types, lists of dictionaries (e.g. list of cloud instances), therefore
+#: including the primitive types will force users of ``JSONType`` to employ ``cast()`` heavily, to actually reveal
+#: the real structure inside the otherwise opaque JSON blob received from a CLI tool. But that **is** a good thing.
+JSONType = Union[str, int, float, List[Any], Dict[Any, Any], None]
+
 
 # Gluetool Sentry instance
 gluetool_sentry = gluetool.sentry.Sentry()

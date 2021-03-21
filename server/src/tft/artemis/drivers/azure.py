@@ -1,12 +1,12 @@
 import dataclasses
 import threading
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, Knob
+from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
@@ -181,8 +181,13 @@ class AzureDriver(PoolDriver):
 
         # delete vm first, resources second
         assorted_resource_ids = []
+        assorted_resources = [
+            res
+            for res in cast(List[Dict[str, str]], resources_by_tag)
+            if res["type"] != "Microsoft.Compute/virtualMachines"
+        ]
 
-        for res in [r for r in resources_by_tag if r["type"] != "Microsoft.Compute/virtualMachines"]:
+        for res in assorted_resources:
             assorted_resource_ids.append(res['id'])
 
         r_cleanup = self._dispatch_resource_cleanup(
@@ -294,7 +299,7 @@ class AzureDriver(PoolDriver):
             master_key,
             cancelled)
 
-    def _run_cmd(self, options: List[str], json_format: bool = True) -> Result[Any, Failure]:
+    def _run_cmd(self, options: List[str], json_format: bool = True) -> Result[Union[JSONType, str], Failure]:
         r_run = run_cli_tool(
             self.logger,
             ['az'] + options,
@@ -306,20 +311,16 @@ class AzureDriver(PoolDriver):
             return Error(r_run.unwrap_error())
 
         if json_format:
-            json_output, _ = r_run.unwrap()
+            return Ok(r_run.unwrap().json)
 
-            return Ok(json_output)
-
-        output_stdout, _ = r_run.unwrap()
-
-        return Ok(output_stdout)
+        return Ok(r_run.unwrap().stdout)
 
     def _run_cmd_with_auth(
         self,
         options: List[str],
         json_format: bool = True,
         with_login: bool = True
-    ) -> Result[Any, Failure]:
+    ) -> Result[Union[JSONType, str], Failure]:
         if with_login:
             login_output = self._login()
 
@@ -418,7 +419,7 @@ class AzureDriver(PoolDriver):
 
         r_output = None
 
-        def _create(custom_data_filename: str) -> Result[Any, Failure]:
+        def _create(custom_data_filename: str) -> Result[JSONType, Failure]:
             """
             The actual call to the azure cli guest create command is happening here.
             If custom_data_filename is an empty string then the guest vm is booted with no user-data.
@@ -463,7 +464,7 @@ class AzureDriver(PoolDriver):
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        output = r_output.unwrap()
+        output = cast(Dict[str, Any], r_output.unwrap())
         if not output['id']:
             return Error(Failure('Instance id not found'))
 
