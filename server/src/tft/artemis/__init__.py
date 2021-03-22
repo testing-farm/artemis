@@ -1010,6 +1010,27 @@ KNOB_LOGGING_DB_QUERIES: Knob[bool] = Knob(
     default=False
 )
 
+#: When enabled, Artemis would log "slow" queries - queries whose execution took longer than
+#: ``ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD`` seconds.
+KNOB_LOGGING_DB_SLOW_QUERIES: Knob[bool] = Knob(
+    'logging.db.slow-queries',
+    # Never change it to `True`: querying DB while logging another DB query sounds too much like "endless recursion".
+    has_db=False,
+    envvar='ARTEMIS_LOG_DB_SLOW_QUERIES',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+#: Minimal time, in seconds, spent executing a query for it to be reported as "slow".
+KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD: Knob[float] = Knob(
+    'logging.db.slow-query-threshold',
+    # Never change it to `True`: querying DB while logging another DB query sounds too much like "endless recursion".
+    has_db=False,
+    envvar='ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD',
+    envvar_cast=float,
+    default=10.0
+)
+
 #: When enabled, Artemis would log events related to database connection pool.
 KNOB_LOGGING_DB_POOL: Knob[str] = Knob(
     'logging.db.pool',

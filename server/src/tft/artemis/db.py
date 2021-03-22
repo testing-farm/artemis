@@ -8,6 +8,7 @@ import logging
 import os
 import secrets
 import threading
+import time
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, Union, \
     cast
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, Iterator, List, 
 import gluetool.glue
 import gluetool.log
 import sqlalchemy
+import sqlalchemy.event
 import sqlalchemy.ext.declarative
 import sqlalchemy.sql.expression
 from gluetool.result import Error, Ok, Result
@@ -734,6 +736,49 @@ class Knob(Base):
 
     knobname = Column(String(), primary_key=True, nullable=False)
     value = Column(String(), nullable=False)
+
+
+# TODO: shuffle a bit with files to avoid local imports and to set this up conditionaly. It's probably not
+# critical, but it would also help a bit with DB class, and it would be really nice to not install the event
+# hooks when not asked to log slow queries.
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'before_cursor_execute')  # type: ignore  # untyped decorator
+def before_cursor_execute(
+    conn: sqlalchemy.engine.Connection,
+    cursor: Any,
+    statement: Any,
+    parameters: Any,
+    context: Any,
+    executemany: Any
+) -> None:
+    conn.info.setdefault('query_start_time', []).append(time.time())
+
+
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'after_cursor_execute')  # type: ignore  # untyped decorator
+def after_cursor_execute(
+    conn: sqlalchemy.engine.Connection,
+    cursor: Any,
+    statement: Any,
+    parameters: Any,
+    context: Any,
+    executemany: Any
+) -> None:
+    from . import KNOB_LOGGING_DB_SLOW_QUERIES, KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD
+
+    if KNOB_LOGGING_DB_SLOW_QUERIES.value is not True:
+        return
+
+    query_time = time.time() - conn.info['query_start_time'].pop(-1)
+
+    if query_time < KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD.value:
+        return
+
+    from . import LOGGER, Failure
+
+    Failure(
+        'detected a slow query',
+        query=str(statement),
+        time=query_time
+    ).handle(LOGGER.get())
 
 
 class _DB:
