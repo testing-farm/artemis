@@ -50,11 +50,16 @@ GUEST_AGE_BUCKETS = \
 # Taken from the Prometheus middleware Dramatiq provides - not suited for our needs, but the bucket
 # setup is not incompatible with our architecture.
 MESSAGE_DURATION_BUCKETS = (
-    5, 10, 25, 50, 75,
-    100, 250, 500, 750,
-    1000, 2500, 5000, 7500,
-    10000, 30000, 60000,
-    600000, 900000,
+    # -> 1s
+    5, 10, 25, 50, 75, 100, 250, 500, 750, 1000,
+    # -> 10s
+    2500, 5000, 7500, 10000,
+    # -> 60s
+    30000, 60000,
+    # -> 600s/10m
+    120000, 180000, 240000, 300000, 360000, 420000, 480000, 540000, 600000,
+    # -> 900s/15m
+    900000,
     prometheus_client.utils.INF
 )
 
@@ -943,7 +948,7 @@ class TaskMetrics(MetricsBase):
     overall_rejected_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
     current_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
     current_delayed_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    message_durations: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
+    message_durations: Dict[Tuple[str, str, str, str], int] = dataclasses.field(default_factory=dict)
 
     _KEY_OVERALL_MESSAGES = 'metrics.tasks.messages.overall'
     _KEY_OVERALL_ERRORED_MESSAGES = 'metrics.tasks.messages.overall.errored'
@@ -1075,7 +1080,13 @@ class TaskMetrics(MetricsBase):
 
     @staticmethod
     @with_context
-    def inc_message_durations(queue: str, actor: str, duration: int, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_message_durations(
+        queue: str,
+        actor: str,
+        duration: int,
+        poolname: Optional[str],
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment number of messages in a duration bucket by one.
 
@@ -1084,13 +1095,18 @@ class TaskMetrics(MetricsBase):
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
         :param duration: how long, in milliseconds, took actor to finish the task.
+        :param poolname: if specified, task was working with a particular pool.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
         bucket = min([threshold for threshold in MESSAGE_DURATION_BUCKETS if threshold > duration])
 
-        inc_metric_field(cache, TaskMetrics._KEY_MESSAGE_DURATIONS, '{}:{}:{}'.format(queue, actor, bucket))
+        inc_metric_field(
+            cache,
+            TaskMetrics._KEY_MESSAGE_DURATIONS,
+            '{}:{}:{}:{}'.format(queue, actor, bucket, poolname or 'undefined')
+        )
 
         return Ok(None)
 
@@ -1127,11 +1143,17 @@ class TaskMetrics(MetricsBase):
             cast(Tuple[str, str], tuple(field.split(':'))): count
             for field, count in get_metric_fields(cache, self._KEY_CURRENT_DELAYED_MESSAGES).items()
         }
-        # queue:actor:bucket => count
-        self.message_durations = {
-            cast(Tuple[str, str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_MESSAGE_DURATIONS).items()
-        }
+        # queue:actor:bucket:poolname => count
+        # deal with older version which had only three dimensions (no poolname)
+        self.message_durations = {}
+
+        for field, count in get_metric_fields(cache, self._KEY_MESSAGE_DURATIONS).items():
+            field_split = tuple(field.split(':'))
+
+            if len(field_split) == 3:
+                field_split = field_split + ('undefined',)
+
+            self.message_durations[cast(Tuple[str, str, str, str], field_split)] = count
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
@@ -1185,7 +1207,7 @@ class TaskMetrics(MetricsBase):
         self.MESSAGE_DURATIONS = Histogram(
             'message_duration_milliseconds',
             'The time spent processing messages by queue and actor.',
-            ['queue_name', 'actor_name'],
+            ['queue_name', 'actor_name', 'pool'],
             buckets=MESSAGE_DURATION_BUCKETS,
             registry=registry,
         )
@@ -1221,14 +1243,14 @@ class TaskMetrics(MetricsBase):
 
         # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
         # since we don't track the exact duration, just what bucket it falls into.
-        for (queue_name, actor_name, bucket_threshold), count in self.message_durations.items():
+        for (queue_name, actor_name, bucket_threshold, poolname), count in self.message_durations.items():
 
             bucket_index = MESSAGE_DURATION_BUCKETS.index(
                 prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
             )
 
-            self.MESSAGE_DURATIONS.labels(queue_name, actor_name)._buckets[bucket_index].set(count)
-            self.MESSAGE_DURATIONS.labels(queue_name, actor_name)._sum.inc(float(bucket_threshold) * count)
+            self.MESSAGE_DURATIONS.labels(queue_name, actor_name, poolname)._buckets[bucket_index].set(count)
+            self.MESSAGE_DURATIONS.labels(queue_name, actor_name, poolname)._sum.inc(float(bucket_threshold) * count)
 
 
 @dataclasses.dataclass

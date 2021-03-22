@@ -13,33 +13,33 @@ from dramatiq.common import compute_backoff, current_millis
 from .guest import GuestLogger
 
 
+def _actor_arguments(
+    logger: gluetool.log.ContextAdapter,
+    message: dramatiq.message.Message,
+    actor: Any  # it's actually tasks.Actor, but circular import :/
+) -> Dict[str, Any]:
+    signature = inspect.signature(actor.fn)
+
+    gluetool.log.log_dict(logger.debug, 'raw message data', message._message)
+
+    if len(signature.parameters) != len(message._message[2]):
+        from . import Failure
+
+        Failure(
+            'actor signature parameters does not match message content',
+            signature=[name for name in signature.parameters.keys()],
+            arguments=message._message[2]
+        ).handle(logger)
+
+        return {}
+
+    return {
+        name: message._message[2][index]
+        for index, name in enumerate(signature.parameters.keys())
+    }
+
+
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class cannot subclass 'Retries
-    def _actor_arguments(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        message: dramatiq.message.Message,
-        actor: Any  # it's actually tasks.Actor, but circular import :/
-    ) -> Optional[Dict[str, Any]]:
-        signature = inspect.signature(actor.fn)
-
-        gluetool.log.log_dict(logger.debug, 'raw message data', message._message)
-
-        if len(signature.parameters) != len(message._message[2]):
-            from . import Failure
-
-            Failure(
-                'actor signature parameters does not match message content',
-                signature=[name for name in signature.parameters.keys()],
-                arguments=message._message[2]
-            ).handle(logger)
-
-            return {}
-
-        return {
-            name: message._message[2][index]
-            for index, name in enumerate(signature.parameters.keys())
-        }
-
     def after_process_message(
         self,
         broker: Any,
@@ -61,7 +61,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         max_retries = message.options.get("max_retries") or actor.options.get("max_retries", self.max_retries)
         retry_when = actor.options.get("retry_when", self.retry_when)
 
-        actor_arguments = self._actor_arguments(logger, message, actor)
+        actor_arguments = _actor_arguments(logger, message, actor)
 
         guestname = actor_arguments['guestname'] if actor_arguments and 'guestname' in actor_arguments else None
 
@@ -201,13 +201,24 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore  # Class canno
         result: Optional[Any] = None,
         exception: Optional[Any] = None
     ) -> None:
+        from . import get_logger
         from .metrics import TaskMetrics
 
+        logger = get_logger()
+
         labels = (message.queue_name, message.actor_name)
+        actor = broker.get_actor(message.actor_name)
+
+        actor_arguments = _actor_arguments(logger, message, actor)
 
         message_start_time = self._message_start_times.pop(message.message_id, current_millis())
         message_duration = current_millis() - message_start_time
-        TaskMetrics.inc_message_durations(message.queue_name, message.actor_name, message_duration)
+        TaskMetrics.inc_message_durations(
+            message.queue_name,
+            message.actor_name,
+            message_duration,
+            actor_arguments.get('poolname', None)
+        )
 
         TaskMetrics.dec_current_messages(*labels)
         TaskMetrics.inc_overall_messages(*labels)
