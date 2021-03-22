@@ -25,7 +25,7 @@ image: "quay.io/testing-farm/python-ci-image:fedora-based-image"
 .tests:
   extends: .locale
   before_script:
-    - dnf -y install krb5-devel libcurl-devel popt-devel postgresql-devel
+    - dnf -y install krb5-devel libcurl-devel popt-devel postgresql-devel libxml2-devel
 
 # Run unit tests
 #
