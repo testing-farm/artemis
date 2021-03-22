@@ -735,8 +735,8 @@ class KnobManager:
     # Entry points hooked to routes
     #
     @staticmethod
-    def entry_get_knobs(manager: 'KnobManager') -> List[KnobResponse]:
-        return manager.get_knobs()
+    def entry_get_knobs(manager: 'KnobManager') -> Tuple[str, List[KnobResponse]]:
+        return HTTP_200, manager.get_knobs()
 
     @staticmethod
     def entry_get_knob(manager: 'KnobManager', knobname: str) -> KnobResponse:
@@ -844,8 +844,8 @@ class KnobManagerComponent:
 #
 # Routes
 #
-def get_guest_requests(manager: GuestRequestManager, request: Request) -> List[GuestResponse]:
-    return manager.get_guest_requests()
+def get_guest_requests(manager: GuestRequestManager, request: Request) -> Tuple[str, List[GuestResponse]]:
+    return HTTP_200, manager.get_guest_requests()
 
 
 def create_guest_request(
@@ -919,14 +919,14 @@ def _validate_events_params(request: Request) -> Dict[str, Any]:
 def get_events(
         request: Request,
         manager: GuestEventManager,
-) -> List[GuestEvent]:
+) -> Tuple[str, List[GuestEvent]]:
     params: Dict[str, Any] = _validate_events_params(request)
-    return manager.get_events(**params)
+    return HTTP_200, manager.get_events(**params)
 
 
-def get_guest_events(guestname: str, request: Request, manager: GuestEventManager) -> List[GuestEvent]:
+def get_guest_events(guestname: str, request: Request, manager: GuestEventManager) -> Tuple[str, List[GuestEvent]]:
     params: Dict[str, Any] = _validate_events_params(request)
-    return manager.get_events_by_guestname(guestname, **params)
+    return HTTP_200, manager.get_events_by_guestname(guestname, **params)
 
 
 def get_metrics(
