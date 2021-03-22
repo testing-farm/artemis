@@ -46,11 +46,14 @@ case-insensitive.
 === API server
 
 * `ARTEMIS_API_ENABLE_PROFILING` (bool): If enabled, API server will profile handling of each request, emitting a summary into log. Default: `no`.
+* `ARTEMIS_API_ENGINE_DEBUG` (bool): Run engine with a debugging enabled. Default: `no`.
+* `ARTEMIS_API_ENGINE_RELOAD_ON_CHANGE` (bool): Reload API server when its code changes. Default: `no`.
 * `ARTEMIS_API_PROFILING_LIMIT` (int): How many functions should be included in the summary. Default: `20`.
 * `ARTEMIS_API_PROCESSES` (int): Number of processes to spawn for servicing API requests. Default: `1`.
 * `ARTEMIS_API_THREADS` (int): Number of threads to spawn in each process for servicing API requests. Default: `1`.
 * `ARTEMIS_ENABLE_AUTHENTICATION` (bool): If enabled, API requests must pass authentication by providing proper username and token. Default: `no`.
 * `ARTEMIS_ENABLE_AUTHORIZATION` (bool): If enabled, API requests must pass authorization by providing username with privileges high enough for the requested action. Default: `no`.
+
 
 === AWS driver
 

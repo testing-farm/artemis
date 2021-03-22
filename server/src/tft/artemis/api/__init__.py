@@ -11,6 +11,7 @@ from inspect import Parameter
 from typing import Any, Dict, List, NoReturn, Optional, Tuple, Type, Union
 
 import gluetool.log
+import gluetool.utils
 import molten
 import molten.dependency_injection
 import molten.openapi
@@ -77,6 +78,24 @@ KNOB_API_PROFILE_LIMIT: Knob[int] = Knob(
     envvar='ARTEMIS_API_PROFILING_LIMIT',
     envvar_cast=int,
     default=20
+)
+
+#: Reload API server when its code changes.
+KNOB_API_ENGINE_RELOAD_ON_CHANGE: Knob[bool] = Knob(
+    'api.engine.reload-on-change',
+    has_db=False,
+    envvar='ARTEMIS_API_ENGINE_RELOAD_ON_CHANGE',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+#: Run engine with a debugging enabled.
+KNOB_API_ENGINE_DEBUG: Knob[bool] = Knob(
+    'api.engine.debug',
+    has_db=False,
+    envvar='ARTEMIS_API_ENGINE_DEBUG',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=False
 )
 
 #: Protects our metrics tree when updating & rendering to user.
@@ -1090,10 +1109,21 @@ def main() -> NoReturn:
 
     gunicorn_options += [
         '--bind', '0.0.0.0:8001',
-        '--reload',
         '--workers', str(KNOB_API_PROCESSES.value),
-        '--threads', str(KNOB_API_THREADS.value)
+        '--threads', str(KNOB_API_THREADS.value),
+        '--access-logfile', '-',
+        '--error-logfile', '-'
     ]
+
+    if KNOB_API_ENGINE_DEBUG.value is True:
+        gunicorn_options += [
+            '--log-level', 'debug'
+        ]
+
+    if KNOB_API_ENGINE_RELOAD_ON_CHANGE.value is True:
+        gunicorn_options += [
+            '--reload'
+        ]
 
     os.execve(
         gunicorn_path,
