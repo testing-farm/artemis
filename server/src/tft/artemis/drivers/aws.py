@@ -25,11 +25,6 @@ from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfoType, PoolResour
 BlockDeviceMappingsType = List[Dict[str, Any]]
 InstanceOwnerType = Tuple[Dict[str, Any], str]
 
-#
-# All these defautls should go to configuration later
-#
-AWS_SPOT_PRICE_BID_PERCENTAGE = 10  # how much % to bid to the spot price
-
 AWS_INSTANCE_SPECIFICATION = Template("""
 {
   "ImageId": "{{ ami_id }}",
