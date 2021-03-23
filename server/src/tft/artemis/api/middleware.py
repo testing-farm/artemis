@@ -5,6 +5,7 @@ import re
 import urllib.parse
 from typing import Any, Callable, List, Optional, Pattern
 
+import molten.validation.common
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
@@ -14,6 +15,7 @@ from molten import Request, Response
 from molten.contrib.prometheus import REQUEST_COUNT as REQUEST_COUNT
 from molten.contrib.prometheus import REQUESTS_INPROGRESS as REQUESTS_INPROGRESS
 from molten.errors import HTTPError
+from molten.http.status_codes import HTTP_200
 
 from .. import Failure, Knob
 from ..db import DB, User, UserRoles
@@ -320,6 +322,11 @@ def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
 
             elif isinstance(response, Response):
                 status = response.status
+
+            # For JSON-like responses, use 200 because handler did not bother to provide better response,
+            # like `DELETE` with its `204 No Content`.
+            elif dataclasses.is_dataclass(response) or molten.validation.common.is_schema(response):
+                status = HTTP_200
 
             return response
 
