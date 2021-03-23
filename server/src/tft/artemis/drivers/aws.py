@@ -1,5 +1,6 @@
 import base64
 import dataclasses
+import json
 import os
 import threading
 from datetime import datetime
@@ -9,7 +10,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.log import log_blob, log_dict
 from gluetool.result import Error, Ok, Result
-from gluetool.utils import wait
+from gluetool.utils import normalize_bool_option, wait
 from jinja2 import Template
 
 from .. import Failure, JSONType, Knob
@@ -84,7 +85,7 @@ class FailedSpotRequest(Failure):
 @dataclasses.dataclass
 class AWSPoolData(PoolData):
     instance_id: str
-    spot_instance_id: str
+    spot_instance_id: Optional[str] = None
 
 
 class AWSDriver(PoolDriver):
@@ -113,8 +114,7 @@ class AWSDriver(PoolDriver):
             'default-instance-type',
             'master-key-name',
             'security-group',
-            'subnet-id',
-            'spot-price-bid-percentage'
+            'subnet-id'
         ]
 
         for variable in required_variables:
@@ -389,6 +389,72 @@ class AWSDriver(PoolDriver):
             )
 
         return Ok(block_device_mappings)
+
+    def _request_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        instance_type: str,
+        image: PoolImageInfoType,
+        guestname: str
+    ) -> Result[ProvisioningProgress, Failure]:
+
+        command = [
+            'ec2', 'run-instances',
+            '--image-id', image.id,
+            '--key-name', self.pool_config['master-key-name'],
+            '--instance-type', instance_type
+        ]
+
+        if 'subnet-id' in self.pool_config:
+            command.extend(['--subnet-id', self.pool_config['subnet-id']])
+
+        if 'security-group' in self.pool_config:
+            command.extend(['--security-group-ids', self.pool_config['security-group']])
+
+        if 'default-root-disk-size' in self.pool_config:
+
+            r_block_device_mappings = self._get_block_device_mappings(image_id=image.id)
+
+            if r_block_device_mappings.is_error:
+                return Error(r_block_device_mappings.unwrap_error())
+
+            r_block_device_mappings = self._set_root_disk_size(
+                r_block_device_mappings.unwrap(),
+                root_disk_size=self.pool_config['default-root-disk-size']
+            )
+
+            block_device_mappings = r_block_device_mappings.unwrap()
+
+            command.append("--block-device-mappings={}".format(json.dumps(block_device_mappings)))
+
+        if 'additional-options' in self.pool_config:
+            command.extend(self.pool_config['additional-options'])
+
+        r_instance_request = self._aws_command(command, key='Instances')
+
+        if r_instance_request.is_error:
+            return Error(r_instance_request.unwrap_error())
+
+        instance_request = cast(List[Dict[str, str]], r_instance_request.unwrap())
+
+        try:
+            instance_id = instance_request[0]['InstanceId']
+        except (KeyError, IndexError):
+            return Error(Failure('Failed to find InstanceID in aws output', output=instance_request))
+
+        # instance state is "pending" after launch
+        # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
+        logger.info('acquired instance status {}:{}'.format(
+            instance_id,
+            "pending"
+        ))
+
+        # There is no chance that the guest will be ready in this step
+        return Ok(ProvisioningProgress(
+            state=ProvisioningState.PENDING,
+            pool_data=AWSPoolData(instance_id=instance_id),
+            delay_update=KNOB_UPDATE_TICK.value
+        ))
 
     def _request_spot_instance(
         self,
@@ -686,27 +752,29 @@ class AWSDriver(PoolDriver):
 
         image = r_image.unwrap()
 
-        logger.info('provisioning from image {}'.format(image))
+        # Non-spot request
+        if not normalize_bool_option(self.pool_config.get('use-spot-request', False)):
+            return self._request_instance(logger, instance_type, image, guest_request.guestname)
+
+        # Spot requests require special handling
+        logger.info('provisioning spot instance from image {}'.format(image))
 
         # request a spot instance and wait for it's full fillment
-        r_spot_instance = self._request_spot_instance(
+        r_instance = self._request_spot_instance(
             logger, session, guest_request, instance_type, image
         )
 
-        if r_spot_instance.is_error:
+        if r_instance.is_error:
             # cleanup the spot request if needed
-            if isinstance(r_spot_instance.error, FailedSpotRequest):
+            if isinstance(r_instance.error, FailedSpotRequest):
                 self._aws_command([
                     'ec2', 'cancel-spot-instance-requests',
-                    '--spot-instance-request-ids={}'.format(r_spot_instance.error.spot_instance_id)
+                    '--spot-instance-request-ids={}'.format(r_instance.error.spot_instance_id)
                 ])
 
-                return Error(Failure(r_spot_instance.error.message))
+                return Error(Failure(r_instance.error.message))
 
-            # just return the error, no cleanup required
-            return r_spot_instance
-
-        return Ok(r_spot_instance.unwrap())
+        return r_instance
 
     def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """
@@ -718,7 +786,7 @@ class AWSDriver(PoolDriver):
 
         pool_data = AWSPoolData.unserialize(guest_request)
 
-        if pool_data.instance_id is None or pool_data.spot_instance_id is None:
+        if pool_data.instance_id is None and pool_data.spot_instance_id is None:
             return Error(Failure('guest has no identification'))
 
         r_cleanup = self._dispatch_resource_cleanup(

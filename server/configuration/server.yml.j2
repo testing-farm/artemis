@@ -90,11 +90,17 @@ pools:
       # instance details
       default-instance-type: "{{ aws.vms.default_flavor }}"
 
-      # how many % we bid on the spot instance price. Raise this if we get too many instances terminated.
-      spot-price-bid-percentage: 10
-      # wait timeout/tick for fulfilling spot request
-      spot-request-timeout: 60
-      spot-request-tick: 1
+      # By default, non-spot instances are launched in the pool. If you
+      # would like to use spot instances instead, enable this option.
+      use-spot-request: {{ aws.vms.use_spot_request | default(true) }}
+
+      # How many % we bid on the spot instance price. Raise this if you
+      # get too many instances terminated.
+      spot-price-bid-percentage: {{ aws.vms.spot_price_bid_percentage | default(10) }}
+
+      # Wait timeout/tick for fulfilling spot request
+      spot-request-timeout: {{ aws.vms.spot_request_timeout | default(60) }}
+      spot-request-tick: {{ aws.vms.spot_request_tick | default(1) }}
 
       # wait timeout/tick for instance becoming running
       instance-running-timeout: 120
