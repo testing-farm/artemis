@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 import threading
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import gluetool
 import gluetool.log
@@ -16,10 +16,12 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, get_cached_item, process_output_to_str, refresh_cached_set
+from .. import Failure, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
+
+T = TypeVar('T')
 
 PoolResourcesIDsType = Dict[str, Any]
 GuestTagsType = Dict[str, str]
@@ -612,6 +614,31 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         return get_cached_item(self.image_info_cache_key, imagename, PoolImageInfoType)
+
+    def _fetch_cached_info(self, key: str, item_klass: Type[T]) -> Result[List[T], Failure]:
+        """
+        Helper method to retrieve cache info - images, flavors, etc.
+
+        :param key: cache key that carries the data.
+        :param item_klass: a dataclass container that represents a cached item.
+        :returns: mapping between item names and their representation as containers of given item class.
+        """
+
+        r_fetch = get_cached_items(key, item_klass)
+
+        if r_fetch.is_error:
+            return Error(r_fetch.unwrap_error())
+
+        infos = r_fetch.unwrap()
+
+        return Ok(list(infos.values()) if infos else [])
+
+    def get_pool_image_infos(self) -> Result[List[PoolImageInfoType], Failure]:
+        """
+        Retrieve all image info known to the pool.
+        """
+
+        return self._fetch_cached_info(self.image_info_cache_key, PoolImageInfoType)
 
 
 def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Failure]:

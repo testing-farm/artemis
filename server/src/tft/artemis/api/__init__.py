@@ -874,6 +874,89 @@ class KnobManagerComponent:
         return KnobManager(db)
 
 
+class CacheManager:
+    def __init__(self, db: artemis_db.DB) -> None:
+        self.db = db
+
+    #
+    # Entry points hooked to routes
+    #
+    @staticmethod
+    def entry_pool_image_info(
+        manager: 'CacheManager',
+        logger: gluetool.log.ContextAdapter,
+        poolname: str
+    ) -> Response:
+        return manager.get_pool_image_info(logger, poolname)
+
+    @staticmethod
+    def entry_pool_flavor_info(
+        manager: 'CacheManager',
+        logger: gluetool.log.ContextAdapter,
+        poolname: str
+    ) -> Response:
+        return manager.get_pool_flavor_info(logger, poolname)
+
+    def _get_pool_object_infos(self, logger: gluetool.log.ContextAdapter, poolname: str, method_name: str) -> Response:
+        from ..tasks import _get_pool
+
+        with self.db.get_session() as session:
+            r_pool = _get_pool(logger, session, poolname)
+
+            if r_pool.is_error:
+                raise errors.InternalServerError(
+                    logger=logger,
+                    caused_by=r_pool.unwrap_error(),
+                    failure_details={
+                        'poolname': poolname
+                    }
+                )
+
+            pool = r_pool.unwrap()
+
+            method = getattr(pool, method_name, None)
+
+            if method is None:
+                raise errors.NoSuchEntityError(message='Pool does not support this type of information')
+
+            r_infos = method()
+
+            if r_infos.is_error:
+                raise errors.InternalServerError(
+                    logger=logger,
+                    caused_by=r_infos.unwrap_error(),
+                    failure_details={
+                        'poolname': poolname
+                    }
+                )
+
+            return Response(
+                status=HTTP_200,
+                content=json.dumps({
+                    info.name: dataclasses.asdict(info)
+                    for info in r_infos.unwrap()
+                }),
+                headers={'Content-Type': 'application/json'}
+            )
+
+    def get_pool_image_info(self, logger: gluetool.log.ContextAdapter, poolname: str) -> Response:
+        return self._get_pool_object_infos(logger, poolname, 'get_pool_image_infos')
+
+    def get_pool_flavor_info(self, logger: gluetool.log.ContextAdapter, poolname: str) -> Response:
+        return self._get_pool_object_infos(logger, poolname, 'get_pool_flavor_infos')
+
+
+class CacheManagerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is CacheManager or parameter.annotation == 'CacheManager'
+
+    def resolve(self, db: artemis_db.DB) -> CacheManager:
+        return CacheManager(db)
+
+
 #
 # Routes
 #
@@ -1077,6 +1160,7 @@ def run_app() -> molten.app.App:
         GuestEventManagerComponent(),
         SnapshotRequestManagerComponent(),
         KnobManagerComponent(),
+        CacheManagerComponent(),
         AuthContextComponent(),
         MetricsComponent(metrics_tree)
     ]
@@ -1119,6 +1203,12 @@ def run_app() -> molten.app.App:
         ]),
         Route('/metrics', get_metrics),
         Route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [
+                Route('/image-info', CacheManager.entry_pool_image_info),
+                Route('/flavor-info', CacheManager.entry_pool_flavor_info)
+            ])
+        ]),
         Route('/_docs', OpenAPIUIHandler()),
         Route('/_schema', OpenAPIHandler(metadata=metadata))
     ]

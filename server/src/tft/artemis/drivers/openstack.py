@@ -836,3 +836,10 @@ class OpenStackDriver(PoolDriver):
             ))
 
         return refresh_cached_set(self.flavor_info_cache_key, flavors)
+
+    def get_pool_flavor_infos(self) -> Result[List[FlavorInfo], Failure]:
+        """
+        Retrieve all flavor info known to the pool.
+        """
+
+        return self._fetch_cached_info(self.flavor_info_cache_key, FlavorInfo)
