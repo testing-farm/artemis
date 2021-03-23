@@ -31,23 +31,23 @@ from tft.artemis.metrics import PoolMetrics
 # Routing knobs do have a DB source, therefore we cannot acquire their value right away
 # but we have to rather query them when needed.
 def TIMEOUT_REACHED_AGE_TOO_YOUNG(session: sqlalchemy.orm.session.Session) -> int:
-    return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session).unwrap() / 2
+    return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session=session).unwrap() / 2
 
 
 def TIMEOUT_REACHED_AGE_TOO_OLD(session: sqlalchemy.orm.session.Session) -> int:
-    return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session).unwrap() * 2
+    return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session=session).unwrap() * 2
 
 
 def ONE_ATTEMPT_FORGIVING_TOO_YOUNG(session: sqlalchemy.orm.session.Session) -> int:
-    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session).unwrap() / 2
+    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session=session).unwrap() / 2
 
 
 def ONE_ATTEMPT_FORGIVING_TOO_OLD(session: sqlalchemy.orm.session.Session) -> int:
-    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session).unwrap() * 2
+    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session=session).unwrap() * 2
 
 
 def ENOUGH_RESOURCES_EXCESS_MULTIPLIER(session: sqlalchemy.orm.session.Session) -> float:
-    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session).unwrap() + 10
+    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session=session).unwrap() + 10
 
 
 MockInputs = collections.namedtuple(

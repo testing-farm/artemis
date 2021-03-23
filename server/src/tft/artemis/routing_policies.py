@@ -337,7 +337,7 @@ def policy_one_attempt_forgiving(
     if not events:
         return Ok(PolicyRuling(allowed_pools=pools))
 
-    r_time = KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session)
+    r_time = KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session=session)
 
     if r_time.is_error:
         return Error(r_time.unwrap_error())
@@ -376,7 +376,7 @@ def policy_timeout_reached(
     if not events:
         return Ok(PolicyRuling(allowed_pools=pools))
 
-    r_time = KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session)
+    r_time = KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session=session)
 
     if r_time.is_error:
         return Error(r_time.unwrap_error())
@@ -415,7 +415,7 @@ def policy_enough_resources(
 
     log_dict(logger.info, 'pool metrics', pool_metrics)
 
-    r_threshold = KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session)
+    r_threshold = KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session=session)
 
     if r_threshold.is_error:
         return Error(r_threshold.unwrap_error())

@@ -511,7 +511,7 @@ class KnobSource(Generic[T]):
     def __init__(self, knob: 'Knob[T]') -> None:
         self.knob = knob
 
-    def get_value(self, *args: Any) -> Result[Optional[T], Failure]:
+    def get_value(self, **kwargs: Any) -> Result[Optional[T], Failure]:
         """
         Acquires and returns the knob value, or ``None`` if the value does not exist. If it may exist but the process
         failed with an error, returns a :py:class:`Failure` describing the error.
@@ -566,7 +566,7 @@ class KnobSourceEnvGlobal(KnobSourceEnv[T]):
     :param type_cast: a callback used to cast the raw string to the correct type.
     """
 
-    def get_value(self, *args: Any) -> Result[Optional[T], Failure]:
+    def get_value(self, **kwargs: Any) -> Result[Optional[T], Failure]:
         return self._fetch_from_env(self.envvar)
 
 
@@ -586,8 +586,9 @@ class KnobSourceEnvPerPool(KnobSourceEnv[T]):
 
     def get_value(  # type: ignore  # match parent
         self,
+        *,
         pool: 'PoolDriver',
-        *args: Any
+        **kwargs: Any
     ) -> Result[Optional[T], Failure]:
         r_value = self._fetch_from_env('{}_{}'.format(self.envvar, pool.poolname))
 
@@ -614,7 +615,7 @@ class KnobSourceDefault(KnobSource[T]):
 
         self.default = default
 
-    def get_value(self, *args: Any) -> Result[Optional[T], Failure]:
+    def get_value(self, **kwargs: Any) -> Result[Optional[T], Failure]:
         return Ok(self.default)
 
     def to_repr(self) -> List[str]:
@@ -669,7 +670,12 @@ class KnobSourceDBGlobal(KnobSourceDB[T]):
     Read knob value from a database.
     """
 
-    def get_value(self, session: Session, *args) -> Result[Optional[T], Failure]:  # type: ignore  # match parent
+    def get_value(  # type: ignore  # match parent
+        self,
+        *,
+        session: Session,
+        **kwargs: Any
+    ) -> Result[Optional[T], Failure]:
         return self._fetch_from_db(session, self.knob.knobname)
 
 
@@ -686,9 +692,10 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
 
     def get_value(  # type: ignore  # match parent
         self,
+        *,
         session: Session,
         pool: 'PoolDriver',
-        *args: Any
+        **kwargs: Any
     ) -> Result[Optional[T], Failure]:
         r_value = self._fetch_from_db(session, 'pool.{}.{}'.format(pool.poolname, self.knob.knobname))
 
@@ -713,7 +720,7 @@ class KnobSourceActual(KnobSource[T]):
 
         self.value = value
 
-    def get_value(self, *args: Any) -> Result[Optional[T], Failure]:
+    def get_value(self, **kwargs: Any) -> Result[Optional[T], Failure]:
         return Ok(self.value)
 
     def to_repr(self) -> List[str]:
@@ -882,7 +889,7 @@ class Knob(Generic[T]):
             ', '.join(traits)
         )
 
-    def _get_value(self, *args: Any) -> Tuple[Optional[T], Optional[Failure]]:
+    def _get_value(self, **kwargs: Any) -> Tuple[Optional[T], Optional[Failure]]:
         """
         The core method for getting the knob value. Returns two items:
 
@@ -891,7 +898,7 @@ class Knob(Generic[T]):
         """
 
         for source in self._sources:
-            r = source.get_value(*args)
+            r = source.get_value(**kwargs)
 
             if r.is_error:
                 return None, r.unwrap_error()
@@ -905,15 +912,15 @@ class Knob(Generic[T]):
 
         return None, None
 
-    def get_value(self, *args: Any) -> Result[T, Failure]:
+    def get_value(self, **kwargs: Any) -> Result[T, Failure]:
         """
         Returns either the knob value, of :py:class:`Failure` instance describing the error encountered, including
         the "value does not exist" state.
 
-        All positional arguments are passed down to code handling each different sources.
+        All keyword arguments are passed down to code handling each different sources.
         """
 
-        value, failure = self._get_value(*args)
+        value, failure = self._get_value(**kwargs)
 
         if value is not None:
             return Ok(value)
