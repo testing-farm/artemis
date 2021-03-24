@@ -215,14 +215,12 @@ class _RescheduleType:
 
 # A class of unique "failed but ignore" doer return value
 class _IgnoreType:
-    pass
+    def __init__(self, failure: Failure) -> None:
+        self.failure = failure
 
 
 # Unique object representing "reschedule task" return value of doer.
 Reschedule = _RescheduleType()
-
-# Unique object representing "failed but ignore" return value of doer.
-Ignore = _IgnoreType()
 
 # Doer return value type.
 DoerReturnType = Result[Union[None, _RescheduleType, _IgnoreType], Failure]
@@ -230,7 +228,14 @@ DoerReturnType = Result[Union[None, _RescheduleType, _IgnoreType], Failure]
 # Helpers for constructing return values.
 SUCCESS: DoerReturnType = Ok(None)
 RESCHEDULE: DoerReturnType = Ok(Reschedule)
-IGNORE: DoerReturnType = Ok(Ignore)
+
+
+def is_ignore_result(result: DoerReturnType) -> bool:
+    return result.is_ok and isinstance(result.unwrap(), _IgnoreType)
+
+
+def IGNORE(result: Result[Any, Failure]) -> DoerReturnType:
+    return Ok(_IgnoreType(result.unwrap_error()))
 
 
 def FAIL(result: Result[Any, Failure]) -> DoerReturnType:
@@ -402,7 +407,7 @@ def create_event_handlers(
         if failure.recoverable is True:
             return Error(failure)
 
-        return IGNORE
+        return IGNORE(result)
 
     return handle_success, handle_failure, spice_details
 
@@ -622,17 +627,87 @@ def task_core(
     LOGGER.set(logger)
     DATABASE.set(db)
 
+    # Small helper so we can keep all session-related stuff inside one block, and avoid repetition or more than
+    # one `get_session()` call.
+    def _run_doer(session: sqlalchemy.orm.session.Session) -> DoerReturnType:
+        SESSION.set(session)
+
+        assert db is not None
+        assert cancel is not None
+        assert doer_args is not None
+        assert doer_kwargs is not None
+
+        doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
+
+        # "Ignored" failures - failures the tasks don't wish to repeat by running the task again - need
+        # special handling: we have to mark the guest request as failed. Without this step, client will
+        # spin endlessly until it finally gives up.
+
+        if not is_ignore_result(doer_result):
+            return doer_result
+
+        failure = cast(_IgnoreType, doer_result.unwrap()).failure
+
+        # Not all failures relate to guests. Such failures are easy to deal with, there's nothing to update anymore.
+        if 'guestname' not in failure.details:
+            return doer_result
+
+        guestname = failure.details['guestname']
+
+        r_state_change = _update_guest_state(
+            logger,
+            session,
+            guestname,
+            GuestState.ERROR
+        )
+
+        # If the change failed, we're left with a loose end: the task marked the failure as something that will not
+        # get better over time, but here we failed to mark the request as failed because of issue that may be
+        # transient. If that's the case, we should probably try again. Otherwise, we log the error that killed the
+        # state change, and move on.
+        if r_state_change.is_error:
+            # Describes the problem encountered when changing the guest request state.
+            state_change_failure = r_state_change.unwrap_error()
+
+            # Describes *when* this change was needed, i.e. what we attempted to do. Brings more context for humans.
+            failure = Failure(
+                'failed to mark guest request as failed',
+                caused_by=state_change_failure
+            )
+
+            # State change failed because of recoverable failure => use it as an excuse to try again. We can expect the
+            # task to fail, but we will get another chance to mark the guest as failed. This effectively drops the
+            # original `IGNORE` result, replacing it with an error.
+            if state_change_failure.recoverable is True:
+                return Error(failure)
+
+            # State change failed because of irrecoverable failure => no point to try again. Probably not very common,
+            # but still possible, in theory. At least try to log the situation before proceeding with the original
+            # `IGNORE`.
+            failure.handle(logger)
+
+        if r_state_change.unwrap() is not True:
+            failure = Failure('failed to mark guest request as failed')
+
+            # State change failed because the expected record might be missing or changed in some way => use it as an
+            # excuse to try again. We can expect the task to *not* perform its work because it's higly likely its
+            # initial attempt to "grab" the guest request would fail. Imagine acquire-guest-request to fail
+            # irrecoverably, and before we can get to mark the request as failed, user removes it. The state change fail
+            # is then quite expected, and the next iteration of acquire-guest-request will not even try to provision (
+            # and fail irrecoverable again) because the guest request would be gone, resulting in successfull no-op.
+            return Error(failure)
+
+        # State change succeeded, and changed exactly the request we're working with. There is nothing left to do,
+        # we proceed by propagating the original "ignore" result, closing the chapter.
+        return doer_result
+
     try:
         if session is None:
             with db.get_session() as session:
-                SESSION.set(session)
-
-                doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
+                doer_result = _run_doer(session)
 
         else:
-            SESSION.set(session)
-
-            doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
+            doer_result = _run_doer(session)
 
     except Exception as exc:
         stackprinter.show_current_exception()
@@ -644,7 +719,7 @@ def task_core(
     if doer_result.is_ok:
         result = doer_result.unwrap()
 
-        if result is Ignore:
+        if is_ignore_result(doer_result):
             logger.warning('message processing encountered error and requests waiver')
 
         logger.finished()
