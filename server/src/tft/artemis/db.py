@@ -598,7 +598,7 @@ class GuestEvent(Base):
 
     _id = Column(Integer(), primary_key=True)
     updated = Column(DateTime, default=datetime.datetime.utcnow)
-    guestname = Column(String(250), nullable=False)
+    guestname = Column(String(250), nullable=False, index=True)
     eventname = Column(String(250), nullable=False)
     details = Column(Text())
 
