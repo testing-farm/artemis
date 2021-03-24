@@ -484,16 +484,31 @@ class PoolMetrics(MetricsBase):
 
         self.resources.sync()
 
-        current_guests = artemis_db.Query.from_session(session, artemis_db.GuestRequest) \
-            .filter(artemis_db.GuestRequest.poolname == self.poolname) \
-            .all()
-
-        self.current_guest_request_count = len(current_guests)
+        self.current_guest_request_count = cast(
+            Tuple[int],
+            session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
+            .filter(artemis_db.GuestRequest.poolname == self.poolname)
+            .one()
+        )[0]
 
         self.current_guest_request_count_per_state = {
-            state: len([guest for guest in current_guests if guest.state == state.value])
-            for state in GuestState
+            state: 0
+            for state in GuestState.__members__.values()
         }
+
+        self.current_guest_request_count_per_state.update({
+            GuestState(record[0]): record[1]
+            for record in cast(
+                List[Tuple[str, int]],
+                session.query(  # type: ignore
+                    artemis_db.GuestRequest.state,
+                    sqlalchemy.func.count(artemis_db.GuestRequest.state)
+                )
+                .filter(artemis_db.GuestRequest.poolname == self.poolname)
+                .group_by(artemis_db.GuestRequest.state)
+                .all()
+            )
+        })
 
 
 @dataclasses.dataclass
