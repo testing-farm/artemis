@@ -63,8 +63,10 @@ class PoolImageInfoType:
     name: str
     id: str
 
+    pool_details: Dict[str, str] = dataclasses.field(default_factory=dict)
+
     def __repr__(self) -> str:
-        return '<PoolImageInfoType: name={} id={}>'.format(self.name, self.id)
+        return '<PoolImageInfoType: name={} id={} pool-details={}>'.format(self.name, self.id, self.pool_details)
 
 
 class PoolCapabilities(argparse.Namespace):
