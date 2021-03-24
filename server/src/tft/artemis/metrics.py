@@ -32,7 +32,6 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info
 from . import __VERSION__, DATABASE, SESSION, Failure
 from . import db as artemis_db
 from . import safe_call, with_context
-from .api.middleware import REQUEST_COUNT, REQUESTS_INPROGRESS
 from .guest import GuestState
 
 # Guest age buckets are not all same, but:
@@ -70,6 +69,16 @@ PROVISION_DURATION_BUCKETS = \
     list(range(60, 3600, 60)) \
     + list(range(3600, 23 * 3600 + 3600, 3600)) \
     + [prometheus_client.utils.INF]
+
+
+# HTTP request processing time buckets, in milliseconds. Spanning from 5 milliseconds up to 15 seconds.
+HTTP_REQUEST_DURATION_BUCKETS = (
+    # -> 1s
+    5, 10, 25, 50, 75, 100, 250, 500, 750, 1000,
+    # -> 15s
+    2500, 5000, 7500, 10000, 15000,
+    prometheus_client.utils.INF
+)
 
 
 def reset_counters(metric: Union[Counter, Gauge]) -> None:
@@ -1325,6 +1334,184 @@ class TaskMetrics(MetricsBase):
 
 
 @dataclasses.dataclass
+class APIMetrics(MetricsBase):
+    """
+    API metrics (mostly HTTP traffic).
+    """
+
+    request_durations: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
+    request_count: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
+    request_inprogress_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+
+    _KEY_REQUEST_DURATIONS = 'metrics.api.http.request.durations'
+    _KEY_REQUEST_COUNT = 'metrics.api.http.request.total'
+    _KEY_REQUEST_INPROGRESS_COUNT = 'metrics.api.http.request.in-progress'
+
+    @staticmethod
+    @with_context
+    def inc_request_durations(
+        method: str,
+        path: str,
+        duration: float,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increment number of HTTP requests in a duration bucket by one.
+
+        The bucket is determined by the upper bound of the given ``duration``.
+
+        :param method: HTTP method.
+        :param path: API endpoint requested.
+        :param duration: how long, in milliseconds, took actor to finish the task.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        bucket = min([threshold for threshold in HTTP_REQUEST_DURATION_BUCKETS if threshold > duration])
+
+        inc_metric_field(
+            cache,
+            APIMetrics._KEY_REQUEST_DURATIONS,
+            '{}:{}:{}'.format(method, path, bucket)
+        )
+
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_requests(method: str, path: str, status: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment number of completed requests.
+
+        :param method: HTTP method.
+        :param path: API endpoint requested.
+        :param status: final HTTP status.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(cache, APIMetrics._KEY_REQUEST_COUNT, '{}:{}:{}'.format(method, path, status))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_requests_in_progress(method: str, path: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Increment number of current requests.
+
+        :param method: HTTP method.
+        :param path: API endpoint requested.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, '{}:{}'.format(method, path))
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def dec_requests_in_progress(method: str, path: str, cache: redis.Redis) -> Result[None, Failure]:
+        """
+        Decrement number of current requests.
+
+        :param method: HTTP method.
+        :param path: API endpoint requested.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        dec_metric_field(cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, '{}:{}'.format(method, path))
+        return Ok(None)
+
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Register instances of Prometheus metrics with the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
+        self.REQUEST_DURATIONS = Histogram(
+            'http_request_duration_milliseconds',
+            'Time spent processing a request.',
+            ['method', 'path'],
+            buckets=HTTP_REQUEST_DURATION_BUCKETS,
+            registry=registry
+        )
+
+        self.REQUEST_COUNT = Counter(
+            'http_requests_count',
+            'Request count by method, path and status line.',
+            ['method', 'path', 'status'],
+            registry=registry
+        )
+
+        self.REQUESTS_INPROGRESS_COUNT = Gauge(
+            'http_requests_inprogress_count',
+            'Requests in progress by method and path',
+            ['method', 'path'],
+            registry=registry
+        )
+
+    @with_context
+    def sync(self, cache: redis.Redis) -> None:
+        """
+        Load values from the storage and update this container with up-to-date values.
+
+        :param cache: cache instance to use for cache access.
+        """
+
+        # method:path => count
+        self.request_durations = {
+            cast(Tuple[str, str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_REQUEST_DURATIONS).items()
+        }
+
+        # method:path:status => count
+        self.request_count = {
+            cast(Tuple[str, str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_REQUEST_COUNT).items()
+        }
+
+        # method:path => count
+        self.request_inprogress_count = {
+            cast(Tuple[str, str], tuple(field.split(':'))): count
+            for field, count in get_metric_fields(cache, self._KEY_REQUEST_INPROGRESS_COUNT).items()
+        }
+
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
+
+        # Reset all duration buckets and sums first
+        for labeled_metric in self.REQUEST_DURATIONS._metrics.values():
+            labeled_metric._sum.set(0)
+
+            for i, _ in enumerate(self.REQUEST_DURATIONS._upper_bounds):
+                labeled_metric._buckets[i].set(0)
+
+        # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
+        # since we don't track the exact duration, just what bucket it falls into.
+        for (method, path, bucket_threshold), count in self.request_durations.items():
+            bucket_index = HTTP_REQUEST_DURATION_BUCKETS.index(
+                prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
+            )
+
+            self.REQUEST_DURATIONS.labels(method, path)._buckets[bucket_index].set(count)
+            self.REQUEST_DURATIONS.labels(method, path)._sum.inc(float(bucket_threshold) * count)
+
+        reset_counters(self.REQUEST_COUNT)
+
+        for (method, path, status), count in self.request_count.items():
+            self.REQUEST_COUNT.labels(method, path, status)._value.set(count)
+
+        reset_counters(self.REQUESTS_INPROGRESS_COUNT)
+
+        for (method, path), count in self.request_inprogress_count.items():
+            self.REQUESTS_INPROGRESS_COUNT.labels(method, path)._value.set(count)
+
+
+@dataclasses.dataclass
 class Metrics(MetricsBase):
     """
     Global metrics that don't fit anywhere else, and also a root of the tree of metrics.
@@ -1335,6 +1522,7 @@ class Metrics(MetricsBase):
     provisioning: ProvisioningMetrics = ProvisioningMetrics()
     routing: RoutingMetrics = RoutingMetrics()
     tasks: TaskMetrics = TaskMetrics()
+    api: APIMetrics = APIMetrics()
 
     # Registry this tree of metrics containers is tied to.
     _registry: Optional[CollectorRegistry] = None
@@ -1349,6 +1537,7 @@ class Metrics(MetricsBase):
         self.provisioning.sync()
         self.routing.sync()
         self.tasks.sync()
+        self.api.sync()
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
@@ -1371,14 +1560,12 @@ class Metrics(MetricsBase):
             registry=registry
         )
 
-        registry.register(REQUEST_COUNT)
-        registry.register(REQUESTS_INPROGRESS)
-
         self.db.register_with_prometheus(registry)
         self.pools.register_with_prometheus(registry)
         self.provisioning.register_with_prometheus(registry)
         self.routing.register_with_prometheus(registry)
         self.tasks.register_with_prometheus(registry)
+        self.api.register_with_prometheus(registry)
 
         # Since these values won't ever change, we can already set metrics and be done with it.
         self.PACKAGE_INFO.info({
@@ -1402,6 +1589,7 @@ class Metrics(MetricsBase):
         self.provisioning.update_prometheus()
         self.routing.update_prometheus()
         self.tasks.update_prometheus()
+        self.api.update_prometheus()
 
     @with_context
     def render_prometheus_metrics(self, db: artemis_db.DB) -> bytes:

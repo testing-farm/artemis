@@ -2,6 +2,7 @@ import base64
 import dataclasses
 import json
 import re
+import time
 import urllib.parse
 from typing import Any, Callable, List, Optional, Pattern
 
@@ -10,15 +11,12 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from molten import Request, Response
-# To make mypy happy when others try `from api.middleware import REQUEST_COUNT`, explicit re-export is needed.
-# See https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-no-implicit-reexport
-from molten.contrib.prometheus import REQUEST_COUNT as REQUEST_COUNT
-from molten.contrib.prometheus import REQUESTS_INPROGRESS as REQUESTS_INPROGRESS
 from molten.errors import HTTPError
 from molten.http.status_codes import HTTP_200
 
 from .. import Failure, Knob
 from ..db import DB, User, UserRoles
+from ..metrics import APIMetrics
 from . import errors
 
 GUEST_ROUTE_PATTERN = re.compile(r'^/guests/[a-z0-9-]+(/(?:events|snapshots))?$')
@@ -309,10 +307,11 @@ def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
     def middleware(request: Request) -> Any:
         status = "500 Internal Server Error"
 
+        start_time = time.monotonic()
+
         path = rewrite_request_path(request.path)
 
-        requests_inprogress = REQUESTS_INPROGRESS.labels(request.method, path)
-        requests_inprogress.inc()
+        APIMetrics.inc_requests_in_progress(request.method, path)
 
         try:
             response = handler()
@@ -336,7 +335,12 @@ def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
             raise
 
         finally:
-            requests_inprogress.dec()
-            REQUEST_COUNT.labels(request.method, path, status).inc()
+            end_time = time.monotonic()
+
+            APIMetrics.dec_requests_in_progress(request.method, path)
+            APIMetrics.inc_requests(request.method, path, status)
+
+            # Convert the difference from fractional seconds to milliseconds
+            APIMetrics.inc_request_durations(request.method, path, (end_time - start_time) * 1000.0)
 
     return middleware
