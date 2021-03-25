@@ -1,6 +1,7 @@
 import concurrent.futures
 import contextvars
 import datetime
+import enum
 import json
 import os
 import random
@@ -226,6 +227,26 @@ def FAIL(result: Result[Any, Failure]) -> DoerReturnType:
     return Error(result.unwrap_error())
 
 
+class TaskPriority(enum.Enum):
+    """
+    Task priorities.
+
+    "The lower the numeric value, the higher priority!"
+    """
+
+    LOW = 300
+    DEFAULT = 200
+    HIGH = 100
+
+
+class TaskQueue(enum.Enum):
+    """
+    Task queues.
+    """
+
+    DEFAULT = 'default'
+
+
 # Task doer type.
 class DoerType(Protocol):
     def __call__(
@@ -390,12 +411,72 @@ def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:
     return var_value
 
 
-def actor_kwargs(actor_name: str) -> Dict[str, Any]:
-    return {
+def actor_kwargs(
+    actor_name: str,
+    priority: TaskPriority = TaskPriority.DEFAULT,
+    queue_name: TaskQueue = TaskQueue.DEFAULT,
+    periodic: Optional[periodiq.CronSpec] = None
+) -> Dict[str, Any]:
+    # We need to preserve the special queues requested by tasks, but still giving maintainers a chance
+    # to change that. Therefore we accept the priority and queue name as parameters, and use them as
+    # defaults when checking knobs. That way, if maintainer uses envvar to specify queue, it'd be used,
+    # otherwise the one specified in the source source would be used.
+
+    # Here we keep the actual priority and queue as understood by dramatiq. In our code, we use enums,
+    # to avoid magic values here and there, but we have to translate those for dramatiq.
+    priority_actual = cast(int, priority.value)
+    queue_actual = cast(str, queue_name.value)
+
+    # We want to support two ways how to specify priority: using names of our predefined priorities ("high"),
+    # or by a number, for tweaks needed by maintainers ("101"). We get the maintainers' input, and try to
+    # translate it to either enum member, or an integer.
+    priority_input: str = actor_control_value(
+        actor_name,
+        'PRIORITY',
+        priority.name
+    )
+
+    # Queues are easier: we have a list of predefined queues, but just like priorities, maintainers can specify
+    # their own ones. There's no second-level test though, calling `str()` on queue name makes no sense since it's
+    # already a string, and pretty much any string can be a queue name. We use `int()` on given priority because
+    # priorities can be only integers.
+    queue_input: str = actor_control_value(
+        actor_name,
+        'QUEUE',
+        queue_name.name
+    )
+
+    try:
+        priority_actual = TaskPriority[priority_input.upper()].value
+
+    except KeyError:
+        try:
+            priority_actual = int(priority_input)
+
+        except ValueError:
+            Failure('unknown task priority', priority=priority_input).handle(_ROOT_LOGGER)
+
+            priority_actual = TaskPriority.DEFAULT.value
+
+    try:
+        queue_actual = TaskQueue[queue_input.upper()].value
+
+    except KeyError:
+        # Yep, not in our list, but that doesn't meen it's forbidden to use it. Keep the input.
+        pass
+
+    kwargs = {
+        'priority': priority_actual,
+        'queue_name': queue_actual,
         'max_retries': int(actor_control_value(actor_name, 'RETRIES', KNOB_ACTOR_DEFAULT_RETRIES_COUNT.value)),
         'min_backoff': int(actor_control_value(actor_name, 'MIN_BACKOFF', KNOB_ACTOR_DEFAULT_MIN_BACKOFF.value)),
         'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value))
     }
+
+    if periodic is not None:
+        kwargs['periodic'] = periodic
+
+    return kwargs
 
 
 def run_doer(
@@ -3251,8 +3332,10 @@ def do_refresh_pool_resources_metrics_dispatcher(
 
 
 @dramatiq.actor(  # type: ignore  # Untyped decorator
-    periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value),
-    **actor_kwargs('REFRESH_POOL_RESOURCES_METRICS')
+    **actor_kwargs(
+        'REFRESH_POOL_RESOURCES_METRICS',
+        periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value)
+    )
 )
 def refresh_pool_resources_metrics_dispatcher() -> None:
     """
@@ -3355,8 +3438,10 @@ def do_refresh_pool_image_info_dispatcher(
 
 
 @dramatiq.actor(  # type: ignore  # Untyped decorator
-    periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value),
-    **actor_kwargs('REFRESH_POOL_IMAGE_INFO')
+    **actor_kwargs(
+        'REFRESH_POOL_IMAGE_INFO',
+        periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value)
+    )
 )
 def refresh_pool_image_info_dispatcher() -> None:
     """
