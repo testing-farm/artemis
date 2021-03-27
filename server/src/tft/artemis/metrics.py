@@ -16,6 +16,7 @@ to its offsprings.
 import dataclasses
 import datetime
 import enum
+import json
 import os
 import platform
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
@@ -253,6 +254,20 @@ class PoolResourcesMetricsDimensions(enum.Enum):
 
 
 @dataclasses.dataclass
+class PoolNetworkResources:
+    """
+    Describes current values of a single (virtual) network available to the pool.
+    """
+
+    # The idea is to store IPv4 and IPv6 as different networks. Might not work, though, in that case we can rename
+    # this field, e.g. `ipv4_addresses`, and add IPv6 variant. Let's see how it aligns with the real world out there.
+    addresses: Optional[int] = None
+    """
+    Number of IP addresses.
+    """
+
+
+@dataclasses.dataclass
 class PoolResources(MetricsBase):
     """
     Describes current values of pool resources.
@@ -268,6 +283,9 @@ class PoolResources(MetricsBase):
     """
 
     _KEY = 'metrics.pool.{poolname}.resources.{dimension}'
+
+    _TRIVIAL_FIELDS = ('instances', 'cores', 'memory', 'diskspace', 'snapshots')
+    _COMPOUND_FIELDS = ('networks',)
 
     instances: Optional[int]
     """
@@ -296,6 +314,11 @@ class PoolResources(MetricsBase):
     Number of instance snapshots.
     """
 
+    networks: Dict[str, PoolNetworkResources] = dataclasses.field(default_factory=dict)
+    """
+    Network resources, i.e. number of addresses and other network-related metrics.
+    """
+
     def __init__(self, poolname: str, dimension: PoolResourcesMetricsDimensions) -> None:
         """
         Resource metrics of a particular pool.
@@ -313,6 +336,7 @@ class PoolResources(MetricsBase):
         self.memory = None
         self.diskspace = None
         self.snapshots = None
+        self.networks = {}
 
     @with_context
     def sync(self, cache: redis.Redis) -> None:
@@ -322,8 +346,28 @@ class PoolResources(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        for metric_field in dataclasses.fields(self):
-            setattr(self, metric_field.name, get_metric(cache, '{}.{}'.format(self._key, metric_field.name)))
+        r_serialized = safe_call(cast(Callable[[str], Optional[str]], cache.get), self._key)
+
+        # TODO: needs fix when we start catching errors in metric handling
+        if r_serialized.is_error:
+            return
+
+        serialized = json.loads(r_serialized.unwrap() or '{}')
+
+        # Since we decided to store in the simplest possible manner, loading is where we "pay the price".
+        #
+        # We have the serialized JSON blob representing the original `PoolResources` instance, with its fields
+        # now being keys and so on. We can replace values in this class by using this serialized blob and storing
+        # it in our `__dict__`, except for `networks`. In the serialized form, `networks` is a list of mappings,
+        # and we need to restore it as a list of dataclasses. Therefore, `networks` need a bit more work,
+        # constructing a list of classes from each mapping.
+
+        self.__dict__.update(serialized)
+
+        self.networks = {
+            network_name: PoolNetworkResources(**serialized_network)
+            for network_name, serialized_network in serialized.get('networks', {}).items()
+        }
 
     @with_context
     def store(self, cache: redis.Redis) -> None:
@@ -333,8 +377,17 @@ class PoolResources(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        for metric_field in dataclasses.fields(self):
-            set_metric(cache, '{}.{}'.format(self._key, metric_field.name), getattr(self, metric_field.name))
+        # Storing the data can be actually quite simple: since we're using dataclasses, we can serialize the whole
+        # container as a JSON blob. There's no need to store each field as a separate key.
+        #
+        # This method will take care of serialization of `networks` list as well, since `asdict` can deal with
+        # nested dataclasses.
+
+        safe_call(
+            cast(Callable[[str, str], None], cache.set),
+            self._key,
+            json.dumps(dataclasses.asdict(self))
+        )
 
 
 class PoolResourcesUsage(PoolResources):
@@ -373,11 +426,18 @@ class PoolResourcesDepleted:
     Describes whether and which pool resources have been depleted.
     """
 
+    available_network_count: int = 0
+
     instances: bool = False
     cores: bool = False
     memory: bool = False
     diskspace: bool = False
     snapshots: bool = False
+
+    # Depleted networks are listed as names only, no deeper structure. We could change this to mapping between
+    # network names and, for example, a boolean or a structure describing which network resource is depleted, but
+    # at this moment, all we need to know is whether or not is the network depleted, nothing more.
+    networks: List[str] = dataclasses.field(default_factory=list)
 
     def is_depleted(self) -> bool:
         """
@@ -386,19 +446,24 @@ class PoolResourcesDepleted:
         :returns: ``True`` if any of resources is marked as depleted, ``False`` otherwise.
         """
 
-        return any(dataclasses.asdict(self).values())
+        return any([getattr(self, field) for field in PoolResources._TRIVIAL_FIELDS]) \
+            or (self.available_network_count != 0 and len(self.networks) >= self.available_network_count)
 
     def depleted_resources(self) -> List[str]:
         """
         Collect depleted resources.
 
-        :returns: list of names of depleted resources.
+        :returns: list of names of depleted resources. Trivial resources (CPU cores, RAM, etc.) are represented
+            by their names, networks are represented as network name prefixed with ``network.``, e.g. ``network.foo``.
         """
 
         return [
-            field.name
-            for field in dataclasses.fields(self)
-            if getattr(self, field.name) is True
+            fieldname
+            for fieldname in PoolResources._TRIVIAL_FIELDS
+            if getattr(self, fieldname) is True
+        ] + [
+            'network.{}'.format(network_name)
+            for network_name in self.networks
         ]
 
 
@@ -444,14 +509,32 @@ class PoolResourcesMetrics(MetricsBase):
 
         delta = PoolResourcesDepleted()
 
-        for field in dataclasses.fields(self.limits):
-            limit, usage = getattr(self.limits, field.name), getattr(self.usage, field.name)
+        for fieldname in PoolResources._TRIVIAL_FIELDS:
+            limit, usage = getattr(self.limits, fieldname), getattr(self.usage, fieldname)
 
             # Skip undefined values: if left undefined, pool does not care about this dimension.
             if not limit or not usage:
                 continue
 
-            setattr(delta, field.name, not is_enough(field.name, limit, usage))
+            setattr(delta, fieldname, not is_enough(fieldname, limit, usage))
+
+        delta.available_network_count = len(self.limits.networks)
+
+        for network_name, network_limit in self.limits.networks.items():
+            network_usage = self.usage.networks.get(network_name)
+
+            # Networks that don't report any usage are treated as having enough resources - again, pool does not care
+            # about this network enough to provide data.
+            if network_usage is None:
+                continue
+
+            if network_limit.addresses is None or network_usage.addresses is None:
+                continue
+
+            if is_enough('network.addresses', network_limit.addresses, network_usage.addresses):
+                continue
+
+            delta.networks.append(network_name)
 
         return delta
 
@@ -565,6 +648,14 @@ class PoolsMetrics(MetricsBase):
                 registry=registry
             )
 
+        def _create_network_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
+            return Gauge(
+                'pool_resources_network_{}{}'.format(name, '_{}'.format(unit) if unit else ''),
+                'Limits and usage of pool network {}'.format(name),
+                ['pool', 'network', 'dimension'],
+                registry=registry
+            )
+
         self.CURRENT_GUEST_REQUEST_COUNT = Gauge(
             'current_guest_request_count',
             'Current number of guest requests being provisioned by pool and state.',
@@ -577,6 +668,8 @@ class PoolsMetrics(MetricsBase):
         self.POOL_RESOURCES_MEMORY = _create_pool_resource_metric('memory', unit='bytes')
         self.POOL_RESOURCES_DISKSPACE = _create_pool_resource_metric('diskspace', unit='bytes')
         self.POOL_RESOURCES_SNAPSHOTS = _create_pool_resource_metric('snapshot')
+
+        self.POOL_RESOURCES_NETWORK_ADDRESSES = _create_network_resource_metric('addresses')
 
     def update_prometheus(self) -> None:
         """
@@ -606,6 +699,16 @@ class PoolsMetrics(MetricsBase):
                 gauge \
                     .labels(pool=poolname, dimension='usage') \
                     .set(usage if usage is not None else float('NaN'))
+
+            for network_name, network_metrics in pool_metrics.resources.limits.networks.items():
+                self.POOL_RESOURCES_NETWORK_ADDRESSES \
+                    .labels(pool=poolname, dimension='limit', network=network_name) \
+                    .set(network_metrics.addresses if network_metrics.addresses else float('NaN'))
+
+            for network_name, network_metrics in pool_metrics.resources.usage.networks.items():
+                self.POOL_RESOURCES_NETWORK_ADDRESSES \
+                    .labels(pool=poolname, dimension='usage', network=network_name) \
+                    .set(network_metrics.addresses if network_metrics.addresses else float('NaN'))
 
 
 @dataclasses.dataclass

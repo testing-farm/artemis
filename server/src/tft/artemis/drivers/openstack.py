@@ -1,8 +1,9 @@
 import dataclasses
 import re
+import sys
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -11,7 +12,7 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, Knob, get_cached_item, refresh_cached_set
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
-from ..metrics import PoolResourcesMetrics
+from ..metrics import PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
 from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
     create_tempfile, run_cli_tool
@@ -213,44 +214,40 @@ class OpenStackDriver(PoolDriver):
         return r_image
 
     def _env_to_network(self, environment: Environment) -> Result[Any, Failure]:
-        ip_version = self.pool_config['ip-version']
-        network_regex = self.pool_config['network-regex']
+        metrics = PoolResourcesMetrics(self.poolname)
+        metrics.sync()
 
-        r_networks = self._run_os(['ip', 'availability', 'list', '--ip-version', ip_version])
-        if r_networks.is_error:
-            return Error(r_networks.value)
-        networks = r_networks.unwrap()
+        # For each network, we need to extract number of free addresses, noting its name as well.
+        suitable_networks: List[Tuple[int, str]] = []
 
-        # networks has next structure:
-        # [
-        #   {
-        #     "Network ID": str,
-        #     "Network Name": str,
-        #     "Total IPs": int,
-        #     "Used IPs": int
-        #   },
-        #   ...
-        # ]
+        for network_name in metrics.usage.networks.keys():
+            limit, usage = metrics.limits.networks.get(network_name), metrics.usage.networks.get(network_name)
 
-        # Keep only matched with regex networks
-        suitable_networks = [network for network in networks if re.match(network_regex, network["Network Name"])]
+            # If there's unknown limit or usage, then pool does not care enough. Use the biggest possible number
+            # to signal this network can be picked freely, without any restrictions.
+            if not limit or not usage:
+                suitable_networks.append((sys.maxsize, network_name))
+                continue
+
+            # The same applies if pool noticed the network, but did not extract any address counts.
+            if limit.addresses is None or usage.addresses is None:
+                suitable_networks.append((sys.maxsize, network_name))
+                continue
+
+            suitable_networks.append((limit.addresses - usage.addresses, network_name))
 
         if not suitable_networks:
             return Error(Failure('no suitable network'))
 
-        # Count free IPs for all suitable networks
-        for network in suitable_networks:
-            network['Free IPs'] = network['Total IPs'] - network['Used IPs']
-
-        # Find max 'Free Ips' value and return network dict
-        suitable_network = max(suitable_networks, key=lambda x: x['Free IPs'])
+        # Sort networks by the number of available IPs, in descending order, and pick the first one.
+        free_ips, network_name = sorted(suitable_networks, key=lambda x: x[0], reverse=True)[0]
 
         self.logger.info('Using {} network with {} free IPs'.format(
-            suitable_network['Network Name'],
-            suitable_network['Free IPs']
+            network_name,
+            free_ips
         ))
 
-        return Ok(suitable_network["Network ID"])
+        return Ok(network_name)
 
     def _show_guest(
         self,
@@ -745,6 +742,38 @@ class OpenStackDriver(PoolDriver):
 
             elif name == 'maxTotalSnapshots':
                 resources.limits.snapshots = int(value)
+
+        r_networks = self._run_os([
+            'ip',
+            'availability',
+            'list',
+            '--ip-version', self.pool_config['ip-version']
+        ], json_format=True)
+
+        if r_networks.is_error:
+            return Error(r_networks.unwrap_error())
+
+        # networks have the following structure:
+        # [
+        #   {
+        #     "Network ID": str,
+        #     "Network Name": str,
+        #     "Total IPs": int,
+        #     "Used IPs": int
+        #   },
+        #   ...
+        # ]
+
+        network_pattern = re.compile(self.pool_config['network-regex'])
+
+        for network in r_networks.unwrap():
+            network_name = network['Network Name']
+
+            if not network_pattern.match(network_name):
+                continue
+
+            resources.usage.networks[network_name] = PoolNetworkResources(addresses=int(network['Used IPs']))
+            resources.limits.networks[network_name] = PoolNetworkResources(addresses=int(network['Total IPs']))
 
         return Ok(resources)
 

@@ -427,6 +427,10 @@ def policy_enough_resources(
             # Very crude trim. We could be smarter, but this should be enough to not hit the limit.
             usage_level = usage / limit
 
+            logger.debug('is-enough: {}.{}: {} / {} < {}: {}'.format(
+                pool.poolname, metric_name, usage, limit, threshold, usage_level < threshold
+            ))
+
             return usage_level < threshold
 
         resources_depletion = metrics.resources.get_depletion(is_enough)
@@ -434,13 +438,28 @@ def policy_enough_resources(
         if not resources_depletion.is_depleted():
             return True
 
+        logger.warning('{}: depleted'.format(pool.poolname))
+
         for metric_name in sorted(resources_depletion.depleted_resources()):
-            logger.warning('{}: "{}" depleted: {} used, {} limit'.format(
-                pool.poolname,
-                metric_name,
-                getattr(metrics.resources.usage, metric_name),
-                getattr(metrics.resources.limits, metric_name)
-            ))
+            if metric_name.startswith('network.'):
+                network_name = metric_name[8:]
+                limit = metrics.resources.limits.networks.get(network_name)
+                usage = metrics.resources.usage.networks.get(network_name)
+
+                logger.warning('{}: "{}" depleted: {} used, {} limit'.format(
+                    pool.poolname,
+                    metric_name,
+                    usage.addresses if usage and usage.addresses is not None else '<unknown>',
+                    limit.addresses if limit and limit.addresses is not None else '<unknown>',
+                ))
+
+            else:
+                logger.warning('{}: "{}" depleted: {} used, {} limit'.format(
+                    pool.poolname,
+                    metric_name,
+                    getattr(metrics.resources.usage, metric_name),
+                    getattr(metrics.resources.limits, metric_name)
+                ))
 
         return False
 
