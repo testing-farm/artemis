@@ -1,4 +1,5 @@
 import contextvars
+import dataclasses
 import functools
 import json
 import logging
@@ -6,8 +7,8 @@ import os
 import traceback as _traceback
 import urllib.parse
 from types import FrameType, TracebackType
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, TypeVar, \
-    Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, Type, \
+    TypeVar, Union, cast
 
 import dramatiq
 import dramatiq.brokers.rabbitmq
@@ -1395,3 +1396,98 @@ def with_context(fn: Callable[..., T]) -> Callable[..., T]:
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+#
+# Helpful cache primitives
+#
+def refresh_cached_set(key: str, items: Dict[str, Any]) -> Result[None, Failure]:
+    """
+    Refresh a cache entry with a given set of items.
+
+    The cache stores items serialized as JSON blobs, reachable by the key given to them by the set.
+
+    :param key: cache key storing the set.
+    :param items: set of items to store.
+    """
+
+    if not items:
+        # When we get an empty set of items, we should remove the key entirely, to make queries looking for
+        # return `None` aka "not found". It's the same as if we'd try to remove all entries, just with one
+        # action.
+        return safe_call(
+            cast(Callable[[str], None], CACHE.get().delete),
+            key
+        )
+
+    # Two steps: create new structure, and replace the old one. We cannot check the old one
+    # and remove entries that are no longer valid.
+    new_key = '{}.new'.format(key)
+
+    r_action = safe_call(
+        cast(Callable[[str, str, Dict[str, str]], None], CACHE.get().hmset),
+        new_key,
+        {
+            item_key: json.dumps(dataclasses.asdict(item))
+            for item_key, item in items.items()
+        }
+    )
+
+    if r_action.is_error:
+        return Error(r_action.unwrap_error())
+
+    return safe_call(
+        cast(Callable[[str, str], None], CACHE.get().rename),
+        new_key,
+        key
+    )
+
+
+def get_cached_items(key: str, item_klass: Type[T]) -> Result[Optional[Dict[str, T]], Failure]:
+    r_fetch = safe_call(
+        cast(Callable[[str], Optional[Dict[bytes, bytes]]], CACHE.get().hgetall),
+        key,
+    )
+
+    if r_fetch.is_error:
+        return Error(r_fetch.unwrap_error())
+
+    serialized = r_fetch.unwrap()
+
+    if serialized is None:
+        return Ok(None)
+
+    items: Dict[str, T] = {}
+
+    for item_key, item_serialized in serialized.items():
+        r_unserialize = safe_call(item_klass, **json.loads(item_serialized.decode('utf-8')))
+
+        if r_unserialize.is_error:
+            return Error(r_unserialize.unwrap_error())
+
+        items[item_key.decode('utf-8')] = r_unserialize.unwrap()
+
+    return Ok(items)
+
+
+def get_cached_item(key: str, item_key: str, item_klass: Type[T]) -> Result[Optional[T], Failure]:
+    r_fetch = safe_call(
+        cast(Callable[[str, str], Optional[bytes]], CACHE.get().hget),
+        key,
+        item_key
+    )
+
+    if r_fetch.is_error:
+        return Error(r_fetch.unwrap_error())
+
+    serialized = r_fetch.unwrap()
+
+    if serialized is None:
+        return Ok(None)
+
+    r_unserialize = safe_call(item_klass, **json.loads(serialized.decode('utf-8')))
+
+    if r_unserialize.is_error:
+        return Error(r_unserialize.unwrap_error())
+
+    return Ok(r_unserialize.unwrap())

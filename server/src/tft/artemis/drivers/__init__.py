@@ -16,7 +16,7 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import CACHE, Failure, process_output_to_str, safe_call
+from .. import Failure, get_cached_item, process_output_to_str, refresh_cached_set
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
@@ -592,46 +592,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_image_info.is_error:
             return Error(r_image_info.unwrap_error())
 
-        image_info = r_image_info.unwrap()
-
-        # When we get an empty list, we should remove the key entirely, to make queries looking for any image
-        # return `None` aka "not found". It's the same as if we'd try to remove all entries, just with one
-        # action.
-        if not image_info:
-            r_action = safe_call(
-                cast(Callable[[str], None], CACHE.get().delete),
-                self.image_info_cache_key
-            )
-
-        else:
-            # Two steps: create new structure, and replace the old one. We cannot check the old one
-            # and remove entries that are no longer valid.
-            actual_key = self.image_info_cache_key
-            new_key = '{}.new'.format(self.image_info_cache_key)
-
-            r_action = safe_call(
-                cast(Callable[[str, str, Dict[str, str]], None], CACHE.get().hmset),
-                new_key,
-                {
-                    ii.name: json.dumps(dataclasses.asdict(ii))
-                    for ii in r_image_info.unwrap()
-                    if ii.name
-                }
-            )
-
-            if r_action.is_error:
-                return Error(r_action.unwrap_error())
-
-            r_action = safe_call(
-                cast(Callable[[str, str], None], CACHE.get().rename),
-                new_key,
-                actual_key
-            )
-
-        if r_action.is_error:
-            return Error(r_action.unwrap_error())
-
-        return Ok(None)
+        return refresh_cached_set(self.image_info_cache_key, {
+            ii.name: ii
+            for ii in r_image_info.unwrap()
+            if ii.name
+        })
 
     def get_pool_image_info(self, imagename: str) -> Result[Optional[PoolImageInfoType], Failure]:
         """
@@ -646,26 +611,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
            is unknown.
         """
 
-        r_fetch = safe_call(
-            cast(Callable[[str, str], Optional[bytes]], CACHE.get().hget),
-            self.image_info_cache_key,
-            imagename
-        )
-
-        if r_fetch.is_error:
-            return Error(r_fetch.unwrap_error())
-
-        serialized = r_fetch.unwrap()
-
-        if serialized is None:
-            return Ok(None)
-
-        r_unserialize = safe_call(PoolImageInfoType, **json.loads(serialized.decode('utf-8')))
-
-        if r_unserialize.is_error:
-            return Error(r_unserialize.unwrap_error())
-
-        return Ok(r_unserialize.unwrap())
+        return get_cached_item(self.image_info_cache_key, imagename, PoolImageInfoType)
 
 
 def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Failure]:
