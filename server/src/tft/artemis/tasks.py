@@ -3296,7 +3296,12 @@ def do_refresh_pool_resources_metrics(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('REFRESH_POOL_RESOURCES_METRICS'))  # type: ignore  # Untyped decorator
+@dramatiq.actor(  # type: ignore  # Untyped decorator
+    **actor_kwargs(
+        'REFRESH_POOL_RESOURCES_METRICS',
+        priority=TaskPriority.HIGH
+    )
+)
 def refresh_pool_resources_metrics(poolname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_refresh_pool_resources_metrics,
@@ -3334,7 +3339,8 @@ def do_refresh_pool_resources_metrics_dispatcher(
 @dramatiq.actor(  # type: ignore  # Untyped decorator
     **actor_kwargs(
         'REFRESH_POOL_RESOURCES_METRICS',
-        periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value)
+        periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value),
+        priority=TaskPriority.HIGH
     )
 )
 def refresh_pool_resources_metrics_dispatcher() -> None:
@@ -3402,7 +3408,12 @@ def do_refresh_pool_image_info(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('REFRESH_POOL_IMAGE_INFO'))  # type: ignore  # Untyped decorator
+@dramatiq.actor(  # type: ignore  # Untyped decorator
+    **actor_kwargs(
+        'REFRESH_POOL_IMAGE_INFO',
+        priority=TaskPriority.HIGH
+    )
+)
 def refresh_pool_image_info(poolname: str) -> None:
     task_core(  # type: ignore # Argument 1 has incompatible type
         do_refresh_pool_image_info,
@@ -3440,7 +3451,8 @@ def do_refresh_pool_image_info_dispatcher(
 @dramatiq.actor(  # type: ignore  # Untyped decorator
     **actor_kwargs(
         'REFRESH_POOL_IMAGE_INFO',
-        periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value)
+        periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value),
+        priority=TaskPriority.HIGH
     )
 )
 def refresh_pool_image_info_dispatcher() -> None:
