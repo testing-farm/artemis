@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tft-artemis"
-version = "0.0.13"
+version = "0.0.14"
 description = "Artemis is a machine provisioning service. Its goal is to provision a machine - using a set of preconfigured providers as backends - which would satisfy the given hardware and software requirements."
 authors = [
   "Milos Prchlik <mprchlik@redhat.com>",
@@ -8,6 +8,8 @@ authors = [
   "Evgeny Fedin <efedin@redhat.com>",
   "Miroslav Vadkerti <mvadkert@redhat.com>",
   "Ondrej Ptak <optak@redhat.com>",
+  "Daniel Simko <dasimko@redhat.com",
+  "Guy Inger <ginger@redhat.com>"
 ]
 license = "Apache-2.0"
 packages = [
