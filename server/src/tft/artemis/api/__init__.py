@@ -971,10 +971,15 @@ def get_metrics(
     LOGGER.set(logger)
     DATABASE.set(db)
 
+    r_metrics = metrics_tree.render_prometheus_metrics()
+
+    if r_metrics.is_error:
+        raise errors.InternalServerError(caused_by=r_metrics.unwrap_error())
+
     with METRICS_LOCK:
         return Response(
             HTTP_200,
-            content=metrics_tree.render_prometheus_metrics().decode('utf-8'),
+            content=r_metrics.unwrap().decode('utf-8'),
             headers={
                 "content-type": "text/plain; charset=utf-8"
             }

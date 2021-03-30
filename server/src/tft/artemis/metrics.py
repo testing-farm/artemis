@@ -1695,7 +1695,7 @@ class Metrics(MetricsBase):
         self.api.update_prometheus()
 
     @with_context
-    def render_prometheus_metrics(self, db: artemis_db.DB) -> bytes:
+    def render_prometheus_metrics(self, db: artemis_db.DB) -> Result[bytes, Failure]:
         """
         Render plaintext output of Prometheus metrics representing values in this tree of metrics.
 
@@ -1707,14 +1707,17 @@ class Metrics(MetricsBase):
         :returns: plaintext represenation of Prometheus metrics, encoded as ``bytes``.
         """
 
-        with db.get_session() as session:
-            SESSION.set(session)
+        def _render() -> bytes:
+            with db.get_session() as session:
+                SESSION.set(session)
 
-            self.sync()
+                self.sync()
 
-        self.update_prometheus()
+            self.update_prometheus()
 
-        return cast(bytes, generate_latest(registry=self._registry))
+            return cast(bytes, generate_latest(registry=self._registry))
+
+        return safe_call(_render)
 
 
 def upsert_metric(
