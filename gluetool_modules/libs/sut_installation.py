@@ -36,7 +36,16 @@ class SUTInstallationFailedError(PrimaryTaskFingerprintsMixin, SoftGlueError):
     def __init__(self, task, guest, items=None, reason=None, installation_logs=None, installation_logs_location=None):
         # type: (Any, gluetool_modules.libs.guest.Guest, Any, Optional[str], Optional[str], Optional[str]) -> None
 
-        super(SUTInstallationFailedError, self).__init__(task, 'SUT installation failed')
+        if reason:
+            super(SUTInstallationFailedError, self).__init__(
+                task,
+                'Test environment installation failed: {}'.format(reason)
+            )
+        else:
+            super(SUTInstallationFailedError, self).__init__(
+                task,
+                'Test environment installation failed: reason unknown, please escalate'
+            )
 
         self.guest = guest
         self.items = items

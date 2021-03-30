@@ -131,6 +131,7 @@ Artifacts        : mailman-3:2.1.29-4.module+el8+2450+4586b8cd.x86_64
 Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled, [a]ctive]
 """
 
+ERROR_OUTPUT_NO_STREAM = "Test environment installation failed: Stream 'stream' is not active or enabled"
 INFO_OUTPUT_NO_STREAM = """
 Name             : mailman
 Stream           : stream [d][a]
@@ -146,6 +147,7 @@ Artifacts        : mailman-3:2.1.29-4.module+el8+2450+4586b8cd.x86_64
 Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled, [a]ctive]
 """
 
+ERROR_OUTPUT_NO_PROFILE_INSTALLED = "Test environment installation failed: Profile 'common' is not installed"
 INFO_OUTPUT_NO_PROFILE_INSTALLED = """
 Name             : mailman
 Stream           : stream [d][e][a]
@@ -161,6 +163,10 @@ Artifacts        : mailman-3:2.1.29-4.module+el8+2450+4586b8cd.x86_64
 Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled, [a]ctive]
 """
 
+ERROR_OUTPUT_NO_PROFILES_AVAILABLE = (
+    "Test environment installation failed: "
+    "Module 'name:stream:version:context' does not have any profiles"
+)
 INFO_OUTPUT_NO_PROFILES_AVAILABLE = """
 Name             : mailman
 Stream           : stream [d][e][a]
@@ -175,6 +181,10 @@ Artifacts        : mailman-3:2.1.29-4.module+el8+2450+4586b8cd.x86_64
 Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled, [a]ctive]
 """
 
+ERROR_OUTPUT_NO_DEFAULT_PROFILE = (
+    "Test environment installation failed: Module "
+    "'name:stream:version:context' doesn't have default profile set"
+)
 INFO_OUTPUT_NO_DEFAULT_PROFILE = """
 Name             : mailman
 Stream           : stream [d][e][a]
@@ -189,6 +199,7 @@ Artifacts        : mailman-3:2.1.29-4.module+el8+2450+4586b8cd.x86_64
 Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled, [a]ctive]
 """
 
+ERROR_OUTPUT_UNAVAILABLE_PROFILE = "Test environment installation failed: Profile 'unavailable' is not available"
 INFO_OUTPUT_UNAVAILABLE_PROFILE = """
 Name             : mailman
 Stream           : stream [d][e][a]
@@ -528,18 +539,20 @@ def test_execute_command_fail(module, monkeypatch, tmpdir):
     assert isinstance(outputs[0].additional_data, gluetool_modules.libs.sut_installation.SUTInstallation)
 
     assert isinstance(exc, SUTInstallationFailedError)
-    assert exc.message == 'SUT installation failed'
+    assert exc.message == 'Test environment installation failed: reason unknown, please escalate'
 
 
-@pytest.mark.parametrize('info_output', [
-    INFO_OUTPUT_NO_STREAM,
-    INFO_OUTPUT_NO_PROFILE_INSTALLED,
-    INFO_OUTPUT_NO_DEFAULT_PROFILE,
-    INFO_OUTPUT_NO_PROFILES_AVAILABLE,
-    INFO_OUTPUT_UNAVAILABLE_PROFILE,
-    ''
+@pytest.mark.parametrize('info_output_and_error', [
+    (INFO_OUTPUT_NO_STREAM, ERROR_OUTPUT_NO_STREAM),
+    (INFO_OUTPUT_NO_PROFILE_INSTALLED, ERROR_OUTPUT_NO_PROFILE_INSTALLED),
+    (INFO_OUTPUT_NO_DEFAULT_PROFILE, ERROR_OUTPUT_NO_DEFAULT_PROFILE),
+    (INFO_OUTPUT_NO_PROFILES_AVAILABLE, ERROR_OUTPUT_NO_PROFILES_AVAILABLE),
+    ('', ERROR_OUTPUT_NO_PROFILES_AVAILABLE),
+    (INFO_OUTPUT_UNAVAILABLE_PROFILE, ERROR_OUTPUT_UNAVAILABLE_PROFILE)
 ])
-def test_sut_installation_fail(module, monkeypatch, info_output, tmpdir):
+def test_sut_installation_fail(module, monkeypatch, info_output_and_error, tmpdir):
+    info_output, error = info_output_and_error
+
     primary_task_mock = MagicMock()
     primary_task_mock.nsvc = NSVC
     primary_task_mock.stream = STREAM
@@ -573,4 +586,4 @@ def test_sut_installation_fail(module, monkeypatch, info_output, tmpdir):
     assert isinstance(outputs[0].additional_data, gluetool_modules.libs.sut_installation.SUTInstallation)
 
     assert isinstance(exc, SUTInstallationFailedError)
-    assert exc.message == 'SUT installation failed'
+    assert exc.message == error
