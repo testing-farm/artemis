@@ -2,7 +2,7 @@
 `artemis-cli` is command line tool for easier communication with `Artemis` service.
 
 == Installation
-* You need python3 and poetry installed first.
+* You need `python3`, `python3-devel` and `poetry` installed first.
 * `poetry install`
 
 == Usage
