@@ -8,7 +8,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, Knob
+from .. import Failure, Knob, get_cached_item, refresh_cached_set
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
@@ -40,7 +40,23 @@ class OpenStackPoolData(PoolData):
     instance_id: str
 
 
+@dataclasses.dataclass
+class FlavorInfo:
+    """
+    Describes important information about an OpenStack flavor.
+    """
+
+    name: str
+    id: str
+
+    def __repr__(self) -> str:
+        return '<FlavorInfo: name={} id={}>'.format(self.name, self.id)
+
+
 class OpenStackDriver(PoolDriver):
+    #: Template for a cache key holding flavor image info.
+    POOL_FLAVOR_INFO_CACHE_KEY = 'pool.{}.flavor-info'
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -68,6 +84,8 @@ class OpenStackDriver(PoolDriver):
             self._os_cmd_base += [
                 '--os-project-domain-id', self.pool_config['project-domain-id']
             ]
+
+        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)
 
     def _run_os(self, options: List[str], json_format: bool = True) -> Result[Any, Failure]:
         """
@@ -149,35 +167,23 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(ii)
 
-    def _env_to_flavor(self, environment: Environment) -> Result[Any, Failure]:
-        r_flavors = self._run_os(['flavor', 'list'])
-
-        if r_flavors.is_error:
-            return Error(r_flavors.value)
-        flavors = r_flavors.unwrap()
-
-        # flavors has next structure:
-        # [
-        #   {
-        #       "Name": str,
-        #       "RAM": int,
-        #       "Ephemeral": int,
-        #       "VCPUs": int,
-        #       "Is Public": bool,
-        #       "Disk": int,
-        #       "ID": str,
-        #   },
-        #   ...
-        # ]
-
+    def _env_to_flavor(self, environment: Environment) -> Result[FlavorInfo, Failure]:
         # TODO: this will be handled by a script, for now we simply pick our local common variety of a flavor.
 
-        suitable_flavors = [flavor for flavor in flavors if flavor["Name"] == self.pool_config['default-flavor']]
+        r_flavor = get_cached_item(self.flavor_info_cache_key, self.pool_config['default-flavor'], FlavorInfo)
 
-        if not suitable_flavors:
-            return Error(Failure('no such flavor'))
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
 
-        return Ok(suitable_flavors[0]["ID"])
+        flavor_info = r_flavor.unwrap()
+
+        if flavor_info is None:
+            return Error(Failure(
+                'no such flavor',
+                flavorname=self.pool_config['default-flavor']
+            ))
+
+        return Ok(flavor_info)
 
     def _env_to_image(
         self,
@@ -313,7 +319,7 @@ class OpenStackDriver(PoolDriver):
 
         image = r_image.unwrap()
 
-        logger.info('provisioning from image {}'.format(image))
+        logger.info('provisioning from image {} and flavor {}'.format(image, flavor))
 
         r_network = self._env_to_network(environment)
         if r_network.is_error:
@@ -341,7 +347,7 @@ class OpenStackDriver(PoolDriver):
             os_options = [
                 'server',
                 'create',
-                '--flavor', flavor,
+                '--flavor', flavor.id,
                 '--image', image.id,
                 '--network', network,
                 '--key-name', self.pool_config['master-key-name'],
@@ -458,7 +464,7 @@ class OpenStackDriver(PoolDriver):
 
         r_flavor = self._env_to_flavor(environment)
         if r_flavor.is_error:
-            return Error(r_flavor.value)
+            return Error(r_flavor.unwrap_error())
 
         return Ok(True)
 
@@ -760,3 +766,44 @@ class OpenStackDriver(PoolDriver):
                 exc,
                 image_info=r_images.unwrap()
             ))
+
+    def refresh_flavor_info(self) -> Result[None, Failure]:
+        """
+        Responsible for updating the cache with the most up-to-date flavor info.
+
+        Data are stored as a mapping between flavor name and containers serialized into JSON blobs.
+        """
+
+        # Flavors are described by OpenStack CLI with the following structure:
+        # [
+        #   {
+        #       "Name": str,
+        #       "RAM": int,
+        #       "Ephemeral": int,
+        #       "VCPUs": int,
+        #       "Is Public": bool,
+        #       "Disk": int,
+        #       "ID": str,
+        #   },
+        #   ...
+        # ]
+
+        r_flavors = self._run_os(['flavor', 'list'])
+
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        try:
+            flavors: Dict[str, FlavorInfo] = {
+                flavor['Name']: FlavorInfo(name=flavor['Name'], id=flavor['ID'])
+                for flavor in r_flavors.unwrap()
+            }
+
+        except KeyError as exc:
+            return Error(Failure.from_exc(
+                'malformed flavor description',
+                exc,
+                flavor_info=r_flavors.unwrap()
+            ))
+
+        return refresh_cached_set(self.flavor_info_cache_key, flavors)
