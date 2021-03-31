@@ -23,6 +23,7 @@ from gluetool.result import Error, Ok
 from mock import MagicMock
 
 import tft.artemis
+import tft.artemis.context
 import tft.artemis.db
 import tft.artemis.routing_policies
 from tft.artemis.metrics import PoolMetrics
@@ -639,8 +640,8 @@ def do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=None, o
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     # TODO: use proper fixture once it lands
-    tft.artemis.CACHE.set(MagicMock(name='cache<mock>'))
-    tft.artemis.SESSION.set(mock_session)
+    tft.artemis.context.CACHE.set(MagicMock(name='cache<mock>'))
+    tft.artemis.context.SESSION.set(mock_session)
 
     mock_metrics = []
 

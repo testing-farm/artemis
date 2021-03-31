@@ -18,8 +18,9 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import DATABASE, LOGGER, SESSION, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
-    log_guest_event, metrics, safe_call, safe_db_change, with_context
+from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
+    safe_call, safe_db_change
+from .context import DATABASE, LOGGER, SESSION, with_context
 from .db import DB, GuestEvent, GuestRequest, Pool, Query, SafeQuery, SnapshotRequest, SSHKey
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver

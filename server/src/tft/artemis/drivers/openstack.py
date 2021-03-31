@@ -10,6 +10,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, Knob, get_cached_item, refresh_cached_set
+from ..context import CACHE
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics
@@ -169,7 +170,12 @@ class OpenStackDriver(PoolDriver):
     def _env_to_flavor(self, environment: Environment) -> Result[FlavorInfo, Failure]:
         # TODO: this will be handled by a script, for now we simply pick our local common variety of a flavor.
 
-        r_flavor = get_cached_item(self.flavor_info_cache_key, self.pool_config['default-flavor'], FlavorInfo)
+        r_flavor = get_cached_item(
+            CACHE.get(),
+            self.flavor_info_cache_key,
+            self.pool_config['default-flavor'],
+            FlavorInfo
+        )
 
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
@@ -833,7 +839,7 @@ class OpenStackDriver(PoolDriver):
                 flavor_info=r_flavors.unwrap()
             ))
 
-        return refresh_cached_set(self.flavor_info_cache_key, flavors)
+        return refresh_cached_set(CACHE.get(), self.flavor_info_cache_key, flavors)
 
     def get_pool_flavor_infos(self) -> Result[List[FlavorInfo], Failure]:
         """

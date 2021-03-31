@@ -775,7 +775,8 @@ def after_cursor_execute(
     if query_time < KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD.value:
         return
 
-    from . import LOGGER, Failure
+    from . import Failure
+    from .context import LOGGER
 
     Failure(
         'detected a slow query',

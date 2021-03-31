@@ -30,9 +30,10 @@ import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
 
-from . import __VERSION__, DATABASE, SESSION, Failure
+from . import __VERSION__, Failure
 from . import db as artemis_db
-from . import safe_call, with_context
+from . import safe_call
+from .context import DATABASE, SESSION, with_context
 from .guest import GuestState
 
 # Guest age buckets are not all same, but:

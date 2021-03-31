@@ -18,6 +18,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
+from ..context import CACHE
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
@@ -607,11 +608,15 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_image_info.is_error:
             return Error(r_image_info.unwrap_error())
 
-        return refresh_cached_set(self.image_info_cache_key, {
-            ii.name: ii
-            for ii in r_image_info.unwrap()
-            if ii.name
-        })
+        return refresh_cached_set(
+            CACHE.get(),
+            self.image_info_cache_key,
+            {
+                ii.name: ii
+                for ii in r_image_info.unwrap()
+                if ii.name
+            }
+        )
 
     def get_pool_image_info(self, imagename: str) -> Result[Optional[PoolImageInfoType], Failure]:
         """
@@ -626,7 +631,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
            is unknown.
         """
 
-        return get_cached_item(self.image_info_cache_key, imagename, PoolImageInfoType)
+        return get_cached_item(CACHE.get(), self.image_info_cache_key, imagename, PoolImageInfoType)
 
     def _fetch_cached_info(self, key: str, item_klass: Type[T]) -> Result[List[T], Failure]:
         """
@@ -637,7 +642,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :returns: mapping between item names and their representation as containers of given item class.
         """
 
-        r_fetch = get_cached_items(key, item_klass)
+        r_fetch = get_cached_items(CACHE.get(), key, item_klass)
 
         if r_fetch.is_error:
             return Error(r_fetch.unwrap_error())

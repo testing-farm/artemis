@@ -26,9 +26,10 @@ from molten.openapi.handlers import OpenAPIUIHandler
 from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 
-from .. import __VERSION__, DATABASE, LOGGER, FailureDetailsType, Knob
+from .. import __VERSION__, FailureDetailsType, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, log_guest_event, metrics, safe_db_change
+from ..context import DATABASE, LOGGER
 from ..guest import GuestState
 from ..tasks import get_snapshot_logger
 from . import errors
