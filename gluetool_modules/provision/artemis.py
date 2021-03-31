@@ -4,6 +4,7 @@ import six
 import sys
 
 import gluetool
+import gluetool_modules.libs
 import requests
 
 from gluetool import GlueError, GlueCommandError, SoftGlueError
@@ -758,7 +759,7 @@ class ArtemisProvisioner(gluetool.Module):
         '''
 
         return ProvisionerCapabilities(
-            available_arches=['x86_64']
+            available_arches=gluetool_modules.libs.ANY
         )
 
     def provision_guest(self,
