@@ -666,7 +666,7 @@ def run_cli_tool(
     command_scrubber = command_scrubber or _noop_scrubber
 
     try:
-        output = gluetool.utils.Command(command).run(env=env)
+        output = gluetool.utils.Command(command, logger=logger).run(env=env)
 
     except gluetool.glue.GlueCommandError as exc:
         return Error(Failure.from_exc(
