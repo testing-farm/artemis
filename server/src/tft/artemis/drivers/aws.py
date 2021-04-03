@@ -18,8 +18,8 @@ from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
+from . import GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, \
+    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
 
 #
 # Custom typing types
@@ -112,6 +112,15 @@ class AWSDriver(PoolDriver):
             "AWS_DEFAULT_REGION": self.pool_config['default-region'],
             "AWS_DEFAULT_OUTPUT": 'json'
         }
+
+    def capabilities(self) -> Result[PoolCapabilities, Failure]:
+        r_capabilities = super(AWSDriver, self).capabilities()
+
+        if r_capabilities.is_error:
+            return r_capabilities
+
+        r_capabilities.unwrap().supports_native_post_install_script = True
+        return r_capabilities
 
     def sanity(self) -> Result[bool, Failure]:
         required_variables = [

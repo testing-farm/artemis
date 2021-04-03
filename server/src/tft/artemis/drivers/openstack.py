@@ -15,8 +15,8 @@ from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
+from . import PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
+    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
@@ -95,6 +95,15 @@ class OpenStackDriver(PoolDriver):
             ]
 
         self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)
+
+    def capabilities(self) -> Result[PoolCapabilities, Failure]:
+        r_capabilities = super(OpenStackDriver, self).capabilities()
+
+        if r_capabilities.is_error:
+            return r_capabilities
+
+        r_capabilities.unwrap().supports_native_post_install_script = True
+        return r_capabilities
 
     def _run_os(self, options: List[str], json_format: bool = True) -> Result[Union[JSONType, str], Failure]:
         """

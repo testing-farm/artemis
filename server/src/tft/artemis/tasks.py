@@ -206,6 +206,9 @@ POOL_DRIVERS = {
 }
 
 
+POST_INSTALL_SCRIPT_REMOTE_FILEPATH = '/tmp/artemis-post-install-script.sh'
+
+
 # A class of unique "reschedule task" doer return value
 #
 # Note: we could use object() to create this value, but using custom class let's use limit allowed types returned
@@ -1898,6 +1901,18 @@ def handle_provisioning_chain_tail(
             GuestState.ROUTING
         )
 
+    # for post-acquire verify chain tasks, revert to ROUTING
+    elif actor.actor_name == prepare_post_install_script.actor_name:
+        r = do_handle_provisioning_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            GuestState.PREPARING,
+            GuestState.ROUTING
+        )
+
     else:
         Failure(
             'actor not covered by provisioning chain tail',
@@ -1999,6 +2014,82 @@ def prepare_verify_ssh(guestname: str) -> None:
     )
 
 
+def do_prepare_post_install_script(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str
+) -> DoerReturnType:
+    # Avoid circular imports
+    from .drivers import copy_to_remote, create_tempfile, run_remote
+
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='prepare-post-install-script'
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, state=GuestState.PREPARING)
+    workspace.load_gr_pool()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+    assert workspace.gr.address
+    assert workspace.pool
+
+    r_master_key = _get_master_key()
+
+    if r_master_key.is_error:
+        return handle_failure(r_master_key, 'failed to fetch master key')
+
+    r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=session, pool=workspace.pool)
+
+    if r_ssh_timeout.is_error:
+        return handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')
+
+    with create_tempfile(file_contents=workspace.gr.post_install_script) as post_install_filepath:
+        r_upload = copy_to_remote(
+            logger,
+            workspace.gr,
+            post_install_filepath,
+            POST_INSTALL_SCRIPT_REMOTE_FILEPATH,
+            key=r_master_key.unwrap(),
+            ssh_timeout=r_ssh_timeout.unwrap()
+        )
+
+    if r_upload.is_error:
+        return handle_failure(r_upload, 'failed to upload post-install script')
+
+    r_ssh = run_remote(
+        logger,
+        workspace.gr,
+        ['/bin/sh', POST_INSTALL_SCRIPT_REMOTE_FILEPATH],
+        key=r_master_key.unwrap(),
+        ssh_timeout=r_ssh_timeout.unwrap()
+    )
+
+    if r_ssh.is_error:
+        return handle_failure(r_ssh, 'failed to execute post-install script successfully')
+
+    return handle_success('finished-task')
+
+
+@dramatiq.actor(**actor_kwargs('PREPARE_POST_INSTALL_SCRIPT'))  # type: ignore  # Untyped decorator
+def prepare_post_install_script(guestname: str) -> None:
+    task_core(
+        cast(DoerType, do_prepare_post_install_script),
+        logger=get_guest_logger('prepare-post-install-script', _ROOT_LOGGER, guestname),
+        doer_args=(guestname,)
+    )
+
+
 def do_guest_request_prepare_finalize_pre_connect(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -2020,7 +2111,39 @@ def do_guest_request_prepare_finalize_pre_connect(
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
 
-    dispatch_preparing_post_connect(logger, workspace)
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+
+    tasks: List[Actor] = []
+
+    # Running post-install script is optional - the driver might have done it already.
+    if workspace.gr.post_install_script:
+        workspace.load_gr_pool()
+
+        if workspace.result:
+            return workspace.result
+
+        assert workspace.pool
+
+        r_capabilities = workspace.pool.capabilities()
+
+        if r_capabilities.is_error:
+            return handle_failure(r_capabilities, 'failed to fetch pool capabilities')
+
+        if r_capabilities.unwrap().supports_native_post_install_script is False:
+            tasks += [prepare_post_install_script]
+
+    if tasks:
+        workspace.dispatch_group(
+            tasks,
+            workspace.guestname,
+            on_complete=guest_request_prepare_finalize_post_connect
+        )
+
+    else:
+        workspace.dispatch_task(guest_request_prepare_finalize_post_connect, workspace.guestname)
 
     if workspace.result:
         return workspace.result
@@ -2115,28 +2238,6 @@ def dispatch_preparing_pre_connect(
         on_complete=guest_request_prepare_finalize_pre_connect,
         delay=KNOB_DISPATCH_PREPARE_DELAY.value
     )
-
-
-def dispatch_preparing_post_connect(
-    logger: gluetool.log.ContextAdapter,
-    workspace: Workspace,
-) -> None:
-    """
-    Helper for dispatching post-acquire chain of tasks.
-
-    Tier 2: additional preparation possible once we established it is possible to access the guest.
-    """
-
-    # At this moment, there is no post-connect task - but there will be! - so we schedule the post-connect
-    # finalization right away.
-    workspace.dispatch_task(guest_request_prepare_finalize_post_connect, workspace.guestname)
-
-    # workspace.dispatch_group(
-    #     [
-    #     ],
-    #     workspace.guestname,
-    #     on_complete=guest_request_prepare_finalize_post_connect
-    # )
 
 
 def do_release_guest_request(

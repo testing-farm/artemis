@@ -124,6 +124,10 @@ class PoolCapabilities:
     #: If set, the pool provides spot instances. Otherwise, only regular instances are supported.
     supports_spot_instances: bool = False
 
+    #: If set, the driver can handle the post-installation script on its own. Otherwise, Artemis core will
+    #: execute it in the preparation stage.
+    supports_native_post_install_script: bool = False
+
     def supports_arch(self, arch: str) -> bool:
         """
         Check whether a given architecture is supported. It is either listed among architectures supported

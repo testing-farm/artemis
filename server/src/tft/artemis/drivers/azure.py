@@ -10,8 +10,8 @@ from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
+from . import PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
+    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
 
 #: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
@@ -44,6 +44,15 @@ class AzureDriver(PoolDriver):
         pool_config: Dict[str, Any],
     ) -> None:
         super(AzureDriver, self).__init__(logger, poolname, pool_config)
+
+    def capabilities(self) -> Result[PoolCapabilities, Failure]:
+        r_capabilities = super(AzureDriver, self).capabilities()
+
+        if r_capabilities.is_error:
+            return r_capabilities
+
+        r_capabilities.unwrap().supports_native_post_install_script = True
+        return r_capabilities
 
     def _dispatch_resource_cleanup(
         self,
