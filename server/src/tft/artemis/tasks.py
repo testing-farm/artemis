@@ -1932,7 +1932,7 @@ def do_prepare_verify_ssh(
     guestname: str
 ) -> DoerReturnType:
     # Avoid circular imports
-    from .drivers import create_tempfile, run_cli_tool
+    from .drivers import run_remote
 
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,
@@ -1964,20 +1964,13 @@ def do_prepare_verify_ssh(
     if r_ssh_timeout.is_error:
         return handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')
 
-    with create_tempfile(file_contents=r_master_key.unwrap().private) as private_key_filepath:
-        r_ssh = run_cli_tool(
-            logger,
-            [
-                'ssh',
-                '-i', private_key_filepath,
-                '-o', 'UserKnownHostsFile=/dev/null',
-                '-o', 'StrictHostKeyChecking=no',
-                '-o', 'ConnectTimeout={}'.format(r_ssh_timeout.unwrap()),
-                '-l', 'root',
-                workspace.gr.address,
-                'bash -c "echo ping"'
-            ]
-        )
+    r_ssh = run_remote(
+        logger,
+        workspace.gr,
+        ['bash', '-c', 'echo ping'],
+        key=r_master_key.unwrap(),
+        ssh_timeout=r_ssh_timeout.unwrap()
+    )
 
     if r_ssh.is_error:
         return handle_failure(r_ssh, 'failed to verify SSH')

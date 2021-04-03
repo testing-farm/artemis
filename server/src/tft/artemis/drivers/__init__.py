@@ -6,6 +6,7 @@ import enum
 import json
 import os
 import re
+import shlex
 import tempfile
 import threading
 from typing import Any, Callable, Dict, Iterator, List, Optional, Pattern, Type, TypeVar, Union, cast
@@ -858,6 +859,89 @@ def test_cli_error(failure: Failure, error_pattern: Pattern[str]) -> bool:
         return True
 
     return False
+
+
+def run_remote(
+    logger: gluetool.log.ContextAdapter,
+    guest_request: GuestRequest,
+    command: List[str],
+    *,
+    key: SSHKey,
+    ssh_timeout: int
+) -> Result[CLIOutput, Failure]:
+    if guest_request.address is None:
+        return Error(Failure('cannot connect to unknown remote address'))
+
+    with create_tempfile(file_contents=key.private) as private_key_filepath:
+        return run_cli_tool(
+            logger,
+            [
+                'ssh',
+                '-i', private_key_filepath,
+                '-o', 'UserKnownHostsFile=/dev/null',
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'ConnectTimeout={}'.format(ssh_timeout),
+                '-l', 'root',
+                guest_request.address,
+                # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
+                # parameters. Therefore joining it into a single string here, instead of bothering the caller.
+                ' '.join(shlex.quote(arg) for arg in command)
+            ]
+        )
+
+
+def copy_to_remote(
+    logger: gluetool.log.ContextAdapter,
+    guest_request: GuestRequest,
+    src: str,
+    dst: str,
+    *,
+    key: SSHKey,
+    ssh_timeout: int
+) -> Result[CLIOutput, Failure]:
+    if guest_request.address is None:
+        return Error(Failure('cannot connect to unknown remote address'))
+
+    with create_tempfile(file_contents=key.private) as private_key_filepath:
+        return run_cli_tool(
+            logger,
+            [
+                'scp',
+                '-i', private_key_filepath,
+                '-o', 'UserKnownHostsFile=/dev/null',
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'ConnectTimeout={}'.format(ssh_timeout),
+                src,
+                'root@{}:{}'.format(guest_request.address, dst),
+            ]
+        )
+
+
+def copy_from_remote(
+    logger: gluetool.log.ContextAdapter,
+    guest_request: GuestRequest,
+    src: str,
+    dst: str,
+    *,
+    key: SSHKey,
+    ssh_timeout: int
+) -> Result[CLIOutput, Failure]:
+    if guest_request.address is None:
+        return Error(Failure('cannot connect to unknown remote address'))
+
+    with create_tempfile(file_contents=key.private) as private_key_filepath:
+        return run_cli_tool(
+            logger,
+            [
+                'scp',
+                '-i', private_key_filepath,
+                '-o', 'UserKnownHostsFile=/dev/null',
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'ConnectTimeout={}'.format(ssh_timeout),
+                'root@{}:{}'.format(guest_request.address, src),
+                dst
+            ]
+        )
 
 
 @contextlib.contextmanager
