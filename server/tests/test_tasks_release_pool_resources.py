@@ -55,38 +55,7 @@ def test_release_pool_resources(logger, db, session, caplog, monkeypatch, mock_p
     assert r.is_ok
     assert r is tft.artemis.tasks.SUCCESS
 
-    pool.release_pool_resources.assert_called_once_with(logger, mock_resource_ids)
-
-
-def test_release_pool_resources_broken_json(logger, db, session, caplog, monkeypatch, mock_pool):
-    """
-    Test the broken, unserializable resource IDs are handled.
-    """
-
-    pool, _ = mock_pool
-
-    r = do_release_pool_resources(
-        logger,
-        db,
-        session,
-        threading.Event(),
-        'dummy-pool',
-        '{',
-        None
-    )
-
-    assert r.is_error
-
-    failure = r.unwrap_error()
-
-    assert isinstance(failure, tft.artemis.Failure)
-    assert failure.message == 'failed to unserialize resource IDs'
-    assert isinstance(failure.exception, json.decoder.JSONDecodeError)
-    assert failure.details['serialized_resource_ids'] == '{'
-
-    pool.release_pool_resources.assert_not_called()
-
-    assert_failure_log(caplog, 'failed to unserialize resource IDs', exception_label='JSONDecodeError:')
+    pool.release_pool_resources.assert_called_once_with(logger, json.dumps(mock_resource_ids))
 
 
 def test_release_pool_resources_broken_pool(logger, db, session, caplog, monkeypatch, mock_pool):
@@ -152,6 +121,6 @@ def test_release_pool_resources_failed(logger, db, session, caplog, monkeypatch,
     assert failure.message == 'injected pool failure'
     assert failure.exception is None
 
-    pool.release_pool_resources.assert_called_once_with(logger, mock_resource_ids)
+    pool.release_pool_resources.assert_called_once_with(logger, json.dumps(mock_resource_ids))
 
     assert_failure_log(caplog, 'failed to release pool resources')

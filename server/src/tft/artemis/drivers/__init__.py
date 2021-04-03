@@ -25,7 +25,6 @@ from ..metrics import PoolResourcesMetrics
 
 T = TypeVar('T')
 
-PoolResourcesIDsType = Dict[str, Any]
 GuestTagsType = Dict[str, str]
 
 
@@ -178,6 +177,28 @@ class ProvisioningProgress:
     pool_failures: List[Failure] = dataclasses.field(default_factory=list)
 
 
+SerializedPoolResourcesIDs = str
+
+
+@dataclasses.dataclass
+class PoolResourcesIDs:
+    """
+    Container for various pool resource IDs, used for scheduling their removal.
+
+    Serves as a base class for pool-specific implementations that add the actual fields for resources and IDs.
+    """
+
+    def is_empty(self) -> bool:
+        return all([value is None for value in dataclasses.asdict(self).values()])
+
+    def serialize(self) -> SerializedPoolResourcesIDs:
+        return json.dumps(dataclasses.asdict(self))
+
+    @classmethod
+    def unserialize(cls: Type[T], raw_resource_ids: SerializedPoolResourcesIDs) -> T:
+        return cls(**json.loads(raw_resource_ids))  # type: ignore
+
+
 class PoolDriver(gluetool.log.LoggerMixin):
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
@@ -210,7 +231,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def dispatch_resource_cleanup(
         self,
         logger: gluetool.log.ContextAdapter,
-        resource_ids: PoolResourcesIDsType,
+        resource_ids: PoolResourcesIDs,
         guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
         """
@@ -219,7 +240,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         driver.
         """
 
-        if not resource_ids:
+        if resource_ids.is_empty():
             return Ok(None)
 
         r_delay = KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY.get_value(pool=self)
@@ -234,7 +255,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             logger,
             release_pool_resources,
             self.poolname,
-            json.dumps(resource_ids),
+            resource_ids.serialize(),
             guest_request.guestname if guest_request else None,
             delay=r_delay.unwrap()
         )
@@ -242,7 +263,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def release_pool_resources(
         self,
         logger: gluetool.log.ContextAdapter,
-        resources_ids: PoolResourcesIDsType
+        raw_resources_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
         """
         Release any pool resources identified by provided IDs.

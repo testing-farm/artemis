@@ -1704,18 +1704,6 @@ def do_release_pool_resources(
 
     handle_success('entered-task')
 
-    try:
-        resource_ids = json.loads(serialized_resource_ids)
-
-    except Exception as exc:
-        failure = Failure.from_exc(
-            'failed to unserialize resource IDs',
-            exc,
-            serialized_resource_ids=serialized_resource_ids
-        )
-
-        return handle_failure(Error(failure), 'failed to unserialize resource IDs')
-
     r_pool = _get_pool(logger, session, poolname)
 
     if r_pool.is_error:
@@ -1723,7 +1711,7 @@ def do_release_pool_resources(
 
     pool = r_pool.unwrap()
 
-    r_release = pool.release_pool_resources(logger, resource_ids)
+    r_release = pool.release_pool_resources(logger, serialized_resource_ids)
 
     if r_release.is_error:
         return handle_failure(r_release, 'failed to release pool resources')

@@ -15,8 +15,8 @@ from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
-    create_tempfile, run_cli_tool
+from . import PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
+    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
@@ -40,6 +40,11 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
 @dataclasses.dataclass
 class OpenStackPoolData(PoolData):
     instance_id: str
+
+
+@dataclasses.dataclass
+class OpenStackPoolResourcesIDs(PoolResourcesIDs):
+    instance_id: Optional[str] = None
 
 
 @dataclasses.dataclass
@@ -140,10 +145,7 @@ class OpenStackDriver(PoolDriver):
         instance_id: Optional[str] = None,
         guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
-        resource_ids = {}
-
-        if instance_id is not None:
-            resource_ids['instance_id'] = instance_id
+        resource_ids = OpenStackPoolResourcesIDs(instance_id=instance_id)
 
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
@@ -682,14 +684,16 @@ class OpenStackDriver(PoolDriver):
     def release_pool_resources(
         self,
         logger: gluetool.log.ContextAdapter,
-        resource_ids: PoolResourcesIDsType
+        raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
-        if 'instance_id' in resource_ids:
+        resource_ids = OpenStackPoolResourcesIDs.unserialize(raw_resource_ids)
+
+        if resource_ids.instance_id:
             r_output = self._run_os([
                 'server',
                 'delete',
                 '--wait',
-                resource_ids['instance_id']
+                resource_ids.instance_id
             ], json_format=False)
 
             if r_output.is_error:

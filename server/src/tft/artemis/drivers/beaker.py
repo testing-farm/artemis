@@ -16,8 +16,8 @@ from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
-from . import CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDsType, ProvisioningProgress, \
-    ProvisioningState, create_tempfile, run_cli_tool
+from . import CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
+    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool
 
 NodeRefType = Any
 
@@ -44,6 +44,11 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
 @dataclasses.dataclass
 class BeakerPoolData(PoolData):
     job_id: str
+
+
+@dataclasses.dataclass
+class BeakerPoolResourcesIDs(PoolResourcesIDs):
+    job_id: Optional[str] = None
 
 
 class BeakerDriver(PoolDriver):
@@ -84,20 +89,19 @@ class BeakerDriver(PoolDriver):
         job_id: Optional[str] = None,
         guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
-        resource_ids = {}
-
-        if job_id is not None:
-            resource_ids['job_id'] = job_id
+        resource_ids = BeakerPoolResourcesIDs(job_id=job_id)
 
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def release_pool_resources(
         self,
         logger: gluetool.log.ContextAdapter,
-        resource_ids: PoolResourcesIDsType
+        raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
-        if 'job_id' in resource_ids:
-            r_output = self._run_bkr(logger, ['job-cancel', resource_ids['job_id']])
+        resource_ids = BeakerPoolResourcesIDs.unserialize(raw_resource_ids)
+
+        if resource_ids.job_id is not None:
+            r_output = self._run_bkr(logger, ['job-cancel', resource_ids.job_id])
 
             if r_output.is_error:
                 return Error(r_output.unwrap_error())

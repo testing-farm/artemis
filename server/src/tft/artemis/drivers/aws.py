@@ -17,8 +17,8 @@ from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDsType, ProvisioningProgress, \
-    ProvisioningState, run_cli_tool
+from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
+    ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool
 
 #
 # Custom typing types
@@ -88,6 +88,12 @@ class AWSPoolData(PoolData):
     spot_instance_id: Optional[str] = None
 
 
+@dataclasses.dataclass
+class AWSPoolResourcesIDs(PoolResourcesIDs):
+    instance_id: Optional[str] = None
+    spot_instance_id: Optional[str] = None
+
+
 class AWSDriver(PoolDriver):
     def __init__(
         self,
@@ -130,34 +136,30 @@ class AWSDriver(PoolDriver):
         spot_instance_id: Optional[str] = None,
         guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
-        resource_ids = {}
-
-        if instance_id is not None:
-            resource_ids['instance_id'] = instance_id
-
-        if spot_instance_id is not None:
-            resource_ids['spot_instance_id'] = spot_instance_id
+        resource_ids = AWSPoolResourcesIDs(instance_id=instance_id, spot_instance_id=spot_instance_id)
 
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def release_pool_resources(
         self,
         logger: gluetool.log.ContextAdapter,
-        resource_ids: PoolResourcesIDsType
+        raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
-        if 'spot_instance_id' in resource_ids:
+        resource_ids = AWSPoolResourcesIDs.unserialize(raw_resource_ids)
+
+        if resource_ids.spot_instance_id is not None:
             r_output = self._aws_command([
                 'ec2', 'cancel-spot-instance-requests',
-                '--spot-instance-request-ids={}'.format(resource_ids['spot_instance_id'])
+                '--spot-instance-request-ids={}'.format(resource_ids.spot_instance_id)
             ])
 
             if r_output.is_error:
                 return Error(r_output.unwrap_error())
 
-        if 'instance_id' in resource_ids:
+        if resource_ids.instance_id is not None:
             r_output = self._aws_command([
                 'ec2', 'terminate-instances',
-                '--instance-ids={}'.format(resource_ids['instance_id'])
+                '--instance-ids={}'.format(resource_ids.instance_id)
             ])
 
             if r_output.is_error:

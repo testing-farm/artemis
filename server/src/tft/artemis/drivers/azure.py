@@ -10,8 +10,8 @@ from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
-    create_tempfile, run_cli_tool, vm_info_to_ip
+from . import PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
+    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
 
 #: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
@@ -30,6 +30,12 @@ class AzurePoolData(PoolData):
     resource_group: str
 
 
+@dataclasses.dataclass
+class AzurePoolResourcesIDs(PoolResourcesIDs):
+    instance_id: Optional[str] = None
+    assorted_resource_ids: Optional[List[str]] = None
+
+
 class AzureDriver(PoolDriver):
     def __init__(
         self,
@@ -46,13 +52,10 @@ class AzureDriver(PoolDriver):
         instance_id: Optional[str] = None,
         guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
-        resource_ids: PoolResourcesIDsType = {}
-
-        if instance_id is not None:
-            resource_ids['instance_id'] = instance_id
-
-        if other_resources:
-            resource_ids['assorted_resource_ids'] = other_resources
+        resource_ids = AzurePoolResourcesIDs(
+            instance_id=instance_id,
+            assorted_resource_ids=list(other_resources) if other_resources else None
+        )
 
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
@@ -74,25 +77,27 @@ class AzureDriver(PoolDriver):
     def release_pool_resources(
         self,
         logger: gluetool.log.ContextAdapter,
-        resource_ids: PoolResourcesIDsType
+        raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
 
         # delete vm first, resources second
 
+        resource_ids = AzurePoolResourcesIDs.unserialize(raw_resource_ids)
+
         def _delete_resource(res_id: str) -> Any:
             options = ['resource', 'delete', '--ids', res_id]
             return self._run_cmd_with_auth(options, json_format=False)
 
-        if 'instance_id' in resource_ids:
-            r_delete = _delete_resource(resource_ids.pop('instance_id'))
+        if resource_ids.instance_id is not None:
+            r_delete = _delete_resource(resource_ids.instance_id)
 
             if r_delete.is_error:
                 return Error(r_delete.unwrap_error())
 
-        if 'assorted_resource_ids' in resource_ids:
-            for resource_id in cast(List[str], resource_ids.pop('assorted_resource_ids')):
+        if resource_ids.assorted_resource_ids is not None:
+            for resource_id in resource_ids.assorted_resource_ids:
                 r_delete = _delete_resource(resource_id)
 
                 if r_delete.is_error:
