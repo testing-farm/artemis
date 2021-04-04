@@ -626,10 +626,18 @@ class PoolsMetrics(MetricsBase):
         # Avoid circullar imports
         from .tasks import get_pools
 
-        self.pools = {
-            pool.poolname: PoolMetrics(pool.poolname)
-            for pool in get_pools(logger, session)
-        }
+        r_pools = get_pools(logger, session)
+
+        if r_pools.is_error:
+            r_pools.unwrap_error().handle(logger)
+
+            self.pools = {}
+
+        else:
+            self.pools = {
+                pool.poolname: PoolMetrics(pool.poolname)
+                for pool in r_pools.unwrap()
+            }
 
         for metrics in self.pools.values():
             metrics.sync()

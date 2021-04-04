@@ -21,7 +21,7 @@ from typing_extensions import Protocol
 from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
     safe_call, safe_db_change
 from .context import DATABASE, LOGGER, SESSION, with_context
-from .db import DB, GuestEvent, GuestRequest, Pool, Query, SafeQuery, SnapshotRequest, SSHKey
+from .db import DB, GuestEvent, GuestRequest, Pool, SafeQuery, SnapshotRequest, SSHKey
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver
@@ -886,72 +886,6 @@ def dispatch_group(
     return Ok(None)
 
 
-def _get_guest_request(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    guestname: str
-) -> Result[Optional[GuestRequest], Failure]:
-    try:
-        return Ok(
-            Query.from_session(session, GuestRequest)
-            .filter(GuestRequest.guestname == guestname)
-            .one_or_none()
-        )
-
-    except Exception as exc:
-        return Error(Failure.from_exc(
-            'failed to fetch guest request',
-            exc,
-            guestname=guestname
-        ))
-
-
-def _get_guest_request_by_state(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    guestname: str,
-    state: GuestState
-) -> Result[Optional[GuestRequest], Failure]:
-    try:
-        return Ok(
-            Query.from_session(session, GuestRequest)
-            .filter(GuestRequest.guestname == guestname)
-            .filter(GuestRequest.state == state.value)
-            .one_or_none()
-        )
-
-    except Exception as exc:
-        return Error(Failure.from_exc(
-            'failed to fetch guest request',
-            exc,
-            guestname=guestname,
-            state=state.name
-        ))
-
-
-def _get_snapshot_request_by_state(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    snapshotname: str,
-    state: GuestState
-) -> Result[Optional[SnapshotRequest], Failure]:
-    try:
-        return Ok(
-            Query.from_session(session, SnapshotRequest)
-            .filter(SnapshotRequest.snapshotname == snapshotname)
-            .filter(SnapshotRequest.state == state.value)
-            .one_or_none()
-        )
-
-    except Exception as exc:
-        return Error(Failure.from_exc(
-            'failed to fetch snapshot request',
-            exc,
-            snapshotname=snapshotname,
-            state=state.name
-        ))
-
-
 def _update_guest_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -1095,19 +1029,16 @@ def _get_pool(
     session: sqlalchemy.orm.session.Session,
     poolname: str
 ) -> Result[PoolDriver, Failure]:
-    try:
-        pool_record = Query.from_session(session, Pool) \
-            .filter(Pool.poolname == poolname) \
-            .one_or_none()
+    r_pool = SafeQuery.from_session(session, Pool) \
+        .filter(Pool.poolname == poolname) \
+        .one_or_none()
 
-    except Exception as exc:
-        return Error(Failure.from_exc(
-            'failed to fetch pool record',
-            exc,
-            poolname=poolname
-        ))
+    if r_pool.is_error:
+        return Error(r_pool.unwrap_error())
 
-    if not pool_record:
+    pool_record = r_pool.unwrap()
+
+    if pool_record is None:
         return Error(Failure(
             'no such pool',
             poolname=poolname
@@ -1127,10 +1058,15 @@ def _get_pool(
 def get_pools(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session
-) -> List[PoolDriver]:
+) -> Result[List[PoolDriver], Failure]:
+    r_pools = SafeQuery.from_session(session, Pool).all()
+
+    if r_pools.is_error:
+        return Error(r_pools.unwrap_error())
+
     pools: List[PoolDriver] = []
 
-    for pool_record in Query.from_session(session, Pool).all():
+    for pool_record in r_pools.unwrap():
         pool_driver_class = POOL_DRIVERS[pool_record.driver]
 
         pools += [
@@ -1142,7 +1078,7 @@ def get_pools(
     if len([d for d in pools if isinstance(d, azure_driver.AzureDriver)]) > 1:
         logger.warning('Multiple Azure pools are not supported at the moment, authentication may fail.')
 
-    return pools
+    return Ok(pools)
 
 
 @with_context
@@ -1282,10 +1218,15 @@ class Workspace:
         self.guestname = guestname
 
         if state is None:
-            r = _get_guest_request(self.logger, self.session, guestname)
+            r = SafeQuery.from_session(self.session, GuestRequest) \
+                .filter(GuestRequest.guestname == guestname) \
+                .one_or_none()
 
         else:
-            r = _get_guest_request_by_state(self.logger, self.session, guestname, state)
+            r = SafeQuery.from_session(self.session, GuestRequest) \
+                .filter(GuestRequest.guestname == guestname) \
+                .filter(GuestRequest.state == state.value) \
+                .one_or_none()
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to load guest request')
@@ -1324,7 +1265,10 @@ class Workspace:
 
         self.snapshotname = snapshotname
 
-        r = _get_snapshot_request_by_state(self.logger, self.session, snapshotname, state)
+        r = SafeQuery.from_session(self.session, SnapshotRequest) \
+            .filter(SnapshotRequest.snapshotname == snapshotname) \
+            .filter(SnapshotRequest.state == state.value) \
+            .one_or_none()
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to load snapshot request')
@@ -2585,13 +2529,18 @@ def do_route_guest_request(
 
     logger.info('finding suitable provisioner')
 
+    r_pools = get_pools(logger, session)
+
+    if r_pools.is_error:
+        return handle_failure(r_pools, 'failed to fetch pools')
+
     ruling = cast(
         PolicyRuling,
         workspace.run_hook(
             'ROUTE',
             session=session,
             guest_request=workspace.gr,
-            pools=get_pools(logger, session)
+            pools=r_pools.unwrap()
         )
     )
 
@@ -3410,7 +3359,7 @@ def do_refresh_pool_resources_metrics_dispatcher(
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event
 ) -> DoerReturnType:
-    handle_success, _, _ = create_event_handlers(
+    handle_success, handle_failure, _ = create_event_handlers(
         logger,
         session,
         task='refresh-pool-metrics-dispatcher'
@@ -3420,7 +3369,14 @@ def do_refresh_pool_resources_metrics_dispatcher(
 
     logger.info('scheduling pool metrics refresh')
 
-    for pool in get_pools(_ROOT_LOGGER, session):
+    r_pools = get_pools(_ROOT_LOGGER, session)
+
+    if r_pools.is_error:
+        handle_failure(r_pools, 'failed to fetch pools')
+
+        return handle_success('finished-task')
+
+    for pool in r_pools.unwrap():
         dispatch_task(
             get_pool_logger('refresh-pool-resources-metrics-dispatcher', _ROOT_LOGGER, pool.poolname),
             refresh_pool_resources_metrics,
@@ -3522,7 +3478,7 @@ def do_refresh_pool_image_info_dispatcher(
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event
 ) -> DoerReturnType:
-    handle_success, _, _ = create_event_handlers(
+    handle_success, handle_failure, _ = create_event_handlers(
         logger,
         session,
         task='refresh-pool-image-info-dispatcher'
@@ -3532,7 +3488,14 @@ def do_refresh_pool_image_info_dispatcher(
 
     logger.info('scheduling pool image info refresh')
 
-    for pool in get_pools(_ROOT_LOGGER, session):
+    r_pools = get_pools(_ROOT_LOGGER, session)
+
+    if r_pools.is_error:
+        handle_failure(r_pools, 'failed to fetch pools')
+
+        return handle_success('finished-task')
+
+    for pool in r_pools.unwrap():
         dispatch_task(
             get_pool_logger('refresh-pool-image-info-dispatcher', _ROOT_LOGGER, pool.poolname),
             refresh_pool_image_info,
@@ -3640,7 +3603,7 @@ def do_refresh_openstack_flavor_info_dispatcher(
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event
 ) -> DoerReturnType:
-    handle_success, _, _ = create_event_handlers(
+    handle_success, handle_failure, _ = create_event_handlers(
         logger,
         session,
         task='refresh-openstack-flavor-info-dispatcher'
@@ -3650,7 +3613,14 @@ def do_refresh_openstack_flavor_info_dispatcher(
 
     logger.info('scheduling OpenStack flavor info refresh')
 
-    for pool in get_pools(logger, session):
+    r_pools = get_pools(logger, session)
+
+    if r_pools.is_error:
+        handle_failure(r_pools, 'failed to fetch pools')
+
+        return handle_success('finished-task')
+
+    for pool in r_pools.unwrap():
         if not isinstance(pool, openstack_driver.OpenStackDriver):
             continue
 
