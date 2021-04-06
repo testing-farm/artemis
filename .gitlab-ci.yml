@@ -7,6 +7,11 @@ stages:
 
 tests:
   stage: test_stage
+  variables:
+    TERM: "xterm"
+    POETRY_ADDOPTS: "--ansi"
+    MYPY_FORCE_COLOR: "1"
+    PYTEST_ADDOPTS: "--color=yes"
   script:
     - cd server
     - IN_TEST=yes tox -v
