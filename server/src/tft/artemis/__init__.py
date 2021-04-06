@@ -762,7 +762,7 @@ class Knob(Generic[T]):
     1. the database, if the knob declaration specifies the database may be used.
     2. the environment variable.
     3. the given "actual" value, prossibly originating from a config file.
-    3. the default value.
+    4. the default value.
 
     A typical knob may look like this:
 

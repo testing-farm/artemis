@@ -4,7 +4,7 @@
 # our code runs in. The entry points - places that call methods like :py:func:`get_logger` and :py:func:`get_db`,
 # usually the first piece of code that runs in reaction to events like HTTP connection or delivered message - are
 # expected to set these variables properly. It is then expected that following paths will update them as needed,
-# for example :py:var:`LOGGER` will gain more logging context and therefore the initial object would be replaced
+# for example :py:data:`LOGGER` will gain more logging context and therefore the initial object would be replaced
 # with more specific loggers.
 #
 # Vast majority of our code expects very similar set of inputs - logger, db, session and so on. This approach
@@ -57,12 +57,12 @@ def with_context(fn: Callable[..., T]) -> Callable[..., T]:
     """
     Decorated function is injected with context variables by specifying them as parameters with known names and types.
 
-    * ``logger`` :py:class:`gluetool.logger.ContextAdapter` - :py:var:`LOGGER`
-    * ``db`` :py:class:`tft.artemis.db.DB` - :py:var:`DATABASE`
-    * ``session`` :py:class:`sqlalchemy.orm.session.Session` - :py:var:`SESSION`
-    * ``cache`` :py:class:`redis.Redis` - :py:var:`CACHE`
+    * ``logger`` :py:class:`gluetool.logger.ContextAdapter` - :py:data:`LOGGER`
+    * ``db`` :py:class:`tft.artemis.db.DB` - :py:data:`DATABASE`
+    * ``session`` :py:class:`sqlalchemy.orm.session.Session` - :py:data:`SESSION`
+    * ``cache`` :py:class:`redis.Redis` - :py:data:`CACHE`
 
-    The objects available for injecting are provided by :py:var:`CONTEXT_PROVIDERS` mapping.
+    The objects available for injecting are provided by :py:data:`CONTEXT_PROVIDERS` mapping.
 
     .. code-block:: python
 
