@@ -640,10 +640,14 @@ class AWSDriver(PoolDriver):
         # tag the instance if requested
         # TODO: move these into configuration. Before that, we need to add support for templates in tags, so we
         # could generate tags like `Name`. But it really belongs to configuration.
-        self._tag_instance(session, guest_request, instance, owner, tags={
-            'Name': '{}::{}'.format(instance['PrivateIpAddress'], instance['ImageId']),
-            'SpotRequestId': pool_data.spot_instance_id,
-        })
+        tags: Dict[str, str] = {
+            'Name': '{}::{}'.format(instance['PrivateIpAddress'], instance['ImageId'])
+        }
+
+        if pool_data.spot_instance_id is not None:
+            tags['SpotRequestId'] = pool_data.spot_instance_id
+
+        self._tag_instance(session, guest_request, instance, owner, tags=tags)
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,

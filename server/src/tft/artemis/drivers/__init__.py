@@ -120,7 +120,7 @@ class PoolData:
         return json.dumps(dataclasses.asdict(self))
 
     @classmethod
-    def unserialize(cls, guest_request: GuestRequest) -> Any:
+    def unserialize(cls: Type[T], guest_request: GuestRequest) -> T:
         return cls(**json.loads(guest_request.pool_data))  # type: ignore
 
 
