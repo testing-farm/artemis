@@ -1794,8 +1794,8 @@ def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional
     else:
         logger = TaskLogger(_ROOT_LOGGER, 'release-pool-resources')
 
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_release_pool_resources,
+    task_core(
+        cast(DoerType, do_release_pool_resources),
         logger=logger,
         doer_args=(poolname, resource_ids, guestname)
     )
@@ -2063,8 +2063,8 @@ def do_prepare_verify_ssh(
 
 @dramatiq.actor(**actor_kwargs('PREPARE_VERIFY_SSH'))  # type: ignore  # Untyped decorator
 def prepare_verify_ssh(guestname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_prepare_verify_ssh,
+    task_core(
+        cast(DoerType, do_prepare_verify_ssh),
         logger=get_guest_logger('prepare-verify-ssh', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
@@ -2101,8 +2101,8 @@ def do_guest_request_prepare_finalize_pre_connect(
 
 @dramatiq.actor(**actor_kwargs('GUEST_REQUEST_PREPARE_FINALIZE_PRE_CONNECT'))  # type: ignore  # Untyped decorator
 def guest_request_prepare_finalize_pre_connect(guestname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_guest_request_prepare_finalize_pre_connect,
+    task_core(
+        cast(DoerType, do_guest_request_prepare_finalize_pre_connect),
         logger=get_guest_logger('guest-request-prepare-finalize-pre-connect', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
@@ -2161,8 +2161,8 @@ def do_guest_request_prepare_finalize_post_connect(
 
 @dramatiq.actor(**actor_kwargs('GUEST_REQUEST_PREPARE_FINALIZE_POST_CONNECT'))  # type: ignore  # Untyped decorator
 def guest_request_prepare_finalize_post_connect(guestname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_guest_request_prepare_finalize_post_connect,
+    task_core(
+        cast(DoerType, do_guest_request_prepare_finalize_post_connect),
         logger=get_guest_logger('guest-request-prepare-finalize-post-connect', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
@@ -2270,8 +2270,8 @@ def do_release_guest_request(
 
 @dramatiq.actor(**actor_kwargs('RELEASE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def release_guest_request(guestname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_release_guest_request,
+    task_core(
+        cast(DoerType, do_release_guest_request),
         logger=get_guest_logger('release-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
@@ -2403,8 +2403,8 @@ def do_update_guest_request(
 
 @dramatiq.actor(**actor_kwargs('UPDATE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def update_guest_request(guestname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_update_guest_request,
+    task_core(
+        cast(DoerType, do_update_guest_request),
         logger=get_guest_logger('update-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
@@ -2543,8 +2543,8 @@ def do_acquire_guest_request(
 
 @dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def acquire_guest_request(guestname: str, poolname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_acquire_guest_request,
+    task_core(
+        cast(DoerType, do_acquire_guest_request),
         logger=get_guest_logger('acquire-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname, poolname)
     )
@@ -2664,8 +2664,8 @@ def do_route_guest_request(
 
 @dramatiq.actor(**actor_kwargs('ROUTE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def route_guest_request(guestname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_route_guest_request,
+    task_core(
+        cast(DoerType, do_route_guest_request),
         logger=get_guest_logger('route-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )
@@ -2738,8 +2738,8 @@ def do_release_snapshot_request(
 
 @dramatiq.actor(**actor_kwargs('RELEASE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
 def release_snapshot_request(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_release_snapshot_request,
+    task_core(
+        cast(DoerType, do_release_snapshot_request),
         logger=get_snapshot_logger('release-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
@@ -2812,8 +2812,8 @@ def do_create_snapshot_start_guest(
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_START_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def create_snapshot_start_guest(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_create_snapshot_start_guest,
+    task_core(
+        cast(DoerType, do_create_snapshot_start_guest),
         logger=get_snapshot_logger('create-snapshot-start-guest', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
@@ -2927,8 +2927,8 @@ def do_update_snapshot(
 
 @dramatiq.actor(**actor_kwargs('UPDATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
 def update_snapshot(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_update_snapshot,
+    task_core(
+        cast(DoerType, do_update_snapshot),
         logger=get_snapshot_logger('update-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
@@ -3046,8 +3046,8 @@ def do_create_snapshot_create(
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_CREATE_REQUEST'))  # type: ignore  # Untyped decorator
 def create_snapshot_create(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_create_snapshot_create,
+    task_core(
+        cast(DoerType, do_create_snapshot_create),
         logger=get_snapshot_logger('create-snapshot-create', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
@@ -3127,8 +3127,8 @@ def do_create_snapshot_stop_guest(
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_STOP_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
 def create_snapshot_stop_guest(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_create_snapshot_stop_guest,
+    task_core(
+        cast(DoerType, do_create_snapshot_stop_guest),
         logger=get_snapshot_logger('create-snapshot-stop-guest', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
@@ -3216,8 +3216,8 @@ def do_create_snapshot(
 
 @dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
 def create_snapshot(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore  # Argument 1 has incompatible type
-        do_create_snapshot,
+    task_core(
+        cast(DoerType, do_create_snapshot),
         logger=get_snapshot_logger('create-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
@@ -3275,8 +3275,8 @@ def do_route_snapshot_request(
 
 @dramatiq.actor(**actor_kwargs('ROUTE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
 def route_snapshot_request(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_route_snapshot_request,
+    task_core(
+        cast(DoerType, do_route_snapshot_request),
         logger=get_snapshot_logger('route-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
@@ -3344,8 +3344,8 @@ def do_restore_snapshot_request(
 
 @dramatiq.actor(**actor_kwargs('RESTORE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
 def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_restore_snapshot_request,
+    task_core(
+        cast(DoerType, do_restore_snapshot_request),
         logger=get_snapshot_logger('restore-snapshot', _ROOT_LOGGER, guestname, snapshotname),
         doer_args=(guestname, snapshotname)
     )
@@ -3397,8 +3397,8 @@ def do_refresh_pool_resources_metrics(
     )
 )
 def refresh_pool_resources_metrics(poolname: str) -> None:
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_refresh_pool_resources_metrics,
+    task_core(
+        cast(DoerType, do_refresh_pool_resources_metrics),
         logger=get_pool_logger('refresh-pool-resources-metrics', _ROOT_LOGGER, poolname),
         doer_args=(poolname,)
     )
@@ -3451,8 +3451,8 @@ def refresh_pool_resources_metrics_dispatcher() -> None:
     retries would make the metrics more outdated.
     """
 
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_refresh_pool_resources_metrics_dispatcher,
+    task_core(
+        cast(DoerType, do_refresh_pool_resources_metrics_dispatcher),
         logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-resources-dispatcher')
     )
 
@@ -3509,8 +3509,8 @@ def do_refresh_pool_image_info(
     )
 )
 def refresh_pool_image_info(poolname: str) -> None:
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_refresh_pool_image_info,
+    task_core(
+        cast(DoerType, do_refresh_pool_image_info),
         logger=get_pool_logger('refresh-pool-image-info', _ROOT_LOGGER, poolname),
         doer_args=(poolname,)
     )
@@ -3563,8 +3563,8 @@ def refresh_pool_image_info_dispatcher() -> None:
     retries would make the metrics more outdated.
     """
 
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_refresh_pool_image_info_dispatcher,
+    task_core(
+        cast(DoerType, do_refresh_pool_image_info_dispatcher),
         logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-image-info-dispatcher')
     )
 
@@ -3627,8 +3627,8 @@ def do_refresh_openstack_flavor_info(
     )
 )
 def refresh_openstack_flavor_info(poolname: str) -> None:
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_refresh_openstack_flavor_info,
+    task_core(
+        cast(DoerType, do_refresh_openstack_flavor_info),
         logger=get_pool_logger('refresh-openstack-flavor-info', _ROOT_LOGGER, poolname),
         doer_args=(poolname,)
     )
@@ -3684,7 +3684,7 @@ def refresh_openstack_flavor_info_dispatcher() -> None:
     retries would make the metrics more outdated.
     """
 
-    task_core(  # type: ignore # Argument 1 has incompatible type
-        do_refresh_openstack_flavor_info_dispatcher,
+    task_core(
+        cast(DoerType, do_refresh_openstack_flavor_info_dispatcher),
         logger=TaskLogger(_ROOT_LOGGER, 'refresh-openstack-flavor-info-dispatcher')
     )
