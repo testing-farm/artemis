@@ -17,7 +17,7 @@ import molten.dependency_injection
 import molten.openapi
 import sqlalchemy
 import sqlalchemy.orm.exc
-from molten import HTTP_200, HTTP_201, HTTP_204, Field, Request, Response
+from molten import HTTP_200, HTTP_201, HTTP_204, Request, Response
 from molten.app import BaseApp
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
@@ -104,7 +104,7 @@ KNOB_API_ENGINE_DEBUG: Knob[bool] = Knob(
 METRICS_LOCK = threading.Lock()
 
 
-class JSONRenderer(molten.JSONRenderer):  # type: ignore
+class JSONRenderer(molten.JSONRenderer):
     """
     Custom renderer, capable of handling :py:class:`datetime.datetime` and :py:class:`enum.Enum` instances
     we use frequently in our responses.
@@ -242,8 +242,8 @@ class EnvironmentOs:
 class Environment:
     arch: str
     os: EnvironmentOs
-    pool: Optional[str] = Field(default=None)
-    snapshots: bool = Field(default=False)
+    pool: Optional[str] = None
+    snapshots: bool = False
 
     def serialize_to_json(self) -> Dict[str, Any]:
         return {
@@ -1131,7 +1131,7 @@ class OpenAPIHandler(_OpenAPIHandler):
     to work with :py:class:`molten.Response` and just stay consistent in general.
     """
 
-    def __call__(self, app: BaseApp) -> Response:
+    def __call__(self, app: BaseApp) -> Response:  # type: ignore # return type incomaptible with supertype
         super(OpenAPIHandler, self).__call__(app)
 
         return Response(

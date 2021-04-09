@@ -47,6 +47,9 @@ darglint = "*"
 flake8 = "*"
 flake8-docstrings = "*"
 isort = "*"
+# This will be trimmed down to 0.730 or something because of much more specific mypy-extensions bellow. Blocked
+# by Gluetool.
+mypy = "*"
 pytest = "*"
 pre-commit = "*"
 pytest-flake8 = "*"
@@ -54,8 +57,7 @@ pytest-mock = "*"
 sqlalchemy-stubs = "*"
 sqlalchemy-utils = "*"
 
-# mypy and mypy-extensions must match gluetool requiremens.
-mypy = "0.720"
+# mypy-extensions must match gluetool requiremens.
 mypy-extensions = "0.4.1"
 
 #
