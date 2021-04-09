@@ -61,6 +61,11 @@ stackprinter.set_excepthook(
 )
 
 
+#: Serves as a backup if user did not specify port in ``BROKER_URL`` knob value. We don't have a dedicated knob
+#: for this value - if you want to use different port, do specify it in ``BROKER_URL`` then.
+DEFAULT_RABBITMQ_PORT = 5672
+
+
 ExceptionInfoType = Union[
     # returned by sys.exc_info()
     Tuple[
@@ -1141,7 +1146,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
             ],
             parameters=[{
                 'host': parsed_url.hostname,
-                'port': int(parsed_url.port),
+                'port': int(parsed_url.port or DEFAULT_RABBITMQ_PORT),
                 'credentials': pika.PlainCredentials(parsed_url.username, parsed_url.password),
                 'heartbeat': KNOB_BROKER_HEARTBEAT_TIMEOUT.value,
                 'blocked_connection_timeout': KNOB_BROKER_HEARTBEAT_TIMEOUT.value
