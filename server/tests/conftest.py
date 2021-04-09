@@ -79,7 +79,9 @@ def db(logger, db_url):
         sqlalchemy_utils.functions.create_database(db_url)
 
     try:
-        yield tft.artemis.db._DB(logger, db_url)
+        tft.artemis.db.DB.instance = None
+
+        yield tft.artemis.db.DB(logger, db_url)
 
     finally:
         if parsed_url.get_dialect() != 'sqlalchemy':

@@ -785,8 +785,11 @@ def after_cursor_execute(
     ).handle(LOGGER.get())
 
 
-class _DB:
-    def __init__(
+class DB:
+    instance: Optional['DB'] = None
+    _lock = threading.RLock()
+
+    def _setup_instance(
         self,
         logger: gluetool.log.ContextAdapter,
         url: str,
@@ -837,6 +840,19 @@ class _DB:
 
         self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self.engine)
 
+    def __new__(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        url: str,
+        application_name: Optional[str] = None
+    ) -> 'DB':
+        with cls._lock:
+            if cls.instance is None:
+                cls.instance = super(DB, cls).__new__(cls)
+                cls.instance._setup_instance(logger, url, application_name=application_name)
+
+            return cls.instance
+
     @contextmanager
     def get_session(self) -> Iterator[sqlalchemy.orm.session.Session]:
         with DB._lock:
@@ -878,28 +894,6 @@ class _DB:
 
         finally:
             session.close()
-
-
-class DB:
-    instance: Optional[_DB] = None
-    _lock = threading.RLock()
-
-    def __new__(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        url: str,
-        application_name: Optional[str] = None
-    ) -> _DB:
-        with DB._lock:
-            if DB.instance is None:
-                DB.instance = _DB(logger, url, application_name=application_name)
-
-                # declared as class attributes only to avoid typing errors ("DB has no attribute" ...)
-                # those attributes should never be used, use instance attributes only
-                cls.get_session: Callable[[], Any] = DB.instance.get_session
-                cls.engine: sqlalchemy.engine.Engine = DB.instance.engine
-
-            return DB.instance
 
 
 def validate_config(logger: gluetool.log.ContextAdapter, server_config: Dict[str, Any]) -> bool:

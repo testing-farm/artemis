@@ -529,10 +529,11 @@ class GuestRequestManager:
         guest_logger = get_guest_logger('delete-guest-request', logger, guestname)
 
         with self.db.get_session() as session:
-            snapshot_count_subquery = session \
-                .query(sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')) \
-                .filter(artemis_db.SnapshotRequest.guestname == guestname) \
-                .subquery('t')
+            snapshot_count_subquery = session.query(  # type: ignore # untyped function "query"
+                sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
+            ).filter(
+                artemis_db.SnapshotRequest.guestname == guestname
+            ).subquery('t')
 
             query = sqlalchemy \
                 .update(artemis_db.GuestRequest.__table__) \
