@@ -17,7 +17,7 @@ from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, \
+from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDsType, ProvisioningProgress, \
     ProvisioningState, run_cli_tool
 
 #
@@ -183,7 +183,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         imagename: str
-    ) -> Result[PoolImageInfoType, Failure]:
+    ) -> Result[PoolImageInfo, Failure]:
         r_ii = self.get_pool_image_info(imagename)
 
         if r_ii.is_error:
@@ -207,7 +207,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[PoolImageInfoType, Failure]:
+    ) -> Result[PoolImageInfo, Failure]:
         r_engine = hook_engine('AWS_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
@@ -215,7 +215,7 @@ class AWSDriver(PoolDriver):
 
         engine = r_engine.unwrap()
 
-        r_image: Result[PoolImageInfoType, Failure] = engine.run_hook(
+        r_image: Result[PoolImageInfo, Failure] = engine.run_hook(
             'AWS_ENVIRONMENT_TO_IMAGE',
             logger=logger,
             pool=self,
@@ -303,7 +303,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         instance_type: str,
-        image: PoolImageInfoType
+        image: PoolImageInfo
     ) -> Result[float, Failure]:
 
         availability_zone = self.pool_config['availability-zone']
@@ -394,7 +394,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         instance_type: str,
-        image: PoolImageInfoType,
+        image: PoolImageInfo,
         guestname: str
     ) -> Result[ProvisioningProgress, Failure]:
 
@@ -462,7 +462,7 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         instance_type: str,
-        image: PoolImageInfoType
+        image: PoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
 
         block_device_mappings: Optional[BlockDeviceMappingsType] = None
@@ -805,7 +805,7 @@ class AWSDriver(PoolDriver):
 
         return Ok(True)
 
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfoType], Failure]:
+    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
         r_images = self._aws_command(['ec2', 'describe-images', '--owner=self'], key='Images')
 
         if r_images.is_error:
@@ -813,7 +813,7 @@ class AWSDriver(PoolDriver):
 
         try:
             return Ok([
-                PoolImageInfoType(
+                PoolImageInfo(
                     name=image['Name'],
                     id=image['ImageId'],
                     pool_details={

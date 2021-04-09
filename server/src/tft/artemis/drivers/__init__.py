@@ -71,7 +71,7 @@ class PoolLogger(gluetool.log.ContextAdapter):
 
 
 @dataclasses.dataclass
-class PoolImageInfoType:
+class PoolImageInfo:
     """
     Describes important information about a pool image.
 
@@ -94,7 +94,7 @@ class PoolImageInfoType:
     pool_details: Dict[str, str] = dataclasses.field(default_factory=dict)
 
     def __repr__(self) -> str:
-        return '<PoolImageInfoType: name={} id={} pool-details={}>'.format(self.name, self.id, self.pool_details)
+        return '<PoolImageInfo: name={} id={} pool-details={}>'.format(self.name, self.id, self.pool_details)
 
 
 class PoolCapabilities(argparse.Namespace):
@@ -279,7 +279,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         imagename: str
-    ) -> Result[PoolImageInfoType, Failure]:
+    ) -> Result[PoolImageInfo, Failure]:
         """
         Search pool resources, and find a pool-specific information for an image identified by the given name.
         """
@@ -633,7 +633,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(None)
 
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfoType], Failure]:
+    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
         """
         Responsible for fetching the most up-to-date image info..
 
@@ -671,7 +671,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             }
         )
 
-    def get_pool_image_info(self, imagename: str) -> Result[Optional[PoolImageInfoType], Failure]:
+    def get_pool_image_info(self, imagename: str) -> Result[Optional[PoolImageInfo], Failure]:
         """
         Retrieve "current" image info metrics, as stored in the cache. Given how the information is acquired,
         it will **always** be slightly outdated.
@@ -684,7 +684,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
            is unknown.
         """
 
-        return get_cached_item(CACHE.get(), self.image_info_cache_key, imagename, PoolImageInfoType)
+        return get_cached_item(CACHE.get(), self.image_info_cache_key, imagename, PoolImageInfo)
 
     def _fetch_cached_info(self, key: str, item_klass: Type[T]) -> Result[List[T], Failure]:
         """
@@ -704,12 +704,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(list(infos.values()) if infos else [])
 
-    def get_pool_image_infos(self) -> Result[List[PoolImageInfoType], Failure]:
+    def get_pool_image_infos(self) -> Result[List[PoolImageInfo], Failure]:
         """
         Retrieve all image info known to the pool.
         """
 
-        return self._fetch_cached_info(self.image_info_cache_key, PoolImageInfoType)
+        return self._fetch_cached_info(self.image_info_cache_key, PoolImageInfo)
 
 
 def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Failure]:

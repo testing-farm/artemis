@@ -10,7 +10,7 @@ from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
+from . import PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
     create_tempfile, run_cli_tool, vm_info_to_ip
 
 #: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
@@ -60,13 +60,13 @@ class AzureDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         imagename: str
-    ) -> Result[PoolImageInfoType, Failure]:
+    ) -> Result[PoolImageInfo, Failure]:
         r_images_show = self._run_cmd_with_auth(['vm', 'image', 'show', '--urn', imagename])
 
         if r_images_show.is_error:
             return Error(r_images_show.unwrap_error())
 
-        return Ok(PoolImageInfoType(
+        return Ok(PoolImageInfo(
             name=imagename,
             id=imagename
         ))
@@ -364,7 +364,7 @@ class AzureDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[PoolImageInfoType, Failure]:
+    ) -> Result[PoolImageInfo, Failure]:
         r_engine = hook_engine('AZURE_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
@@ -372,7 +372,7 @@ class AzureDriver(PoolDriver):
 
         engine = r_engine.unwrap()
 
-        r_image: Result[PoolImageInfoType, Failure] = engine.run_hook(
+        r_image: Result[PoolImageInfo, Failure] = engine.run_hook(
             'AZURE_ENVIRONMENT_TO_IMAGE',
             logger=logger,
             pool=self,

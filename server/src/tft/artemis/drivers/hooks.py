@@ -11,7 +11,7 @@ from gluetool.result import Error, Ok, Result
 
 from .. import KNOB_CONFIG_DIRPATH, Failure
 from ..environment import Environment
-from . import PoolDriver, PoolImageInfoType
+from . import PoolDriver, PoolImageInfo
 
 
 def map_compose_to_imagename_by_pattern_map(
@@ -68,7 +68,7 @@ def map_environment_to_image_info(
     environment: Environment,
     mapping_filename: Optional[str] = None,
     mapping_filepath: Optional[str] = None
-) -> Result[PoolImageInfoType, Failure]:
+) -> Result[PoolImageInfo, Failure]:
     """
     Using a given pattern mapping file, try to map a compose, as specified by a given environment, to the corresponding
     cloud-specific image info.

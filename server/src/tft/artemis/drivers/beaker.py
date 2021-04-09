@@ -16,7 +16,7 @@ from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
-from . import CLIOutput, PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, \
+from . import CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDsType, ProvisioningProgress, \
     ProvisioningState, create_tempfile, run_cli_tool
 
 NodeRefType = Any
@@ -108,7 +108,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         imagename: str
-    ) -> Result[PoolImageInfoType, Failure]:
+    ) -> Result[PoolImageInfo, Failure]:
         # TODO: is it true that `name` is equal to `id` in Beaker? Is really each `name` we get from
         # the `compose` => `image name` mapping really the same as "ID" of the distro? I believe this
         # is indeed correct, but needs checking.
@@ -117,7 +117,7 @@ class BeakerDriver(PoolDriver):
         # We want the right-hand side to be human-readable and easy to follow, therefore OpenStack and AWS have this
         # extra level of dereference.
 
-        return Ok(PoolImageInfoType(
+        return Ok(PoolImageInfo(
             name=imagename,
             id=imagename
         ))
@@ -126,7 +126,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[PoolImageInfoType, Failure]:
+    ) -> Result[PoolImageInfo, Failure]:
         r_engine = hook_engine('BEAKER_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
@@ -134,7 +134,7 @@ class BeakerDriver(PoolDriver):
 
         engine = r_engine.unwrap()
 
-        r_image: Result[PoolImageInfoType, Failure] = engine.run_hook(
+        r_image: Result[PoolImageInfo, Failure] = engine.run_hook(
             'BEAKER_ENVIRONMENT_TO_IMAGE',
             logger=logger,
             pool=self,

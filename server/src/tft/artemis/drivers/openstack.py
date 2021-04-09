@@ -15,7 +15,7 @@ from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
+from . import PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
     create_tempfile, run_cli_tool
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
@@ -151,7 +151,7 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         imagename: str
-    ) -> Result[PoolImageInfoType, Failure]:
+    ) -> Result[PoolImageInfo, Failure]:
         r_ii = self.get_pool_image_info(imagename)
 
         if r_ii.is_error:
@@ -194,7 +194,7 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[PoolImageInfoType, Failure]:
+    ) -> Result[PoolImageInfo, Failure]:
         r_engine = hook_engine('OPENSTACK_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
@@ -202,7 +202,7 @@ class OpenStackDriver(PoolDriver):
 
         engine = r_engine.unwrap()
 
-        r_image: Result[PoolImageInfoType, Failure] = engine.run_hook(
+        r_image: Result[PoolImageInfo, Failure] = engine.run_hook(
             'OPENSTACK_ENVIRONMENT_TO_IMAGE',
             logger=logger,
             pool=self,
@@ -792,7 +792,7 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(resources)
 
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfoType], Failure]:
+    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
         r_images = self._run_os(['image', 'list'])
 
         if r_images.is_error:
@@ -800,7 +800,7 @@ class OpenStackDriver(PoolDriver):
 
         try:
             return Ok([
-                PoolImageInfoType(name=image['Name'], id=image['ID'])
+                PoolImageInfo(name=image['Name'], id=image['ID'])
                 for image in cast(List[Dict[str, str]], r_images.unwrap())
             ])
 
