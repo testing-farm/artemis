@@ -3,8 +3,8 @@ import time
 import gluetool.log
 import sqlalchemy.orm.session
 
-from . import get_db, get_logger
-from .db import GuestRequest, SnapshotRequest
+from . import Failure, get_db, get_logger
+from .db import GuestRequest, SafeQuery, SnapshotRequest
 from .guest import GuestState
 from .tasks import _update_snapshot_state, dispatch_task, get_guest_logger, get_snapshot_logger, \
     release_guest_request, release_snapshot_request, restore_snapshot_request, route_snapshot_request
@@ -95,37 +95,49 @@ def main() -> None:
 
         # For each pending guest request, start their processing by submitting the first, routing task.
         with db.get_session() as session:
-            guest_requests = session \
-                .query(GuestRequest) \
+            r_condemned_gr = SafeQuery.from_session(session, GuestRequest) \
                 .filter(GuestRequest.state == GuestState.CONDEMNED.value) \
                 .all()
 
-            for guest in guest_requests:
-                _release_guest_request(root_logger, session, guest)
+            if r_condemned_gr.is_ok:
+                for guest in r_condemned_gr.unwrap():
+                    _release_guest_request(root_logger, session, guest)
 
-            snapshot_requests = session \
-                .query(SnapshotRequest) \
+            else:
+                Failure('failed to fetch condemned guest requests').handle(root_logger)
+
+            r_pending_sr = SafeQuery.from_session(session, SnapshotRequest) \
                 .filter(SnapshotRequest.state == GuestState.PENDING.value) \
                 .all()
 
-            for snapshot in snapshot_requests:
-                _dispatch_snapshot_request(root_logger, session, snapshot)
+            if r_pending_sr.is_ok:
+                for snapshot in r_pending_sr.unwrap():
+                    _dispatch_snapshot_request(root_logger, session, snapshot)
 
-            snapshot_requests = session \
-                .query(SnapshotRequest) \
+            else:
+                Failure('failed to fetch pending snapshot requests').handle(root_logger)
+
+            r_restoring_sr = SafeQuery.from_session(session, SnapshotRequest) \
                 .filter(SnapshotRequest.state == GuestState.CONDEMNED.value) \
                 .all()
 
-            for snapshot in snapshot_requests:
-                _release_snapshot_request(root_logger, session, snapshot)
+            if r_restoring_sr.is_ok:
+                for snapshot in r_restoring_sr.unwrap():
+                    _release_snapshot_request(root_logger, session, snapshot)
 
-            snapshot_requests = session \
-                .query(SnapshotRequest) \
+            else:
+                Failure('failed to fetch condemned snapshot requests').handle(root_logger)
+
+            r_restoring_sr = SafeQuery.from_session(session, SnapshotRequest) \
                 .filter(SnapshotRequest.state == GuestState.RESTORING.value) \
                 .all()
 
-            for snapshot in snapshot_requests:
-                _restore_snapshot_request(root_logger, session, snapshot)
+            if r_restoring_sr.is_ok:
+                for snapshot in r_restoring_sr.unwrap():
+                    _restore_snapshot_request(root_logger, session, snapshot)
+
+            else:
+                Failure('failed to fetch restoring snapshot requests').handle(root_logger)
 
         time.sleep(10)
 
