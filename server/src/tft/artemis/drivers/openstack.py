@@ -15,8 +15,9 @@ from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
-    create_tempfile, run_cli_tool
+from . import (PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType,
+               ProvisioningProgress, ProvisioningState, create_tempfile,
+               run_cli_tool)
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
@@ -333,7 +334,7 @@ class OpenStackDriver(PoolDriver):
                If user_data_filename is an empty string then the guest vm is booted with no user-data.
             """
 
-            r_tags = self.get_guest_tags(session, guest_request)
+            r_tags = self.get_guest_tags(logger, session, guest_request)
 
             if r_tags.is_error:
                 return Error(r_tags.unwrap_error())

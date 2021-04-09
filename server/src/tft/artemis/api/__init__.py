@@ -33,7 +33,8 @@ from ..context import DATABASE, LOGGER
 from ..guest import GuestState
 from ..tasks import get_snapshot_logger
 from . import errors
-from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
+from .middleware import (AuthContext, authorization_middleware,
+                         error_handler_middleware, prometheus_middleware)
 
 DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
 
@@ -261,6 +262,7 @@ class GuestRequest:
     priority_group: Optional[str]
     user_data: Optional[Dict[str, Optional[str]]]
     post_install_script: Optional[str]
+    pool_label: Optional[str]
 
 
 @molten.schema
@@ -291,6 +293,7 @@ class GuestResponse:
     state: GuestState
     user_data: Dict[str, Optional[str]]
     post_install_script: Optional[str]
+    pool_label: Optional[str]
     ctime: datetime.datetime
 
     @classmethod
@@ -310,6 +313,7 @@ class GuestResponse:
             state=GuestState(guest.state),
             user_data=json.loads(guest.user_data),
             post_install_script=guest.post_install_script,
+            pool_label=guest.pool_label,
             ctime=guest.ctime
         )
 
@@ -413,7 +417,8 @@ class GuestRequestManager:
             ]
 
     def create(self, guest_request: GuestRequest, ownername: str, logger: gluetool.log.ContextAdapter) -> GuestResponse:
-        from ..tasks import dispatch_task, get_guest_logger, route_guest_request
+        from ..tasks import (dispatch_task, get_guest_logger,
+                             route_guest_request)
 
         guestname = str(uuid.uuid4())
 
@@ -440,6 +445,7 @@ class GuestRequestManager:
                     user_data=json.dumps(guest_request.user_data),
                     state=GuestState.ROUTING.value,
                     post_install_script=guest_request.post_install_script,
+                    pool_label=guest_request.pool_label
                 ),
                 conflict_error=errors.InternalServerError,
                 failure_details=failure_details

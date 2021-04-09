@@ -11,8 +11,8 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, Union, \
-    cast
+from typing import (TYPE_CHECKING, Any, Callable, Dict, Generic, Iterator,
+                    List, Optional, Tuple, Type, TypeVar, Union, cast)
 
 import gluetool.glue
 import gluetool.log
@@ -23,7 +23,8 @@ import sqlalchemy.event
 import sqlalchemy.ext.declarative
 import sqlalchemy.sql.expression
 from gluetool.result import Error, Ok, Result
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import (Boolean, Column, DateTime, Enum, ForeignKey, Integer,
+                        String, Text)
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
 
@@ -547,6 +548,9 @@ class GuestRequest(Base):
     # Contents of a script to be run when the guest becomes active
     post_install_script = Column(Text(), nullable=True)
 
+    #: If specified, this is a template to use when naming the pool instance instead of a default template.
+    pool_label = Column(Text(), nullable=True)
+
     owner = relationship('User', back_populates='guests')
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
@@ -765,7 +769,8 @@ def after_cursor_execute(
     context: Any,
     executemany: Any
 ) -> None:
-    from . import KNOB_LOGGING_DB_SLOW_QUERIES, KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD
+    from . import (KNOB_LOGGING_DB_SLOW_QUERIES,
+                   KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD)
 
     if KNOB_LOGGING_DB_SLOW_QUERIES.value is not True:
         return
@@ -792,7 +797,8 @@ class _DB:
         url: str,
         application_name: Optional[str] = None
     ) -> None:
-        from . import KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE, KNOB_LOGGING_DB_POOL, KNOB_LOGGING_DB_QUERIES
+        from . import (KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE,
+                       KNOB_LOGGING_DB_POOL, KNOB_LOGGING_DB_QUERIES)
 
         self.logger = logger
 

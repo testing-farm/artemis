@@ -165,6 +165,7 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
 @click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
+@click.option('--pool-label', help='Custom template to use to name the in-pool instance')
 @click.pass_obj
 def cmd_guest_create(
         cfg: Configuration,
@@ -174,7 +175,8 @@ def cmd_guest_create(
         pool: str = None,
         snapshots = False,
         priority_group = None,
-        post_install_script: str = None
+        post_install_script: str = None,
+        pool_label: Optional[str] = None
 ) -> None:
     environment = {}
     environment['arch'] = arch
@@ -211,6 +213,7 @@ def cmd_guest_create(
             'keyname': keyname,
             'priority_group': 'default-priority',
             'post_install_script': post_install,
+            'pool_label': pool_label
             }
 
     response = artemis_create(cfg, 'guests/', data)

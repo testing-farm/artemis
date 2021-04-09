@@ -8,7 +8,8 @@ import os
 import re
 import tempfile
 import threading
-from typing import Any, Callable, Dict, Iterator, List, Optional, Type, TypeVar, Union, cast
+from typing import (Any, Callable, Dict, Iterator, List, Optional, Type,
+                    TypeVar, Union, cast)
 
 import gluetool
 import gluetool.log
@@ -17,7 +18,8 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
+from .. import (Failure, JSONType, get_cached_item, get_cached_items,
+                process_output_to_str, refresh_cached_set, safe_call)
 from ..context import CACHE
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -37,6 +39,9 @@ class _AnyArchitecture:
 
 
 AnyArchitecture = _AnyArchitecture()
+
+
+DEFAULT_GUEST_LABEL_TEMPLATE = 'artemis-guest-{{ TIMESTAMP }}'
 
 
 @dataclasses.dataclass
@@ -494,6 +499,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def get_guest_tags(
         self,
+        logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
     ) -> Result[GuestTagsType, Failure]:
@@ -526,8 +532,24 @@ class PoolDriver(gluetool.log.LoggerMixin):
         }
 
         tags['ArtemisGuestName'] = guest_request.guestname
-        # TODO: drivers could accept a template for the name, to allow custom naming schemes
-        tags['ArtemisGuestLabel'] = 'artemis-guest-{}'.format(datetime.datetime.utcnow().strftime('%Y-%m-%d-%H-%M-%S'))
+
+        if guest_request.pool_label is not None:
+            label_template = guest_request.pool_label
+
+        else:
+            label_template = DEFAULT_GUEST_LABEL_TEMPLATE
+
+        r_label = safe_call(
+            gluetool.utils.render_template,
+            label_template,
+            logger=logger,
+            TIMESTAMP=datetime.datetime.utcnow().strftime('%Y-%m-%d-%H-%M-%S')
+        )
+
+        if r_label.is_error:
+            return Error(r_label.unwrap_error())
+
+        tags['ArtemisGuestLabel'] = r_label.unwrap()
 
         return Ok(tags)
 

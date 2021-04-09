@@ -10,8 +10,9 @@ from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, ProvisioningState, \
-    create_tempfile, run_cli_tool, vm_info_to_ip
+from . import (PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType,
+               ProvisioningProgress, ProvisioningState, create_tempfile,
+               run_cli_tool, vm_info_to_ip)
 
 #: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
@@ -404,7 +405,7 @@ class AzureDriver(PoolDriver):
 
         logger.info('provisioning from image {}'.format(image))
 
-        r_base_tags = self.get_guest_tags(session, guest_request)
+        r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_base_tags.is_error:
             return Error(r_base_tags.unwrap_error())

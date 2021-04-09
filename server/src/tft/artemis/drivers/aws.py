@@ -17,8 +17,9 @@ from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfoType, PoolResourcesIDsType, ProvisioningProgress, \
-    ProvisioningState, run_cli_tool
+from . import (GuestTagsType, PoolData, PoolDriver, PoolImageInfoType,
+               PoolResourcesIDsType, ProvisioningProgress, ProvisioningState,
+               run_cli_tool)
 
 #
 # Custom typing types
@@ -640,7 +641,7 @@ class AWSDriver(PoolDriver):
         # tag the instance if requested
         # TODO: move these into configuration. Before that, we need to add support for templates in tags, so we
         # could generate tags like `Name`. But it really belongs to configuration.
-        self._tag_instance(session, guest_request, instance, owner, tags={
+        self._tag_instance(logger, session, guest_request, instance, owner, tags={
             'Name': '{}::{}'.format(instance['PrivateIpAddress'], instance['ImageId']),
             'SpotRequestId': pool_data.spot_instance_id,
         })
@@ -653,13 +654,14 @@ class AWSDriver(PoolDriver):
 
     def _tag_instance(
         self,
+        logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         instance: Dict[str, Any],
         owner: str,
         tags: Optional[GuestTagsType] = None
     ) -> None:
-        base_tags = self.get_guest_tags(session, guest_request)
+        base_tags = self.get_guest_tags(logger, session, guest_request)
 
         # TODO: this is a huge problem, AWS driver tends to ignore many of possible errors, we need to fix that
         # so we can propagate issues like this one upwards.
