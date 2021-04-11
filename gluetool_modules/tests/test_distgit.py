@@ -225,6 +225,22 @@ def test_no_ci_config(module, dummy_repository, monkeypatch, log):
     assert log.match(message='does not contain CI configuration')
 
 
+def test_rpminspect_yaml(module, dummy_repository, monkeypatch, log):
+    monkeypatch.setattr(gluetool.utils, 'requests', MockRequests)
+
+    assert dummy_repository.rpminspect_yaml == 'this is a test'
+    assert dummy_repository.rpminspect_yaml
+    assert log.match(message='contains rpminspect configuration')
+
+
+def test_no_rpminspect_yaml(module, dummy_repository, monkeypatch, log):
+    monkeypatch.setattr(gluetool.utils, 'requests', MockRequests)
+    monkeypatch.setattr(MockRequests, 'status_code', 404)
+
+    assert dummy_repository.rpminspect_yaml is None
+    assert log.match(message='does not contain rpminspect configuration')
+
+
 def test_no_gating(module, dummy_repository, monkeypatch, log):
     # gating configuration not found
     monkeypatch.setattr(gluetool.utils, 'requests', MockRequests)

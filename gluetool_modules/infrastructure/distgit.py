@@ -51,6 +51,14 @@ class DistGitRepository(gluetool_modules.libs.git.RemoteGitRepository):
         return '{}/tree/tests?id={}'.format(self.web_url, self.ref if self.ref else self.branch)
 
     @cached_property
+    def rpminspect_yaml_url(self):
+        """
+        URL of rpminspect.conf file.
+        """
+
+        return '{}/tree/rpminspect.yaml?id={}'.format(self.web_url, self.ref if self.ref else self.branch)
+
+    @cached_property
     def gating_config_url(self):
         # NOTE: url for Pagure instances, move to config later ideally
         # return '{}/raw/{}/f/gating.yaml'.format(self.web_url, self.ref if self.ref else self.branch)
@@ -146,6 +154,21 @@ class DistGitRepository(gluetool_modules.libs.git.RemoteGitRepository):
             recipient.strip() for recipients in re.findall("recipients:.*", response.content, re.MULTILINE)
             for recipient in recipients.lstrip("recipients:").split(',')
         ]
+
+    @cached_property
+    def rpminspect_yaml(self):
+        """
+        Returns contents of rpminspect.yaml file. This file can be placed in the dist-git repository
+        to customize rpminspect execution.
+
+        :returns: Contents of the rpminspect.yaml file.
+        """
+
+        return self._get_url(
+            self.rpminspect_yaml_url,
+            'contains rpminspect configuration',
+            'does not contain rpminspect configuration'
+        )
 
 
 class DistGit(gluetool.Module):
