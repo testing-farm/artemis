@@ -693,7 +693,12 @@ class OpenStackDriver(PoolDriver):
             ], json_format=False)
 
             if r_output.is_error:
-                return Error(r_output.unwrap_error())
+                # Irrecoverable failures in release-pool-resources chain shouldn't influence the guest request.
+                # The release process is decoupled, and therefore pool outages should no longer affect the request.
+                failure = r_output.unwrap_error()
+                failure.fail_guest_request = False
+
+                return Error(failure)
 
         return Ok(None)
 

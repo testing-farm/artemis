@@ -170,6 +170,11 @@ class Failure:
         self.caused_by = caused_by
 
         self.recoverable = recoverable
+        # If the failure is irrecoverable, mark the guest request as failed by switching its state
+        # to `ERROR`. This flag gives code chance to avoid this switch - there are places where
+        # we can encounter irrecoverable failures without necessarily failing the whole request,
+        # e.g. when releasing its resources.
+        self.fail_guest_request = True
 
         if scrubbed_command:
             self.details['scrubbed_command'] = scrubbed_command
@@ -289,6 +294,7 @@ class Failure:
 
         event_details['message'] = self.message
         event_details['recoverable'] = self.recoverable
+        event_details['fail_guest_request'] = self.fail_guest_request
 
         # We don't want command or its output in the event details - hard to serialize, full of secrets, etc.
         event_details.pop('command_output', None)
@@ -363,6 +369,7 @@ class Failure:
 
         extra['message'] = self.message
         extra['recoverable'] = self.recoverable
+        extra['fail_guest_request'] = self.fail_guest_request
 
         if 'scrubbed_command' in self.details:
             extra['scrubbed_command'] = gluetool.utils.format_command_line([self.details['scrubbed_command']])
@@ -413,6 +420,7 @@ class Failure:
 
         details['message'] = self.message
         details['recoverable'] = self.recoverable
+        details['fail_guest_request'] = self.fail_guest_request
 
         if self.exception:
             details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))

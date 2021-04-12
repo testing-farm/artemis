@@ -649,7 +649,11 @@ def task_core(
 
         failure = cast(_IgnoreType, doer_result.unwrap()).failure
 
-        # Not all failures relate to guests. Such failures are easy to deal with, there's nothing to update anymore.
+        # Not all failures influence their parent guest request.
+        if failure.recoverable is not False or failure.fail_guest_request is not True:
+            return doer_result
+
+        # Also, not all failures relate to guests. Such failures are easy to deal with, there's nothing to update.
         if 'guestname' not in failure.details:
             return doer_result
 
