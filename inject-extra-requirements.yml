@@ -102,3 +102,11 @@
         pycurl=$(pip list --format=freeze | grep pycurl)
         pip uninstall -y pycurl
         PYCURL_SSL_LIBRARY={{ pycurl_ssl_library }} pip install --no-cache-dir $pycurl
+
+    - name: "Force requests to use system CA bundle"
+      lineinfile:
+        dest: "{{ virtualenv_path }}/bin/activate"
+        state: present
+        insertafter: EOF
+        regexp: '^export REQUESTS_CA_BUNDLE=.*$'
+        line: 'export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt'
