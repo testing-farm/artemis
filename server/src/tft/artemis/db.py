@@ -16,8 +16,6 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, Iterator, List, 
 
 import gluetool.glue
 import gluetool.log
-import jsonschema
-import pkg_resources
 import sqlalchemy
 import sqlalchemy.event
 import sqlalchemy.ext.declarative
@@ -896,35 +894,64 @@ class DB:
             session.close()
 
 
-def validate_config(logger: gluetool.log.ContextAdapter, server_config: Dict[str, Any]) -> bool:
-    schema_dir = pkg_resources.resource_filename('tft.artemis', 'schema')
-    config_valid = True
+def validate_config(
+    logger: gluetool.log.ContextAdapter,
+    server_config: Dict[str, Any]
+) -> Result[List[str], 'Failure']:
+    """
+    Validate a server configuration data using a JSON schema.
 
-    schema = gluetool.utils.load_yaml(os.path.join(schema_dir, 'common.yml'), loader_type='safe')
+    :return: either a list of validation errors, or a :py:class:`Failure` describing problem preventing
+        the validation process.
+    """
 
-    try:
-        jsonschema.validate(server_config, schema)
-    except jsonschema.exceptions.ValidationError as e:
-        config_valid = False
-        logger.error('config: {}'.format(e.message))
+    from . import load_validation_schema, validate_data
+
+    # In this list we will accumulate all validation errors reported by `validate_data`.
+    validation_errors: List[str] = []
+
+    # First the overall server and common configuration
+    r_schema = load_validation_schema('common.yml')
+
+    if r_schema.is_error:
+        return r_schema
+
+    r_validation = validate_data(server_config, r_schema.unwrap())
+
+    if r_validation.is_error:
+        return r_validation
+
+    validation_errors += [
+        'server: {}'.format(error)
+        for error in r_validation.unwrap()
+    ]
 
     for pool in server_config.get('pools', []):
-        filename = os.path.join(schema_dir, 'drivers', pool['driver'] + '.yml')
+        failure_details = {
+            'pool': pool.get('name'),
+            'pool_driver': pool.get('driver')
+        }
 
-        if os.path.isfile(filename):
-            driver_schema = gluetool.utils.load_yaml(filename, loader_type='safe')
+        r_schema = load_validation_schema(os.path.join('drivers', pool.get('driver', '') + '.yml'))
 
-            try:
-                jsonschema.validate(pool['parameters'], driver_schema)
-            except jsonschema.exceptions.ValidationError as e:
-                config_valid = False
-                logger.error('config: pool {}: {}'.format(pool['name'], e.message))
-        else:
-            config_valid = False
-            logger.error('config: pool {}: Could not load schema for {} driver.'
-                         'Are you using an existing driver?'.format(pool['name'], pool['driver']))
+        if r_schema.is_error:
+            r_schema.unwrap_error().details.update(failure_details)
 
-    return config_valid
+            return r_schema
+
+        r_validation = validate_data(pool.get('parameters'), r_schema.unwrap())
+
+        if r_validation.is_error:
+            r_validation.unwrap_error().details.update(failure_details)
+
+            return r_validation
+
+        validation_errors += [
+            'pool "{}": {}'.format(pool.get('name'), error)
+            for error in r_validation.unwrap()
+        ]
+
+    return Ok(validation_errors)
 
 
 def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
@@ -939,8 +966,23 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
     # Adding system and pool tags. We do not want to overwrite the existing value, only add those
     # that are missing. Artemis' default example of configuration tries to add as little as possible,
     # which means we probably don't return any tag user might have removed.
-    if not validate_config(logger, server_config):
-        logger.error('Configuration schema validation failed')
+
+    r_validation = validate_config(logger, server_config)
+
+    if r_validation.is_error:
+        r_validation.unwrap_error().handle(logger)
+
+        sys.exit(1)
+
+    validation_errors = r_validation.unwrap()
+
+    if validation_errors:
+        gluetool.log.log_dict(
+            logger.error,
+            'configuration schema validation failed',
+            validation_errors
+        )
+
         sys.exit(1)
 
     with db.get_session() as session:

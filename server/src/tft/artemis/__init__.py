@@ -22,6 +22,7 @@ import gluetool.sentry
 import gluetool.utils
 import jinja2.defaults
 import jinja2_ansible_filters.core_filters
+import jsonschema
 import periodiq
 import pkg_resources
 import redis
@@ -1424,3 +1425,45 @@ def get_cached_item(cache: redis.Redis, key: str, item_key: str, item_klass: Typ
         return Error(r_unserialize.unwrap_error())
 
     return Ok(r_unserialize.unwrap())
+
+
+def load_validation_schema(schema_path: str) -> Result[Any, Failure]:
+    """
+    Load a JSON schema for future use in data validation.
+
+    :param schema_path: path to a schema file relative to ``schema`` directory in ``tft.artemis`` package.
+    """
+
+    root_schema_dirpath = pkg_resources.resource_filename('tft.artemis', 'schema')
+
+    r_schema = safe_call(
+        gluetool.utils.load_yaml,
+        os.path.join(root_schema_dirpath, schema_path),
+        loader_type='safe'
+    )
+
+    if r_schema.is_error:
+        return Error(Failure(
+            'failed to load schema',
+            caused_by=r_schema.unwrap_error(),
+            schema_path=schema_path
+        ))
+
+    return r_schema
+
+
+def validate_data(data: Any, schema: Any) -> Result[List[str], Failure]:
+    """
+    Validate a given data using a JSON schema.
+
+    :return: either a list of validation errors, or a :py:class:`Failure` describing problem preventing
+        the validation process.
+    """
+
+    try:
+        jsonschema.validate(data, schema)
+
+    except jsonschema.exceptions.ValidationError as exc:
+        return Ok([exc.message])
+
+    return Ok([])
