@@ -769,7 +769,9 @@ def _randomize_delay(delay: int) -> int:
     Modify a given delay by a randomized value withing spread specified by :py:const:`KNOB_DELAY_UNIFORM_SPREAD`.
     """
 
-    return delay + int(random.uniform(-KNOB_DELAY_UNIFORM_SPREAD.value, KNOB_DELAY_UNIFORM_SPREAD.value))
+    # Use `max()` to always return positive delay - if `delay == 0`, then the randomized delay could
+    # fall bellow zero, and that does not seem to be a good practice.
+    return max(0, delay + int(random.uniform(-KNOB_DELAY_UNIFORM_SPREAD.value, KNOB_DELAY_UNIFORM_SPREAD.value)))
 
 
 def dispatch_task(

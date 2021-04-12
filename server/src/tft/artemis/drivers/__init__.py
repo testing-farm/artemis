@@ -17,7 +17,7 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
+from .. import Failure, JSONType, Knob, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
 from ..context import CACHE
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -27,6 +27,18 @@ T = TypeVar('T')
 
 PoolResourcesIDsType = Dict[str, Any]
 GuestTagsType = Dict[str, str]
+
+
+#: A delay, in seconds, to schedule pool resources release with. This may be useful for post mortem investigation
+#: of crashed resources.
+KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
+    'pool.dispatch-resource-cleanup',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY',
+    envvar_cast=int,
+    default=0
+)
 
 
 class _AnyArchitecture:
@@ -210,6 +222,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if not resource_ids:
             return Ok(None)
 
+        r_delay = KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY.get_value(pool=self)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         # Local import, to avoid circular imports
         from ..tasks import dispatch_task, release_pool_resources
 
@@ -218,7 +235,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
             release_pool_resources,
             self.poolname,
             json.dumps(resource_ids),
-            guest_request.guestname if guest_request else None
+            guest_request.guestname if guest_request else None,
+            delay=r_delay.unwrap()
         )
 
     def release_pool_resources(
