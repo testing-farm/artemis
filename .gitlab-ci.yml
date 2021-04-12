@@ -66,7 +66,8 @@ installation-fedora:
   stage: test
   image: registry.fedoraproject.org/fedora:32
   script:
-    - dnf -y install python3-pip git
+    # tmt requires rsync
+    - dnf -y install python3-pip git rsync
     - pip3 install git+https://github.com/psss/tmt.git
     - tmt run -adddvvv provision -h local plan --name /plans/fedora
 
@@ -75,7 +76,8 @@ installation-centos8:
   stage: test
   image: registry.centos.org/centos/centos:8
   script:
-    - dnf -y install python3-pip git
+    # tmt requires rsync
+    - dnf -y install python3-pip git rsync
     - pip3 install git+https://github.com/psss/tmt.git
     - tmt run -adddvvv provision -h local plan --name /plans/centos8
 
@@ -86,7 +88,8 @@ installation-rhel8:
   # https://access.redhat.com/articles/4238681
   image: registry.access.redhat.com/ubi8/ubi
   script:
-    - dnf -y install python3-pip git
+    # tmt requires rsync
+    - dnf -y install python3-pip git rsync
     - pip3 install git+https://github.com/psss/tmt.git
     - tmt run -adddvvv provision -h local plan --name /plans/rhel8
 
