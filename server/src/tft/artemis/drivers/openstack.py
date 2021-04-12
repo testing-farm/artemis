@@ -12,7 +12,7 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
 from ..db import GuestRequest, SnapshotRequest, SSHKey
-from ..environment import Environment
+from ..environment import Environment, Flavor, FlavorCpu, FlavorDisk
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
 from . import PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
@@ -146,28 +146,78 @@ class OpenStackDriver(PoolDriver):
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
-    def _env_to_flavor(self, environment: Environment) -> Result[PoolFlavorInfo, Failure]:
-        # TODO: this will be handled by a script, for now we simply pick our local common variety of a flavor.
+    def _env_to_flavor(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment
+    ) -> Result[PoolFlavorInfo, Failure]:
+        r_flavors = self.get_pool_flavor_infos()
 
-        r_flavor = get_cached_item(
-            CACHE.get(),
-            self.flavor_info_cache_key,
-            self.pool_config['default-flavor'],
-            PoolFlavorInfo
-        )
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
 
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
+        r_capabilities = self.capabilities()
 
-        flavor_info = r_flavor.unwrap()
+        if r_capabilities.is_error:
+            return Error(r_capabilities.unwrap_error())
 
-        if flavor_info is None:
+        pool_flavors = r_flavors.unwrap()
+        capabilities = r_capabilities.unwrap()
+
+        flavors: List[Tuple[PoolFlavorInfo, Flavor]] = []
+
+        for pool_flavor in pool_flavors:
+            for arch in capabilities.supported_architectures:
+                flavor = Flavor(
+                    arch=arch,
+                    cpu=FlavorCpu(
+                        cores=pool_flavor.cores
+                    ),
+                    disk=FlavorDisk(
+                        space=pool_flavor.diskspace
+                    ),
+                    memory=pool_flavor.memory
+                )
+
+                flavors.append((pool_flavor, flavor))
+
+        gluetool.log.log_dict(logger.warning, 'available flavors', flavors)
+
+        constraints = environment.get_environment_constraints()
+        gluetool.log.log_blob(logger.warning, 'constraint', constraints.format())
+
+        suitable_flavors = [
+            (pool_flavor, flavor)
+            for pool_flavor, flavor in flavors
+            if constraints.eval_flavor(flavor) is True
+        ]
+
+        gluetool.log.log_dict(logger.warning, 'suitable flavors', suitable_flavors)
+
+        def _flavor_key(
+            flavor_pair: Tuple[PoolFlavorInfo, Flavor]
+        ) -> Tuple[Optional[int], Optional[int], Optional[int]]:
+            pool_flavor, _ = flavor_pair
+
+            return (pool_flavor.cores, pool_flavor.memory, pool_flavor.diskspace)
+
+        sorted_suitable_flavors = sorted(suitable_flavors, key=_flavor_key)
+
+        gluetool.log.log_dict(logger.warning, 'sorted suitable flavors', sorted_suitable_flavors)
+
+        if not sorted_suitable_flavors:
             return Error(Failure(
-                'no such flavor',
-                flavorname=self.pool_config['default-flavor']
+                'no suitable flavor',
+                environment=environment
             ))
 
-        return Ok(flavor_info)
+        picked_flavor = sorted_suitable_flavors[0][0]
+
+        gluetool.log.log_dict(logger.warning, 'environment', environment.serialize_to_json())
+        gluetool.log.log_blob(logger.warning, 'constraints', constraints.format())
+        gluetool.log.log_dict(logger.warning, 'picked flavor', picked_flavor)
+
+        return Ok(picked_flavor)
 
     def _env_to_image(
         self,
@@ -287,7 +337,7 @@ class OpenStackDriver(PoolDriver):
 
         logger.info('provisioning environment {}'.format(environment))
 
-        r_flavor = self._env_to_flavor(environment)
+        r_flavor = self._env_to_flavor(logger, environment)
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
 
@@ -442,7 +492,7 @@ class OpenStackDriver(PoolDriver):
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
-        r_flavor = self._env_to_flavor(environment)
+        r_flavor = self._env_to_flavor(self.logger, environment)
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
 

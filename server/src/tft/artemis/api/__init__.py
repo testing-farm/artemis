@@ -455,9 +455,10 @@ class GuestRequestManager:
 
         # COMPAT: internal `arch` is replaced with `hw.arch` - move `arch` to proper position, and drop it from
         # the input. Drop once API catches up with internal format.
-        guest_request.environment['hw'] = {
-            'arch': guest_request.environment.pop('arch')
-        }
+        if 'arch' in guest_request.environment:
+            guest_request.environment['hw'] = {
+                'arch': guest_request.environment.pop('arch')
+            }
 
         with self.db.get_session() as session:
             perform_safe_db_change(

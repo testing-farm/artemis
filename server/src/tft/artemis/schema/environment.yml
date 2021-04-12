@@ -3,6 +3,18 @@ description: Environment schema
 type: object
 
 definitions:
+  hw_requirements:
+    type: object
+
+    properties:
+      arch:
+        type: string
+
+    required:
+      - arch
+
+    additionalProperties: true
+
   os_requirements:
     type: object
 
@@ -18,6 +30,9 @@ definitions:
 properties:
   arch:
     type: string
+
+  hw:
+    "$ref": "#/definitions/hw_requirements"
 
   os:
     "$ref": "#/definitions/os_requirements"
@@ -43,7 +58,8 @@ properties:
     default: null
 
 required:
-  - arch
+  # - arch
   - os
+  - hw
 
 additionalProperties: false
