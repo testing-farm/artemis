@@ -1200,7 +1200,7 @@ def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Fail
         return Ok(fn(*args, **kwargs))
 
     except Exception as exc:
-        return Error(Failure.from_exc('failed to execute {}: {}'.format(fn.__name__, exc), exc))
+        return Error(Failure.from_exc('exception raised inside a safe block', exc))
 
 
 def safe_db_change(
