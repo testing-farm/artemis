@@ -62,7 +62,7 @@ Counters are emitted as two distinct metrics, `foo_total` and `foo_created`, to 
 * `overall_failover_count` (counter): Overall total number of failovers to another pool by source and destination pool.
 * `overall_successfull_failover_count` (counter): Overall total number of successful failovers to another pool by source and destination pool.
 * `guest_request_age` (counter): Guest request ages by pool, state and age threshold. Thresholds are 5 minutes long in the first hour, then 60 minutes until 48 hours. `inf` bucket collects all guests that are older than 48 hours.
-* `provisioning_duration_milliseconds` (histogram): The time spent provisioning a machine.
+* `provisioning_duration_seconds` (histogram): The time spent provisioning a machine.
 
 === Pool resource metrics
 
