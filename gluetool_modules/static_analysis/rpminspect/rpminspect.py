@@ -207,6 +207,16 @@ class CIRpminspect(gluetool.Module):
 
         command.append(str(task.id) if task.scratch else task.nvr)
 
+        # Add rpminspect.yaml into workdir, if present in dist-git repository
+        if self.has_shared('dist_git_repository'):
+            repository = self.shared('dist_git_repository')
+            rpminspect_yaml_content = repository.rpminspect_yaml
+
+            if rpminspect_yaml_content:
+                self.info('rpminspect.yaml added from {}'.format(repository.rpminspect_yaml_url))
+                with open(os.path.join(workdir, 'rpminspect.yaml')) as rpminspect_yaml:
+                    rpminspect_yaml.write(rpminspect_yaml_content)
+
         def _write_log(output):
             # type: (ProcessOutput) -> None
             """

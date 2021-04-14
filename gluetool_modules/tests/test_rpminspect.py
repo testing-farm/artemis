@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import os
+import tempfile
 import pytest
 
 from mock import MagicMock
@@ -9,6 +11,7 @@ import __builtin__
 
 import gluetool
 from gluetool.utils import from_json
+import gluetool_modules.infrastructure.distgit
 import gluetool_modules.static_analysis.rpminspect.rpminspect
 from . import create_module, patch_shared, check_loadable
 
@@ -603,3 +606,39 @@ def test_test_result_type():
     skipped_test_result = gluetool_modules.static_analysis.rpminspect.rpminspect.RpminspectSkippedTestResult(
         gluetool.glue)
     assert skipped_test_result.rpminspect_test_type == 'comparison'
+
+
+def test_execute_rpminspect_yaml(module, monkeypatch, log):
+    mock_runinfo = MagicMock()
+    mock_runinfo.stdout = ''
+    mock_runinfo.stderr = ''
+    mock_command_run = MagicMock(return_value=mock_runinfo)
+
+    monkeypatch.setattr(gluetool.utils.Command, 'run', mock_command_run)
+    monkeypatch.setattr(tempfile, 'mkdtemp', MagicMock(return_value='workdir'))
+    monkeypatch.setattr(os, 'chmod', MagicMock())
+    monkeypatch.setattr(gluetool_modules.static_analysis.rpminspect.rpminspect, 'load_json', MagicMock(return_value={}))
+
+    class DistGitRepositoryMock(MagicMock):
+        @property
+        def rpminspect_yaml(self):
+            return 'rpminspect.yaml content'
+
+        @property
+        def rpminspect_yaml_url(self):
+            return 'some-url'
+
+    patch_shared(monkeypatch, module, {
+        'dist_git_repository': DistGitRepositoryMock(),
+    })
+
+    mock_open = MagicMock()
+    monkeypatch.setattr(__builtin__, 'open', mock_open)
+
+    module.execute()
+    mock_command_run.assert_called_once()
+
+    mock_open.assert_any_call('workdir/rpminspect.yaml')
+    mock_open.return_value.__enter__().write.assert_any_call('rpminspect.yaml content')
+
+    assert log.records[1].message == 'rpminspect.yaml added from some-url'
