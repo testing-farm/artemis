@@ -100,6 +100,9 @@ class PoolCapabilities(argparse.Namespace):
     supported_architectures: Union[List[str], _AnyArchitecture]
     supports_snapshots = False
 
+    #: If set, the pool provides spot instances. Otherwise, only regular instances are supported.
+    supports_spot_instances: bool = False
+
     def supports_arch(self, arch: str) -> bool:
         """
         Check whether a given architecture is supported. It is either listed among architectures supported
@@ -496,7 +499,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         capabilities = PoolCapabilities(
             supported_architectures=AnyArchitecture,
-            supports_snapshots=False
+            supports_snapshots=False,
+            supports_spot_instances=False
         )
 
         capabilities_config = self.pool_config.get('capabilities')
@@ -527,6 +531,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if 'supports-snapshots' in capabilities_config:
             capabilities.supports_snapshots = gluetool.utils.normalize_bool_option(
                 cast(str, capabilities_config['supports-snapshots'])
+            )
+
+        if 'supports-spot-instances' in capabilities_config:
+            capabilities.supports_spot_instances = gluetool.utils.normalize_bool_option(
+                cast(str, capabilities_config['supports-spot-instances'])
             )
 
         return Result.Ok(capabilities)

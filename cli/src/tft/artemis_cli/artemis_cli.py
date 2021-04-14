@@ -164,6 +164,7 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--compose', required=True, help='compose id')
 @click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
+@click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
 @click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
 @click.pass_obj
 def cmd_guest_create(
@@ -173,6 +174,7 @@ def cmd_guest_create(
         compose: str = None,
         pool: str = None,
         snapshots = False,
+        spot_instance = None,
         priority_group = None,
         post_install_script: str = None
 ) -> None:
@@ -185,6 +187,8 @@ def cmd_guest_create(
 
     if snapshots:
         environment['snapshots'] = True
+
+    environment['spot_instance'] = spot_instance
 
     post_install = None
     if post_install_script:

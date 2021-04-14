@@ -46,6 +46,7 @@ pools:
 
       capabilities:
         supports-snapshots: true
+        supports-spot-instances: false
         supported-architectures:
           - x86_64
 
@@ -68,6 +69,7 @@ pools:
       capabilities:
         # snapshot feature is not yet implemented for Azure driver
         supports-snapshots: false
+        supports-spot-instances: false
         supported-architectures:
           - x86_64
 
@@ -115,6 +117,7 @@ pools:
 
       capabilities:
         supports-snapshots: False
+        supports-spot-instances: {{ aws.vms.use_spot_instances | default(true) }}
         supported-architectures:
           - x86_64
 
@@ -137,6 +140,7 @@ pools:
 
       capabilities:
         supports-snapshots: False
+        supports-spot-instances: false
         # supports any architecture - there may be other constraints based on distro vs. arch support,
         # but in general, Beaker is open
         supported-architectures: any

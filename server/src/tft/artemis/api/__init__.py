@@ -244,13 +244,15 @@ class Environment:
     os: EnvironmentOs
     pool: Optional[str] = None
     snapshots: bool = False
+    spot_instance: Optional[bool] = None
 
     def serialize_to_json(self) -> Dict[str, Any]:
         return {
             'arch': self.arch,
             'os': self.os.serialize_to_json(),
             'pool': self.pool,
-            'snapshots': self.snapshots
+            'snapshots': self.snapshots,
+            'spot_instance': self.spot_instance
         }
 
 

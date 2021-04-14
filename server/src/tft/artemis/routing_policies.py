@@ -286,6 +286,44 @@ def policy_supports_snapshots(
 
 
 @policy_boilerplate
+def policy_supports_spot_instances(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    If guest request requires spot instance, disallow all pools that lack this capability.
+    """
+
+    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
+
+    # If request does not insist on using spot or non-spot instance, we can easily move forward and use any
+    # pool we've been given.
+    if environment.spot_instance is None:
+        return Ok(PolicyRuling(
+            allowed_pools=pools
+        ))
+
+    r_capabilities = collect_pool_capabilities(pools)
+
+    if r_capabilities.is_error:
+        return Error(r_capabilities.unwrap_error())
+
+    pool_capabilities = r_capabilities.unwrap()
+
+    # Pick only pools whose spot instance support matches the request - a pool cannot support both kinds at the same
+    # time.
+    return Ok(PolicyRuling(
+        allowed_pools=[
+            pool
+            for pool, capabilities in pool_capabilities
+            if capabilities.supports_spot_instances is environment.spot_instance
+        ]
+    ))
+
+
+@policy_boilerplate
 def policy_least_crowded(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
