@@ -315,6 +315,12 @@ class Failure:
         if self.caused_by:
             event_details['caused_by'] = self.caused_by.get_event_details()
 
+        if self.sentry_event_url:
+            event_details['sentry'] = {
+                'event_id': self.sentry_event_id,
+                'event_url': self.sentry_event_url
+            }
+
         return event_details
 
     @classmethod
@@ -381,15 +387,19 @@ class Failure:
             extra['scrubbed_command'] = gluetool.utils.format_command_line([self.details['scrubbed_command']])
 
         if 'command_output' in self.details:
+            extra['stdout'] = self.details['command_output'].stdout
             extra['stderr'] = self.details['command_output'].stderr
 
         if 'guestname' in self.details:
+            extra['guestname'] = self.details['guestname']
             tags['guestname'] = self.details['guestname']
 
         if 'snapshotname' in self.details:
+            extra['snapshotname'] = self.details['snapshotname']
             tags['snapshotname'] = self.details['snapshotname']
 
         if 'poolname' in self.details:
+            extra['poolname'] = self.details['poolname']
             tags['poolname'] = self.details['poolname']
 
         if self.traceback:
@@ -451,6 +461,12 @@ class Failure:
         if self.caused_by:
             details['caused-by'] = self.caused_by.get_log_details()
 
+        if self.sentry_event_url:
+            details['sentry'] = {
+                'event_id': self.sentry_event_id,
+                'event_url': self.sentry_event_url
+            }
+
         return details
 
     def log(
@@ -510,16 +526,10 @@ class Failure:
     ) -> None:
         self.details.update(details)
 
-        self.log(logger.error, label=label)
-
         if sentry:
             self.submit_to_sentry()
 
-            if self.sentry_event_url:
-                logger.warning('submitted to Sentry as {}'.format(self.sentry_event_url))
-
-            else:
-                logger.warning('not submitted to Sentry')
+        self.log(logger.error, label=label)
 
 
 class KnobSource(Generic[T]):
