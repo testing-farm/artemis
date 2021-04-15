@@ -11,11 +11,14 @@ import gluetool_modules.libs.guest
 
 from gluetool_modules.libs.testing_environment import TestingEnvironment
 
+from typing import Any, Dict, List, Optional, Tuple, cast  # noqa
+
 
 DEFAULT_NAME = 'citool'
 
 
 def rand_id():
+    # type: () -> int
     return random.randint(0, 999999999)
 
 
@@ -32,6 +35,7 @@ class Image(object):
 
     @staticmethod
     def image_by_id(docker, image_id):
+        # type: (Any, str) -> Image
         """
         Create ``Image`` instance from Docker image ID.
         """
@@ -40,6 +44,7 @@ class Image(object):
 
     @staticmethod
     def image_by_name(docker, image_name):
+        # type: (Any, str) -> Image
         """
         Create ``Image`` instance from human-readable name.
         """
@@ -47,6 +52,7 @@ class Image(object):
         return Image(docker.images.get(image_name), name=image_name)
 
     def __init__(self, image, name=None):
+        # type: (Any, Optional[str]) -> None
         self._image = image
         self.name = name
 
@@ -54,12 +60,14 @@ class Image(object):
         self.short_id = image.short_id.split(':')[1]
 
     def __repr__(self):
+        # type: () -> str
         name = self.name if self.name is not None else '<unknown name>'
 
         return "'{}' ({})".format(name, self.full_id)
 
     @property
     def attrs(self):
+        # type: () -> Any
         """
         Return image attributes as provided by Docker API.
 
@@ -106,6 +114,7 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
     """
 
     def __init__(self, module, name, docker, image, volumes=None):
+        # type: (DockerProvisioner, str, Any, Image, Optional[Dict[str, Dict[str, str]]]) -> None
         super(DockerGuest, self).__init__(module, name)
 
         self._docker = docker
@@ -133,19 +142,22 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
 
         # initialize lists of things we created for this guest, so we could clean up after it
         self._created_images = [self._image]
-        self._created_containers = []
+        self._created_containers = []  # type: List[Any]
 
         self.debug("current image is {}".format(self._image))
 
     def __repr__(self):
+        # type: () -> str
         return '{}'.format(self._namespace)
 
     @property
     def supports_snapshot(self):
+        # type: () -> bool
         return True
 
     @property
     def _current_image(self):
+        # type: () -> Tuple[str, str, str]
         """
         Return parts of current image.
 
@@ -160,6 +172,7 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
         return ('{}:{}'.format(self._namespace, tag), self._namespace, tag)
 
     def _instantiate_container(self, creator, *args, **kwargs):
+        # type: (Any, Any, Any) -> Any
         """
         Create the container from the current image.
 
@@ -186,6 +199,7 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
         return container
 
     def _create_container(self):
+        # type: () -> Any
         """
         ``docker create`` analogue - create a container, but don't start it.
 
@@ -195,8 +209,9 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
         return self._instantiate_container(self._docker.containers.create)
 
     def _run_container(self, cmd):
+        # type: (str) -> Tuple[Any, Optional[Exception]]
         """
-        ``docker run`` anologue - create container and run a command in it.
+        ``docker run`` analogue - create container and run a command in it.
 
         :param str: command to run.
         :returns: :py:mod:`docker`'s ``Container`` instance.
@@ -204,18 +219,18 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
 
         container = self._instantiate_container(self._docker.containers.create, command=cmd)
 
+        error = None  # type: Optional[Exception]
+
         try:
             container.start()
 
         except Exception as exc:
             error = exc
 
-        else:
-            error = None
-
         return container, error
 
     def _commit_container(self):
+        # type: () -> None
         assert self._container is not None
 
         container, self._container = self._container, None
@@ -240,9 +255,11 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
         self.debug("current image is {}".format(self._image))
 
     def _execute_shell(self, cmd, **kwargs):
-        return gluetool.utils.run_command(cmd, logger=self.logger, **kwargs)
+        # type: (List[str], Any) -> gluetool.utils.ProcessOutput
+        return cast(gluetool.utils.ProcessOutput, gluetool.utils.run_command(cmd, logger=self.logger, **kwargs))
 
     def execute(self, cmd, **kwargs):
+        # type: (str, Any) -> gluetool.utils.ProcessOutput
         self.debug("execute: '%s'" % (cmd))
 
         if self._container is not None:
@@ -256,6 +273,7 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
         if error is None:
             # wait for it to finish the execution
             def _check_exited():
+                # type: () -> Result[bool, str]
                 container.reload()
                 return Result.Ok(True) if container.status == 'exited' else Result.Error('still running')
 
@@ -271,34 +289,41 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
 
         gluetool.log.log_dict(self.debug, 'container attributes', container.attrs)
 
-        output = gluetool.utils.ProcessOutput(cmd, container.attrs['State']['ExitCode'], stdout, stderr, {})
+        output = gluetool.utils.ProcessOutput([cmd], container.attrs['State']['ExitCode'], stdout, stderr, {})
 
         output.log(self.logger)
 
         if output.exit_code != 0:
-            raise GlueCommandError(cmd, output)
+            raise GlueCommandError([cmd], output)
 
         return output
 
     def copy_to(self, src, dst, recursive=False, **kwargs):
+        # type: (str, str, bool, Any) -> gluetool.utils.ProcessOutput
         if recursive is False:
             self.warn("Cannot disable recursive behavior of 'cp' command")
 
         if self._container is None:
             self._create_container()
+
+        assert self._container is not None
 
         return self._execute_shell(['docker', 'cp', src, '{}:{}'.format(self._container.id, dst)])
 
     def copy_from(self, src, dst, recursive=False, **kwargs):
+        # type: (str, str, bool, Any) -> gluetool.utils.ProcessOutput
         if recursive is False:
             self.warn("Cannot disable recursive behavior of 'cp' command")
 
         if self._container is None:
             self._create_container()
 
+        assert self._container is not None
+
         return self._execute_shell(['docker', 'cp', '{}:{}'.format(self._container.id, src), dst])
 
     def add_volume(self, host_path, guest_path, mode='ro'):
+        # type: (str, str, str) -> None
         """
         Add a volume that should be mounted when running a command.
 
@@ -315,6 +340,7 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
         }
 
     def remove_volume(self, host_path):
+        # type: (str) -> None
         """
         Remove previously configured volume.
 
@@ -328,6 +354,7 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
         del self._volumes[host_path]
 
     def create_snapshot(self, start_again=True):
+        # type: (bool) -> Image
         self.debug('creating a snapshot')
 
         if self._container is not None:
@@ -337,11 +364,17 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
         return self._image
 
     def restore_snapshot(self, snapshot):
+        # type: (Image) -> DockerGuest
         self.debug("restoring snapshot {}".format(snapshot))
 
-        return self._module.guest_factory(self._module, '{}-{}'.format(self._name, rand_id()), self._docker, snapshot)
+        return cast(DockerProvisioner, self._module).guest_factory(
+            self._module,
+            '{}-{}'.format(self._name, rand_id()),
+            self._docker, snapshot
+        )
 
     def destroy(self):
+        # type: () -> None
         # reversing the lists does not seem to be necessary - newer images do not
         # depend on older ones, only containers must be removed before removing
         # the images they were created from.
@@ -365,6 +398,7 @@ class DockerGuest(gluetool_modules.libs.guest.Guest):
             self._docker.images.remove(image=image.name)
 
     def setup(self, variables=None, **kwargs):
+        # type: (Optional[Dict[str, Any]], Any) -> None
         variables = variables or {}
 
         if 'IMAGE_NAME' not in variables:
@@ -416,18 +450,21 @@ class DockerProvisioner(gluetool.Module):
 
     required_options = ('environment-map',)
 
-    shared_functions = ('provision',)
+    shared_functions = ['provision']
 
     def __init__(self, *args, **kwargs):
+        # type: (Any, Any) -> None
         super(DockerProvisioner, self).__init__(*args, **kwargs)
 
-        self._guests = []
+        self._guests = []  # type: List[DockerGuest]
 
     @gluetool.utils.cached_property
     def environment_map(self):
+        # type: () -> Any
         return gluetool.utils.load_yaml(self.option('environment-map'), logger=self.logger)
 
     def guest_factory(self, *args, **kwargs):
+        # type: (Any, Any) -> DockerGuest
         """
         Create a docker guest, and add it to the list of guests. All arguments are passed
         directly to :py:class:`DockerGuest`.
@@ -442,6 +479,7 @@ class DockerProvisioner(gluetool.Module):
         return guest
 
     def _determine_image_name(self, image_name):
+        # type: (str) -> Image
         """
         Find a Docker image reference based on its supposed name.
 
@@ -460,6 +498,7 @@ class DockerProvisioner(gluetool.Module):
         return image
 
     def _determine_image_environment(self, environment):
+        # type: (TestingEnvironment) -> Image
         """
         Find a Docker image reference based on its Docker ID.
 
@@ -487,12 +526,14 @@ class DockerProvisioner(gluetool.Module):
         return image
 
     def _determine_image(self, environment, image_name):
+        # type: (TestingEnvironment, Optional[str]) -> Image
         if image_name:
             return self._determine_image_name(image_name)
 
         return self._determine_image_environment(environment)
 
     def provision(self, environment, count=1, image_name=None, name=DEFAULT_NAME, **kwargs):
+        # type: (TestingEnvironment, int, Optional[str], str, Any) -> List[DockerGuest]
         """
         Provision guest for the given environment.
 
@@ -517,6 +558,7 @@ class DockerProvisioner(gluetool.Module):
         ]
 
     def sanity(self):
+        # type: () -> None
         if self.option('provision') and not self.option('image') and not self.option('environment'):
             raise GlueError('You must specify either ``--image`` or ``--environment`` when using direct provisioning')
 
@@ -524,6 +566,7 @@ class DockerProvisioner(gluetool.Module):
             self._config['environment'] = TestingEnvironment.unserialize_from_string(self.option('environment'))
 
     def execute(self):
+        # type: () -> None
         random.seed(int(time.time()))
 
         if self.option('provision'):
@@ -548,5 +591,6 @@ class DockerProvisioner(gluetool.Module):
                     output.log(self.logger)
 
     def destroy(self, failure=None):
+        # type: (Any) -> None
         for guest in self._guests:
             guest.destroy()
