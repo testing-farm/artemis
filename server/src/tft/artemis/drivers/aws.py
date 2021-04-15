@@ -2,6 +2,7 @@ import base64
 import dataclasses
 import json
 import os
+import re
 import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, cast
@@ -18,13 +19,15 @@ from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
 from . import GuestTagsType, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool
+    ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
 
 #
 # Custom typing types
 #
 BlockDeviceMappingsType = List[Dict[str, Any]]
 InstanceOwnerType = Tuple[Dict[str, Any], str]
+
+MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist')
 
 AWS_INSTANCE_SPECIFICATION = Template("""
 {
@@ -284,7 +287,14 @@ class AWSDriver(PoolDriver):
         )
 
         if r_run.is_error:
-            return Error(r_run.unwrap_error())
+            failure = r_run.unwrap_error()
+
+            # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
+            # run this method, we would never evenr made it remove instance that doesn't exist.
+            if test_cli_error(failure, MISSING_INSTANCE_ERROR_PATTERN):
+                failure.recoverable = False
+
+            return Error(failure)
 
         output = r_run.unwrap()
 

@@ -16,7 +16,7 @@ from ..environment import Environment
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
 from . import PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool
+    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
@@ -35,6 +35,8 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
     envvar_cast=int,
     default=30
 )
+
+MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'^No server with a name or ID')
 
 
 @dataclasses.dataclass
@@ -119,16 +121,12 @@ class OpenStackDriver(PoolDriver):
         )
 
         if r_run.is_error:
-            # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
-            # run this method, we would never evenr made it remove instance that doesn't exist.
             failure = r_run.unwrap_error()
 
-            if 'command_output' in failure.details:
-                os_output = cast(gluetool.utils.ProcessOutput, failure.details['command_output'])
-
-                if os_output.stderr \
-                   and cast(bytes, os_output.stderr).strip().startswith(b'No server with a name or ID'):
-                    failure.recoverable = False
+            # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
+            # run this method, we would never evenr made it remove instance that doesn't exist.
+            if test_cli_error(failure, MISSING_INSTANCE_ERROR_PATTERN):
+                failure.recoverable = False
 
             return Error(failure)
 

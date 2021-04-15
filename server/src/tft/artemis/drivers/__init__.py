@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 import threading
-from typing import Any, Callable, Dict, Iterator, List, Optional, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Iterator, List, Optional, Pattern, Type, TypeVar, Union, cast
 
 import gluetool
 import gluetool.log
@@ -832,6 +832,23 @@ def run_cli_tool(
             ))
 
     return Ok(CLIOutput(output, output_stdout))
+
+
+def test_cli_error(failure: Failure, error_pattern: Pattern[str]) -> bool:
+    if 'command_output' not in failure.details:
+        return False
+
+    os_output = cast(gluetool.utils.ProcessOutput, failure.details['command_output'])
+
+    if not os_output.stderr:
+        return False
+
+    stderr = cast(bytes, os_output.stderr).decode('utf-8')
+
+    if error_pattern.match(stderr):
+        return True
+
+    return False
 
 
 @contextlib.contextmanager
