@@ -1798,7 +1798,8 @@ def do_handle_provisioning_chain_tail(
         current_state=current_state,
         set_values={
             'poolname': None,
-            'pool_data': json.dumps({})
+            'pool_data': json.dumps({}),
+            'address': None
         },
         current_pool_data=workspace.gr.pool_data
     )
