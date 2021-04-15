@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 import gluetool
 from gluetool.log import log_dict
 from gluetool.utils import cached_property, new_xml_element

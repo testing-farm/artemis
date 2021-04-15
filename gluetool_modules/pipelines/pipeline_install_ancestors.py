@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 import gluetool
 from gluetool.result import Ok, Error
 from gluetool.utils import normalize_shell_option, normalize_multistring_option

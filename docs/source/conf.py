@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 # -*- coding: utf-8 -*-
 # pylint: disable=redefined-builtin,invalid-name,import-error
 #

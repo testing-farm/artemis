@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 from gluetool import SoftGlueError
 from gluetool.utils import Command
 from gluetool_modules.libs import run_and_log

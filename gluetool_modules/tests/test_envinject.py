@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 import pytest
 
 from gluetool_modules.helpers.envinject import EnvInject

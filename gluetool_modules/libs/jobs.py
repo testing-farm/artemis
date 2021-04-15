@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 Simplyfies access to concurrently running jobs. Based on ``concurrent.futures``, letting user
 to use callbacks to step into the whole process, it should take care of the heavy lifting.

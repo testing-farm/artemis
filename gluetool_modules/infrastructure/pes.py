@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 from urlparse import urljoin
 import simplejson.errors  # type: ignore  # no stubfile for simplejson
 

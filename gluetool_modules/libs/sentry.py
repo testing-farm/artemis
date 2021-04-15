@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
 from typing import TYPE_CHECKING, Any, Dict, List  # noqa

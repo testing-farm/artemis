@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 'Guest' is a (possibly remote) system citool modules can run tests
 on. It provides some basic functionality to its users, e.g. you can

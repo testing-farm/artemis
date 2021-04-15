@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 # Avoid importing this module instead of python-bugzilla in tests
 from __future__ import absolute_import
 

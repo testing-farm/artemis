@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 # Note: avoid relative import of this git module instead of GitPython's git module
 # https://www.python.org/dev/peps/pep-0328/
 from __future__ import absolute_import

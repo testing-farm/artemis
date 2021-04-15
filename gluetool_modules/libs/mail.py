@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 from gluetool.log import log_blob, log_dict
 
 # Type annotations
