@@ -51,6 +51,7 @@ expose_hooks() {
     done
 }
 
+ARTEMIS_CONTAINER_LOG_METHOD="${ARTEMIS_CONTAINER_LOG_METHOD:-file}"
 ARTEMIS_WORKER_OPTIONS="${ARTEMIS_WORKER_OPTIONS:-}"
  
 if [ "$ARTEMIS_WORKER_PROCESSES" != "" ]; then
@@ -95,18 +96,26 @@ case $APP in
         ;;
 esac
 
-# Logs from each application are logged in a separate timestamped file. Hostname helps
-# to identify the pod which run it.
-[ -z "$ARTEMIS_LOG_DIR" ] && ARTEMIS_LOG_DIR=$(mktemp -d)
-LOG_FILE="$ARTEMIS_LOG_DIR/$(date -u '+%Y-%m-%d_%H:%M:%S')_$(hostname).log"
-echo "Logging to '$LOG_FILE'"
-
 # We run the command in background to get his PID which is used to properly
 # terminate it with SIGTERM signal.
-$COMMAND &>$LOG_FILE &
-PID=$!
 
-# Show logs from log file, retry until the log file appears (we run it as subprocess) ...
-tail -F $LOG_FILE &
+if [ "$ARTEMIS_CONTAINER_LOG_METHOD" = "stdout" ]; then
+    # Logs are streamed irectly to stdout/stderr.
+    $COMMAND &
+    PID=$!
+
+elif [ "$ARTEMIS_CONTAINER_LOG_METHOD" = "file" ]; then
+    # Logs from each application are logged in a separate timestamped file. Hostname helps
+    # to identify the pod which run it.
+    [ -z "$ARTEMIS_LOG_DIR" ] && ARTEMIS_LOG_DIR=$(mktemp -d)
+    LOG_FILE="$ARTEMIS_LOG_DIR/$(date -u '+%Y-%m-%d_%H:%M:%S')_$(hostname).log"
+    echo "Logging to '$LOG_FILE'"
+
+    $COMMAND &>$LOG_FILE &
+    PID=$!
+
+    # Show logs from log file, retry until the log file appears (we run it as subprocess) ...
+    tail -F $LOG_FILE &
+fi
 
 wait $PID

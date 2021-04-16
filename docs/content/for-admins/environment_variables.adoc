@@ -34,6 +34,7 @@ case-insensitive.
 * `ARTEMIS_CACHE_URL` (string): Cache URL. Default: `redis://127.0.0.1:6379`.
 * `ARTEMIS_CLOSE_AFTER_DISPATCH` (boolean): When enabled, broker connection will be forcefully closed after every message dispatch. Default: `no`.
 * `ARTEMIS_CONFIG_DIR` (string): Path to a directory with configuration. Default: current working directory.
+* `ARTEMIS_CONTAINER_LOG_METHOD` (string): Sets logging mode for Artemis components running in containers: `file` for logging into a file under `/logs` directory, `stdout` for the very basic stream of logs streamed through container's own stdout/stderr. Default: `file`.
 * `ARTEMIS_DB_POOL_SIZE` (int): Size of the DB connection pool. Default: `20`.
 * `ARTEMIS_DB_POOL_MAX_OVERFLOW` (int): Maximum size of connection pool overflow. Default: `10`.
 * `ARTEMIS_DB_URL` (string): Database URL. Default: `sqlite:///test.db`.
