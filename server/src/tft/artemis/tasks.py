@@ -261,6 +261,8 @@ class TaskQueue(enum.Enum):
     """
 
     DEFAULT = 'default'
+    PERIODIC = 'periodic'
+    POOL_DATA_REFRESH = 'pool-data-refresh'
 
 
 # Task doer type.
@@ -3325,7 +3327,8 @@ def do_refresh_pool_resources_metrics(
 @dramatiq.actor(  # type: ignore  # Untyped decorator
     **actor_kwargs(
         'REFRESH_POOL_RESOURCES_METRICS',
-        priority=TaskPriority.HIGH
+        priority=TaskPriority.HIGH,
+        queue_name=TaskQueue.POOL_DATA_REFRESH
     )
 )
 def refresh_pool_resources_metrics(poolname: str) -> None:
@@ -3373,7 +3376,8 @@ def do_refresh_pool_resources_metrics_dispatcher(
     **actor_kwargs(
         'REFRESH_POOL_RESOURCES_METRICS',
         periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value),
-        priority=TaskPriority.HIGH
+        priority=TaskPriority.HIGH,
+        queue_name=TaskQueue.PERIODIC
     )
 )
 def refresh_pool_resources_metrics_dispatcher() -> None:
@@ -3444,7 +3448,8 @@ def do_refresh_pool_image_info(
 @dramatiq.actor(  # type: ignore  # Untyped decorator
     **actor_kwargs(
         'REFRESH_POOL_IMAGE_INFO',
-        priority=TaskPriority.HIGH
+        priority=TaskPriority.HIGH,
+        queue_name=TaskQueue.POOL_DATA_REFRESH
     )
 )
 def refresh_pool_image_info(poolname: str) -> None:
@@ -3492,7 +3497,8 @@ def do_refresh_pool_image_info_dispatcher(
     **actor_kwargs(
         'REFRESH_POOL_IMAGE_INFO',
         periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value),
-        priority=TaskPriority.HIGH
+        priority=TaskPriority.HIGH,
+        queue_name=TaskQueue.PERIODIC
     )
 )
 def refresh_pool_image_info_dispatcher() -> None:
@@ -3569,7 +3575,8 @@ def do_refresh_openstack_flavor_info(
 @dramatiq.actor(  # type: ignore  # Untyped decorator
     **actor_kwargs(
         'REFRESH_OPENSTACK_FLAVOR_INFO',
-        priority=TaskPriority.HIGH
+        priority=TaskPriority.HIGH,
+        queue_name=TaskQueue.POOL_DATA_REFRESH
     )
 )
 def refresh_openstack_flavor_info(poolname: str) -> None:
@@ -3620,7 +3627,8 @@ def do_refresh_openstack_flavor_info_dispatcher(
     **actor_kwargs(
         'REFRESH_OPENSTACK_FLAVOR_INFO',
         periodic=periodiq.cron(KNOB_REFRESH_OPENSTACK_FLAVOR_INFO_SCHEDULE.value),
-        priority=TaskPriority.HIGH
+        priority=TaskPriority.HIGH,
+        queue_name=TaskQueue.PERIODIC
     )
 )
 def refresh_openstack_flavor_info_dispatcher() -> None:
