@@ -9,6 +9,7 @@ import re
 import shlex
 import tempfile
 import threading
+import time
 from typing import Any, Callable, Dict, Iterator, List, Optional, Pattern, Type, TypeVar, Union, cast
 
 import gluetool
@@ -38,6 +39,25 @@ KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     envvar='ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY',
     envvar_cast=int,
     default=0
+)
+
+#: When enabled, Artemis would log "slow" CLI commands - commands whose execution took longer than
+#: ``ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD`` seconds.
+KNOB_LOGGING_SLOW_CLI_COMMANDS: Knob[bool] = Knob(
+    'logging.cli.slow-commands',
+    has_db=False,
+    envvar='ARTEMIS_LOG_SLOW_CLI_COMMANDS',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+#: Minimal time, in seconds, spent executing a CLI command for it to be reported as "slow".
+KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD: Knob[float] = Knob(
+    'logging.cli.slow-command-threshold',
+    has_db=False,
+    envvar='ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD',
+    envvar_cast=float,
+    default=10.0
 )
 
 
@@ -792,16 +812,42 @@ def run_cli_tool(
 
     command_scrubber = command_scrubber or _noop_scrubber
 
+    if KNOB_LOGGING_SLOW_CLI_COMMANDS.value is True:
+        start_time = time.monotonic()
+
+    def _log_slow_command(output: gluetool.utils.ProcessOutput) -> None:
+        if KNOB_LOGGING_SLOW_CLI_COMMANDS.value is not True:
+            return
+
+        command_time = time.monotonic() - start_time
+
+        if command_time < KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD.value:
+            return
+
+        assert command_scrubber is not None
+
+        Failure(
+            'detected a slow CLI command',
+            command_output=output,
+            scrubbed_command=command_scrubber(command),
+            time=command_time
+        ).handle(logger)
+
     try:
         output = gluetool.utils.Command(command, logger=logger).run(env=env)
 
     except gluetool.glue.GlueCommandError as exc:
+        _log_slow_command(exc.output)
+
         return Error(Failure.from_exc(
             'error running CLI command',
             exc,
             command_output=exc.output,
             scrubbed_command=command_scrubber(command)
         ))
+
+    else:
+        _log_slow_command(output)
 
     if output.stdout is None:
         if not allow_empty:
