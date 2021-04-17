@@ -526,31 +526,83 @@ class GuestRequestManager:
             return GuestResponse.from_db(guest_request_record)
 
     def delete_by_guestname(self, guestname: str, request: Request, logger: gluetool.log.ContextAdapter) -> None:
-        from ..tasks import get_guest_logger
+        from ..tasks import dispatch_task, get_guest_logger, release_guest_request
+
+        failure_details = {
+            'guestname': guestname
+        }
 
         guest_logger = get_guest_logger('delete-guest-request', logger, guestname)
 
         with self.db.get_session() as session:
-            snapshot_count_subquery = session.query(  # type: ignore # untyped function "query"
-                sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
-            ).filter(
-                artemis_db.SnapshotRequest.guestname == guestname
-            ).subquery('t')
+            r_guest_request = artemis_db.SafeQuery \
+                .from_session(session, artemis_db.GuestRequest) \
+                .filter(artemis_db.GuestRequest.guestname == guestname) \
+                .one_or_none()
 
-            query = sqlalchemy \
-                .update(artemis_db.GuestRequest.__table__) \
-                .where(artemis_db.GuestRequest.guestname == guestname) \
-                .where(snapshot_count_subquery.c.snapshot_count == 0) \
-                .values(state=GuestState.CONDEMNED.value)
+            if r_guest_request.is_error:
+                raise errors.InternalServerError(
+                    logger=guest_logger,
+                    caused_by=r_guest_request.unwrap_error(),
+                    failure_details=failure_details
+                )
 
-            # The query can miss either with existing snapshots, or when the guest request has been
-            # removed from DB already. The "gone already" situation could be better expressed by
-            # returning "404 Not Found", but we can't tell which of these two situations caused the
-            # change to go vain, therefore returning general "409 Conflict", expressing our believe
-            # user should resolve the conflict and try again.
-            perform_safe_db_change(guest_logger, session, query)
+            # Once condemned, the request cannot change its state to anything else. It can only disappear.
+            guest_request = r_guest_request.unwrap()
 
-            log_guest_event(guest_logger, session, guestname, 'condemned')
+            if guest_request is None:
+                raise errors.NoSuchEntityError(
+                    logger=guest_logger,
+                    failure_details=failure_details
+                )
+
+            if guest_request.state != GuestState.CONDEMNED.value:
+                snapshot_count_subquery = session.query(  # type: ignore # untyped function "query"
+                    sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
+                ).filter(
+                    artemis_db.SnapshotRequest.guestname == guestname
+                ).subquery('t')
+
+                query = sqlalchemy \
+                    .update(artemis_db.GuestRequest.__table__) \
+                    .where(artemis_db.GuestRequest.guestname == guestname) \
+                    .where(snapshot_count_subquery.c.snapshot_count == 0) \
+                    .values(state=GuestState.CONDEMNED.value)
+
+                # The query can miss either with existing snapshots, or when the guest request has been
+                # removed from DB already. The "gone already" situation could be better expressed by
+                # returning "404 Not Found", but we can't tell which of these two situations caused the
+                # change to go vain, therefore returning general "409 Conflict", expressing our believe
+                # user should resolve the conflict and try again.
+                perform_safe_db_change(guest_logger, session, query)
+
+                log_guest_event(guest_logger, session, guestname, 'condemned')
+
+            r_dispatch = dispatch_task(guest_logger, release_guest_request, guestname)
+
+            if r_dispatch.is_error:
+                # This looks like a problem: we already marked the request as condemned, but we failed to dispatch
+                # the task. We can't undo that change, because we did not bother to save the original state.
+                #
+                # But this does not have to be an issue, because we can freely report this error to user, and
+                # ask him to try again since this change is idempotent - when marking the request as condemned,
+                # we don't check its current state. If the request is already condemned, we merely proceed to
+                # dispatch the task.
+                #
+                # This is not a perfect solution: if we fail to dispatch the task, we report the error and expect
+                # user to try again. User may decide to give up, leaving us with a condemned request and no release
+                # task to take care of it.
+                #
+                # The other possible course of action - mark the request as condemned and then use a dispatcher
+                # process to dispatch the task asynchronously - has its own issues. For example, when facing excess
+                # of messages to process, workers may take time to reach the release task we scheduled - dispatcher
+                # would keep dispatching the task because the request still exists and is still marked as condemned,
+                # adding even more messages to the mix.
+                raise errors.InternalServerError(
+                    logger=guest_logger,
+                    caused_by=r_dispatch.unwrap_error(),
+                    failure_details=failure_details
+                )
 
 
 class GuestEventManager:
