@@ -8,7 +8,7 @@ import sys
 import threading
 import uuid
 from inspect import Parameter
-from typing import Any, Dict, List, NoReturn, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple, Type, Union
 
 import gluetool.log
 import gluetool.utils
@@ -1238,36 +1238,151 @@ def run_app() -> molten.app.App:
         version=__VERSION__
     )
 
-    routes: List[Union[Route, Include]] = [
+    #
+    # Current routes and API endpoints
+    #
+    # API provides following structure:
+    #
+    # * /current/<endpoints> - the most up-to-date API
+    # * /$VERSION/<endpoints> - API implementation correspoding to the given version
+    # * /<endpoints> - the same as `current` but deprecated - it will be removed once all clients switch
+    # to version-prefixed endpoints.
+    routes: List[Union[Route, Include]] = []
+
+    # Our thin wrapper over `Route` class: we want to reuse handlers as much as possible, but Molten
+    # blocks us from doing so in the easy way, but remembering the route "name" and disallowing its
+    # reuse - and the default name of the route is `handler.__name__`. Which means, if we'd like to use
+    # one handler several times, we need to use different name every time except the first one.
+    #
+    # We could spawn custom handlers to overcome this, but they would be very, very simple. Waste of
+    # time, let's use a wrapper for `Route` and allow name prefixes, to distinguish routes with the same
+    # handler.
+    def create_route(
+        template: str,
+        handler: Callable[..., Any],
+        method: str = 'GET',
+        name_prefix: str = ''
+    ) -> Route:
+        return Route(template, handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
+
+    # Current, most up-to-date endpoints, under `/current`
+    routes += [
+        Include('/current', [
+            Include('/guests', [
+                create_route('/', get_guest_requests, method='GET'),
+                create_route('/', create_guest_request, method='POST'),
+                create_route('/{guestname}', get_guest_request),
+                create_route('/{guestname}', delete_guest, method='DELETE'),
+                create_route('/events', get_events),
+                create_route('/{guestname}/events', get_guest_events),
+                create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+                create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+                create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+                create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
+            ]),
+            Include('/knobs', [
+                create_route('/', KnobManager.entry_get_knobs, method='GET'),
+                create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+                create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+                create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            ]),
+            create_route('/metrics', get_metrics),
+            create_route('/about', get_about),
+            Include('/_cache', [
+                Include('/pools/{poolname}', [
+                    create_route('/image-info', CacheManager.entry_pool_image_info),
+                    create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
+                ])
+            ]),
+            create_route('/_docs', OpenAPIUIHandler()),
+            create_route('/_schema', OpenAPIHandler(metadata=metadata))
+        ])
+    ]
+
+    # Current, most up-to-date endpoints, but under `/{tft.artemis.__VERSION__}`
+    def create_route_version(template: str, handler: Callable[..., Any], method: str = 'GET') -> Route:
+        return create_route(template, handler, method=method, name_prefix='v{}_'.format(__VERSION__))
+
+    routes += [
+        Include('/v{}'.format(__VERSION__), [
+            Include('/guests', [
+                create_route_version('/', get_guest_requests, method='GET'),
+                create_route_version('/', create_guest_request, method='POST'),
+                create_route_version('/{guestname}', get_guest_request),
+                create_route_version('/{guestname}', delete_guest, method='DELETE'),
+                create_route_version('/events', get_events),
+                create_route_version('/{guestname}/events', get_guest_events),
+                create_route_version('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+                create_route_version('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+                create_route_version('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+                create_route_version(
+                    '/{guestname}/snapshots/{snapshotname}/restore',
+                    restore_snapshot_request,
+                    method='POST'
+                )
+            ]),
+            Include('/knobs', [
+                create_route_version('/', KnobManager.entry_get_knobs, method='GET'),
+                create_route_version('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+                create_route_version('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+                create_route_version('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            ]),
+            create_route_version('/metrics', get_metrics),
+            create_route_version('/about', get_about),
+            Include('/_cache', [
+                Include('/pools/{poolname}', [
+                    create_route_version('/image-info', CacheManager.entry_pool_image_info),
+                    create_route_version('/flavor-info', CacheManager.entry_pool_flavor_info)
+                ])
+            ]),
+            create_route_version('/_docs', OpenAPIUIHandler()),
+            create_route_version('/_schema', OpenAPIHandler(metadata=metadata))
+        ])
+    ]
+
+    # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
+    def create_route_toplevel(template: str, handler: Callable[..., Any], method: str = 'GET') -> Route:
+        return create_route(template, handler, method=method, name_prefix='toplevel_legacy_')
+
+    routes += [
         Include('/guests', [
-            Route('/', get_guest_requests, method='GET'),
-            Route('/', create_guest_request, method='POST'),
-            Route('/{guestname}', get_guest_request),
-            Route('/{guestname}', delete_guest, method='DELETE'),
-            Route('/events', get_events),
-            Route('/{guestname}/events', get_guest_events),
-            Route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
-            Route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
-            Route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
-            Route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
+            create_route_toplevel('/', get_guest_requests, method='GET'),
+            create_route_toplevel('/', create_guest_request, method='POST'),
+            create_route_toplevel('/{guestname}', get_guest_request),
+            create_route_toplevel('/{guestname}', delete_guest, method='DELETE'),
+            create_route_toplevel('/events', get_events),
+            create_route_toplevel('/{guestname}/events', get_guest_events),
+            create_route_toplevel('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+            create_route_toplevel('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+            create_route_toplevel('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+            create_route_toplevel(
+                '/{guestname}/snapshots/{snapshotname}/restore',
+                restore_snapshot_request,
+                method='POST'
+            )
         ]),
         Include('/knobs', [
-            Route('/', KnobManager.entry_get_knobs, method='GET'),
-            Route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
-            Route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
-            Route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            create_route_toplevel('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route_toplevel('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+            create_route_toplevel('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+            create_route_toplevel('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
         ]),
-        Route('/metrics', get_metrics),
-        Route('/about', get_about),
+        create_route_toplevel('/metrics', get_metrics),
+        create_route_toplevel('/about', get_about),
         Include('/_cache', [
             Include('/pools/{poolname}', [
-                Route('/image-info', CacheManager.entry_pool_image_info),
-                Route('/flavor-info', CacheManager.entry_pool_flavor_info)
+                create_route_toplevel('/image-info', CacheManager.entry_pool_image_info),
+                create_route_toplevel('/flavor-info', CacheManager.entry_pool_flavor_info)
             ])
         ]),
-        Route('/_docs', OpenAPIUIHandler()),
-        Route('/_schema', OpenAPIHandler(metadata=metadata))
+        create_route_toplevel('/_docs', OpenAPIUIHandler()),
+        create_route_toplevel('/_schema', OpenAPIHandler(metadata=metadata))
     ]
+
+    #
+    # Older API versions will land here when needed
+    #
+    # ...
 
     return molten.app.App(
         components=components,
