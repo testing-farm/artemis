@@ -13,11 +13,11 @@ tests:
     MYPY_FORCE_COLOR: "1"
     PYTEST_ADDOPTS: "--color=yes"
   script:
-    - cd server
-    - IN_TEST=yes tox -v
+    - make -C server/ test
 
     # Once we polish client/, we would start using shared pre-commit instance. For now, Tox already installed one for
     # us, we can use it.
+    - cd server/
     - git ls-files -- . | xargs -n100 .tox/py37/bin/pre-commit run --files
 
 container:
