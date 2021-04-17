@@ -26,7 +26,7 @@ from molten.openapi.handlers import OpenAPIUIHandler
 from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 
-from .. import __VERSION__, FailureDetailsType, Knob
+from .. import Failure, __VERSION__, FailureDetailsType, Knob, load_validation_schema, validate_data
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, safe_db_change, validate_data
 from ..context import DATABASE, LOGGER
@@ -237,7 +237,9 @@ def perform_safe_db_change(
 @molten.schema
 class GuestRequest:
     keyname: str
+
     environment: Dict[str, Optional[Any]]
+
     priority_group: Optional[str]
     user_data: Optional[Dict[str, Optional[str]]]
     post_install_script: Optional[str]

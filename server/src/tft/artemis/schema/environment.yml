@@ -28,6 +28,7 @@ properties:
         - string
       - type:
         - "null"
+
     default: null
 
   snapshots:
