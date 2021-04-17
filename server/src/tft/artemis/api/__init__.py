@@ -28,7 +28,7 @@ from prometheus_client import CollectorRegistry
 
 from .. import __VERSION__, FailureDetailsType, Knob
 from .. import db as artemis_db
-from .. import get_db, get_logger, log_guest_event, metrics, safe_db_change
+from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, safe_db_change, validate_data
 from ..context import DATABASE, LOGGER
 from ..guest import GuestState
 from ..tasks import get_snapshot_logger
@@ -102,6 +102,10 @@ KNOB_API_ENGINE_DEBUG: Knob[bool] = Knob(
 
 #: Protects our metrics tree when updating & rendering to user.
 METRICS_LOCK = threading.Lock()
+
+
+# Will be filled with the actual schema during API server bootstrap.
+ENVIRONMENT_SCHEMA: Any = {}
 
 
 class JSONRenderer(molten.JSONRenderer):
@@ -231,35 +235,9 @@ def perform_safe_db_change(
 
 
 @molten.schema
-class EnvironmentOs:
-    compose: str
-
-    def serialize_to_json(self) -> Dict[str, Any]:
-        return {'compose': self.compose}
-
-
-@molten.schema
-class Environment:
-    arch: str
-    os: EnvironmentOs
-    pool: Optional[str] = None
-    snapshots: bool = False
-    spot_instance: Optional[bool] = None
-
-    def serialize_to_json(self) -> Dict[str, Any]:
-        return {
-            'arch': self.arch,
-            'os': self.os.serialize_to_json(),
-            'pool': self.pool,
-            'snapshots': self.snapshots,
-            'spot_instance': self.spot_instance
-        }
-
-
-@molten.schema
 class GuestRequest:
     keyname: str
-    environment: Environment
+    environment: Dict[str, Optional[Any]]
     priority_group: Optional[str]
     user_data: Optional[Dict[str, Optional[str]]]
     post_install_script: Optional[str]
@@ -425,13 +403,37 @@ class GuestRequestManager:
 
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
+        # Validate given environment specification
+        r_validation = validate_data(guest_request.environment, ENVIRONMENT_SCHEMA)
+
+        if r_validation.is_error:
+            raise errors.InternalServerError(
+                logger=guest_logger,
+                caused_by=r_validation.unwrap_error(),
+                failure_details=failure_details
+            )
+
+        validation_errors = r_validation.unwrap()
+
+        if validation_errors:
+            failure_details['api_request_validation_errors'] = json.dumps(validation_errors)
+
+            raise errors.BadRequestError(
+                response={
+                    'message': 'Bad request',
+                    'errors': validation_errors
+                },
+                logger=guest_logger,
+                failure_details=failure_details
+            )
+
         with self.db.get_session() as session:
             perform_safe_db_change(
                 guest_logger,
                 session,
                 sqlalchemy.insert(artemis_db.GuestRequest.__table__).values(
                     guestname=guestname,
-                    environment=json.dumps(guest_request.environment.serialize_to_json()),
+                    environment=json.dumps(guest_request.environment),
                     ownername=DEFAULT_GUEST_REQUEST_OWNER,
                     ssh_keyname=guest_request.keyname,
                     ssh_port=DEFAULT_SSH_PORT,
@@ -1200,6 +1202,18 @@ def run_app() -> molten.app.App:
 
     logger = get_logger()
     db = get_db(logger, application_name='artemis-api-server')
+
+    # Preload environment schema
+    global ENVIRONMENT_SCHEMA
+
+    r_schema = load_validation_schema('environment.yml')
+
+    if r_schema.is_error:
+        r_schema.unwrap_error().handle(logger)
+
+        sys.exit(1)
+
+    ENVIRONMENT_SCHEMA = r_schema.unwrap()
 
     metrics_tree = metrics.Metrics()
     metrics_tree.register_with_prometheus(CollectorRegistry())
