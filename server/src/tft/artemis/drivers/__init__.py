@@ -1,4 +1,3 @@
-import argparse
 import contextlib
 import dataclasses
 import datetime
@@ -117,9 +116,10 @@ class PoolImageInfo:
         return '<PoolImageInfo: name={} id={} pool-details={}>'.format(self.name, self.id, self.pool_details)
 
 
-class PoolCapabilities(argparse.Namespace):
-    supported_architectures: Union[List[str], _AnyArchitecture]
-    supports_snapshots = False
+@dataclasses.dataclass
+class PoolCapabilities:
+    supported_architectures: Union[List[str], _AnyArchitecture] = AnyArchitecture
+    supports_snapshots: bool = False
 
     #: If set, the pool provides spot instances. Otherwise, only regular instances are supported.
     supports_spot_instances: bool = False
@@ -518,11 +518,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError()
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
-        capabilities = PoolCapabilities(
-            supported_architectures=AnyArchitecture,
-            supports_snapshots=False,
-            supports_spot_instances=False
-        )
+        capabilities = PoolCapabilities()
 
         capabilities_config = self.pool_config.get('capabilities')
 
