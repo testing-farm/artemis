@@ -4,7 +4,12 @@ from typing import Any, Dict, Optional
 
 
 @dataclasses.dataclass
-class Os:
+class HWRequirements:
+    arch: str
+
+
+@dataclasses.dataclass
+class OsRequirements:
     compose: str
 
 
@@ -18,8 +23,8 @@ class Environment:
     effect on the provisioning process, therefore are omitted.
     """
 
-    arch: str
-    os: Os
+    hw: HWRequirements
+    os: OsRequirements
     pool: Optional[str] = None
     snapshots: bool = False
 
@@ -50,11 +55,22 @@ class Environment:
         Construct a testing environment from a JSON representation of fields and their values.
         """
 
+        # Handle serialized pre-v0.0.17 environments. Drop once v0.0.16 and older become unsupported.
+        if 'arch' in serialized:
+            if 'hw' in serialized:
+                serialized['hw'] = serialized['arch']
+
+            else:
+                serialized['hw'] = {
+                    'arch': serialized['arch']
+                }
+
+            del serialized['arch']
+
         env = Environment(**serialized)
 
-        env.os = Os(
-            compose=serialized['os']['compose']
-        )
+        env.hw = HWRequirements(**serialized['hw'])
+        env.os = OsRequirements(**serialized['os'])
 
         return env
 

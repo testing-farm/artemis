@@ -26,10 +26,11 @@ from molten.openapi.handlers import OpenAPIUIHandler
 from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 
-from .. import Failure, __VERSION__, FailureDetailsType, Knob, load_validation_schema, validate_data
+from .. import __VERSION__, FailureDetailsType, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, safe_db_change, validate_data
 from ..context import DATABASE, LOGGER
+from ..environment import HWRequirements
 from ..guest import GuestState
 from ..tasks import get_snapshot_logger
 from . import errors
@@ -106,6 +107,7 @@ METRICS_LOCK = threading.Lock()
 
 # Will be filled with the actual schema during API server bootstrap.
 ENVIRONMENT_SCHEMA: Any = {}
+ENVIRONMENT_SCHEMA_v0_0_16: Any = {}
 
 
 class JSONRenderer(molten.JSONRenderer):
@@ -378,6 +380,36 @@ class AboutResponse:
     artemis_deployment: Optional[str]
 
 
+def _validate_environment(
+    logger: gluetool.log.ContextAdapter,
+    failure_details: Dict[str, str],
+    guest_request: GuestRequest,
+    schema: Any
+) -> None:
+    r_validation = validate_data(guest_request.environment, schema)
+
+    if r_validation.is_error:
+        raise errors.InternalServerError(
+            logger=logger,
+            caused_by=r_validation.unwrap_error(),
+            failure_details=failure_details
+        )
+
+    validation_errors = r_validation.unwrap()
+
+    if validation_errors:
+        failure_details['api_request_validation_errors'] = json.dumps(validation_errors)
+
+        raise errors.BadRequestError(
+            response={
+                'message': 'Bad request',
+                'errors': validation_errors
+            },
+            logger=logger,
+            failure_details=failure_details
+        )
+
+
 class GuestRequestManager:
     def __init__(self, db: artemis_db.DB) -> None:
         self.db = db
@@ -406,28 +438,7 @@ class GuestRequestManager:
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
         # Validate given environment specification
-        r_validation = validate_data(guest_request.environment, ENVIRONMENT_SCHEMA)
-
-        if r_validation.is_error:
-            raise errors.InternalServerError(
-                logger=guest_logger,
-                caused_by=r_validation.unwrap_error(),
-                failure_details=failure_details
-            )
-
-        validation_errors = r_validation.unwrap()
-
-        if validation_errors:
-            failure_details['api_request_validation_errors'] = json.dumps(validation_errors)
-
-            raise errors.BadRequestError(
-                response={
-                    'message': 'Bad request',
-                    'errors': validation_errors
-                },
-                logger=guest_logger,
-                failure_details=failure_details
-            )
+        _validate_environment(guest_logger, failure_details, guest_request, ENVIRONMENT_SCHEMA)
 
         with self.db.get_session() as session:
             perform_safe_db_change(
@@ -1044,6 +1055,26 @@ def create_guest_request(
     return HTTP_201, manager.create(guest_request, ownername, logger)
 
 
+def create_guest_request_v0_0_16(
+    guest_request: GuestRequest,
+    manager: GuestRequestManager,
+    request: Request,
+    auth: AuthContext,
+    logger: gluetool.log.ContextAdapter
+) -> Tuple[str, GuestResponse]:
+    # Validate environment first, before we start molding it.
+    _validate_environment(logger, {}, guest_request, ENVIRONMENT_SCHEMA_v0_0_16)
+
+    # v0.0.16 had `.arch` field which was replaced by `.hw.arch` field.
+    guest_request.environment['hw'] = {
+        'arch': guest_request.environment['arch']
+    }
+
+    del guest_request.environment['arch']
+
+    return create_guest_request(guest_request, manager, request, auth, logger)
+
+
 def get_guest_request(guestname: str, manager: GuestRequestManager, request: Request) -> GuestResponse:
     guest_response = manager.get_by_guestname(guestname)
 
@@ -1207,6 +1238,7 @@ def run_app() -> molten.app.App:
 
     # Preload environment schema
     global ENVIRONMENT_SCHEMA
+    global ENVIRONMENT_SCHEMA_v0_0_16
 
     r_schema = load_validation_schema('environment.yml')
 
@@ -1216,6 +1248,15 @@ def run_app() -> molten.app.App:
         sys.exit(1)
 
     ENVIRONMENT_SCHEMA = r_schema.unwrap()
+
+    r_schema = load_validation_schema('environment-v0.0.16.yml')
+
+    if r_schema.is_error:
+        r_schema.unwrap_error().handle(logger)
+
+        sys.exit(1)
+
+    ENVIRONMENT_SCHEMA_v0_0_16 = r_schema.unwrap()
 
     metrics_tree = metrics.Metrics()
     metrics_tree.register_with_prometheus(CollectorRegistry())
@@ -1355,6 +1396,48 @@ def run_app() -> molten.app.App:
             create_route_version('/_schema', OpenAPIHandler(metadata=metadata))
         ])
     ]
+
+    # v0.0.16
+    def create_route_v0_0_16(template: str, handler: Callable[..., Any], method: str = 'GET') -> Route:
+        return create_route(template, handler, method=method, name_prefix='v0.0.16_')
+
+    routes += [
+        Include('/v0.0.16', [
+            Include('/guests', [
+                create_route_v0_0_16('/', get_guest_requests, method='GET'),
+                create_route_v0_0_16('/', create_guest_request_v0_0_16, method='POST'),
+                create_route_v0_0_16('/{guestname}', get_guest_request),
+                create_route_v0_0_16('/{guestname}', delete_guest, method='DELETE'),
+                create_route_v0_0_16('/events', get_events),
+                create_route_v0_0_16('/{guestname}/events', get_guest_events),
+                create_route_v0_0_16('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+                create_route_v0_0_16('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+                create_route_v0_0_16('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+                create_route_v0_0_16(
+                    '/{guestname}/snapshots/{snapshotname}/restore',
+                    restore_snapshot_request,
+                    method='POST'
+                )
+            ]),
+            Include('/knobs', [
+                create_route_v0_0_16('/', KnobManager.entry_get_knobs, method='GET'),
+                create_route_v0_0_16('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+                create_route_v0_0_16('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+                create_route_v0_0_16('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            ]),
+            create_route_v0_0_16('/metrics', get_metrics),
+            create_route_v0_0_16('/about', get_about),
+            Include('/_cache', [
+                Include('/pools/{poolname}', [
+                    create_route_v0_0_16('/image-info', CacheManager.entry_pool_image_info),
+                    create_route_v0_0_16('/flavor-info', CacheManager.entry_pool_flavor_info)
+                ])
+            ]),
+            create_route_v0_0_16('/_docs', OpenAPIUIHandler()),
+            create_route_v0_0_16('/_schema', OpenAPIHandler(metadata=metadata))
+        ])
+    ]
+
 
     # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
     def create_route_toplevel(template: str, handler: Callable[..., Any], method: str = 'GET') -> Route:

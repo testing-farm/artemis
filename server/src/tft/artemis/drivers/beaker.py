@@ -179,7 +179,7 @@ class BeakerDriver(PoolDriver):
             '--dry-run',
             '--prettyxml',
             '--distro', distro.id,
-            '--arch', environment.arch,
+            '--arch', environment.hw.arch,
             '--task', '/distribution/dummy',
             '--reserve',
             '--reserve-duration', str(KNOB_RESERVATION_DURATION.value)
@@ -456,7 +456,7 @@ class BeakerDriver(PoolDriver):
         :rtype: result.Result[bool, Failure]
         :returns: Ok with True if guest can be acquired.
         """
-        if environment.arch not in self.pool_config['available-arches']:
+        if environment.hw.arch not in self.pool_config['available-arches']:
             return Ok(False)
 
         return Ok(True)

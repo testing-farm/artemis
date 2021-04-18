@@ -246,7 +246,7 @@ def policy_supports_architecture(
         allowed_pools=[
             pool
             for pool, capabilities in pool_capabilities
-            if capabilities.supports_arch(environment.arch)
+            if capabilities.supports_arch(environment.hw.arch)
         ]
     ))
 
