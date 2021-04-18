@@ -2248,7 +2248,7 @@ def do_update_guest_request(
 
         handle_failure(r, 'failed to undo guest update')
 
-    environment = Environment.unserialize_from_json(json.loads(workspace.gr.environment))
+    environment = Environment.unserialize_from_str(workspace.gr.environment)
 
     r_update = workspace.pool.update_guest(
         logger,
@@ -2369,7 +2369,7 @@ def do_acquire_guest_request(
     assert workspace.pool
     assert workspace.ssh_key
 
-    environment = Environment.unserialize_from_json(json.loads(workspace.gr.environment))
+    environment = Environment.unserialize_from_str(workspace.gr.environment)
 
     result = workspace.pool.acquire_guest(
         logger,

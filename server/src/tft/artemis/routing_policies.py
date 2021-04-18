@@ -206,7 +206,7 @@ def policy_match_pool_name(
     If guest request requires a specific pool by its name, disallow any other pools.
     """
 
-    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
+    environment = Environment.unserialize_from_str(guest_request.environment)
 
     if environment.pool:
         return Ok(PolicyRuling(
@@ -233,7 +233,7 @@ def policy_supports_architecture(
     Disallow pools that don't support requested architecture.
     """
 
-    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
+    environment = Environment.unserialize_from_str(guest_request.environment)
 
     r_capabilities = collect_pool_capabilities(pools)
 
@@ -262,7 +262,7 @@ def policy_supports_snapshots(
     If guest request requires snapshot support, disallow all pools that lack this capability.
     """
 
-    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
+    environment = Environment.unserialize_from_str(guest_request.environment)
 
     if environment.snapshots is not True:
         return Ok(PolicyRuling(

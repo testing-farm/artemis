@@ -37,6 +37,13 @@ class Environment:
 
         return dataclasses.asdict(self)
 
+    def serialize_to_str(self) -> str:
+        """
+        Serialize testing environment to a string.
+        """
+
+        return json.dumps(dataclasses.asdict(self))
+
     @classmethod
     def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'Environment':
         """
@@ -50,3 +57,11 @@ class Environment:
         )
 
         return env
+
+    @classmethod
+    def unserialize_from_str(cls, serialized: str) -> 'Environment':
+        """
+        Construct a testing environment from a JSON representation of fields and their values stored in a string.
+        """
+
+        return Environment.unserialize_from_json(json.loads(serialized))
