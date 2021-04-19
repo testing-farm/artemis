@@ -3,8 +3,10 @@
 
 import psycopg2
 from psycopg2.extras import NamedTupleCursor
-
 import gluetool
+
+# Type annotations
+from typing import Any, Optional  # noqa
 
 
 class PostgreSQL(gluetool.Module):
@@ -46,15 +48,19 @@ class PostgreSQL(gluetool.Module):
     }
 
     required_options = ('dbname',)
-    shared_functions = ('db_cursor',)
+    shared_functions = ['db_cursor']
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
         super(PostgreSQL, self).__init__(*args, **kwargs)
 
         self._connection = None
 
     @property
     def connection(self):
+        # type: () -> Any
+
         if self._connection is None:
             host, port = self.option('host'), self.option('port')
 
@@ -71,6 +77,7 @@ class PostgreSQL(gluetool.Module):
         return self._connection
 
     def db_cursor(self, cursor_factory=NamedTupleCursor, **kwargs):
+        # type: (Any, **Any) -> Any
         """
         Return :py:class:`psycopg2.connection.cursor` instance.
 
@@ -84,6 +91,8 @@ class PostgreSQL(gluetool.Module):
         return self.connection.cursor(cursor_factory=cursor_factory)
 
     def server_version(self):
+        # type: () -> Any
+
         cursor = self.db_cursor()
 
         cursor.execute('SELECT version()')
@@ -95,6 +104,8 @@ class PostgreSQL(gluetool.Module):
         return row[0]
 
     def execute(self):
+        # type: () -> None
+
         version = self.server_version()
 
         self.info("Connected to a PostgreSQL '{}', version '{}'".format(self.option('host'), version))

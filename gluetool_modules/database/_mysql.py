@@ -5,6 +5,9 @@ import gluetool
 
 import mysql.connector
 
+# Type annotations
+from typing import Any  # noqa
+
 
 class MySQL(gluetool.Module):
     """
@@ -42,15 +45,19 @@ class MySQL(gluetool.Module):
     }
 
     required_options = ('dbname',)
-    shared_functions = ('db_cursor',)
+    shared_functions = ['db_cursor']
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
         super(MySQL, self).__init__(*args, **kwargs)
 
         self._connection = None
 
     @property
     def connection(self):
+        # type: () -> Any
+
         if self._connection is None:
             try:
                 self._connection = mysql.connector.connect(user=self.option('user'), password=self.option('password'),
@@ -63,6 +70,7 @@ class MySQL(gluetool.Module):
         return self._connection
 
     def db_cursor(self, **kwargs):
+        # type: (**Any) -> Any
         """
         Return a database cursor.
 
@@ -72,6 +80,8 @@ class MySQL(gluetool.Module):
         return self.connection.cursor()
 
     def server_version(self):
+        # type: () -> Any
+
         cursor = self.db_cursor()
 
         cursor.execute('SELECT version()')
@@ -83,6 +93,8 @@ class MySQL(gluetool.Module):
         return row[0]
 
     def execute(self):
+        # type: () -> None
+
         version = self.server_version()
 
         self.info("Connected to a MySQL '{}', version '{}'".format(self.option('host'), version))
