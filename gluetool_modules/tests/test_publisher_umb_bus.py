@@ -43,6 +43,7 @@ def test_publish(module, monkeypatch):
     _, module = module
 
     module._environment = {
+        'topic': 'dummy-topic',
         'urls': [
             'dummy-broker-#1',
             'dummy-broker-#2'
