@@ -72,7 +72,7 @@ def gather_test_results(schedule_entry, artifacts_directory):
         try:
             with open(test_log_filename) as test_log:
                 for line in test_log:
-                    match = re.match('([^ ]+) (.*)', line)
+                    match = re.match('([^ :]+):? (.*)', line)
                     if not match:
                         continue
                     result, name = match.groups()
