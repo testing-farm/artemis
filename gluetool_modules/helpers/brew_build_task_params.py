@@ -3,6 +3,8 @@
 
 import gluetool
 
+from typing import Dict, List  # noqa
+
 
 class BrewBuildOptions(gluetool.Module):
     """
@@ -45,9 +47,10 @@ class BrewBuildOptions(gluetool.Module):
         }
     }
 
-    shared_functions = ('brew_build_task_params',)
+    shared_functions = ['brew_build_task_params']
 
     def brew_build_task_params(self):
+        # type: () -> Dict[str, str]
         """
         Return mapping with options for ``/distribution/install/brew-build``, to install currently known artifacts.
         """
@@ -55,8 +58,8 @@ class BrewBuildOptions(gluetool.Module):
         self.require_shared('primary_task', 'tasks')
 
         # temporary holders of options
-        tasks = []
-        builds = []
+        tasks = []  # type: List[int]
+        builds = []  # type: List[int]
 
         if gluetool.utils.normalize_bool_option(self.option('install-task-not-build')):
             self.debug('asked to install by task ID')
