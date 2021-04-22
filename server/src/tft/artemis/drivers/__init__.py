@@ -125,8 +125,21 @@ class PoolFlavorInfo:
     name: str
     id: str
 
+    #: Number of cores.
+    cores: Optional[int] = None
+    #: Size of RAM available, in bytes.
+    memory: Optional[int] = None
+    #: Size of the main storage, in bytes.
+    diskspace: Optional[int] = None
+
     def __repr__(self) -> str:
-        return '<PoolFlavorInfo: name={} id={}>'.format(self.name, self.id)
+        return '<PoolFlavorInfo: name={} id={} cores={} memory={} diskspace={}>'.format(
+            self.name,
+            self.id,
+            self.cores,
+            self.memory,
+            self.diskspace
+        )
 
 
 @dataclasses.dataclass

@@ -833,7 +833,15 @@ class OpenStackDriver(PoolDriver):
 
         try:
             return Ok([
-                PoolFlavorInfo(name=flavor['Name'], id=flavor['ID'])
+                PoolFlavorInfo(
+                    name=flavor['Name'],
+                    id=flavor['ID'],
+                    cores=int(flavor['VCPUs']),
+                    # memory is reported in MB
+                    memory=int(flavor['RAM']) * 1048576,
+                    # diskspace is reported in GB
+                    diskspace=int(flavor['Disk']) * 1073741824
+                )
                 for flavor in cast(List[Dict[str, str]], r_flavors.unwrap())
                 if flavor_name_pattern is None or flavor_name_pattern.match(flavor['Name'])
             ])
