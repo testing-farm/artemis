@@ -17,6 +17,9 @@ properties:
   default-flavor:
     type: string
 
+  flavor-regex:
+    type: string
+
   ip-version:
     type: string
     enum:

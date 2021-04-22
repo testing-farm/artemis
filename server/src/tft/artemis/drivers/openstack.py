@@ -3,7 +3,7 @@ import re
 import sys
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -825,10 +825,17 @@ class OpenStackDriver(PoolDriver):
         if r_flavors.is_error:
             return Error(r_flavors.unwrap_error())
 
+        if self.pool_config.get('flavor-regex'):
+            flavor_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['flavor-regex'])
+
+        else:
+            flavor_name_pattern = None
+
         try:
             return Ok([
                 PoolFlavorInfo(name=flavor['Name'], id=flavor['ID'])
                 for flavor in cast(List[Dict[str, str]], r_flavors.unwrap())
+                if flavor_name_pattern is None or flavor_name_pattern.match(flavor['Name'])
             ])
 
         except KeyError as exc:

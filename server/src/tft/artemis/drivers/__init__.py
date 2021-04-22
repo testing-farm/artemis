@@ -18,8 +18,7 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob, get_cached_item, get_cached_items, get_logger, process_output_to_str, \
-    refresh_cached_set
+from .. import Failure, JSONType, Knob, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
 from ..context import CACHE
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -782,8 +781,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         if r_flavor_info.is_error:
             return Error(r_flavor_info.unwrap_error())
-
-        gluetool.log.log_dict(get_logger().warning, 'flavors', r_flavor_info.unwrap())
 
         return refresh_cached_set(
             CACHE.get(),
