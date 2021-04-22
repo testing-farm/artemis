@@ -46,6 +46,7 @@ case-insensitive.
 * `ARTEMIS_LOG_LEVEL` (choice): Level of logging. Accepted values are Python logging levels as defined by Python's https://docs.python.org/3.7/library/logging.html#levels[logging subsystem], case-insensitive. Default: `info`.
 * `ARTEMIS_LOG_SLOW_CLI_COMMANDS` (boolean): When enabled, Artemis would log "slow" CLI commands - commands whose execution took longer than `ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD` seconds. Default: `no`.
 * `ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD` (float): Minimal time, in seconds, spent executing a CLI command for it to be reported as "slow". Default: `10`.
+* `ARTEMIS_VAULT_PASSWORD` (string): A password for decrypting files protected by Ansible Vault. Takes precedence over `ARTEMIS_VAULT_PASSWORD_FILE`.
 * `ARTEMIS_VAULT_PASSWORD_FILE` (string): Path to a file with a password for decrypting files protected by Ansible Vault. Default: `$HOME/.vault_password`.
 
 === API server

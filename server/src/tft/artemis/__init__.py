@@ -1031,6 +1031,15 @@ KNOB_DB_URL: Knob[str] = Knob(
     default='sqlite:///test.db'
 )
 
+#: A password for decrypting files protected by Ansible Vault. Takes precedence over ``ARTEMIS_VAULT_PASSWORD_FILE``.
+KNOB_VAULT_PASSWORD: Knob[Optional[str]] = Knob(
+    'vault.password',
+    has_db=False,
+    envvar='ARTEMIS_VAULT_PASSWORD',
+    envvar_cast=str,
+    default=''  # "empty" password, not set
+)
+
 #: Path to a file with a password for decrypting files protected by Ansible Vault.
 KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
     'vault.password.filepath',
@@ -1194,8 +1203,13 @@ def get_db(logger: gluetool.log.ContextAdapter, application_name: Optional[str] 
 
 
 def get_vault() -> artemis_vault.Vault:
-    with open(KNOB_VAULT_PASSWORD_FILEPATH.value, 'r') as f:
-        return artemis_vault.Vault(f.read())
+    password = KNOB_VAULT_PASSWORD.value
+
+    if not password:
+        with open(KNOB_VAULT_PASSWORD_FILEPATH.value, 'r') as f:
+            password = f.read()
+
+    return artemis_vault.Vault(password)
 
 
 def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Failure]:
