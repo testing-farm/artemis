@@ -9,14 +9,15 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob, get_cached_item, refresh_cached_set
+from .. import Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
+from . import PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
+    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
+    test_cli_error
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
@@ -49,23 +50,7 @@ class OpenStackPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
 
 
-@dataclasses.dataclass
-class FlavorInfo:
-    """
-    Describes important information about an OpenStack flavor.
-    """
-
-    name: str
-    id: str
-
-    def __repr__(self) -> str:
-        return '<FlavorInfo: name={} id={}>'.format(self.name, self.id)
-
-
 class OpenStackDriver(PoolDriver):
-    #: Template for a cache key holding flavor image info.
-    POOL_FLAVOR_INFO_CACHE_KEY = 'pool.{}.flavor-info'
-
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -93,8 +78,6 @@ class OpenStackDriver(PoolDriver):
             self._os_cmd_base += [
                 '--os-project-domain-id', self.pool_config['project-domain-id']
             ]
-
-        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         r_capabilities = super(OpenStackDriver, self).capabilities()
@@ -176,14 +159,14 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(ii)
 
-    def _env_to_flavor(self, environment: Environment) -> Result[FlavorInfo, Failure]:
+    def _env_to_flavor(self, environment: Environment) -> Result[PoolFlavorInfo, Failure]:
         # TODO: this will be handled by a script, for now we simply pick our local common variety of a flavor.
 
         r_flavor = get_cached_item(
             CACHE.get(),
             self.flavor_info_cache_key,
             self.pool_config['default-flavor'],
-            FlavorInfo
+            PoolFlavorInfo
         )
 
         if r_flavor.is_error:
@@ -822,13 +805,7 @@ class OpenStackDriver(PoolDriver):
                 image_info=r_images.unwrap()
             ))
 
-    def refresh_flavor_info(self) -> Result[None, Failure]:
-        """
-        Responsible for updating the cache with the most up-to-date flavor info.
-
-        Data are stored as a mapping between flavor name and containers serialized into JSON blobs.
-        """
-
+    def fetch_pool_flavor_info(self) -> Result[List[PoolFlavorInfo], Failure]:
         # Flavors are described by OpenStack CLI with the following structure:
         # [
         #   {
@@ -849,10 +826,10 @@ class OpenStackDriver(PoolDriver):
             return Error(r_flavors.unwrap_error())
 
         try:
-            flavors: Dict[str, FlavorInfo] = {
-                flavor['Name']: FlavorInfo(name=flavor['Name'], id=flavor['ID'])
+            return Ok([
+                PoolFlavorInfo(name=flavor['Name'], id=flavor['ID'])
                 for flavor in cast(List[Dict[str, str]], r_flavors.unwrap())
-            }
+            ])
 
         except KeyError as exc:
             return Error(Failure.from_exc(
@@ -860,12 +837,3 @@ class OpenStackDriver(PoolDriver):
                 exc,
                 flavor_info=r_flavors.unwrap()
             ))
-
-        return refresh_cached_set(CACHE.get(), self.flavor_info_cache_key, flavors)
-
-    def get_pool_flavor_infos(self) -> Result[List[FlavorInfo], Failure]:
-        """
-        Retrieve all flavor info known to the pool.
-        """
-
-        return self._fetch_cached_info(self.flavor_info_cache_key, FlavorInfo)

@@ -18,7 +18,8 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
+from .. import Failure, JSONType, Knob, get_cached_item, get_cached_items, get_logger, process_output_to_str, \
+    refresh_cached_set
 from ..context import CACHE
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -114,6 +115,19 @@ class PoolImageInfo:
 
     def __repr__(self) -> str:
         return '<PoolImageInfo: name={} id={} pool-details={}>'.format(self.name, self.id, self.pool_details)
+
+
+@dataclasses.dataclass
+class PoolFlavorInfo:
+    """
+    Describes important information about an OpenStack flavor.
+    """
+
+    name: str
+    id: str
+
+    def __repr__(self) -> str:
+        return '<PoolFlavorInfo: name={} id={}>'.format(self.name, self.id)
 
 
 @dataclasses.dataclass
@@ -231,6 +245,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
 
+    #: Template for a cache key holding flavor image info.
+    POOL_FLAVOR_INFO_CACHE_KEY = 'pool.{}.flavor-info'
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -245,6 +262,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self._pool_resources_metrics: Optional[PoolResourcesMetrics] = None
 
         self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)
+        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)
 
     def __repr__(self) -> str:
         return '<{}: {}>'.format(self.__class__.__name__, self.poolname)
@@ -737,6 +755,61 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return get_cached_item(CACHE.get(), self.image_info_cache_key, imagename, PoolImageInfo)
 
+    def fetch_pool_flavor_info(self) -> Result[List[PoolFlavorInfo], Failure]:
+        """
+        Responsible for fetching the most up-to-date flavor info..
+
+        This is the only method common driver needs to reimplement. The default
+        implementation yields "no flavors" default as it has no actual pool to query.
+        The real driver would probably to query its pool's API, and retrieve actual data.
+        """
+
+        return Ok([])
+
+    def refresh_pool_flavor_info(self) -> Result[None, Failure]:
+        """
+        Responsible for updating the cache with the most up-to-date flavor info. For that purpose, it calls
+        :py:meth:`fetch_pool_flavor_info` to retrieve the actual data - this part is driver-specific, while
+        the cache operations are not.
+
+        Since :py:meth:`fetch_pool_flavor_info` is presumably going to talk to pool API, we cannot allow it
+        to be part of the critical paths like routing, therefore we exchange metrics through the cache.
+
+        Data are stored as a mapping between image name and a containers serialized into JSON blobs.
+        """
+
+        r_flavor_info = self.fetch_pool_flavor_info()
+
+        if r_flavor_info.is_error:
+            return Error(r_flavor_info.unwrap_error())
+
+        gluetool.log.log_dict(get_logger().warning, 'flavors', r_flavor_info.unwrap())
+
+        return refresh_cached_set(
+            CACHE.get(),
+            self.flavor_info_cache_key,
+            {
+                fi.name: fi
+                for fi in r_flavor_info.unwrap()
+                if fi.name
+            }
+        )
+
+    def get_pool_flavor_info(self, flavorname: str) -> Result[Optional[PoolFlavorInfo], Failure]:
+        """
+        Retrieve "current" flavor info metrics, as stored in the cache. Given how the information is acquired,
+        it will **always** be slightly outdated.
+
+        .. note::
+
+           There is a small window opened to race conditions: if provisioning gets to this method *before*
+           pool's flavor info has been fetched and stored in the cache, after the cache was emptied (e.g. by
+           a caching service restart), then this method will return ``None``, falsely pretending the flavor
+           is unknown.
+        """
+
+        return get_cached_item(CACHE.get(), self.flavor_info_cache_key, flavorname, PoolFlavorInfo)
+
     def _fetch_cached_info(self, key: str, item_klass: Type[T]) -> Result[List[T], Failure]:
         """
         Helper method to retrieve cache info - images, flavors, etc.
@@ -761,6 +834,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         return self._fetch_cached_info(self.image_info_cache_key, PoolImageInfo)
+
+    def get_pool_flavor_infos(self) -> Result[List[PoolFlavorInfo], Failure]:
+        """
+        Retrieve all flavor info known to the pool.
+        """
+
+        return self._fetch_cached_info(self.flavor_info_cache_key, PoolFlavorInfo)
 
 
 def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Failure]:

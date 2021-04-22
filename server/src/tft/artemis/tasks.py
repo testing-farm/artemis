@@ -189,10 +189,10 @@ KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
 
 
 #: When to run OpenStack flavor info refresh task, as a Cron-like specification.
-KNOB_REFRESH_OPENSTACK_FLAVOR_INFO_SCHEDULE: Knob[str] = Knob(
-    'actor.refresh-openstack-flavor-info.schedule',
+KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE: Knob[str] = Knob(
+    'actor.refresh-pool-flavor-info.schedule',
     has_db=False,
-    envvar='ARTEMIS_ACTOR_REFRESH_OPENSTACK_FLAVOR_INFO_SCHEDULE',
+    envvar='ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_SCHEDULE',
     envvar_cast=str,
     default='*/5 * * * *'
 )
@@ -3622,13 +3622,7 @@ def refresh_pool_image_info_dispatcher() -> None:
     )
 
 
-# TODO: following tasks are specific for OpenStack driver. It would be more reasonable to place them in the
-# OpenStack driver module, but that would require the OpenStack module to import some of the task primitives
-# and helpers - and that's where things get too complicated :/ Therefore this is the plan: because we need
-# to get rid of OpenStack bottlenecks, we have to implement the caching these tasks perform. But, the next
-# step of the plan is to split this file into a generic part and the actual tasks which would allow us to
-# create custom tasks and place them in a more logical places.
-def do_refresh_openstack_flavor_info(
+def do_refresh_pool_flavor_info(
     logger: gluetool.log.ContextAdapter,
     db: DB,
     session: sqlalchemy.orm.session.Session,
@@ -3644,7 +3638,7 @@ def do_refresh_openstack_flavor_info(
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,
         session,
-        task='refresh-openstack-flavor-info'
+        task='refresh-pool-flavor-info'
     )
 
     handle_success('entered-task')
@@ -3663,32 +3657,32 @@ def do_refresh_openstack_flavor_info(
         handle_failure(r_pool, 'failed to load pool')
 
     else:
-        pool = cast(openstack_driver.OpenStackDriver, r_pool.unwrap())
+        pool = r_pool.unwrap()
 
-        r_refresh = pool.refresh_flavor_info()
+        r_refresh = pool.refresh_pool_flavor_info()
 
         if r_refresh.is_error:
-            handle_failure(r_refresh, 'failed to refresh OpenStack flavor info')
+            handle_failure(r_refresh, 'failed to refresh pool flavor info')
 
     return handle_success('finished-task')
 
 
 @dramatiq.actor(  # type: ignore  # Untyped decorator
     **actor_kwargs(
-        'REFRESH_OPENSTACK_FLAVOR_INFO',
+        'REFRESH_POOL_FLAVOR_INFO',
         priority=TaskPriority.HIGH,
         queue_name=TaskQueue.POOL_DATA_REFRESH
     )
 )
-def refresh_openstack_flavor_info(poolname: str) -> None:
+def refresh_pool_flavor_info(poolname: str) -> None:
     task_core(
-        cast(DoerType, do_refresh_openstack_flavor_info),
-        logger=get_pool_logger('refresh-openstack-flavor-info', _ROOT_LOGGER, poolname),
+        cast(DoerType, do_refresh_pool_flavor_info),
+        logger=get_pool_logger('refresh-pool-flavor-info', _ROOT_LOGGER, poolname),
         doer_args=(poolname,)
     )
 
 
-def do_refresh_openstack_flavor_info_dispatcher(
+def do_refresh_pool_flavor_info_dispatcher(
     logger: gluetool.log.ContextAdapter,
     db: DB,
     session: sqlalchemy.orm.session.Session,
@@ -3697,12 +3691,12 @@ def do_refresh_openstack_flavor_info_dispatcher(
     handle_success, handle_failure, _ = create_event_handlers(
         logger,
         session,
-        task='refresh-openstack-flavor-info-dispatcher'
+        task='refresh-pool-flavor-info-dispatcher'
     )
 
     handle_success('entered-task')
 
-    logger.info('scheduling OpenStack flavor info refresh')
+    logger.info('scheduling pool flavor info refresh')
 
     r_pools = get_pools(logger, session)
 
@@ -3712,12 +3706,9 @@ def do_refresh_openstack_flavor_info_dispatcher(
         return handle_success('finished-task')
 
     for pool in r_pools.unwrap():
-        if not isinstance(pool, openstack_driver.OpenStackDriver):
-            continue
-
         dispatch_task(
-            get_pool_logger('refresh-openstack-flavor-info-dispatcher', logger, pool.poolname),
-            refresh_openstack_flavor_info,
+            get_pool_logger('refresh-pool-flavor-info-dispatcher', logger, pool.poolname),
+            refresh_pool_flavor_info,
             pool.poolname
         )
 
@@ -3726,15 +3717,15 @@ def do_refresh_openstack_flavor_info_dispatcher(
 
 @dramatiq.actor(  # type: ignore  # Untyped decorator
     **actor_kwargs(
-        'REFRESH_OPENSTACK_FLAVOR_INFO',
-        periodic=periodiq.cron(KNOB_REFRESH_OPENSTACK_FLAVOR_INFO_SCHEDULE.value),
+        'REFRESH_POOL_FLAVOR_INFO',
+        periodic=periodiq.cron(KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE.value),
         priority=TaskPriority.HIGH,
         queue_name=TaskQueue.PERIODIC
     )
 )
-def refresh_openstack_flavor_info_dispatcher() -> None:
+def refresh_pool_flavor_info_dispatcher() -> None:
     """
-    Dispatcher-like task for OpenStack flavor info refresh. It is being scheduled periodically (by Periodiq),
+    Dispatcher-like task for pool flavor info refresh. It is being scheduled periodically (by Periodiq),
     and it refreshes nothing on its own - instead, it gets a list of pools, and dispatches the actual refresh
     task for each pool.
 
@@ -3747,6 +3738,6 @@ def refresh_openstack_flavor_info_dispatcher() -> None:
     """
 
     task_core(
-        cast(DoerType, do_refresh_openstack_flavor_info_dispatcher),
-        logger=TaskLogger(_ROOT_LOGGER, 'refresh-openstack-flavor-info-dispatcher')
+        cast(DoerType, do_refresh_pool_flavor_info_dispatcher),
+        logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-flavor-info-dispatcher')
     )
