@@ -1402,6 +1402,14 @@ def refresh_cached_set(cache: redis.Redis, key: str, items: Dict[str, Any]) -> R
 
 
 def get_cached_items(cache: redis.Redis, key: str, item_klass: Type[T]) -> Result[Optional[Dict[str, T]], Failure]:
+    """
+    Return cached items of a given type in the form of a mapping between their names and the instances.
+
+    Serves as a helper function for fetching homogenous sets of objects, like pool image infos.
+
+    See :py:func:`get_cached_items_as_list` for the variant returning items in a list.
+    """
+
     r_fetch = safe_call(
         cast(Callable[[str], Optional[Dict[bytes, bytes]]], cache.hgetall),
         key,
@@ -1426,6 +1434,25 @@ def get_cached_items(cache: redis.Redis, key: str, item_klass: Type[T]) -> Resul
         items[item_key.decode('utf-8')] = r_unserialize.unwrap()
 
     return Ok(items)
+
+
+def get_cached_items_as_list(cache: redis.Redis, key: str, item_klass: Type[T]) -> Result[List[T], Failure]:
+    """
+    Return cached items of a given type in the form of a list of instances.
+
+    Serves as a helper function for fetching homogenous sets of objects, like pool image infos.
+
+    See :py:func:`get_cached_items` for the variant returning items in the form of a mapping.
+    """
+
+    r_fetch = get_cached_items(cache, key, item_klass)
+
+    if r_fetch.is_error:
+        return Error(r_fetch.unwrap_error())
+
+    items = r_fetch.unwrap()
+
+    return Ok(list(items.values()) if items else [])
 
 
 def get_cached_item(cache: redis.Redis, key: str, item_key: str, item_klass: Type[T]) -> Result[Optional[T], Failure]:

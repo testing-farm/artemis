@@ -3538,7 +3538,7 @@ def do_refresh_pool_image_info(
     else:
         pool = r_pool.unwrap()
 
-        r_refresh = pool.refresh_pool_image_info()
+        r_refresh = pool.refresh_cached_pool_image_info()
 
         if r_refresh.is_error:
             handle_failure(r_refresh, 'failed to refresh pool image info')
@@ -3659,7 +3659,7 @@ def do_refresh_pool_flavor_info(
     else:
         pool = r_pool.unwrap()
 
-        r_refresh = pool.refresh_pool_flavor_info()
+        r_refresh = pool.refresh_cached_pool_flavor_info()
 
         if r_refresh.is_error:
             handle_failure(r_refresh, 'failed to refresh pool flavor info')

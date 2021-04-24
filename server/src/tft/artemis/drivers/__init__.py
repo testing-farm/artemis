@@ -18,7 +18,8 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob, get_cached_item, get_cached_items, process_output_to_str, refresh_cached_set
+from .. import Failure, JSONType, Knob, get_cached_item, get_cached_items_as_list, process_output_to_str, \
+    refresh_cached_set
 from ..context import CACHE
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -354,7 +355,31 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError()
 
-    def image_info_by_name(
+    def _map_image_name_to_image_info_by_cache(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        imagename: str
+    ) -> Result[PoolImageInfo, Failure]:
+        """
+        Retrieve pool-specific information for a given image name from pool image info cache.
+        """
+
+        r_ii = self.get_cached_pool_image_info(imagename)
+
+        if r_ii.is_error:
+            return Error(r_ii.unwrap_error())
+
+        ii = r_ii.unwrap()
+
+        if ii is None:
+            return Error(Failure(
+                'cannot find image by name',
+                imagename=imagename
+            ))
+
+        return Ok(ii)
+
+    def map_image_name_to_image_info(
         self,
         logger: gluetool.log.ContextAdapter,
         imagename: str
@@ -725,7 +750,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok([])
 
-    def refresh_pool_image_info(self) -> Result[None, Failure]:
+    def refresh_cached_pool_image_info(self) -> Result[None, Failure]:
         """
         Responsible for updating the cache with the most up-to-date image info. For that purpose, it calls
         :py:meth:`fetch_pool_image_info` to retrieve the actual data - this part is driver-specific, while
@@ -752,17 +777,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
             }
         )
 
-    def get_pool_image_info(self, imagename: str) -> Result[Optional[PoolImageInfo], Failure]:
+    def get_cached_pool_image_info(self, imagename: str) -> Result[Optional[PoolImageInfo], Failure]:
         """
-        Retrieve "current" image info metrics, as stored in the cache. Given how the information is acquired,
-        it will **always** be slightly outdated.
-
-        .. note::
-
-           There is a small window opened to race conditions: if provisioning gets to this method *before*
-           pool's image info has been fetched and stored in the cache, after the cache was emptied (e.g. by
-           a caching service restart), then this method will return ``None``, falsely pretending the image
-           is unknown.
+        Retrieve pool image info for an image of a given name.
         """
 
         return get_cached_item(CACHE.get(), self.image_info_cache_key, imagename, PoolImageInfo)
@@ -778,7 +795,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok([])
 
-    def refresh_pool_flavor_info(self) -> Result[None, Failure]:
+    def refresh_cached_pool_flavor_info(self) -> Result[None, Failure]:
         """
         Responsible for updating the cache with the most up-to-date flavor info. For that purpose, it calls
         :py:meth:`fetch_pool_flavor_info` to retrieve the actual data - this part is driver-specific, while
@@ -805,7 +822,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             }
         )
 
-    def get_pool_flavor_info(self, flavorname: str) -> Result[Optional[PoolFlavorInfo], Failure]:
+    def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[PoolFlavorInfo], Failure]:
         """
         Retrieve "current" flavor info metrics, as stored in the cache. Given how the information is acquired,
         it will **always** be slightly outdated.
@@ -820,37 +837,19 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return get_cached_item(CACHE.get(), self.flavor_info_cache_key, flavorname, PoolFlavorInfo)
 
-    def _fetch_cached_info(self, key: str, item_klass: Type[T]) -> Result[List[T], Failure]:
+    def get_cached_pool_image_infos(self) -> Result[List[PoolImageInfo], Failure]:
         """
-        Helper method to retrieve cache info - images, flavors, etc.
-
-        :param key: cache key that carries the data.
-        :param item_klass: a dataclass container that represents a cached item.
-        :returns: mapping between item names and their representation as containers of given item class.
+        Retrieve pool image info for all known images.
         """
 
-        r_fetch = get_cached_items(CACHE.get(), key, item_klass)
+        return get_cached_items_as_list(CACHE.get(), self.image_info_cache_key, PoolImageInfo)
 
-        if r_fetch.is_error:
-            return Error(r_fetch.unwrap_error())
-
-        infos = r_fetch.unwrap()
-
-        return Ok(list(infos.values()) if infos else [])
-
-    def get_pool_image_infos(self) -> Result[List[PoolImageInfo], Failure]:
-        """
-        Retrieve all image info known to the pool.
-        """
-
-        return self._fetch_cached_info(self.image_info_cache_key, PoolImageInfo)
-
-    def get_pool_flavor_infos(self) -> Result[List[PoolFlavorInfo], Failure]:
+    def get_cached_pool_flavor_infos(self) -> Result[List[PoolFlavorInfo], Failure]:
         """
         Retrieve all flavor info known to the pool.
         """
 
-        return self._fetch_cached_info(self.flavor_info_cache_key, PoolFlavorInfo)
+        return get_cached_items_as_list(CACHE.get(), self.flavor_info_cache_key, PoolFlavorInfo)
 
 
 def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Failure]:

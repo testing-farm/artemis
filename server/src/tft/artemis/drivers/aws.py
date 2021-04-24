@@ -220,25 +220,12 @@ class AWSDriver(PoolDriver):
 
         return Ok(True)
 
-    def image_info_by_name(
+    def map_image_name_to_image_info(
         self,
         logger: gluetool.log.ContextAdapter,
         imagename: str
     ) -> Result[PoolImageInfo, Failure]:
-        r_ii = self.get_pool_image_info(imagename)
-
-        if r_ii.is_error:
-            return Error(r_ii.unwrap_error())
-
-        ii = r_ii.unwrap()
-
-        if ii is None:
-            return Error(Failure(
-                'cannot find image by name',
-                imagename=imagename
-            ))
-
-        return Ok(ii)
+        return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
     def _env_to_instance_type(self, environment: Environment) -> Result[Any, Failure]:
         # TODO: in the future we will here translate the environment into an instance type

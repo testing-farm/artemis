@@ -101,7 +101,7 @@ def map_environment_to_image_info(
 
         logger.info('mapped {} to image name {}'.format(environment, imagename))
 
-        return pool.image_info_by_name(logger, imagename)
+        return pool.map_image_name_to_image_info(logger, imagename)
 
     except Exception as exc:
         return Error(Failure.from_exc(
