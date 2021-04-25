@@ -1,6 +1,6 @@
 import dataclasses
 import threading
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Dict, List, Optional, Union, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -41,7 +41,7 @@ class AzureDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         poolname: str,
-        pool_config: Dict[str, Any],
+        pool_config: Dict[str, JSONType],
     ) -> None:
         super(AzureDriver, self).__init__(logger, poolname, pool_config)
 
@@ -57,7 +57,7 @@ class AzureDriver(PoolDriver):
     def _dispatch_resource_cleanup(
         self,
         logger: gluetool.log.ContextAdapter,
-        *other_resources: Any,
+        *other_resources: str,
         instance_id: Optional[str] = None,
         guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
@@ -95,7 +95,7 @@ class AzureDriver(PoolDriver):
 
         resource_ids = AzurePoolResourcesIDs.unserialize(raw_resource_ids)
 
-        def _delete_resource(res_id: str) -> Any:
+        def _delete_resource(res_id: str) -> JSONType:
             options = ['resource', 'delete', '--ids', res_id]
             return self._run_cmd_with_auth(options, json_format=False)
 
@@ -189,7 +189,7 @@ class AzureDriver(PoolDriver):
         cmd = ['resource', 'list', '--tag', 'uid={}'.format(pool_data.instance_name)]
         resources_by_tag = self._run_cmd_with_auth(cmd).unwrap()
 
-        def _delete_resource(res_id: str) -> Any:
+        def _delete_resource(res_id: str) -> JSONType:
             options = ['resource', 'delete', '--ids', res_id]
             return self._run_cmd_with_auth(options, json_format=False)
 
@@ -360,7 +360,7 @@ class AzureDriver(PoolDriver):
     def _show_guest(
         self,
         guest_request: GuestRequest
-    ) -> Result[Any, Failure]:
+    ) -> Result[JSONType, Failure]:
         r_output = self._run_cmd_with_auth([
             'vm',
             'show',
@@ -478,7 +478,7 @@ class AzureDriver(PoolDriver):
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        output = cast(Dict[str, Any], r_output.unwrap())
+        output = cast(Dict[str, STR], r_output.unwrap())
         if not output['id']:
             return Error(Failure('Instance id not found'))
 

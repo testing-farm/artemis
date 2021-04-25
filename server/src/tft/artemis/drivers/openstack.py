@@ -3,7 +3,7 @@ import re
 import sys
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Dict, List, Optional, Tuple, Union, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -70,7 +70,7 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         poolname: str,
-        pool_config: Dict[str, Any]
+        pool_config: Dict[str, JSONType]
     ) -> None:
         super(OpenStackDriver, self).__init__(logger, poolname, pool_config)
 
@@ -226,7 +226,7 @@ class OpenStackDriver(PoolDriver):
 
         return r_image
 
-    def _env_to_network(self, environment: Environment) -> Result[Any, Failure]:
+    def _env_to_network(self, environment: Environment) -> Result[str, Failure]:
         metrics = PoolResourcesMetrics(self.poolname)
         metrics.sync()
 
@@ -265,7 +265,7 @@ class OpenStackDriver(PoolDriver):
     def _show_guest(
         self,
         guest_request: GuestRequest
-    ) -> Result[Any, Failure]:
+    ) -> Result[JSONType, Failure]:
         os_options = [
             'server',
             'show',
@@ -282,7 +282,7 @@ class OpenStackDriver(PoolDriver):
     def _show_snapshot(
         self,
         snapshot_request: SnapshotRequest,
-    ) -> Result[Any, Failure]:
+    ) -> Result[JSONType, Failure]:
         os_options = ['image', 'show', snapshot_request.snapshotname]
 
         r_output = self._run_os(os_options)
@@ -292,7 +292,7 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(r_output.unwrap())
 
-    def _output_to_ip(self, output: Any) -> Result[Optional[str], Failure]:
+    def _output_to_ip(self, output: JSONType) -> Result[Optional[str], Failure]:
         if not output['addresses']:
             # It's ok! That means the instance is not ready yet. We need to wait a bit for ip address.
             # The `update_guest` task will be scheduled until ip adress is None.
@@ -337,7 +337,7 @@ class OpenStackDriver(PoolDriver):
 
         network = r_network.unwrap()
 
-        def _create(user_data_filename: str) -> Result[Any, Failure]:
+        def _create(user_data_filename: str) -> Result[JSONType, Failure]:
             """The actual call to the openstack cli guest create command is happening here.
                If user_data_filename is an empty string then the guest vm is booted with no user-data.
             """

@@ -2,7 +2,7 @@ import dataclasses
 import os
 import stat
 import threading
-from typing import Any, List, Optional
+from typing import List, Optional
 
 import bs4
 import gluetool.log
@@ -18,8 +18,6 @@ from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
 from . import CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
     ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool
-
-NodeRefType = Any
 
 
 #: A time, in seconds, for which the guest would be initially reserved.

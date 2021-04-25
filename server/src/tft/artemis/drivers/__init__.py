@@ -235,7 +235,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         poolname: str,
-        pool_config: Dict[str, Any]
+        pool_config: Dict[str, JSONType]
     ) -> None:
         super(PoolDriver, self).__init__(logger)
 
@@ -763,7 +763,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return self._fetch_cached_info(self.image_info_cache_key, PoolImageInfo)
 
 
-def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Failure]:
+def vm_info_to_ip(output: JSONType, key: str, regex: str) -> Result[Optional[str], Failure]:
     if not output[key]:
         # It's ok! That means the instance is not ready yet. We need to wait a bit for ip address.
         return Ok(None)

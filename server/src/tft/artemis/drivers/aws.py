@@ -102,7 +102,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         poolname: str,
-        pool_config: Dict[str, Any]
+        pool_config: Dict[str, JSONType]
     ) -> None:
         super(AWSDriver, self).__init__(logger, poolname, pool_config)
         self.environ = {
@@ -213,7 +213,7 @@ class AWSDriver(PoolDriver):
 
         return Ok(ii)
 
-    def _env_to_instance_type(self, environment: Environment) -> Result[Any, Failure]:
+    def _env_to_instance_type(self, environment: Environment) -> Result[str, Failure]:
         # TODO: in the future we will here translate the environment into an instance type
         return Ok(self.pool_config['default-instance-type'])
 
@@ -550,7 +550,7 @@ class AWSDriver(PoolDriver):
 
         # wait until spot request fullfilled, accept busy waiting as this should take only few seconds
         # TODO: remove busy waiting later
-        def _check_spot_request_fulfilled() -> Result[Any, Failure]:
+        def _check_spot_request_fulfilled() -> Result[Optional[str], Failure]:
             # wait for request to be fulfilled
             r_spot_status = self._aws_command([
                 'ec2', 'describe-spot-instance-requests',
@@ -668,7 +668,7 @@ class AWSDriver(PoolDriver):
         if pool_data.spot_instance_id is not None:
             tags['SpotRequestId'] = pool_data.spot_instance_id
 
-        self._tag_instance(session, guest_request, instance, owner, tags=tags)
+        self._tag_instance(session, guest_request, pool_data.instance_id, owner, tags=tags)
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
@@ -680,7 +680,7 @@ class AWSDriver(PoolDriver):
         self,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        instance: Dict[str, Any],
+        instance_id: str,
         owner: str,
         tags: Optional[GuestTagsType] = None
     ) -> None:
