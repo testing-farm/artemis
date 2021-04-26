@@ -324,6 +324,49 @@ def policy_supports_spot_instances(
 
 
 @policy_boilerplate
+def policy_prefer_spot_instances(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Prefer pools capable of using spot instances to satisfy the request. If there are no such pools, all given pools
+    are returned - *prefer*, not *allow only*.
+    """
+
+    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
+
+    # If request does insist on using spot or non-spot instance, we should not mess with its request by
+    # possibly removing the group it requests. For such environments, do nothing and let other policies
+    # apply their magic.
+    if environment.spot_instance is not None:
+        return Ok(PolicyRuling(
+            allowed_pools=pools
+        ))
+
+    r_capabilities = collect_pool_capabilities(pools)
+
+    if r_capabilities.is_error:
+        return Error(r_capabilities.unwrap_error())
+
+    preferred_pools = [
+        pool
+        for pool, capabilities in r_capabilities.unwrap()
+        if capabilities.supports_spot_instances is True
+    ]
+
+    if not preferred_pools:
+        return Ok(PolicyRuling(
+            allowed_pools=pools
+        ))
+
+    return Ok(PolicyRuling(
+        allowed_pools=preferred_pools
+    ))
+
+
+@policy_boilerplate
 def policy_least_crowded(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
