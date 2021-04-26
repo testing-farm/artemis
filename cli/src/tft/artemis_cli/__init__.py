@@ -262,20 +262,20 @@ def fetch_artemis(
         allow_statuses=allow_statuses
     )
 
-def artemis_inspect(cfg, resource, rid, params=None, data=None, logger=None):
-    return fetch_artemis(cfg, '/{}/{}'.format(resource, rid), request_kwargs={'json': data, 'params': params}, logger=None)
+def artemis_inspect(cfg, resource, rid, params=None, data=None, logger=None, version='current'):
+    return fetch_artemis(cfg, '/{}/{}/{}'.format(version, resource, rid), request_kwargs={'json': data, 'params': params}, logger=None)
 
-def artemis_create(cfg, resource, data, logger=None):
-    return fetch_artemis(cfg, '/{}'.format(resource), method='post', request_kwargs={'json': data}, logger=None)
+def artemis_create(cfg, resource, data, logger=None, version='current'):
+    return fetch_artemis(cfg, '/{}/{}'.format(version, resource), method='post', request_kwargs={'json': data}, logger=None)
 
-def artemis_update(cfg, resource, data, logger=None):
-    return fetch_artemis(cfg, '/{}'.format(resource), method='put', request_kwargs={'json': data}, logger=None)
+def artemis_update(cfg, resource, data, logger=None, version='current'):
+    return fetch_artemis(cfg, '/{}/{}'.format(version, resource), method='put', request_kwargs={'json': data}, logger=None)
 
-def artemis_restore(cfg, resource, rid, data=None, logger=None):
-    return fetch_artemis(cfg, '/{}/{}/restore'.format(resource, rid), method='post', request_kwargs={'json': data}, logger=None)
+def artemis_restore(cfg, resource, rid, data=None, logger=None, version='current'):
+    return fetch_artemis(cfg, '/{}/{}/{}/restore'.format(version, resource, rid), method='post', request_kwargs={'json': data}, logger=None)
 
-def artemis_delete(cfg, resource, rid, logger=None):
-    return fetch_artemis(cfg, '{}/{}'.format(resource, rid), method='delete', logger=None, allow_statuses=[200, 201, 204, 404, 409])
+def artemis_delete(cfg, resource, rid, logger=None, version='current'):
+    return fetch_artemis(cfg, '/{}/{}/{}'.format(version, resource, rid), method='delete', logger=None, allow_statuses=[200, 201, 204, 404, 409])
 
 def confirm(
     cfg: Configuration,
