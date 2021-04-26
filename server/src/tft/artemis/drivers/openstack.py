@@ -448,7 +448,7 @@ class OpenStackDriver(PoolDriver):
         return Ok(True)
 
     def can_acquire(self, environment: Environment) -> Result[bool, Failure]:
-        if environment.arch not in self.pool_config['available-arches']:
+        if environment.hw.arch not in self.pool_config['available-arches']:
             return Ok(False)
 
         r_image = self._env_to_image(self.logger, environment)

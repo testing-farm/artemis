@@ -180,7 +180,7 @@ class AWSDriver(PoolDriver):
         return Ok(None)
 
     def can_acquire(self, environment: Environment) -> Result[bool, Failure]:
-        if environment.arch != 'x86_64':
+        if environment.hw.arch != 'x86_64':
             return Ok(False)
 
         r_image = self._env_to_image(self.logger, environment)

@@ -327,8 +327,8 @@ def do_test_policy_match_pool_name(mock_inputs, pool_name, expected_pools):
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     mock_guest_request.environment = tft.artemis.environment.Environment(
-        arch='x86_64',
-        os=tft.artemis.environment.Os(compose='dummy-compose'),
+        hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+        os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
         pool=pool_name
     ).serialize_to_str()
 
@@ -370,8 +370,8 @@ def do_test_policy_supports_architecture(mock_inputs, provide_arch):
         mock_pools[1].capabilities = lambda: Ok(tft.artemis.drivers.PoolCapabilities(supported_architectures=['foo', 'bar', 'x86_64']))
 
     mock_guest_request.environment = tft.artemis.environment.Environment(
-        arch='x86_64',
-        os=tft.artemis.environment.Os(compose='dummy-compose'),
+        hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+        os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
         snapshots=False
     ).serialize_to_str()
 
@@ -413,8 +413,8 @@ def do_test_policy_supports_snapshots(mock_inputs, require_snapshots, provide_sn
 
     mock_guest_request.environment = json.dumps(
         tft.artemis.environment.Environment(
-            arch='x86_64',
-            os=tft.artemis.environment.Os(compose='dummy-compose'),
+            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
             snapshots=require_snapshots
         ).serialize_to_json()
     )
