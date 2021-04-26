@@ -11,7 +11,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.log import log_blob, log_dict
 from gluetool.result import Error, Ok, Result
-from gluetool.utils import normalize_bool_option, wait
+from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 
 from .. import Failure, JSONType, Knob
@@ -55,6 +55,15 @@ AWS_INSTANCE_SPECIFICATION = Template("""
 }
 """)
 
+#: How long, in seconds, is an spot instance request allowed to stay in `open` state until cancelled and reprovisioned.
+KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
+    'aws.spot-open-timeout',
+    has_db=False,
+    envvar='ARTEMIS_AWS_SPOT_OPEN_TIMEOUT',
+    envvar_cast=int,
+    default=60
+)
+
 #: How long, in seconds, is an instance allowed to stay in `pending` state until cancelled and reprovisioned.
 KNOB_PENDING_TIMEOUT: Knob[int] = Knob(
     'aws.pending-timeout',
@@ -87,7 +96,7 @@ class FailedSpotRequest(Failure):
 
 @dataclasses.dataclass
 class AWSPoolData(PoolData):
-    instance_id: str
+    instance_id: Optional[str] = None
     spot_instance_id: Optional[str] = None
 
 
@@ -95,6 +104,24 @@ class AWSPoolData(PoolData):
 class AWSPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
     spot_instance_id: Optional[str] = None
+
+
+def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold: int) -> bool:
+    try:
+        parsed_timestamp = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
+
+    except Exception as exc:
+        Failure.from_exc(
+            'failed to parse timestamp',
+            exc,
+            timestamp=timestamp
+        ).handle(logger)
+
+        return False
+
+    diff = datetime.utcnow() - parsed_timestamp
+
+    return diff.total_seconds() >= threshold
 
 
 class AWSDriver(PoolDriver):
@@ -278,6 +305,24 @@ class AWSDriver(PoolDriver):
 
         return Ok((instance, owner))
 
+    def _describe_spot_instance(
+        self,
+        guest_request: GuestRequest
+    ) -> Result[Dict[str, Any], Failure]:
+        aws_options = [
+            'ec2',
+            'describe-spot-instance-requests',
+            '--spot-instance-request-ids={}'.format(AWSPoolData.unserialize(guest_request).spot_instance_id)
+        ]
+
+        r_output = self._aws_command(aws_options, key='SpotInstanceRequests')
+
+        # command returned an unxpected result
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        return Ok(cast(List[Dict[str, Any]], r_output.unwrap())[0])
+
     def _aws_command(self, args: List[str], key: Optional[str] = None) -> Result[JSONType, Failure]:
         """
         Runs command via aws cli and returns a dictionary with command reply.
@@ -418,6 +463,7 @@ class AWSDriver(PoolDriver):
         image: PoolImageInfo,
         guestname: str
     ) -> Result[ProvisioningProgress, Failure]:
+        logger.info('provisioning instance from image {}'.format(image))
 
         command = [
             'ec2', 'run-instances',
@@ -465,10 +511,7 @@ class AWSDriver(PoolDriver):
 
         # instance state is "pending" after launch
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
-        logger.info('acquired instance status {}:{}'.format(
-            instance_id,
-            "pending"
-        ))
+        logger.info('current instance state {}:pending'.format(instance_id))
 
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
@@ -485,6 +528,7 @@ class AWSDriver(PoolDriver):
         instance_type: str,
         image: PoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
+        logger.info('provisioning spot instance from image {}'.format(image))
 
         block_device_mappings: Optional[BlockDeviceMappingsType] = None
 
@@ -546,65 +590,83 @@ class AWSDriver(PoolDriver):
             return Error(r_spot_request.unwrap_error())
 
         spot_instance_id = cast(List[Dict[str, str]], r_spot_request.unwrap())[0]['SpotInstanceRequestId']
-        logger.info("spot instance request '{}'".format(spot_instance_id))
 
-        # wait until spot request fullfilled, accept busy waiting as this should take only few seconds
-        # TODO: remove busy waiting later
-        def _check_spot_request_fulfilled() -> Result[Any, Failure]:
-            # wait for request to be fulfilled
-            r_spot_status = self._aws_command([
-                'ec2', 'describe-spot-instance-requests',
-                '--spot-instance-request-ids={}'.format(spot_instance_id)
-            ], key='SpotInstanceRequests')
+        # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-request-status.html
+        logger.info('current spot instance request state {}:open:pending-evaluation'.format(spot_instance_id))
 
-            # Command returned error, there is no point to continue, return None
-            if r_spot_status.is_error:
-                r_spot_status.unwrap_error().log(logger.error, label='provisioning failed')
-                return Ok(None)
-
-            spot_request_result = cast(List[Dict[str, Any]], r_spot_status.unwrap())[0]
-
-            if spot_request_result['Status']['Code'] == 'fulfilled':
-                # note: we are returning a result as the value
-                return Ok(spot_request_result['InstanceId'])
-
-            return Error(Failure('Request in state {}'.format(spot_request_result['Status']['Code'])))
-
-        logger.info('waiting for spot request to be fulfilled for {}s, tick each {}s'.format(
-            self.pool_config['spot-request-timeout'], self.pool_config['spot-request-tick']
-        ))
-        instance_id = wait(
-            'wait for spot request to be fulfilled', _check_spot_request_fulfilled,
-            timeout=int(self.pool_config['spot-request-timeout']), tick=int(self.pool_config['spot-request-tick'])
-        )
-
-        if instance_id is None:
-            return Error(FailedSpotRequest('Failed to get spot instance fullfillment state', spot_instance_id))
-
-        # instance state is "pending" after launch
-        # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
-        logger.info('acquired instance status {}:{}'.format(
-            instance_id,
-            "pending"
-        ))
-
-        # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
-            pool_data=AWSPoolData(instance_id=instance_id, spot_instance_id=spot_instance_id),
+            pool_data=AWSPoolData(spot_instance_id=spot_instance_id),
             delay_update=KNOB_UPDATE_TICK.value
         ))
 
-    def update_guest(
+    def _do_update_spot_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+    ) -> Result[ProvisioningProgress, Failure]:
+        pool_data = AWSPoolData.unserialize(guest_request)
+
+        assert pool_data.spot_instance_id is not None
+
+        r_spot_instance = self._describe_spot_instance(guest_request)
+
+        if r_spot_instance.is_error:
+            return Error(r_spot_instance.unwrap_error())
+
+        spot_instance = r_spot_instance.unwrap()
+
+        state = spot_instance['State']
+        status = spot_instance['Status']['Code']
+
+        logger.info('current spot instance request state {}:{}:{}'.format(
+            pool_data.spot_instance_id,
+            state,
+            status
+        ))
+
+        if status == 'fulfilled' and state == 'active':
+            return Ok(ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=AWSPoolData(
+                    instance_id=spot_instance['InstanceId'],
+                    spot_instance_id=pool_data.spot_instance_id
+                ),
+                delay_update=KNOB_UPDATE_TICK.value
+            ))
+
+        if state == 'open':
+            if is_old_enough(logger, spot_instance['CreateTime'], KNOB_SPOT_OPEN_TIMEOUT.value):
+                return Ok(ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=AWSPoolData.unserialize(guest_request),
+                    pool_failures=[Failure('spot instance stuck in "open" for too long')]
+                ))
+
+        if state in ('cancelled', 'failed', 'closed', 'disabled'):
+            return Ok(ProvisioningProgress(
+                state=ProvisioningState.CANCEL,
+                pool_data=AWSPoolData.unserialize(guest_request),
+                pool_failures=[Failure(
+                    'spot instance terminated prematurely',
+                    spot_instance_state=state,
+                    spot_instance_status=status,
+                    spot_instance_error=spot_instance['Status']['Message']
+                )]
+            ))
+
+        return Ok(ProvisioningProgress(
+            state=ProvisioningState.PENDING,
+            pool_data=pool_data,
+            delay_update=KNOB_UPDATE_TICK.value
+        ))
+
+    def _do_update_instance(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
-        cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
-
         r_output = self._describe_instance(guest_request)
 
         if r_output.is_error:
@@ -612,45 +674,29 @@ class AWSDriver(PoolDriver):
 
         instance, owner = r_output.unwrap()
 
-        status = instance['State']['Name']
+        state = instance['State']['Name']
 
         pool_data = AWSPoolData.unserialize(guest_request)
 
-        logger.info('current instance status {}:{}'.format(
-            pool_data.instance_id,
-            status
-        ))
+        logger.info('current instance state {}:{}'.format(pool_data.instance_id, state))
 
         # EC2 instance lifecycle documentation
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
 
-        if status == 'terminated' or status == 'shutting-down':
+        if state == 'terminated' or state == 'shutting-down':
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
                 pool_data=AWSPoolData.unserialize(guest_request),
                 pool_failures=[Failure('instance terminated prematurely')]
             ))
 
-        if status == 'pending':
-            try:
-                created_stamp = datetime.strptime(instance['LaunchTime'], '%Y-%m-%dT%H:%M:%S.%fZ')
-
-            except Exception as exc:
-                Failure.from_exc(
-                    'failed to parse "created" timestamp',
-                    exc,
-                    stamp=instance['LaunchTime']
-                ).handle(self.logger)
-
-            else:
-                diff = datetime.utcnow() - created_stamp
-
-                if diff.total_seconds() > KNOB_PENDING_TIMEOUT.value:
-                    return Ok(ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=AWSPoolData.unserialize(guest_request),
-                        pool_failures=[Failure('instance stuck in "pending" for too long')]
-                    ))
+        if state == 'pending':
+            if is_old_enough(logger, instance['LaunchTime'], KNOB_PENDING_TIMEOUT.value):
+                return Ok(ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=AWSPoolData.unserialize(guest_request),
+                    pool_failures=[Failure('instance stuck in "pending" for too long')]
+                ))
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
@@ -675,6 +721,26 @@ class AWSDriver(PoolDriver):
             pool_data=pool_data,
             address=instance['PrivateIpAddress']
         ))
+
+    def update_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        environment: Environment,
+        master_key: SSHKey,
+        cancelled: Optional[threading.Event] = None
+    ) -> Result[ProvisioningProgress, Failure]:
+        pool_data = AWSPoolData.unserialize(guest_request)
+
+        # If there is a spot instance request, check its state. If it's complete, the pool data would be updated
+        # with freshly known instance ID - next time we're asked for update, we would proceed to check the state
+        # of this instance, no longer checking the spot request since `pool_data.instance_id` would be set by then.
+
+        if pool_data.instance_id is None:
+            return self._do_update_spot_instance(logger, guest_request)
+
+        return self._do_update_instance(logger, session, guest_request)
 
     def _tag_instance(
         self,
@@ -766,7 +832,6 @@ class AWSDriver(PoolDriver):
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
-
         logger.info('provisioning environment {}'.format(environment.serialize_to_json()))
 
         # get instance type from environment
@@ -784,29 +849,19 @@ class AWSDriver(PoolDriver):
 
         image = r_image.unwrap()
 
-        # Non-spot request
-        if not normalize_bool_option(self.pool_config.get('use-spot-request', False)):
-            return self._request_instance(logger, instance_type, image, guest_request.guestname)
+        # If this pool provides spot instances, we start the provisioning by submitting a spot instance request.
+        # After that, we request an update to be scheduled, to check progress of this spot request. If successfull,
+        # we extract instance ID, and proceed just like we do with non-spot instances.
+        #
+        # There is only one request in both cases: either we submit a spot instance request, and the instance gets
+        # created implicitly, or, when this pool don't provide spot instances, we submit an instance request. There
+        # is no explicit request to transition from spot instance request to instance updates - once spot request is
+        # fulfilled, we're given instance ID to work with.
 
-        # Spot requests require special handling
-        logger.info('provisioning spot instance from image {}'.format(image))
+        if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
+            return self._request_spot_instance(logger, session, guest_request, instance_type, image)
 
-        # request a spot instance and wait for it's full fillment
-        r_instance = self._request_spot_instance(
-            logger, session, guest_request, instance_type, image
-        )
-
-        if r_instance.is_error:
-            # cleanup the spot request if needed
-            if isinstance(r_instance.error, FailedSpotRequest):
-                self._aws_command([
-                    'ec2', 'cancel-spot-instance-requests',
-                    '--spot-instance-request-ids={}'.format(r_instance.error.spot_instance_id)
-                ])
-
-                return Error(Failure(r_instance.error.message))
-
-        return r_instance
+        return self._request_instance(logger, instance_type, image, guest_request.guestname)
 
     def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """
