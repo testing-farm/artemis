@@ -668,7 +668,7 @@ class AWSDriver(PoolDriver):
         if pool_data.spot_instance_id is not None:
             tags['SpotRequestId'] = pool_data.spot_instance_id
 
-        self._tag_instance(session, guest_request, instance, owner, tags=tags)
+        self._tag_instance(logger, session, guest_request, instance, owner, tags=tags)
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
@@ -678,6 +678,7 @@ class AWSDriver(PoolDriver):
 
     def _tag_instance(
         self,
+        logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         instance: Dict[str, Any],
@@ -708,17 +709,23 @@ class AWSDriver(PoolDriver):
             instance['InstanceId']
         )
 
-        for tag, value in tags.items():
-            self.info("tagging resource '{}' with '{}={}'".format(arn, tag, value))
-            r_tag = self._aws_command([
-                'resourcegroupstaggingapi', 'tag-resources',
-                '--resource-arn-list', arn,
-                '--tags', '{}={}'.format(tag, value)
-            ])
+        r_tag = self._aws_command([
+            'resourcegroupstaggingapi',
+            'tag-resources',
+            '--resource-arn-list', arn,
+            '--tags', ','.join(['{}={}'.format(tag, value) for tag, value in tags.items()])
+        ])
 
-            # do not fail if failed to tag, but scream to Sentry
-            if r_tag.is_error:
-                self.warn("Failed to tag ARN '{}' to tag '{}={}'".format(arn, tag, value), sentry=True)
+        # do not fail if failed to tag
+        if r_tag.is_error:
+            failure = r_tag.unwrap_error()
+
+            failure.update(
+                arn=arn,
+                tags=tags
+            )
+
+            failure.handle(logger, 'failed to tag AWS instance')
 
     def acquire_guest(
         self,
