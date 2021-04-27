@@ -210,6 +210,8 @@ class JobEngine(object):
             if self.on_job_done:
                 self.on_job_done(len(self._futures), *job.args, **job.kwargs)
 
+        import pdb
+
         with self._executor:
             for job in self._jobs:
                 self._start_job(job)
@@ -221,10 +223,12 @@ class JobEngine(object):
             # complete future available, but that's fine. We'll get our hands on each complete one as soon as
             # possible, letting user know about the progress.
 
+            pdb.set_trace()
             done, not_done = concurrent.futures.wait(self._futures, timeout=0)
 
             try:
                 while not_done:
+                    pdb.set_trace()
                     freshly_done, not_done = concurrent.futures.wait(not_done, timeout=5)
                     if freshly_done:
                         _handle_finished_futures()
