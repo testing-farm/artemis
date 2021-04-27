@@ -221,8 +221,25 @@ class JobEngine(object):
             # complete future available, but that's fine. We'll get our hands on each complete one as soon as
             # possible, letting user know about the progress.
 
-            while self._futures:
-                _handle_finished_futures()
+            done, not_done = concurrent.futures.wait(self._futures, timeout=0)
+
+            try:
+                while not_done:
+                    freshly_done, not_done = concurrent.futures.wait(not_done, timeout=5)
+                    if freshly_done:
+                        _handle_finished_futures()
+
+            except KeyboardInterrupt:
+                # only futures that are not done will prevent exiting
+                for future in not_done:
+                    # cancel() returns False if it's already done or currently running,
+                    # and True if was able to cancel it; we don't need that return value
+                    _ = future.cancel()
+                # wait for running futures that the above for loop couldn't cancel (note timeout)
+                _ = concurrent.futures.wait(not_done, timeout=None)
+
+            # while self._futures:
+            #    _handle_finished_futures()
 
         self.logger.debug('job executor removed')
 

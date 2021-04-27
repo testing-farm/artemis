@@ -470,6 +470,7 @@ class TestScheduleRunner(gluetool.Module):
 
             engine.enqueue_jobs(_job(schedule_queue_entry, 'get entry ready', self._get_entry_ready))
 
+        import pdb; pdb.set_trace()
         engine.run()
 
         if engine.errors:
