@@ -902,16 +902,13 @@ class ArtemisProvisioner(gluetool.Module):
                                          post_install_script=post_install_script)
 
         guestname = response.get('guestname')
-        guest = None
+        guest = ArtemisGuest(self, guestname, response['address'], environment,
+                             port=response['ssh']['port'], username=response['ssh']['username'],
+                             key=ssh_key, options=options)
+        guest.info('Guest is being provisioned')
+        log_dict(guest.debug, 'Created guest request', response)
 
         try:
-            guest = ArtemisGuest(self, guestname, response['address'], environment,
-                                 port=response['ssh']['port'], username=response['ssh']['username'],
-                                 key=ssh_key, options=options)
-
-            guest.info('Guest is being provisioned')
-            log_dict(guest.debug, 'Created guest request', response)
-
             guest._wait_ready(timeout=self.option('ready-timeout'), tick=self.option('ready-tick'))
             response = self.api.inspect_guest(guest.artemis_id)
             guest.hostname = response['address']
@@ -922,14 +919,15 @@ class ArtemisProvisioner(gluetool.Module):
                               self.option('boot-timeout'), self.option('boot-tick'))
             guest.info('Guest has become alive')
 
-        except Exception as exc:
-            self.warn("Exception while provisioning guest: {}".format(exc))
+        except (Exception, KeyboardInterrupt) as exc:
+            message = 'KeyboardInterrupt' if isinstance(exc, KeyboardInterrupt) else str(exc)
+            self.warn("Exception while provisioning guest: {}".format(message))
             if not self.option('keep'):
-                if guest:
-                    self.api.cancel_guest(guest.artemis_id)
-                elif guestname:
-                    self.api.cancel_guest(guestname)
-            raise exc
+                self.info("Cancelling guest '{}'".format(guestname))
+                self.api.cancel_guest(guestname)
+            else:
+                self.warn("Keeping guest '{}' provisioned".format(guestname))
+            six.reraise(*sys.exc_info())
 
         return guest
 
