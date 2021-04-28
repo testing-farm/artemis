@@ -106,6 +106,37 @@ METRICS_LOCK = threading.Lock()
 
 # Will be filled with the actual schema during API server bootstrap.
 ENVIRONMENT_SCHEMA: Any = {}
+ENVIRONMENT_SCHEMA_v0_0_16: Any = {}
+
+
+def _validate_environment(
+    logger: gluetool.log.ContextAdapter,
+    environment: Any,
+    schema: Any,
+    failure_details: Dict[str, str]
+) -> None:
+    r_validation = validate_data(environment, schema)
+
+    if r_validation.is_error:
+        raise errors.InternalServerError(
+            logger=logger,
+            caused_by=r_validation.unwrap_error(),
+            failure_details=failure_details
+        )
+
+    validation_errors = r_validation.unwrap()
+
+    if validation_errors:
+        failure_details['api_request_validation_errors'] = json.dumps(validation_errors)
+
+        raise errors.BadRequestError(
+            response={
+                'message': 'Bad request',
+                'errors': validation_errors
+            },
+            logger=logger,
+            failure_details=failure_details
+        )
 
 
 class JSONRenderer(molten.JSONRenderer):
@@ -404,28 +435,7 @@ class GuestRequestManager:
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
         # Validate given environment specification
-        r_validation = validate_data(guest_request.environment, ENVIRONMENT_SCHEMA)
-
-        if r_validation.is_error:
-            raise errors.InternalServerError(
-                logger=guest_logger,
-                caused_by=r_validation.unwrap_error(),
-                failure_details=failure_details
-            )
-
-        validation_errors = r_validation.unwrap()
-
-        if validation_errors:
-            failure_details['api_request_validation_errors'] = json.dumps(validation_errors)
-
-            raise errors.BadRequestError(
-                response={
-                    'message': 'Bad request',
-                    'errors': validation_errors
-                },
-                logger=guest_logger,
-                failure_details=failure_details
-            )
+        _validate_environment(guest_logger, guest_request.environment, ENVIRONMENT_SCHEMA, failure_details)
 
         # In v0.0.17, internal representation of environment changes, for some time it will not match the API
         # specification exactly. This situation will remain with us for couple of versions, until addition of
@@ -1215,6 +1225,7 @@ def run_app() -> molten.app.App:
 
     # Preload environment schema
     global ENVIRONMENT_SCHEMA
+    global ENVIRONMENT_SCHEMA_v0_0_16
 
     r_schema = load_validation_schema('environment.yml')
 
@@ -1224,6 +1235,15 @@ def run_app() -> molten.app.App:
         sys.exit(1)
 
     ENVIRONMENT_SCHEMA = r_schema.unwrap()
+
+    r_schema = load_validation_schema('environment-v0.0.16.yml')
+
+    if r_schema.is_error:
+        r_schema.unwrap_error().handle(logger)
+
+        sys.exit(1)
+
+    ENVIRONMENT_SCHEMA_v0_0_16 = r_schema.unwrap()
 
     metrics_tree = metrics.Metrics()
     metrics_tree.register_with_prometheus(CollectorRegistry())
@@ -1361,6 +1381,52 @@ def run_app() -> molten.app.App:
             ]),
             create_route_version('/_docs', OpenAPIUIHandler()),
             create_route_version('/_schema', OpenAPIHandler(metadata=metadata))
+        ])
+    ]
+
+    # v0.0.16 and older
+    # NOTE: As of now, it is the same as v0.0.17, but that will change before 0.0.17 gets released
+    def create_route_version_v0_0_16(template: str, handler: Callable[..., Any], method: str = 'GET') -> Route:
+        return create_route(template, handler, method=method, name_prefix='v0.0.16_')
+
+    routes += [
+        Include('/v0.0.16', [
+            Include('/guests', [
+                create_route_version_v0_0_16('/', get_guest_requests, method='GET'),
+                create_route_version_v0_0_16('/', create_guest_request, method='POST'),
+                create_route_version_v0_0_16('/{guestname}', get_guest_request),
+                create_route_version_v0_0_16('/{guestname}', delete_guest, method='DELETE'),
+                create_route_version_v0_0_16('/events', get_events),
+                create_route_version_v0_0_16('/{guestname}/events', get_guest_events),
+                create_route_version_v0_0_16('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+                create_route_version_v0_0_16(
+                    '/{guestname}/snapshots/{snapshotname}',
+                    get_snapshot_request,
+                    method='GET'
+                ),
+                create_route_version_v0_0_16('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+                create_route_version_v0_0_16(
+                    '/{guestname}/snapshots/{snapshotname}/restore',
+                    restore_snapshot_request,
+                    method='POST'
+                )
+            ]),
+            Include('/knobs', [
+                create_route_version_v0_0_16('/', KnobManager.entry_get_knobs, method='GET'),
+                create_route_version_v0_0_16('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+                create_route_version_v0_0_16('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+                create_route_version_v0_0_16('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            ]),
+            create_route_version_v0_0_16('/metrics', get_metrics),
+            create_route_version_v0_0_16('/about', get_about),
+            Include('/_cache', [
+                Include('/pools/{poolname}', [
+                    create_route_version_v0_0_16('/image-info', CacheManager.entry_pool_image_info),
+                    create_route_version_v0_0_16('/flavor-info', CacheManager.entry_pool_flavor_info)
+                ])
+            ]),
+            create_route_version_v0_0_16('/_docs', OpenAPIUIHandler()),
+            create_route_version_v0_0_16('/_schema', OpenAPIHandler(metadata=metadata))
         ])
     ]
 
