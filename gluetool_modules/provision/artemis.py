@@ -20,6 +20,8 @@ from gluetool_modules.libs.testing_environment import TestingEnvironment
 
 from typing import Any, Dict, List, Optional, Tuple, cast  # noqa
 
+SUPPORTED_API_VERSIONS = ('v0.0.16', 'v0.0.17', 'v0.0.18')
+
 DEFAULT_PRIORIY_GROUP = 'default-priority'
 DEFAULT_READY_TIMEOUT = 300
 DEFAULT_READY_TICK = 3
@@ -89,11 +91,12 @@ class ArtemisAPIError(SoftGlueError):
 class ArtemisAPI(object):
     ''' Class that allows RESTful communication with Artemis API '''
 
-    def __init__(self, module, api_url, timeout, tick):
-        # type: (gluetool.Module, str, int, int) -> None
+    def __init__(self, module, api_url, api_version, timeout, tick):
+        # type: (gluetool.Module, str, str, int, int) -> None
 
         self.module = module
         self.url = treat_url(api_url)
+        self.version = api_version
         self.timeout = timeout
         self.tick = tick
         self.check_if_artemis()
@@ -185,23 +188,30 @@ class ArtemisAPI(object):
             with open(normalize_path(post_install_script)) as f:
                 post_install_script_contents = f.read()
 
-        data = {
-            'keyname': keyname,
-            'environment': {
-                'arch': environment.arch,
-                'os': {},
-                'snapshots': snapshots
-            },
-            'priority_group': priority,
-            'post_install_script': post_install_script_contents
-        }  # type: Dict[str, Any]
+        if self.version in ('v0.0.16', 'v0.0.17', 'v0.0.18'):
+            data = {
+                'keyname': keyname,
+                'environment': {
+                    'arch': environment.arch,
+                    'os': {},
+                    'snapshots': snapshots
+                },
+                'priority_group': priority,
+                'post_install_script': post_install_script_contents
+            }  # type: Dict[str, Any]
 
-        if pool:
-            data['environment']['pool'] = pool
+            if pool:
+                data['environment']['pool'] = pool
 
-        data['environment']['os']['compose'] = compose
+            data['environment']['os']['compose'] = compose
 
-        data['user_data'] = user_data
+            data['user_data'] = user_data
+
+        else:
+            # Note that this should never happen, because we check the requested version in sanity()
+            raise GlueError('unsupported API version {}'.format(self.version))
+
+        log_dict(self.module.debug, 'guest data', data)
 
         return self.api_call('guests/', method='POST', expected_status_code=201, data=data).json()
 
@@ -585,6 +595,11 @@ class ArtemisProvisioner(gluetool.Module):
                 'metavar': 'URL',
                 'type': str
             },
+            'api-version': {
+                'help': 'Artemis API version',
+                'metavar': 'URL',
+                'type': str
+            },
             'key': {
                 'help': 'Desired guest key name',
                 'metavar': 'KEYNAME',
@@ -733,7 +748,7 @@ class ArtemisProvisioner(gluetool.Module):
         })
     ]
 
-    required_options = ('api-url', 'key', 'priority-group', 'ssh-key')
+    required_options = ('api-url', 'api-version', 'key', 'priority-group', 'ssh-key')
 
     shared_functions = ['provision', 'provisioner_capabilities']
 
@@ -745,6 +760,9 @@ class ArtemisProvisioner(gluetool.Module):
 
         if not self.option('arch'):
             raise GlueError('Missing required option: --arch')
+
+        if self.option('api-version') not in SUPPORTED_API_VERSIONS:
+            raise GlueError('Unsupported API version, only {} are supported'.format(', '.join(SUPPORTED_API_VERSIONS)))
 
     def __init__(self, *args, **kwargs):
         # type: (Any, Any) -> None
@@ -879,6 +897,7 @@ class ArtemisProvisioner(gluetool.Module):
 
         self.api = ArtemisAPI(self,
                               self.option('api-url'),
+                              self.option('api-version'),
                               self.option('api-call-timeout'),
                               self.option('api-call-tick'))
 
