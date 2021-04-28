@@ -26,6 +26,9 @@ properties:
   default-region:
     type: string
 
+  flavor-regex:
+    type: string
+
   instance-running-tick:
     type: integer
 

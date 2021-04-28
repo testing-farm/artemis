@@ -5,7 +5,7 @@ import os
 import re
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -18,7 +18,7 @@ from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
-from . import GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, \
+from . import GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
     ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
 
 #
@@ -898,4 +898,38 @@ class AWSDriver(PoolDriver):
                 'malformed image description',
                 exc,
                 image_info=r_images.unwrap()
+            ))
+
+    def fetch_pool_flavor_info(self) -> Result[List[PoolFlavorInfo], Failure]:
+        # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
+
+        r_flavors = self._aws_command(['ec2', 'describe-instance-types'], key='InstanceTypes')
+
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        if self.pool_config.get('flavor-regex'):
+            flavor_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['flavor-regex'])
+
+        else:
+            flavor_name_pattern = None
+
+        try:
+            return Ok([
+                PoolFlavorInfo(
+                    name=flavor['InstanceType'],
+                    id=flavor['InstanceType'],
+                    cores=int(flavor['VCpuInfo']['DefaultVCpus']),
+                    # memory is reported in MB
+                    memory=int(flavor['MemoryInfo']['SizeInMiB']) * 1048576,
+                )
+                for flavor in cast(List[Dict[str, Any]], r_flavors.unwrap())
+                if flavor_name_pattern is None or flavor_name_pattern.match(flavor['InstanceType'])
+            ])
+
+        except KeyError as exc:
+            return Error(Failure.from_exc(
+                'malformed flavor description',
+                exc,
+                flavor_info=r_flavors.unwrap()
             ))
