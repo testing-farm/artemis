@@ -18,7 +18,7 @@ from gluetool.result import Result
 from gluetool.utils import wait
 
 # Type annotations
-from typing import Any, Dict  # Ignore PyUnusedCodeBear
+from typing import Any, Dict, List, Optional  # noqa
 
 
 DEFAULT_JENKINSAPI_TIMEOUT = 120
@@ -34,17 +34,20 @@ DEFAULT_JENKINSAPI_TIMEOUT_TICK = 30
 
 class JenkinsJob(object):
     def __init__(self, module, job_name):
+        # type: (CIJenkins, str) -> None
         self.module = module
 
         self.name = job_name
 
     @property
     def jenkinsapi(self):
-        return self.module.jenkins(reconnect=True)[self.name]
+        # type: () -> Any
+        return self.module.jenkins(reconnect=True)[self.name]  # type: ignore
 
 
 class JenkinsBuild(object):
     def __init__(self, module, job, build_id):
+        # type: (CIJenkins, JenkinsJob, str) -> None
         self.module = module
 
         self.job = job
@@ -53,6 +56,7 @@ class JenkinsBuild(object):
 
     @property
     def jenkinsapi(self):
+        # type: () -> Any
         return self.job.jenkinsapi.get_build(self.id)
 
 
@@ -77,7 +81,8 @@ class JenkinsProxy(Proxy):
     _CUSTOM_METHODS = ('set_build_name', 'enable_quiet_mode', 'disable_quiet_mode', 'invoke_job')
 
     def __init__(self, jenkins, module):
-        super(JenkinsProxy, self).__init__(jenkins)
+        # type: (Jenkins, CIJenkins) -> None
+        super(JenkinsProxy, self).__init__(jenkins)  # type: ignore
 
         # This is a proxy, so 'self.foo' would change attribute of
         # the wrapped object. We don't want to mess with its attributes,
@@ -86,6 +91,7 @@ class JenkinsProxy(Proxy):
         object.__setattr__(self, '_module', module)
 
     def __getattribute__(self, name):
+        # type: (str) -> Any
         """
         Original __getattribute__ method of Proxy class just forwards all
         its calls to the object Proxy wraps. To allow users use of our custom
@@ -95,9 +101,10 @@ class JenkinsProxy(Proxy):
         if name in JenkinsProxy._CUSTOM_METHODS:
             return object.__getattribute__(self, name)
 
-        return super(JenkinsProxy, self).__getattribute__(name)
+        return super(JenkinsProxy, self).__getattribute__(name)  # type: ignore
 
     def set_build_name(self, name, description=None, build_url=None):
+        # type: (str, Optional[str], Optional[str]) -> None
         """
         Set name (and possibly description) of a jenkins build.
 
@@ -130,6 +137,7 @@ class JenkinsProxy(Proxy):
             name, description))
 
     def enable_quiet_mode(self):
+        # type: () -> Any
         """
         Enable "quiet" mode - Jenkins will accept triggers and queue builds but it won't start them
         on slaves.
@@ -140,6 +148,7 @@ class JenkinsProxy(Proxy):
         return module.jenkins_rest('{}/quietDown'.format(module.option('url')))
 
     def disable_quiet_mode(self):
+        # type: () -> Any
         """
         Disable "quiet" mode - Jenkins will start queued builds.
         """
@@ -241,6 +250,7 @@ class CIJenkins(gluetool.Module):
     shared_functions = ['jenkins', 'jenkins_rest', 'get_jenkins_build']
 
     def jenkins(self, reconnect=False):
+        # type: (bool) -> Optional[JenkinsProxy]
         """ return jenkinsapi.Jenkins object instance """
         if reconnect:
             self.connect()
@@ -248,6 +258,7 @@ class CIJenkins(gluetool.Module):
         return self._jenkins
 
     def jenkins_rest(self, url, wait_timeout=None, wait_tick=None, accepted_codes=None, as_json=False, **data):
+        # type: (str, Optional[int], Optional[int], Optional[List[int]], bool, **Any) -> Any
         """
         Submit request to Jenkins via its http interface.
 
@@ -303,7 +314,7 @@ class CIJenkins(gluetool.Module):
         username, password = self.option('username'), self.option('password')
 
         if username or password:
-            auth = requests.auth.HTTPBasicAuth(username, password)
+            auth = requests.auth.HTTPBasicAuth(username, password)  # type: Optional[requests.auth.HTTPBasicAuth]
 
         else:
             auth = None
@@ -312,6 +323,9 @@ class CIJenkins(gluetool.Module):
             return None, None
 
         def _make_request():
+            # type: () -> Any
+            assert accepted_codes is not None
+
             with gluetool.utils.requests(logger=self.logger) as req:
                 try:
                     if submit_data is None:
@@ -336,6 +350,7 @@ class CIJenkins(gluetool.Module):
         return response
 
     def get_jenkins_build(self, job_name=None, build_id=None):
+        # type: (Optional[str], Optional[str]) -> JenkinsBuild
         """
         Return (arbitrary) Jenkins build representation.
 
@@ -363,6 +378,7 @@ class CIJenkins(gluetool.Module):
         )
 
     def create_jjb_config(self):
+        # type: () -> None
         password = self.option('password')
         url = self.option('url')
         user = self.option('username')
@@ -391,6 +407,7 @@ class CIJenkins(gluetool.Module):
 
     @gluetool.utils.cached_property
     def _jenkins_build_params(self):
+        # type: () -> Optional[Dict[str, str]]
         """
         Parameters used when the Jenkins build, running this pipeline, was triggered, or ``None`` if we
         cannot acquire the data.
@@ -462,6 +479,7 @@ class CIJenkins(gluetool.Module):
 
     @property
     def eval_context(self):
+        # type: () -> Dict[str, Any]
         __content__ = {  # noqa
             'JENKINS_URL': """
                            URL of the Jenkins server running this module. If it cannot be determined,
@@ -505,6 +523,7 @@ class CIJenkins(gluetool.Module):
         }
 
     def connect(self):
+        # type: () -> None
         password = self.option('password')
         url = self.option('url')
         user = self.option('username')
@@ -523,6 +542,7 @@ class CIJenkins(gluetool.Module):
         self._jenkins = JenkinsProxy(jenkins, self)
 
     def execute(self):
+        # type: () -> None
         url = self.option('url')
 
         # create JJB configuration file if forced
@@ -537,4 +557,4 @@ class CIJenkins(gluetool.Module):
         self.connect()
 
         # be informative about the jenkins connection
-        self.info('connected to jenkins \'{}\' version {}'.format(url, self._jenkins.version))
+        self.info('connected to jenkins \'{}\' version {}'.format(url, self._jenkins.version))  # type: ignore
