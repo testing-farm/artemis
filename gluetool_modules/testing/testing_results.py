@@ -7,6 +7,9 @@ import sys
 import gluetool
 import gluetool_modules.libs.results
 
+# Type annotations
+from typing import cast, Any, List, Tuple, Optional, Union  # noqa
+
 
 class TestingResults(gluetool.Module):
     """
@@ -38,14 +41,16 @@ class TestingResults(gluetool.Module):
         }
     }
 
-    shared_functions = ('results', 'serialize_results')
+    shared_functions = ['results', 'serialize_results']
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
         super(TestingResults, self).__init__(*args, **kwargs)
 
-        self._results = []
+        self._results = []  # type: List[gluetool_modules.libs.results.TestResult]
 
     def results(self):
+        # type: () -> List[gluetool_modules.libs.results.TestResult]
         """
         Return list of gathered results.
 
@@ -56,6 +61,7 @@ class TestingResults(gluetool.Module):
         return self._results
 
     def _parse_formats(self, option):
+        # type: (str) -> List[Tuple[str, ...]]
         """
         Converts different forms on format:file specifications into a ``list``. These:
 
@@ -65,12 +71,12 @@ class TestingResults(gluetool.Module):
         will result into ``[('foo', 'bar'), ('bar', 'baz')]``.
         """
 
-        specs = self.option(option)
+        specs = self.option(option)  # type: Union[str, List[str]]
 
         if isinstance(specs, str):
             specs = [s.strip() for s in specs.split(',')]
 
-        parsed = []
+        parsed = []  # type: List[Tuple[str, ...]]
 
         for spec in specs:
             if ':' not in spec:
@@ -84,11 +90,13 @@ class TestingResults(gluetool.Module):
 
     @staticmethod
     def _serialize_to_json(results):
+        # type: (List[gluetool_modules.libs.results.TestResult]) -> List[Any]
         return [result.serialize('json') for result in results]
 
     @staticmethod
     def _serialize_to_xunit(results):
-        test_suites = gluetool.utils.new_xml_element('testsuites')
+        # type: (List[gluetool_modules.libs.results.TestResult]) -> List[Any]
+        test_suites = gluetool.utils.new_xml_element('testsuites')  # type: List[Any]
 
         for result in results:
             test_suites.append(result.serialize('xunit'))
@@ -101,6 +109,7 @@ class TestingResults(gluetool.Module):
     }
 
     def serialize_results(self, output_format, results=None):
+        # type: (str, Optional[List[gluetool_modules.libs.results.TestResult]]) -> List[Any]
         if results is None:
             results = self._results
 
@@ -115,16 +124,18 @@ class TestingResults(gluetool.Module):
         return serializer(results)
 
     def execute(self):
+        # type: () -> None
         initfile = self.option('init-file')
 
         if initfile is None:
             return
 
-        input_format, input_file = self._parse_formats('init-file')[0]
+        input_format, input_file = cast(Tuple[str, Any], self._parse_formats('init-file')[0])
 
         self.info("loading results from '{}', in format '{}'".format(input_file, input_format))
 
         def _default_unserialize(result):
+            # type: (Any) -> gluetool_modules.libs.results.TestResult
             return gluetool_modules.libs.results.TestResult.unserialize(self.glue, 'json', result)
 
         # load results from init file
@@ -167,9 +178,10 @@ class TestingResults(gluetool.Module):
         except KeyError as e:
             raise gluetool.GlueError('init file is invalid, key {} not found'.format(e))
         except IOError as e:
-            raise gluetool.GlueError(e)
+            raise gluetool.GlueError(str(e))
 
     def destroy(self, failure=None):
+        # type: (Optional[Any]) -> None
         # the results-file option can be empty if parsing of arguments failed
         if not self.option('results-file'):
             self.warn('No results file set.', sentry=True)
@@ -182,11 +194,11 @@ class TestingResults(gluetool.Module):
 
         gluetool.log.log_dict(self.debug, 'outputs', outputs)
 
-        for output_format, output_file in outputs:
+        for output_format, output_file in cast(Tuple[str, Any], outputs):
             serialized = self.serialize_results(output_format, self._results)
 
             with open(output_file, 'w') as f:
-                self.writers[output_format](f, serialized)
+                self.writers[output_format](f, serialized)  # type: ignore
                 f.flush()
 
             self.info("Results in format '{}' saved into '{}'".format(output_format, output_file))
