@@ -68,7 +68,7 @@ class AzureDriver(PoolDriver):
 
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
-    def image_info_by_name(
+    def map_image_name_to_image_info(
         self,
         logger: gluetool.log.ContextAdapter,
         imagename: str

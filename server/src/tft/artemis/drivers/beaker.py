@@ -108,7 +108,7 @@ class BeakerDriver(PoolDriver):
 
         return Ok(None)
 
-    def image_info_by_name(
+    def map_image_name_to_image_info(
         self,
         logger: gluetool.log.ContextAdapter,
         imagename: str
