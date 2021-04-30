@@ -605,6 +605,71 @@ class PoolMetrics(MetricsBase):
 
 
 @dataclasses.dataclass
+class UndefinedPoolMetrics(MetricsBase):
+    """
+    Metrics of an "undefined" pool, to handle values for guests that don't belong into any pool (yet).
+    """
+
+    poolname: str
+
+    resources: PoolResourcesMetrics
+
+    current_guest_request_count: int
+    current_guest_request_count_per_state: Dict[GuestState, int]
+
+    def __init__(self, poolname: str) -> None:
+        """
+        Metrics of a particular pool.
+
+        :param poolname: name of the pool whose metrics we're tracking.
+        """
+
+        self.poolname = poolname
+        self.resources = PoolResourcesMetrics(poolname)
+
+        self.current_guest_request_count = 0
+        self.current_guest_request_count_per_state = {}
+
+    @with_context
+    def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+        """
+        Load values from the storage and update this container with up-to-date values.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        """
+
+        # NOTE: sqlalchemy overloads operators to construct the conditions, and `is` is not overloaded. Therefore
+        # in the query, we have to use `==` instead of more Pythonic `is`.
+
+        self.current_guest_request_count = cast(
+            Tuple[int],
+            session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
+            .filter(artemis_db.GuestRequest.poolname == None)  # noqa
+            .one()
+        )[0]
+
+        self.current_guest_request_count_per_state = {
+            state: 0
+            for state in GuestState.__members__.values()
+        }
+
+        self.current_guest_request_count_per_state.update({
+            GuestState(record[0]): record[1]
+            for record in cast(
+                List[Tuple[str, int]],
+                session.query(  # type: ignore
+                    artemis_db.GuestRequest.state,
+                    sqlalchemy.func.count(artemis_db.GuestRequest.state)
+                )
+                .filter(artemis_db.GuestRequest.poolname == None)  # noqa
+                .group_by(artemis_db.GuestRequest.state)
+                .all()
+            )
+        })
+
+
+@dataclasses.dataclass
 class PoolsMetrics(MetricsBase):
     """
     General metrics shared by pools, and per-pool metrics.
@@ -612,7 +677,7 @@ class PoolsMetrics(MetricsBase):
 
     # here is the space left for global pool-related metrics.
 
-    pools: Dict[str, PoolMetrics] = dataclasses.field(default_factory=dict)
+    pools: Dict[str, Union[PoolMetrics, UndefinedPoolMetrics]] = dataclasses.field(default_factory=dict)
 
     @with_context
     def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
@@ -638,6 +703,8 @@ class PoolsMetrics(MetricsBase):
                 pool.poolname: PoolMetrics(pool.poolname)
                 for pool in r_pools.unwrap()
             }
+
+        self.pools['undefined'] = UndefinedPoolMetrics('undefined')
 
         for metrics in self.pools.values():
             metrics.sync()
