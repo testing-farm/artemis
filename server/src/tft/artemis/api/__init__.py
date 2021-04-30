@@ -1390,7 +1390,7 @@ def run_app() -> molten.app.App:
                     create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
                 ])
             ]),
-            create_route('/_docs', OpenAPIUIHandler()),
+            create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
             create_route('/_schema', OpenAPIHandler(metadata=metadata))
         ]
 
