@@ -14,7 +14,8 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 
-from .. import Failure, JSONType, Knob
+from .. import Failure, JSONType, Knob, get_cached_item
+from ..context import CACHE
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
 from ..script import hook_engine
@@ -33,7 +34,7 @@ AWS_INSTANCE_SPECIFICATION = Template("""
 {
   "ImageId": "{{ ami_id }}",
   "KeyName": "{{ key_name }}",
-  "InstanceType": "{{ instance_type }}",
+  "InstanceType": "{{ instance_type.name }}",
   "Placement": {
     "AvailabilityZone": "{{ availability_zone }}"
   },
@@ -216,7 +217,7 @@ class AWSDriver(PoolDriver):
 
         r_type = self._env_to_instance_type(environment)
         if r_type.is_error:
-            return Error(r_type.value)
+            return Error(r_type.unwrap_error())
 
         return Ok(True)
 
@@ -227,9 +228,31 @@ class AWSDriver(PoolDriver):
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
-    def _env_to_instance_type(self, environment: Environment) -> Result[Any, Failure]:
-        # TODO: in the future we will here translate the environment into an instance type
-        return Ok(self.pool_config['default-instance-type'])
+    def _env_to_instance_type(
+        self,
+        environment: Environment
+    ) -> Result[PoolFlavorInfo, Failure]:
+        # TODO: later we will be smarter when picking flavor, for now return the default one.
+
+        r_flavor = get_cached_item(
+            CACHE.get(),
+            self.flavor_info_cache_key,
+            self.pool_config['default-instance-type'],
+            PoolFlavorInfo
+        )
+
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
+
+        flavor_info = r_flavor.unwrap()
+
+        if flavor_info is None:
+            return Error(Failure(
+                'no such flavor',
+                flavorname=self.pool_config['default-instance-type']
+            ))
+
+        return Ok(flavor_info)
 
     def _env_to_image(
         self,
@@ -355,7 +378,7 @@ class AWSDriver(PoolDriver):
     def _get_spot_price(
         self,
         logger: gluetool.log.ContextAdapter,
-        instance_type: str,
+        instance_type: PoolFlavorInfo,
         image: PoolImageInfo
     ) -> Result[float, Failure]:
 
@@ -363,7 +386,7 @@ class AWSDriver(PoolDriver):
 
         r_spot_price = self._aws_command([
             'ec2', 'describe-spot-price-history',
-            '--instance-types={}'.format(instance_type),
+            '--instance-types={}'.format(instance_type.name),
             '--availability-zone={}'.format(availability_zone),
             '--product-descriptions={}'.format(image.pool_details['PlatformDetails']),
             '--max-items=1'
@@ -446,17 +469,17 @@ class AWSDriver(PoolDriver):
     def _request_instance(
         self,
         logger: gluetool.log.ContextAdapter,
-        instance_type: str,
+        instance_type: PoolFlavorInfo,
         image: PoolImageInfo,
         guestname: str
     ) -> Result[ProvisioningProgress, Failure]:
-        logger.info('provisioning instance from image {}'.format(image))
+        logger.info('provisioning from image {} and flavor {}'.format(image, instance_type))
 
         command = [
             'ec2', 'run-instances',
             '--image-id', image.id,
             '--key-name', self.pool_config['master-key-name'],
-            '--instance-type', instance_type
+            '--instance-type', instance_type.name
         ]
 
         if 'subnet-id' in self.pool_config:
@@ -512,10 +535,10 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        instance_type: str,
+        instance_type: PoolFlavorInfo,
         image: PoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
-        logger.info('provisioning spot instance from image {}'.format(image))
+        logger.info('provisioning from image {} and flavor {}'.format(image, instance_type))
 
         block_device_mappings: Optional[BlockDeviceMappingsType] = None
 
@@ -824,7 +847,7 @@ class AWSDriver(PoolDriver):
         # get instance type from environment
         r_instance_type = self._env_to_instance_type(environment)
         if r_instance_type.is_error:
-            return r_instance_type
+            return Error(r_instance_type.unwrap_error())
 
         instance_type = r_instance_type.unwrap()
 
