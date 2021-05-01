@@ -940,30 +940,29 @@ def _update_guest_state(
 
     r = safe_db_change(logger, session, query)
 
-    if r.is_ok:
-        if r.value is True:
-            logger.warning('state switch: {} => {}: succeeded'.format(current_state_label, new_state.value))
+    if r.is_error:
+        return Error(Failure(
+            'failed to switch guest state',
+            caused_by=r.unwrap_error(),
+            current_state=current_state_label,
+            new_state=new_state.value
+        ))
 
-            handle_success('state-changed')
+    if r.value is False:
+        logger.warning('state switch: {} => {}: failed'.format(current_state_label, new_state.value))
 
-        else:
-            logger.warning('state switch: {} => {}: failed'.format(current_state_label, new_state.value))
+        return Error(Failure(
+            'did not switch guest state',
+            caused_by=r.unwrap_error(),
+            current_state=current_state_label,
+            new_state=new_state.value
+        ))
 
-            handle_failure(
-                Error(Failure('failed to switch guest state')),
-                'failed to switch guest state'
-            )
+    logger.warning('state switch: {} => {}: succeeded'.format(current_state_label, new_state.value))
 
-        return Ok(r.unwrap())
+    handle_success('state-changed')
 
-    failure = r.unwrap_error()
-
-    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        logger.warning('state switch: {} => {}: no result found'.format(current_state_label, new_state.value))
-
-        return Ok(False)
-
-    return Error(failure)
+    return Ok(True)
 
 
 def _update_snapshot_state(
@@ -1007,27 +1006,28 @@ def _update_snapshot_state(
 
     r = safe_db_change(logger, session, query)
 
-    if r.is_ok:
-        if r.value is True:
-            logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
+    if r.is_error:
+        return Error(Failure(
+            'failed to switch snapshot state',
+            caused_by=r.unwrap_error(),
+            current_state=current_state.value,
+            new_state=new_state.value
+        ))
 
-            handle_success('snapshot-state-changed')
+    if r.value is False:
+        logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
 
-        else:
-            logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
+        return Error(Failure(
+            'did not switch snapshot state',
+            current_state=current_state.value,
+            new_state=new_state.value
+        ))
 
-            handle_failure(Error(Failure('failed to switch snapshot state')), 'failed to switch snapshot state')
+    logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
 
-        return Ok(r.unwrap())
+    handle_success('snapshot-state-changed')
 
-    failure = r.unwrap_error()
-
-    if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-        logger.warning('state switch: {} => {}: no result found'.format(current_state.value, new_state.value))
-
-        return Ok(False)
-
-    return Error(failure)
+    return Ok(True)
 
 
 def _get_pool(
