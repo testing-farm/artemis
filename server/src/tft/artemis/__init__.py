@@ -281,10 +281,7 @@ class Failure:
                 scrubbed_command = [exc.cmd[0], '<scrubbed...>']
 
             return {
-                'instance': 'Command "{}" failed with exit code {}'.format(
-                    ' '.join(scrubbed_command),
-                    exc.output.exit_code
-                ),
+                'instance': f'Command "{" ".join(scrubbed_command)}" failed with exit code {exc.output.exit_code}',
                 'type': 'GlueCommandError'
             }
 
@@ -446,7 +443,7 @@ class Failure:
             details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))
 
         if self.exc_info:
-            details['traceback'] = stackprinter.format(self.exc_info)
+            details['traceback'] = stackprinter.format(self.exc_info)  # noqa
 
         if 'scrubbed_command' in details:
             details['scrubbed_command'] = gluetool.utils.format_command_line([details['scrubbed_command']])
@@ -483,7 +480,7 @@ class Failure:
         details = self.get_log_details()
 
         if label:
-            text = '{}\n\n{}'.format(label, format_struct_as_yaml(details))
+            text = f'{label}\n\n{format_struct_as_yaml(details)}'
 
         else:
             text = format_struct_as_yaml(details)
@@ -504,7 +501,7 @@ class Failure:
 
         try:
             self.sentry_event_id = gluetool_sentry.submit_message(
-                'Failure: {}'.format(self.message),
+                f'Failure: {self.message}',
                 exc_info=self.exc_info,
                 data=data,
                 tags=tags,
@@ -594,8 +591,8 @@ class KnobSourceEnv(KnobSource[T]):
 
     def to_repr(self) -> List[str]:
         return [
-            'envvar="{}"'.format(self.envvar),
-            'envvar-type-cast={}'.format(self.type_cast.__name__)
+            f'envvar="{self.envvar}"',
+            f'envvar-type-cast={self.type_cast.__name__}'
         ]
 
 
@@ -631,7 +628,7 @@ class KnobSourceEnvPerPool(KnobSourceEnv[T]):
         pool: 'PoolDriver',
         **kwargs: Any
     ) -> Result[Optional[T], Failure]:
-        r_value = self._fetch_from_env('{}_{}'.format(self.envvar, pool.poolname))
+        r_value = self._fetch_from_env(f'{self.envvar}_{pool.poolname}')
 
         if r_value.is_error:
             return r_value
@@ -661,7 +658,7 @@ class KnobSourceDefault(KnobSource[T]):
 
     def to_repr(self) -> List[str]:
         return [
-            'default="{}"'.format(self.default)
+            f'default="{self.default}"'
         ]
 
 
@@ -738,7 +735,7 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
         pool: 'PoolDriver',
         **kwargs: Any
     ) -> Result[Optional[T], Failure]:
-        r_value = self._fetch_from_db(session, 'pool.{}.{}'.format(pool.poolname, self.knob.knobname))
+        r_value = self._fetch_from_db(session, f'pool.{pool.poolname}.{self.knob.knobname}')
 
         if r_value.is_error:
             return r_value
@@ -748,7 +745,7 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
         if value is not None:
             return r_value
 
-        return self._fetch_from_db(session, 'pool-defaults.{}'.format(self.knob.knobname))
+        return self._fetch_from_db(session, f'pool-defaults.{self.knob.knobname}')
 
 
 class KnobSourceActual(KnobSource[T]):
@@ -766,13 +763,13 @@ class KnobSourceActual(KnobSource[T]):
 
     def to_repr(self) -> List[str]:
         return [
-            'actual="{}"'.format(self.value)
+            f'actual="{self.value}"'
         ]
 
 
 class KnobError(ValueError):
     def __init__(self, knob: 'Knob[T]', message: str, failure: Optional[Failure] = None) -> None:
-        super(KnobError, self).__init__('Badly configured knob: {}'.format(message))
+        super(KnobError, self).__init__(f'Badly configured knob: {message}')
 
         self.knobname = knob.knobname
         self.failure = failure
@@ -878,7 +875,7 @@ class Knob(Generic[T]):
 
         if envvar is not None:
             if not envvar_cast:
-                raise Exception('Knob {} defined with envvar but no envvar_cast'.format(knobname))
+                raise Exception(f'Knob {knobname} defined with envvar but no envvar_cast')
 
             if per_pool:
                 self._sources.append(KnobSourceEnvPerPool(self, envvar, envvar_cast))
@@ -925,10 +922,7 @@ class Knob(Generic[T]):
 
         traits += sum([source.to_repr() for source in self._sources], [])
 
-        return '<Knob: {}: {}>'.format(
-            self.knobname,
-            ', '.join(traits)
-        )
+        return f'<Knob: {self.knobname}: {" ".join(traits)}>'
 
     def _get_value(self, **kwargs: Any) -> Tuple[Optional[T], Optional[Failure]]:
         """
@@ -1252,7 +1246,7 @@ def safe_db_change(
         a :py:class:`Failure` instance.
     """
 
-    logger.debug('safe db change: {}'.format(str(query)))
+    logger.debug(f'safe db change: {str(query)}')
 
     r = safe_call(session.execute, query)
 
@@ -1271,11 +1265,11 @@ def safe_db_change(
     )
 
     if query_result.rowcount != expected_records:
-        logger.warning('expected {} matching rows, found {}'.format(expected_records, query_result.rowcount))
+        logger.warning(f'expected {expected_records} matching rows, found {query_result.rowcount}')
 
         return Ok(False)
 
-    logger.debug('found {} matching rows, as expected'.format(query_result.rowcount))
+    logger.debug(f'found {query_result.rowcount} matching rows, as expected')
 
     r = safe_call(session.commit)
 
@@ -1283,7 +1277,7 @@ def safe_db_change(
         failure = r.unwrap_error()
 
         if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-            logger.warning('expected {} matching rows, found 0'.format(expected_records))
+            logger.warning(f'expected {expected_records} matching rows, found 0')
 
             return Ok(False)
 
@@ -1325,7 +1319,7 @@ def log_guest_event(
             'eventname': eventname
         })
 
-        gluetool.log.log_dict(logger.warning, 'failed to log event {}'.format(eventname), details)
+        gluetool.log.log_dict(logger.warning, f'failed to log event {eventname}', details)
 
         # TODO: this handle() call can be removed once we fix callers of log_guest_event and they start consuming
         # its return value. At this moment, they ignore it, therefore we have to keep reporting the failures on
@@ -1339,7 +1333,7 @@ def log_guest_event(
 
         return Error(failure)
 
-    gluetool.log.log_dict(logger.info, 'logged event {}'.format(eventname), details)
+    gluetool.log.log_dict(logger.info, f'logged event {eventname}', details)
 
     return Ok(None)
 
@@ -1378,7 +1372,7 @@ def refresh_cached_set(cache: redis.Redis, key: str, items: Dict[str, Any]) -> R
     :param items: set of items to store.
     """
 
-    key_updated = '{}.updated'.format(key)
+    key_updated = f'{key}.updated'
 
     if not items:
         # When we get an empty set of items, we should remove the key entirely, to make queries looking for
@@ -1399,7 +1393,7 @@ def refresh_cached_set(cache: redis.Redis, key: str, items: Dict[str, Any]) -> R
 
     # Two steps: create new structure, and replace the old one. We cannot check the old one
     # and remove entries that are no longer valid.
-    new_key = '{}.new'.format(key)
+    new_key = f'{key}.new'
 
     r_action = safe_call(
         cast(Callable[[str, str, Dict[str, str]], None], cache.hmset),

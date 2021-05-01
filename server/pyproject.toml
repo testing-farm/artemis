@@ -46,6 +46,7 @@ coverage = { version = "*", extras = ["toml"] }
 darglint = "*"
 flake8 = "*"
 flake8-docstrings = "*"
+flake8-use-fstring = "*"
 isort = "*"
 # This will be trimmed down to 0.730 or something because of much more specific mypy-extensions bellow. Blocked
 # by Gluetool.
