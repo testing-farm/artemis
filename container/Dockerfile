@@ -57,7 +57,9 @@ RUN    apk add --no-cache bash \
     && pip3 install --no-cache --upgrade pip setuptools virtualenv wheel \
     && if [ ! -e /usr/bin/pip ]; then ln -s pip3 /usr/bin/pip ; fi \
     && curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python3 \
-    && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
+    && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf \
+    # TODO: Workaround for solving Kerberos issues, remove later
+    && chmod g+rw /etc/krb5.conf
 
 #
 # Make sure AWS credentials are available from configuration
