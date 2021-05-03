@@ -33,6 +33,7 @@ ENV PATH="/tmp/.poetry/bin:$PATH"
 # Prepare virtual environment and install all required dependencies
 #
 RUN    apk add --no-cache bash \
+                          bind-tools \
                           curl \
                           gcc \
                           g++ \
