@@ -216,6 +216,7 @@ class Failure:
         message: str,
         exc: Exception,
         caused_by: Optional['Failure'] = None,
+        sentry: Optional[bool] = True,
         recoverable: bool = True,
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
@@ -377,29 +378,28 @@ class Failure:
 
         data: Dict[str, Any] = {}
         tags: Dict[str, str] = {}
-        extra: Dict[str, Any] = {}
+        extra: Dict[str, Any] = self.details.copy()
 
         extra['message'] = self.message
         extra['recoverable'] = self.recoverable
         extra['fail_guest_request'] = self.fail_guest_request
 
-        if 'scrubbed_command' in self.details:
-            extra['scrubbed_command'] = gluetool.utils.format_command_line([self.details['scrubbed_command']])
+        if 'scrubbed_command' in extra:
+            extra['scrubbed_command'] = gluetool.utils.format_command_line([extra['scrubbed_command']])
 
-        if 'command_output' in self.details:
-            extra['stdout'] = self.details['command_output'].stdout
-            extra['stderr'] = self.details['command_output'].stderr
+        if 'command_output' in extra:
+            extra['stdout'] = process_output_to_str(extra['command_output'], stream='stdout')
+            extra['stderr'] = process_output_to_str(extra['command_output'], stream='stderr')
+
+            del extra['command_output']
 
         if 'guestname' in self.details:
-            extra['guestname'] = self.details['guestname']
             tags['guestname'] = self.details['guestname']
 
         if 'snapshotname' in self.details:
-            extra['snapshotname'] = self.details['snapshotname']
             tags['snapshotname'] = self.details['snapshotname']
 
         if 'poolname' in self.details:
-            extra['poolname'] = self.details['poolname']
             tags['poolname'] = self.details['poolname']
 
         if self.traceback:
@@ -407,8 +407,8 @@ class Failure:
             # expects it to find when generating the message for submission.
             data['stacktrace'] = Failure._get_sentry_stack_info(self.traceback)
 
-        if 'environment' in self.details:
-            extra['environment'] = self.details['environment'].serialize_to_json()
+        if 'environment' in extra:
+            extra['environment'] = extra['environment'].serialize_to_json()
 
         tags.update({
             key: value
@@ -489,7 +489,7 @@ class Failure:
             exc_info=exc_info
         )
 
-    def submit_to_sentry(self, **additional_tags: Any) -> None:
+    def submit_to_sentry(self, logger: gluetool.log.ContextAdapter, **additional_tags: Any) -> None:
         if self.submited_to_sentry:
             return
 
@@ -498,18 +498,23 @@ class Failure:
         if additional_tags:
             tags.update(additional_tags)
 
-        self.sentry_event_id = gluetool_sentry.submit_message(
-            'Failure: {}'.format(self.message),
-            exc_info=self.exc_info,
-            data=data,
-            tags=tags,
-            extra=extra
-        )
+        try:
+            self.sentry_event_id = gluetool_sentry.submit_message(
+                'Failure: {}'.format(self.message),
+                exc_info=self.exc_info,
+                data=data,
+                tags=tags,
+                extra=extra
+            )
 
-        self.submited_to_sentry = True
+        except Exception as exc:
+            Failure.from_exc('failed to submit to Sentry', exc).handle(logger, sentry=False)
+
+        else:
+            self.submited_to_sentry = True
 
         if self.sentry_event_id:
-            self.sentry_event_url = gluetool_sentry.event_url(self.sentry_event_id, logger=get_logger())
+            self.sentry_event_url = gluetool_sentry.event_url(self.sentry_event_id, logger=logger)
 
     def reraise(self) -> NoReturn:
         if self.exception:
@@ -527,7 +532,7 @@ class Failure:
         self.details.update(details)
 
         if sentry:
-            self.submit_to_sentry()
+            self.submit_to_sentry(logger)
 
         self.log(logger.error, label=label)
 
