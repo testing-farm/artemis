@@ -1,4 +1,5 @@
 import dataclasses
+import datetime
 import json
 import logging
 import os
@@ -1377,14 +1378,24 @@ def refresh_cached_set(cache: redis.Redis, key: str, items: Dict[str, Any]) -> R
     :param items: set of items to store.
     """
 
+    key_updated = '{}.updated'.format(key)
+
     if not items:
         # When we get an empty set of items, we should remove the key entirely, to make queries looking for
         # return `None` aka "not found". It's the same as if we'd try to remove all entries, just with one
         # action.
-        return safe_call(
+        safe_call(
             cast(Callable[[str], None], cache.delete),
             key
         )
+
+        safe_call(
+            cast(Callable[[str, float], None], cache.set),
+            key_updated,
+            datetime.datetime.timestamp(datetime.datetime.utcnow())
+        )
+
+        return Ok(None)
 
     # Two steps: create new structure, and replace the old one. We cannot check the old one
     # and remove entries that are no longer valid.
@@ -1402,11 +1413,19 @@ def refresh_cached_set(cache: redis.Redis, key: str, items: Dict[str, Any]) -> R
     if r_action.is_error:
         return Error(r_action.unwrap_error())
 
-    return safe_call(
+    safe_call(
         cast(Callable[[str, str], None], cache.rename),
         new_key,
         key
     )
+
+    safe_call(
+        cast(Callable[[str, float], None], cache.set),
+        key_updated,
+        datetime.datetime.timestamp(datetime.datetime.utcnow())
+    )
+
+    return Ok(None)
 
 
 def get_cached_items(cache: redis.Redis, key: str, item_klass: Type[T]) -> Result[Optional[Dict[str, T]], Failure]:

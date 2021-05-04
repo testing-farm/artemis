@@ -73,6 +73,7 @@ Following metrics are generated for every known pool, and represent limits and c
 * `pool_resources_memory_bytes` (gauge): Current limits and usage of pool memory.
 * `pool_resources_diskspace_bytes` (gauge): Current limits and usage of pool diskspace.
 * `pool_resources_snapshot` (gauge): Current limits and usage of pool snapshot.
+* `pool_resources_update_timestamp` (gauge): Last time the pool metrics were updated, as Unix timestamp.
 
 == Other components
 

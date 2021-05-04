@@ -284,6 +284,7 @@ class PoolResources(MetricsBase):
     """
 
     _KEY = 'metrics.pool.{poolname}.resources.{dimension}'
+    _KEY_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.resources.{dimension}.updated_timestamp'
 
     _TRIVIAL_FIELDS = ('instances', 'cores', 'memory', 'diskspace', 'snapshots')
     _COMPOUND_FIELDS = ('networks',)
@@ -320,6 +321,11 @@ class PoolResources(MetricsBase):
     Network resources, i.e. number of addresses and other network-related metrics.
     """
 
+    updated_timestamp: Optional[float] = None
+    """
+    Time when these metrics were updated, as UNIX timestamp.
+    """
+
     def __init__(self, poolname: str, dimension: PoolResourcesMetricsDimensions) -> None:
         """
         Resource metrics of a particular pool.
@@ -331,6 +337,9 @@ class PoolResources(MetricsBase):
         super(PoolResources, self).__init__()
 
         self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)
+        self._key_updated_timestamp = PoolResources._KEY_UPDATED_TIMESTAMP.format(
+            poolname=poolname, dimension=dimension.value
+        )
 
         self.instances = None
         self.cores = None
@@ -370,6 +379,13 @@ class PoolResources(MetricsBase):
             for network_name, serialized_network in serialized.get('networks', {}).items()
         }
 
+        updated = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self._key_updated_timestamp)
+
+        self.updated_timestamp = updated if updated is None else float(updated)
+
     @with_context
     def store(self, cache: redis.Redis) -> None:
         """
@@ -388,6 +404,12 @@ class PoolResources(MetricsBase):
             cast(Callable[[str, str], None], cache.set),
             self._key,
             json.dumps(dataclasses.asdict(self))
+        )
+
+        safe_call(
+            cast(Callable[[str, float], None], cache.set),
+            self._key_updated_timestamp,
+            datetime.datetime.timestamp(datetime.datetime.utcnow())
         )
 
 
@@ -747,6 +769,8 @@ class PoolsMetrics(MetricsBase):
 
         self.POOL_RESOURCES_NETWORK_ADDRESSES = _create_network_resource_metric('addresses')
 
+        self.POOL_RESOURCES_UPDATED_TIMESTAMP = _create_pool_resource_metric('updated_timestamp')
+
     def update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
@@ -785,6 +809,14 @@ class PoolsMetrics(MetricsBase):
                 self.POOL_RESOURCES_NETWORK_ADDRESSES \
                     .labels(pool=poolname, dimension='usage', network=network_name) \
                     .set(network_metrics.addresses if network_metrics.addresses else float('NaN'))
+
+            self.POOL_RESOURCES_UPDATED_TIMESTAMP \
+                .labels(pool=poolname, dimension='limit') \
+                .set(pool_metrics.resources.limits.updated_timestamp or float('NaN'))
+
+            self.POOL_RESOURCES_UPDATED_TIMESTAMP \
+                .labels(pool=poolname, dimension='usage') \
+                .set(pool_metrics.resources.usage.updated_timestamp or float('NaN'))
 
 
 @dataclasses.dataclass
