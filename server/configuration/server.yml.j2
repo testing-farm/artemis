@@ -41,7 +41,7 @@ pools:
 
       default-flavor: "{{ openstack.vms.default_flavor }}"
       network-regex: '{{ openstack.vms.network_regex }}'
-      flavor-regex: '{{ flavor_regex | default(null) }}'
+      flavor-regex: '{{ flavor_regex | default('') }}'
       ip-version: "4"
       post-install-script: "{{ openstack.vms.post_install_script }}"
 
