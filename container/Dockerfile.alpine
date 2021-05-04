@@ -11,7 +11,8 @@
 #   * worker
 #
 
-FROM registry.fedoraproject.org/fedora-minimal:34
+# Note that alpine from 3.11 uses python 3.8 which we do not yet support
+FROM quay.io/testing-farm/alpine:3.10
 
 # This hack is widely applied to avoid python printing issues in docker containers.
 # See: https://github.com/Docker-Hub-frolvlad/docker-alpine-python3/pull/13
@@ -31,26 +32,34 @@ ENV PATH="/tmp/.poetry/bin:$PATH"
 #
 # Prepare virtual environment and install all required dependencies
 #
-RUN    microdnf -y install bash \
-                           curl \
-                           gcc \
-                           g++ \
-                           krb5-workstation \
-                           krb5-devel \
-                           libpq-devel \
-                           libffi-devel \
-                           libxml2-devel \
-                           libxslt-devel \
-                           make \
-                           nmap-ncat \
-                           openssh-clients \
-                           openssl-devel \
-                           postgresql \
-                           poetry \
-                           python3.7 \
-    && microdnf clean all \
-    && rm -rf /var/cache/dnf \
-    && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
+RUN    apk add --no-cache bash \
+                          curl \
+                          gcc \
+                          g++ \
+                          krb5 \
+                          krb5-dev \
+                          libffi-dev \
+                          libxml2-dev \
+                          libxslt-dev \
+                          make \
+                          musl-dev \
+                          openssh \
+                          openssl-dev \
+                          postgresql \
+                          postgresql-dev \
+                          python3 \
+                          python3-dev \
+                          tzdata \
+    && cp /usr/share/zoneinfo/Universal /etc/localtime \
+    && echo "Universal" > /etc/timezone \
+    && if [ ! -e /usr/bin/python ]; then ln -sf python3 /usr/bin/python ; fi \
+    && python3 -m ensurepip \
+    && pip3 install --no-cache --upgrade pip setuptools virtualenv wheel \
+    && if [ ! -e /usr/bin/pip ]; then ln -s pip3 /usr/bin/pip ; fi \
+    && curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python3 \
+    && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf \
+    # TODO: Workaround for solving Kerberos issues, remove later
+    && chmod g+rw /etc/krb5.conf
 
 #
 # Make sure AWS credentials are available from configuration
@@ -69,13 +78,6 @@ RUN    mkdir -p $HOME/.aws \
 #
 RUN    mkdir -p /etc/beaker \
     && ln -s $CONFIGURATION/beaker-client-config /etc/beaker/client.conf
-
-#
-# We want Artemis to support also older SSH keys for now, Fedora 33+ has strong crypto enabled
-# https://fedoraproject.org/wiki/Changes/StrongCryptoSettings2
-#
-RUN    mkdir $HOME/.ssh \
-    && printf "Host *\n   PubkeyAcceptedKeyTypes +ssh-rsa" > $HOME/.ssh/config
 
 #
 # Add entrypoint
@@ -102,13 +104,12 @@ RUN chmod +x /wait-for-postgres.sh /wait-for-rabbitmq.sh /wait-for-api.sh /wait-
 #
 COPY server /APP/
 RUN    cd /APP \
-    && poetry env use python3.7 \
     && poetry install --no-dev
 
 #
-# Make sure we can edit /etc/passwd, required to set valid username when run via Openshift
+# Make sure we can edit /etc/passwd
 #
-RUN chmod g+rw /etc/passwd
+RUN chmod -R g+rwX /etc/passwd /tmp/.poetry
 
 #
 # Entrypoint for all artemis apps
