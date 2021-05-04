@@ -19,8 +19,12 @@ from ..db import DB, User, UserRoles
 from ..metrics import APIMetrics
 from . import errors
 
-GUEST_ROUTE_PATTERN = re.compile(r'^/guests/[a-z0-9-]+(/(?:events|snapshots))?$')
-SNAPSHOT_ROUTE_PATTERN = re.compile(r'^/guests/[a-z0-9-]+/snapshots/[a-z0-9-]+(/.+)?$')
+GUEST_ROUTE_PATTERN = re.compile(
+    r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+(?P<url_rest>/(events|snapshots))?$'
+)
+SNAPSHOT_ROUTE_PATTERN = re.compile(
+    r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+/snapshots/[a-z0-9-]+(?P<url_rest>/.+)?$'
+)
 
 
 NO_AUTH = [
@@ -294,11 +298,21 @@ def rewrite_request_path(path: str) -> str:
 
     match = GUEST_ROUTE_PATTERN.match(path)
     if match is not None:
-        return '/guests/GUESTNAME{}'.format(match.group(1) or '')
+        groups = match.groupdict()
+
+        return '/{}guests/GUESTNAME{}'.format(
+            groups.get('version') or '',
+            groups.get('url_rest') or ''
+        )
 
     match = SNAPSHOT_ROUTE_PATTERN.match(path)
     if match is not None:
-        return '/guests/GUESTNAME/snapshots/SNAPSHOTNAME{}'.format(match.group(1) or '')
+        groups = match.groupdict()
+
+        return '/{}guests/GUESTNAME/snapshots/SNAPSHOTNAME{}'.format(
+            groups.get('version') or '',
+            groups.get('url_rest') or ''
+        )
 
     return path
 
