@@ -444,6 +444,7 @@ class BeakerDriver(PoolDriver):
 
         return Error(Failure(
             'unknown status',
+            job_status=job_status,
             job_results=job_results.prettify()
         ))
 
