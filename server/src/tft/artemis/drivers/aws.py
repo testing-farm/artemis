@@ -423,7 +423,7 @@ class AWSDriver(PoolDriver):
         self,
         block_device_mappings: BlockDeviceMappingsType,
         root_disk_size: int
-    ) -> Result[BlockDeviceMappingsType, Failure]:
+    ) -> Result[Optional[BlockDeviceMappingsType], Failure]:
 
         try:
             block_device_mappings[0]['Ebs']['VolumeSize'] = root_disk_size
@@ -454,17 +454,49 @@ class AWSDriver(PoolDriver):
         image = cast(List[Dict[str, BlockDeviceMappingsType]], r_image.unwrap())
 
         try:
-            block_device_mappings = image[0]['BlockDeviceMappings']
+            return Ok(image[0]['BlockDeviceMappings'])
+
         except (KeyError, IndexError) as error:
             return Error(
                 Failure.from_exc(
                     'Failed to get block device mappings',
                     error,
-                    block_device_mappings=block_device_mappings
+                    image=image
                 )
             )
 
-        return Ok(block_device_mappings)
+    def _create_block_device_mappings(
+        self,
+        image: PoolImageInfo,
+        flavor: PoolFlavorInfo
+    ) -> Result[Optional[BlockDeviceMappingsType], Failure]:
+        """
+        Prepare block device mapping according to given flavor.
+
+        .. note::
+
+           If the flavor does not specify a desired disk space, then fall back to ``default-root-disk-size``
+           configuration option. This will serve us until all flavors get their disk space.
+
+        :param image: image that will be used to create the instance. It serves as a source of block device
+            mapping data.
+        :param flavor: flavor providing the disk space information.
+        """
+
+        r_block_device_mappings = self._get_block_device_mappings(image_id=image.id)
+
+        if r_block_device_mappings.is_error:
+            return Error(r_block_device_mappings.unwrap_error())
+
+        block_device_mappings = r_block_device_mappings.unwrap()
+
+        if flavor.diskspace is not None:
+            return self._set_root_disk_size(block_device_mappings, flavor.diskspace)
+
+        if 'default-root-disk-size' in self.pool_config:
+            return self._set_root_disk_size(block_device_mappings, self.pool_config['default-root-disk-size'])
+
+        return Ok(None)
 
     def _request_instance(
         self,
@@ -488,21 +520,13 @@ class AWSDriver(PoolDriver):
         if 'security-group' in self.pool_config:
             command.extend(['--security-group-ids', self.pool_config['security-group']])
 
-        if 'default-root-disk-size' in self.pool_config:
+        r_block_device_mappings = self._create_block_device_mappings(image, instance_type)
 
-            r_block_device_mappings = self._get_block_device_mappings(image_id=image.id)
+        if r_block_device_mappings.is_error:
+            return Error(r_block_device_mappings.unwrap_error())
 
-            if r_block_device_mappings.is_error:
-                return Error(r_block_device_mappings.unwrap_error())
-
-            r_block_device_mappings = self._set_root_disk_size(
-                r_block_device_mappings.unwrap(),
-                root_disk_size=self.pool_config['default-root-disk-size']
-            )
-
-            block_device_mappings = r_block_device_mappings.unwrap()
-
-            command.append("--block-device-mappings={}".format(json.dumps(block_device_mappings)))
+        if r_block_device_mappings.unwrap() is not None:
+            command.append("--block-device-mappings={}".format(json.dumps(r_block_device_mappings.unwrap())))
 
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
@@ -540,8 +564,6 @@ class AWSDriver(PoolDriver):
     ) -> Result[ProvisioningProgress, Failure]:
         logger.info('provisioning from image {} and flavor {}'.format(image, instance_type))
 
-        block_device_mappings: Optional[BlockDeviceMappingsType] = None
-
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)
         if r_price.is_error:
@@ -563,19 +585,10 @@ class AWSDriver(PoolDriver):
             else:
                 user_data = ""
 
-        if 'default-root-disk-size' in self.pool_config:
+        r_block_device_mappings = self._create_block_device_mappings(image, instance_type)
 
-            r_block_device_mappings = self._get_block_device_mappings(image_id=image.id)
-
-            if r_block_device_mappings.is_error:
-                return Error(r_block_device_mappings.unwrap_error())
-
-            r_block_device_mappings = self._set_root_disk_size(
-                r_block_device_mappings.unwrap(),
-                root_disk_size=self.pool_config['default-root-disk-size']
-            )
-
-            block_device_mappings = r_block_device_mappings.unwrap()
+        if r_block_device_mappings.is_error:
+            return Error(r_block_device_mappings.unwrap_error())
 
         specification = AWS_INSTANCE_SPECIFICATION.render(
             ami_id=image.id,
@@ -585,7 +598,7 @@ class AWSDriver(PoolDriver):
             subnet_id=self.pool_config['subnet-id'],
             security_group=self.pool_config['security-group'],
             user_data=user_data,
-            block_device_mappings=block_device_mappings
+            block_device_mappings=r_block_device_mappings.unwrap()
         )
 
         log_blob(logger.info, 'spot request launch specification', specification)
