@@ -14,7 +14,7 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 
-from .. import Failure, JSONType, Knob, get_cached_item
+from .. import UNITS, Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
@@ -957,7 +957,7 @@ class AWSDriver(PoolDriver):
                     id=flavor['InstanceType'],
                     cores=int(flavor['VCpuInfo']['DefaultVCpus']),
                     # memory is reported in MB
-                    memory=int(flavor['MemoryInfo']['SizeInMiB']) * 1048576,
+                    memory=int(flavor['MemoryInfo']['SizeInMiB']) * UNITS.mebibytes
                 )
                 for flavor in cast(List[Dict[str, Any]], r_flavors.unwrap())
                 if flavor_name_pattern is None or flavor_name_pattern.match(flavor['InstanceType'])

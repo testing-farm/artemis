@@ -26,6 +26,7 @@ import jinja2.defaults
 import jinja2_ansible_filters.core_filters
 import jsonschema
 import periodiq
+import pint
 import pkg_resources
 import redis
 import ruamel.yaml
@@ -64,6 +65,10 @@ stackprinter.set_excepthook(
 )
 
 
+#: Unit registry, used and shared by all code.
+UNITS = pint.UnitRegistry()
+
+
 #: Serves as a backup if user did not specify port in ``BROKER_URL`` knob value. We don't have a dedicated knob
 #: for this value - if you want to use different port, do specify it in ``BROKER_URL`` then.
 DEFAULT_RABBITMQ_PORT = 5672
@@ -87,6 +92,7 @@ ExceptionInfoType = Union[
 
 # Type variable used in generic types
 T = TypeVar('T')
+S = TypeVar('S', bound='SerializableContainer')
 
 FailureDetailsType = Dict[str, Any]
 
@@ -102,6 +108,19 @@ JSONType = Union[str, int, float, List[Any], Dict[Any, Any], None]
 
 # Gluetool Sentry instance
 gluetool_sentry = gluetool.sentry.Sentry()
+
+
+class SerializableContainer:
+    """
+    Mixing class bringing serialize/unserialize methods for dataclass-based containers.
+    """
+
+    def serialize_to_json(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def unserialize_from_json(cls: Type[S], serialized: Dict[str, Any]) -> S:
+        return cls(**serialized)  # type: ignore
 
 
 def format_struct_as_yaml(data: Any) -> str:
@@ -1377,7 +1396,11 @@ def log_error_guest_event(
 #
 # Helpful cache primitives
 #
-def refresh_cached_set(cache: redis.Redis, key: str, items: Dict[str, Any]) -> Result[None, Failure]:
+def refresh_cached_set(
+    cache: redis.Redis,
+    key: str,
+    items: Dict[str, SerializableContainer]
+) -> Result[None, Failure]:
     """
     Refresh a cache entry with a given set of items.
 
@@ -1414,7 +1437,7 @@ def refresh_cached_set(cache: redis.Redis, key: str, items: Dict[str, Any]) -> R
         cast(Callable[[str, str, Dict[str, str]], None], cache.hmset),
         new_key,
         {
-            item_key: json.dumps(dataclasses.asdict(item))
+            item_key: json.dumps(item.serialize_to_json())
             for item_key, item in items.items()
         }
     )
@@ -1437,7 +1460,11 @@ def refresh_cached_set(cache: redis.Redis, key: str, items: Dict[str, Any]) -> R
     return Ok(None)
 
 
-def get_cached_items(cache: redis.Redis, key: str, item_klass: Type[T]) -> Result[Optional[Dict[str, T]], Failure]:
+def get_cached_items(
+    cache: redis.Redis,
+    key: str,
+    item_klass: Type[S]
+) -> Result[Optional[Dict[str, S]], Failure]:
     """
     Return cached items of a given type in the form of a mapping between their names and the instances.
 
@@ -1459,10 +1486,10 @@ def get_cached_items(cache: redis.Redis, key: str, item_klass: Type[T]) -> Resul
     if serialized is None:
         return Ok(None)
 
-    items: Dict[str, T] = {}
+    items: Dict[str, S] = {}
 
     for item_key, item_serialized in serialized.items():
-        r_unserialize = safe_call(item_klass, **json.loads(item_serialized.decode('utf-8')))
+        r_unserialize = safe_call(item_klass.unserialize_from_json, json.loads(item_serialized.decode('utf-8')))
 
         if r_unserialize.is_error:
             return Error(r_unserialize.unwrap_error())
@@ -1472,7 +1499,11 @@ def get_cached_items(cache: redis.Redis, key: str, item_klass: Type[T]) -> Resul
     return Ok(items)
 
 
-def get_cached_items_as_list(cache: redis.Redis, key: str, item_klass: Type[T]) -> Result[List[T], Failure]:
+def get_cached_items_as_list(
+    cache: redis.Redis,
+    key: str,
+    item_klass: Type[S]
+) -> Result[List[S], Failure]:
     """
     Return cached items of a given type in the form of a list of instances.
 
@@ -1491,7 +1522,12 @@ def get_cached_items_as_list(cache: redis.Redis, key: str, item_klass: Type[T]) 
     return Ok(list(items.values()) if items else [])
 
 
-def get_cached_item(cache: redis.Redis, key: str, item_key: str, item_klass: Type[T]) -> Result[Optional[T], Failure]:
+def get_cached_item(
+    cache: redis.Redis,
+    key: str,
+    item_key: str,
+    item_klass: Type[S]
+) -> Result[Optional[S], Failure]:
     r_fetch = safe_call(
         cast(Callable[[str, str], Optional[bytes]], cache.hget),
         key,
@@ -1506,7 +1542,7 @@ def get_cached_item(cache: redis.Redis, key: str, item_key: str, item_klass: Typ
     if serialized is None:
         return Ok(None)
 
-    r_unserialize = safe_call(item_klass, **json.loads(serialized.decode('utf-8')))
+    r_unserialize = safe_call(item_klass.unserialize_from_json, json.loads(serialized.decode('utf-8')))
 
     if r_unserialize.is_error:
         return Error(r_unserialize.unwrap_error())

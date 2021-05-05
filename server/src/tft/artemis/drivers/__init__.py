@@ -14,18 +14,21 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Pattern, Type,
 import gluetool
 import gluetool.log
 import gluetool.utils
+import pint
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob, get_cached_item, get_cached_items_as_list, process_output_to_str, \
-    refresh_cached_set
+from .. import UNITS, Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
+    process_output_to_str, refresh_cached_set
 from ..context import CACHE
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
 
 T = TypeVar('T')
+S = TypeVar('S', bound=SerializableContainer)
+
 
 GuestTagsType = Dict[str, str]
 
@@ -91,7 +94,7 @@ class PoolLogger(gluetool.log.ContextAdapter):
 
 
 @dataclasses.dataclass
-class PoolImageInfo:
+class PoolImageInfo(SerializableContainer):
     """
     Describes important information about a pool image.
 
@@ -118,7 +121,7 @@ class PoolImageInfo:
 
 
 @dataclasses.dataclass
-class PoolFlavorInfo:
+class PoolFlavorInfo(SerializableContainer):
     """
     Describes important information about an OpenStack flavor.
     """
@@ -129,18 +132,42 @@ class PoolFlavorInfo:
     #: Number of cores.
     cores: Optional[int] = None
     #: Size of RAM available, in bytes.
-    memory: Optional[int] = None
+    memory: Optional[pint.Quantity] = None
     #: Size of the main storage, in bytes.
-    diskspace: Optional[int] = None
+    diskspace: Optional[pint.Quantity] = None
 
     def __repr__(self) -> str:
         return '<PoolFlavorInfo: name={} id={} cores={} memory={} diskspace={}>'.format(
             self.name,
             self.id,
             self.cores,
-            self.memory,
-            self.diskspace
+            str(self.memory),
+            str(self.diskspace)
         )
+
+    # Custom serialization - we have to take care of Quantity instances, and unserialize them correctly.
+    def serialize_to_json(self) -> Dict[str, Any]:
+        serialized = dataclasses.asdict(self)
+
+        if self.memory is not None:
+            serialized['memory'] = str(self.memory)
+
+        if self.diskspace is not None:
+            serialized['diskspace'] = str(self.diskspace)
+
+        return serialized
+
+    @classmethod
+    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'PoolFlavorInfo':
+        flavor = cls(**serialized)
+
+        if flavor.memory is not None:
+            flavor.memory = UNITS(flavor.memory)
+
+        if flavor.diskspace is not None:
+            flavor.diskspace = UNITS(flavor.diskspace)
+
+        return flavor
 
 
 @dataclasses.dataclass

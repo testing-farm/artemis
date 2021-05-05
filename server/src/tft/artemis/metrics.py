@@ -281,6 +281,11 @@ class PoolResources(MetricsBase):
 
     This is a main class we use for transporting resources metrics between
     interested parties.
+
+    .. note::
+
+       Memory and diskspace is tracked as integers, not using :py:class:`pint.Quantity`. This will be resolved
+       to stick with Pint wherever we use a value with units.
     """
 
     _KEY = 'metrics.pool.{poolname}.resources.{dimension}'

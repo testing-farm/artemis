@@ -9,7 +9,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob, get_cached_item
+from .. import UNITS, Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
@@ -824,10 +824,10 @@ class OpenStackDriver(PoolDriver):
                     name=flavor['Name'],
                     id=flavor['ID'],
                     cores=int(flavor['VCPUs']),
-                    # memory is reported in MB
-                    memory=int(flavor['RAM']) * 1048576,
-                    # diskspace is reported in GB
-                    diskspace=int(flavor['Disk']) * 1073741824
+                    # memory is reported in MiB
+                    memory=int(flavor['RAM']) * UNITS.mebibytes,
+                    # diskspace is reported in GiB
+                    diskspace=int(flavor['Disk']) * UNITS.gibibytes
                 )
                 for flavor in cast(List[Dict[str, str]], r_flavors.unwrap())
                 if flavor_name_pattern is None or flavor_name_pattern.match(flavor['Name'])

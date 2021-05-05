@@ -1024,7 +1024,7 @@ class CacheManager:
             return Response(
                 status=HTTP_200,
                 content=json.dumps({
-                    info.name: dataclasses.asdict(info)
+                    info.name: info.serialize_to_json()
                     for info in r_infos.unwrap()
                 }),
                 headers={'Content-Type': 'application/json'}
