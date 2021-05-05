@@ -336,13 +336,13 @@ class BeakerDriver(PoolDriver):
         if not job_results.find('job') or len(job_results.find_all('job')) != 1:
             return Error(Failure(
                 'job results XML has unknown structure',
-                job_results=job_results.prettify(encoding='utf-8')
+                job_results=job_results.prettify()
             ))
 
         if not job_results.find('job')['result']:
             return Error(Failure(
                 'job results XML does not contain result attribute',
-                job_results=job_results.prettify(encoding='utf-8')
+                job_results=job_results.prettify()
             ))
 
         return Ok(job_results.find('job')['result'])
@@ -363,7 +363,7 @@ class BeakerDriver(PoolDriver):
         if not job_results.find('recipe')['system']:
             return Error(Failure(
                 'System element was not found in job results',
-                job_results=job_results.prettify(encoding='utf-8')
+                job_results=job_results.prettify()
             ))
 
         return Ok(job_results.find('recipe')['system'])
@@ -444,7 +444,7 @@ class BeakerDriver(PoolDriver):
 
         return Error(Failure(
             'unknown status',
-            job_results=job_results.prettify(encoding='utf-8')
+            job_results=job_results.prettify()
         ))
 
     def can_acquire(self, environment: Environment) -> Result[bool, Failure]:
