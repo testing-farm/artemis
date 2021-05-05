@@ -20,8 +20,8 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from .. import UNITS, Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
-    process_output_to_str, refresh_cached_set
-from ..context import CACHE
+    process_output_to_str, refresh_cached_set, safe_call
+from ..context import CACHE, LOGGER
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
@@ -822,6 +822,68 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok([])
 
+    def _fetch_pool_flavor_info_from_config(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        flavors: List[PoolFlavorInfo]
+    ) -> Result[List[PoolFlavorInfo], Failure]:
+        """
+        "Fetch" custom flavors specified in driver configuration. These are based on existing flavors, and override
+        some of their properties.
+
+        :param flavors: actual existing flavors that serve as basis for custom flavors.
+        """
+
+        custom_flavor_specs = cast(List[Dict[str, str]], self.pool_config.get('custom-flavors', []))
+
+        if not custom_flavor_specs:
+            return Ok([])
+
+        custom_flavors = []
+
+        flavors_map = {
+            flavor.name: flavor
+            for flavor in flavors
+        }
+
+        gluetool.log.log_dict(logger.debug, 'base flavors', flavors_map)
+
+        for custom_flavor_spec in custom_flavor_specs:
+            customname = custom_flavor_spec['name']
+            basename = custom_flavor_spec['base']
+
+            if basename not in flavors_map:
+                return Error(Failure(
+                    'unknown base flavor',
+                    customname=customname,
+                    basename=basename
+                ))
+
+            custom_flavor = dataclasses.replace(
+                flavors_map[basename],
+                name=customname
+            )
+
+            custom_flavors.append(custom_flavor)
+
+            if 'diskspace' in custom_flavor_spec:
+                r_diskspace = safe_call(UNITS, custom_flavor_spec['diskspace'])
+
+                if r_diskspace.is_error:
+                    return Error(Failure(
+                        'failed to parse flavor diskspace',
+                        caused_by=r_diskspace.unwrap_error(),
+                        customname=customname,
+                        basename=basename,
+                        diskspace=custom_flavor_spec['diskspace']
+                    ))
+
+                custom_flavor.diskspace = r_diskspace.unwrap()
+
+        gluetool.log.log_dict(logger.debug, 'custom flavors', custom_flavors)
+
+        return Ok(custom_flavors)
+
     def refresh_cached_pool_flavor_info(self) -> Result[None, Failure]:
         """
         Responsible for updating the cache with the most up-to-date flavor info. For that purpose, it calls
@@ -839,12 +901,19 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_flavor_info.is_error:
             return Error(r_flavor_info.unwrap_error())
 
+        real_flavors = r_flavor_info.unwrap()
+
+        r_custom_flavors = self._fetch_pool_flavor_info_from_config(LOGGER.get(), real_flavors)
+
+        if r_custom_flavors.is_error:
+            return Error(r_custom_flavors.unwrap_error())
+
         return refresh_cached_set(
             CACHE.get(),
             self.flavor_info_cache_key,
             {
                 fi.name: fi
-                for fi in r_flavor_info.unwrap()
+                for fi in (real_flavors + r_custom_flavors.unwrap())
                 if fi.name
             }
         )

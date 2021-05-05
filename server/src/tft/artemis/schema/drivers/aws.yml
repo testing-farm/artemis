@@ -17,6 +17,9 @@ properties:
   command:
     type: string
 
+  custom-flavors:
+    type: array
+
   default-instance-type:
     type: string
 

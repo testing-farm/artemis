@@ -116,6 +116,32 @@ pools:
 
       post-install-script: "{{ aws.vms.post_install_script }}"
 
+      # Custom instance types (or, as Artemis calls them, "flavors").
+      #
+      # These are based on existing instance types, as supported by AWS (see [1]) but override one or more properties
+      # for the purpose of providing flavors suitable for the common workflows in your deployment. For example,
+      # various instance types leave the question of storage size open, leaving it to image or user to specify how
+      # large should the root "disk" be. By using such an instance as a base, `diskspace` key creates a custom instance
+      # with a particular root disk size.
+      #
+      # [1] https://aws.amazon.com/ec2/instance-types/
+      # custom-flavors:
+      #  - name: t2.small.20
+      #    base: t2.small
+      #    diskspace: "20 GiB"
+      #
+      #  - name: t2.small.40
+      #    base: t2.small
+      #    diskspace: "40 GiB"
+      #
+      #  - name: t2.medium.20
+      #    base: t2.medium
+      #    diskspace: "20 GiB"
+      #
+      #  - name: t2.medium.40
+      #    base: t2.medium
+      #    diskspace: "40 GiB"
+
       capabilities:
         supports-snapshots: False
         supports-spot-instances: {{ aws.vms.use_spot_instances | default(true) }}

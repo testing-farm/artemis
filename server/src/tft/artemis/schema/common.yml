@@ -2,6 +2,26 @@ $schema: http://json-schema.org/draft-07/schema#
 description: Server configuration schema
 type: object
 
+definitions:
+  custom_flavor:
+    type: object
+
+    properties:
+      name:
+        type: string
+
+      base:
+        type: string
+
+      diskspace:
+        type: string
+
+    required:
+      - name
+      - base
+
+    additionalProperties: false
+
 properties:
 
   users:
@@ -115,6 +135,11 @@ properties:
               required:
                 - supported-architectures
                 - supports-snapshots
+
+            custom-flavors:
+              type: array
+              items:
+                "$ref": "#/definitions/custom_flavor"
 
             resources:
               type: object
