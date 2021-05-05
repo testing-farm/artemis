@@ -310,6 +310,9 @@ class Failure:
         # Guestname will be provided by event instance itself, no need to parse it as event details
         event_details.pop('guestname', None)
 
+        # We don't want the raw Beaker XMLs in the event neither, too much internal stuff in those XMLs
+        event_details.pop('job_results', None)
+
         if 'environment' in event_details:
             event_details['environment'] = event_details['environment'].serialize_to_json()
 
