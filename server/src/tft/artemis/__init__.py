@@ -3,6 +3,7 @@ import datetime
 import json
 import logging
 import os
+import sys
 import traceback as _traceback
 import urllib.parse
 from types import FrameType, TracebackType
@@ -204,12 +205,26 @@ class Failure:
                 ),
                 capture_locals=True
             )
+            self.traceback.reverse()
 
         if traceback:
             self.traceback = traceback
 
         if self.traceback is None:
-            self.traceback = _traceback.extract_stack()
+            # This is what `traceback.extract_stack` does, but `extract_stack` does not let us save frame locals,
+            # and we would like to see them, at least in Sentry.
+
+            # start with the caller frame - the one creating the Failure
+            f = sys._getframe().f_back
+
+            self.traceback = _traceback.StackSummary.extract(
+                cast(
+                    Generator[Tuple[FrameType, int], None, None],
+                    _traceback.walk_stack(f)
+                ),
+                capture_locals=True
+            )
+            self.traceback.reverse()
 
     @classmethod
     def from_exc(
