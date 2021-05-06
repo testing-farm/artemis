@@ -12,7 +12,10 @@
 #
 
 # Note that alpine from 3.11 uses python 3.8 which we do not yet support
+FROM docker.io/randomcoww/promtail:v2.0.0 as PROMTAIL_SOURCE
 FROM quay.io/testing-farm/alpine:3.10
+
+COPY --from=PROMTAIL_SOURCE /promtail /usr/bin/
 
 # This hack is widely applied to avoid python printing issues in docker containers.
 # See: https://github.com/Docker-Hub-frolvlad/docker-alpine-python3/pull/13
@@ -78,6 +81,13 @@ RUN    mkdir -p $HOME/.aws \
 #
 RUN    mkdir -p /etc/beaker \
     && ln -s $CONFIGURATION/beaker-client-config /etc/beaker/client.conf
+
+#
+# Promtail configuration space
+#
+RUN    mkdir -p /promtail-config \
+    && chmod a+rx /promtail-config
+COPY container/promtail-dummy.yaml /promtail-config/
 
 #
 # Add entrypoint

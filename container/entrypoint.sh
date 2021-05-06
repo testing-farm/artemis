@@ -52,6 +52,9 @@ expose_hooks() {
 }
 
 ARTEMIS_CONTAINER_LOG_METHOD="${ARTEMIS_CONTAINER_LOG_METHOD:-file}"
+ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH="${ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH:-/promtail-config/promtail.yaml}"
+ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS="${ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS:-}"
+
 ARTEMIS_WORKER_OPTIONS="${ARTEMIS_WORKER_OPTIONS:-}"
 
 if [ "$ARTEMIS_WORKER_PROCESSES" != "" ]; then
@@ -116,6 +119,18 @@ elif [ "$ARTEMIS_CONTAINER_LOG_METHOD" = "file" ]; then
 
     # Show logs from log file, retry until the log file appears (we run it as subprocess) ...
     tail -F $LOG_FILE &
+
+elif [ "$ARTEMIS_CONTAINER_LOG_METHOD" = "promtail-pipe" ]; then
+    # Logs from each application are piped to a promtail process. Requires a promtail config file, the path is
+    # provided by $ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH variable.
+
+    mkfifo /tmp/command-logging
+
+    $COMMAND > /tmp/command-logging 2>&1 &
+    PID=$!
+
+    cat /tmp/command-logging | /usr/bin/promtail --stdin --config.file "$ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH" ${ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS} &
+
 fi
 
 wait $PID

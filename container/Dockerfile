@@ -11,7 +11,10 @@
 #   * worker
 #
 
+FROM docker.io/randomcoww/promtail:v2.0.0 as PROMTAIL_SOURCE
 FROM registry.fedoraproject.org/fedora-minimal:34
+
+COPY --from=PROMTAIL_SOURCE /promtail /usr/bin/
 
 # This hack is widely applied to avoid python printing issues in docker containers.
 # See: https://github.com/Docker-Hub-frolvlad/docker-alpine-python3/pull/13
@@ -78,6 +81,13 @@ RUN    mkdir -p /etc/beaker \
 #
 RUN    mkdir $HOME/.ssh \
     && printf "Host *\n   PubkeyAcceptedKeyTypes +ssh-rsa" > $HOME/.ssh/config
+
+#
+# Promtail configuration space
+#
+RUN    mkdir -p /promtail-config \
+    && chmod a+rx /promtail-config
+COPY container/promtail-dummy.yaml /promtail-config/
 
 #
 # Add entrypoint

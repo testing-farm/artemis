@@ -1,0 +1,20 @@
+---
+
+#
+# Either provide your own config file, for example via a configmap, or use
+# $ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS to override the dummy defaults bellow.
+#
+
+client:
+  url: http://dummy-loki-host.com:3100/loki/api/v1/push
+
+server:
+  disable: true
+
+scrape_configs:
+  - job_name: replace-me
+    pipeline_stages:
+    static_configs:
+      - labels:
+          job: dummy-name-replace-me
+          host: dummy-hostname-replace-me
