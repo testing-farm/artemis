@@ -352,6 +352,9 @@ def _parse_disk(spec: SpecType) -> ConstraintBase:
 def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
     group = And()
 
+    if 'arch' in spec:
+        group.constraints += [Constraint.from_specification('arch', spec['arch'], str)]
+
     if 'cpu' in spec:
         group.constraints += [_parse_cpu(spec['cpu'])]
 
@@ -488,3 +491,6 @@ class Environment:
         """
 
         return Environment.unserialize_from_json(json.loads(serialized))
+
+    def get_hw_constraints(self) -> ConstraintBase:
+        return _parse_block(dataclasses.asdict(self.hw))

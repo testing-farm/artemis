@@ -9,7 +9,7 @@ import shlex
 import tempfile
 import threading
 import time
-from typing import Any, Callable, Dict, Iterator, List, Optional, Pattern, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Iterator, List, Optional, Pattern, Tuple, Type, TypeVar, Union, cast
 
 import gluetool
 import gluetool.log
@@ -22,7 +22,7 @@ from .. import Failure, JSONType, Knob, get_cached_item, get_cached_items_as_lis
     refresh_cached_set
 from ..context import CACHE
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
-from ..environment import Environment
+from ..environment import Environment, Flavor, FlavorCpu, FlavorDisk
 from ..metrics import PoolResourcesMetrics
 
 T = TypeVar('T')
@@ -389,6 +389,129 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         raise NotImplementedError()
+
+    def _map_environment_to_flavor_info_by_cache_by_name(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        flavorname: str
+    ) -> Result[PoolFlavorInfo, Failure]:
+        r_flavor = get_cached_item(
+            CACHE.get(),
+            self.flavor_info_cache_key,
+            flavorname,
+            PoolFlavorInfo
+        )
+
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
+
+        picked_flavor = r_flavor.unwrap()
+
+        if picked_flavor is None:
+            return Error(Failure(
+                'no such flavor',
+                flavorname=flavorname
+            ))
+
+        return Ok(picked_flavor)
+
+    def _map_environment_to_flavor_info_by_cache_by_constraints(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment
+    ) -> Result[List[Tuple[PoolFlavorInfo, Flavor]], Failure]:
+        """
+        Evaluate the given environment, and return flavors suitable for the environment given its HW constraints.
+
+        :returns: list of two-item tuples consting of a pool flavor info paired with a corresponding
+            :py:class:`environment.Flavor` instance.
+        """
+
+        # Fetch available flavor infos and pool capabilities first.
+        r_flavors = self.get_cached_pool_flavor_infos()
+
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        r_capabilities = self.capabilities()
+
+        if r_capabilities.is_error:
+            return Error(r_capabilities.unwrap_error())
+
+        pool_flavors = r_flavors.unwrap()
+        capabilities = r_capabilities.unwrap()
+
+        # For each flavor info and arch, create a Flavor description we can then match against the HW constraints.
+        # TODO: what if some flavors are not supported on all arches?
+        flavors: List[Tuple[PoolFlavorInfo, Flavor]] = []
+
+        for pool_flavor in pool_flavors:
+            if capabilities.supported_architectures is AnyArchitecture:
+                flavor = Flavor(
+                    arch=None,
+                    cpu=FlavorCpu(
+                        cores=pool_flavor.cores
+                    ),
+                    disk=FlavorDisk(
+                        space=pool_flavor.diskspace
+                    ),
+                    memory=pool_flavor.memory
+                )
+
+                flavors.append((pool_flavor, flavor))
+
+            else:
+                assert isinstance(capabilities.supported_architectures, list)
+
+                for arch in capabilities.supported_architectures:
+                    flavor = Flavor(
+                        arch=arch,
+                        cpu=FlavorCpu(
+                            cores=pool_flavor.cores
+                        ),
+                        disk=FlavorDisk(
+                            space=pool_flavor.diskspace
+                        ),
+                        memory=pool_flavor.memory
+                    )
+
+                    flavors.append((pool_flavor, flavor))
+
+        gluetool.log.log_dict(logger.warning, 'available flavors', flavors)
+
+        constraints = environment.get_hw_constraints()
+        gluetool.log.log_blob(logger.warning, 'constraint', constraints.format())
+
+        # The actual filter: pick flavors that pass the test and match the requirements.
+        suitable_flavors = [
+            (pool_flavor, flavor)
+            for pool_flavor, flavor in flavors
+            if constraints.eval_flavor(logger, flavor) is True
+        ]
+
+        gluetool.log.log_dict(logger.warning, 'suitable flavors', suitable_flavors)
+
+        if not suitable_flavors:
+            return Ok([])
+
+        # Sort suitable flavors, the "smaller" ones first. The less cores, memory and diskpace the flavor has,
+        # the smaller it is in eyes of this ordering.
+        # TODO: this might be left to the caller, putting it here for now.
+        def _flavor_key(
+            flavor_pair: Tuple[PoolFlavorInfo, Flavor]
+        ) -> Tuple[Optional[int], Optional[int], Optional[int]]:
+            pool_flavor, _ = flavor_pair
+
+            return (pool_flavor.cores, pool_flavor.memory, pool_flavor.diskspace)
+
+        sorted_suitable_flavors = sorted(suitable_flavors, key=_flavor_key)
+
+        gluetool.log.log_dict(logger.warning, 'sorted suitable flavors', sorted_suitable_flavors)
+
+        gluetool.log.log_dict(logger.warning, 'environment', environment.serialize_to_json())
+        gluetool.log.log_blob(logger.warning, 'constraints', constraints.format())
+
+        return Ok(sorted_suitable_flavors)
 
     def acquire_guest(
         self,

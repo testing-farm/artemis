@@ -214,9 +214,10 @@ class AWSDriver(PoolDriver):
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
-        r_type = self._env_to_instance_type(environment)
+        # TODO: provide proper logger
+        r_type = self._env_to_instance_type(self.logger, environment)
         if r_type.is_error:
-            return Error(r_type.value)
+            return Error(r_type.unwrap_error())
 
         return Ok(True)
 
@@ -227,9 +228,29 @@ class AWSDriver(PoolDriver):
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
-    def _env_to_instance_type(self, environment: Environment) -> Result[Any, Failure]:
-        # TODO: in the future we will here translate the environment into an instance type
-        return Ok(self.pool_config['default-instance-type'])
+    def _env_to_instance_type(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment
+    ) -> Result[PoolFlavorInfo, Failure]:
+        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(logger, environment)
+
+        if r_suitable_flavors.is_error:
+            return Error(r_suitable_flavors.unwrap_error())
+
+        suitable_flavors = r_suitable_flavors.unwrap()
+
+        if not suitable_flavors:
+            return self._map_environment_to_flavor_info_by_cache_by_name(
+                logger,
+                self.pool_config['default-instance-type']
+            )
+
+        picked_flavor = suitable_flavors[0][0]
+
+        gluetool.log.log_dict(logger.warning, 'picked flavor', picked_flavor)
+
+        return Ok(picked_flavor)
 
     def _env_to_image(
         self,
@@ -822,9 +843,9 @@ class AWSDriver(PoolDriver):
         logger.info('provisioning environment {}'.format(environment.serialize_to_json()))
 
         # get instance type from environment
-        r_instance_type = self._env_to_instance_type(environment)
+        r_instance_type = self._env_to_instance_type(logger, environment)
         if r_instance_type.is_error:
-            return r_instance_type
+            return Error(r_instance_type.unwrap_error())
 
         instance_type = r_instance_type.unwrap()
 
