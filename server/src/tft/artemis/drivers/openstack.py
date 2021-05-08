@@ -10,13 +10,13 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, Knob, log_dict_yaml
-from ..db import GuestRequest, SnapshotRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogType, GuestRequest, SnapshotRequest
 from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
-from . import ConsoleUrlData, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
-    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
-    test_cli_error, vm_info_to_ip
+from . import ConsoleUrlData, GuestLogUpdateProgress, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, \
+    PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
+    create_tempfile, run_cli_tool, test_cli_error, vm_info_to_ip
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -868,4 +868,43 @@ class OpenStackDriver(PoolDriver):
                 'malformed flavor description',
                 exc,
                 flavor_info=r_flavors.unwrap()
+            ))
+
+    def update_guest_log(
+        self,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        if guest_log.logtype != GuestLogType.CONSOLE:
+            return Error(Failure(
+                'unsupported guest log',
+                logname=guest_log.logname,
+                logtype=guest_log.logtype,
+                contenttype=guest_log.contenttype
+            ))
+
+        if guest_log.contenttype == GuestLogContentType.LINK:
+            r_output = self._run_os([
+                'console',
+                'url',
+                'show',
+                OpenStackPoolData.unserialize(guest_request).instance_id
+            ])
+
+            if r_output.is_error:
+                return Error(r_output.unwrap_error())
+
+            output = cast(Dict[str, str], r_output.unwrap())
+
+            return Ok(GuestLogUpdateProgress(
+                complete=True,
+                url=output['url']
+            ))
+
+        else:
+            # run `os` and do some magic to update console log
+            return Ok(GuestLogUpdateProgress(
+                complete=False,
+                blob='',
+                delay_update=30
             ))

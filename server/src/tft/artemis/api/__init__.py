@@ -1430,6 +1430,98 @@ def restore_snapshot_request(
     return HTTP_201, manager.restore_snapshot(guestname, snapshotname, logger)
 
 
+@molten.schema
+@dataclasses.dataclass
+class GuestLogResponse:
+    contenttype: artemis_db.GuestLogContentType
+
+    url: Optional[str]
+    blob: Optional[str]
+
+    updated: datetime.datetime
+    complete: bool
+
+    @classmethod
+    def from_db(cls, log: artemis_db.GuestLog) -> 'GuestLogResponse':
+        return cls(
+            contenttype=log.contenttype,
+            url=log.url,
+            blob=log.blob,
+            updated=log.updated,
+            complete=log.complete
+        )
+
+
+def get_guest_request_log(
+    guestname: str,
+    logname: str,
+    contenttype: str,
+    manager: GuestRequestManager,
+    logger: gluetool.log.ContextAdapter
+) -> Union[Tuple[str, None], GuestLogResponse]:
+    from ..tasks import get_guest_logger
+
+    failure_details = {
+        'guestname': guestname
+    }
+
+    guest_logger = get_guest_logger('create-guest-request-log', logger, guestname)
+
+    with manager.db.get_session() as session:
+        r_log = artemis_db.SafeQuery.from_session(session, artemis_db.GuestLog) \
+            .filter(artemis_db.GuestLog.guestname == guestname) \
+            .filter(artemis_db.GuestLog.logname == logname) \
+            .filter(artemis_db.GuestLog.contenttype == artemis_db.GuestLogContentType(contenttype)) \
+            .one_or_none()
+
+        if r_log.is_error:
+            raise errors.InternalServerError(
+                logger=guest_logger,
+                caused_by=r_log.unwrap_error(),
+                failure_details=failure_details
+            )
+
+        log = r_log.unwrap()
+
+        if not log:
+            return HTTP_204, None
+
+        return GuestLogResponse.from_db(log)
+
+
+def create_guest_request_log(
+    guestname: str,
+    logname: str,
+    contenttype: str,
+    manager: GuestRequestManager,
+    logger: gluetool.log.ContextAdapter
+) -> Tuple[str, None]:
+    from ..tasks import get_guest_logger, dispatch_task, update_guest_log
+
+    failure_details = {
+        'guestname': guestname
+    }
+
+    guest_logger = get_guest_logger('create-guest-request-log', logger, guestname)
+
+    r_dispatch = dispatch_task(
+        guest_logger,
+        update_guest_log,
+        guestname,
+        logname,
+        contenttype
+    )
+
+    if r_dispatch.is_error:
+        raise errors.InternalServerError(
+            logger=guest_logger,
+            caused_by=r_dispatch,
+            failure_details=failure_details
+        )
+
+    return HTTP_202, None
+
+
 def get_about(request: Request) -> AboutResponse:
     """
     Some docs.
@@ -1660,7 +1752,10 @@ def generate_routes_v0_0_18(
             create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
             create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
             create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
-            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')
+            # XXX FIXME(ivasilev) To be removed once general logs approach is working with console url just another type of console log
+            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET'),
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')
         ]),
         Include('/knobs', [
             create_route('/', KnobManager.entry_get_knobs, method='GET'),

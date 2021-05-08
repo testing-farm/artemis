@@ -291,7 +291,7 @@ def upsert(
         }
     )
 
-    if update_data is None:
+    if update_data is not None:
         statement = statement.on_conflict_do_nothing(
             constraint=model.__table__.primary_key  # type: ignore
         )
@@ -303,7 +303,7 @@ def upsert(
             where=where
         )
 
-    return safe_db_change(logger, session, statement)
+    session.execute(statement)
 
 
 class UserRoles(enum.Enum):
@@ -313,6 +313,11 @@ class UserRoles(enum.Enum):
 
     USER = 'USER'
     ADMIN = 'ADMIN'
+
+
+class GuestLogContentType(enum.Enum):
+    LINK = 'link'
+    BLOB = 'blob'
 
 
 class User(Base):
@@ -486,6 +491,13 @@ class GuestRequest(Base):
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
 
+    logs = relationship(
+        'GuestLog',
+        back_populates='guest',
+        cascade="all, delete",
+        passive_deletes=True
+    )
+
     def log_event(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -525,6 +537,23 @@ class GuestRequest(Base):
             since=since,
             until=until
         )
+
+
+class GuestLog(Base):
+    __tablename__ = 'guest_logs'
+
+    guestname = Column(String(), ForeignKey('guest_requests.guestname', ondelete='CASCADE'), nullable=False,
+        primary_key=True)
+    logname = Column(String(), nullable=False, primary_key=True)
+    contenttype = Column(Enum(GuestLogContentType), nullable=False, primary_key=True)
+
+    url = Column(String(), nullable=True)
+    blob = Column(String(), nullable=True)
+
+    updated = Column(DateTime(), nullable=True)
+    complete = Column(Boolean(), nullable=False, default=True)
+
+    guest = relationship('GuestRequest', back_populates='logs')
 
 
 class GuestEvent(Base):

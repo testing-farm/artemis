@@ -21,7 +21,8 @@ from typing_extensions import Protocol
 from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
     safe_call, safe_db_change
 from .context import DATABASE, LOGGER, SESSION, with_context
-from .db import DB, GuestEvent, GuestRequest, Pool, SafeQuery, SnapshotRequest, SSHKey
+from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogType, GuestRequest, Pool, SafeQuery, \
+    SnapshotRequest, SSHKey, upsert
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver
@@ -192,6 +193,15 @@ KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE: Knob[str] = Knob(
     default='*/5 * * * *'
 )
 
+#: A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks.
+KNOB_UPDATE_GUEST_LOG_DELAY: Knob[int] = Knob(
+    'actor.dispatch-preparing.delay',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY',
+    envvar_cast=int,
+    default=60
+)
+
 
 POOL_DRIVERS = {
     'aws': aws_driver.AWSDriver,
@@ -319,7 +329,8 @@ class DispatchTaskType(Protocol):
 class SuccessHandlerType(Protocol):
     def __call__(
         self,
-        eventname: str
+        eventname: str,
+        return_value: DoerReturnType = SUCCESS
     ) -> DoerReturnType:
         ...
 
@@ -1940,6 +1951,132 @@ def handle_provisioning_chain_tail(
     return False
 
 
+def do_update_guest_log(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    logname: str,
+    contenttype: GuestLogContentType
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='update-guest-log'
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname, state=GuestState.READY)
+    workspace.load_gr_pool()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+    assert workspace.gr.address
+    assert workspace.pool
+
+    r_guest_log = SafeQuery.from_session(session, GuestLog) \
+        .filter(GuestLog.guestname == workspace.gr.guestname) \
+        .filter(GuestLog.logname == logname) \
+        .filter(GuestLog.contenttype == contenttype.value) \
+        .one_or_none()
+
+    if r_guest_log.is_error:
+        return handle_failure(r_guest_log, 'failed to fetch the log')
+
+    guest_log = r_guest_log.unwrap()
+
+    if guest_log is None:
+        # We're the first: create the record, and reschedule. We *could* proceed and try to fetch the data, too,
+        # let's try with another task run first.
+
+        r_insert = upsert(
+            session,
+            GuestLog,
+            {
+                GuestLog.guestname: guestname,
+                GuestLog.logname: logname,
+                GuestLog.contenttype: contenttype
+            },
+            insert_data={
+                GuestLog.complete: False
+            }
+        )
+
+        if r_insert.is_error:
+            return handle_failure(r_insert, 'failed to create the log')
+
+        return handle_success('finished-task', return_value=RESCHEDULE)
+
+    if guest_log.complete:
+        return handle_success('finished-task')
+
+    r_update = workspace.pool.update_guest_log(
+        workspace.gr,
+        guest_log
+    )
+
+    if r_update.is_error:
+        return handle_failure(r_update, 'failed to update the log')
+
+    update_progress = r_update.unwrap()
+
+    query = sqlalchemy \
+        .update(GuestLog.__table__) \
+        .where(GuestLog.guestname == workspace.gr.guestname) \
+        .where(GuestLog.logname == logname) \
+        .where(GuestLog.contenttype == contenttype.value) \
+        .where(GuestLog.updated == guest_log.updated) \
+        .where(GuestLog.url == guest_log.url) \
+        .where(GuestLog.blob == guest_log.blob) \
+        .values(
+            url=update_progress.url,
+            blob=update_progress.blob,
+            updated=datetime.datetime.utcnow(),
+            complete=update_progress.complete
+        )
+
+    # flake8 is going to complain about `==` being used with booleans, but SQLAlchemy can't handle `is` when
+    # creating the query, just `==`.
+    query = query.where(GuestLog.complete == False)  # noqa
+
+    r_store = safe_db_change(logger, session, query)
+
+    if r_store.is_error:
+        return handle_failure(r_store, 'failed to update the log')
+
+    if r_store.unwrap() is not True:
+        return handle_success('finished-task', return_value=RESCHEDULE)
+
+    if not update_progress.complete:
+        workspace.dispatch_task(
+            update_guest_log,
+            guestname,
+            logname,
+            contenttype.value,
+            delay=update_progress.delay_update or KNOB_UPDATE_GUEST_LOG_DELAY.value
+        )
+
+    if workspace.result:
+        return workspace.result
+
+    return handle_success('finished-task')
+
+
+@dramatiq.actor(**actor_kwargs('UPDATE_GUEST_LOG'))  # type: ignore  # Untyped decorator
+def update_guest_log(guestname: str, logname: str, contenttype: str) -> None:
+    task_core(
+        cast(DoerType, do_update_guest_log),
+        logger=get_guest_logger('update-guest-log', _ROOT_LOGGER, guestname),
+        doer_args=(guestname, logname, GuestLogContentType[contenttype])
+    )
+
+
 def do_prepare_verify_ssh(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -2179,6 +2316,38 @@ def do_guest_request_prepare_finalize_post_connect(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
+
+    # TODO: missing return value test!
+    # assert workspace.gr
+    #
+    # r_upsert = upsert(
+    #     logger,
+    #     session,
+    #     GuestLog,
+    #     {
+    #         GuestLog.guestname: workspace.gr.guestname,
+    #         GuestLog.logname: 'console',
+    #         GuestLog.logtype: GuestLogType.CONSOLE,
+    #         GuestLog.contenttype: GuestLogContentType.BLOB
+    #     },
+    #     insert_data={
+    #         getattr(GuestLog, 'blob'): ''
+    #     },
+    #     update_data={
+    #         'blob': ''
+    #     }
+    # )
+    #
+    # if r_upsert.is_error:
+    #     return handle_failure(r_upsert)
+    #
+    # workspace.dispatch_task(
+    #     update_guest_log,
+    #      workspace.gr.guestname,
+    #     'console',
+    #     GuestLogType.CONSOLE.value,
+    #     GuestLogContentType.BLOB.value
+    # )
 
     workspace.update_guest_state(
         GuestState.READY,
