@@ -50,7 +50,8 @@ DEFAULT_EVENTS_SORT_BY = 'desc'
 #: API milestones - mapping between a milestone version, and older versions compatible with it.
 #: The mapping is then used to install proper redirects.
 API_MILESTONES: Dict[str, List[str]] = {
-    'v0.0.17': [
+    'v0.0.18': [
+        'v0.0.17',
         'v0.0.16',
         'v0.0.15',
         'v0.0.14'
