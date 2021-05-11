@@ -953,7 +953,6 @@ def _update_guest_state(
 
         return Error(Failure(
             'did not switch guest state',
-            caused_by=r.unwrap_error(),
             current_state=current_state_label,
             new_state=new_state.value
         ))
