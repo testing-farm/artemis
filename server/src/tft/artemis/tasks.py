@@ -1415,17 +1415,21 @@ class Workspace:
 
         assert self.guestname
 
-        events = GuestEvent.fetch(
+        r_events = GuestEvent.fetch(
             self.session,
             eventname=eventname,
             guestname=self.guestname
         )
 
+        if r_events.is_error:
+            self.result = self.handle_failure(r_events, 'failed to fetch events')
+            return
+
         if _cancel_task_if(self.logger, self.cancel):
             self.result = RESCHEDULE
             return
 
-        self.guest_events = events
+        self.guest_events = r_events.unwrap()
 
     def update_guest_state(
         self,

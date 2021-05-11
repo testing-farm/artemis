@@ -520,13 +520,13 @@ def do_test_policy_timeout_reached(mock_inputs, empty_events=False, age=None):
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     if empty_events:
-        mock_guest_request.fetch_events = lambda session, eventname: []
+        mock_guest_request.fetch_events = lambda session, eventname: Ok([])
 
     else:
         event = tft.artemis.db.GuestEvent('created', 'dummy-guest')
         event.updated = datetime.datetime.utcnow() - datetime.timedelta(seconds=age)
 
-        mock_guest_request.fetch_events = lambda session, eventname: [event]
+        mock_guest_request.fetch_events = lambda session, eventname: Ok([event])
 
     r_ruling = tft.artemis.routing_policies.policy_timeout_reached(
         mock_logger,
@@ -554,7 +554,7 @@ def do_test_policy_timeout_reached(mock_inputs, empty_events=False, age=None):
         assert ruling.allowed_pools == mock_pools
 
 
-def test_policy_timeout_reached(mock_inputs):
+def test_policy_timeout_reached(logger, mock_inputs):
     do_test_policy_timeout_reached(
         mock_inputs,
         age=TIMEOUT_REACHED_AGE_TOO_OLD(mock_inputs.session)
@@ -579,13 +579,13 @@ def do_policy_one_attempt_forgiving(mock_inputs, empty_events=False, age=None):
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     if empty_events:
-        mock_guest_request.fetch_events = lambda session, eventname: []
+        mock_guest_request.fetch_events = lambda session, eventname: Ok([])
 
     else:
         event = tft.artemis.db.GuestEvent('error', 'dummy-guest', failure={'poolname': 'dummy-pool'})
         event.updated = datetime.datetime.utcnow() - datetime.timedelta(seconds=age)
 
-        mock_guest_request.fetch_events = lambda session, eventname: [event]
+        mock_guest_request.fetch_events = lambda session, eventname: Ok([event])
 
     r_ruling = tft.artemis.routing_policies.policy_one_attempt_forgiving(
         mock_logger,

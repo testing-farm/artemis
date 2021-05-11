@@ -5,7 +5,7 @@ from mock import MagicMock
 from sqlalchemy import Column, Integer, Text
 
 from tft.artemis import safe_db_change
-from tft.artemis.db import GuestRequest, Query, SafeQuery, upsert
+from tft.artemis.db import GuestRequest, SafeQuery, upsert
 
 from . import assert_failure_log
 
@@ -120,7 +120,7 @@ def test_session_autorollback(db, mock_session):
 
 
 def assert_upsert_counter(session, count, subname='', subcount=0):
-    records = Query.from_session(session, Counters).all()
+    records = SafeQuery.from_session(session, Counters).all().unwrap()
 
     assert len(records) == 1
 
@@ -290,7 +290,7 @@ def test_safe_db_change(logger, session):
     assert r.is_error is False
     assert r.unwrap() is True
 
-    records = Query.from_session(session, Counters).all()
+    records = SafeQuery.from_session(session, Counters).all().unwrap()
 
     assert len(records) == 1
     assert records[0].count == 1
@@ -308,7 +308,7 @@ def test_safe_db_change_multiple(logger, session):
     assert r.is_error is False
     assert r.unwrap() is True
 
-    records = Query.from_session(session, Counters).all()
+    records = SafeQuery.from_session(session, Counters).all().unwrap()
 
     assert len(records) == 2
     assert all([record.count == 1 for record in records])
@@ -325,7 +325,7 @@ def test_safe_db_change_single_delete(logger, session):
     assert r.is_error is False
     assert r.unwrap() is True
 
-    records = Query.from_session(session, Counters).all()
+    records = SafeQuery.from_session(session, Counters).all().unwrap()
 
     assert len(records) == 1
 
@@ -342,7 +342,7 @@ def test_schema_actual_load(session):
     and at least something resembling the Artemis DB schema has been created.
     """
 
-    assert Query.from_session(session, GuestRequest).all() == []
+    assert SafeQuery.from_session(session, GuestRequest).all().unwrap() == []
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters_1record')

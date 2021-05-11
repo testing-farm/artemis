@@ -46,85 +46,12 @@ TOKEN_HASH_SIZE = 64
 Base = sqlalchemy.ext.declarative.declarative_base()
 
 
-# SQLalchemy stubs are missing types for Query methods, and allowing untyped calls globally
-# is not a good practice. Therefore, we wrap original Query instances with our wrapper which
-# provides all methods we need but applies cast() as needed.
-#
-# https://github.com/dropbox/sqlalchemy-stubs/pull/81
-class Query(Generic[T]):
-    def __init__(self, query: _Query) -> None:
-        self.query = query
-
-    @staticmethod
-    def from_session(session: sqlalchemy.orm.session.Session, klass: Type[T]) -> 'Query[T]':
-        query_proxy: Query[T] = Query(
-            cast(
-                Callable[[Type[T]], _Query],
-                session.query
-            )(klass)
-        )
-
-        return query_proxy
-
-    def filter(self, *args: Any) -> 'Query[T]':
-        self.query = cast(
-            Callable[..., _Query],
-            self.query.filter
-        )(*args)
-
-        return self
-
-    def order_by(self, *args: Any) -> 'Query[T]':
-        self.query = cast(
-            Callable[..., _Query],
-            self.query.order_by
-        )(*args)
-
-        return self
-
-    def limit(self, limit: Optional[int] = None) -> 'Query[T]':
-        self.query = cast(
-            Callable[[Optional[int]], _Query],
-            self.query.limit
-        )(limit)
-
-        return self
-
-    def offset(self, offset: Optional[int] = None) -> 'Query[T]':
-        self.query = cast(
-            Callable[[Optional[int]], _Query],
-            self.query.offset
-        )(offset)
-
-        return self
-
-    def one(self) -> T:
-        return cast(
-            Callable[[], T],
-            self.query.one
-        )()
-
-    def one_or_none(self) -> Optional[T]:
-        return cast(
-            Callable[[], T],
-            self.query.one_or_none
-        )()
-
-    def all(self) -> List[T]:
-        return cast(
-            Callable[[], List[T]],
-            self.query.all
-        )()
-
-
-# "Safe" query - a Query-like class, adapted to return Result instances instead of the raw data.
+# "Safe" query - a query-like class, adapted to return Result instances instead of the raw data.
 # When it comes to issues encountered when working with the database, SafeQuery should be easier
-# to use than Query, because it aligns better with our codebase, and exceptions raised by underlying
+# to use than query, because it aligns better with our codebase, and exceptions raised by underlying
 # SQLAlchemy code are translated into Failures. For example, should the database connection go away,
-# Query.one_or_none() will raise an exception when called - SafeQuery.one_or_none() would return
-# Error(Failure) instead.
-#
-# TODO: when SafeQuery replaces the use of Query, we will drop Query, rename SafeQuery and that's it.
+# one_or_none() will raise an exception when called - SafeQuery.one_or_none() would return Error(Failure)
+# instead.
 
 # Types of SafeQuery methods, as used by SafeQuery decorators.
 #
@@ -434,12 +361,6 @@ class User(Base):
             role=role.value
         )
 
-    @classmethod
-    def fetch_by_username(cls, session: sqlalchemy.orm.session.Session, username: str) -> Optional['User']:
-        return Query.from_session(session, User) \
-            .filter(User.username == username) \
-            .one_or_none()
-
 
 class SSHKey(Base):
     __tablename__ = 'sshkeys'
@@ -577,7 +498,7 @@ class GuestRequest(Base):
         sort_direction: str = 'desc',
         since: Optional[str] = None,
         until: Optional[str] = None
-    ) -> List['GuestEvent']:
+    ) -> Result[List['GuestEvent'], 'Failure']:
         return GuestEvent.fetch(
             session,
             guestname=self.guestname,
@@ -640,8 +561,8 @@ class GuestEvent(Base):
         sort_direction: str = 'desc',
         since: Optional[str] = None,
         until: Optional[str] = None
-    ) -> List['GuestEvent']:
-        query = Query.from_session(session, GuestEvent)
+    ) -> Result[List['GuestEvent'], 'Failure']:
+        query = SafeQuery.from_session(session, GuestEvent)
 
         if guestname is not None:
             query = query.filter(cls.guestname == guestname)
@@ -660,7 +581,11 @@ class GuestEvent(Base):
             sort_field_direction = getattr(sort_field_column, sort_direction)
 
         except AttributeError:
-            raise gluetool.glue.GlueError('Cannot sort by {}/{}'.format(sort_field, sort_direction))
+            return Error(Failure(
+                'cannot sort events',
+                sort_field=sort_field,
+                sort_direction=sort_direction
+            ))
 
         # E.g. order_by(GuestEvent.updated.desc())
         query = query.order_by(sort_field_direction())
@@ -986,11 +911,19 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
         sys.exit(1)
 
     with db.get_session() as session:
-        all_tags = Query.from_session(session, GuestTag).all()
+        r_all_tags = SafeQuery.from_session(session, GuestTag).all()
+
+        if r_all_tags.is_error:
+            Failure(
+                'failed to load guest tags',
+                caused_by=r_all_tags.unwrap_error()
+            ).handle(logger)
+
+            sys.exit(1)
 
         current_tags: Dict[str, GuestTagsType] = collections.defaultdict(dict)
 
-        for r in all_tags:
+        for r in r_all_tags.unwrap():
             current_tags[r.poolname][r.tag] = r.value
 
         def _add_tags(poolname: str, input_tags: GuestTagsType) -> None:

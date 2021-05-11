@@ -655,17 +655,22 @@ class GuestEventManager:
         **kwargs: Optional[Dict[str, Any]]
     ) -> List[GuestEvent]:
         with self.db.get_session() as session:
+            r_events = artemis_db.GuestEvent.fetch(
+                session,
+                page=page,
+                page_size=page_size,
+                sort_field=sort_field,
+                sort_direction=sort_by,
+                since=since,
+                until=until
+            )
+
+            if r_events.is_error:
+                raise errors.InternalServerError(caused_by=r_events.unwrap_error())
+
             return [
                 GuestEvent.from_db(event_record)
-                for event_record in artemis_db.GuestEvent.fetch(
-                    session,
-                    page=page,
-                    page_size=page_size,
-                    sort_field=sort_field,
-                    sort_direction=sort_by,
-                    since=since,
-                    until=until
-                )
+                for event_record in r_events.unwrap()
             ]
 
     def get_events_by_guestname(
@@ -680,18 +685,23 @@ class GuestEventManager:
         **kwargs: Optional[Dict[str, Any]]
     ) -> List[GuestEvent]:
         with self.db.get_session() as session:
+            r_events = artemis_db.GuestEvent.fetch(
+                session,
+                guestname=guestname,
+                page=page,
+                page_size=page_size,
+                sort_field=sort_field,
+                sort_direction=sort_by,
+                since=since,
+                until=until
+            )
+
+            if r_events.is_error:
+                raise errors.InternalServerError(caused_by=r_events.unwrap_error())
+
             return [
                 GuestEvent.from_db(event_record)
-                for event_record in artemis_db.GuestEvent.fetch(
-                    session,
-                    guestname=guestname,
-                    page=page,
-                    page_size=page_size,
-                    sort_field=sort_field,
-                    sort_direction=sort_by,
-                    since=since,
-                    until=until
-                )
+                for event_record in r_events.unwrap()
             ]
 
 

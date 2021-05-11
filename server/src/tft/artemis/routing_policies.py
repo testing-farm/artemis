@@ -413,7 +413,12 @@ def policy_one_attempt_forgiving(
     :py:data:`KNOB_ROUTE_POOL_FORGIVING_TIME`.
     """
 
-    events = guest_request.fetch_events(session, eventname='error')
+    r_events = guest_request.fetch_events(session, eventname='error')
+
+    if r_events.is_error:
+        return Error(r_events.unwrap_error())
+
+    events = r_events.unwrap()
 
     if not events:
         return Ok(PolicyRuling(allowed_pools=pools))
@@ -452,7 +457,12 @@ def policy_timeout_reached(
     :py:data:`KNOB_ROUTE_REQUEST_MAX_TIME`.
     """
 
-    events = guest_request.fetch_events(session, eventname='created')
+    r_events = guest_request.fetch_events(session, eventname='created')
+
+    if r_events.is_error:
+        return Error(r_events.unwrap_error())
+
+    events = r_events.unwrap()
 
     if not events:
         return Ok(PolicyRuling(allowed_pools=pools))

@@ -15,7 +15,7 @@ from molten.errors import HTTPError
 from molten.http.status_codes import HTTP_200
 
 from .. import Failure, Knob
-from ..db import DB, User, UserRoles
+from ..db import DB, SafeQuery, User, UserRoles
 from ..metrics import APIMetrics
 from . import errors
 
@@ -200,7 +200,14 @@ class AuthContext:
 
         assert self.username is not None
 
-        user = User.fetch_by_username(session, self.username)
+        r_user = SafeQuery.from_session(session, User) \
+            .filter(User.username == self.username) \
+            .one_or_none()
+
+        if r_user.is_error:
+            raise errors.InternalServerError(caused_by=r_user.unwrap_error())
+
+        user = r_user.unwrap()
 
         if not user:
             return
