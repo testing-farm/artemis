@@ -35,8 +35,10 @@ RUN    microdnf -y install bash \
                            curl \
                            gcc \
                            g++ \
+                           hostname \
                            krb5-workstation \
                            krb5-devel \
+                           less \
                            libpq-devel \
                            libffi-devel \
                            libxml2-devel \
