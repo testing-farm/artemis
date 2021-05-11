@@ -225,10 +225,7 @@ class OpenStackDriver(PoolDriver):
         # Sort networks by the number of available IPs, in descending order, and pick the first one.
         free_ips, network_name = sorted(suitable_networks, key=lambda x: x[0], reverse=True)[0]
 
-        self.logger.info('Using {} network with {} free IPs'.format(
-            network_name,
-            free_ips
-        ))
+        self.logger.info(f'Using {network_name} network with {free_ips} free IPs')
 
         return Ok(network_name)
 
@@ -269,7 +266,7 @@ class OpenStackDriver(PoolDriver):
             return Ok(None)
 
         # output['addresses'] == "network_name=ip_address[, ipv6]"
-        match_obj = re.match(r'.*=((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*', output['addresses'])
+        match_obj = re.match(r'.*=((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*', output['addresses'])  # noqa: FS003
         if not match_obj:
             return Error(Failure('Failed to get ip', addresses=output['addresses']))
 
@@ -285,7 +282,7 @@ class OpenStackDriver(PoolDriver):
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
 
-        logger.info('provisioning environment {}'.format(environment))
+        logger.info(f'provisioning environment {environment}')
 
         r_flavor = self._env_to_flavor(environment)
         if r_flavor.is_error:
@@ -299,7 +296,7 @@ class OpenStackDriver(PoolDriver):
 
         image = r_image.unwrap()
 
-        logger.info('provisioning from image {} and flavor {}'.format(image, flavor))
+        logger.info(f'provisioning from image {image} and flavor {flavor}')
 
         r_network = self._env_to_network(environment)
         if r_network.is_error:
@@ -320,7 +317,7 @@ class OpenStackDriver(PoolDriver):
             tags = r_tags.unwrap()
 
             property_options: List[str] = sum([
-                ['--property', '{}={}'.format(tag, value)]
+                ['--property', f'{tag}={value}']
                 for tag, value in tags.items()
             ], [])
 
@@ -357,10 +354,7 @@ class OpenStackDriver(PoolDriver):
 
         status = output['status'].lower()
 
-        logger.info('acquired instance status {}:{}'.format(
-            instance_id,
-            status
-        ))
+        logger.info(f'acquired instance status {instance_id}:{status}')
 
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
@@ -488,7 +482,7 @@ class OpenStackDriver(PoolDriver):
             return Error(Failure('Image show commmand output is empty'))
 
         status = output['status']
-        self.logger.info('snapshot status is {}'.format(status))
+        self.logger.info(f'snapshot status is {status}')
 
         if status != 'active':
             return Ok(ProvisioningProgress(
@@ -585,10 +579,7 @@ class OpenStackDriver(PoolDriver):
 
         status = output['status'].lower()
 
-        logger.info('current instance status {}:{}'.format(
-            OpenStackPoolData.unserialize(guest_request).instance_id,
-            status
-        ))
+        logger.info(f'current instance status {OpenStackPoolData.unserialize(guest_request).instance_id}:{status}')
 
         if status == 'error':
             return Ok(ProvisioningProgress(

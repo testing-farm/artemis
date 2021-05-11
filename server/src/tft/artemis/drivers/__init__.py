@@ -117,7 +117,7 @@ class PoolImageInfo(SerializableContainer):
     pool_details: Dict[str, str] = dataclasses.field(default_factory=dict)
 
     def __repr__(self) -> str:
-        return '<PoolImageInfo: name={} id={} pool-details={}>'.format(self.name, self.id, self.pool_details)
+        return f'<PoolImageInfo: name={self.name} id={self.id} pool-details={self.pool_details}>'
 
 
 @dataclasses.dataclass
@@ -137,13 +137,12 @@ class PoolFlavorInfo(SerializableContainer):
     diskspace: Optional[pint.Quantity] = None
 
     def __repr__(self) -> str:
-        return '<PoolFlavorInfo: name={} id={} cores={} memory={} diskspace={}>'.format(
-            self.name,
-            self.id,
-            self.cores,
-            str(self.memory),
-            str(self.diskspace)
-        )
+        formatted_fields = " ".join([
+            f"{field.name}={str(getattr(self, field.name))}"
+            for field in dataclasses.fields(self)
+        ])
+
+        return f'<PoolFlavorInfo: {formatted_fields}>'
 
     # Custom serialization - we have to take care of Quantity instances, and unserialize them correctly.
     def serialize_to_json(self) -> Dict[str, Any]:
@@ -301,11 +300,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         self._pool_resources_metrics: Optional[PoolResourcesMetrics] = None
 
-        self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)
-        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)
+        self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
+        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
     def __repr__(self) -> str:
-        return '<{}: {}>'.format(self.__class__.__name__, self.poolname)
+        return f'<{self.__class__.__name__}: {self.poolname}>'
 
     def sanity(self) -> Result[bool, Failure]:
         """
@@ -678,7 +677,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         tags['ArtemisGuestName'] = guest_request.guestname
         # TODO: drivers could accept a template for the name, to allow custom naming schemes
-        tags['ArtemisGuestLabel'] = 'artemis-guest-{}'.format(datetime.datetime.utcnow().strftime('%Y-%m-%d-%H-%M-%S'))
+        tags['ArtemisGuestLabel'] = f'artemis-guest-{datetime.datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")}'
 
         return Ok(tags)
 
@@ -1111,7 +1110,7 @@ def run_remote(
                 '-i', private_key_filepath,
                 '-o', 'UserKnownHostsFile=/dev/null',
                 '-o', 'StrictHostKeyChecking=no',
-                '-o', 'ConnectTimeout={}'.format(ssh_timeout),
+                '-o', f'ConnectTimeout={ssh_timeout}',
                 '-l', 'root',
                 guest_request.address,
                 # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
@@ -1141,9 +1140,9 @@ def copy_to_remote(
                 '-i', private_key_filepath,
                 '-o', 'UserKnownHostsFile=/dev/null',
                 '-o', 'StrictHostKeyChecking=no',
-                '-o', 'ConnectTimeout={}'.format(ssh_timeout),
+                '-o', f'ConnectTimeout={ssh_timeout}',
                 src,
-                'root@{}:{}'.format(guest_request.address, dst),
+                f'root@{guest_request.address}:{dst}',
             ]
         )
 
@@ -1168,8 +1167,8 @@ def copy_from_remote(
                 '-i', private_key_filepath,
                 '-o', 'UserKnownHostsFile=/dev/null',
                 '-o', 'StrictHostKeyChecking=no',
-                '-o', 'ConnectTimeout={}'.format(ssh_timeout),
-                'root@{}:{}'.format(guest_request.address, src),
+                '-o', f'ConnectTimeout={ssh_timeout}',
+                f'root@{guest_request.address}:{src}',
                 dst
             ]
         )

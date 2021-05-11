@@ -248,7 +248,7 @@ class BeakerDriver(PoolDriver):
                 command_output=bkr_output.process_output
             ))
 
-        logger.info('Job submitted: {}'.format(job_id))
+        logger.info(f'Job submitted: {job_id}')
 
         return Ok(job_id)
 
@@ -402,10 +402,7 @@ class BeakerDriver(PoolDriver):
 
         job_status = r_job_status.unwrap()
 
-        logger.info('current job status {}: {}'.format(
-            BeakerPoolData.unserialize(guest_request).job_id,
-            job_status
-        ))
+        logger.info(f'current job status {BeakerPoolData.unserialize(guest_request).job_id}:{job_status}')
 
         if job_status.lower() == 'pass':
             r_guest_address = self._parse_guest_address(logger, job_results)

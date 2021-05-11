@@ -151,10 +151,7 @@ class AzureDriver(PoolDriver):
 
         status = output['provisioningState'].lower()
 
-        logger.info('current instance status {}:{}'.format(
-            AzurePoolData.unserialize(guest_request).instance_id,
-            status
-        ))
+        logger.info(f'current instance status {AzurePoolData.unserialize(guest_request).instance_id}:{status}')
 
         if status == 'failed':
             return Ok(ProvisioningProgress(
@@ -163,7 +160,7 @@ class AzureDriver(PoolDriver):
                 pool_failures=[Failure('instance ended up in "failed" state')]
             ))
 
-        r_ip_address = vm_info_to_ip(output, 'publicIps', r'((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*')
+        r_ip_address = vm_info_to_ip(output, 'publicIps', r'((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*')  # noqa: FS003
 
         if r_ip_address.is_error:
             return Error(r_ip_address.unwrap_error())
@@ -186,7 +183,7 @@ class AzureDriver(PoolDriver):
 
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
-        cmd = ['resource', 'list', '--tag', 'uid={}'.format(pool_data.instance_name)]
+        cmd = ['resource', 'list', '--tag', f'uid={pool_data.instance_name}']
         resources_by_tag = self._run_cmd_with_auth(cmd).unwrap()
 
         def _delete_resource(res_id: str) -> Any:
@@ -416,7 +413,7 @@ class AzureDriver(PoolDriver):
 
         image = r_image.unwrap()
 
-        logger.info('provisioning from image {}'.format(image))
+        logger.info(f'provisioning from image {image}')
 
         r_base_tags = self.get_guest_tags(session, guest_request)
 
@@ -461,7 +458,7 @@ class AzureDriver(PoolDriver):
                 az_options += [
                     '--tags'
                 ] + [
-                    '{}={}'.format(tag, value)
+                    f'{tag}={value}'
                     for tag, value in tags.items()
                 ]
 
@@ -484,10 +481,7 @@ class AzureDriver(PoolDriver):
 
         status = output['powerState'].lower()
 
-        logger.info('acquired instance status {}:{}'.format(
-            output['id'],
-            status
-        ))
+        logger.info(f'acquired instance status {output["id"]}:{status}')
 
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(

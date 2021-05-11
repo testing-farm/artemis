@@ -165,7 +165,7 @@ class AWSDriver(PoolDriver):
 
         for variable in required_variables:
             if variable not in self.pool_config:
-                return Error(Failure("Required variable '{}' not found in pool configuration".format(variable)))
+                return Error(Failure(f"Required variable '{variable}' not found in pool configuration"))
 
         return Ok(True)
 
@@ -190,7 +190,7 @@ class AWSDriver(PoolDriver):
         if resource_ids.spot_instance_id is not None:
             r_output = self._aws_command([
                 'ec2', 'cancel-spot-instance-requests',
-                '--spot-instance-request-ids={}'.format(resource_ids.spot_instance_id)
+                f'--spot-instance-request-ids={resource_ids.spot_instance_id}'
             ])
 
             if r_output.is_error:
@@ -199,7 +199,7 @@ class AWSDriver(PoolDriver):
         if resource_ids.instance_id is not None:
             r_output = self._aws_command([
                 'ec2', 'terminate-instances',
-                '--instance-ids={}'.format(resource_ids.instance_id)
+                f'--instance-ids={resource_ids.instance_id}'
             ])
 
             if r_output.is_error:
@@ -289,7 +289,7 @@ class AWSDriver(PoolDriver):
         aws_options = [
             'ec2',
             'describe-instances',
-            '--instance-id={}'.format(AWSPoolData.unserialize(guest_request).instance_id)
+            f'--instance-id={AWSPoolData.unserialize(guest_request).instance_id}'
         ]
 
         r_output = self._aws_command(aws_options, key='Reservations')
@@ -322,7 +322,7 @@ class AWSDriver(PoolDriver):
         aws_options = [
             'ec2',
             'describe-spot-instance-requests',
-            '--spot-instance-request-ids={}'.format(AWSPoolData.unserialize(guest_request).spot_instance_id)
+            f'--spot-instance-request-ids={AWSPoolData.unserialize(guest_request).spot_instance_id}'
         ]
 
         r_output = self._aws_command(aws_options, key='SpotInstanceRequests')
@@ -370,7 +370,7 @@ class AWSDriver(PoolDriver):
 
         except KeyError:
             return Error(Failure(
-                "key '{}' not found in CLI output".format(key),
+                f"key '{key}' not found in CLI output",
                 command_output=output.process_output,
                 scrubbed_command=command
             ))
@@ -386,9 +386,9 @@ class AWSDriver(PoolDriver):
 
         r_spot_price = self._aws_command([
             'ec2', 'describe-spot-price-history',
-            '--instance-types={}'.format(instance_type.name),
-            '--availability-zone={}'.format(availability_zone),
-            '--product-descriptions={}'.format(image.pool_details['PlatformDetails']),
+            f'--instance-types={instance_type.name}',
+            f'--availability-zone={availability_zone}',
+            f'--product-descriptions={image.pool_details["PlatformDetails"]}',
             '--max-items=1'
         ], key='SpotPriceHistory')
 
@@ -409,12 +409,12 @@ class AWSDriver(PoolDriver):
 
         spot_price_bid_percentage = self.pool_config['spot-price-bid-percentage']
 
-        log_dict(logger.info, 'using spot price {} for'.format(price), {
+        log_dict(logger.info, f'using spot price {price} for', {
             'availability zone': self.pool_config['availability-zone'],
             'current price': current_price,
             'instance type': instance_type,
             'product description': image.pool_details['PlatformDetails'],
-            'bid': '{}%'.format(spot_price_bid_percentage)
+            'bid': f'{spot_price_bid_percentage}%'
         })
 
         return Ok(price)
@@ -505,7 +505,7 @@ class AWSDriver(PoolDriver):
         image: PoolImageInfo,
         guestname: str
     ) -> Result[ProvisioningProgress, Failure]:
-        logger.info('provisioning from image {} and flavor {}'.format(image, instance_type))
+        logger.info(f'provisioning from image {image} and flavor {instance_type}')
 
         command = [
             'ec2', 'run-instances',
@@ -526,7 +526,7 @@ class AWSDriver(PoolDriver):
             return Error(r_block_device_mappings.unwrap_error())
 
         if r_block_device_mappings.unwrap() is not None:
-            command.append("--block-device-mappings={}".format(json.dumps(r_block_device_mappings.unwrap())))
+            command.append(f'--block-device-mappings={json.dumps(r_block_device_mappings.unwrap())}')
 
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
@@ -545,7 +545,7 @@ class AWSDriver(PoolDriver):
 
         # instance state is "pending" after launch
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
-        logger.info('current instance state {}:pending'.format(instance_id))
+        logger.info(f'current instance state {instance_id}:pending')
 
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
@@ -562,7 +562,7 @@ class AWSDriver(PoolDriver):
         instance_type: PoolFlavorInfo,
         image: PoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
-        logger.info('provisioning from image {} and flavor {}'.format(image, instance_type))
+        logger.info(f'provisioning from image {image} and flavor {instance_type}')
 
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)
@@ -605,8 +605,8 @@ class AWSDriver(PoolDriver):
 
         r_spot_request = self._aws_command([
             'ec2', 'request-spot-instances',
-            '--spot-price={}'.format(spot_price),
-            '--launch-specification={}'.format(' '.join(specification.split())),
+            f'--spot-price={spot_price}',
+            f'--launch-specification={" ".join(specification.split())}',
         ], key='SpotInstanceRequests')
 
         if r_spot_request.is_error:
@@ -615,7 +615,7 @@ class AWSDriver(PoolDriver):
         spot_instance_id = cast(List[Dict[str, str]], r_spot_request.unwrap())[0]['SpotInstanceRequestId']
 
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-request-status.html
-        logger.info('current spot instance request state {}:open:pending-evaluation'.format(spot_instance_id))
+        logger.info(f'current spot instance request state {spot_instance_id}:open:pending-evaluation')
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
@@ -642,11 +642,7 @@ class AWSDriver(PoolDriver):
         state = spot_instance['State']
         status = spot_instance['Status']['Code']
 
-        logger.info('current spot instance request state {}:{}:{}'.format(
-            pool_data.spot_instance_id,
-            state,
-            status
-        ))
+        logger.info(f'current spot instance request state {pool_data.spot_instance_id}:{state}:{status}')
 
         if status == 'fulfilled' and state == 'active':
             return Ok(ProvisioningProgress(
@@ -701,7 +697,7 @@ class AWSDriver(PoolDriver):
 
         pool_data = AWSPoolData.unserialize(guest_request)
 
-        logger.info('current instance state {}:{}'.format(pool_data.instance_id, state))
+        logger.info(f'current instance state {pool_data.instance_id}:{state}')
 
         # EC2 instance lifecycle documentation
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
@@ -731,7 +727,7 @@ class AWSDriver(PoolDriver):
         # TODO: move these into configuration. Before that, we need to add support for templates in tags, so we
         # could generate tags like `Name`. But it really belongs to configuration.
         tags: Dict[str, str] = {
-            'Name': '{}::{}'.format(instance['PrivateIpAddress'], instance['ImageId'])
+            'Name': f'{instance["PrivateIpAddress"]}::{instance["ImageId"]}'
         }
 
         if pool_data.spot_instance_id is not None:
@@ -791,18 +787,14 @@ class AWSDriver(PoolDriver):
             return
 
         # we need ARN of the instance for tagging
-        arn = 'arn:aws:ec2:{}:{}:instance/{}'.format(
-            # region can be transformed from availability zone by omiting the last character
-            self.pool_config['availability-zone'][:-1],
-            owner,
-            instance['InstanceId']
-        )
+        # region can be transformed from availability zone by omiting the last character
+        arn = f'arn:aws:ec2:{self.pool_config["availability-zone"][:-1]}:{owner}:instance/{instance["InstanceId"]}'
 
         r_tag = self._aws_command([
             'resourcegroupstaggingapi',
             'tag-resources',
             '--resource-arn-list', arn,
-            '--tags', ','.join(['{}={}'.format(tag, value) for tag, value in tags.items()])
+            '--tags', ','.join([f'{tag}={value}' for tag, value in tags.items()])
         ])
 
         # do not fail if failed to tag
@@ -855,7 +847,7 @@ class AWSDriver(PoolDriver):
         master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
-        logger.info('provisioning environment {}'.format(environment.serialize_to_json()))
+        logger.info(f'provisioning environment {environment.serialize_to_json()}')
 
         # get instance type from environment
         r_instance_type = self._env_to_instance_type(environment)

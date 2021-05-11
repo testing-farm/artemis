@@ -41,7 +41,7 @@ def map_compose_to_imagename_by_pattern_map(
     else:
         return Error(Failure('no compose/image mapping file specified', compose=compose_id))
 
-    logger.debug('using pattern map {}'.format(mapping_filepath))
+    logger.debug(f'using pattern map {mapping_filepath}')
 
     try:
         pattern_map = gluetool.utils.PatternMap(mapping_filepath, allow_variables=True, logger=logger)
@@ -84,7 +84,7 @@ def map_environment_to_image_info(
         unsuccessfull.
     """
 
-    logger.info('deciding image name for {}'.format(environment))
+    logger.info(f'deciding image name for {environment}')
 
     try:
         r_image_name = map_compose_to_imagename_by_pattern_map(
@@ -99,7 +99,7 @@ def map_environment_to_image_info(
 
         imagename = r_image_name.unwrap()
 
-        logger.info('mapped {} to image name {}'.format(environment, imagename))
+        logger.info(f'mapped {environment} to image name {imagename}')
 
         return pool.map_image_name_to_image_info(logger, imagename)
 
