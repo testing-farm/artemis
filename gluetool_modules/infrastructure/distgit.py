@@ -5,7 +5,8 @@ import re
 
 import gluetool
 
-from gluetool.utils import cached_property, IncompatibleOptionsError, normalize_path, PatternMap, render_template
+from gluetool.utils import cached_property, IncompatibleOptionsError, normalize_path, normalize_shell_option, \
+        PatternMap, render_template
 from gluetool.log import log_blob, log_dict
 
 import gluetool_modules.libs
@@ -237,6 +238,11 @@ class DistGit(gluetool.Module):
             'clone-url': {
                 'help': 'Force dist-git repository clone URL'
             },
+            'clone-args': {
+                'help': 'Additional arguments to pass to clone command (default: none)',
+                'action': 'append',
+                'default': []
+            },
             'web-url': {
                 'help': 'Force dist-git repository web URL'
             }
@@ -309,6 +315,9 @@ class DistGit(gluetool.Module):
     def _artifact_web_url(self, task):
         return self.option('web-url') or self.web_url_map.match(task.ARTIFACT_NAMESPACE)
 
+    def _artifact_clone_args(self, task):
+        return normalize_shell_option(self.option('clone-args'))
+
     _methods_branch = {
         'artifact': _artifact_branch,
     }
@@ -323,6 +332,10 @@ class DistGit(gluetool.Module):
 
     _methods_web_url = {
         'artifact': _artifact_web_url,
+    }
+
+    _methods_clone_args = {
+        'artifact': _artifact_clone_args,
     }
 
     def sanity(self):
@@ -388,6 +401,8 @@ class DistGit(gluetool.Module):
         # Use the initial value as a template for the final value
         context = self.shared('eval_context')
 
+        if isinstance(value, list):
+            return [render_template(v, **context) for v in value]
         return render_template(value, **context)
 
     def dist_git_bugs(self):
@@ -447,6 +462,7 @@ class DistGit(gluetool.Module):
         # the method.
         kwargs = {
             'clone_url': self._acquire_param('clone_url', error_message='Could not acquire dist-git clone URL'),
+            'clone_args': self._acquire_param('clone_args'),
             'web_url': self._acquire_param('web_url', error_message='Could not acquire dist-git web URL'),
             'branch': self._acquire_param('branch'),
             'ref': self._acquire_param('ref'),

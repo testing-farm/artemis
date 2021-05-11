@@ -16,7 +16,7 @@ import gluetool.log
 import gluetool.utils
 
 # Type annotations
-from typing import cast, Any, Optional  # cast, Callable, Dict, List, NamedTuple, Optional, Tuple  # noqa
+from typing import cast, Any, Optional, List  # cast, Callable, Dict, List, NamedTuple, Optional, Tuple  # noqa
 
 
 class RemoteGitRepository(gluetool.log.LoggerMixin):
@@ -38,7 +38,8 @@ class RemoteGitRepository(gluetool.log.LoggerMixin):
         branch=None,  # type: Optional[str]
         path=None,  # type: Optional[str]
         ref=None,  # type: Optional[str]
-        web_url=None  # type: Optional[str]
+        web_url=None,  # type: Optional[str]
+        clone_args=None  # type: Optional[List[str]]
     ):
         # type: (...) -> None
 
@@ -49,6 +50,7 @@ class RemoteGitRepository(gluetool.log.LoggerMixin):
         self.ref = ref
         self.web_url = web_url
         self.path = path
+        self.clone_args = clone_args or []
 
         # holds git.Git instance, GitPython has no typing support
         self._instance = None  # type: Any
@@ -73,7 +75,8 @@ class RemoteGitRepository(gluetool.log.LoggerMixin):
         branch=None,  # type: Optional[str]
         ref=None,  # type: Optional[str]
         path=None,  # type: Optional[str]
-        prefix=None  # type: Optional[str]
+        prefix=None,  # type: Optional[str]
+        clone_args=None  # type: Optional[List[str]]
     ):
         # type: (...) -> str
         """
@@ -128,8 +131,9 @@ class RemoteGitRepository(gluetool.log.LoggerMixin):
             branch,
             ref if ref else 'not specified'
         ))
-
         cmd = gluetool.utils.Command(['git', 'clone'], logger=logger)
+
+        cmd.options += clone_args or self.clone_args
 
         if not ref:
             cmd.options += [
