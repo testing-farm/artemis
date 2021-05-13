@@ -14,6 +14,7 @@ import git
 
 import gluetool.log
 import gluetool.utils
+from gluetool.utils import Result
 
 # Type annotations
 from typing import cast, Any, Optional, List  # cast, Callable, Dict, List, NamedTuple, Optional, Tuple  # noqa
@@ -76,7 +77,9 @@ class RemoteGitRepository(gluetool.log.LoggerMixin):
         ref=None,  # type: Optional[str]
         path=None,  # type: Optional[str]
         prefix=None,  # type: Optional[str]
-        clone_args=None  # type: Optional[List[str]]
+        clone_args=None,  # type: Optional[List[str]]
+        clone_timeout=120,  # type: int
+        clone_tick=20  # type: int
     ):
         # type: (...) -> str
         """
@@ -92,6 +95,9 @@ class RemoteGitRepository(gluetool.log.LoggerMixin):
         :param str path: if specified, clone into this path. Otherwise, a temporary directory is created.
         :param str prefix: if specified and `path` wasn't set, it is used as a prefix of directory created
             to hold the clone.
+        :param list(str) clone_args: Additional arguments to pass to `git clone`.
+        :param int clone_timeout: Timeout for `git clone` retries.
+        :param int clone_tick: Delay in seconds before retrying `git clone`.
         :returns: path to the cloned repository. If `path` was given explicitly, it is returned as-is. Otherwise,
             function created a temporary directory and its path relative to CWD is returned.
         """
@@ -146,11 +152,22 @@ class RemoteGitRepository(gluetool.log.LoggerMixin):
             actual_path
         ]
 
-        try:
-            cmd.run()
+        def _clone():
+            # type: () -> Result[None, str]
+            try:
+                cmd.run()
 
-        except gluetool.GlueCommandError as exc:
-            raise gluetool.GlueError('Failed to clone git repository: {}'.format(exc.output.stderr))
+            except gluetool.GlueCommandError as exc:
+                return Result.Error('Failed to clone git repository: {}, retrying'.format(exc.output.stderr))
+
+            return Result.Ok(None)
+
+        gluetool.utils.wait(
+            "cloning with timeout {}, tick {}".format(clone_timeout, clone_tick),
+            _clone,
+            timeout=clone_timeout,
+            tick=clone_tick
+        )
 
         # Make sure it's possible to enter this directory for other parties. We're not that concerned with privacy,
         # we'd rather let common users inside the repository when inspecting the pipeline artifacts. Therefore
