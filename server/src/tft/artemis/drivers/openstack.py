@@ -9,8 +9,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob, get_cached_item
-from ..context import CACHE
+from .. import Failure, JSONType, Knob
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
@@ -148,28 +147,34 @@ class OpenStackDriver(PoolDriver):
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
-    def _env_to_flavor(self, environment: Environment) -> Result[PoolFlavorInfo, Failure]:
-        # TODO: this will be handled by a script, for now we simply pick our local common variety of a flavor.
+    def _env_to_flavor(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment
+    ) -> Result[PoolFlavorInfo, Failure]:
+        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(logger, environment)
 
-        r_flavor = get_cached_item(
-            CACHE.get(),
-            self.flavor_info_cache_key,
-            self.pool_config['default-flavor'],
-            PoolFlavorInfo
-        )
+        if r_suitable_flavors.is_error:
+            return Error(r_suitable_flavors.unwrap_error())
 
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
+        suitable_flavors = r_suitable_flavors.unwrap()
 
-        flavor_info = r_flavor.unwrap()
+        if not suitable_flavors:
+            # TODO: somehow notify user that we were not able to find fitting flavor
+            logger.warning('no sutiable flavors, using default')
 
-        if flavor_info is None:
-            return Error(Failure(
-                'no such flavor',
-                flavorname=self.pool_config['default-flavor']
-            ))
+            return self._map_environment_to_flavor_info_by_cache_by_name(logger, self.pool_config['default-flavor'])
 
-        return Ok(flavor_info)
+        if self.pool_config['default-flavor'] in [flavor.name for flavor, _ in suitable_flavors]:
+            logger.info('default flavor among suitable ones, using it')
+
+            return Ok([
+                flavor
+                for flavor, _ in suitable_flavors
+                if flavor.name == self.pool_config['default-flavor']
+            ][0])
+
+        return Ok(suitable_flavors[0][0])
 
     def _env_to_image(
         self,
@@ -285,7 +290,7 @@ class OpenStackDriver(PoolDriver):
 
         logger.info(f'provisioning environment {guest_request.environment}')
 
-        r_flavor = self._env_to_flavor(environment)
+        r_flavor = self._env_to_flavor(logger, environment)
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
 
@@ -437,7 +442,8 @@ class OpenStackDriver(PoolDriver):
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
-        r_flavor = self._env_to_flavor(environment)
+        # TODO: fix once we have better logger
+        r_flavor = self._env_to_flavor(self.logger, environment)
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
 

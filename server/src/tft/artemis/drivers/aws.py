@@ -14,8 +14,7 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 
-from .. import Failure, JSONType, Knob, get_cached_item
-from ..context import CACHE
+from .. import Failure, JSONType, Knob
 from ..db import GuestRequest
 from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics
@@ -227,7 +226,8 @@ class AWSDriver(PoolDriver):
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
-        r_type = self._env_to_instance_type(environment)
+        # TODO: fix once we have better logger
+        r_type = self._env_to_instance_type(self.logger, environment)
         if r_type.is_error:
             return Error(r_type.unwrap_error())
 
@@ -242,29 +242,35 @@ class AWSDriver(PoolDriver):
 
     def _env_to_instance_type(
         self,
+        logger: gluetool.log.ContextAdapter,
         environment: Environment
     ) -> Result[PoolFlavorInfo, Failure]:
-        # TODO: later we will be smarter when picking flavor, for now return the default one.
+        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(logger, environment)
 
-        r_flavor = get_cached_item(
-            CACHE.get(),
-            self.flavor_info_cache_key,
-            self.pool_config['default-instance-type'],
-            PoolFlavorInfo
-        )
+        if r_suitable_flavors.is_error:
+            return Error(r_suitable_flavors.unwrap_error())
 
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
+        suitable_flavors = r_suitable_flavors.unwrap()
 
-        flavor_info = r_flavor.unwrap()
+        if not suitable_flavors:
+            # TODO: somehow notify user that we were not able to find fitting flavor
+            logger.warning('no sutiable flavors, using default')
 
-        if flavor_info is None:
-            return Error(Failure(
-                'no such flavor',
-                flavorname=self.pool_config['default-instance-type']
-            ))
+            return self._map_environment_to_flavor_info_by_cache_by_name(
+                logger,
+                self.pool_config['default-instance-type']
+            )
 
-        return Ok(flavor_info)
+        if self.pool_config['default-instance-type'] in [flavor.name for flavor, _ in suitable_flavors]:
+            logger.info('default flavor among suitable ones, using it')
+
+            return Ok([
+                flavor
+                for flavor, _ in suitable_flavors
+                if flavor.name == self.pool_config['default-instance-type']
+            ][0])
+
+        return Ok(suitable_flavors[0][0])
 
     def _env_to_image(
         self,
@@ -869,7 +875,7 @@ class AWSDriver(PoolDriver):
         logger.info(f'provisioning environment {environment.serialize_to_json()}')
 
         # get instance type from environment
-        r_instance_type = self._env_to_instance_type(environment)
+        r_instance_type = self._env_to_instance_type(logger, environment)
         if r_instance_type.is_error:
             return Error(r_instance_type.unwrap_error())
 
