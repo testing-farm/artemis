@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shlex
+import sys
 import tempfile
 import threading
 import time
@@ -62,6 +63,36 @@ KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD: Knob[float] = Knob(
     envvar_cast=float,
     default=10.0
 )
+
+#: Log only slow commands matching the pattern.
+KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN: Knob[str] = Knob(
+    'logging.cli.slow-command-pattern',
+    has_db=False,
+    envvar='ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN',
+    envvar_cast=str,
+    default=r'.*'
+)
+
+# Precompile the slow command pattern
+try:
+    SLOW_CLI_COMMAND_PATTERN = re.compile(KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN.value)
+
+except Exception as exc:
+    Failure.from_exc(
+        'failed to compile ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN pattern',
+        exc,
+        pattern=KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN.value
+    ).handle(LOGGER.get())
+
+    sys.exit(1)
+
+
+if hasattr(shlex, 'join'):
+    command_join = shlex.join  # type: ignore
+
+else:
+    def command_join(command: List[str]) -> str:
+        return ' '.join(shlex.quote(arg) for arg in command)
 
 
 class _AnyArchitecture:
@@ -1003,6 +1034,9 @@ def run_cli_tool(
         if KNOB_LOGGING_SLOW_CLI_COMMANDS.value is not True:
             return
 
+        if SLOW_CLI_COMMAND_PATTERN.match(command_join(command)) is None:
+            return
+
         command_time = time.monotonic() - start_time
 
         if command_time < KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD.value:
@@ -1115,7 +1149,7 @@ def run_remote(
                 guest_request.address,
                 # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
                 # parameters. Therefore joining it into a single string here, instead of bothering the caller.
-                ' '.join(shlex.quote(arg) for arg in command)
+                command_join(command)
             ]
         )
 
