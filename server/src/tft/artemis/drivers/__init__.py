@@ -452,8 +452,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         """
@@ -468,8 +466,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         :param logger: logger to use for logging.
         :param guest_request: guest request to provision for.
-        :param enviroment: environment to satisfy.
-        :param master_key: Artemis' master SSH key.
         :param cancelled: if provided, and set, method is expected to cancel its work, and release
             resources it already allocated.
         """
@@ -481,8 +477,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         """
@@ -498,8 +492,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         :param logger: logger to use for logging.
         :param guest_request: guest request to provision for.
-        :param enviroment: environment to satisfy.
-        :param master_key: Artemis' master SSH key.
         :param cancelled: if provided, and set, method is expected to cancel its work, and release
             resources it already allocated.
         """

@@ -16,7 +16,7 @@ from jinja2 import Template
 
 from .. import UNITS, Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
-from ..db import GuestRequest, SSHKey
+from ..db import GuestRequest
 from ..environment import Environment
 from ..metrics import PoolMetrics
 from ..script import hook_engine
@@ -771,8 +771,6 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         pool_data = AWSPoolData.unserialize(guest_request)
@@ -838,8 +836,6 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         """
@@ -858,8 +854,6 @@ class AWSDriver(PoolDriver):
             logger,
             session,
             guest_request,
-            environment,
-            master_key,
             cancelled
         )
 
@@ -868,10 +862,10 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
+        environment = Environment.unserialize_from_str(guest_request.environment)
+
         logger.info(f'provisioning environment {environment.serialize_to_json()}')
 
         # get instance type from environment

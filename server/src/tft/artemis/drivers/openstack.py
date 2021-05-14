@@ -11,7 +11,7 @@ from gluetool.result import Error, Ok, Result
 
 from .. import UNITS, Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
-from ..db import GuestRequest, SnapshotRequest, SSHKey
+from ..db import GuestRequest, SnapshotRequest
 from ..environment import Environment
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
@@ -279,12 +279,11 @@ class OpenStackDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
+        environment = Environment.unserialize_from_str(guest_request.environment)
 
-        logger.info(f'provisioning environment {environment}')
+        logger.info(f'provisioning environment {guest_request.environment}')
 
         r_flavor = self._env_to_flavor(environment)
         if r_flavor.is_error:
@@ -535,8 +534,6 @@ class OpenStackDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         """
@@ -555,8 +552,6 @@ class OpenStackDriver(PoolDriver):
             logger,
             session,
             guest_request,
-            environment,
-            master_key,
             cancelled
         )
 
@@ -565,8 +560,6 @@ class OpenStackDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         r_output = self._show_guest(guest_request)

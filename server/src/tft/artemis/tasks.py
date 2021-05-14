@@ -27,7 +27,6 @@ from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver
 from .drivers import beaker as beaker_driver
 from .drivers import openstack as openstack_driver
-from .environment import Environment
 from .guest import GuestLogger, GuestState, SnapshotLogger
 from .routing_policies import PolicyRuling
 from .script import hook_engine
@@ -2328,7 +2327,6 @@ def do_update_guest_request(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PROMISED)
-    workspace.load_ssh_key()
     workspace.load_gr_pool()
 
     if workspace.result:
@@ -2336,7 +2334,6 @@ def do_update_guest_request(
 
     assert workspace.gr
     assert workspace.pool
-    assert workspace.ssh_key
 
     spice_details['poolname'] = workspace.gr.poolname
     current_pool_data = workspace.gr.pool_data
@@ -2352,14 +2349,10 @@ def do_update_guest_request(
 
         handle_failure(r, 'failed to undo guest update')
 
-    environment = Environment.unserialize_from_str(workspace.gr.environment)
-
     r_update = workspace.pool.update_guest(
         logger,
         session,
-        workspace.gr,
-        environment,
-        workspace.ssh_key
+        workspace.gr
     )
 
     if r_update.is_error:
@@ -2463,7 +2456,6 @@ def do_acquire_guest_request(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PROVISIONING)
-    workspace.load_ssh_key()
     workspace.load_gr_pool()
 
     if workspace.result:
@@ -2471,16 +2463,11 @@ def do_acquire_guest_request(
 
     assert workspace.gr
     assert workspace.pool
-    assert workspace.ssh_key
-
-    environment = Environment.unserialize_from_str(workspace.gr.environment)
 
     result = workspace.pool.acquire_guest(
         logger,
         session,
         workspace.gr,
-        environment,
-        workspace.ssh_key,
         cancelled=cancel
     )
 

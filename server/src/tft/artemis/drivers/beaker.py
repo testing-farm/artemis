@@ -12,7 +12,7 @@ from gluetool.log import log_xml
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure, Knob
-from ..db import GuestRequest, SSHKey
+from ..db import GuestRequest
 from ..environment import Environment
 from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
@@ -373,8 +373,6 @@ class BeakerDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         """
@@ -427,7 +425,7 @@ class BeakerDriver(PoolDriver):
             r_reschedule_job = self._reschedule_job(
                 logger,
                 BeakerPoolData.unserialize(guest_request).job_id,
-                environment
+                Environment.unserialize_from_str(guest_request.environment)
             )
 
             if r_reschedule_job.is_error:
@@ -464,8 +462,6 @@ class BeakerDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         """
@@ -481,7 +477,7 @@ class BeakerDriver(PoolDriver):
             of error.
         """
 
-        r_create_job = self._create_job(logger, environment)
+        r_create_job = self._create_job(logger, Environment.unserialize_from_str(guest_request.environment))
 
         if r_create_job.is_error:
             return Error(r_create_job.unwrap_error())

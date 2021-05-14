@@ -7,7 +7,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, Knob
-from ..db import GuestRequest, SnapshotRequest, SSHKey
+from ..db import GuestRequest, SnapshotRequest
 from ..environment import Environment
 from ..script import hook_engine
 from . import PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
@@ -129,8 +129,6 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         """
@@ -285,8 +283,6 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
         """
@@ -306,8 +302,6 @@ class AzureDriver(PoolDriver):
             logger,
             session,
             guest_request,
-            environment,
-            master_key,
             cancelled)
 
     def _run_cmd(self, options: List[str], json_format: bool = True) -> Result[Union[JSONType, str], Failure]:
@@ -403,10 +397,10 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        environment: Environment,
-        master_key: SSHKey,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
+        environment = Environment.unserialize_from_str(guest_request.environment)
+
         r_image = self._env_to_image(logger, environment)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
