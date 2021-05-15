@@ -18,6 +18,7 @@ from .. import UNITS, Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
 from ..db import GuestRequest, SSHKey
 from ..environment import Environment
+from ..metrics import PoolMetrics
 from ..script import hook_engine
 from . import GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
     ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
@@ -358,6 +359,8 @@ class AWSDriver(PoolDriver):
             if test_cli_error(failure, MISSING_INSTANCE_ERROR_PATTERN):
                 failure.recoverable = False
 
+                PoolMetrics.inc_error(self.poolname, 'missing-instance')
+
             return Error(failure)
 
         output = r_run.unwrap()
@@ -401,7 +404,10 @@ class AWSDriver(PoolDriver):
 
         try:
             current_price = float(prices[0]['SpotPrice'])
+
         except KeyError:
+            PoolMetrics.inc_error(self.poolname, 'spot-price-not-detected')
+
             return Error(Failure('failed to detect spot price'))
 
         # we bid some % to the price
@@ -656,6 +662,8 @@ class AWSDriver(PoolDriver):
 
         if state == 'open':
             if is_old_enough(logger, spot_instance['CreateTime'], KNOB_SPOT_OPEN_TIMEOUT.value):
+                PoolMetrics.inc_error(self.poolname, 'instance-building-too-long')
+
                 return Ok(ProvisioningProgress(
                     state=ProvisioningState.CANCEL,
                     pool_data=AWSPoolData.unserialize(guest_request),
@@ -663,6 +671,8 @@ class AWSDriver(PoolDriver):
                 ))
 
         if state in ('cancelled', 'failed', 'closed', 'disabled'):
+            PoolMetrics.inc_error(self.poolname, 'spot-instance-terminated-prematurely')
+
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
                 pool_data=AWSPoolData.unserialize(guest_request),
@@ -703,6 +713,8 @@ class AWSDriver(PoolDriver):
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
 
         if state == 'terminated' or state == 'shutting-down':
+            PoolMetrics.inc_error(self.poolname, 'instance-terminated-prematurely')
+
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
                 pool_data=AWSPoolData.unserialize(guest_request),
@@ -711,6 +723,8 @@ class AWSDriver(PoolDriver):
 
         if state == 'pending':
             if is_old_enough(logger, instance['LaunchTime'], KNOB_PENDING_TIMEOUT.value):
+                PoolMetrics.inc_error(self.poolname, 'instance-building-too-long')
+
                 return Ok(ProvisioningProgress(
                     state=ProvisioningState.CANCEL,
                     pool_data=AWSPoolData.unserialize(guest_request),

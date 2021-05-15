@@ -13,7 +13,7 @@ from .. import UNITS, Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
 from ..db import GuestRequest, SnapshotRequest, SSHKey
 from ..environment import Environment
-from ..metrics import PoolNetworkResources, PoolResourcesMetrics
+from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
 from . import PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
     ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
@@ -119,6 +119,8 @@ class OpenStackDriver(PoolDriver):
             # run this method, we would never evenr made it remove instance that doesn't exist.
             if test_cli_error(failure, MISSING_INSTANCE_ERROR_PATTERN):
                 failure.recoverable = False
+
+                PoolMetrics.inc_error(self.poolname, 'missing-instance')
 
             return Error(failure)
 
@@ -582,6 +584,8 @@ class OpenStackDriver(PoolDriver):
         logger.info(f'current instance status {OpenStackPoolData.unserialize(guest_request).instance_id}:{status}')
 
         if status == 'error':
+            PoolMetrics.inc_error(self.poolname, 'instance-in-error-state')
+
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
                 pool_data=OpenStackPoolData.unserialize(guest_request),
@@ -603,6 +607,8 @@ class OpenStackDriver(PoolDriver):
                 diff = datetime.utcnow() - created_stamp
 
                 if diff.total_seconds() > KNOB_BUILD_TIMEOUT.value:
+                    PoolMetrics.inc_error(self.poolname, 'instance-building-too-long')
+
                     return Ok(ProvisioningProgress(
                         state=ProvisioningState.CANCEL,
                         pool_data=OpenStackPoolData.unserialize(guest_request),

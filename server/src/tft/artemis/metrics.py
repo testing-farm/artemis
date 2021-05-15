@@ -573,12 +573,16 @@ class PoolMetrics(MetricsBase):
     Metrics of a particular pool.
     """
 
+    _KEY_ERRORS = 'metrics.pool.{poolname}.errors'
+
     poolname: str
 
     resources: PoolResourcesMetrics
 
     current_guest_request_count: int
     current_guest_request_count_per_state: Dict[GuestState, int]
+
+    errors: Dict[str, int]
 
     def __init__(self, poolname: str) -> None:
         """
@@ -587,19 +591,48 @@ class PoolMetrics(MetricsBase):
         :param poolname: name of the pool whose metrics we're tracking.
         """
 
+        self.key_errors = self._KEY_ERRORS.format(poolname=poolname)
+
         self.poolname = poolname
         self.resources = PoolResourcesMetrics(poolname)
 
         self.current_guest_request_count = 0
         self.current_guest_request_count_per_state = {}
 
+        self.errors = {}
+
+    @staticmethod
     @with_context
-    def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+    def inc_error(
+        pool: str,
+        error: str,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase counter for a given pool error by 1.
+
+        :param pool: pool that provided the instance.
+        :param error: error to track.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error)
+        return Ok(None)
+
+    @with_context
+    def sync(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        cache: redis.Redis
+    ) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
         :param logger: logger to use for logging.
         :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
         """
 
         self.resources.sync()
@@ -630,6 +663,11 @@ class PoolMetrics(MetricsBase):
             )
         })
 
+        self.errors = {
+            errorname: count
+            for errorname, count in get_metric_fields(cache, self.key_errors).items()
+        }
+
 
 @dataclasses.dataclass
 class UndefinedPoolMetrics(MetricsBase):
@@ -644,6 +682,8 @@ class UndefinedPoolMetrics(MetricsBase):
     current_guest_request_count: int
     current_guest_request_count_per_state: Dict[GuestState, int]
 
+    errors: Dict[str, int]
+
     def __init__(self, poolname: str) -> None:
         """
         Metrics of a particular pool.
@@ -656,6 +696,8 @@ class UndefinedPoolMetrics(MetricsBase):
 
         self.current_guest_request_count = 0
         self.current_guest_request_count_per_state = {}
+
+        self.errors = {}
 
     @with_context
     def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
@@ -766,6 +808,13 @@ class PoolsMetrics(MetricsBase):
             registry=registry
         )
 
+        self.POOL_ERRORS = Counter(
+            'pool_errors',
+            'Overall total number of pool errors, per pool and error.',
+            ['pool', 'error'],
+            registry=registry
+        )
+
         self.POOL_RESOURCES_INSTANCES = _create_pool_resource_metric('instances')
         self.POOL_RESOURCES_CORES = _create_pool_resource_metric('cores')
         self.POOL_RESOURCES_MEMORY = _create_pool_resource_metric('memory', unit='bytes')
@@ -781,11 +830,16 @@ class PoolsMetrics(MetricsBase):
         Update values of Prometheus metric instances with the data in this container.
         """
 
+        reset_counters(self.POOL_ERRORS)
+
         for poolname, pool_metrics in self.pools.items():
             for state in pool_metrics.current_guest_request_count_per_state:
                 self.CURRENT_GUEST_REQUEST_COUNT \
                     .labels(poolname, state.value) \
                     .set(pool_metrics.current_guest_request_count_per_state[state])
+
+            for error, count in pool_metrics.errors.items():
+                self.POOL_ERRORS.labels(pool=poolname, error=error).inc(count)
 
             for gauge, metric_name in [
                 (self.POOL_RESOURCES_INSTANCES, 'instances'),

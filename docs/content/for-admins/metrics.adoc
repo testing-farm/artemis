@@ -75,6 +75,10 @@ Following metrics are generated for every known pool, and represent limits and c
 * `pool_resources_snapshot` (gauge): Current limits and usage of pool snapshot.
 * `pool_resources_update_timestamp` (gauge): Last time the pool metrics were updated, as Unix timestamp.
 
+=== Pool errors
+
+* `pool_errors` (counter): Overall total number of pool errors, per pool and error.
+
 == Other components
 
 #TODO: List other components and where to find their metrics, plus links to their documentation - we don't want to document their metrics here. But this will need to somehow standardise where their metrics can be found, e.g. by listing routes and checking k8s the routes are available.#
