@@ -145,10 +145,8 @@ class PoolImageInfo(SerializableContainer):
     name: str
     id: str
 
-    pool_details: Dict[str, str] = dataclasses.field(default_factory=dict)
-
     def __repr__(self) -> str:
-        return f'<PoolImageInfo: name={self.name} id={self.id} pool-details={self.pool_details}>'
+        return f'<PoolImageInfo: name={self.name} id={self.id}>'
 
 
 @dataclasses.dataclass
@@ -312,6 +310,8 @@ class PoolResourcesIDs:
 
 
 class PoolDriver(gluetool.log.LoggerMixin):
+    image_info_class: Type[PoolImageInfo] = PoolImageInfo
+
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
 
@@ -839,7 +839,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Retrieve pool image info for an image of a given name.
         """
 
-        return get_cached_item(CACHE.get(), self.image_info_cache_key, imagename, PoolImageInfo)
+        return get_cached_item(CACHE.get(), self.image_info_cache_key, imagename, self.image_info_class)
 
     def fetch_pool_flavor_info(self) -> Result[List[PoolFlavorInfo], Failure]:
         """
@@ -968,7 +968,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Retrieve pool image info for all known images.
         """
 
-        return get_cached_items_as_list(CACHE.get(), self.image_info_cache_key, PoolImageInfo)
+        return get_cached_items_as_list(CACHE.get(), self.image_info_cache_key, self.image_info_class)
 
     def get_cached_pool_flavor_infos(self) -> Result[List[PoolFlavorInfo], Failure]:
         """

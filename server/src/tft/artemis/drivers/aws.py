@@ -103,6 +103,15 @@ class AWSPoolData(PoolData):
 
 
 @dataclasses.dataclass
+class AWSPoolImageInfo(PoolImageInfo):
+    #: Carries ``PlatformDetails`` field as provided by AWS image description.
+    platform_details: str
+
+    def __repr__(self) -> str:
+        return f'<AWSPoolImageInfo: name={self.name} id={self.id} platform-details={self.platform_details}>'
+
+
+@dataclasses.dataclass
 class AWSPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
     spot_instance_id: Optional[str] = None
@@ -127,6 +136,8 @@ def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold
 
 
 class AWSDriver(PoolDriver):
+    image_info_class = AWSPoolImageInfo
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -259,7 +270,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[PoolImageInfo, Failure]:
+    ) -> Result[AWSPoolImageInfo, Failure]:
         r_engine = hook_engine('AWS_ENVIRONMENT_TO_IMAGE')
 
         if r_engine.is_error:
@@ -267,7 +278,7 @@ class AWSDriver(PoolDriver):
 
         engine = r_engine.unwrap()
 
-        r_image: Result[PoolImageInfo, Failure] = engine.run_hook(
+        r_image: Result[AWSPoolImageInfo, Failure] = engine.run_hook(
             'AWS_ENVIRONMENT_TO_IMAGE',
             logger=logger,
             pool=self,
@@ -382,7 +393,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         instance_type: PoolFlavorInfo,
-        image: PoolImageInfo
+        image: AWSPoolImageInfo
     ) -> Result[float, Failure]:
 
         availability_zone = self.pool_config['availability-zone']
@@ -391,7 +402,7 @@ class AWSDriver(PoolDriver):
             'ec2', 'describe-spot-price-history',
             f'--instance-types={instance_type.name}',
             f'--availability-zone={availability_zone}',
-            f'--product-descriptions={image.pool_details["PlatformDetails"]}',
+            f'--product-descriptions={image.platform_details}',
             '--max-items=1'
         ], key='SpotPriceHistory')
 
@@ -419,7 +430,7 @@ class AWSDriver(PoolDriver):
             'availability zone': self.pool_config['availability-zone'],
             'current price': current_price,
             'instance type': instance_type,
-            'product description': image.pool_details['PlatformDetails'],
+            'product description': image.platform_details,
             'bid': f'{spot_price_bid_percentage}%'
         })
 
@@ -473,7 +484,7 @@ class AWSDriver(PoolDriver):
 
     def _create_block_device_mappings(
         self,
-        image: PoolImageInfo,
+        image: AWSPoolImageInfo,
         flavor: PoolFlavorInfo
     ) -> Result[Optional[BlockDeviceMappingsType], Failure]:
         """
@@ -508,7 +519,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         instance_type: PoolFlavorInfo,
-        image: PoolImageInfo,
+        image: AWSPoolImageInfo,
         guestname: str
     ) -> Result[ProvisioningProgress, Failure]:
         logger.info(f'provisioning from image {image} and flavor {instance_type}')
@@ -566,7 +577,7 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         instance_type: PoolFlavorInfo,
-        image: PoolImageInfo
+        image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
         logger.info(f'provisioning from image {image} and flavor {instance_type}')
 
@@ -925,12 +936,10 @@ class AWSDriver(PoolDriver):
 
         try:
             return Ok([
-                PoolImageInfo(
+                AWSPoolImageInfo(
                     name=image['Name'],
                     id=image['ImageId'],
-                    pool_details={
-                        'PlatformDetails': image['PlatformDetails']
-                    }
+                    platform_details=image['PlatformDetails']
                 )
                 for image in cast(List[Dict[str, str]], r_images.unwrap())
             ])
