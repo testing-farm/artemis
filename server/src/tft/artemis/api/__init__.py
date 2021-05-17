@@ -18,7 +18,7 @@ import molten.dependency_injection
 import molten.openapi
 import sqlalchemy
 import sqlalchemy.orm.exc
-from molten import HTTP_200, HTTP_201, HTTP_204, Request, Response
+from molten import HTTP_200, HTTP_201, HTTP_204, Include, Request, Response, Route
 from molten.app import BaseApp
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware
@@ -26,6 +26,7 @@ from molten.openapi.handlers import OpenAPIHandler as _OpenAPIHandler
 from molten.openapi.handlers import OpenAPIUIHandler
 from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
+from typing_extensions import Protocol
 
 from .. import __VERSION__, FailureDetailsType, Knob
 from .. import db as artemis_db
@@ -36,6 +37,17 @@ from ..tasks import get_snapshot_logger
 from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
+
+class RouteGeneratorType(Protocol):
+    def __call__(
+        self,
+        url_prefix: str,
+        name_prefix: str,
+        redirect_to_prefix: Optional[str] = None
+    ) -> List[Union[Route, Include]]:
+        pass
+
+
 DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
 
 DEFAULT_SSH_PORT = 22
@@ -45,18 +57,6 @@ DEFAULT_EVENTS_PAGE = 1
 DEFAULT_EVENTS_PAGE_SIZE = 20
 DEFAULT_EVENTS_SORT_FIELD = 'updated'
 DEFAULT_EVENTS_SORT_BY = 'desc'
-
-
-#: API milestones - mapping between a milestone version, and older versions compatible with it.
-#: The mapping is then used to install proper redirects.
-API_MILESTONES: Dict[str, List[str]] = {
-    'v0.0.18': [
-        'v0.0.17',
-        'v0.0.16',
-        'v0.0.15',
-        'v0.0.14'
-    ]
-}
 
 
 #: Number of processes to spawn for servicing API requests.
@@ -1332,7 +1332,7 @@ def run_app() -> molten.app.App:
     ) -> Route:
         return Route(template, handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
 
-    def create_routes(
+    def create_routes_v0_0_18(
         url_prefix: str,
         name_prefix: str,
         redirect_to_prefix: Optional[str] = None
@@ -1410,23 +1410,35 @@ def run_app() -> molten.app.App:
 
         return [Include(url_prefix, routes)]
 
-    # Current, most up-to-date endpoints, under `/current`
-    routes += create_routes('/current', 'current_')
+    #: API milestones - mapping between a milestone version, and older versions compatible with it.
+    #: The mapping is then used to install proper redirects.
+    API_MILESTONES: Dict[Tuple[str, RouteGeneratorType], List[str]] = {
+        ('v0.0.18', create_routes_v0_0_18): [
+            # For lazy clients who don't care about the version, support `/current` redirected
+            # to the most recent API we have.
+            'current',
+            'v0.0.17',
+            'v0.0.16',
+            'v0.0.15',
+            'v0.0.14'
+        ]
+    }
 
-    # Current, most up-to-date endpoints, but under `/{tft.artemis.__VERSION__}`
-    routes += create_routes('/v{}'.format(__VERSION__), 'v{}_'.format(__VERSION__), redirect_to_prefix='/current')
+    # Current API version
+    routes += create_routes_v0_0_18('/v0.0.18', 'v0.0.18_')
+
+    # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
+    routes += create_routes_v0_0_18('/', 'toplevel_legacy_')
 
     # Milestones and versions compatible with them
-    for milestone_version, compatible_versions in API_MILESTONES.items():
+    for (milestone_version, routes_generator), compatible_versions in API_MILESTONES.items():
         for compatible_version in compatible_versions:
-            routes += create_routes(
+            logger.warning('API: /{} => /{}'.format(compatible_version, milestone_version))
+            routes += routes_generator(
                 '/{}'.format(compatible_version),
                 'legacy_{}_'.format(compatible_version),
                 redirect_to_prefix='/{}'.format(milestone_version)
             )
-
-    # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
-    routes += create_routes('/', 'toplevel_legacy_')
 
     #
     # Older API versions will land here when needed
