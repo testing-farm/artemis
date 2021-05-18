@@ -277,6 +277,7 @@ class DoerType(Protocol):
 # Task actor type.
 class Actor(Protocol):
     actor_name: str
+    fn: Callable[..., None]
 
     def send(
         self,

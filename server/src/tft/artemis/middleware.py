@@ -1,7 +1,7 @@
 import datetime
 import inspect
 import traceback
-from typing import Any, Dict, Optional, Set
+from typing import TYPE_CHECKING, Dict, Optional, Set, Union
 
 import dramatiq.broker
 import dramatiq.message
@@ -12,12 +12,15 @@ from dramatiq.common import compute_backoff, current_millis
 
 from .guest import GuestLogger
 
+if TYPE_CHECKING:
+    from .tasks import Actor
+
 
 def _actor_arguments(
     logger: gluetool.log.ContextAdapter,
     message: dramatiq.message.Message,
-    actor: Any  # it's actually tasks.Actor, but circular import :/
-) -> Dict[str, Any]:
+    actor: 'Actor'
+) -> Dict[str, Union[str, None]]:
     signature = inspect.signature(actor.fn)
 
     gluetool.log.log_dict(logger.debug, 'raw message data', message._message)
@@ -42,11 +45,12 @@ def _actor_arguments(
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class cannot subclass 'Retries
     def after_process_message(
         self,
-        broker: Any,
+        broker: dramatiq.broker.Broker,
         message: dramatiq.message.Message,
         *,
-        result: Optional[Any] = None,
-        exception: Optional[Any] = None
+        # This is on purpose, our tasks never return anything useful.
+        result: None = None,
+        exception: Optional[BaseException] = None
     ) -> None:
         if exception is None:
             return
@@ -198,8 +202,9 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore  # Class canno
         broker: dramatiq.broker.Broker,
         message: dramatiq.message.Message,
         *,
-        result: Optional[Any] = None,
-        exception: Optional[Any] = None
+        # This is on purpose, our tasks never return anything useful.
+        result: None = None,
+        exception: Optional[BaseException] = None
     ) -> None:
         from . import get_logger
         from .metrics import TaskMetrics
