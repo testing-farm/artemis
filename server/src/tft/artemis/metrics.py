@@ -99,6 +99,26 @@ class MetricsBase:
     Base class for all containers carrying metrics around.
     """
 
+    _metric_container_fields: List['MetricsBase']
+
+    def __post_init__(self) -> None:
+        """
+        Collect all fields that are child classes of this base class.
+
+        This list is then used to automagically call :py:func:`sync` and other methods for these fields.
+
+        .. note::
+
+           This method is called by dataclasses implementation,
+           see https://docs.python.org/3.7/library/dataclasses.html#post-init-processing
+        """
+
+        self._metric_container_fields = [
+            self.__dict__[field.name]
+            for field in dataclasses.fields(self)
+            if isinstance(self.__dict__[field.name], MetricsBase)
+        ]
+
     def sync(self) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
@@ -107,29 +127,36 @@ class MetricsBase:
 
            **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
 
-        :raises NotImplementedError: when not implemented by a child class.
+        The default implementation delegates the call to all child fields that are descendants of ``MetricsBase``
+        class.
         """
 
-        raise NotImplementedError()
+        for container in self._metric_container_fields:
+            container.sync()
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
+        The default implementation delegates the call to all child fields that are descendants of ``MetricsBase``
+        class.
+
         :param registry: Prometheus registry to attach metrics to.
-        :raises NotImplementedError: when not implemented by a child class.
         """
 
-        raise NotImplementedError()
+        for container in self._metric_container_fields:
+            container.register_with_prometheus(registry)
 
     def update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
 
-        :raises NotImplementedError: when not implemented by a child class.
+        The default implementation delegates the call to all child fields that are descendants of ``MetricsBase``
+        class.
         """
 
-        raise NotImplementedError()
+        for container in self._metric_container_fields:
+            container.update_prometheus()
 
 
 @dataclasses.dataclass
@@ -155,6 +182,8 @@ class DBPoolMetrics(MetricsBase):
         Load values from the storage and update this container with up-to-date values.
         """
 
+        super(DBPoolMetrics, self).sync()
+
         db = DATABASE.get()
 
         if not hasattr(db.engine.pool, 'size'):
@@ -176,6 +205,8 @@ class DBPoolMetrics(MetricsBase):
 
         :param registry: Prometheus registry to attach metrics to.
         """
+
+        super(DBPoolMetrics, self).register_with_prometheus(registry)
 
         self.POOL_SIZE = Gauge(
             'db_pool_size',
@@ -206,6 +237,8 @@ class DBPoolMetrics(MetricsBase):
         Update values of Prometheus metric instances with the data in this container.
         """
 
+        super(DBPoolMetrics, self).update_prometheus()
+
         self.POOL_SIZE.set(self.size)
         self.POOL_CHECKED_IN.set(self.checked_in_connections)
         self.POOL_CHECKED_OUT.set(self.checked_out_connections)
@@ -220,29 +253,6 @@ class DBMetrics(MetricsBase):
 
     #: Database connection pool metrics.
     pool: DBPoolMetrics = DBPoolMetrics()
-
-    def sync(self) -> None:
-        """
-        Load values from the storage and update this container with up-to-date values.
-        """
-
-        self.pool.sync()
-
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
-        """
-        Register instances of Prometheus metrics with the given registry.
-
-        :param registry: Prometheus registry to attach metrics to.
-        """
-
-        self.pool.register_with_prometheus(registry)
-
-    def update_prometheus(self) -> None:
-        """
-        Update values of Prometheus metric instances with the data in this container.
-        """
-
-        self.pool.update_prometheus()
 
 
 class PoolResourcesMetricsDimensions(enum.Enum):
@@ -353,6 +363,10 @@ class PoolResources(MetricsBase):
         self.snapshots = None
         self.networks = {}
 
+        self.updated_timestamp = None
+
+        self.__post_init__()
+
     @with_context
     def sync(self, cache: redis.Redis) -> None:
         """
@@ -360,6 +374,8 @@ class PoolResources(MetricsBase):
 
         :param cache: cache instance to use for cache access.
         """
+
+        super(PoolResources, self).sync()
 
         r_serialized = safe_call(cast(Callable[[str], Optional[str]], cache.get), self._key)
 
@@ -514,13 +530,7 @@ class PoolResourcesMetrics(MetricsBase):
         self.limits = PoolResourcesLimits(poolname)
         self.usage = PoolResourcesUsage(poolname)
 
-    def sync(self) -> None:
-        """
-        Load values from the storage and update this container with up-to-date values.
-        """
-
-        self.limits.sync()
-        self.usage.sync()
+        self.__post_init__()
 
     def get_depletion(
         self,
@@ -601,6 +611,8 @@ class PoolMetrics(MetricsBase):
 
         self.errors = {}
 
+        self.__post_init__()
+
     @staticmethod
     @with_context
     def inc_error(
@@ -635,7 +647,7 @@ class PoolMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        self.resources.sync()
+        super(PoolMetrics, self).sync()
 
         self.current_guest_request_count = cast(
             Tuple[int],
@@ -699,6 +711,8 @@ class UndefinedPoolMetrics(MetricsBase):
 
         self.errors = {}
 
+        self.__post_init__()
+
     @with_context
     def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
         """
@@ -707,6 +721,8 @@ class UndefinedPoolMetrics(MetricsBase):
         :param logger: logger to use for logging.
         :param session: DB session to use for DB access.
         """
+
+        super(UndefinedPoolMetrics, self).sync()
 
         # NOTE: sqlalchemy overloads operators to construct the conditions, and `is` is not overloaded. Therefore
         # in the query, we have to use `==` instead of more Pythonic `is`.
@@ -757,6 +773,8 @@ class PoolsMetrics(MetricsBase):
         :param session: DB session to use for DB access.
         """
 
+        super(PoolsMetrics, self).sync()
+
         # Avoid circullar imports
         from .tasks import get_pools
 
@@ -784,6 +802,8 @@ class PoolsMetrics(MetricsBase):
 
         :param registry: Prometheus registry to attach metrics to.
         """
+
+        super(PoolsMetrics, self).register_with_prometheus(registry)
 
         def _create_pool_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
@@ -829,6 +849,8 @@ class PoolsMetrics(MetricsBase):
         """
         Update values of Prometheus metric instances with the data in this container.
         """
+
+        super(PoolsMetrics, self).update_prometheus()
 
         reset_counters(self.POOL_ERRORS)
 
@@ -998,6 +1020,8 @@ class ProvisioningMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
+        super(ProvisioningMetrics, self).sync()
+
         NOW = datetime.datetime.utcnow()
 
         current_record = session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
@@ -1042,6 +1066,8 @@ class ProvisioningMetrics(MetricsBase):
 
         :param registry: Prometheus registry to attach metrics to.
         """
+
+        super(ProvisioningMetrics, self).register_with_prometheus(registry)
 
         self.CURRENT_GUEST_REQUEST_COUNT_TOTAL = Gauge(
             'current_guest_request_count_total',
@@ -1095,6 +1121,8 @@ class ProvisioningMetrics(MetricsBase):
         """
         Update values of Prometheus metric instances with the data in this container.
         """
+
+        super(ProvisioningMetrics, self).update_prometheus()
 
         self.CURRENT_GUEST_REQUEST_COUNT_TOTAL.set(self.current)
         self.OVERALL_PROVISIONING_COUNT._value.set(self.requested)
@@ -1227,6 +1255,8 @@ class RoutingMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
+        super(RoutingMetrics, self).sync()
+
         self.policy_calls = {
             field: count
             for field, count in get_metric_fields(cache, self._KEY_CALLS).items()
@@ -1247,6 +1277,8 @@ class RoutingMetrics(MetricsBase):
 
         :param registry: Prometheus registry to attach metrics to.
         """
+
+        super(RoutingMetrics, self).register_with_prometheus(registry)
 
         self.OVERALL_POLICY_CALLS_COUNT = Counter(
             'overall_policy_calls_count',
@@ -1273,6 +1305,8 @@ class RoutingMetrics(MetricsBase):
         """
         Update values of Prometheus metric instances with the data in this container.
         """
+
+        super(RoutingMetrics, self).update_prometheus()
 
         for policy_name, count in self.policy_calls.items():
             self.OVERALL_POLICY_CALLS_COUNT.labels(policy=policy_name)._value.set(count)
@@ -1468,6 +1502,8 @@ class TaskMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
+        super(TaskMetrics, self).sync()
+
         # queue:actor => count
         self.overall_message_count = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
@@ -1511,6 +1547,8 @@ class TaskMetrics(MetricsBase):
 
         :param registry: Prometheus registry to attach metrics to.
         """
+
+        super(TaskMetrics, self).register_with_prometheus(registry)
 
         self.OVERALL_MESSAGE_COUNT = Counter(
             'overall_message_count',
@@ -1570,6 +1608,8 @@ class TaskMetrics(MetricsBase):
         :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         """
+
+        super(TaskMetrics, self).update_prometheus()
 
         def _update_counter(prom_metric: Counter, source: Dict[Tuple[str, str], int]) -> None:
             reset_counters(prom_metric)
@@ -1700,6 +1740,8 @@ class APIMetrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
+        super(APIMetrics, self).register_with_prometheus(registry)
+
         self.REQUEST_DURATIONS = Histogram(
             'http_request_duration_milliseconds',
             'Time spent processing a request.',
@@ -1730,6 +1772,8 @@ class APIMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
+        super(APIMetrics, self).sync()
+
         # method:path => count
         self.request_durations = {
             cast(Tuple[str, str, str], tuple(field.split(':'))): count
@@ -1752,6 +1796,8 @@ class APIMetrics(MetricsBase):
         """
         Update values of Prometheus metric instances with the data in this container.
         """
+
+        super(APIMetrics, self).update_prometheus()
 
         # Reset all duration buckets and sums first
         for labeled_metric in self.REQUEST_DURATIONS._metrics.values():
@@ -1797,24 +1843,14 @@ class Metrics(MetricsBase):
     # Registry this tree of metrics containers is tied to.
     _registry: Optional[CollectorRegistry] = None
 
-    def sync(self) -> None:
-        """
-        Load values from the storage and update this container with up-to-date values.
-        """
-
-        self.db.sync()
-        self.pools.sync()
-        self.provisioning.sync()
-        self.routing.sync()
-        self.tasks.sync()
-        self.api.sync()
-
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
+
+        super(Metrics, self).register_with_prometheus(registry)
 
         self._registry = registry
 
@@ -1830,13 +1866,6 @@ class Metrics(MetricsBase):
             registry=registry
         )
 
-        self.db.register_with_prometheus(registry)
-        self.pools.register_with_prometheus(registry)
-        self.provisioning.register_with_prometheus(registry)
-        self.routing.register_with_prometheus(registry)
-        self.tasks.register_with_prometheus(registry)
-        self.api.register_with_prometheus(registry)
-
         # Since these values won't ever change, we can already set metrics and be done with it.
         self.PACKAGE_INFO.info({
             'package_version': __VERSION__,
@@ -1848,18 +1877,6 @@ class Metrics(MetricsBase):
             'api_node': platform.node(),
             'artemis_deployment': os.getenv('ARTEMIS_DEPLOYMENT', '<undefined>')
         })
-
-    def update_prometheus(self) -> None:
-        """
-        Update values of Prometheus metric instances with the data in this container.
-        """
-
-        self.db.update_prometheus()
-        self.pools.update_prometheus()
-        self.provisioning.update_prometheus()
-        self.routing.update_prometheus()
-        self.tasks.update_prometheus()
-        self.api.update_prometheus()
 
     @with_context
     def render_prometheus_metrics(self, db: artemis_db.DB) -> Result[bytes, Failure]:
