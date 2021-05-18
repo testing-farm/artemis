@@ -9,10 +9,10 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import UNITS, Failure, JSONType, Knob, get_cached_item
+from .. import Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
 from ..db import GuestRequest, SnapshotRequest
-from ..environment import Environment
+from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
 from . import PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \

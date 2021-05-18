@@ -3,9 +3,14 @@ import enum
 import json
 import operator
 import re
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, cast
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, cast
 
 import gluetool.log
+import pint
+from pint import Quantity
+
+#: Unit registry, used and shared by all code.
+UNITS = pint.UnitRegistry()
 
 #
 # Parsing of HW requirements of the environment
@@ -27,9 +32,7 @@ S = TypeVar('S')
 
 #: Regular expression to match and split the value part of the key:value mapping. This value bundles together the
 #: operator, the actual value of the constraint, and units.
-# TODO: use Pint once it gets merged with our code, to handle the units. We're not going to list all of them...
-# TODO: what units TMT wants us to use: https://github.com/psss/tmt/issues/768
-VALUE_PATTERN = re.compile(r'^(?P<operator>==|!=|=~|=|>=|>|<=|<)?\s*(?P<value>.+?)\s*(?P<unit>GB|MB|kB)?$')
+VALUE_PATTERN = re.compile(r'^(?P<operator>==|!=|=~|=|>=|>|<=|<)?\s*(?P<value>.+?)\s*$')
 
 #: Type of the operator callable. The operators accept two arguments, and returns result of their comparison.
 OperatorHandlerType = Callable[[Any, Any], bool]
@@ -42,6 +45,8 @@ OperatorHandlerType = Callable[[Any, Any], bool]
 #:
 #: See https://github.com/python/mypy/issues/731 for details.
 SpecType = Any
+
+ConstraintValueType = Union[int, Quantity, str]
 
 
 #
@@ -94,7 +99,7 @@ class FlavorDisk:
     """
 
     #: Total size of the disk storage, in bytes.
-    space: Optional[int] = None
+    space: Optional[Quantity] = None
 
 
 @dataclasses.dataclass
@@ -113,7 +118,7 @@ class Flavor:
     disk: FlavorDisk = dataclasses.field(default_factory=FlavorDisk)
 
     #: RAM size, in bytes.
-    memory: Optional[int] = None
+    memory: Optional[Quantity] = None
 
 
 class Operator(enum.Enum):
@@ -150,15 +155,6 @@ OPERATOR_TO_HANDLER: Dict[Operator, OperatorHandlerType] = {
     Operator.LT: operator.lt,
     Operator.LTE: operator.le,
     Operator.MATCH: match
-}
-
-
-# TODO: use Pint once it gets merged with our code, to handle the units. We're not going to list all of them...
-# TODO: what units TMT wants us to use: https://github.com/psss/tmt/issues/768
-UNIT_MULTIPLIERS = {
-    'GB': 1024 * 1024 * 1024,
-    'MB': 1024 * 1024,
-    'kB': 1024
 }
 
 
@@ -225,19 +221,22 @@ class Constraint(ConstraintBase):
 
     name: str
     operator: Operator
-    value: str
+    value: ConstraintValueType
 
     # A callable comparing the flavor value and the constraint value.
     operator_handler: OperatorHandlerType
-    # A callable applied to both left and right values before passing them to operator handler.
-    type_cast: Callable[[str], Any]
 
     # Stored for possible inspection by more advanced processing.
     raw_value: str
     unit: Optional[str] = None
 
     @classmethod
-    def from_specification(cls: Type[T], name: str, raw_value: str, type_cast: Callable[[str], Any]) -> T:
+    def from_specification(
+        cls: Type[T],
+        name: str,
+        raw_value: str,
+        as_quantity: bool = True
+    ) -> T:
         parsed_value = VALUE_PATTERN.match(raw_value)
 
         if not parsed_value:
@@ -252,24 +251,19 @@ class Constraint(ConstraintBase):
         else:
             operator = Operator.EQ
 
-        value = groups['value']
+        raw_value = groups['value']
 
-        if groups['unit']:
-            unit = groups['unit']
+        if as_quantity:
+            value = UNITS(raw_value)
 
-            if unit not in UNIT_MULTIPLIERS:
-                # TODO: convert to Result
-                raise Exception()
-
-            value = str(int(value) * UNIT_MULTIPLIERS[unit])
+        else:
+            value = raw_value
 
         return cls(
             name=name,
             operator=operator,
             operator_handler=OPERATOR_TO_HANDLER[operator],
-            type_cast=type_cast,
             value=value,
-            unit=groups['unit'],
             raw_value=raw_value
         )
 
@@ -279,7 +273,6 @@ class Constraint(ConstraintBase):
             name='arch',
             operator=Operator.EQ,
             operator_handler=OPERATOR_TO_HANDLER[Operator.EQ],
-            type_cast=str,
             value=value,
             raw_value=value
         )
@@ -295,11 +288,11 @@ class Constraint(ConstraintBase):
             flavor_property = getattr(flavor_property, property_path.pop(0))
 
         result = self.operator_handler(  # type: ignore  # Too many arguments - mypy issue #5485
-            self.type_cast(flavor_property),  # type: ignore  # Invalid self argument - mypy issue #5485
-            self.type_cast(self.value)  # type: ignore  # Invalid self argument - mypy issue #5485
+            flavor_property,
+            self.value
         )
 
-        logger.debug('eval-flavor: {} "{}" {} "{}" => {}'.format(
+        logger.debug('eval-flavor: {} {} {} {} => {}'.format(
             self.name,
             flavor_property,
             self.operator.value,
@@ -329,13 +322,13 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
     group = And()
 
     group.constraints += [
-        Constraint.from_specification(f'cpu.{constraint_name}', str(spec[constraint_name]), int)
+        Constraint.from_specification(f'cpu.{constraint_name}', str(spec[constraint_name]))
         for constraint_name in ('processors', 'cores', 'model', 'family')
         if constraint_name in spec
     ]
 
     group.constraints += [
-        Constraint.from_specification(f'cpu.{constraint_name}', str(spec[constraint_name]), str)
+        Constraint.from_specification(f'cpu.{constraint_name}', str(spec[constraint_name]), as_quantity=False)
         for constraint_name in ('model_name',)
         if constraint_name in spec
     ]
@@ -350,7 +343,7 @@ def _parse_disk(spec: SpecType) -> ConstraintBase:
     group = And()
 
     group.constraints += [
-        Constraint.from_specification(f'disk.{constraint_name}', str(spec[constraint_name]), int)
+        Constraint.from_specification(f'disk.{constraint_name}', str(spec[constraint_name]))
         for constraint_name in ('space',)
         if constraint_name in spec
     ]
@@ -368,7 +361,7 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
         group.constraints += [_parse_cpu(spec['cpu'])]
 
     if 'memory' in spec:
-        group.constraints += [Constraint.from_specification('memory', spec['memory'], int)]
+        group.constraints += [Constraint.from_specification('memory', spec['memory'])]
 
     if 'disk' in spec:
         group.constraints += [_parse_disk(spec['disk'])]

@@ -3,6 +3,7 @@ import textwrap
 import gluetool.utils
 
 import tft.artemis.environment
+from tft.artemis.environment import UNITS
 
 
 def parse_hw(text):
@@ -14,7 +15,7 @@ def test_example_simple(logger):
         """
         ---
 
-        memory: 8 GB
+        memory: 8 GiB
         """
     )
 
@@ -23,14 +24,14 @@ def test_example_simple(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024
+            memory=UNITS('8 GiB')
         )
     ) is True
 
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
-            memory=9 * 1024 * 1024 * 1024
+            memory=UNITS('9 GiB')
         )
     ) is False
 
@@ -67,7 +68,7 @@ def test_example_disk(logger):
         ---
 
         disk:
-            space: 500 GB
+            space: 500 GiB
         """
     )
 
@@ -77,7 +78,7 @@ def test_example_disk(logger):
         logger,
         tft.artemis.environment.Flavor(
             disk=tft.artemis.environment.FlavorDisk(
-                space=500 * 1024 * 1024 * 1024
+                space=UNITS('500 GiB')
             )
         )
     ) is True
@@ -86,136 +87,80 @@ def test_example_disk(logger):
         logger,
         tft.artemis.environment.Flavor(
             disk=tft.artemis.environment.FlavorDisk(
-                space=600 * 1024 * 1024 * 1024
+                space=UNITS('600 GiB')
             )
         )
     ) is False
 
 
 def test_example_operators(logger):
-    constraint = parse_hw(
-        """
-        ---
-
-        memory: '> 8 GB'
-        """
+    flavor_big = tft.artemis.environment.Flavor(
+        memory=UNITS('9 GiB')
     )
 
-    print(constraint.format())
+    flavor_right = tft.artemis.environment.Flavor(
+        memory=UNITS('8 GiB')
+    )
 
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024 + 1
-        )
-    ) is True
-
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024
-        )
-    ) is False
-
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024 - 1
-        )
-    ) is False
+    flavor_small = tft.artemis.environment.Flavor(
+        memory=UNITS('7 GiB')
+    )
 
     constraint = parse_hw(
         """
         ---
 
-        memory: '>= 8 GB'
+        memory: '> 8 GiB'
         """
     )
 
     print(constraint.format())
 
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024 + 1
-        )
-    ) is True
-
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024
-        )
-    ) is True
-
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024 - 1
-        )
-    ) is False
+    assert constraint.eval_flavor(logger, flavor_big) is True
+    assert constraint.eval_flavor(logger, flavor_right) is False
+    assert constraint.eval_flavor(logger, flavor_small) is False
 
     constraint = parse_hw(
         """
         ---
 
-        memory: "< 8 GB"
+        memory: '>= 8 GiB'
         """
     )
 
     print(constraint.format())
 
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024 + 1
-        )
-    ) is False
-
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024
-        )
-    ) is False
-
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024 - 1
-        )
-    ) is True
+    assert constraint.eval_flavor(logger, flavor_big) is True
+    assert constraint.eval_flavor(logger, flavor_right) is True
+    assert constraint.eval_flavor(logger, flavor_small) is False
 
     constraint = parse_hw(
         """
         ---
 
-        memory: '<= 8 GB'
+        memory: "< 8 GiB"
         """
     )
 
     print(constraint.format())
 
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024 + 1
-        )
-    ) is False
+    assert constraint.eval_flavor(logger, flavor_big) is False
+    assert constraint.eval_flavor(logger, flavor_right) is False
+    assert constraint.eval_flavor(logger, flavor_small) is True
 
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024
-        )
-    ) is True
+    constraint = parse_hw(
+        """
+        ---
 
-    assert constraint.eval_flavor(
-        logger,
-        tft.artemis.environment.Flavor(
-            memory=8 * 1024 * 1024 * 1024 - 1
-        )
-    ) is True
+        memory: '<= 8 GiB'
+        """
+    )
+
+    print(constraint.format())
+
+    assert constraint.eval_flavor(logger, flavor_big) is False
+    assert constraint.eval_flavor(logger, flavor_right) is True
+    assert constraint.eval_flavor(logger, flavor_small) is True
 
 
 def test_example_exact_value():
@@ -223,7 +168,7 @@ def test_example_exact_value():
         """
         ---
 
-        memory: 8 GB
+        memory: 8 GiB
         """
     )
 
@@ -233,7 +178,7 @@ def test_example_exact_value():
         """
         ---
 
-        memory: '= 8 GB'
+        memory: '= 8 GiB'
         """
     )
 
@@ -247,7 +192,7 @@ def test_example_unit_with_space():
         """
         ---
 
-        memory: '8GB'
+        memory: '8GiB'
         """
     )
 
@@ -257,13 +202,32 @@ def test_example_unit_with_space():
         """
         ---
 
-        memory: '8 GB'
+        memory: '8 GiB'
         """
     )
 
     print(constraint2.format())
 
     assert constraint1.format() == constraint2.format()
+
+
+def test_example_units_conversion(logger):
+    constraint = parse_hw(
+        """
+        ---
+
+        memory: 8192 MiB
+        """
+    )
+
+    print(constraint.format())
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            memory=UNITS('8 GiB')
+        )
+    ) is True
 
 
 def test_example_regex(logger):

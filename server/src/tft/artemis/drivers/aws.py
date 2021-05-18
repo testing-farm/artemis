@@ -14,10 +14,10 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 
-from .. import UNITS, Failure, JSONType, Knob, get_cached_item
+from .. import Failure, JSONType, Knob, get_cached_item
 from ..context import CACHE
 from ..db import GuestRequest
-from ..environment import Environment
+from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics
 from ..script import hook_engine
 from . import GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \

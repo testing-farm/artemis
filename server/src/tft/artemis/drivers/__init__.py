@@ -20,11 +20,11 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import UNITS, Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
+from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
     process_output_to_str, refresh_cached_set, safe_call
 from ..context import CACHE, LOGGER
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
-from ..environment import Environment
+from ..environment import UNITS, Environment
 from ..metrics import PoolResourcesMetrics
 
 T = TypeVar('T')

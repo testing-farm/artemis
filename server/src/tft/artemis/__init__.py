@@ -26,7 +26,6 @@ import jinja2.defaults
 import jinja2_ansible_filters.core_filters
 import jsonschema
 import periodiq
-import pint
 import pkg_resources
 import redis
 import ruamel.yaml
@@ -63,10 +62,6 @@ stackprinter.set_excepthook(
     reverse=False,
     add_summary=False
 )
-
-
-#: Unit registry, used and shared by all code.
-UNITS = pint.UnitRegistry()
 
 
 #: Serves as a backup if user did not specify port in ``BROKER_URL`` knob value. We don't have a dedicated knob
