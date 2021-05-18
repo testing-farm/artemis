@@ -124,7 +124,7 @@ class PoolLogger(gluetool.log.ContextAdapter):
         })
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(repr=False)
 class PoolImageInfo(SerializableContainer):
     """
     Describes important information about a pool image.
@@ -149,7 +149,7 @@ class PoolImageInfo(SerializableContainer):
         return f'<PoolImageInfo: name={self.name} id={self.id}>'
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(repr=False)
 class PoolFlavorInfo(SerializableContainer):
     """
     Describes important information about an OpenStack flavor.

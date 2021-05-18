@@ -17,7 +17,7 @@ from .environment import Environment
 from .metrics import PoolMetrics
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(repr=False)
 class PolicyRuling:
     """
     Container for reporting policy result.

@@ -217,7 +217,7 @@ class CompoundConstraint(ConstraintBase):
         return '\n'.join(lines)
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(repr=False)
 class Constraint(ConstraintBase):
     """
     A constraint imposing a particular limit to one of the system properties.
@@ -432,7 +432,7 @@ class OsRequirements:
     compose: str
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(repr=False)
 class Environment:
     """
     Represents a testing environment and its dimensions.
