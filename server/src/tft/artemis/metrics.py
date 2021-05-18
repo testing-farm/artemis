@@ -13,6 +13,7 @@ since it provides only methods, and therefore does not need to be declared as co
 to its offsprings.
 """
 
+import collections
 import dataclasses
 import datetime
 import enum
@@ -21,35 +22,46 @@ import os
 import platform
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import gluetool.log
-import prometheus_client.utils
+# Disable the default, global, shared registry - we do not want our Prometheus metrics to be registered with this
+# registry, we do have our own, one fully under our control. Since the default registry is the default value of
+# `registry` keyword arguments of metrics classes, the only way how to get rid of this integration seems to be to
+# set it to `None`, effectively turning these arguments to `registry=None`.
+#
+# It just have to be done *before* importing any of these objects, because the keyword argument defaults are evaluated
+# when the function is declared. Setting `REGISTRY` to `None` after import wouldn't change the default value of any
+# keyword argument.
+import prometheus_client.registry
 import redis
 import sqlalchemy
 import sqlalchemy.orm.session
 import sqlalchemy.sql.schema
-from gluetool.result import Ok, Result
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
+from gluetool.result import Error, Ok, Result
+from mypy_extensions import Arg
 
 from . import __VERSION__, Failure
 from . import db as artemis_db
 from . import safe_call
 from .cache import dec_cache_field, dec_cache_value, get_cache_value, inc_cache_field, inc_cache_value, \
     iter_cache_fields, iter_cache_keys, set_cache_value
-from .context import DATABASE, SESSION, with_context
+from .context import SESSION, with_context
 from .guest import GuestState
 from .knobs import KNOB_POOL_ENABLED, KNOB_WORKER_PROCESS_METRICS_TTL
 
-T = TypeVar('T')
+prometheus_client.registry.REGISTRY = None
 
+import prometheus_client.utils  # noqa: E402
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest  # noqa: E402
+from prometheus_client.metrics import MetricWrapperBase  # noqa: E402
 
 # Guest age buckets are not all same, but:
 #
 # * first hour split into intervals of 5 minutes,
 # * next 47 hours, by hour,
 # * and the rest.
-GUEST_AGE_BUCKETS = \
+GUEST_AGE_BUCKETS: List[int] = \
     list(range(300, 3600, 300)) \
     + list(range(3600, 49 * 3600, 3600)) \
     + [prometheus_client.utils.INF]
@@ -132,12 +144,230 @@ def reset_histogram(metric: Histogram) -> None:
             metric._buckets[i].set(0)
 
 
+V = TypeVar('V', bound=MetricWrapperBase)
+U = TypeVar('U')
+T = TypeVar('T', bound=int)
+S = TypeVar('S', bound=Tuple[str, ...])
+
+
+class PrometheusAdapter(Generic[V]):
+    _metric_class: Type[V]
+
+    @classmethod
+    def register_with_prometheus(cls, registry: CollectorRegistry, parent: 'MetricBase') -> V:
+        return cls._metric_class(
+            parent.name,
+            parent.help,
+            labelnames=parent.labels,
+            registry=registry
+        )
+
+    @classmethod
+    def update_prometheus(cls, parent: 'MetricBase', metric: V) -> Result[None, Failure]:
+        raise NotImplementedError()
+
+
+class GaugeAdapter(PrometheusAdapter[Gauge]):
+    _metric_class = Gauge
+
+    @classmethod
+    def update_prometheus(cls, parent: 'MetricBase', metric: Gauge) -> Result[None, Failure]:
+        assert parent.value is not None
+
+        reset_counters(metric)
+
+        if isinstance(parent, LabeledMetric):
+            assert parent.labels
+
+            for labels, value in parent.value.items():
+                metric.labels(*labels)._value.set(value)
+
+        else:
+            metric._value.set(parent.value)
+
+        return Ok(None)
+
+
+class CounterAdapter(PrometheusAdapter[Counter]):
+    _metric_class = Counter
+
+    @classmethod
+    def update_prometheus(cls, parent: 'MetricBase', metric: Counter) -> Result[None, Failure]:
+        assert parent.value is not None
+
+        reset_counters(metric)
+
+        if isinstance(parent, LabeledMetric):
+            assert parent.labels
+
+            for labels, value in parent.value.items():
+                metric.labels(*labels)._value.set(value)
+
+        else:
+            metric._value.set(parent.value)
+
+        return Ok(None)
+
+
+class HistogramAdapter(PrometheusAdapter[Histogram]):
+    _metric_class = Histogram
+
+    @classmethod
+    def update_prometheus(cls, parent: 'MetricBase', metric: Histogram) -> Result[None, Failure]:
+        assert parent.value is not None
+
+        reset_histogram(metric)
+
+        assert isinstance(parent.value, dict)
+
+        if isinstance(parent, LabeledMetric):
+            pass
+
+        else:
+            assert parent.histogram_buckets
+
+            for bucket_threshold, count in parent.value.items():
+                bucket_index = parent.histogram_buckets.index(
+                    prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
+                )
+
+                metric._buckets[bucket_index].set(count)
+                metric._sum.inc(int(bucket_threshold) * count)
+
+        return Ok(None)
+
+
+class MetricBase(Generic[S, T, U]):
+    def __init__(
+        self,
+        *,
+        name: str,
+        help: str,
+        prometheus_adapter: Type[PrometheusAdapter],
+        histogram_buckets: Optional[List[int]] = None,
+        cache_key: Optional[str] = None,
+        labels: Optional[S] = None,
+        read_from_system: Optional[Callable[[], Result[U, Failure]]] = None
+    ) -> None:
+        assert cache_key is not None or read_from_system is not None, ''
+        assert prometheus_adapter is not HistogramAdapter or histogram_buckets, ''
+
+        self.name = name
+        self.help = help
+
+        self.cache_key = cache_key
+
+        self.prometheus_adapter = prometheus_adapter
+        self.prometheus_metric: Optional[MetricWrapperBase] = None
+        self.histogram_buckets = histogram_buckets
+
+        self.labels = labels
+
+        self.read_from_system = read_from_system
+
+        self.value: Optional[U] = None
+
+    @with_context
+    def read_from_cache(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[U, Failure]:
+        raise NotImplementedError()
+
+    def sync(self) -> Result[None, Failure]:
+        if self.read_from_system is not None:
+            r_value = self.read_from_system()
+
+        else:
+            r_value = self.read_from_cache()
+
+        if r_value.is_error:
+            return Error(r_value.unwrap_error())
+
+        self.value = r_value.unwrap()
+
+        return Ok(None)
+
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+        self.prometheus_metric = self.prometheus_adapter.register_with_prometheus(registry, self)
+
+    def update_prometheus(self) -> Result[None, Failure]:
+        assert self.prometheus_metric
+
+        return self.prometheus_adapter.update_prometheus(self, self.prometheus_metric)
+
+
+class TrivialMetric(MetricBase[Tuple, T, T]):
+    def __init__(
+        self,
+        *,
+        name: str,
+        help: str,
+        prometheus_adapter: Type[PrometheusAdapter],
+        histogram_buckets: Optional[List[int]] = None,
+        cache_key: Optional[str] = None,
+        read_from_system: Optional[Callable[[], Result[T, Failure]]] = None
+    ) -> None:
+        super().__init__(
+            name=name,
+            help=help,
+            prometheus_adapter=prometheus_adapter,
+            histogram_buckets=histogram_buckets,
+            cache_key=cache_key,
+            read_from_system=read_from_system
+        )
+
+    @with_context
+    def inc(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[None, Failure]:
+        assert self.cache_key is not None
+
+        inc_metric(logger, cache, self.cache_key)
+
+        return Ok(None)
+
+    @with_context
+    def read_from_cache(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[T, Failure]:
+        assert self.cache_key is not None
+
+        return Ok(cast(T, get_metric(logger, cache, self.cache_key)))
+
+
+class LabeledMetric(MetricBase[S, T, Dict[S, T]]):
+    @with_context
+    def read_from_cache(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[Dict[S, T], Failure]:
+        assert self.cache_key is not None
+
+        # When labels are not empty, values are stored in cache as a mapping, with names constructed from labels
+        # (label1:label2:label3:...).
+        assert self.labels is not None
+
+        return Ok(
+            {
+                cast(S, tuple(field.split(':', len(self.labels) - 1))): cast(T, value)
+                for field, value in get_metric_fields(logger, cache, self.cache_key).items()
+            }
+        )
+
+    @with_context
+    def inc(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis,
+        *args: str
+    ) -> Result[None, Failure]:
+        assert self.labels
+        assert self.cache_key
+        assert len(args) == len(self.labels)
+
+        inc_metric_field(logger, cache, self.cache_key, ':'.join(args))
+
+        return Ok(None)
+
+
 class MetricsBase:
     """
     Base class for all containers carrying metrics around.
     """
 
     _metric_container_fields: List['MetricsBase']
+    _metric_fields: List['MetricBase']
 
     def __post_init__(self) -> None:
         """
@@ -157,6 +387,12 @@ class MetricsBase:
             if isinstance(self.__dict__[field.name], MetricsBase)
         ]
 
+        self._metric_fields = [
+            self.__dict__[field.name]
+            for field in dataclasses.fields(self)
+            if isinstance(self.__dict__[field.name], MetricBase)
+        ]
+
     def sync(self) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
@@ -172,6 +408,9 @@ class MetricsBase:
         for container in self._metric_container_fields:
             container.sync()
 
+        for metric in self._metric_fields:
+            metric.sync()
+
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
@@ -185,6 +424,9 @@ class MetricsBase:
         for container in self._metric_container_fields:
             container.register_with_prometheus(registry)
 
+        for metric in self._metric_fields:
+            metric.register_with_prometheus(registry)
+
     def update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
@@ -196,6 +438,9 @@ class MetricsBase:
         for container in self._metric_container_fields:
             container.update_prometheus()
 
+        for metric in self._metric_fields:
+            metric.update_prometheus()
+
 
 @dataclasses.dataclass
 class DBPoolMetrics(MetricsBase):
@@ -203,84 +448,41 @@ class DBPoolMetrics(MetricsBase):
     Database connection pool metrics.
     """
 
-    #: Total number of connections allowed to exist in the pool.
-    size: int = 0
+    @staticmethod
+    @with_context
+    def _read_db_pool_property(property_name: str, db: artemis_db.DB) -> Result[int, Failure]:
+        if not hasattr(db.engine.pool, property_name) or not callable(db.engine.pool.property_name):
+            return Ok(0)
 
-    #: Number of connections in the use.
-    checked_in_connections: int = 0
+        return Ok(getattr(db.engine.pool, property_name)())
 
-    #: Number of idle connections.
-    checked_out_connections: int = 0
+    db_pool_size: TrivialMetric[int] = TrivialMetric(
+        name='db_pool_size',
+        help='Maximal number of connections available in the pool.',
+        prometheus_adapter=GaugeAdapter,
+        read_from_system=lambda: DBPoolMetrics._read_db_pool_property('size')
+    )
 
-    #: Maximal "overflow" of the pool, i.e. how many connections above the :py:attr:`size` are allowed.
-    current_overflow: int = 0
+    db_pool_checked_in: TrivialMetric[int] = TrivialMetric(
+        name='db_pool_checked_in',
+        help='Current number of connections checked in',
+        prometheus_adapter=GaugeAdapter,
+        read_from_system=lambda: DBPoolMetrics._read_db_pool_property('checked_in_connections')
+    )
 
-    def sync(self) -> None:
-        """
-        Load values from the storage and update this container with up-to-date values.
-        """
+    db_pool_checked_out: TrivialMetric[int] = TrivialMetric(
+        name='db_pool_checked_out',
+        help='Current number of connections checked out',
+        prometheus_adapter=GaugeAdapter,
+        read_from_system=lambda: DBPoolMetrics._read_db_pool_property('checked_out_connections')
+    )
 
-        super(DBPoolMetrics, self).sync()
-
-        db = DATABASE.get()
-
-        if not hasattr(db.engine.pool, 'size') or not callable(db.engine.pool.size):
-            self.size = 0
-            self.checked_in_connections = 0
-            self.checked_out_connections = 0
-            self.current_overflow = 0
-
-            return
-
-        self.size = db.engine.pool.size()
-        self.checked_in_connections = db.engine.pool.checkedin()
-        self.checked_out_connections = db.engine.pool.checkedout()
-        self.current_overflow = db.engine.pool.overflow()
-
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
-        """
-        Register instances of Prometheus metrics with the given registry.
-
-        :param registry: Prometheus registry to attach metrics to.
-        """
-
-        super(DBPoolMetrics, self).register_with_prometheus(registry)
-
-        self.POOL_SIZE = Gauge(
-            'db_pool_size',
-            'Maximal number of connections available in the pool',
-            registry=registry
-        )
-
-        self.POOL_CHECKED_IN = Gauge(
-            'db_pool_checked_in',
-            'Current number of connections checked in',
-            registry=registry
-        )
-
-        self.POOL_CHECKED_OUT = Gauge(
-            'db_pool_checked_out',
-            'Current number of connections out',
-            registry=registry
-        )
-
-        self.POOL_OVERFLOW = Gauge(
-            'db_pool_overflow',
-            'Current overflow of connections',
-            registry=registry
-        )
-
-    def update_prometheus(self) -> None:
-        """
-        Update values of Prometheus metric instances with the data in this container.
-        """
-
-        super(DBPoolMetrics, self).update_prometheus()
-
-        self.POOL_SIZE.set(self.size)
-        self.POOL_CHECKED_IN.set(self.checked_in_connections)
-        self.POOL_CHECKED_OUT.set(self.checked_out_connections)
-        self.POOL_OVERFLOW.set(self.current_overflow)
+    db_pool_overflow: TrivialMetric[int] = TrivialMetric(
+        name='db_pool_overflow',
+        help='Current overflow of connections',
+        prometheus_adapter=GaugeAdapter,
+        read_from_system=lambda: DBPoolMetrics._read_db_pool_property('current_overflow')
+    )
 
 
 @dataclasses.dataclass
@@ -290,7 +492,7 @@ class DBMetrics(MetricsBase):
     """
 
     #: Database connection pool metrics.
-    pool: DBPoolMetrics = DBPoolMetrics()
+    pool: DBPoolMetrics = dataclasses.field(default_factory=DBPoolMetrics)
 
 
 class PoolResourcesMetricsDimensions(enum.Enum):
@@ -1343,276 +1545,131 @@ class ProvisioningMetrics(MetricsBase):
     Provisioning metrics.
     """
 
-    _KEY_PROVISIONING_REQUESTED = 'metrics.provisioning.requested'
-    _KEY_PROVISIONING_SUCCESS = 'metrics.provisioning.success'
-    _KEY_FAILOVER = 'metrics.provisioning.failover'
-    _KEY_FAILOVER_SUCCESS = 'metrics.provisioning.failover.success'
-    _KEY_PROVISIONING_DURATIONS = 'metrics.provisioning.durations'
+    overall_provisioning_count: TrivialMetric[int] = TrivialMetric(
+        name='overall_provisioning_count',
+        help='Overall total number of all requested guest requests.',
+        cache_key='metrics.provisioning.requested',
+        prometheus_adapter=CounterAdapter
+    )
 
-    requested: int = 0
-    current: int = 0
-    success: Dict[str, int] = dataclasses.field(default_factory=dict)
-    failover: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    failover_success: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-
-    # We want to maybe point fingers on pools where guests are stuck, so include pool name and state as labels.
-    guest_ages: List[Tuple[GuestState, Optional[str], datetime.timedelta]] = dataclasses.field(default_factory=list)
-    provisioning_durations: Dict[str, int] = dataclasses.field(default_factory=dict)
+    inc_requested = overall_provisioning_count.inc
 
     @staticmethod
     @with_context
-    def inc_requested(
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
-        """
-        Increase :py:attr:`requested` metric by 1.
+    def _read_current_guest_request_count_total(session: sqlalchemy.orm.session.Session) -> Result[int, Failure]:
+        return Ok(session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname)).scalar())
 
-        :param logger: logger to use for logging.
-        :param cache: cache instance to use for cache access.
-        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
-        """
+    current_guest_request_count_total: TrivialMetric[int] = TrivialMetric(
+        name='current_guest_request_count_total',
+        help='Current total number of guest requests being provisioned.',
+        prometheus_adapter=CounterAdapter,
+        read_from_system=_read_current_guest_request_count_total
+    )
 
-        inc_metric(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_REQUESTED)
-        return Ok(None)
+    overall_successfull_provisioning_count: LabeledMetric[Tuple[str], int] = LabeledMetric(
+        name='overall_successfull_provisioning_count',
+        help='Overall total number of all successfully provisioned guest requests by pool.',
+        cache_key='metrics.provisioning.success',
+        prometheus_adapter=CounterAdapter,
+        labels=('pool',)
+    )
 
-    @staticmethod
-    @with_context
-    def inc_success(
-        pool: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
-        """
-        Increase :py:attr:`success` metric by 1.
+    inc_success = cast(
+        Callable[[Arg(str, 'pool')], Result[None, Failure]],  # noqa: F821
+        overall_successfull_provisioning_count.inc
+    )
 
-        :param logger: logger to use for logging.
-        :param cache: cache instance to use for cache access.
-        :param pool: pool that provided the instance.
-        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
-        """
+    overall_failover_count: LabeledMetric[Tuple[str, str], int] = LabeledMetric(
+        name='overall_failover_count',
+        help='Overall total number of failovers to another pool by source and destination pool.',
+        cache_key='metrics.provisioning.failover',
+        prometheus_adapter=CounterAdapter,
+        labels=('from_pool', 'to_pool')
+    )
 
-        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_SUCCESS, pool)
-        return Ok(None)
+    inc_failover = cast(
+        Callable[[Arg(str, 'from_pool'), Arg(str, 'to_pool')], Result[None, Failure]],  # noqa: F821
+        overall_failover_count.inc
+    )
 
-    @staticmethod
-    @with_context
-    def inc_failover(
-        from_pool: str,
-        to_pool: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
-        """
-        Increase pool failover metric by 1.
+    overall_successfull_failover_count: LabeledMetric[Tuple[str, str], int] = LabeledMetric(
+        name='overall_successfull_failover_count',
+        help='Overall total number of successful failovers to another pool by source and destination pool.',
+        cache_key='metrics.provisioning.failover.success',
+        prometheus_adapter=CounterAdapter,
+        labels=('from_pool', 'to_pool')
+    )
 
-        :param logger: logger to use for logging.
-        :param cache: cache instance to use for cache access.
-        :param from_pool: name of the originating pool.
-        :param to_pool: name of the replacement pool.
-        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
-        """
-
-        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_FAILOVER, '{}:{}'.format(from_pool, to_pool))
-        return Ok(None)
+    inc_failover_success = cast(
+        Callable[[Arg(str, 'from_pool'), Arg(str, 'to_pool')], Result[None, Failure]],  # noqa: F821
+        overall_successfull_failover_count.inc
+    )
 
     @staticmethod
     @with_context
-    def inc_failover_success(
-        from_pool: str,
-        to_pool: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
-        """
-        Increase successfull pool failover meric by 1.
-
-        :param logger: logger to use for logging.
-        :param cache: cache instance to use for cache access.
-        :param from_pool: name of the originating pool.
-        :param to_pool: name of the replacement pool.
-        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
-        """
-
-        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_FAILOVER_SUCCESS, '{}:{}'.format(from_pool, to_pool))
-        return Ok(None)
-
-    @staticmethod
-    @with_context
-    def inc_provisioning_durations(
-        duration: int,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
-        """
-        Increment provisioning duration bucket by one.
-
-        The bucket is determined by the upper bound of the given ``duration``.
-
-        :param logger: logger to use for logging.
-        :param duration: how long, in milliseconds, took actor to finish the task.
-        :param cache: cache instance to use for cache access.
-        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
-        """
-
-        bucket = min([threshold for threshold in PROVISION_DURATION_BUCKETS if threshold > duration])
-
-        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_DURATIONS, '{}'.format(bucket))
-
-        return Ok(None)
-
-    @with_context
-    def sync(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis,
+    def _read_guest_ages(
         session: sqlalchemy.orm.session.Session
-    ) -> None:
-        """
-        Load values from the storage and update this container with up-to-date values.
-
-        :param logger: logger to use for logging.
-        :param session: DB session to use for DB access.
-        :param cache: cache instance to use for cache access.
-        """
-
-        super(ProvisioningMetrics, self).sync()
+    ) -> Result[Dict[Tuple[str, str, str], int], Failure]:
+        # Using `query` directly, because we need just limited set of fields, and we need our `Query`
+        # and `SafeQuery` to support this functionality (it should be just a matter of correct types).
 
         NOW = datetime.datetime.utcnow()
 
-        current_record = session.query(  # type: ignore[no-untyped-call]
-            sqlalchemy.func.count(artemis_db.GuestRequest.guestname)
+        buckets: Dict[Tuple[str, str, str], int] = collections.defaultdict(int)
+
+        query = session.query(  # type: ignore[no-untyped-call]
+            artemis_db.GuestRequest.state,
+            artemis_db.GuestRequest.poolname,
+            artemis_db.GuestRequest.ctime
         )
 
-        self.current = current_record.scalar()
-        self.requested = get_metric(logger, cache, self._KEY_PROVISIONING_REQUESTED) or 0
-        self.success = {
-            poolname: count
-            for poolname, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_SUCCESS).items()
-        }
-        # fields are in form `from_pool:to_pool`
-        self.failover = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
-            for field, count in get_metric_fields(logger, cache, self._KEY_FAILOVER).items()
-        }
-        # fields are in form `from_pool:to_pool`
-        self.failover_success = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
-            for field, count in get_metric_fields(logger, cache, self._KEY_FAILOVER_SUCCESS).items()
-        }
-        # Using `query` directly, because we need just limited set of fields, and we need our `Query`
-        # and `SafeQuery` to support this functionality (it should be just a matter of correct types).
-        self.guest_ages = [
-            (record[0], record[1], NOW - record[2])
-            for record in cast(
-                List[Tuple[GuestState, Optional[str], datetime.datetime]],
-                session.query(  # type: ignore[no-untyped-call]
-                    artemis_db.GuestRequest.state,
-                    artemis_db.GuestRequest.poolname,
-                    artemis_db.GuestRequest.ctime
-                ).all()
-            )
-        ]
-        self.provisioning_durations = {
-            field: count
-            for field, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_DURATIONS).items()
-        }
+        for record in cast(List[Tuple[str, Optional[str], datetime.datetime]], query.all()):
+            state, poolname, age = record[0], record[1], NOW - record[2]
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
-        """
-        Register instances of Prometheus metrics with the given registry.
-
-        :param registry: Prometheus registry to attach metrics to.
-        """
-
-        super(ProvisioningMetrics, self).register_with_prometheus(registry)
-
-        self.CURRENT_GUEST_REQUEST_COUNT_TOTAL = Gauge(
-            'current_guest_request_count_total',
-            'Current total number of guest requests being provisioned.',
-            registry=registry
-        )
-
-        self.OVERALL_PROVISIONING_COUNT = Counter(
-            'overall_provisioning_count',
-            'Overall total number of all requested guest requests.',
-            registry=registry
-        )
-
-        self.OVERALL_SUCCESSFULL_PROVISIONING_COUNT = Counter(
-            'overall_successfull_provisioning_count',
-            'Overall total number of all successfully provisioned guest requests by pool.',
-            ['pool'],
-            registry=registry
-        )
-
-        self.OVERALL_FAILOVER_COUNT = Counter(
-            'overall_failover_count',
-            'Overall total number of failovers to another pool by source and destination pool.',
-            ['from_pool', 'to_pool'],
-            registry=registry
-        )
-
-        self.OVERALL_SUCCESSFULL_FAILOVER_COUNT = Counter(
-            'overall_successfull_failover_count',
-            'Overall total number of successful failovers to another pool by source and destination pool.',
-            ['from_pool', 'to_pool'],
-            registry=registry
-        )
-
-        self.GUEST_AGES = Gauge(
-            'guest_request_age',
-            'Guest request ages by pool and state.',
-            ['pool', 'state', 'age_threshold'],
-            registry=registry
-        )
-
-        self.PROVISION_DURATIONS = Histogram(
-            'provisioning_duration_seconds',
-            'The time spent provisioning a machine.',
-            [],
-            buckets=PROVISION_DURATION_BUCKETS,
-            registry=registry,
-        )
-
-    def update_prometheus(self) -> None:
-        """
-        Update values of Prometheus metric instances with the data in this container.
-        """
-
-        super(ProvisioningMetrics, self).update_prometheus()
-
-        self.CURRENT_GUEST_REQUEST_COUNT_TOTAL.set(self.current)
-        self.OVERALL_PROVISIONING_COUNT._value.set(self.requested)
-
-        for pool, count in self.success.items():
-            self.OVERALL_SUCCESSFULL_PROVISIONING_COUNT.labels(pool=pool)._value.set(count)
-
-        for (from_pool, to_pool), count in self.failover.items():
-            self.OVERALL_FAILOVER_COUNT.labels(from_pool=from_pool, to_pool=to_pool)._value.set(count)
-
-        for (from_pool, to_pool), count in self.failover_success.items():
-            self.OVERALL_SUCCESSFULL_FAILOVER_COUNT.labels(from_pool=from_pool, to_pool=to_pool)._value.set(count)
-
-        reset_counters(self.GUEST_AGES)
-
-        for state, poolname, age in self.guest_ages:
             # Pick the smallest larger bucket threshold (e.g. age == 250 => 300, age == 3599 => 3600, ...)
             # There's always the last threshold, infinity, so the list should never be empty.
             age_threshold = min([threshold for threshold in GUEST_AGE_BUCKETS if threshold > age.total_seconds()])
 
-            self.GUEST_AGES.labels(state=state, pool=poolname, age_threshold=age_threshold).inc()
+            buckets[(state, poolname if poolname else 'unknown', str(age_threshold))] += 1
 
-        # Set each bucket to number of observations, and each sum to (observations * bucket threshold)
-        # since we don't track the exact duration, just what bucket it falls into.
-        reset_histogram(self.PROVISION_DURATIONS)
+        return Ok(buckets)
 
-        for bucket_threshold, count in self.provisioning_durations.items():
-            bucket_index = PROVISION_DURATION_BUCKETS.index(
-                prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
-            )
-            self.PROVISION_DURATIONS._buckets[bucket_index].set(count)
-            self.PROVISION_DURATIONS._sum.inc(int(bucket_threshold) * count)
+    guest_ages: LabeledMetric[Tuple[str, str, str], int] = LabeledMetric(
+        name='guest_request_age',
+        help='Guest request ages by pool and state.',
+        prometheus_adapter=GaugeAdapter,
+        labels=('pool', 'state', 'age_threshold')
+    )
+
+    # provisioning_durations: TrivialMetric[int] = TrivialMetric(
+    #    name='provisioning_duration_seconds',
+    #    help='The time spent provisioning a machine.',
+    #    cache_key='metrics.provisioning.durations',
+    #    prometheus_adapter=HistogramAdapter,
+    #    histogram_buckets=PROVISION_DURATION_BUCKETS
+    # )
+
+    # @staticmethod
+    # @with_context
+    # def inc_provisioning_durations(
+    #     duration: int,
+    # ) -> Result[None, Failure]:
+    #    """
+    #    Increment provisioning duration bucket by one.
+    #
+    #    The bucket is determined by the upper bound of the given ``duration``.
+    #
+    #    :param logger: logger to use for logging.
+    #    :param duration: how long, in milliseconds, took actor to finish the task.
+    #    :param cache: cache instance to use for cache access.
+    #    :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+    #    """
+    #
+    #    bucket = min([threshold for threshold in PROVISION_DURATION_BUCKETS if threshold > duration])
+    #
+    #    inc_metric_field(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_DURATIONS, '{}'.format(bucket))
+    #
+    #    return Ok(None)
 
 
 @dataclasses.dataclass
@@ -1621,59 +1678,44 @@ class RoutingMetrics(MetricsBase):
     Routing metrics.
     """
 
-    _KEY_CALLS = 'metrics.routing.policy.calls'
-    _KEY_CANCELLATIONS = 'metrics.routing.policy.cancellations'
-    _KEY_RULINGS = 'metrics.routing.policy.rulings'
+    overall_policy_calls_count: LabeledMetric[Tuple[str], int] = LabeledMetric(
+        name='overall_policy_calls_count',
+        help='Overall total number of policy call by policy name.',
+        cache_key='metrics.routing.policy.calls',
+        prometheus_adapter=CounterAdapter,
+        labels=('policy',)
+    )
 
-    policy_calls: Dict[str, int] = dataclasses.field(default_factory=dict)
-    policy_cancellations: Dict[str, int] = dataclasses.field(default_factory=dict)
-    policy_rulings: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
+    inc_policy_called = cast(
+        Callable[[Arg(str, 'policyname')], Result[None, Failure]],  # noqa: F821
+        overall_policy_calls_count.inc
+    )
 
-    @staticmethod
-    @with_context
-    def inc_policy_called(
-        policy_name: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
-        """
-        Increase "policy called to make ruling" metric by 1.
+    overall_policy_cancellations_count: LabeledMetric[Tuple[str], int] = LabeledMetric(
+        name='overall_policy_cancellations_count',
+        help='Overall total number of policy canceling a guest request by policy name.',
+        cache_key='metrics.routing.policy.cancellations',
+        prometheus_adapter=CounterAdapter,
+        labels=('policy',)
+    )
 
-        :param logger: logger to use for logging.
-        :param cache: cache instance to use for cache access.
-        :param policy_name: policy that was called to make ruling.
-        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
-        """
+    inc_policy_canceled = cast(
+        Callable[[Arg(str, 'policyname')], Result[None, Failure]],  # noqa: F821
+        overall_policy_cancellations_count.inc
+    )
 
-        inc_metric_field(logger, cache, RoutingMetrics._KEY_CALLS, policy_name)
-        return Ok(None)
-
-    @staticmethod
-    @with_context
-    def inc_policy_canceled(
-        policy_name: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
-        """
-        Increase "policy canceled a guest request" metric by 1.
-
-        :param logger: logger to use for logging.
-        :param cache: cache instance to use for cache access.
-        :param policy_name: policy that made the decision.
-        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
-        """
-
-        inc_metric_field(logger, cache, RoutingMetrics._KEY_CANCELLATIONS, policy_name)
-        return Ok(None)
+    overall_policy_rulings_count: LabeledMetric[Tuple[str, str, str], int] = LabeledMetric(
+        name='overall_policy_rulings_count',
+        help='Overall total number of policy rulings by policy name, pool name and whether the pool was allowed.',
+        cache_key='metrics.routing.policy.rulings',
+        prometheus_adapter=CounterAdapter,
+        labels=('policy', 'pool', 'allowed'),
+    )
 
     @staticmethod
-    @with_context
     def inc_pool_allowed(
         policy_name: str,
-        pool_name: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        pool_name: str
     ) -> Result[None, Failure]:
         """
         Increase "pool allowed by policy" metric by 1.
@@ -1685,16 +1727,12 @@ class RoutingMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, RoutingMetrics._KEY_RULINGS, '{}:{}:yes'.format(policy_name, pool_name))
-        return Ok(None)
+        return RoutingMetrics.overall_policy_rulings_count.inc(policy_name, pool_name, 'yes')
 
     @staticmethod
-    @with_context
     def inc_pool_excluded(
         policy_name: str,
-        pool_name: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        pool_name: str
     ) -> Result[None, Failure]:
         """
         Increase "pool excluded by policy" metric by 1.
@@ -1706,85 +1744,7 @@ class RoutingMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, RoutingMetrics._KEY_RULINGS, '{}:{}:no'.format(policy_name, pool_name))
-        return Ok(None)
-
-    @with_context
-    def sync(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> None:
-        """
-        Load values from the storage and update this container with up-to-date values.
-
-        :param logger: logger to use for logging.
-        :param cache: cache instance to use for cache access.
-        """
-
-        super(RoutingMetrics, self).sync()
-
-        self.policy_calls = {
-            field: count
-            for field, count in get_metric_fields(logger, cache, self._KEY_CALLS).items()
-        }
-        self.policy_cancellations = {
-            field: count
-            for field, count in get_metric_fields(logger, cache, self._KEY_CANCELLATIONS).items()
-        }
-        # fields are in form `policy:pool:allowed`
-        self.policy_rulings = {
-            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
-            for field, count in get_metric_fields(logger, cache, self._KEY_RULINGS).items()
-        }
-
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
-        """
-        Register instances of Prometheus metrics with the given registry.
-
-        :param registry: Prometheus registry to attach metrics to.
-        """
-
-        super(RoutingMetrics, self).register_with_prometheus(registry)
-
-        self.OVERALL_POLICY_CALLS_COUNT = Counter(
-            'overall_policy_calls_count',
-            'Overall total number of policy call by policy name.',
-            ['policy'],
-            registry=registry
-        )
-
-        self.OVERALL_POLICY_CANCELLATIONS_COUNT = Counter(
-            'overall_policy_cancellations_count',
-            'Overall total number of policy canceling a guest request by policy name.',
-            ['policy'],
-            registry=registry
-        )
-
-        self.OVERALL_POLICY_RULINGS_COUNT = Counter(
-            'overall_policy_rulings_count',
-            'Overall total number of policy rulings by policy name, pool name and whether the pool was allowed.',
-            ['policy', 'pool', 'allowed'],
-            registry=registry
-        )
-
-    def update_prometheus(self) -> None:
-        """
-        Update values of Prometheus metric instances with the data in this container.
-        """
-
-        super(RoutingMetrics, self).update_prometheus()
-
-        for policy_name, count in self.policy_calls.items():
-            self.OVERALL_POLICY_CALLS_COUNT.labels(policy=policy_name)._value.set(count)
-
-        for policy_name, count in self.policy_cancellations.items():
-            self.OVERALL_POLICY_CANCELLATIONS_COUNT.labels(policy=policy_name)._value.set(count)
-
-        for (policy_name, pool_name, allowed), count in self.policy_rulings.items():
-            self.OVERALL_POLICY_RULINGS_COUNT \
-                .labels(policy=policy_name, pool=pool_name, allowed=allowed) \
-                ._value.set(count)
+        return RoutingMetrics.overall_policy_rulings_count.inc(policy_name, pool_name, 'no')
 
 
 @dataclasses.dataclass
@@ -1793,63 +1753,80 @@ class TaskMetrics(MetricsBase):
     Task and actor metrics.
     """
 
-    overall_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    overall_errored_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    overall_message_count: LabeledMetric[Tuple[str, str], int] = LabeledMetric(
+        name='overall_message_count',
+        help='Overall total number of messages processed by queue and actor.',
+        cache_key='metrics.tasks.messages.overall',
+        prometheus_adapter=CounterAdapter,
+        labels=('queue_name', 'actor_name')
+    )
+
+    inc_overall_messages = cast(
+        Callable[[Arg(str, 'queue'), Arg(str, 'actor')], Result[None, Failure]],  # noqa: F821
+        overall_message_count.inc
+    )
+
+    overall_errored_message_count: LabeledMetric[Tuple[str, str], int] = LabeledMetric(
+        name='overall_errored_message_count',
+        help='Overall total number of errored messages by queue and actor.',
+        cache_key='metrics.tasks.messages.overall.errored',
+        prometheus_adapter=CounterAdapter,
+        labels=('queue', 'actor')
+    )
+
+    inc_overall_errored_messages = cast(
+        Callable[[Arg(str, 'queue'), Arg(str, 'actor')], Result[None, Failure]],  # noqa: F821
+        overall_errored_message_count.inc
+    )
+
+    self.OVERALL_RETRIED_MESSAGE_COUNT = Counter(
+        'overall_retried_message_count',
+        'Overall total number of retried messages by queue and actor.',
+        ['queue_name', 'actor_name'],
+        registry=registry
+    )
+
+    self.OVERALL_REJECTED_MESSAGE_COUNT = Counter(
+        'overall_rejected_message_count',
+        'Overall total number of rejected messages by queue and actor.',
+        ['queue_name', 'actor_name'],
+        registry=registry
+    )
+
+    self.CURRENT_MESSAGE_COUNT = Gauge(
+        'current_message_count',
+        'Current number of messages being processed by queue and actor.',
+        ['queue_name', 'actor_name'],
+        registry=registry
+    )
+
+    self.CURRENT_DELAYED_MESSAGE_COUNT = Gauge(
+        'current_delayed_message_count',
+        'Current number of messages being delayed by queue and actor.',
+        ['queue_name', 'actor_name'],
+        registry=registry
+    )
+
+    self.MESSAGE_DURATIONS = Histogram(
+        'message_duration_milliseconds',
+        'The time spent processing messages by queue and actor.',
+        ['queue_name', 'actor_name', 'pool'],
+        buckets=MESSAGE_DURATION_BUCKETS,
+        registry=registry,
+    )
+
+
     overall_retried_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
     overall_rejected_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
     current_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
     current_delayed_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
     message_durations: Dict[Tuple[str, str, str, str], int] = dataclasses.field(default_factory=dict)
 
-    _KEY_OVERALL_MESSAGES = 'metrics.tasks.messages.overall'
-    _KEY_OVERALL_ERRORED_MESSAGES = 'metrics.tasks.messages.overall.errored'
     _KEY_OVERALL_RETRIED_MESSAGES = 'metrics.tasks.messages.overall.retried'
     _KEY_OVERALL_REJECTED_MESSAGES = 'metrics.tasks.messages.overall.rejected'
     _KEY_CURRENT_MESSAGES = 'metrics.tasks.messages.current'
     _KEY_CURRENT_DELAYED_MESSAGES = 'metrics.tasks.messages.current.delayed'
     _KEY_MESSAGE_DURATIONS = 'metrics.tasks.messages.durations'
-
-    @staticmethod
-    @with_context
-    def inc_overall_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
-        """
-        Increment number of all encountered messages.
-
-        :param queue: name of the queue the message belongs to.
-        :param actor: name of the actor requested by the message.
-        :param logger: logger to use for logging.
-        :param cache: cache instance to use for cache access.
-        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
-        """
-
-        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_MESSAGES, '{}:{}'.format(queue, actor))
-        return Ok(None)
-
-    @staticmethod
-    @with_context
-    def inc_overall_errored_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
-        """
-        Increment number of all errored messages.
-
-        :param queue: name of the queue the message belongs to.
-        :param actor: name of the actor requested by the message.
-        :param logger: logger to use for logging.
-        :param cache: cache instance to use for cache access.
-        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
-        """
-
-        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_ERRORED_MESSAGES, '{}:{}'.format(queue, actor))
-        return Ok(None)
 
     @staticmethod
     @with_context
@@ -2073,55 +2050,7 @@ class TaskMetrics(MetricsBase):
 
         super(TaskMetrics, self).register_with_prometheus(registry)
 
-        self.OVERALL_MESSAGE_COUNT = Counter(
-            'overall_message_count',
-            'Overall total number of messages processed by queue and actor.',
-            ['queue_name', 'actor_name'],
-            registry=registry
-        )
 
-        self.OVERALL_ERRORED_MESSAGE_COUNT = Counter(
-            'overall_errored_message_count',
-            'Overall total number of errored messages by queue and actor.',
-            ['queue_name', 'actor_name'],
-            registry=registry
-        )
-
-        self.OVERALL_RETRIED_MESSAGE_COUNT = Counter(
-            'overall_retried_message_count',
-            'Overall total number of retried messages by queue and actor.',
-            ['queue_name', 'actor_name'],
-            registry=registry
-        )
-
-        self.OVERALL_REJECTED_MESSAGE_COUNT = Counter(
-            'overall_rejected_message_count',
-            'Overall total number of rejected messages by queue and actor.',
-            ['queue_name', 'actor_name'],
-            registry=registry
-        )
-
-        self.CURRENT_MESSAGE_COUNT = Gauge(
-            'current_message_count',
-            'Current number of messages being processed by queue and actor.',
-            ['queue_name', 'actor_name'],
-            registry=registry
-        )
-
-        self.CURRENT_DELAYED_MESSAGE_COUNT = Gauge(
-            'current_delayed_message_count',
-            'Current number of messages being delayed by queue and actor.',
-            ['queue_name', 'actor_name'],
-            registry=registry
-        )
-
-        self.MESSAGE_DURATIONS = Histogram(
-            'message_duration_milliseconds',
-            'The time spent processing messages by queue and actor.',
-            ['queue_name', 'actor_name', 'pool'],
-            buckets=MESSAGE_DURATION_BUCKETS,
-            registry=registry,
-        )
 
     @with_context
     def update_prometheus(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
@@ -2591,43 +2520,23 @@ class Metrics(MetricsBase):
     api: APIMetrics = APIMetrics()
     workers: WorkerMetrics = WorkerMetrics()
 
-    # Registry this tree of metrics containers is tied to.
-    _registry: Optional[CollectorRegistry] = None
-
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
-        """
-        Register instances of Prometheus metrics with the given registry.
-
-        :param registry: Prometheus registry to attach metrics to.
-        """
-
-        super(Metrics, self).register_with_prometheus(registry)
-
-        self._registry = registry
-
-        self.PACKAGE_INFO = Info(
-            'artemis_package',
-            'Artemis packaging info. Labels provide information about package versions.',
-            registry=registry
-        )
-
-        self.IDENTITY_INFO = Info(
-            'artemis_identity',
-            'Artemis identity info. Labels provide information about identity aspects.',
-            registry=registry
-        )
-
-        # Since these values won't ever change, we can already set metrics and be done with it.
-        self.PACKAGE_INFO.info({
+    @prometheus(Info('artemis_package', 'Artemis packaging info. Labels provide information about package versions.'))
+    def update(self, metric: Info) -> None:
+        metric.info({
             'package_version': __VERSION__,
             'image_digest': os.getenv('ARTEMIS_IMAGE_DIGEST', '<undefined>'),
             'image_url': os.getenv('ARTEMIS_IMAGE_URL', '<undefined>')
         })
 
-        self.IDENTITY_INFO.info({
+    @prometheus(Info('artemis_identity', 'Artemis identity info. Labels provide information about identity aspects.'))
+    def update(self, metric: Info) -> None:
+        metric.info({
             'api_node': platform.node(),
             'artemis_deployment': os.getenv('ARTEMIS_DEPLOYMENT', '<undefined>')
         })
+
+    # Registry this tree of metrics containers is tied to.
+    _registry: Optional[CollectorRegistry] = None
 
     @with_context
     def render_prometheus_metrics(self, db: artemis_db.DB) -> Result[bytes, Failure]:
