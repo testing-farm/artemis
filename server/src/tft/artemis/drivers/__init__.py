@@ -36,6 +36,9 @@ S = TypeVar('S', bound=SerializableContainer)
 GuestTagsType = Dict[str, str]
 
 
+IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')  # noqa: FS003
+
+
 #: A delay, in seconds, to schedule pool resources release with. This may be useful for post mortem investigation
 #: of crashed resources.
 KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
@@ -1155,14 +1158,20 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return get_cached_items_as_list(CACHE.get(), self.flavor_info_cache_key, PoolFlavorInfo)
 
 
-def vm_info_to_ip(output: Any, key: str, regex: str) -> Result[Optional[str], Failure]:
+def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -> Result[Optional[str], Failure]:
     if not output[key]:
         # It's ok! That means the instance is not ready yet. We need to wait a bit for ip address.
         return Ok(None)
 
-    match_obj = re.match(regex, output[key])
+    regex = regex or IP_ADDRESS_PATTERN
+
+    match_obj = regex.search(output[key])
+
     if not match_obj:
-        return Error(Failure('Failed to get an ip'))
+        return Error(Failure(
+            'failed to parse an IP address',
+            input=output[key]
+        ))
 
     return Ok(match_obj.group(1))
 

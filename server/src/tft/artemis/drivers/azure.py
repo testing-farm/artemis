@@ -159,7 +159,7 @@ class AzureDriver(PoolDriver):
                 pool_failures=[Failure('instance ended up in "failed" state')]
             ))
 
-        r_ip_address = vm_info_to_ip(output, 'publicIps', r'((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*')  # noqa: FS003
+        r_ip_address = vm_info_to_ip(output, 'publicIps')
 
         if r_ip_address.is_error:
             return Error(r_ip_address.unwrap_error())

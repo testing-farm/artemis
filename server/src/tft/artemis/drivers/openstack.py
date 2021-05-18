@@ -16,7 +16,7 @@ from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
 from . import ConsoleUrlData, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
     ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
-    test_cli_error
+    test_cli_error, vm_info_to_ip
 
 #: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
@@ -275,19 +275,6 @@ class OpenStackDriver(PoolDriver):
             return Error(r_output.unwrap_error())
 
         return Ok(r_output.unwrap())
-
-    def _output_to_ip(self, output: Any) -> Result[Optional[str], Failure]:
-        if not output['addresses']:
-            # It's ok! That means the instance is not ready yet. We need to wait a bit for ip address.
-            # The `update_guest` task will be scheduled until ip adress is None.
-            return Ok(None)
-
-        # output['addresses'] == "network_name=ip_address[, ipv6]"
-        match_obj = re.match(r'.*=((?:[0-9]{1,3}\.){3}[0-9]{1,3}).*', output['addresses'])  # noqa: FS003
-        if not match_obj:
-            return Error(Failure('Failed to get ip', addresses=output['addresses']))
-
-        return Ok(match_obj.group(1))
 
     def _do_acquire_guest(
         self,
@@ -658,7 +645,7 @@ class OpenStackDriver(PoolDriver):
                 delay_update=KNOB_UPDATE_TICK.value
             ))
 
-        r_ip_address = self._output_to_ip(output)
+        r_ip_address = vm_info_to_ip(output, 'addresses')
 
         if r_ip_address.is_error:
             return Error(r_ip_address.unwrap_error())
