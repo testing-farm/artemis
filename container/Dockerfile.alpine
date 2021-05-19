@@ -12,7 +12,7 @@
 #
 
 # Note that alpine from 3.11 uses python 3.8 which we do not yet support
-FROM docker.io/randomcoww/promtail:v2.0.0 as PROMTAIL_SOURCE
+FROM quay.io/testing-farm/promtail:v2.0.0 as PROMTAIL_SOURCE
 FROM quay.io/testing-farm/alpine:3.10
 
 COPY --from=PROMTAIL_SOURCE /promtail /usr/bin/
