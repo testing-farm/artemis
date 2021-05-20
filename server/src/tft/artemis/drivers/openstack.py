@@ -2,7 +2,7 @@ import dataclasses
 import re
 import sys
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
@@ -14,7 +14,7 @@ from ..db import GuestRequest, SnapshotRequest
 from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
-from . import PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
+from . import ConsoleUrlData, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
     ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
     test_cli_error
 
@@ -34,6 +34,15 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
     envvar='ARTEMIS_OPENSTACK_UPDATE_TICK',
     envvar_cast=int,
     default=30
+)
+
+#: How long, in seconds, it takes for a console url to be qualified as expired.
+KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
+    'openstack.default.console-url.expires',
+    has_db=False,
+    envvar='ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES',
+    envvar_cast=int,
+    default=600
 )
 
 MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'^No server with a name or ID')
@@ -85,6 +94,7 @@ class OpenStackDriver(PoolDriver):
             return r_capabilities
 
         r_capabilities.unwrap().supports_native_post_install_script = True
+        r_capabilities.unwrap().supports_console_url = True
         return r_capabilities
 
     def _run_os(self, options: List[str], json_format: bool = True) -> Result[Union[JSONType, str], Failure]:
@@ -448,6 +458,29 @@ class OpenStackDriver(PoolDriver):
             return Error(r_flavor.unwrap_error())
 
         return Ok(True)
+
+    def acquire_console_url(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest: GuestRequest
+    ) -> Result[ConsoleUrlData, Failure]:
+        """
+        Acquire a guest console.
+        """
+
+        instance_id = OpenStackPoolData.unserialize(guest).instance_id
+        os_options = [
+            'console', 'url', 'show', instance_id
+        ]
+        r_output = self._run_os(os_options)
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+        # NOTE(ivasilev) The following cast is needed to keep quiet the typing check
+        data = cast(Dict[str, str], r_output.unwrap())
+
+        return Ok(ConsoleUrlData(url=data['url'],
+                                 type=data['type'],
+                                 expires=datetime.utcnow() + timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)))
 
     def create_snapshot(
         self,

@@ -466,6 +466,10 @@ class GuestRequest(Base):
     # Contents of a script to be run when the guest becomes active
     post_install_script = Column(Text(), nullable=True)
 
+    # Console url if it was requested by the user
+    console_url = Column(String(250), nullable=True)
+    console_url_expires = Column(DateTime(), nullable=True)
+
     owner = relationship('User', back_populates='guests')
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')

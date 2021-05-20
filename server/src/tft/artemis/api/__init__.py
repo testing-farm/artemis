@@ -316,6 +316,8 @@ class GuestResponse:
     user_data: Dict[str, Optional[str]]
     post_install_script: Optional[str]
     ctime: datetime.datetime
+    console_url: Optional[str]
+    console_url_expires: Optional[datetime.datetime]
 
     @classmethod
     def from_db(cls, guest: artemis_db.GuestRequest):
@@ -334,7 +336,9 @@ class GuestResponse:
             state=GuestState(guest.state),
             user_data=json.loads(guest.user_data),
             post_install_script=guest.post_install_script,
-            ctime=guest.ctime
+            ctime=guest.ctime,
+            console_url=guest.console_url,
+            console_url_expires=guest.console_url_expires
         )
 
 
@@ -396,6 +400,13 @@ class SnapshotResponse:
             guestname=snapshot_request.guestname,
             state=GuestState(snapshot_request.state)
         )
+
+
+@molten.schema
+@dataclasses.dataclass
+class ConsoleUrlResponse:
+    url: Optional[str]
+    expires: Optional[datetime.datetime]
 
 
 @molten.schema
@@ -638,6 +649,20 @@ class GuestRequestManager:
                     caused_by=r_dispatch.unwrap_error(),
                     failure_details=failure_details
                 )
+
+    def acquire_guest_console_url(
+        self,
+        guestname: str,
+        logger: gluetool.log.ContextAdapter
+    ) -> ConsoleUrlResponse:
+        from ..tasks import acquire_guest_console_url as task_acquire_guest_console_url
+        from ..tasks import dispatch_task
+
+        r_dispatch = dispatch_task(logger, task_acquire_guest_console_url, guestname)
+        if r_dispatch.is_error:
+            raise errors.InternalServerError(caused_by=r_dispatch.unwrap_error(), logger=logger)
+
+        return ConsoleUrlResponse(url=None, expires=None)
 
 
 class GuestEventManager:
@@ -1146,6 +1171,34 @@ def get_guest_events(guestname: str, request: Request, manager: GuestEventManage
     return HTTP_200, manager.get_events_by_guestname(guestname, **params)
 
 
+def acquire_guest_console_url(
+        guestname: str,
+        request: Request,
+        manager: GuestRequestManager,
+        logger: gluetool.log.ContextAdapter
+) -> Tuple[str, ConsoleUrlResponse]:
+    from ..tasks import get_guest_logger
+    console_url_logger = get_guest_logger('acquire-guest-console-url', logger, guestname)
+
+    # first see if the console has already been created and isn't expired yet
+    gr = manager.get_by_guestname(guestname)
+    if not gr:
+        # no such guest found, aborting
+        raise errors.NoSuchEntityError(request=request, logger=console_url_logger)
+    console_url_response = ConsoleUrlResponse(
+        url=gr.console_url,
+        expires=gr.console_url_expires
+    )
+    has_expired = gr.console_url_expires and gr.console_url_expires < datetime.datetime.utcnow()
+    if not gr.console_url or has_expired:
+        if has_expired:
+            logger.warning(f'Guest console url {console_url_response.url} has expired, will fetch a new one')
+        else:
+            logger.warning('Fetching a new guest console url')
+        console_url_response = manager.acquire_guest_console_url(guestname, console_url_logger)
+    return HTTP_200, console_url_response
+
+
 def get_metrics(
     request: Request,
     db: artemis_db.DB,
@@ -1332,7 +1385,88 @@ def run_app() -> molten.app.App:
     ) -> Route:
         return Route(template, handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
 
+    # NEW: /guest/$GUESTNAME/console/url
     def create_routes_v0_0_18(
+        url_prefix: str,
+        name_prefix: str,
+        redirect_to_prefix: Optional[str] = None
+    ) -> List[Union[Route, Include]]:
+        """
+        Building on top of `create_routes`, this helper uses it to build the whole tree of endpoints. It applies proper
+        prefix when asked to, so we can use it to build versioned trees of endpoints. And it can redirect endpoints to
+        another endpoint in a different version tree by replacing the actual handler with a trivial redirect.
+
+        :param url_prefix: first step of the desired URL, usually a version, e.g. ``/v0.0.1``. It is added to all
+            endpoints.
+        :param name_prefix: a prefix applied to all internal route names. It must be unique among all the tree's built
+            by this helper, because Molten does not allow two routes with the same name, even if they represent
+            different endpoints.
+        :param redirect_to_prefix: if set, instead of calling the usual handler to generate response, a redirect is
+            returned. The redirect URL is created by replacing ``url_prefix`` part of the original URL with this value.
+            For example, ``url_prefix='/v0.0.15', redirect_to_prefix='/v0.0.16'`` would redirect ``/v0.0.15/foo`` to
+            ``/v0.0.16/foo``.
+        """
+
+        if redirect_to_prefix:
+            # Keeping the same API as `_create_route`, to make the structure below easier to handle. But we will ignore
+            # the given handler, and use a custom one.
+            def create_route(
+                template: str,
+                handler: Callable[..., Any],
+                method: str = 'GET'
+            ) -> Route:
+                def real_handler(request: Request) -> Any:
+                    assert redirect_to_prefix is not None
+
+                    return molten.redirect(
+                        request.path.replace(url_prefix, redirect_to_prefix),
+                        redirect_type=molten.RedirectType.PERMANENT
+                    )
+
+                return Route(template, real_handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
+
+        else:
+            create_route = functools.partial(_create_route, name_prefix=name_prefix)
+
+        routes: List[Union[Include, Route]] = [
+            Include('/guests', [
+                create_route('/', get_guest_requests, method='GET'),
+                create_route('/', create_guest_request, method='POST'),
+                create_route('/{guestname}', get_guest_request),
+                create_route('/{guestname}', delete_guest, method='DELETE'),
+                create_route('/events', get_events),
+                create_route('/{guestname}/events', get_guest_events),
+                create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+                create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+                create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+                create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
+                create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')
+            ]),
+            Include('/knobs', [
+                create_route('/', KnobManager.entry_get_knobs, method='GET'),
+                create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+                create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+                create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            ]),
+            create_route('/metrics', get_metrics),
+            create_route('/about', get_about),
+            Include('/_cache', [
+                Include('/pools/{poolname}', [
+                    create_route('/image-info', CacheManager.entry_pool_image_info),
+                    create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
+                ])
+            ]),
+            create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+            create_route('/_schema', OpenAPIHandler(metadata=metadata))
+        ]
+
+        if url_prefix == '/':
+            return routes
+
+        return [Include(url_prefix, routes)]
+
+    # TODO: use classes and inheritance to avoid repetition
+    def create_routes_v0_0_17(
         url_prefix: str,
         name_prefix: str,
         redirect_to_prefix: Optional[str] = None
@@ -1416,8 +1550,9 @@ def run_app() -> molten.app.App:
         ('v0.0.18', create_routes_v0_0_18): [
             # For lazy clients who don't care about the version, support `/current` redirected
             # to the most recent API we have.
-            'current',
-            'v0.0.17',
+            'current'
+        ],
+        ('v0.0.17', create_routes_v0_0_17): [
             'v0.0.16',
             'v0.0.15',
             'v0.0.14'

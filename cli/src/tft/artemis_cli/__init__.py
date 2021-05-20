@@ -277,6 +277,9 @@ def artemis_restore(cfg, resource, rid, data=None, logger=None):
 def artemis_delete(cfg, resource, rid, logger=None):
     return fetch_artemis(cfg, '{}/{}'.format(resource, rid), method='delete', logger=None, allow_statuses=[200, 201, 204, 404, 409])
 
+def artemis_get_console_url(cfg, resource, rid, logger=None):
+    return fetch_artemis(cfg, '/{}/{}/console/url'.format(resource, rid), request_kwargs={}, logger=None)
+
 def confirm(
     cfg: Configuration,
     msg: str,

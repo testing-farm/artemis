@@ -83,6 +83,7 @@ case-insensitive.
 * `ARTEMIS_HOOK_OPENSTACK_ENVIRONMENT_TO_IMAGE` (string): Script to map environment to an OpenStack image.
 * `ARTEMIS_OPENSTACK_BUILD_TIMEOUT` (int): How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned. Default: `600`.
 * `ARTEMIS_OPENSTACK_UPDATE_TICK` (int): A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress. Default: `30`.
+* `ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES` (int): How long, in seconds, it takes for a console url to be qualified as expired. Default: `600`.
 
 === Routing
 

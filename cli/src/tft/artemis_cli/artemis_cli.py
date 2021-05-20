@@ -14,7 +14,7 @@ from tft import artemis_cli
 
 from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
                artemis_create, artemis_delete, artemis_inspect,
-               artemis_restore, artemis_update, confirm, fetch_remote,
+               artemis_restore, artemis_update, artemis_get_console_url, confirm, fetch_remote,
                prettify_json, prettify_yaml, prompt)
 
 # to prevent infinite loop in pagination support
@@ -330,6 +330,20 @@ def cmd_guest_events(
         results_json.reverse()
 
     print(prettify_json(True, results_json))
+
+
+@cmd_guest.group(name='console', short_help='Console related commands')
+@click.pass_obj
+def cmd_console(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_console.command(name='url', short_help='Acquire console url of a guest')
+@click.argument('guestname', metavar='ID', default=None,)
+@click.pass_obj
+def cmd_console_url(cfg: Configuration, guestname: str) -> None:
+    response = artemis_get_console_url(cfg, 'guests', guestname)
+    cfg.logger.info(prettify_json(True, response.json()))
 
 
 @cli_root.command(name='init', short_help='Initialize configuration file.')

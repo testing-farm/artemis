@@ -897,7 +897,7 @@ def _update_guest_state(
     guestname: str,
     new_state: GuestState,
     current_state: Optional[GuestState] = None,
-    set_values: Optional[Dict[str, Union[str, int, None]]] = None,
+    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime]]] = None,
     current_pool_data: Optional[str] = None,
     **details: Any
 ) -> Result[bool, Failure]:
@@ -1434,7 +1434,7 @@ class Workspace:
         self,
         new_state: GuestState,
         current_state: Optional[GuestState] = None,
-        set_values: Optional[Dict[str, Union[str, int, None]]] = None,
+        set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime]]] = None,
         current_pool_data: Optional[str] = None,
         **details: Any
     ) -> None:
@@ -3413,6 +3413,62 @@ def do_refresh_pool_resources_metrics(
             handle_failure(r_refresh, 'failed to refresh pool resources metrics')
 
     return handle_success('finished-task')
+
+
+def do_acquire_guest_console_url(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str
+) -> DoerReturnType:
+
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='acquire-guest-console-url'
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname)
+    workspace.load_gr_pool()
+    assert workspace.pool
+    assert workspace.gr
+    r_console = workspace.pool.acquire_console_url(logger, workspace.gr)
+    if r_console.is_error:
+        handle_failure(r_console, 'failed to get guest console')
+        return RESCHEDULE
+
+    console_url_data = r_console.unwrap()
+    workspace.update_guest_state(
+        GuestState(workspace.gr.state),
+        set_values={
+            'console_url': console_url_data.url,
+            'console_url_expires': console_url_data.expires,
+        },
+        current_pool_data=workspace.gr.pool_data
+    )
+
+    if workspace.result:
+        return workspace.result
+
+    return handle_success('finished-task')
+
+
+@dramatiq.actor(  # type: ignore  # Untyped decorator
+    **actor_kwargs(
+        'ACQUIRE_GUEST_CONSOLE_URL',
+    )
+)
+def acquire_guest_console_url(guestname: str) -> None:
+    task_core(
+        cast(DoerType, do_acquire_guest_console_url),
+        logger=get_guest_logger('acquire-guest-console-url', _ROOT_LOGGER, guestname),
+        doer_args=(guestname,)
+    )
 
 
 @dramatiq.actor(  # type: ignore  # Untyped decorator

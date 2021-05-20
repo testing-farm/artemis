@@ -226,6 +226,7 @@ def flavor_to_key(
 class PoolCapabilities:
     supported_architectures: Union[List[str], _AnyArchitecture] = AnyArchitecture
     supports_snapshots: bool = False
+    supports_console_url: bool = False
 
     #: If set, the pool provides spot instances. Otherwise, only regular instances are supported.
     supports_spot_instances: bool = False
@@ -248,6 +249,16 @@ class PoolCapabilities:
         # Here we know the attribute must be a list, because we ruled out the `AnyArchitecture` above, but mypy
         # can't deduce it.
         return arch in cast(List[str], self.supported_architectures)
+
+
+@dataclasses.dataclass
+class ConsoleUrlData:
+    """
+    Base class for guest console data.
+    """
+    type: str
+    url: str
+    expires: datetime.datetime
 
 
 @dataclasses.dataclass
@@ -702,6 +713,17 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Release guest and its resources back to the pool.
 
         :rtype: result.Result[bool, Failure]
+        """
+
+        raise NotImplementedError()
+
+    def acquire_console_url(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest: GuestRequest
+    ) -> Result[ConsoleUrlData, Failure]:
+        """
+        Acquire a guest console url.
         """
 
         raise NotImplementedError()
