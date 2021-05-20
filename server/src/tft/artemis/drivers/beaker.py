@@ -452,10 +452,8 @@ class BeakerDriver(PoolDriver):
         :rtype: result.Result[bool, Failure]
         :returns: Ok with True if guest can be acquired.
         """
-        if environment.hw.arch not in self.pool_config['available-arches']:
-            return Ok(False)
 
-        return Ok(True)
+        return super(BeakerDriver, self).can_acquire(environment)
 
     def acquire_guest(
         self,

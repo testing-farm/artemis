@@ -436,8 +436,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         environment: Environment
     ) -> Result[bool, Failure]:
         """
-        Find our whether this driver can provision a guest that would satisfy
-        the given environment.
+        Find our whether this driver can provision a guest that would satisfy the given environment.
+
+        By default, the driver base class tries to run tests that are common for majority - if not all - of drivers:
+
+        * make sure the requested architecture is supported by the driver.
 
         :param Environment environment: environment to check
         :rtype: result.Result[bool, Failure]
@@ -445,7 +448,17 @@ class PoolDriver(gluetool.log.LoggerMixin):
             or specification of error.
         """
 
-        raise NotImplementedError()
+        r_capabilities = self.capabilities()
+
+        if r_capabilities.is_error:
+            return Error(r_capabilities.unwrap_error())
+
+        capabilities = r_capabilities.unwrap()
+
+        if not capabilities.supports_arch(environment.hw.arch):
+            return Ok(False)
+
+        return Ok(True)
 
     def _map_image_name_to_image_info_by_cache(
         self,

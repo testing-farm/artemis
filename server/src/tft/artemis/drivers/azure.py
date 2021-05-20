@@ -122,7 +122,8 @@ class AzureDriver(PoolDriver):
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
         """
-        return Ok(True)
+
+        return super(AzureDriver, self).can_acquire(environment)
 
     def update_guest(
         self,
