@@ -37,22 +37,6 @@ from ..tasks import get_snapshot_logger
 from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
-# Bump every time we change the current API, spawning a new milestone API version.
-# TODO: once we have route generators (already submitted), this would be autodetected from their list,
-# since it basically the very first item of such a list.
-CURRENT_MILESTONE_VERSION = 'v0.0.18'
-
-
-class RouteGeneratorType(Protocol):
-    def __call__(
-        self,
-        url_prefix: str,
-        name_prefix: str,
-        redirect_to_prefix: Optional[str] = None
-    ) -> List[Union[Route, Include]]:
-        pass
-
-
 DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
 
 DEFAULT_SSH_PORT = 22
@@ -1302,6 +1286,241 @@ class OpenAPIHandler(_OpenAPIHandler):
         )
 
 
+#
+# Route generators
+#
+# These functions take care of generating routes - endpoints - for their respective API versions.
+#
+class CreateRouteCallbackType(Protocol):
+    """
+    Represents a callable that creates a :py:class:`molten.Route` for given parameters.
+
+    Pretty much the type of :py:class:`molten.Route` ``__init__()`` method, including accepted parameters.
+    """
+
+    def __call__(self, template: str, handler: Callable[..., Any], method: str = 'GET') -> Route:
+        pass
+
+
+class RouteGeneratorType(Protocol):
+    """
+    Represents a callable that creates a list of routes. This is what we need to implement for each API version.
+
+    :param create_route: a callable to create one individual route. Similar to a bare :py:class:`molten.Route`,
+        but not necessarily the class itself.
+    :param name_prefix: a prefix applied to all route names. It must be unique among all the routes, because
+        Molten does not allow two routes with the same name, even if they represent different endpoints.
+    :param metadata: OpenAPI metadata. Usually shared by the whole tree, and passed to OpenAPI handlers taking
+        care of endpoints like ``/_docs``.
+    """
+
+    def __call__(
+        self,
+        create_route: CreateRouteCallbackType,
+        name_prefix: str,
+        metadata: Any
+    ) -> List[Union[Route, Include]]:
+        pass
+
+
+class RouteGeneratorOuterType(Protocol):
+    """
+    "Public" API of a route generator.
+
+    :param url_prefix: first step of the desired URL, usually a version, e.g. ``/v0.0.1``. It is added to all
+        endpoints.
+    :param name_prefix: a prefix applied to all internal route names. It must be unique among all the tree's built
+        by this helper, because Molten does not allow two routes with the same name, even if they represent
+        different endpoints.
+    :param metadata: OpenAPI metadata. Usually shared by the whole tree, and passed to OpenAPI handlers taking
+        care of endpoints like ``/_docs``.
+    :param redirect_to_prefix: if set, instead of calling the usual handler to generate response, a redirect is
+        returned. The redirect URL is created by replacing ``url_prefix`` part of the original URL with this value.
+        For example, ``url_prefix='/v0.0.15', redirect_to_prefix='/v0.0.16'`` would redirect ``/v0.0.15/foo`` to
+        ``/v0.0.16/foo``.
+    """
+
+    def __call__(
+        self,
+        url_prefix: str,
+        name_prefix: str,
+        metadata: Any,
+        redirect_to_prefix: Optional[str] = None
+    ) -> List[Union[Route, Include]]:
+        pass
+
+
+def _create_route(
+    template: str,
+    handler: Callable[..., Any],
+    method: str = 'GET',
+    name_prefix: str = ''
+) -> Route:
+    """
+    Create a single route for given parameters.
+
+    Since Molten does not allow multiple routes with the same name, and since the name is created from
+    the handler name, we need to provide custom name for each route that shares the handler. We do that
+    by prefixing the handler name with an arbitrary prefix, which is specified by route generator calling
+    this helper.
+
+    Without this Molten requirement, we could just use `Route(...)` and be done with it.
+    """
+
+    return Route(template, handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
+
+
+def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
+    """
+    Decorator for route generators, providing shared functionality.
+
+    Decorates function with signature matching :py:class:`RouteGeneratorType`, which does the actual work,
+    and wraps it to provide some shared functionality, presenting :py:class:`RouteGeneratorOuterType` signature
+    to API server code. This signature demands more parameters, but the wrapped function doesn't have to be
+    concerned with these are consumed by the wrapper.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(
+        url_prefix: str,
+        name_prefix: str,
+        metadata: Any,
+        redirect_to_prefix: Optional[str] = None
+    ) -> List[Union[Route, Include]]:
+        if redirect_to_prefix:
+            # Keeping the same API as `_create_route`, to make the structure below easier to handle. But we will ignore
+            # the given handler, and use a custom one.
+            def create_route(
+                template: str,
+                handler: Callable[..., Any],
+                method: str = 'GET'
+            ) -> Route:
+                def real_handler(request: Request) -> Any:
+                    assert redirect_to_prefix is not None
+
+                    # Replace just once, no more - doesn't metter with regular versions, but the pseudo "top-level"
+                    # version means an empty string as a prefix, and that would insert the `redirect_to_prefix` between
+                    # each and every character of the path.
+                    return molten.redirect(
+                        request.path.replace(url_prefix, redirect_to_prefix, 1),
+                        redirect_type=molten.RedirectType.PERMANENT
+                    )
+
+                return Route(template, real_handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
+
+        else:
+            def create_route(
+                template: str,
+                handler: Callable[..., Any],
+                method: str = 'GET'
+            ) -> Route:
+                return _create_route(template, handler, method=method, name_prefix=name_prefix)
+
+        return [
+            Include(url_prefix, fn(create_route, name_prefix, metadata))
+        ]
+
+    return wrapper
+
+
+# NEW: /{guestname}/console/url
+@route_generator
+def generate_routes_v0_0_18(
+    create_route: CreateRouteCallbackType,
+    name_prefix: str,
+    metadata: Any
+) -> List[Union[Route, Include]]:
+    return [
+        Include('/guests', [
+            create_route('/', get_guest_requests, method='GET'),
+            create_route('/', create_guest_request, method='POST'),
+            create_route('/{guestname}', get_guest_request),
+            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/events', get_events),
+            create_route('/{guestname}/events', get_guest_events),
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
+            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')
+        ]),
+        Include('/knobs', [
+            create_route('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+        ]),
+        create_route('/metrics', get_metrics),
+        create_route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [
+                create_route('/image-info', CacheManager.entry_pool_image_info),
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
+            ])
+        ]),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+        create_route('/_schema', OpenAPIHandler(metadata=metadata))
+    ]
+
+
+@route_generator
+def generate_routes_v0_0_17(
+    create_route: CreateRouteCallbackType,
+    name_prefix: str,
+    metadata: Any
+) -> List[Union[Route, Include]]:
+    return [
+        Include('/guests', [
+            create_route('/', get_guest_requests, method='GET'),
+            create_route('/', create_guest_request, method='POST'),
+            create_route('/{guestname}', get_guest_request),
+            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/events', get_events),
+            create_route('/{guestname}/events', get_guest_events),
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
+        ]),
+        Include('/knobs', [
+            create_route('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+        ]),
+        create_route('/metrics', get_metrics),
+        create_route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [
+                create_route('/image-info', CacheManager.entry_pool_image_info),
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
+            ])
+        ]),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+        create_route('/_schema', OpenAPIHandler(metadata=metadata))
+    ]
+
+
+#: API milestones: describes milestone API version, its route generator, and optionally also compatible
+#: API versions. Based on this list, routes are created with proper endpoints, and possibly redirected
+#: when necessary.
+API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
+    # NEW: /guest/$GUESTNAME/console/url
+    ('v0.0.18', generate_routes_v0_0_18, [
+        # For lazy clients who don't care about the version, our most current API version should add
+        # `/current` redirected to itself.
+        'current',
+
+        # For clients that did not switch to versioned API yet, keep top-level endpoints.
+        # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
+        'toplevel'
+    ]),
+    ('v0.0.17', generate_routes_v0_0_17, [])
+]
+
+CURRENT_MILESTONE_VERSION = API_MILESTONES[0][0]
+
+
 def run_app() -> molten.app.App:
     from molten.router import Include, Route
 
@@ -1356,202 +1575,7 @@ def run_app() -> molten.app.App:
     # to version-prefixed endpoints.
     routes: List[Union[Route, Include]] = []
 
-    # Our thin wrapper over `Route` class: we want to reuse handlers as much as possible, but Molten
-    # blocks us from doing so in the easy way, but remembering the route "name" and disallowing its
-    # reuse - and the default name of the route is `handler.__name__`. Which means, if we'd like to use
-    # one handler several times, we need to use different name every time except the first one.
-    #
-    # We could spawn custom handlers to overcome this, but they would be very, very simple. Waste of
-    # time, let's use a wrapper for `Route` and allow name prefixes, to distinguish routes with the same
-    # handler.
-    def _create_route(
-        template: str,
-        handler: Callable[..., Any],
-        method: str = 'GET',
-        name_prefix: str = ''
-    ) -> Route:
-        return Route(template, handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
-
-    # NEW: /guest/$GUESTNAME/console/url
-    def create_routes_v0_0_18(
-        url_prefix: str,
-        name_prefix: str,
-        redirect_to_prefix: Optional[str] = None
-    ) -> List[Union[Route, Include]]:
-        """
-        Building on top of `create_routes`, this helper uses it to build the whole tree of endpoints. It applies proper
-        prefix when asked to, so we can use it to build versioned trees of endpoints. And it can redirect endpoints to
-        another endpoint in a different version tree by replacing the actual handler with a trivial redirect.
-
-        :param url_prefix: first step of the desired URL, usually a version, e.g. ``/v0.0.1``. It is added to all
-            endpoints.
-        :param name_prefix: a prefix applied to all internal route names. It must be unique among all the tree's built
-            by this helper, because Molten does not allow two routes with the same name, even if they represent
-            different endpoints.
-        :param redirect_to_prefix: if set, instead of calling the usual handler to generate response, a redirect is
-            returned. The redirect URL is created by replacing ``url_prefix`` part of the original URL with this value.
-            For example, ``url_prefix='/v0.0.15', redirect_to_prefix='/v0.0.16'`` would redirect ``/v0.0.15/foo`` to
-            ``/v0.0.16/foo``.
-        """
-
-        if redirect_to_prefix:
-            # Keeping the same API as `_create_route`, to make the structure below easier to handle. But we will ignore
-            # the given handler, and use a custom one.
-            def create_route(
-                template: str,
-                handler: Callable[..., Any],
-                method: str = 'GET'
-            ) -> Route:
-                def real_handler(request: Request) -> Any:
-                    assert redirect_to_prefix is not None
-
-                    # Replace just once, no more - doesn't metter with regular versions, but the pseudo "top-level"
-                    # version means an empty string as a prefix, and that would insert the `redirect_to_prefix` between
-                    # each and every character of the path.
-                    return molten.redirect(
-                        request.path.replace(url_prefix, redirect_to_prefix, 1),
-                        redirect_type=molten.RedirectType.PERMANENT
-                    )
-
-                return Route(template, real_handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
-
-        else:
-            create_route = functools.partial(_create_route, name_prefix=name_prefix)
-
-        routes: List[Union[Include, Route]] = [
-            Include('/guests', [
-                create_route('/', get_guest_requests, method='GET'),
-                create_route('/', create_guest_request, method='POST'),
-                create_route('/{guestname}', get_guest_request),
-                create_route('/{guestname}', delete_guest, method='DELETE'),
-                create_route('/events', get_events),
-                create_route('/{guestname}/events', get_guest_events),
-                create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
-                create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
-                create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
-                create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
-                create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')
-            ]),
-            Include('/knobs', [
-                create_route('/', KnobManager.entry_get_knobs, method='GET'),
-                create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
-                create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
-                create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
-            ]),
-            create_route('/metrics', get_metrics),
-            create_route('/about', get_about),
-            Include('/_cache', [
-                Include('/pools/{poolname}', [
-                    create_route('/image-info', CacheManager.entry_pool_image_info),
-                    create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
-                ])
-            ]),
-            create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
-            create_route('/_schema', OpenAPIHandler(metadata=metadata))
-        ]
-
-        return [Include(url_prefix, routes)]
-
-    # TODO: use classes and inheritance to avoid repetition
-    def create_routes_v0_0_17(
-        url_prefix: str,
-        name_prefix: str,
-        redirect_to_prefix: Optional[str] = None
-    ) -> List[Union[Route, Include]]:
-        """
-        Building on top of `create_routes`, this helper uses it to build the whole tree of endpoints. It applies proper
-        prefix when asked to, so we can use it to build versioned trees of endpoints. And it can redirect endpoints to
-        another endpoint in a different version tree by replacing the actual handler with a trivial redirect.
-
-        :param url_prefix: first step of the desired URL, usually a version, e.g. ``/v0.0.1``. It is added to all
-            endpoints.
-        :param name_prefix: a prefix applied to all internal route names. It must be unique among all the tree's built
-            by this helper, because Molten does not allow two routes with the same name, even if they represent
-            different endpoints.
-        :param redirect_to_prefix: if set, instead of calling the usual handler to generate response, a redirect is
-            returned. The redirect URL is created by replacing ``url_prefix`` part of the original URL with this value.
-            For example, ``url_prefix='/v0.0.15', redirect_to_prefix='/v0.0.16'`` would redirect ``/v0.0.15/foo`` to
-            ``/v0.0.16/foo``.
-        """
-
-        if redirect_to_prefix:
-            # Keeping the same API as `_create_route`, to make the structure below easier to handle. But we will ignore
-            # the given handler, and use a custom one.
-            def create_route(
-                template: str,
-                handler: Callable[..., Any],
-                method: str = 'GET'
-            ) -> Route:
-                def real_handler(request: Request) -> Any:
-                    assert redirect_to_prefix is not None
-
-                    if url_prefix == '':
-                        return molten.redirect(
-                            '{}/{}'.format(redirect_to_prefix, request.path),
-                            redirect_type=molten.RedirectType.PERMANENT
-                        )
-
-                    return molten.redirect(
-                        request.path.replace(url_prefix, redirect_to_prefix),
-                        redirect_type=molten.RedirectType.PERMANENT
-                    )
-
-                return Route(template, real_handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
-
-        else:
-            create_route = functools.partial(_create_route, name_prefix=name_prefix)
-
-        routes: List[Union[Include, Route]] = [
-            Include('/guests', [
-                create_route('/', get_guest_requests, method='GET'),
-                create_route('/', create_guest_request, method='POST'),
-                create_route('/{guestname}', get_guest_request),
-                create_route('/{guestname}', delete_guest, method='DELETE'),
-                create_route('/events', get_events),
-                create_route('/{guestname}/events', get_guest_events),
-                create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
-                create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
-                create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
-                create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
-            ]),
-            Include('/knobs', [
-                create_route('/', KnobManager.entry_get_knobs, method='GET'),
-                create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
-                create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
-                create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
-            ]),
-            create_route('/metrics', get_metrics),
-            create_route('/about', get_about),
-            Include('/_cache', [
-                Include('/pools/{poolname}', [
-                    create_route('/image-info', CacheManager.entry_pool_image_info),
-                    create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
-                ])
-            ]),
-            create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
-            create_route('/_schema', OpenAPIHandler(metadata=metadata))
-        ]
-
-        return [Include(url_prefix, routes)]
-
-    # API milestones: mapping between a milestone version, its route generator, and versions compatible
-    # with it. Based on this mapping, routes are created with proper endpoints, and possibly redirected
-    # when necessary.
-    API_MILESTONES: Dict[Tuple[str, RouteGeneratorType], List[str]] = {
-        # NEW: /guest/$GUESTNAME/console/url
-        ('v0.0.18', create_routes_v0_0_18): [
-            # For lazy clients who don't care about the version, our most current API version should add
-            # `/current` redirected to itself.
-            'current',
-
-            # For clients that did not switch to versioned API yet, keep top-level endpoints.
-            # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
-            'toplevel'
-        ],
-        ('v0.0.17', create_routes_v0_0_17): []
-    }
-
-    for (milestone_version, routes_generator), compatible_versions in API_MILESTONES.items():
+    for milestone_version, routes_generator, compatible_versions in API_MILESTONES:
         # Preload environment schema.
         r_schema = load_validation_schema('environment-{}.yml'.format(milestone_version))
 
@@ -1565,7 +1589,11 @@ def run_app() -> molten.app.App:
         # Create the base API endpoints of this version.
         logger.info('API: /{}'.format(milestone_version))
 
-        routes += routes_generator('/{}'.format(milestone_version), '{}_'.format(milestone_version))
+        routes += routes_generator(
+            '/{}'.format(milestone_version),
+            '{}_'.format(milestone_version),
+            metadata
+        )
 
         # Then create all compatible versions
         for compatible_version in compatible_versions:
@@ -1588,6 +1616,7 @@ def run_app() -> molten.app.App:
             routes += routes_generator(
                 endpoint_root,
                 'legacy_{}_'.format(compatible_version),
+                metadata,
                 redirect_to_prefix='/{}'.format(milestone_version)
             )
 
