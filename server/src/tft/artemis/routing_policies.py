@@ -5,6 +5,7 @@ import json
 from typing import Callable, List, Tuple, Type, cast
 
 import gluetool.log
+import gluetool.utils
 import sqlalchemy
 from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
@@ -78,6 +79,16 @@ KNOB_ROUTE_POOL_RESOURCE_THRESHOLD: Knob[float] = Knob(
     envvar='ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD',
     envvar_cast=float,
     default=90.0
+)
+
+#: Allow disabling pools
+KNOB_ROUTE_POOL_ENABLED: Knob[bool] = Knob(
+    'route.pool.enabled',
+    has_db=True,
+    per_pool=True,
+    envvar='ARTEMIS_ROUTE_POOL_ENABLED',
+    envvar_cast=gluetool.utils.normalize_bool_option,
+    default=True
 )
 
 
@@ -193,6 +204,31 @@ def create_preferrence_filter_by_driver_class(policy_name: str, *preferred_drive
     cast(PolicyWrapperType, policy).policy_name = policy_name
 
     return policy
+
+
+@policy_boilerplate
+def policy_pool_enabled(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Allow only enabled pools, filter out disabled ones.
+    """
+
+    allowed_pools = []
+
+    for pool in pools:
+        r_enabled = KNOB_ROUTE_POOL_ENABLED.get_value(pool=pool, session=session)
+
+        if r_enabled.is_error:
+            return Error(r_enabled.unwrap_error())
+
+        if r_enabled.unwrap():
+            allowed_pools.append(pool)
+
+    return Ok(PolicyRuling(allowed_pools=allowed_pools))
 
 
 @policy_boilerplate

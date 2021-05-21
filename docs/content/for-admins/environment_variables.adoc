@@ -91,6 +91,7 @@ case-insensitive.
 * `ARTEMIS_ROUTE_REQUEST_MAX_TIME` (int): A time, in seconds, after which a guest request is cancelled if provisioning haven't succeeded. Default: `21600`.
 * `ARTEMIS_ROUTE_POOL_FORGIVING_TIME` (int): A time, in seconds, after which a pool error during a guest provisioning is ignored and pool becomes eligible for said guest request again. Default: `600`.
 * `ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD` (int): A percentage part of pool resource that, when reached, marks pool as depleted and not eligible for provisioning. Default: `90`.
+* `ARTEMIS_ROUTE_POOL_ENABLED_*` (bool): Per-pool variable enabling/disabling pools. The variable name is suffixed with capitalized pool name, for example pool named `foo` would use variable named `ARTEMIS_ROUTE_POOL_ENABLED_FOO`. Default: `True`
 
 === Provisioning workflow
 
