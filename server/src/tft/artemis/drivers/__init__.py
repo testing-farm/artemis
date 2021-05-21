@@ -855,7 +855,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
         Get all tags applicable for a given guest request.
 
-        Collects all system, pool, and guest-level tags.
+        Collects all system, pool, guest-level tags, and guest user data.
 
         Currently provided guest-level tags:
 
@@ -879,6 +879,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
             **{r.tag: r.value for r in system_tags.unwrap()},
             **{r.tag: r.value for r in pool_tags.unwrap()}
         }
+
+        if guest_request.user_data:
+            tags.update(json.loads(guest_request.user_data))
 
         tags['ArtemisGuestName'] = guest_request.guestname
         # TODO: drivers could accept a template for the name, to allow custom naming schemes
