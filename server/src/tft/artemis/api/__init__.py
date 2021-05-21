@@ -118,8 +118,7 @@ METRICS_LOCK = threading.Lock()
 
 
 # Will be filled with the actual schema during API server bootstrap.
-ENVIRONMENT_SCHEMA: Any = {}
-ENVIRONMENT_SCHEMA_v0_0_16: Any = {}
+ENVIRONMENT_SCHEMAS: Dict[str, Any] = {}
 
 
 def _validate_environment(
@@ -459,7 +458,12 @@ class GuestRequestManager:
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
         # Validate given environment specification
-        _validate_environment(guest_logger, guest_request.environment, ENVIRONMENT_SCHEMA, failure_details)
+        _validate_environment(
+            guest_logger,
+            guest_request.environment,
+            ENVIRONMENT_SCHEMAS['current'],
+            failure_details
+        )
 
         # In v0.0.17, internal representation of environment changes, for some time it will not match the API
         # specification exactly. This situation will remain with us for couple of versions, until addition of
@@ -1299,28 +1303,6 @@ def run_app() -> molten.app.App:
     logger = get_logger()
     db = get_db(logger, application_name='artemis-api-server')
 
-    # Preload environment schema
-    global ENVIRONMENT_SCHEMA
-    global ENVIRONMENT_SCHEMA_v0_0_16
-
-    r_schema = load_validation_schema('environment.yml')
-
-    if r_schema.is_error:
-        r_schema.unwrap_error().handle(logger)
-
-        sys.exit(1)
-
-    ENVIRONMENT_SCHEMA = r_schema.unwrap()
-
-    r_schema = load_validation_schema('environment-v0.0.16.yml')
-
-    if r_schema.is_error:
-        r_schema.unwrap_error().handle(logger)
-
-        sys.exit(1)
-
-    ENVIRONMENT_SCHEMA_v0_0_16 = r_schema.unwrap()
-
     metrics_tree = metrics.Metrics()
     metrics_tree.register_with_prometheus(CollectorRegistry())
 
@@ -1418,8 +1400,11 @@ def run_app() -> molten.app.App:
                 def real_handler(request: Request) -> Any:
                     assert redirect_to_prefix is not None
 
+                    # Replace just once, no more - doesn't metter with regular versions, but the pseudo "top-level"
+                    # version means an empty string as a prefix, and that would insert the `redirect_to_prefix` between
+                    # each and every character of the path.
                     return molten.redirect(
-                        request.path.replace(url_prefix, redirect_to_prefix),
+                        request.path.replace(url_prefix, redirect_to_prefix, 1),
                         redirect_type=molten.RedirectType.PERMANENT
                     )
 
@@ -1460,9 +1445,6 @@ def run_app() -> molten.app.App:
             create_route('/_schema', OpenAPIHandler(metadata=metadata))
         ]
 
-        if url_prefix == '/':
-            return routes
-
         return [Include(url_prefix, routes)]
 
     # TODO: use classes and inheritance to avoid repetition
@@ -1497,6 +1479,12 @@ def run_app() -> molten.app.App:
             ) -> Route:
                 def real_handler(request: Request) -> Any:
                     assert redirect_to_prefix is not None
+
+                    if url_prefix == '':
+                        return molten.redirect(
+                            '{}/{}'.format(redirect_to_prefix, request.path),
+                            redirect_type=molten.RedirectType.PERMANENT
+                        )
 
                     return molten.redirect(
                         request.path.replace(url_prefix, redirect_to_prefix),
@@ -1539,46 +1527,64 @@ def run_app() -> molten.app.App:
             create_route('/_schema', OpenAPIHandler(metadata=metadata))
         ]
 
-        if url_prefix == '/':
-            return routes
-
         return [Include(url_prefix, routes)]
 
-    #: API milestones - mapping between a milestone version, and older versions compatible with it.
-    #: The mapping is then used to install proper redirects.
+    # API milestones: mapping between a milestone version, its route generator, and versions compatible
+    # with it. Based on this mapping, routes are created with proper endpoints, and possibly redirected
+    # when necessary.
     API_MILESTONES: Dict[Tuple[str, RouteGeneratorType], List[str]] = {
+        # NEW: /guest/$GUESTNAME/console/url
         ('v0.0.18', create_routes_v0_0_18): [
-            # For lazy clients who don't care about the version, support `/current` redirected
-            # to the most recent API we have.
-            'current'
+            # For lazy clients who don't care about the version, our most current API version should add
+            # `/current` redirected to itself.
+            'current',
+
+            # For clients that did not switch to versioned API yet, keep top-level endpoints.
+            # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
+            'toplevel'
         ],
-        ('v0.0.17', create_routes_v0_0_17): [
-            'v0.0.16',
-            'v0.0.15',
-            'v0.0.14'
-        ]
+        ('v0.0.17', create_routes_v0_0_17): []
     }
 
-    # Current API version
-    routes += create_routes_v0_0_18('/v0.0.18', 'v0.0.18_')
-
-    # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
-    routes += create_routes_v0_0_18('/', 'toplevel_legacy_')
-
-    # Milestones and versions compatible with them
     for (milestone_version, routes_generator), compatible_versions in API_MILESTONES.items():
+        # Preload environment schema.
+        r_schema = load_validation_schema('environment-{}.yml'.format(milestone_version))
+
+        if r_schema.is_error:
+            r_schema.unwrap_error().handle(logger)
+
+            sys.exit(1)
+
+        ENVIRONMENT_SCHEMAS[milestone_version] = r_schema.unwrap()
+
+        # Create the base API endpoints of this version.
+        logger.info('API: /{}'.format(milestone_version))
+
+        routes += routes_generator('/{}'.format(milestone_version), '{}_'.format(milestone_version))
+
+        # Then create all compatible versions
         for compatible_version in compatible_versions:
-            logger.warning('API: /{} => /{}'.format(compatible_version, milestone_version))
+            # If this version is the "current" version, make its environment schema available under `current` key.
+            if compatible_version == 'current':
+                ENVIRONMENT_SCHEMAS['current'] = ENVIRONMENT_SCHEMAS[milestone_version]
+
+            # "toplevel" is a pseudo-version, similar to "current" - it's backed by "current", and its endpoints
+            # have no version prefix. Once all clients lear to use versioned API, we will drop this dog-leg.
+            if compatible_version == 'toplevel':
+                logger.info('API: / => /{}'.format(milestone_version))
+
+                endpoint_root = ''
+
+            else:
+                logger.info('API: /{} => /{}'.format(compatible_version, milestone_version))
+
+                endpoint_root = '/{}'.format(compatible_version)
+
             routes += routes_generator(
-                '/{}'.format(compatible_version),
+                endpoint_root,
                 'legacy_{}_'.format(compatible_version),
                 redirect_to_prefix='/{}'.format(milestone_version)
             )
-
-    #
-    # Older API versions will land here when needed
-    #
-    # ...
 
     def log_routes() -> None:
         extracted_routes = []
