@@ -142,6 +142,30 @@ pools:
       #    base: t2.medium
       #    diskspace: "40 GiB"
 
+      # Modification - "patching" - of existing instance types (or, as Artemis calls them, "flavors").
+      #
+      # Here a maintainer has an oportunity to modify autodetected parameters, or provide values that were not
+      # autodetected at all. For example, CPU families, models and other bits that are documented yet not available
+      # via provider API.
+      #
+      # [1] https://aws.amazon.com/ec2/instance-types/
+      #
+      # patch-flavors:
+      #  - name: t2.small
+      #    cpu:
+      #      family: 6
+      #      family-name: "Haswell"
+      #      model: 63
+      #      model-name: "Intel(R) Xeon(R) CPU E5-2676 v3 @ 2.40GHz"
+      #
+      # It is possible to modify even the custom flavors
+      #  - name: t2.small.20
+      #    cpu:
+      #      family: 6
+      #      family-name: "Haswell"
+      #      model: 63
+      #      model-name: "Intel(R) Xeon(R) CPU E5-2676 v3 @ 2.40GHz"
+
       capabilities:
         supports-snapshots: False
         supports-spot-instances: {{ aws.vms.use_spot_instances | default(true) }}

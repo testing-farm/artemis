@@ -22,6 +22,40 @@ definitions:
 
     additionalProperties: false
 
+  patch_flavor_cpu:
+    type: object
+
+    properties:
+      family:
+        type: integer
+
+      family-name:
+        type: string
+
+      model:
+        type: integer
+
+      model-name:
+        type: string
+
+    required: []
+    additionalProperties: false
+
+  patch_flavor:
+    type: object
+
+    properties:
+      name:
+        type: string
+
+      cpu:
+        "$ref": "#/definitions/patch_flavor_cpu"
+
+    required:
+      - name
+
+    additionalProperties: false
+
 properties:
 
   users:
@@ -140,6 +174,11 @@ properties:
               type: array
               items:
                 "$ref": "#/definitions/custom_flavor"
+
+            patch-flavors:
+              type: array
+              items:
+                "$ref": "#/definitions/patch_flavor"
 
             resources:
               type: object

@@ -35,6 +35,9 @@ properties:
   password:
     type: string
 
+  patch-flavors:
+    type: array
+
   post-install-script:
     type: string
 

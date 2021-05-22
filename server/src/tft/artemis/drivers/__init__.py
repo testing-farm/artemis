@@ -36,6 +36,17 @@ S = TypeVar('S', bound=SerializableContainer)
 GuestTagsType = Dict[str, str]
 
 
+PatchFlavorsSpecType = List[
+    Dict[
+        str,
+        Union[
+            str,
+            Dict[str, Union[str, int]]
+        ]
+    ]
+]
+
+
 IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')  # noqa: FS003
 
 
@@ -163,8 +174,20 @@ class PoolFlavorInfo(SerializableContainer):
     name: str
     id: str
 
+    # TODO: introduce structure, in the longterm we don't want the flat namespace, but rather follow
+    # environment.Flavor - and we probably would like to merge these two classes into one, to avoid
+    # wasting time and translation in the driver.
+
     #: Number of cores.
     cores: Optional[int] = None
+    #: CPU family number.
+    cpu_family: Optional[int] = None
+    #: CPU family name.
+    cpu_family_name: Optional[str] = None
+    #: CPU model number.
+    cpu_model: Optional[int] = None
+    #: CPU model name.
+    cpu_model_name: Optional[str] = None
     #: Size of RAM available, in bytes.
     memory: Optional[pint.Quantity] = None
     #: Size of the main storage, in bytes.
@@ -1041,14 +1064,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok([])
 
-    def _fetch_pool_flavor_info_from_config(
+    def _fetch_custom_pool_flavor_info_from_config(
         self,
         logger: gluetool.log.ContextAdapter,
-        flavors: List[PoolFlavorInfo]
+        flavors: Dict[str, PoolFlavorInfo]
     ) -> Result[List[PoolFlavorInfo], Failure]:
         """
-        "Fetch" custom flavors specified in driver configuration. These are based on existing flavors, and override
-        some of their properties.
+        "Fetch" custom flavors specified in driver configuration. These are clones of existing flavors, but with
+        some of the original properties changed in the clone.
 
         :param flavors: actual existing flavors that serve as basis for custom flavors.
         """
@@ -1060,18 +1083,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         custom_flavors = []
 
-        flavors_map = {
-            flavor.name: flavor
-            for flavor in flavors
-        }
-
-        gluetool.log.log_dict(logger.debug, 'base flavors', flavors_map)
+        gluetool.log.log_dict(logger.debug, 'base flavors', flavors)
 
         for custom_flavor_spec in custom_flavor_specs:
             customname = custom_flavor_spec['name']
             basename = custom_flavor_spec['base']
 
-            if basename not in flavors_map:
+            if basename not in flavors:
                 return Error(Failure(
                     'unknown base flavor',
                     customname=customname,
@@ -1079,7 +1097,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 ))
 
             custom_flavor = dataclasses.replace(
-                flavors_map[basename],
+                flavors[basename],
                 name=customname
             )
 
@@ -1103,6 +1121,98 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(custom_flavors)
 
+    def _fetch_patched_pool_flavor_info_from_config(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        flavors: Dict[str, PoolFlavorInfo]
+    ) -> Result[None, Failure]:
+        """
+        "Patch" existing flavors as specified by configuration. Some information may not be available via API,
+        therefore maintainers can use ``patch-flavors`` to modify flavors as needed.
+
+        :param flavors: actual existing flavors that serve as basis for custom flavors.
+        """
+
+        patch_flavor_specs = cast(PatchFlavorsSpecType, self.pool_config.get('patch-flavors', []))
+
+        if not patch_flavor_specs:
+            return Ok(None)
+
+        gluetool.log.log_dict(logger.debug, 'base flavors', flavors)
+
+        for patch_flavor_spec in patch_flavor_specs:
+            flavorname = cast(str, patch_flavor_spec['name'])
+
+            if flavorname not in flavors:
+                return Error(Failure(
+                    'unknown patched flavor',
+                    flavorname=flavorname
+                ))
+
+            flavor = flavors[flavorname]
+
+            # Don't worry about types, config schema makes sure the types are correct.
+            if 'cpu' in patch_flavor_spec:
+                cpu_patch = cast(Dict[str, Union[str, int]], patch_flavor_spec['cpu'])
+
+                flavor.cpu_family = cast(
+                    Optional[int],
+                    cpu_patch.get('family', None)
+                )
+                flavor.cpu_family_name = cast(
+                    Optional[str],
+                    cpu_patch.get('family-name', None)
+                )
+                flavor.cpu_model = cast(
+                    Optional[int],
+                    cpu_patch.get('model', None)
+                )
+                flavor.cpu_model_name = cast(
+                    Optional[str],
+                    cpu_patch.get('model-name', None)
+                )
+
+        return Ok(None)
+
+    def _fetch_pool_flavor_info_from_config(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        flavors: List[PoolFlavorInfo]
+    ) -> Result[List[PoolFlavorInfo], Failure]:
+        """
+        "Fetch" flavor infos from the driver configuration. This includes both custom flavors and patch information.
+
+        :param flavors: actual existing flavors that serve as basis for custom flavors.
+        """
+
+        flavors_map = {
+            flavor.name: flavor
+            for flavor in flavors
+        }
+
+        if 'custom-flavors' in self.pool_config:
+            r_custom_flavors = self._fetch_custom_pool_flavor_info_from_config(
+                logger,
+                flavors_map
+            )
+
+            if r_custom_flavors.is_error:
+                return Error(r_custom_flavors.unwrap_error())
+
+            for flavor in r_custom_flavors.unwrap():
+                flavors_map[flavor.name] = flavor
+
+        if 'patch-flavors' in self.pool_config:
+            r_patched_flavors = self._fetch_patched_pool_flavor_info_from_config(
+                logger,
+                flavors_map
+            )
+
+            if r_patched_flavors.is_error:
+                return Error(r_patched_flavors.unwrap_error())
+
+        return Ok(list(flavors_map.values()))
+
     def refresh_cached_pool_flavor_info(self) -> Result[None, Failure]:
         """
         Responsible for updating the cache with the most up-to-date flavor info. For that purpose, it calls
@@ -1122,17 +1232,17 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         real_flavors = r_flavor_info.unwrap()
 
-        r_custom_flavors = self._fetch_pool_flavor_info_from_config(LOGGER.get(), real_flavors)
+        r_config_flavors = self._fetch_pool_flavor_info_from_config(LOGGER.get(), real_flavors)
 
-        if r_custom_flavors.is_error:
-            return Error(r_custom_flavors.unwrap_error())
+        if r_config_flavors.is_error:
+            return Error(r_config_flavors.unwrap_error())
 
         return refresh_cached_set(
             CACHE.get(),
             self.flavor_info_cache_key,
             {
                 fi.name: fi
-                for fi in (real_flavors + r_custom_flavors.unwrap())
+                for fi in (real_flavors + r_config_flavors.unwrap())
                 if fi.name
             }
         )
