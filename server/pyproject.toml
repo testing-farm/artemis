@@ -92,3 +92,8 @@ py_version = "3"
 line_length = "120"
 multi_line_output = "2"
 group_by_package = true
+
+[tool.pytest.ini_options]
+filterwarnings = [
+  "ignore::DeprecationWarning"
+]
