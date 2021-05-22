@@ -19,7 +19,7 @@ import enum
 import json
 import os
 import platform
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import gluetool.log
 import prometheus_client.utils
@@ -35,6 +35,9 @@ from . import db as artemis_db
 from . import safe_call
 from .context import DATABASE, SESSION, with_context
 from .guest import GuestState
+
+T = TypeVar('T')
+
 
 # Guest age buckets are not all same, but:
 #
@@ -618,6 +621,7 @@ class PoolMetrics(MetricsBase):
     def inc_error(
         pool: str,
         error: str,
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
@@ -625,11 +629,12 @@ class PoolMetrics(MetricsBase):
 
         :param pool: pool that provided the instance.
         :param error: error to track.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error)
+        inc_metric_field(logger, cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error)
         return Ok(None)
 
     @with_context
@@ -677,7 +682,7 @@ class PoolMetrics(MetricsBase):
 
         self.errors = {
             errorname: count
-            for errorname, count in get_metric_fields(cache, self.key_errors).items()
+            for errorname, count in get_metric_fields(logger, cache, self.key_errors).items()
         }
 
 
@@ -925,33 +930,37 @@ class ProvisioningMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_requested(
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase :py:attr:`requested` metric by 1.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(cache, ProvisioningMetrics._KEY_PROVISIONING_REQUESTED)
+        inc_metric(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_REQUESTED)
         return Ok(None)
 
     @staticmethod
     @with_context
     def inc_success(
         pool: str,
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase :py:attr:`success` metric by 1.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :param pool: pool that provided the instance.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, ProvisioningMetrics._KEY_PROVISIONING_SUCCESS, pool)
+        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_SUCCESS, pool)
         return Ok(None)
 
     @staticmethod
@@ -959,18 +968,20 @@ class ProvisioningMetrics(MetricsBase):
     def inc_failover(
         from_pool: str,
         to_pool: str,
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase pool failover metric by 1.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :param from_pool: name of the originating pool.
         :param to_pool: name of the replacement pool.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, ProvisioningMetrics._KEY_FAILOVER, '{}:{}'.format(from_pool, to_pool))
+        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_FAILOVER, '{}:{}'.format(from_pool, to_pool))
         return Ok(None)
 
     @staticmethod
@@ -978,28 +989,35 @@ class ProvisioningMetrics(MetricsBase):
     def inc_failover_success(
         from_pool: str,
         to_pool: str,
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase successfull pool failover meric by 1.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :param from_pool: name of the originating pool.
         :param to_pool: name of the replacement pool.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, ProvisioningMetrics._KEY_FAILOVER_SUCCESS, '{}:{}'.format(from_pool, to_pool))
+        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_FAILOVER_SUCCESS, '{}:{}'.format(from_pool, to_pool))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def inc_provisioning_durations(duration: int, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_provisioning_durations(
+        duration: int,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment provisioning duration bucket by one.
 
         The bucket is determined by the upper bound of the given ``duration``.
 
+        :param logger: logger to use for logging.
         :param duration: how long, in milliseconds, took actor to finish the task.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
@@ -1007,15 +1025,21 @@ class ProvisioningMetrics(MetricsBase):
 
         bucket = min([threshold for threshold in PROVISION_DURATION_BUCKETS if threshold > duration])
 
-        inc_metric_field(cache, ProvisioningMetrics._KEY_PROVISIONING_DURATIONS, '{}'.format(bucket))
+        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_DURATIONS, '{}'.format(bucket))
 
         return Ok(None)
 
     @with_context
-    def sync(self, cache: redis.Redis, session: sqlalchemy.orm.session.Session) -> None:
+    def sync(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis,
+        session: sqlalchemy.orm.session.Session
+    ) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
+        :param logger: logger to use for logging.
         :param session: DB session to use for DB access.
         :param cache: cache instance to use for cache access.
         """
@@ -1027,20 +1051,20 @@ class ProvisioningMetrics(MetricsBase):
         current_record = session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
 
         self.current = current_record.scalar()
-        self.requested = get_metric(cache, self._KEY_PROVISIONING_REQUESTED) or 0
+        self.requested = get_metric(logger, cache, self._KEY_PROVISIONING_REQUESTED) or 0
         self.success = {
             poolname: count
-            for poolname, count in get_metric_fields(cache, self._KEY_PROVISIONING_SUCCESS).items()
+            for poolname, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_SUCCESS).items()
         }
         # fields are in form `from_pool:to_pool`
         self.failover = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_FAILOVER).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_FAILOVER).items()
         }
         # fields are in form `from_pool:to_pool`
         self.failover_success = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_FAILOVER_SUCCESS).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_FAILOVER_SUCCESS).items()
         }
         # Using `query` directly, because we need just limited set of fields, and we need our `Query`
         # and `SafeQuery` to support this functionality (it should be just a matter of correct types).
@@ -1057,7 +1081,7 @@ class ProvisioningMetrics(MetricsBase):
         ]
         self.provisioning_durations = {
             field: count
-            for field, count in get_metric_fields(cache, self._KEY_PROVISIONING_DURATIONS).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_DURATIONS).items()
         }
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -1179,34 +1203,38 @@ class RoutingMetrics(MetricsBase):
     @with_context
     def inc_policy_called(
         policy_name: str,
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "policy called to make ruling" metric by 1.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :param policy_name: policy that was called to make ruling.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, RoutingMetrics._KEY_CALLS, policy_name)
+        inc_metric_field(logger, cache, RoutingMetrics._KEY_CALLS, policy_name)
         return Ok(None)
 
     @staticmethod
     @with_context
     def inc_policy_canceled(
         policy_name: str,
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "policy canceled a guest request" metric by 1.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :param policy_name: policy that made the decision.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, RoutingMetrics._KEY_CANCELLATIONS, policy_name)
+        inc_metric_field(logger, cache, RoutingMetrics._KEY_CANCELLATIONS, policy_name)
         return Ok(None)
 
     @staticmethod
@@ -1214,18 +1242,20 @@ class RoutingMetrics(MetricsBase):
     def inc_pool_allowed(
         policy_name: str,
         pool_name: str,
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "pool allowed by policy" metric by 1.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :param policy_name: policy that made the decision.
         :param pool_name: pool that was allowed.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, RoutingMetrics._KEY_RULINGS, '{}:{}:yes'.format(policy_name, pool_name))
+        inc_metric_field(logger, cache, RoutingMetrics._KEY_RULINGS, '{}:{}:yes'.format(policy_name, pool_name))
         return Ok(None)
 
     @staticmethod
@@ -1233,25 +1263,32 @@ class RoutingMetrics(MetricsBase):
     def inc_pool_excluded(
         policy_name: str,
         pool_name: str,
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "pool excluded by policy" metric by 1.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :param policy_name: policy that made the decision.
         :param pool_name: pool that was excluded.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, RoutingMetrics._KEY_RULINGS, '{}:{}:no'.format(policy_name, pool_name))
+        inc_metric_field(logger, cache, RoutingMetrics._KEY_RULINGS, '{}:{}:no'.format(policy_name, pool_name))
         return Ok(None)
 
     @with_context
-    def sync(self, cache: redis.Redis) -> None:
+    def sync(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         """
 
@@ -1259,16 +1296,16 @@ class RoutingMetrics(MetricsBase):
 
         self.policy_calls = {
             field: count
-            for field, count in get_metric_fields(cache, self._KEY_CALLS).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_CALLS).items()
         }
         self.policy_cancellations = {
             field: count
-            for field, count in get_metric_fields(cache, self._KEY_CANCELLATIONS).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_CANCELLATIONS).items()
         }
         # fields are in form `policy:pool:allowed`
         self.policy_rulings = {
             cast(Tuple[str, str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_RULINGS).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_RULINGS).items()
         }
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -1344,122 +1381,170 @@ class TaskMetrics(MetricsBase):
 
     @staticmethod
     @with_context
-    def inc_overall_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_overall_messages(
+        queue: str,
+        actor: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment number of all encountered messages.
 
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, TaskMetrics._KEY_OVERALL_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_MESSAGES, '{}:{}'.format(queue, actor))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def inc_overall_errored_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_overall_errored_messages(
+        queue: str,
+        actor: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment number of all errored messages.
 
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, TaskMetrics._KEY_OVERALL_ERRORED_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_ERRORED_MESSAGES, '{}:{}'.format(queue, actor))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def inc_overall_retried_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_overall_retried_messages(
+        queue: str,
+        actor: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment number of all retried messages.
 
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, TaskMetrics._KEY_OVERALL_RETRIED_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_RETRIED_MESSAGES, '{}:{}'.format(queue, actor))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def inc_overall_rejected_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_overall_rejected_messages(
+        queue: str,
+        actor: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment number of all rejected messages.
 
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, TaskMetrics._KEY_OVERALL_REJECTED_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_REJECTED_MESSAGES, '{}:{}'.format(queue, actor))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def inc_current_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_current_messages(
+        queue: str,
+        actor: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment number of messages currently being processed.
 
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, TaskMetrics._KEY_CURRENT_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_MESSAGES, '{}:{}'.format(queue, actor))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def dec_current_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+    def dec_current_messages(
+        queue: str,
+        actor: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Decrement number of all messages currently being processed.
 
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        dec_metric_field(cache, TaskMetrics._KEY_CURRENT_MESSAGES, '{}:{}'.format(queue, actor))
+        dec_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_MESSAGES, '{}:{}'.format(queue, actor))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def inc_current_delayed_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_current_delayed_messages(
+        queue: str,
+        actor: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment number of delayed messages.
 
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, '{}:{}'.format(queue, actor))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def dec_current_delayed_messages(queue: str, actor: str, cache: redis.Redis) -> Result[None, Failure]:
+    def dec_current_delayed_messages(
+        queue: str,
+        actor: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Decrement number of delayed messages.
 
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        dec_metric_field(cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, '{}:{}'.format(queue, actor))
+        dec_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, '{}:{}'.format(queue, actor))
         return Ok(None)
 
     @staticmethod
@@ -1469,6 +1554,7 @@ class TaskMetrics(MetricsBase):
         actor: str,
         duration: int,
         poolname: Optional[str],
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
@@ -1480,6 +1566,7 @@ class TaskMetrics(MetricsBase):
         :param actor: name of the actor requested by the message.
         :param duration: how long, in milliseconds, took actor to finish the task.
         :param poolname: if specified, task was working with a particular pool.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
@@ -1487,6 +1574,7 @@ class TaskMetrics(MetricsBase):
         bucket = min([threshold for threshold in MESSAGE_DURATION_BUCKETS if threshold > duration])
 
         inc_metric_field(
+            logger,
             cache,
             TaskMetrics._KEY_MESSAGE_DURATIONS,
             '{}:{}:{}:{}'.format(queue, actor, bucket, poolname or 'undefined')
@@ -1495,10 +1583,15 @@ class TaskMetrics(MetricsBase):
         return Ok(None)
 
     @with_context
-    def sync(self, cache: redis.Redis) -> None:
+    def sync(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         """
 
@@ -1507,33 +1600,33 @@ class TaskMetrics(MetricsBase):
         # queue:actor => count
         self.overall_message_count = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_OVERALL_MESSAGES).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_MESSAGES).items()
         }
         self.overall_errored_message_count = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_OVERALL_ERRORED_MESSAGES).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_ERRORED_MESSAGES).items()
         }
         self.overall_retried_message_count = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_OVERALL_RETRIED_MESSAGES).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_RETRIED_MESSAGES).items()
         }
         self.overall_rejected_message_count = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_OVERALL_REJECTED_MESSAGES).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_REJECTED_MESSAGES).items()
         }
         self.current_message_count = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_CURRENT_MESSAGES).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_CURRENT_MESSAGES).items()
         }
         self.current_delayed_message_count = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_CURRENT_DELAYED_MESSAGES).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_CURRENT_DELAYED_MESSAGES).items()
         }
         # queue:actor:bucket:poolname => count
         # deal with older version which had only three dimensions (no poolname)
         self.message_durations = {}
 
-        for field, count in get_metric_fields(cache, self._KEY_MESSAGE_DURATIONS).items():
+        for field, count in get_metric_fields(logger, cache, self._KEY_MESSAGE_DURATIONS).items():
             field_split = tuple(field.split(':'))
 
             if len(field_split) == 3:
@@ -1663,6 +1756,7 @@ class APIMetrics(MetricsBase):
         method: str,
         path: str,
         duration: float,
+        logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
     ) -> Result[None, Failure]:
         """
@@ -1673,6 +1767,7 @@ class APIMetrics(MetricsBase):
         :param method: HTTP method.
         :param path: API endpoint requested.
         :param duration: how long, in milliseconds, took actor to finish the task.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
@@ -1680,6 +1775,7 @@ class APIMetrics(MetricsBase):
         bucket = min([threshold for threshold in HTTP_REQUEST_DURATION_BUCKETS if threshold > duration])
 
         inc_metric_field(
+            logger,
             cache,
             APIMetrics._KEY_REQUEST_DURATIONS,
             '{}:{}:{}'.format(method, path, bucket)
@@ -1689,48 +1785,67 @@ class APIMetrics(MetricsBase):
 
     @staticmethod
     @with_context
-    def inc_requests(method: str, path: str, status: str, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_requests(
+        method: str,
+        path: str,
+        status: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment number of completed requests.
 
         :param method: HTTP method.
         :param path: API endpoint requested.
         :param status: final HTTP status.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, APIMetrics._KEY_REQUEST_COUNT, '{}:{}:{}'.format(method, path, status))
+        inc_metric_field(logger, cache, APIMetrics._KEY_REQUEST_COUNT, '{}:{}:{}'.format(method, path, status))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def inc_requests_in_progress(method: str, path: str, cache: redis.Redis) -> Result[None, Failure]:
+    def inc_requests_in_progress(
+        method: str,
+        path: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Increment number of current requests.
 
         :param method: HTTP method.
         :param path: API endpoint requested.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, '{}:{}'.format(method, path))
+        inc_metric_field(logger, cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, '{}:{}'.format(method, path))
         return Ok(None)
 
     @staticmethod
     @with_context
-    def dec_requests_in_progress(method: str, path: str, cache: redis.Redis) -> Result[None, Failure]:
+    def dec_requests_in_progress(
+        method: str,
+        path: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
         """
         Decrement number of current requests.
 
         :param method: HTTP method.
         :param path: API endpoint requested.
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        dec_metric_field(cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, '{}:{}'.format(method, path))
+        dec_metric_field(logger, cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, '{}:{}'.format(method, path))
         return Ok(None)
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -1765,10 +1880,11 @@ class APIMetrics(MetricsBase):
         )
 
     @with_context
-    def sync(self, cache: redis.Redis) -> None:
+    def sync(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
+        :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         """
 
@@ -1777,19 +1893,19 @@ class APIMetrics(MetricsBase):
         # method:path => count
         self.request_durations = {
             cast(Tuple[str, str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_REQUEST_DURATIONS).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_DURATIONS).items()
         }
 
         # method:path:status => count
         self.request_count = {
             cast(Tuple[str, str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_REQUEST_COUNT).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_COUNT).items()
         }
 
         # method:path => count
         self.request_inprogress_count = {
             cast(Tuple[str, str], tuple(field.split(':'))): count
-            for field, count in get_metric_fields(cache, self._KEY_REQUEST_INPROGRESS_COUNT).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_INPROGRESS_COUNT).items()
         }
 
     def update_prometheus(self) -> None:
@@ -1979,35 +2095,110 @@ def upsert_dec_metric(
     upsert_metric(session, model, primary_keys, -1)
 
 
+# Once mypy implements support for PEP 612, something like this would be the way to go.
+# https://github.com/python/mypy/issues/8645
+#
+# P = ParamSpec('P')
+#
+# def handle_failure(default: Union[T, None] = None) -> Callable[Concatenate[gluetool.log.ContextAdapter, P], T]:
+#    def decorator(fn: Callable[P, T]) -> Callable[Concatenate[gluetool.log.ContextAdapter, P], T]:
+#        @functools.wraps(fn)
+#        def wrapper(logger: gluetool.log.ContextAdapter, *args: Any, **kwargs: Any) -> T:
+#            try:
+#                return fn(*args, **kwargs)
+#
+#            except Exception as exc:
+#                Failure.from_exc('exception raised inside a safe block', exc).handle(logger)
+#
+#                return default
+#
+#        return wrapper
+#
+#    return decorator
+
+
+def safe_call_and_handle(
+    logger: gluetool.log.ContextAdapter,
+    fn: Callable[..., T],
+    *args: Any,
+    **kwargs: Any
+) -> Optional[T]:
+    """
+    Call given function, with provided arguments. If the call fails, log the resulting failure before returning it.
+
+    .. note::
+
+       Similar to :py:func:`tft.artemis.safe_call`, but
+
+       * does handle the potential failure, and
+       * does not return :py:class:`Result` instance but either the bare value or ``None``.
+
+       This is on purpose, because such a helper fits the needs of cache-related helpers we use for tracking
+       metrics. The failure to communicate with the case isn't a reason to interrupt the main body of work,
+       but it still needs to be reported.
+
+    :param logger: logger to use for logging.
+    :param fn: function to decorate.
+    :param args: positional arguments of ``fn``.
+    :param kwargs: keyword arguments of ``fn``.
+    :returns: if an exception was raised during the function call, a failure is logged and ``safe_call_and_handle``
+        returns ``None``. Otherwise, the return value of the call is returned.
+    """
+
+    try:
+        return fn(*args, **kwargs)
+
+    except Exception as exc:
+        Failure.from_exc('exception raised inside a safe block', exc).handle(logger)
+
+        return None
+
+
+# Our helper types - Redis library does have some types, but they are often way too open for our purposes.
+# We often can provide more restricting types.
+RedisIncrType = Callable[[str], None]
+RedisDecrType = RedisIncrType
+RedisGetType = Callable[[str], Optional[bytes]]
+RedisSetType = Callable[[str, int], None]
+RedisDeleteType = Callable[[str], None]
+RedisHIncrByType = Callable[[str, str, int], None]
+RedisHGetAllType = Callable[[str], Optional[Dict[bytes, bytes]]]
+
+
 def inc_metric(
+    logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str
 ) -> None:
     """
     Increment a metric counter by 1. If metric does not exist yet, it is set to `0` and incremented.
 
+    :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param metric: metric to increment.
     """
 
-    safe_call(cast(Callable[[str], None], cache.incr), metric)
+    safe_call_and_handle(logger, cast(RedisIncrType, cache.incr), metric)
 
 
 def dec_metric(
+    logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str
 ) -> None:
     """
     Decrement a metric counter by 1. If metric does not exist yet, it is set to `0` and decremented.
 
+    :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param metric: metric to decrement.
     """
 
-    safe_call(cast(Callable[[str], None], cache.decr), metric)
+    safe_call_and_handle(logger, cast(RedisDecrType, cache.decr), metric)
 
 
 def inc_metric_field(
+    logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str,
     field: str
@@ -2015,15 +2206,17 @@ def inc_metric_field(
     """
     Increment a metric field counter by 1. If metric field does not exist yet, it is set to `0` and incremented.
 
+    :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param metric: parent metric to access.
     :param field: field to increment.
     """
 
-    safe_call(cast(Callable[[str, str, int], None], cache.hincrby), metric, field, 1)
+    safe_call_and_handle(logger, cast(RedisHIncrByType, cache.hincrby), metric, field, 1)
 
 
 def dec_metric_field(
+    logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str,
     field: str
@@ -2031,21 +2224,24 @@ def dec_metric_field(
     """
     Decrement a metric field counter by 1. If metric field does not exist yet, it is set to `0` and decremented.
 
+    :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param metric: parent metric to access.
     :param field: field to decrement.
     """
 
-    safe_call(cast(Callable[[str, str, int], None], cache.hincrby), metric, field, -1)
+    safe_call_and_handle(logger, cast(RedisHIncrByType, cache.hincrby), metric, field, -1)
 
 
 def get_metric(
+    logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str
 ) -> Optional[int]:
     """
     Return a metric counter for the given metric.
 
+    :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param metric: metric name to retrieve.
     :returns: value of the metric.
@@ -2055,15 +2251,13 @@ def get_metric(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `get` with `cast` calls.
 
-    value = cast(
-        Callable[[str], Optional[bytes]],
-        cache.get
-    )(metric)
+    value: Optional[bytes] = safe_call_and_handle(logger, cast(RedisGetType, cache.get), metric)
 
     return value if value is None else int(value)
 
 
 def set_metric(
+    logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str,
     value: Optional[int] = None
@@ -2071,6 +2265,7 @@ def set_metric(
     """
     Set a metric counter for the given metric.
 
+    :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param metric: metric name to retrieve.
     :param value: value to set to.
@@ -2081,19 +2276,21 @@ def set_metric(
     # to wrap `get` with `cast` calls.
 
     if value is None:
-        safe_call(cast(Callable[[str], None], cache.delete), metric)
+        safe_call_and_handle(logger, cast(RedisDeleteType, cache.delete), metric)
 
     else:
-        safe_call(cast(Callable[[str, int], None], cache.set), metric, value)
+        safe_call_and_handle(logger, cast(RedisSetType, cache.set), metric, value)
 
 
 def get_metric_fields(
+    logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str
 ) -> Dict[str, int]:
     """
     Return a mapping between fields and corresponding counters representing the given metric.
 
+    :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param metric: metric name to retrieve.
     :returns: mapping between field and counters.
@@ -2103,10 +2300,7 @@ def get_metric_fields(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `hgetall` with `cast` calls.
 
-    values = cast(
-        Callable[[str], Optional[Dict[bytes, bytes]]],
-        cache.hgetall
-    )(metric)
+    values = safe_call_and_handle(logger, cast(RedisHGetAllType, cache.hgetall), metric)
 
     if values is None:
         return {}
