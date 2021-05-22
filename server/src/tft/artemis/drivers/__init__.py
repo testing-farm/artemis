@@ -595,7 +595,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
         gluetool.log.log_dict(logger.debug, 'available flavors', flavors)
 
         # Extract HW constraints specified by the environment.
-        constraints = environment.get_hw_constraints()
+        r_constraints = environment.get_hw_constraints()
+
+        if r_constraints.is_error:
+            return Error(r_constraints.unwrap_error())
+
+        constraints = r_constraints.unwrap()
 
         if constraints is None:
             return Ok(flavors)

@@ -17,7 +17,13 @@ def fixture_schema_v0_0_19():
 
 
 def parse_hw(text):
-    return tft.artemis.environment.constraints_from_environment_requirements(gluetool.utils.from_yaml(textwrap.dedent(text)))
+    r_constraint = tft.artemis.environment.constraints_from_environment_requirements(
+        gluetool.utils.from_yaml(textwrap.dedent(text))
+    )
+
+    assert r_constraint.is_ok
+
+    return r_constraint.unwrap()
 
 
 def parse_spec(text):

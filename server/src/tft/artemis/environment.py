@@ -3,11 +3,16 @@ import enum
 import json
 import operator
 import re
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type, TypeVar, Union, cast
 
 import gluetool.log
 import pint
+from gluetool.result import Ok, Result
 from pint import Quantity
+
+if TYPE_CHECKING:
+    from . import Failure
+
 
 #: Unit registry, used and shared by all code.
 UNITS = pint.UnitRegistry()
@@ -158,6 +163,19 @@ OPERATOR_TO_HANDLER: Dict[Operator, OperatorHandlerType] = {
 }
 
 
+# NOTE: this is an exception in the way Artemis handles errors and their propagation. Since constraint parsing
+# involves great deal of recursion and sequences, propagating errors in the form of `Result` instances would
+# introduce a large amount of spaghetti code. The exception is used to interupt this possibly deep chain of calls,
+# without the burden of huge boilerplate of code. It is intercepted on the border between the constraint parser
+# and the rest of the code, and converted to proper `Failure`.
+class ParseError(Exception):
+    def __init__(self, constraint_name: str, raw_value: str) -> None:
+        super(ParseError, self).__init__('failed to parse a constraint')
+
+        self.constraint_name = constraint_name
+        self.raw_value = raw_value
+
+
 class ConstraintBase:
     """
     Base class for all classes representing one or more constraints.
@@ -240,8 +258,7 @@ class Constraint(ConstraintBase):
         parsed_value = VALUE_PATTERN.match(raw_value)
 
         if not parsed_value:
-            # TODO: convert to Result
-            raise Exception()
+            raise ParseError(constraint_name=name, raw_value=raw_value)
 
         groups = parsed_value.groupdict()
 
@@ -364,7 +381,7 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
         group.constraints += [_parse_cpu(spec['cpu'])]
 
     if 'memory' in spec:
-        group.constraints += [Constraint.from_specification('memory', spec['memory'])]
+        group.constraints += [Constraint.from_specification('memory', str(spec['memory']))]
 
     if 'disk' in spec:
         group.constraints += [_parse_disk(spec['disk'])]
@@ -414,8 +431,15 @@ def _parse_block(spec: SpecType) -> ConstraintBase:
         return _parse_generic_spec(spec)
 
 
-def constraints_from_environment_requirements(spec: SpecType) -> ConstraintBase:
-    return _parse_block(spec)
+def constraints_from_environment_requirements(spec: SpecType) -> Result[ConstraintBase, 'Failure']:
+    from . import safe_call
+
+    r_constraints = safe_call(_parse_block, spec)
+
+    if r_constraints.is_error:
+        r_constraints.unwrap_error().update(constraints_spec=spec)
+
+    return r_constraints
 
 
 @dataclasses.dataclass
@@ -498,5 +522,11 @@ class Environment:
 
         return Environment.unserialize_from_json(json.loads(serialized))
 
-    def get_hw_constraints(self) -> Optional[ConstraintBase]:
-        return _parse_block(self.hw.constraints) if self.hw.constraints is not None else None
+    def get_hw_constraints(self) -> Result[Optional[ConstraintBase], 'Failure']:
+        if self.hw.constraints is None:
+            return Ok(None)
+
+        return cast(
+            Result[Optional[ConstraintBase], 'Failure'],
+            constraints_from_environment_requirements(self.hw.constraints)
+        )
