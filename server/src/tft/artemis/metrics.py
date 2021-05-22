@@ -97,6 +97,27 @@ def reset_counters(metric: Union[Counter, Gauge]) -> None:
         labeled_metric._value.set(0)
 
 
+def reset_histogram(metric: Histogram) -> None:
+    """
+    Reset each bucket and the total sum to zero. After that, the metric is ready to be filled with updated data.
+
+    :param metric: histogram to reset.
+    """
+
+    if hasattr(metric, '_metrics'):
+        for labeled_metric in metric._metrics.values():
+            labeled_metric._sum.set(0)
+
+            for i, _ in enumerate(metric._upper_bounds):
+                labeled_metric._buckets[i].set(0)
+
+    else:
+        metric._sum.set(0)
+
+        for i, _ in enumerate(metric._upper_bounds):
+            metric._buckets[i].set(0)
+
+
 class MetricsBase:
     """
     Base class for all containers carrying metrics around.
@@ -1169,14 +1190,10 @@ class ProvisioningMetrics(MetricsBase):
 
             self.GUEST_AGES.labels(state=state, pool=poolname, age_threshold=age_threshold).inc()
 
-        # Reset all duration buckets and sums first - no labels, therefore touching metric instance directly
-        self.PROVISION_DURATIONS._sum.set(0)
-
-        for i, _ in enumerate(self.PROVISION_DURATIONS._upper_bounds):
-            self.PROVISION_DURATIONS._buckets[i].set(0)
-
-        # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
+        # Set each bucket to number of observations, and each sum to (observations * bucket threshold)
         # since we don't track the exact duration, just what bucket it falls into.
+        reset_histogram(self.PROVISION_DURATIONS)
+
         for bucket_threshold, count in self.provisioning_durations.items():
             bucket_index = PROVISION_DURATION_BUCKETS.index(
                 prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
@@ -1718,11 +1735,7 @@ class TaskMetrics(MetricsBase):
         _update_counter(self.CURRENT_DELAYED_MESSAGE_COUNT, self.current_delayed_message_count)
 
         # Reset all duration buckets and sums first
-        for labeled_metric in self.MESSAGE_DURATIONS._metrics.values():
-            labeled_metric._sum.set(0)
-
-            for i, _ in enumerate(self.MESSAGE_DURATIONS._upper_bounds):
-                labeled_metric._buckets[i].set(0)
+        reset_histogram(self.MESSAGE_DURATIONS)
 
         # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
         # since we don't track the exact duration, just what bucket it falls into.
@@ -1916,11 +1929,7 @@ class APIMetrics(MetricsBase):
         super(APIMetrics, self).update_prometheus()
 
         # Reset all duration buckets and sums first
-        for labeled_metric in self.REQUEST_DURATIONS._metrics.values():
-            labeled_metric._sum.set(0)
-
-            for i, _ in enumerate(self.REQUEST_DURATIONS._upper_bounds):
-                labeled_metric._buckets[i].set(0)
+        reset_histogram(self.REQUEST_DURATIONS)
 
         # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
         # since we don't track the exact duration, just what bucket it falls into.
