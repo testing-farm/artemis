@@ -839,7 +839,7 @@ class PoolsMetrics(MetricsBase):
                     .set(pool_metrics.current_guest_request_count_per_state[state])
 
             for error, count in pool_metrics.errors.items():
-                self.POOL_ERRORS.labels(pool=poolname, error=error).inc(count)
+                self.POOL_ERRORS.labels(pool=poolname, error=error)._value.set(count)
 
             for gauge, metric_name in [
                 (self.POOL_RESOURCES_INSTANCES, 'instances'),
