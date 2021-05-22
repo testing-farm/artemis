@@ -186,7 +186,7 @@ class DBPoolMetrics(MetricsBase):
 
         db = DATABASE.get()
 
-        if not hasattr(db.engine.pool, 'size'):
+        if not hasattr(db.engine.pool, 'size') or not callable(db.engine.pool.size):
             self.size = 0
             self.checked_in_connections = 0
             self.checked_out_connections = 0
@@ -215,7 +215,7 @@ class DBPoolMetrics(MetricsBase):
         )
 
         self.POOL_CHECKED_IN = Gauge(
-            'db_pool_checked',
+            'db_pool_checked_in',
             'Current number of connections checked in',
             registry=registry
         )

@@ -22,7 +22,7 @@ Counters are emitted as two distinct metrics, `foo_total` and `foo_created`, to 
 
 === Artemis
 
-* `artemis_identity` (gauge): Artemis identity info. Labels provide information about identity aspects.
+* `artemis_identity_info` (gauge): Artemis identity info. Labels provide information about identity aspects.
 * `artemis_package_info` (gauge): Artemis packaging info. Labels provide information about package versions.
 
 === Messages and tasks
@@ -37,8 +37,8 @@ Counters are emitted as two distinct metrics, `foo_total` and `foo_created`, to 
 
 === API server HTTP traffic
 
-* `http_requests` (counter): Request count by method, path and status line.
-* `http_requests_inprogress` (gauge): Requests in progress by method and path.
+* `http_requests_total` (counter): Request count by method, path and status line.
+* `http_requests_inprogress_count` (gauge): Requests in progress by method and path.
 
 === API server DB metrics
 
@@ -61,7 +61,7 @@ Counters are emitted as two distinct metrics, `foo_total` and `foo_created`, to 
 * `overall_successfull_provisioning_count` (counter): Overall total number of successfully provisioned guest requests by pool.
 * `overall_failover_count` (counter): Overall total number of failovers to another pool by source and destination pool.
 * `overall_successfull_failover_count` (counter): Overall total number of successful failovers to another pool by source and destination pool.
-* `guest_request_age` (counter): Guest request ages by pool, state and age threshold. Thresholds are 5 minutes long in the first hour, then 60 minutes until 48 hours. `inf` bucket collects all guests that are older than 48 hours.
+* `guest_request_age` (gauge): Guest request ages by pool, state and age threshold. Thresholds are 5 minutes long in the first hour, then 60 minutes until 48 hours. `inf` bucket collects all guests that are older than 48 hours.
 * `provisioning_duration_seconds` (histogram): The time spent provisioning a machine.
 
 === Pool resource metrics
@@ -74,7 +74,7 @@ Following metrics are generated for every known pool, and represent limits and c
 * `pool_resources_diskspace_bytes` (gauge): Current limits and usage of pool diskspace.
 * `pool_resources_snapshot` (gauge): Current limits and usage of pool snapshot.
 * `pool_resources_network_addresses` (gauge) Current limits and usage of pool networks.
-* `pool_resources_update_timestamp` (gauge): Last time the pool metrics were updated, as Unix timestamp.
+* `pool_resources_updated_timestamp` (gauge): Last time the pool metrics were updated, as Unix timestamp.
 
 === Pool errors
 
@@ -87,3 +87,5 @@ Following metrics are generated for every known pool, and represent limits and c
 === PostgreSQL
 
 === RabbitMQ
+
+=== Redis

@@ -57,6 +57,7 @@ pre-commit = "*"
 pytest-flake8 = "*"
 pytest-icdiff = "*"
 pytest-mock = "*"
+redislite = "*"
 sqlalchemy-stubs = "*"
 sqlalchemy-utils = "*"
 

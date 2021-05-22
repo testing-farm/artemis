@@ -1,14 +1,19 @@
+import contextvars
+import logging
 import os
 
 import gluetool.log
 import gluetool.utils
 import pytest
+import redis
+import redislite
 import sqlalchemy.engine.url
 import sqlalchemy_utils.functions
 
 import alembic
 import alembic.config
 import tft.artemis
+import tft.artemis.context
 import tft.artemis.tasks
 
 # The default list of database URLs we test against. Serves as a safe parameter when
@@ -113,3 +118,32 @@ def fixture_schema_actual(request, logger, db):
     alembic_config.attributes['connectable'] = db.engine
 
     alembic.command.upgrade(alembic_config, 'head')
+
+
+@pytest.fixture(name='redis')
+def fixture_redis(monkeypatch, tmpdir, logger):
+    redislite.client.logger.setLevel(logging.DEBUG)
+
+    redis_db_file = tmpdir.join('redis.db')
+
+    def get_cache(logger):
+        return redislite.Redis(dbfilename=str(redis_db_file))
+
+    mock_contextvar = contextvars.ContextVar('CACHE', default=get_cache(logger))
+
+    monkeypatch.setattr(tft.artemis, 'get_cache', get_cache)
+    monkeypatch.setattr(tft.artemis.context, 'get_cache', get_cache)
+
+    monkeypatch.setattr(
+        tft.artemis.context,
+        'CACHE',
+        mock_contextvar
+    )
+
+    monkeypatch.setitem(
+        tft.artemis.context.CONTEXT_PROVIDERS,
+        ('cache', redis.Redis),
+        mock_contextvar
+    )
+
+    yield
