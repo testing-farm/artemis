@@ -75,13 +75,6 @@ from .script import hook_engine
 # When thread B finishes, successfully or by raising an exception, its "return value" is "picked up" by thread A,
 # possibly raising the original exception raised in thread B, giving thread A a chance to react to them even more.
 
-#
-# TODO:
-# - support queue name when sending messages - we want our tasks to use different queues.
-# - allow retries modification and tweaking
-# - "lazy actor" wrapper to avoid the necessity of initializing dramatiq at the import time
-
-
 # Initialize our top-level objects, database and logger, shared by all threads and in *this* worker.
 _ROOT_LOGGER = get_logger()
 
