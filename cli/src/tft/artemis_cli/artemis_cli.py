@@ -4,18 +4,21 @@ import shutil
 import sys
 import tempfile
 import urllib
-from typing import Any, Optional, cast, List
+from itertools import cycle
+from time import sleep
+from typing import Any, Callable, List, Optional, cast
 
 import click
 import click_completion
+import click_spinner
 import requests
 import stackprinter
 from tft import artemis_cli
 
 from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
-               artemis_create, artemis_delete, artemis_inspect,
-               artemis_restore, artemis_update, artemis_get_console_url, confirm, fetch_remote,
-               prettify_json, prettify_yaml, prompt)
+               artemis_create, artemis_delete, artemis_get_console_url,
+               artemis_inspect, artemis_restore, artemis_update, confirm,
+               fetch_remote, prettify_json, prettify_yaml, prompt)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT=10000
@@ -87,6 +90,9 @@ def cli_root(ctx: Any, config: str) -> None:
 
     cfg.artemis_api_url = cfg.raw_config['artemis_api_url']
     assert cfg.artemis_api_url is not None
+
+    if 'provisioning_poll_interval' in cfg.raw_config:
+        cfg.provisioning_poll_interval = cfg.raw_config['provisioning_poll_interval']
 
 
 @cli_root.group(name='snapshot', short_help='Snapshots related commands')
@@ -166,6 +172,7 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
 @click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
 @click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
+@click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
 @click.pass_obj
 def cmd_guest_create(
         cfg: Configuration,
@@ -176,7 +183,8 @@ def cmd_guest_create(
         snapshots = False,
         spot_instance = None,
         priority_group = None,
-        post_install_script: str = None
+        post_install_script: str = None,
+        wait: bool = None
 ) -> None:
     environment = {}
     environment['arch'] = arch
@@ -219,6 +227,33 @@ def cmd_guest_create(
 
     response = artemis_create(cfg, 'guests/', data)
     print(prettify_json(True, response.json()))
+
+    if wait:
+        guestname = response.json()['guestname']
+        state = response.json()['state']
+
+        # click_spinner runs asynchronously and after printing a spinner frame, it waits 250ms before writing a
+        # backspace character. Therefore, for printing updates, return to beginning of line and message is
+        # terminated with a newline and an extra whitespace for the backspace.
+        with click_spinner.spinner():
+            while True:
+                new_state = artemis_inspect(cfg, 'guests', guestname).json()['state']
+
+                if state == new_state:
+                    sleep(cfg.provisioning_poll_interval)
+                    continue
+
+                state = new_state
+
+                print('\rNew state:', new_state, end='\n ')
+
+                if state == 'ready' or state == 'error':
+                    break
+
+        if state == 'ready':
+            click.echo(GREEN('Provisioning finished. Guest is ready.'))
+        elif state == 'error':
+            click.echo(RED('Provisioning finished with an error.'))
 
 
 @cmd_guest.command(name='inspect', short_help='Inspect provisioning request')

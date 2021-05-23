@@ -71,6 +71,8 @@ class Configuration:
 
     artemis_api_url: str = None
 
+    provisioning_poll_interval: float = 10
+
 # Colorization
 def BLUE(s: str) -> str:
     return click.style(s, fg='blue')

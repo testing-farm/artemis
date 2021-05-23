@@ -4,5 +4,8 @@ properties:
   artemis_api_url:
     type: string
 
+  provisioning_poll_interval:
+    type: number
+
 required:
   - artemis_api_url
