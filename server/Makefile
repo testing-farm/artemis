@@ -13,6 +13,9 @@ coverage:  ## Run tests with coverage
 test:  ## Run all tests
 	tox
 
+docs:
+	tox -e autodocs
+
 gen-db-revision:  ## Generate new DB revision
 	rm -rf test.db
 	poetry run alembic upgrade head
