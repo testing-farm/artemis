@@ -37,6 +37,11 @@ from ..tasks import get_snapshot_logger
 from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
+# Bump every time we change the current API, spawning a new milestone API version.
+# TODO: once we have route generators (already submitted), this would be autodetected from their list,
+# since it basically the very first item of such a list.
+CURRENT_MILESTONE_VERSION = 'v0.0.18'
+
 
 class RouteGeneratorType(Protocol):
     def __call__(
