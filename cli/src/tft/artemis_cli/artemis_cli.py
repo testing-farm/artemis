@@ -4,7 +4,7 @@ import shutil
 import sys
 import tempfile
 import urllib
-from typing import Any, Optional, cast
+from typing import Any, Optional, cast, List
 
 import click
 import click_completion
@@ -231,17 +231,18 @@ def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
 
 
 @cmd_guest.command(name='cancel', short_help='Cancel provisioning request')
-@click.argument('guestname', metavar='ID', default=None,)
+@click.argument('guestnames', metavar='ID...', default=None, nargs=-1,)
 @click.pass_obj
-def cmd_cancel(cfg: Configuration, guestname: str) -> None:
+def cmd_cancel(cfg: Configuration, guestnames: List[str]) -> None:
     logger=Logger()
-    response = artemis_delete(cfg, 'guests', guestname, logger=logger)
-    if response.status_code == 404:
-        logger.error('guest "{}" has not been found'.format(guestname))
-    elif response.status_code == 409:
-        logger.error('guest "{}" has provisioned snapshots. Remove the snapshots first'.format(guestname))
-    if response.ok:
-        logger.info('guest "{}" has been canceled'.format(guestname))
+    for guestname in guestnames:
+        response = artemis_delete(cfg, 'guests', guestname, logger=logger)
+        if response.status_code == 404:
+            logger.error('guest "{}" has not been found'.format(guestname))
+        elif response.status_code == 409:
+            logger.error('guest "{}" has provisioned snapshots. Remove the snapshots first'.format(guestname))
+        if response.ok:
+            logger.info('guest "{}" has been canceled'.format(guestname))
 
 
 @cmd_guest.command(name='list', short_help='List provisioning requests')
