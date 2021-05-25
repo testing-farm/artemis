@@ -8,6 +8,9 @@ properties:
   capabilities:
     type: object
 
+  cost:
+    type: object
+
   password:
     type: string
 

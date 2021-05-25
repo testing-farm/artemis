@@ -75,6 +75,7 @@ Following metrics are generated for every known pool, and represent limits and c
 * `pool_resources_snapshot` (gauge): Current limits and usage of pool snapshot.
 * `pool_resources_network_addresses` (gauge) Current limits and usage of pool networks.
 * `pool_resources_updated_timestamp` (gauge): Last time the pool metrics were updated, as Unix timestamp.
+* `pool_costs` (counter): Overall total cost of resources used by a pool, per pool and resource type.
 
 === Pool errors
 

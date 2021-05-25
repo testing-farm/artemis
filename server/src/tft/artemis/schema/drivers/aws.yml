@@ -17,6 +17,9 @@ properties:
   command:
     type: string
 
+  cost:
+    type: object
+
   custom-flavors:
     type: array
 

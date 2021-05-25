@@ -12,7 +12,7 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, JSONType, Knob, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import UNITS, Environment
-from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
+from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
 from . import ConsoleUrlData, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
     ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
@@ -708,6 +708,8 @@ class OpenStackDriver(PoolDriver):
                 failure.fail_guest_request = False
 
                 return Error(failure)
+
+            self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         return Ok(None)
 

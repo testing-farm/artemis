@@ -602,6 +602,80 @@ class PoolResourcesMetrics(MetricsBase):
         return delta
 
 
+ResourceCostType = int
+
+
+class ResourceType(enum.Enum):
+    """
+    Resource type used in cost tracking.
+    """
+
+    VIRTUAL_MACHINE = 'virtual-machine'
+    DISK = 'disk'
+    STATIC_IP = 'static-ip'
+    NETWORK_INTERFACE = 'network-interface'
+    VIRTUAL_NETWORK = 'virtual-network'
+
+
+@dataclasses.dataclass
+class PoolCostsMetrics(MetricsBase):
+    """
+    Cumulative cost produced by a pool.
+    """
+
+    virtual_machine: Optional[ResourceCostType]
+    disk: Optional[ResourceCostType]
+    static_ip: Optional[ResourceCostType]
+    network_interface: Optional[ResourceCostType]
+    virtual_network: Optional[ResourceCostType]
+
+    def __init__(self, poolname: str) -> None:
+        """
+        Cost metrics of a particular pool.
+
+        :param poolname: name of the pool whose costs we are tracking.
+        """
+
+        self._key = 'metrics.pool.{poolname}.cost.cumulative_cost'.format(poolname=poolname)
+
+        self.virtual_machine = None
+        self.disk = None
+        self.static_ip = None
+        self.network_interface = None
+        self.virtual_network = None
+
+    @with_context
+    def sync(self, cache: redis.Redis, logger: gluetool.log.ContextAdapter) -> None:
+        """
+        Load values from the storage and update this container with up-to-date values.
+
+        :param cache: cache instance to use for cache access.
+        :param logger: logger to use for logging.
+        """
+
+        for field, count in get_metric_fields(logger, cache, self._key).items():
+            setattr(self, field.replace('-', '_'), count)
+
+    @with_context
+    def inc_costs(
+        self,
+        resource_type: ResourceType,
+        value: ResourceCostType,
+        cache: redis.Redis,
+        logger: gluetool.log.ContextAdapter
+    ) -> None:
+        """
+        Increment cost.
+
+        :param cache: cache instance to use for cache access.
+        :param logger: logger to use for logging.
+        :param value: value (in cents) to increase the cumulative_cost.
+        :param resource_type: resource type whose value is being incremented.
+        """
+
+        inc_metric_field(logger, cache, self._key, resource_type.value, value)
+
+
 @dataclasses.dataclass
 class PoolMetrics(MetricsBase):
     """
@@ -613,6 +687,7 @@ class PoolMetrics(MetricsBase):
     poolname: str
 
     resources: PoolResourcesMetrics
+    costs: PoolCostsMetrics
 
     current_guest_request_count: int
     current_guest_request_count_per_state: Dict[GuestState, int]
@@ -630,6 +705,7 @@ class PoolMetrics(MetricsBase):
 
         self.poolname = poolname
         self.resources = PoolResourcesMetrics(poolname)
+        self.costs = PoolCostsMetrics(poolname)
 
         self.current_guest_request_count = 0
         self.current_guest_request_count_per_state = {}
@@ -717,6 +793,7 @@ class UndefinedPoolMetrics(MetricsBase):
     poolname: str
 
     resources: PoolResourcesMetrics
+    costs: PoolCostsMetrics
 
     current_guest_request_count: int
     current_guest_request_count_per_state: Dict[GuestState, int]
@@ -732,6 +809,7 @@ class UndefinedPoolMetrics(MetricsBase):
 
         self.poolname = poolname
         self.resources = PoolResourcesMetrics(poolname)
+        self.costs = PoolCostsMetrics(poolname)
 
         self.current_guest_request_count = 0
         self.current_guest_request_count_per_state = {}
@@ -862,6 +940,13 @@ class PoolsMetrics(MetricsBase):
             registry=registry
         )
 
+        self.POOL_COSTS = Counter(
+            'pool_costs',
+            'Overall total cost of resources used by a pool, per pool and resource type.',
+            ['pool', 'resource'],
+            registry=registry
+        )
+
         self.POOL_RESOURCES_INSTANCES = _create_pool_resource_metric('instances')
         self.POOL_RESOURCES_CORES = _create_pool_resource_metric('cores')
         self.POOL_RESOURCES_MEMORY = _create_pool_resource_metric('memory', unit='bytes')
@@ -880,6 +965,7 @@ class PoolsMetrics(MetricsBase):
         super(PoolsMetrics, self).update_prometheus()
 
         reset_counters(self.POOL_ERRORS)
+        reset_counters(self.POOL_COSTS)
 
         for poolname, pool_metrics in self.pools.items():
             for state in pool_metrics.current_guest_request_count_per_state:
@@ -889,6 +975,13 @@ class PoolsMetrics(MetricsBase):
 
             for error, count in pool_metrics.errors.items():
                 self.POOL_ERRORS.labels(pool=poolname, error=error)._value.set(count)
+
+            for resource in ResourceType.__members__.values():
+                value = getattr(pool_metrics.costs, resource.value.replace('-', '_'))
+
+                self.POOL_COSTS \
+                    .labels(pool=poolname, resource=resource.value) \
+                    ._value.set(value if value is not None else float('NaN'))
 
             for gauge, metric_name in [
                 (self.POOL_RESOURCES_INSTANCES, 'instances'),
@@ -2184,7 +2277,7 @@ def safe_call_and_handle(
 
 # Our helper types - Redis library does have some types, but they are often way too open for our purposes.
 # We often can provide more restricting types.
-RedisIncrType = Callable[[str], None]
+RedisIncrType = Callable[[str, int], None]
 RedisDecrType = RedisIncrType
 RedisGetType = Callable[[str], Optional[bytes]]
 RedisSetType = Callable[[str, int], None]
@@ -2196,7 +2289,8 @@ RedisHGetAllType = Callable[[str], Optional[Dict[bytes, bytes]]]
 def inc_metric(
     logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
-    metric: str
+    metric: str,
+    amount: int = 1
 ) -> None:
     """
     Increment a metric counter by 1. If metric does not exist yet, it is set to `0` and incremented.
@@ -2204,15 +2298,17 @@ def inc_metric(
     :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param metric: metric to increment.
+    :param amount: amount to increment by.
     """
 
-    safe_call_and_handle(logger, cast(RedisIncrType, cache.incr), metric)
+    safe_call_and_handle(logger, cast(RedisIncrType, cache.incr), metric, amount)
 
 
 def dec_metric(
     logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
-    metric: str
+    metric: str,
+    amount: int = 1
 ) -> None:
     """
     Decrement a metric counter by 1. If metric does not exist yet, it is set to `0` and decremented.
@@ -2220,16 +2316,18 @@ def dec_metric(
     :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param metric: metric to decrement.
+    :param amount: amount to decrement by.
     """
 
-    safe_call_and_handle(logger, cast(RedisDecrType, cache.decr), metric)
+    safe_call_and_handle(logger, cast(RedisDecrType, cache.decr), metric, amount)
 
 
 def inc_metric_field(
     logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str,
-    field: str
+    field: str,
+    amount: int = 1
 ) -> None:
     """
     Increment a metric field counter by 1. If metric field does not exist yet, it is set to `0` and incremented.
@@ -2238,16 +2336,18 @@ def inc_metric_field(
     :param cache: cache instance to use for cache access.
     :param metric: parent metric to access.
     :param field: field to increment.
+    :param amount: amount to increment by.
     """
 
-    safe_call_and_handle(logger, cast(RedisHIncrByType, cache.hincrby), metric, field, 1)
+    safe_call_and_handle(logger, cast(RedisHIncrByType, cache.hincrby), metric, field, amount)
 
 
 def dec_metric_field(
     logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str,
-    field: str
+    field: str,
+    amount: int = 1
 ) -> None:
     """
     Decrement a metric field counter by 1. If metric field does not exist yet, it is set to `0` and decremented.
@@ -2256,9 +2356,10 @@ def dec_metric_field(
     :param cache: cache instance to use for cache access.
     :param metric: parent metric to access.
     :param field: field to decrement.
+    :param amount: amount to decrement by.
     """
 
-    safe_call_and_handle(logger, cast(RedisHIncrByType, cache.hincrby), metric, field, -1)
+    safe_call_and_handle(logger, cast(RedisHIncrByType, cache.hincrby), metric, field, -1 * amount)
 
 
 def get_metric(

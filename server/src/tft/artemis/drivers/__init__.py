@@ -27,7 +27,7 @@ from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, 
 from ..context import CACHE, LOGGER
 from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk
-from ..metrics import PoolResourcesMetrics
+from ..metrics import PoolCostsMetrics, PoolResourcesMetrics, ResourceType
 
 T = TypeVar('T')
 S = TypeVar('S', bound=SerializableContainer)
@@ -357,6 +357,9 @@ class ProvisioningProgress:
 
 SerializedPoolResourcesIDs = str
 
+#: Used to serialize ``datetime`` instances that are part of ``PoolResourcesIDs``.
+RESOURCE_CTIME_FMT: str = '%Y-%m-%dT%H:%M:%S.%f'
+
 
 @dataclasses.dataclass
 class PoolResourcesIDs:
@@ -366,15 +369,25 @@ class PoolResourcesIDs:
     Serves as a base class for pool-specific implementations that add the actual fields for resources and IDs.
     """
 
+    ctime: Optional[datetime.datetime] = None
+
     def is_empty(self) -> bool:
-        return all([value is None for value in dataclasses.asdict(self).values()])
+        return all([value is None for key, value in dataclasses.asdict(self).items() if key != 'ctime'])
 
     def serialize(self) -> SerializedPoolResourcesIDs:
-        return json.dumps(dataclasses.asdict(self))
+        # Convert datetime object to string first
+        data = dataclasses.asdict(self)
+        data['ctime'] = data['ctime'].strftime(RESOURCE_CTIME_FMT) if data['ctime'] else None
+
+        return json.dumps(data)
 
     @classmethod
     def unserialize(cls: Type[T], raw_resource_ids: SerializedPoolResourcesIDs) -> T:
-        return cls(**json.loads(raw_resource_ids))  # type: ignore
+        # Convert ctime string to datetime object
+        data = json.loads(raw_resource_ids)
+        data['ctime'] = datetime.datetime.strptime(data['ctime'], RESOURCE_CTIME_FMT) if data['ctime'] else None
+
+        return cls(**data)  # type: ignore
 
 
 class PoolDriver(gluetool.log.LoggerMixin):
@@ -398,6 +411,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self.pool_config = pool_config
 
         self._pool_resources_metrics: Optional[PoolResourcesMetrics] = None
+        self._pool_costs_metrics: Optional[PoolCostsMetrics] = None
 
         self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
         self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
@@ -431,6 +445,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
+
+        resource_ids.ctime = guest_request.ctime if guest_request else None
 
         # Local import, to avoid circular imports
         from ..tasks import dispatch_task, release_pool_resources
@@ -1012,6 +1028,24 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         resources.limits.store()
         resources.usage.store()
+
+        return Ok(None)
+
+    def inc_costs(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resource_type: ResourceType,
+        ctime: Optional[datetime.datetime],
+    ) -> Result[None, Failure]:
+        if not ctime:
+            return Ok(None)
+
+        duration = (datetime.datetime.utcnow() - ctime).total_seconds()
+
+        costs_metrics = PoolCostsMetrics(self.poolname)
+
+        resource_cost = self.pool_config.get('cost', {}).get(resource_type.value, 0)
+        costs_metrics.inc_costs(resource_type, round(resource_cost * duration))
 
         return Ok(None)
 

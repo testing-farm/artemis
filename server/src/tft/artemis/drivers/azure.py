@@ -9,9 +9,18 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, JSONType, Knob, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import Environment
+from ..metrics import ResourceType
 from ..script import hook_engine
 from . import PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
     ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
+
+AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
+    'Microsoft.Compute/virtualMachines': ResourceType.VIRTUAL_MACHINE,
+    'Microsoft.Network/virtualNetworks': ResourceType.VIRTUAL_NETWORK,
+    'Microsoft.Compute/disks': ResourceType.DISK,
+    'Microsoft.Network/publicIPAddresses': ResourceType.STATIC_IP,
+    'Microsfot.Network/networkInterfaces': ResourceType.NETWORK_INTERFACE
+}
 
 KNOB_UPDATE_TICK: Knob[int] = Knob(
     'azure.update.tick',
@@ -33,7 +42,7 @@ class AzurePoolData(PoolData):
 @dataclasses.dataclass
 class AzurePoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
-    assorted_resource_ids: Optional[List[str]] = None
+    assorted_resource_ids: Optional[List[Dict[str, str]]] = None
 
 
 class AzureDriver(PoolDriver):
@@ -105,12 +114,16 @@ class AzureDriver(PoolDriver):
             if r_delete.is_error:
                 return Error(r_delete.unwrap_error())
 
+            self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
+
         if resource_ids.assorted_resource_ids is not None:
-            for resource_id in resource_ids.assorted_resource_ids:
-                r_delete = _delete_resource(resource_id)
+            for resource in resource_ids.assorted_resource_ids:
+                r_delete = _delete_resource(resource['id'])
 
                 if r_delete.is_error:
                     return Error(r_delete.unwrap_error())
+
+                self.inc_costs(logger, AZURE_RESOURCE_TYPE[resource['type']], resource_ids.ctime)
 
         return Ok(None)
 
@@ -198,15 +211,11 @@ class AzureDriver(PoolDriver):
             return self._run_cmd_with_auth(options, json_format=False)
 
         # delete vm first, resources second
-        assorted_resource_ids = []
-        assorted_resources = [
+        assorted_resource_ids = [
             res
             for res in cast(List[Dict[str, str]], resources_by_tag)
-            if res["type"] != "Microsoft.Compute/virtualMachines"
+            if res['type'] != 'Microsoft.Compute/virtualMachines'
         ]
-
-        for res in assorted_resources:
-            assorted_resource_ids.append(res['id'])
 
         r_cleanup = self._dispatch_resource_cleanup(
             logger,

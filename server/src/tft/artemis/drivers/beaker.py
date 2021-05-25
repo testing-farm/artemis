@@ -15,7 +15,7 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, Knob
 from ..db import GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, Operator, Or
-from ..metrics import PoolResourcesMetrics
+from ..metrics import PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
 from . import CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
     ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool
@@ -280,6 +280,8 @@ class BeakerDriver(PoolDriver):
 
             if r_output.is_error:
                 return Error(r_output.unwrap_error())
+
+            self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         return Ok(None)
 

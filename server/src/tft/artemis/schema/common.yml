@@ -180,6 +180,26 @@ properties:
               items:
                 "$ref": "#/definitions/patch_flavor"
 
+            cost:
+              type: object
+
+              properties:
+                disk:
+                  type: number
+                  multipleOf: 0.0001
+                network-interface:
+                  type: number
+                  multipleOf: 0.0001
+                static-ip:
+                  type: number
+                  multipleOf: 0.0001
+                virtual-machine:
+                  type: number
+                  multipleOf: 0.0001
+                virtual-network:
+                  type: number
+                  multipleOf: 0.0001
+
             resources:
               type: object
 

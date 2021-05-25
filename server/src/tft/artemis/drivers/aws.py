@@ -19,7 +19,7 @@ from jinja2 import Template
 from .. import Failure, JSONType, Knob, log_dict_yaml
 from ..db import GuestRequest
 from ..environment import UNITS, Environment
-from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
+from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
 from . import GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
     ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
@@ -223,6 +223,8 @@ class AWSDriver(PoolDriver):
             if r_output.is_error:
                 return Error(r_output.unwrap_error())
 
+            self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
+
         if resource_ids.instance_id is not None:
             r_output = self._aws_command([
                 'ec2', 'terminate-instances',
@@ -231,6 +233,8 @@ class AWSDriver(PoolDriver):
 
             if r_output.is_error:
                 return Error(r_output.unwrap_error())
+
+            self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         return Ok(None)
 

@@ -17,6 +17,9 @@ properties:
   capabilities:
     type: object
 
+  cost:
+    type: object
+
   resources:
     type: object
 
