@@ -44,10 +44,18 @@ class BrewBuildOptions(gluetool.Module):
             'help': 'Set priority of brew build repository (default: %(default)s).',
             'type': int,
             'default': 50  # The priority should be higher (lower number) than the default one (99)
+        },
+        'brew-server-map': {
+            'help': 'Rules file setting the value of SERVER parameter of the install task.'
         }
     }
 
     shared_functions = ['brew_build_task_params']
+    required_options = ['brew-server-map']
+
+    @gluetool.utils.cached_property
+    def _brew_server_map(self):
+        return gluetool.utils.load_yaml(gluetool.utils.normalize_path_option(self.option('brew-server-map')))
 
     def brew_build_task_params(self):
         # type: () -> Dict[str, str]
@@ -55,7 +63,7 @@ class BrewBuildOptions(gluetool.Module):
         Return mapping with options for ``/distribution/install/brew-build``, to install currently known artifacts.
         """
 
-        self.require_shared('primary_task', 'tasks')
+        self.require_shared('primary_task', 'tasks', 'evaluate_rules')
 
         # temporary holders of options
         tasks = []  # type: List[int]
@@ -80,7 +88,7 @@ class BrewBuildOptions(gluetool.Module):
 
         options = {
             'METHOD': self.option('install-method'),
-            'SERVER': self.shared('primary_task').ARTIFACT_NAMESPACE,
+            'SERVER': self.shared('evaluate_rules', self._brew_server_map, context=self.shared('eval_context')),
             'RPM_BLACKLIST': self.option('install-rpms-blacklist'),
             'PRIORITY': self.option('brew-build-repo-priority')
         }
