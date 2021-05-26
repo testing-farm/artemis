@@ -286,7 +286,7 @@ def artemis_get_console_url(cfg, resource, rid, logger=None):
 
 def artemis_get_guest_log(cfg, resource, rid, logname, contenttype, logger=None):
     return fetch_artemis(cfg, '/{}/{}/logs/{}/{}'.format(resource, rid, logname, contenttype), request_kwargs={},
-                         allow_statuses=[204], logger=None)
+                         allow_statuses=[200, 204], logger=None)
 
 def artemis_create_guest_log(cfg, resource, rid, logname, contenttype, logger=None):
     return fetch_artemis(cfg, '/{}/{}/logs/{}/{}'.format(resource, rid, logname, contenttype), method='post',

@@ -291,7 +291,7 @@ def upsert(
         }
     )
 
-    if update_data is not None:
+    if update_data is None:
         statement = statement.on_conflict_do_nothing(
             constraint=model.__table__.primary_key  # type: ignore
         )

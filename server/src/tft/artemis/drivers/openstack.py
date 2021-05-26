@@ -875,11 +875,10 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        if guest_log.logtype != GuestLogType.CONSOLE:
+        if guest_log.logname != GuestLogType.CONSOLE.value:
             return Error(Failure(
                 'unsupported guest log',
                 logname=guest_log.logname,
-                logtype=guest_log.logtype,
                 contenttype=guest_log.contenttype
             ))
 

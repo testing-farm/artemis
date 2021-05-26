@@ -1983,7 +1983,7 @@ def do_update_guest_log(
     r_guest_log = SafeQuery.from_session(session, GuestLog) \
         .filter(GuestLog.guestname == workspace.gr.guestname) \
         .filter(GuestLog.logname == logname) \
-        .filter(GuestLog.contenttype == contenttype.value) \
+        .filter(GuestLog.contenttype == contenttype) \
         .one_or_none()
 
     if r_guest_log.is_error:
@@ -1995,22 +1995,18 @@ def do_update_guest_log(
         # We're the first: create the record, and reschedule. We *could* proceed and try to fetch the data, too,
         # let's try with another task run first.
 
-        import rpdb; rpdb.set_trace()
-        r_insert = upsert(
+        upsert(
             session,
             GuestLog,
             {
                 GuestLog.guestname: guestname,
                 GuestLog.logname: logname,
-                GuestLog.contenttype: contenttype.value
+                GuestLog.contenttype: contenttype
             },
             insert_data={
                 GuestLog.complete: False
             }
         )
-
-        if r_insert.is_error:
-            return handle_failure(r_insert, 'failed to create the log')
 
         return handle_success('finished-task', return_value=RESCHEDULE)
 
@@ -2031,7 +2027,7 @@ def do_update_guest_log(
         .update(GuestLog.__table__) \
         .where(GuestLog.guestname == workspace.gr.guestname) \
         .where(GuestLog.logname == logname) \
-        .where(GuestLog.contenttype == contenttype.value) \
+        .where(GuestLog.contenttype == contenttype) \
         .where(GuestLog.updated == guest_log.updated) \
         .where(GuestLog.url == guest_log.url) \
         .where(GuestLog.blob == guest_log.blob) \

@@ -400,16 +400,24 @@ def cmd_guest_events(
 @click.argument('guestname', metavar='ID', default=None,)
 @click.argument('logname', metavar='LOGNAME',)
 @click.argument('contenttype', metavar='CONTENTTYPE',)
+@click.option('--wait', is_flag=True, default=False, help='Poll the server till the log is ready')
 @click.pass_obj
-def cmd_guest_log(cfg: Configuration, guestname: str, logname: str, contenttype: str) -> None:
+def cmd_guest_log(cfg: Configuration, guestname: str, logname: str, contenttype: str, wait:bool) -> None:
     response = artemis_get_guest_log(cfg, 'guests', guestname, logname, contenttype)
     if response.status_code == 204:
         # first time asking for this type of log
         response = artemis_create_guest_log(cfg, 'guests', guestname, logname, contenttype)
-    while response.status_code in [202, 204]:
-        response = artemis_get_guest_log(cfg, 'guests', guestname, logname, contenttype)
-        time.sleep(10)
-    cfg.logger.info(prettify_json(True, response.json()))
+
+    if wait:
+        def is_null(response):
+            return not response.json() or all(not response.json().get(x) for x in ['url', 'blob'])
+
+        while response.status_code in [202, 204] or is_null(response):
+            response = artemis_get_guest_log(cfg, 'guests', guestname, logname, contenttype)
+            # XXX FIXME move magic number to a constant
+            time.sleep(10)
+
+    cfg.logger.info(prettify_json(True, response.json() or {}))
 
 
 # XXX FIXME(ivasilev) Switch to the generalized guest logs approach with console url being a special log type
