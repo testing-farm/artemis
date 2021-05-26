@@ -13,7 +13,7 @@ prepare:
     # we install poetry via python3, which has less bugs as with python2
     - yum install -y python3
     # popt devel is only available in Centos8 :(
-    - yum install -y http://mirror.centos.org/centos/8/BaseOS/x86_64/os/Packages/popt-devel-1.16-14.el8.x86_64.rpm
+    - yum install -y http://mirror.centos.org/centos/8-stream/BaseOS/x86_64/os/Packages/popt-devel-1.18-1.el8.x86_64.rpm
     # well latest ansible requires latest pip ...
     - pip3 install -U pip
     # unfortunately installing Ansible on RHEL8 from EPEL does not work :( nothing provides python3-jmespath needed
