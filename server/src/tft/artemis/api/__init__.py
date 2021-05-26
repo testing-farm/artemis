@@ -28,7 +28,7 @@ from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 from typing_extensions import Protocol
 
-from .. import __VERSION__, FailureDetailsType, Knob
+from .. import __VERSION__, FailureDetailsType, JSONSchemaType, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, safe_db_change, validate_data
 from ..context import DATABASE, LOGGER
@@ -107,13 +107,13 @@ METRICS_LOCK = threading.Lock()
 
 
 # Will be filled with the actual schema during API server bootstrap.
-ENVIRONMENT_SCHEMAS: Dict[str, Any] = {}
+ENVIRONMENT_SCHEMAS: Dict[str, JSONSchemaType] = {}
 
 
 def _validate_environment(
     logger: gluetool.log.ContextAdapter,
     environment: Any,
-    schema: Any,
+    schema: JSONSchemaType,
     failure_details: Dict[str, str]
 ) -> None:
     r_validation = validate_data(environment, schema)
@@ -435,7 +435,13 @@ class GuestRequestManager:
                 for guest in r_guests.unwrap()
             ]
 
-    def create(self, guest_request: GuestRequest, ownername: str, logger: gluetool.log.ContextAdapter) -> GuestResponse:
+    def create(
+        self,
+        guest_request: GuestRequest,
+        ownername: str,
+        logger: gluetool.log.ContextAdapter,
+        environment_schema: JSONSchemaType
+    ) -> GuestResponse:
         from ..tasks import dispatch_task, get_guest_logger, route_guest_request
 
         guestname = str(uuid.uuid4())
@@ -450,7 +456,7 @@ class GuestRequestManager:
         _validate_environment(
             guest_logger,
             guest_request.environment,
-            ENVIRONMENT_SCHEMAS['current'],
+            environment_schema,
             failure_details
         )
 
@@ -1083,7 +1089,7 @@ def get_guest_requests(manager: GuestRequestManager, request: Request) -> Tuple[
     return HTTP_200, manager.get_guest_requests()
 
 
-def create_guest_request(
+def create_guest_request_v0_0_19(
     guest_request: GuestRequest,
     manager: GuestRequestManager,
     request: Request,
@@ -1100,7 +1106,47 @@ def create_guest_request(
     else:
         ownername = DEFAULT_GUEST_REQUEST_OWNER
 
-    return HTTP_201, manager.create(guest_request, ownername, logger)
+    return HTTP_201, manager.create(guest_request, ownername, logger, ENVIRONMENT_SCHEMAS['v0.0.19'])
+
+
+def create_guest_request_v0_0_18(
+    guest_request: GuestRequest,
+    manager: GuestRequestManager,
+    request: Request,
+    auth: AuthContext,
+    logger: gluetool.log.ContextAdapter
+) -> Tuple[str, GuestResponse]:
+    # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
+    # and we got so far means user must be authenticated.
+    if auth.is_authentication_enabled and auth.is_authenticated:
+        assert auth.username
+
+        ownername = auth.username
+
+    else:
+        ownername = DEFAULT_GUEST_REQUEST_OWNER
+
+    return HTTP_201, manager.create(guest_request, ownername, logger, ENVIRONMENT_SCHEMAS['v0.0.18'])
+
+
+def create_guest_request_v0_0_17(
+    guest_request: GuestRequest,
+    manager: GuestRequestManager,
+    request: Request,
+    auth: AuthContext,
+    logger: gluetool.log.ContextAdapter
+) -> Tuple[str, GuestResponse]:
+    # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
+    # and we got so far means user must be authenticated.
+    if auth.is_authentication_enabled and auth.is_authenticated:
+        assert auth.username
+
+        ownername = auth.username
+
+    else:
+        ownername = DEFAULT_GUEST_REQUEST_OWNER
+
+    return HTTP_201, manager.create(guest_request, ownername, logger, ENVIRONMENT_SCHEMAS['v0.0.17'])
 
 
 def get_guest_request(guestname: str, manager: GuestRequestManager, request: Request) -> GuestResponse:
@@ -1423,6 +1469,46 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
     return wrapper
 
 
+# NEW: HW requirements
+@route_generator
+def generate_routes_v0_0_19(
+    create_route: CreateRouteCallbackType,
+    name_prefix: str,
+    metadata: Any
+) -> List[Union[Route, Include]]:
+    return [
+        Include('/guests', [
+            create_route('/', get_guest_requests, method='GET'),
+            create_route('/', create_guest_request_v0_0_19, method='POST'),
+            create_route('/{guestname}', get_guest_request),
+            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/events', get_events),
+            create_route('/{guestname}/events', get_guest_events),
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
+            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')
+        ]),
+        Include('/knobs', [
+            create_route('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+        ]),
+        create_route('/metrics', get_metrics),
+        create_route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [
+                create_route('/image-info', CacheManager.entry_pool_image_info),
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
+            ])
+        ]),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+        create_route('/_schema', OpenAPIHandler(metadata=metadata))
+    ]
+
+
 # NEW: /{guestname}/console/url
 @route_generator
 def generate_routes_v0_0_18(
@@ -1433,7 +1519,7 @@ def generate_routes_v0_0_18(
     return [
         Include('/guests', [
             create_route('/', get_guest_requests, method='GET'),
-            create_route('/', create_guest_request, method='POST'),
+            create_route('/', create_guest_request_v0_0_18, method='POST'),
             create_route('/{guestname}', get_guest_request),
             create_route('/{guestname}', delete_guest, method='DELETE'),
             create_route('/events', get_events),
@@ -1472,7 +1558,7 @@ def generate_routes_v0_0_17(
     return [
         Include('/guests', [
             create_route('/', get_guest_requests, method='GET'),
-            create_route('/', create_guest_request, method='POST'),
+            create_route('/', create_guest_request_v0_0_17, method='POST'),
             create_route('/{guestname}', get_guest_request),
             create_route('/{guestname}', delete_guest, method='DELETE'),
             create_route('/events', get_events),
@@ -1505,8 +1591,8 @@ def generate_routes_v0_0_17(
 #: API versions. Based on this list, routes are created with proper endpoints, and possibly redirected
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
-    # NEW: /guest/$GUESTNAME/console/url
-    ('v0.0.18', generate_routes_v0_0_18, [
+    # NEW: environment.hw opens
+    ('v0.0.19', generate_routes_v0_0_19, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
         'current',
@@ -1515,6 +1601,8 @@ API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
         # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
         'toplevel'
     ]),
+    # NEW: /guest/$GUESTNAME/console/url
+    ('v0.0.18', generate_routes_v0_0_18, []),
     ('v0.0.17', generate_routes_v0_0_17, [])
 ]
 

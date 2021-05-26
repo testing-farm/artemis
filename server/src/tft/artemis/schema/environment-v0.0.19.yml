@@ -1,0 +1,49 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: Environment schema
+type: object
+
+definitions:
+  os_requirements:
+    type: object
+
+    properties:
+      compose:
+        type: string
+
+    required:
+      - compose
+
+    additionalProperties: false
+
+properties:
+  arch:
+    type: string
+
+  os:
+    "$ref": "#/definitions/os_requirements"
+
+  pool:
+    anyOf:
+      - type:
+        - string
+      - type:
+        - "null"
+    default: null
+
+  snapshots:
+    type: boolean
+    default: false
+
+  spot_instance:
+    anyOf:
+      - type:
+        - boolean
+      - type:
+        - "null"
+    default: null
+
+required:
+  - arch
+  - os
+
+additionalProperties: false
