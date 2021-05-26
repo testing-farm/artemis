@@ -30,6 +30,14 @@ policy_prefer_openstack = create_preferrence_filter_by_driver_class(
 )
 
 
+#: If there are AWS pools still in the mix, then prefer these pools over the rest. If there are no AWS
+#: pools allowed anymore, return the original list: *prefer*, not *use only*.
+policy_prefer_aws = create_preferrence_filter_by_driver_class(
+    'prefer-aws',
+    tft.artemis.drivers.aws.AWSDriver
+)
+
+
 #: If there are cloud-backed pools still in the mix, then prefer these pools over more expensive pools (like Beaker).
 #: If there are no cloud-backed pools available anymore, return the original list: *prefer*, not *use only*.
 policy_prefer_clouds = create_preferrence_filter_by_driver_class(
@@ -50,6 +58,8 @@ POLICIES = [
     policy_enough_resources,
     policy_prefer_clouds,
     policy_prefer_openstack,
+    # or:
+    # policy_prefer_aws,
     policy_prefer_spot_instances,
     policy_least_crowded
 ]
