@@ -187,7 +187,7 @@ def cmd_guest_create(
         wait: bool = None
 ) -> None:
     environment = {}
-    environment['arch'] = arch
+    environment['hw'] = {'arch': arch}
     environment['os'] = {'compose': compose}
 
     if pool:

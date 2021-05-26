@@ -1,13 +1,27 @@
 import textwrap
 
 import gluetool.utils
+import pytest
 
 import tft.artemis.environment
 from tft.artemis.environment import UNITS
 
 
+@pytest.fixture(name='schema_v0_0_19')
+def fixture_schema_v0_0_19():
+    r_schema = tft.artemis.load_validation_schema('environment-v0.0.19.yml')
+
+    assert r_schema.is_ok
+
+    return r_schema.unwrap()
+
+
 def parse_hw(text):
     return tft.artemis.environment.constraints_from_environment_requirements(gluetool.utils.from_yaml(textwrap.dedent(text)))
+
+
+def parse_spec(text):
+    return gluetool.utils.from_yaml(textwrap.dedent(text))
 
 
 def test_example_simple(logger):
@@ -330,3 +344,94 @@ def test_example_logic(logger):
             )
         )
     ) is False
+
+
+def test_schema_no_constraints_v0_0_19(schema_v0_0_19, logger):
+    spec = parse_spec(
+        """
+        ---
+
+        hw:
+          arch: x86_64
+
+        os:
+          compose: dummy-compose
+        """
+    )
+
+    r_validation = tft.artemis.validate_data(spec, schema_v0_0_19)
+
+    assert r_validation.is_ok
+
+    errors = r_validation.unwrap()
+
+    for error in errors:
+        print(error)
+
+    assert errors == []
+
+
+def test_schema_simple_v0_0_19(schema_v0_0_19, logger):
+    spec = parse_spec(
+        """
+        ---
+
+        hw:
+          arch: x86_64
+          constraints:
+            memory: 8192000
+            disk:
+              space: ">= 120 GiB"
+
+        os:
+          compose: dummy-compose
+        """
+    )
+
+    r_validation = tft.artemis.validate_data(spec, schema_v0_0_19)
+
+    assert r_validation.is_ok
+
+    errors = r_validation.unwrap()
+
+    for error in errors:
+        print(error)
+
+    assert errors == []
+
+
+def test_schema_logic_v0_0_19(schema_v0_0_19, logger):
+    spec = parse_spec(
+        """
+        ---
+
+        hw:
+          arch: x86_64
+          constraints:
+            and:
+              - memory: 8192000
+                disk:
+                  space: ">= 120 GiB"
+              - or:
+                - cpu:
+                    model: 65
+                - cpu:
+                    model: 67
+                - cpu:
+                    model: 69
+
+        os:
+          compose: dummy-compose
+        """
+    )
+
+    r_validation = tft.artemis.validate_data(spec, schema_v0_0_19)
+
+    assert r_validation.is_ok
+
+    errors = r_validation.unwrap()
+
+    for error in errors:
+        print(error)
+
+    assert errors == []

@@ -421,6 +421,7 @@ def constraints_from_environment_requirements(spec: SpecType) -> ConstraintBase:
 @dataclasses.dataclass
 class HWRequirements:
     arch: str
+    constraints: Optional[SpecType] = None
 
 
 @dataclasses.dataclass
@@ -497,5 +498,5 @@ class Environment:
 
         return Environment.unserialize_from_json(json.loads(serialized))
 
-    def get_hw_constraints(self) -> ConstraintBase:
-        return _parse_block(dataclasses.asdict(self.hw))
+    def get_hw_constraints(self) -> Optional[ConstraintBase]:
+        return _parse_block(self.hw.constraints) if self.hw.constraints is not None else None

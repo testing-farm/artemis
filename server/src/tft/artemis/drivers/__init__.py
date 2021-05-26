@@ -596,6 +596,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         # Extract HW constraints specified by the environment.
         constraints = environment.get_hw_constraints()
+
+        if constraints is None:
+            return Ok(flavors)
+
         gluetool.log.log_blob(logger.debug, 'constraint', constraints.format())  # noqa: FS002
 
         # The actual filter: pick flavors that pass the test and match the requirements.
