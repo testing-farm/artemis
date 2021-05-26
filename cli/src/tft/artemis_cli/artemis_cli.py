@@ -3,6 +3,7 @@ import os.path
 import shutil
 import sys
 import tempfile
+import time
 import urllib
 from itertools import cycle
 from time import sleep
@@ -17,6 +18,7 @@ from tft import artemis_cli
 
 from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
                artemis_create, artemis_delete, artemis_get_console_url,
+               artemis_get_guest_log, artemis_create_guest_log,
                artemis_inspect, artemis_restore, artemis_update, confirm,
                fetch_remote, prettify_json, prettify_yaml, prompt)
 
@@ -394,6 +396,23 @@ def cmd_guest_events(
     print(prettify_json(True, results_json))
 
 
+@cmd_guest.command(name='logs', short_help='Get specific logs from the guest')
+@click.argument('guestname', metavar='ID', default=None,)
+@click.argument('logname', metavar='LOGNAME',)
+@click.argument('contenttype', metavar='CONTENTTYPE',)
+@click.pass_obj
+def cmd_guest_log(cfg: Configuration, guestname: str, logname: str, contenttype: str) -> None:
+    response = artemis_get_guest_log(cfg, 'guests', guestname, logname, contenttype)
+    if response.status_code == 204:
+        # first time asking for this type of log
+        response = artemis_create_guest_log(cfg, 'guests', guestname, logname, contenttype)
+    while response.status_code in [202, 204]:
+        response = artemis_get_guest_log(cfg, 'guests', guestname, logname, contenttype)
+        time.sleep(10)
+    cfg.logger.info(prettify_json(True, response.json()))
+
+
+# XXX FIXME(ivasilev) Switch to the generalized guest logs approach with console url being a special log type
 @cmd_guest.group(name='console', short_help='Console related commands')
 @click.pass_obj
 def cmd_console(cfg: Configuration) -> None:

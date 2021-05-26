@@ -18,7 +18,7 @@ import molten.dependency_injection
 import molten.openapi
 import sqlalchemy
 import sqlalchemy.orm.exc
-from molten import HTTP_200, HTTP_201, HTTP_204, Include, Request, Response, Route
+from molten import HTTP_200, HTTP_201, HTTP_202, HTTP_204, Include, Request, Response, Route
 from molten.app import BaseApp
 # from molten.contrib.prometheus import prometheus_middleware
 from molten.middleware import ResponseRendererMiddleware

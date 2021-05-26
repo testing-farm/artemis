@@ -316,8 +316,12 @@ class UserRoles(enum.Enum):
 
 
 class GuestLogContentType(enum.Enum):
-    LINK = 'link'
+    URL = 'url'
     BLOB = 'blob'
+
+
+class GuestLogType(enum.Enum):
+    CONSOLE = 'console'
 
 
 class User(Base):

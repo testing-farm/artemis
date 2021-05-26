@@ -1995,13 +1995,14 @@ def do_update_guest_log(
         # We're the first: create the record, and reschedule. We *could* proceed and try to fetch the data, too,
         # let's try with another task run first.
 
+        import rpdb; rpdb.set_trace()
         r_insert = upsert(
             session,
             GuestLog,
             {
                 GuestLog.guestname: guestname,
                 GuestLog.logname: logname,
-                GuestLog.contenttype: contenttype
+                GuestLog.contenttype: contenttype.value
             },
             insert_data={
                 GuestLog.complete: False
@@ -2070,10 +2071,12 @@ def do_update_guest_log(
 
 @dramatiq.actor(**actor_kwargs('UPDATE_GUEST_LOG'))  # type: ignore  # Untyped decorator
 def update_guest_log(guestname: str, logname: str, contenttype: str) -> None:
+    # XXX FIXME(ivasilev) Find a real way to vet contenttype
+    vetted_contenttype = GuestLogContentType[contenttype.swapcase()]
     task_core(
         cast(DoerType, do_update_guest_log),
         logger=get_guest_logger('update-guest-log', _ROOT_LOGGER, guestname),
-        doer_args=(guestname, logname, GuestLogContentType[contenttype])
+        doer_args=(guestname, logname, vetted_contenttype)
     )
 
 

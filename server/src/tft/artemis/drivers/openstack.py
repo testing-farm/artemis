@@ -883,7 +883,7 @@ class OpenStackDriver(PoolDriver):
                 contenttype=guest_log.contenttype
             ))
 
-        if guest_log.contenttype == GuestLogContentType.LINK:
+        if guest_log.contenttype == GuestLogContentType.URL:
             r_output = self._run_os([
                 'console',
                 'url',
