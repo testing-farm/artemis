@@ -1545,7 +1545,14 @@ def get_cached_item(
     return Ok(r_unserialize.unwrap())
 
 
-def load_validation_schema(schema_path: str) -> Result[Any, Failure]:
+#: Custom type for JSON schema. We don't expect the schema structure though, all we do is loading it
+#: from a YAML file, then passing it to validators. The actual type could very well be ``Any``, but
+#: given how JSON schema looks like, it's pretty much going to be a mapping with string keys. So using
+#: this type, and adding our alias to it so we could follow JSON schemas in our code easily.
+JSONSchemaType = Dict[str, Any]
+
+
+def load_validation_schema(schema_path: str) -> Result[JSONSchemaType, Failure]:
     """
     Load a JSON schema for future use in data validation.
 
@@ -1567,10 +1574,10 @@ def load_validation_schema(schema_path: str) -> Result[Any, Failure]:
             schema_path=schema_path
         ))
 
-    return r_schema
+    return Ok(cast(JSONSchemaType, r_schema.unwrap()))
 
 
-def validate_data(data: Any, schema: Any) -> Result[List[str], Failure]:
+def validate_data(data: Any, schema: JSONSchemaType) -> Result[List[str], Failure]:
     """
     Validate a given data using a JSON schema.
 

@@ -843,12 +843,12 @@ def validate_config(
     r_schema = load_validation_schema('common.yml')
 
     if r_schema.is_error:
-        return r_schema
+        return Error(r_schema.unwrap_error())
 
     r_validation = validate_data(server_config, r_schema.unwrap())
 
     if r_validation.is_error:
-        return r_validation
+        return Error(r_validation.unwrap_error())
 
     validation_errors += [
         'server: {}'.format(error)
@@ -866,7 +866,7 @@ def validate_config(
         if r_schema.is_error:
             r_schema.unwrap_error().details.update(failure_details)
 
-            return r_schema
+            return Error(r_schema.unwrap_error())
 
         r_validation = validate_data(pool.get('parameters'), r_schema.unwrap())
 
