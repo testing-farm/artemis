@@ -578,6 +578,7 @@ class GuestRequest(Base):
     ctime = Column(DateTime(), nullable=False, default=datetime.datetime.utcnow)
 
     state = Column(Enum(GuestState), nullable=False)
+    state_mtime = Column(DateTime(), nullable=True)
 
     address = Column(String(250), nullable=True)
 
@@ -649,6 +650,7 @@ class GuestRequest(Base):
                 for log in log_types
             ],
             state=GuestState.ROUTING,
+            state_mtime=datetime.datetime.utcnow(),
             poolname=None,
             pool_data=json.dumps({}),
         )

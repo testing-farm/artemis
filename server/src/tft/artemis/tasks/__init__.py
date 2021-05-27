@@ -1011,15 +1011,19 @@ def _update_guest_state(
 
     logger.warning('state switch: {} => {}'.format(current_state_label, new_state.value))
 
+    now = datetime.datetime.utcnow()
+
     if set_values:
         values = set_values
         values.update({
-            'state': new_state
+            'state': new_state,
+            'state_mtime': now
         })
 
     else:
         values = {
-            'state': new_state
+            'state': new_state,
+            'state_mtime': now
         }
 
     query = sqlalchemy \
