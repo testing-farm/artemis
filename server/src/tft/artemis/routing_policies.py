@@ -11,7 +11,7 @@ from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import Failure, JSONType, Knob, log_guest_event
+from . import Failure, JSONType, Knob, log_guest_event, partition
 from .db import GuestRequest
 from .drivers import PoolCapabilities, PoolDriver
 from .environment import Environment
@@ -147,22 +147,25 @@ def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[Pool
     :return: List of two item tuples, pool and its capabilities.
     """
 
-    r_capabilities = [
-        (pool, pool.capabilities())
-        for pool in pools
-    ]
+    oks, errors = partition(
+        lambda result_pair: result_pair[1].is_ok,
+        [
+            (pool, pool.capabilities())
+            for pool in pools
+        ]
+    )
 
-    errors = [r for _, r in r_capabilities if r.is_error]
+    first_error_pair = next(iter(errors), None)
 
-    if errors:
+    if first_error_pair:
         return Error(Failure(
             'failed to get pool capabilities',
-            caused_by=errors[0].unwrap_error()
+            caused_by=first_error_pair[1].unwrap_error()
         ))
 
     return Ok([
         (pool, r.unwrap())
-        for pool, r in r_capabilities
+        for pool, r in oks
     ])
 
 

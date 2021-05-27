@@ -1,5 +1,6 @@
 import dataclasses
 import datetime
+import itertools
 import json
 import logging
 import os
@@ -7,8 +8,8 @@ import sys
 import traceback as _traceback
 import urllib.parse
 from types import FrameType, TracebackType
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Generic, List, NoReturn, Optional, Tuple, Type, \
-    TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Generic, Iterable, List, NoReturn, Optional, Tuple, \
+    Type, TypeVar, Union, cast
 
 import dramatiq
 import dramatiq.brokers.rabbitmq
@@ -1615,3 +1616,14 @@ def validate_data(data: Any, schema: JSONSchemaType) -> Result[List[str], Failur
         return Ok([exc.message])
 
     return Ok([])
+
+
+def partition(predicate: Callable[[T], bool], iterable: Iterable[T]) -> Tuple[Iterable[T], Iterable[T]]:
+    """
+    Use a predicate to split the entries of the given iterable into two lists, one for true entries
+    and second for false ones.
+    """
+
+    iter1, iter2 = itertools.tee(iterable)
+
+    return filter(predicate, iter1), itertools.filterfalse(predicate, iter2)
