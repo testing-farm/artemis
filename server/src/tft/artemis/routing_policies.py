@@ -103,6 +103,14 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
 
     policy_name = fn.__name__.lower().replace('policy_', '').replace('_', '-')
 
+    knob_enabled: Knob[bool] = Knob(
+        f'route.policy.{policy_name}.enabled',
+        'If disabled, routing policy is not applied when routing a guest request.',
+        has_db=True,
+        default=True,
+        cast_from_str=gluetool.utils.normalize_bool_option
+    )
+
     @functools.wraps(fn)
     def wrapper(
         logger: gluetool.log.ContextAdapter,
@@ -114,6 +122,19 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
             policy_logger = PolicyLogger(logger, policy_name)
 
             log_dict(policy_logger.debug, 'input pools', pools)
+
+            r_enabled = knob_enabled.get_value(session=session)
+
+            if r_enabled.is_error:
+                return Error(Failure(
+                    'failed to test policy enablement',
+                    caused_by=r_enabled.unwrap_error()
+                ))
+
+            if r_enabled.unwrap() is not True:
+                policy_logger.debug('policy disabled, skipping')
+
+                return Ok(PolicyRuling(allowed_pools=pools))
 
             r = fn(policy_logger, session, pools, guest_request)
 
@@ -208,7 +229,11 @@ def collect_pool_metrics(pools: List[PoolDriver]) -> Result[List[Tuple[PoolDrive
 
 
 def create_preferrence_filter_by_driver_class(policy_name: str, *preferred_drivers: Type[PoolDriver]) -> PolicyType:
-    @policy_boilerplate
+    # `policy_boilerplate` does some things that depend on its knowledge of the policy name. That name
+    # is deduced from the policy function name, but this helper will generate policy functions with the
+    # very same name, `policy`, every time for all inputs. We have to patch the `policy.__name__` with
+    # the given `policy_name`, and therefore the decorator is applied *after* that patch.
+
     def policy(
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
@@ -230,9 +255,9 @@ def create_preferrence_filter_by_driver_class(policy_name: str, *preferred_drive
             allowed_pools=preferred_pools
         ))
 
-    cast(PolicyWrapperType, policy).policy_name = policy_name
+    policy.__name__ = policy_name
 
-    return policy
+    return policy_boilerplate(policy)
 
 
 @policy_boilerplate

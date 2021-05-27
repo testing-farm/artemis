@@ -34,6 +34,7 @@ from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, safe_db_change, validate_data
 from ..context import DATABASE, LOGGER
 from ..guest import GuestState
+from ..script import hook_engine
 from ..tasks import get_snapshot_logger
 from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
@@ -2210,6 +2211,18 @@ def run_app() -> molten.app.App:
     from molten.router import Include, Route
 
     logger = get_logger()
+
+    # Load routing hook to populate our list of knobs with those created dynamicaly for custom policies - the hook
+    # is loaded by workers, but those are completely different processes, therefore they would remain invisible
+    # to us.
+    if os.getenv('ARTEMIS_HOOK_ROUTE'):
+        r_routing_hook = hook_engine('ROUTE')
+
+        if r_routing_hook.is_error:
+            r_routing_hook.unwrap_error().handle(logger)
+
+            sys.exit(1)
+
     db = get_db(logger, application_name='artemis-api-server')
 
     metrics_tree = metrics.Metrics()
