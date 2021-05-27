@@ -45,7 +45,7 @@ DEFAULT_SSH_USERNAME = 'root'
 DEFAULT_EVENTS_PAGE = 1
 DEFAULT_EVENTS_PAGE_SIZE = 20
 DEFAULT_EVENTS_SORT_FIELD = 'updated'
-DEFAULT_EVENTS_SORT_BY = 'desc'
+DEFAULT_EVENTS_SORT_ORDER = 'desc'
 
 
 KNOB_API_PROCESSES: Knob[int] = Knob(
@@ -422,6 +422,54 @@ class AboutResponse:
     artemis_deployment: Optional[str]
 
 
+@dataclasses.dataclass
+class EventSearchParameters:
+    page: int = DEFAULT_EVENTS_PAGE
+    page_size: int = DEFAULT_EVENTS_PAGE_SIZE
+    sort_field: str = DEFAULT_EVENTS_SORT_FIELD
+    sort_order: str = DEFAULT_EVENTS_SORT_ORDER
+    since: Optional[str] = None
+    until: Optional[str] = None
+
+    @classmethod
+    def from_request(cls, request: Request) -> 'EventSearchParameters':
+        req_params = request.params
+        params = EventSearchParameters()
+
+        try:
+            # req_params does not support `in` :/
+
+            if req_params.get('page') is not None:
+                params.page = int(req_params['page'])
+
+            if req_params.get('page_size') is not None:
+                params.page_size = int(req_params['page_size'])
+
+            if req_params.get('sort_field') is not None:
+                params.sort_field = req_params['sort_field']
+
+                if params.sort_field not in filter(lambda x: not x.startswith('_'), artemis_db.GuestEvent.__dict__):
+                    raise errors.BadRequestError(request=request)
+
+            if req_params.get('sort_by') is not None:
+                params.sort_order = req_params['sort_by']
+
+                if params.sort_order not in ('asc', 'desc'):
+                    raise errors.BadRequestError(request=request)
+
+            # TODO: parse the value to proper date/time
+            if req_params.get('since') is not None:
+                params.since = req_params['since']
+
+            if req_params.get('until') is not None:
+                params.since = req_params['until']
+
+        except (ValueError, AttributeError):
+            raise errors.BadRequestError(request=request)
+
+        return params
+
+
 class GuestRequestManager:
     def __init__(self, db: artemis_db.DB) -> None:
         self.db = db
@@ -674,23 +722,17 @@ class GuestEventManager:
 
     def get_events(
         self,
-        page: int = DEFAULT_EVENTS_PAGE,
-        page_size: int = DEFAULT_EVENTS_PAGE_SIZE,
-        sort_field: str = DEFAULT_EVENTS_SORT_FIELD,
-        sort_by: str = DEFAULT_EVENTS_SORT_BY,
-        since: Optional[str] = None,
-        until: Optional[str] = None,
-        **kwargs: Optional[Dict[str, Any]]
+        search_params: EventSearchParameters
     ) -> List[GuestEvent]:
         with self.db.get_session() as session:
             r_events = artemis_db.GuestEvent.fetch(
                 session,
-                page=page,
-                page_size=page_size,
-                sort_field=sort_field,
-                sort_direction=sort_by,
-                since=since,
-                until=until
+                page=search_params.page,
+                page_size=search_params.page_size,
+                sort_field=search_params.sort_field,
+                sort_order=search_params.sort_order,
+                since=search_params.since,
+                until=search_params.until
             )
 
             if r_events.is_error:
@@ -704,24 +746,18 @@ class GuestEventManager:
     def get_events_by_guestname(
         self,
         guestname: str,
-        page: int = DEFAULT_EVENTS_PAGE,
-        page_size: int = DEFAULT_EVENTS_PAGE_SIZE,
-        sort_field: str = DEFAULT_EVENTS_SORT_FIELD,
-        sort_by: str = DEFAULT_EVENTS_SORT_BY,
-        since: Optional[str] = None,
-        until: Optional[str] = None,
-        **kwargs: Optional[Dict[str, Any]]
+        search_params: EventSearchParameters
     ) -> List[GuestEvent]:
         with self.db.get_session() as session:
             r_events = artemis_db.GuestEvent.fetch(
                 session,
                 guestname=guestname,
-                page=page,
-                page_size=page_size,
-                sort_field=sort_field,
-                sort_direction=sort_by,
-                since=since,
-                until=until
+                page=search_params.page,
+                page_size=search_params.page_size,
+                sort_field=search_params.sort_field,
+                sort_order=search_params.sort_order,
+                since=search_params.since,
+                until=search_params.until
             )
 
             if r_events.is_error:
@@ -1304,42 +1340,15 @@ def delete_guest(
     return HTTP_204, None
 
 
-def _validate_events_params(request: Request) -> Dict[str, Any]:
-    '''Not a route, utility function to validate URL params for all */events routes'''
-
-    req_params = request.params
-    params: Dict[str, Any] = {}
-
-    try:
-        page_param = req_params.get('page')
-        page_size_param = req_params.get('page_size')
-        params['page'] = int(page_param) if page_param else DEFAULT_EVENTS_PAGE
-        params['page_size'] = int(page_size_param) if page_size_param else DEFAULT_EVENTS_PAGE_SIZE
-        params['sort_field'] = req_params.get('sort_field', DEFAULT_EVENTS_SORT_FIELD)
-        params['sort_by'] = req_params.get('sort_by', DEFAULT_EVENTS_SORT_BY)
-        params['since'] = req_params.get('since')
-        params['until'] = req_params.get('until')
-    except (ValueError, AttributeError):
-        raise errors.BadRequestError(request=request)
-
-    if params['sort_field'] not in filter(lambda x: not x.startswith('_'), artemis_db.GuestEvent.__dict__) or \
-       params['sort_by'] not in ('asc', 'desc'):
-        raise errors.BadRequestError(request=request)
-
-    return params
-
-
 def get_events(
         request: Request,
         manager: GuestEventManager,
 ) -> Tuple[str, List[GuestEvent]]:
-    params: Dict[str, Any] = _validate_events_params(request)
-    return HTTP_200, manager.get_events(**params)
+    return HTTP_200, manager.get_events(EventSearchParameters.from_request(request))
 
 
 def get_guest_events(guestname: str, request: Request, manager: GuestEventManager) -> Tuple[str, List[GuestEvent]]:
-    params: Dict[str, Any] = _validate_events_params(request)
-    return HTTP_200, manager.get_events_by_guestname(guestname, **params)
+    return HTTP_200, manager.get_events_by_guestname(guestname, EventSearchParameters.from_request(request))
 
 
 def acquire_guest_console_url(

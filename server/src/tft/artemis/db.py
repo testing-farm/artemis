@@ -510,7 +510,7 @@ class GuestRequest(Base):
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         sort_field: str = 'updated',
-        sort_direction: str = 'desc',
+        sort_order: str = 'desc',
         since: Optional[str] = None,
         until: Optional[str] = None
     ) -> Result[List['GuestEvent'], 'Failure']:
@@ -521,7 +521,7 @@ class GuestRequest(Base):
             page=page,
             page_size=page_size,
             sort_field=sort_field,
-            sort_direction=sort_direction,
+            sort_order=sort_order,
             since=since,
             until=until
         )
@@ -573,7 +573,7 @@ class GuestEvent(Base):
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         sort_field: str = 'updated',
-        sort_direction: str = 'desc',
+        sort_order: str = 'desc',
         since: Optional[str] = None,
         until: Optional[str] = None
     ) -> Result[List['GuestEvent'], 'Failure']:
@@ -593,13 +593,13 @@ class GuestEvent(Base):
 
         try:
             sort_field_column = getattr(cls, sort_field)
-            sort_field_direction = getattr(sort_field_column, sort_direction)
+            sort_field_direction = getattr(sort_field_column, sort_order)
 
         except AttributeError:
             return Error(Failure(
                 'cannot sort events',
                 sort_field=sort_field,
-                sort_direction=sort_direction
+                sort_order=sort_order
             ))
 
         # E.g. order_by(GuestEvent.updated.desc())
