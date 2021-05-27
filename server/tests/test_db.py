@@ -135,8 +135,9 @@ def assert_upsert_counter(session, count, subname='', subcount=0):
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert(session):
+def test_upsert(logger, session):
     r = upsert(
+        logger,
         session,
         Counters,
         {
@@ -150,16 +151,36 @@ def test_upsert(session):
         }
     )
 
-    assert r is None
-
-    session.commit()
+    assert r.is_ok
+    assert r.unwrap() is True
 
     assert_upsert_counter(session, 1)
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_compound_key(session):
+def test_upsert_no_update(logger, session):
     r = upsert(
+        logger,
+        session,
+        Counters,
+        {
+            Counters.name: 'foo'
+        },
+        insert_data={
+            Counters.count: 1
+        }
+    )
+
+    assert r.is_ok
+    assert r.unwrap() is True
+
+    assert_upsert_counter(session, 1)
+
+
+@pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
+def test_upsert_compound_key(logger, session):
+    r = upsert(
+        logger,
         session,
         Counters,
         {
@@ -174,16 +195,16 @@ def test_upsert_compound_key(session):
         }
     )
 
-    assert r is None
-
-    session.commit()
+    assert r.is_ok
+    assert r.unwrap() is True
 
     assert_upsert_counter(session, 1, subname='bar')
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_multiple_values(session):
+def test_upsert_multiple_values(logger, session):
     r = upsert(
+        logger,
         session,
         Counters,
         {
@@ -199,17 +220,17 @@ def test_upsert_multiple_values(session):
         }
     )
 
-    assert r is None
-
-    session.commit()
+    assert r.is_ok
+    assert r.unwrap() is True
 
     assert_upsert_counter(session, 1, subcount=1)
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_multiple_upserts(session):
+def test_upsert_multiple_upserts(logger, session):
     def do_upsert():
         r = upsert(
+            logger,
             session,
             Counters,
             {
@@ -223,21 +244,21 @@ def test_upsert_multiple_upserts(session):
             }
         )
 
-        assert r is None
+        assert r.is_ok
+        assert r.unwrap() is True
 
     do_upsert()
     do_upsert()
     do_upsert()
-
-    session.commit()
 
     assert_upsert_counter(session, 3)
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_multiple_commits(session):
+def test_upsert_multiple_commits(logger, session):
     def do_upsert():
         r = upsert(
+            logger,
             session,
             Counters,
             {
@@ -251,18 +272,15 @@ def test_upsert_multiple_commits(session):
             }
         )
 
-        assert r is None
+        assert r.is_ok
+        assert r.unwrap() is True
 
     do_upsert()
-
-    session.commit()
 
     assert_upsert_counter(session, 1)
 
     do_upsert()
     do_upsert()
-
-    session.commit()
 
     assert_upsert_counter(session, 3)
 

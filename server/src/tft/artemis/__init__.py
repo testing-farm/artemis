@@ -1259,6 +1259,19 @@ def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Fail
         return Error(Failure.from_exc('exception raised inside a safe block', exc))
 
 
+def stringify_query(session: sqlalchemy.orm.session.Session, query: Any) -> str:
+    """
+    Return string representation of a given DB query.
+
+    This helper wraps one tricky piece of information: since SQLAlchemy supports many SQL dialects,
+    and these dialects can add custom operations to queries, it is necessary to be aware of the dialect
+    when compiling the query. "Compilation" is what happens when we ask SQLAlchemy to transform the query
+    to string.
+    """
+
+    return cast(str, query.compile(dialect=session.bind.dialect))
+
+
 def safe_db_change(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -1275,7 +1288,7 @@ def safe_db_change(
         a :py:class:`Failure` instance.
     """
 
-    logger.debug(f'safe db change: {str(query)}')
+    logger.debug(f'safe db change: {stringify_query(session, query)}')
 
     r = safe_call(session.execute, query)
 
@@ -1284,7 +1297,7 @@ def safe_db_change(
             Failure(
                 'failed to execute update query',
                 caused_by=r.unwrap_error(),
-                query=str(query)
+                query=stringify_query(session, query)
             )
         )
 
@@ -1314,7 +1327,7 @@ def safe_db_change(
             Failure(
                 'failed to commit query',
                 caused_by=failure,
-                query=str(query)
+                query=stringify_query(session, query)
             )
         )
 

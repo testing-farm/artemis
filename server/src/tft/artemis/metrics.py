@@ -2021,6 +2021,7 @@ class Metrics(MetricsBase):
 
 
 def upsert_metric(
+    logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     model: Type[artemis_db.Base],
     primary_keys: Dict[Any, Any],
@@ -2038,6 +2039,7 @@ def upsert_metric(
     Therefore, this helper focuses on changing the counter, using primary keys to limit the change, or initialize
     the row if it doesn't exist yet.
 
+    :param logger: logger to use for logging.
     :param session: DB session to use for DB access.
     :param model: SQLAlchemy model representing the metrics table we need to update.
     :param primary_keys: mapping of primary keys and their expected values. This mapping is used to limit
@@ -2049,6 +2051,7 @@ def upsert_metric(
 
     # TODO: actually check if result of upsert was sucessful
     artemis_db.upsert(
+        logger,
         session,
         model,
         primary_keys,
@@ -2058,6 +2061,7 @@ def upsert_metric(
 
 
 def upsert_inc_metric(
+    logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     model: Type[artemis_db.Base],
     primary_keys: Dict[Any, Any]
@@ -2067,16 +2071,18 @@ def upsert_inc_metric(
 
     Implemented as a thin wrapper for :py:func:`upsert_metric`, therefore the parameters share their meaning.
 
+    :param logger: logger to use for logging.
     :param session: DB session to use for DB access.
     :param model: SQLAlchemy model representing the metrics table we need to update.
     :param primary_keys: mapping of primary keys and their expected values. See :py:func:`upsert_metric`
         for more details.
     """
 
-    upsert_metric(session, model, primary_keys, 1)
+    upsert_metric(logger, session, model, primary_keys, 1)
 
 
 def upsert_dec_metric(
+    logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     model: Type[artemis_db.Base],
     primary_keys: Dict[Any, Any]
@@ -2086,13 +2092,14 @@ def upsert_dec_metric(
 
     Implemented as a thin wrapper for :py:func:`upsert_metric`, therefore the parameters share their meaning.
 
+    :param logger: logger to use for logging.
     :param session: DB session to use for DB access.
     :param model: SQLAlchemy model representing the metrics table we need to update.
     :param primary_keys: mapping of primary keys and their expected values. See :py:func:`upsert_metric`
         for more details.
     """
 
-    upsert_metric(session, model, primary_keys, -1)
+    upsert_metric(logger, session, model, primary_keys, -1)
 
 
 # Once mypy implements support for PEP 612, something like this would be the way to go.

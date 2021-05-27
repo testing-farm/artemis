@@ -967,6 +967,7 @@ class KnobManager:
     def set_knob(self, knobname: str, value: str, logger: gluetool.log.ContextAdapter) -> None:
         with self.db.get_session() as session:
             artemis_db.upsert(
+                logger,
                 session,
                 artemis_db.Knob,
                 {

@@ -219,13 +219,14 @@ class SafeQuery(Generic[T]):
 
 
 def upsert(
+    logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     model: Type[Base],
     primary_keys: Dict[Any, Any],
     *,
-    update_data: Dict[Any, Any],
+    update_data: Optional[Dict[Any, Any]] = None,
     insert_data: Optional[Dict[Any, Any]] = None
-) -> None:
+) -> Result[bool, 'Failure']:
     """
     Provide "INSERT ... ON CONFLICT UPDATE ..." primitive, also known as "UPSERT". Using primary key as a constraint,
     if the given row already exists, an UPDATE clause is applied.
@@ -257,6 +258,8 @@ def upsert(
 
     from sqlalchemy.dialects.postgresql import insert
 
+    from . import safe_db_change
+
     # Prepare condition for `WHERE` statement. Basically, we focus on given primary keys and their values. If we
     # were given multiple columns, we need to join them via `AND` so we could present just one value to `where`
     # parameter of the `on_conflict_update` clause.
@@ -286,13 +289,21 @@ def upsert(
                 for column, value in (insert_data or {}).items()
             }
         }
-    ).on_conflict_do_update(
-        constraint=model.__table__.primary_key,  # type: ignore
-        set_=update_data,
-        where=where
     )
 
-    session.execute(statement)
+    if update_data is None:
+        statement = statement.on_conflict_do_nothing(
+            constraint=model.__table__.primary_key  # type: ignore
+        )
+
+    else:
+        statement = statement.on_conflict_do_update(
+            constraint=model.__table__.primary_key,  # type: ignore
+            set_=update_data,
+            where=where
+        )
+
+    return safe_db_change(logger, session, statement)
 
 
 class UserRoles(enum.Enum):
