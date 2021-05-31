@@ -1,5 +1,6 @@
 import base64
 import dataclasses
+import ipaddress
 import json
 import os
 import re
@@ -8,6 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 
 import gluetool.log
+import jq
 import sqlalchemy.orm.session
 from gluetool.log import log_blob, log_dict
 from gluetool.result import Error, Ok, Result
@@ -17,7 +19,7 @@ from jinja2 import Template
 from .. import Failure, JSONType, Knob
 from ..db import GuestRequest
 from ..environment import UNITS, Environment
-from ..metrics import PoolMetrics
+from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
 from ..script import hook_engine
 from . import GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
     ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
@@ -55,6 +57,17 @@ AWS_INSTANCE_SPECIFICATION = Template("""
   "UserData": "{{ user_data }}"
 }
 """)
+
+
+#: Flatten the output of ``describe-instances`` to a simple list of instances.
+JQ_QUERY_POOL_INSTANCES = jq.compile('.Reservations | .[] | .Instances | .[]')
+
+#: Extract CIDR block of a subnet, as available from ``describe-subnets``.
+JQ_QUERY_SUBNET_CIDR = jq.compile('.Subnets | .[] | .CidrBlock')
+
+#: Extract number of available IPs of a subnet, as available from ``describe-subnets``.
+JQ_QUERY_SUBNET_AVAILABLE_IPS = jq.compile('.Subnets | .[] | .AvailableIpAddressCount')
+
 
 #: How long, in seconds, is an spot instance request allowed to stay in `open` state until cancelled and reprovisioned.
 KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
@@ -989,3 +1002,60 @@ class AWSDriver(PoolDriver):
                 exc,
                 flavor_info=r_flavors.unwrap()
             ))
+
+    def fetch_pool_resources_metrics(
+        self,
+        logger: gluetool.log.ContextAdapter
+    ) -> Result[PoolResourcesMetrics, Failure]:
+        # TODO: Extract usage of components - CPU cores, memory, disk space - but that might be much harder.
+        # TODO: Or even pointless and not needed.
+
+        subnet_id = self.pool_config['subnet-id']
+
+        r_resources = super(AWSDriver, self).fetch_pool_resources_metrics(logger)
+
+        if r_resources.is_error:
+            return Error(r_resources.unwrap_error())
+
+        resources = r_resources.unwrap()
+
+        # Count instances - only those using our subnet
+        r_instances = self._aws_command([
+            'ec2', 'describe-instances',
+            '--filter', f'Name=subnet-id,Values={subnet_id}'
+        ])
+
+        if r_instances.is_error:
+            return Error(r_instances.unwrap_error())
+
+        try:
+            resources.usage.instances = len(JQ_QUERY_POOL_INSTANCES.input(r_instances.unwrap()).all())
+
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'failed to parse AWS output',
+                exc
+            ))
+
+        # Inspect the subnet
+        r_subnet = self._aws_command([
+            'ec2', 'describe-subnets',
+            '--filter', f'Name=subnet-id,Values={subnet_id}'
+        ])
+
+        if r_subnet.is_error:
+            return Error(r_subnet.unwrap_error())
+
+        # Extracting available IPs...
+        resources.usage.networks[subnet_id] = PoolNetworkResources(
+            addresses=JQ_QUERY_SUBNET_AVAILABLE_IPS.input(r_subnet.unwrap()).first()
+        )
+
+        # ... and total IPs.
+        cidr = JQ_QUERY_SUBNET_CIDR.input(r_subnet.unwrap()).first()
+        network = ipaddress.ip_network(cidr)
+
+        # drop network address and broadcast
+        resources.limits.networks[subnet_id] = PoolNetworkResources(addresses=network.num_addresses - 2)
+
+        return Ok(resources)
