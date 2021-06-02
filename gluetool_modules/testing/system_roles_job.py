@@ -145,12 +145,31 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
         if not self.access_control:
             return
 
+        primary_task = self.shared('primary_task')
+
         composes_to_test_on = []
         for compose_template in self.option('composes-to-test-on').split(','):
             composes_to_test_on.append((render_template(compose_template, **self.shared('eval_context'))))
 
         for compose in composes_to_test_on:
             for ansible_version, ansible_path in self.system_roles_ansibles().items():
+
+                pr_label = '{}/ansible-{}/(citool)'.format(
+                    compose, ansible_version
+                )
+
+                if primary_task.comment and primary_task.commit_statuses.get(pr_label):
+                    # if comment is [citest bad] comment, trigger only failure or error tests
+                    if '[citest bad]' in primary_task.comment.lower():
+                        if primary_task.commit_statuses[pr_label]['state'] not in ['error', 'failure']:
+                            self.info('skipping {}, not error nor failure'.format(pr_label))
+                            continue
+                    # if comment is [citest pending] comment, trigger only pending tests
+                    if '[citest pending]' in primary_task.comment.lower():
+                        if primary_task.commit_statuses[pr_label]['state'] != 'pending':
+                            self.info('skipping {}, not pending'.format(pr_label))
+                            continue
+
                 self.build_params = common_build_params.copy()
 
                 for substring, option in self.compose_sub_to_artemis_options().items():
@@ -163,8 +182,6 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
                     ansible_path
                 )
 
-                self.build_params['pipeline_state_reporter_options'] += ' --pr-label={}/ansible-{}/(citool)'.format(
-                    compose, ansible_version
-                )
+                self.build_params['pipeline_state_reporter_options'] += ' --pr-label={}'.format(pr_label)
 
                 self.shared('jenkins').invoke_job('ci-test-github-ts_sti-artemis-system-roles', self.build_params)
