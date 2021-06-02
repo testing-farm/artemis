@@ -20,7 +20,7 @@ from gluetool_modules.libs.testing_environment import TestingEnvironment
 
 from typing import Any, Dict, List, Optional, Tuple, cast  # noqa
 
-SUPPORTED_API_VERSIONS = ('v0.0.16', 'v0.0.17', 'v0.0.18')
+SUPPORTED_API_VERSIONS = ('v0.0.16', 'v0.0.17', 'v0.0.18', 'v0.0.19')
 
 DEFAULT_PRIORIY_GROUP = 'default-priority'
 DEFAULT_READY_TIMEOUT = 300
@@ -188,7 +188,29 @@ class ArtemisAPI(object):
             with open(normalize_path(post_install_script)) as f:
                 post_install_script_contents = f.read()
 
-        if self.version in ('v0.0.16', 'v0.0.17', 'v0.0.18'):
+        if self.version == 'v0.0.19':
+            data = {
+                'keyname': keyname,
+                'environment': {
+                    'hw': {
+                        'arch': environment.arch
+                        # TODO: here's the place for HW constraints like `memory: ">= 4 GiB:"` once accepted by module
+                        # constraints: ...
+                    },
+                    'os': {
+                        'compose': compose
+                    },
+                    'snapshots': snapshots
+                },
+                'priority_group': priority,
+                'post_install_script': post_install_script_contents,
+                'user_data': user_data
+            }  # type: Dict[str, Any]
+
+            if pool:
+                data['environment']['pool'] = pool
+
+        elif self.version in ('v0.0.16', 'v0.0.17', 'v0.0.18'):
             data = {
                 'keyname': keyname,
                 'environment': {
@@ -198,7 +220,7 @@ class ArtemisAPI(object):
                 },
                 'priority_group': priority,
                 'post_install_script': post_install_script_contents
-            }  # type: Dict[str, Any]
+            }
 
             if pool:
                 data['environment']['pool'] = pool
