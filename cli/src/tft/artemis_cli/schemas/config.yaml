@@ -4,8 +4,12 @@ properties:
   artemis_api_url:
     type: string
 
+  artemis_api_version:
+    type: string
+
   provisioning_poll_interval:
     type: number
 
 required:
   - artemis_api_url
+  - artemis_api_version

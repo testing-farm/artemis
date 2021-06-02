@@ -70,6 +70,7 @@ class Configuration:
     output_format: str = 'human'
 
     artemis_api_url: str = None
+    artemis_api_version: str = None
 
     provisioning_poll_interval: float = 10
 

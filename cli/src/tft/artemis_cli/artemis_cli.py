@@ -89,6 +89,7 @@ def cli_root(ctx: Any, config: str) -> None:
         sys.exit(0)
 
     cfg.artemis_api_url = cfg.raw_config['artemis_api_url']
+    cfg.artemis_api_version = cfg.raw_config['artemis_api_version']
     assert cfg.artemis_api_url is not None
 
     if 'provisioning_poll_interval' in cfg.raw_config:
@@ -167,6 +168,7 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--keyname', required=True, help='name of ssh key')
 @click.option('--priority-group', help='name of priority group')
 @click.option('--arch', required=True, help='architecture')
+@click.option('--hw-constraints', required=False, default=None, help='Optional HW constraints.')
 @click.option('--compose', required=True, help='compose id')
 @click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
@@ -178,6 +180,7 @@ def cmd_guest_create(
         cfg: Configuration,
         keyname: str = None,
         arch: str = None,
+        hw_constraints: str = None,
         compose: str = None,
         pool: str = None,
         snapshots = False,
@@ -186,8 +189,31 @@ def cmd_guest_create(
         post_install_script: str = None,
         wait: bool = None
 ) -> None:
+    assert cfg.artemis_api_version is not None
+
     environment = {}
-    environment['hw'] = {'arch': arch}
+
+    if cfg.artemis_api_version == 'v0.0.19':
+        environment['hw'] = {
+            'arch': arch
+        }
+
+        if hw_constraints is not None:
+            try:
+                environment['hw']['constraints'] = json.loads(hw_constraints)
+
+            except Exception as exc:
+                cfg.logger.error('failed to parse HW constraints: {}'.format(exc))
+
+    elif cfg.artemis_api_version in ('v0.0.17', 'v0.0.18'):
+        environment['arch'] = arch
+
+        if hw_constraints is not None:
+            cfg.logger.error('HW constraints are supported with API v0.0.19 and newer')
+
+    else:
+        cfg.logger.error('Unsupported API version {}'.format(cfg.artemis_api_version))
+
     environment['os'] = {'compose': compose}
 
     if pool:
