@@ -511,11 +511,12 @@ class PoolResourcesDepleted:
         """
         Test whether any of resources is marked as depleted.
 
-        :returns: ``True`` if any of resources is marked as depleted, ``False`` otherwise.
+        :returns: ``True`` when any of the fields is marked as depleted, or if there are available networks
+            but all of them are marked as depleted; ``False`` otherwise.
         """
 
         return any([getattr(self, field) for field in PoolResources._TRIVIAL_FIELDS]) \
-            or (self.available_network_count != 0 and len(self.networks) >= self.available_network_count)
+            or (self.available_network_count != 0 and len(self.networks) == self.available_network_count)
 
     def depleted_resources(self) -> List[str]:
         """
@@ -910,12 +911,12 @@ class PoolsMetrics(MetricsBase):
             for network_name, network_metrics in pool_metrics.resources.limits.networks.items():
                 self.POOL_RESOURCES_NETWORK_ADDRESSES \
                     .labels(pool=poolname, dimension='limit', network=network_name) \
-                    .set(network_metrics.addresses if network_metrics.addresses else float('NaN'))
+                    .set(network_metrics.addresses if network_metrics.addresses is not None else float('NaN'))
 
             for network_name, network_metrics in pool_metrics.resources.usage.networks.items():
                 self.POOL_RESOURCES_NETWORK_ADDRESSES \
                     .labels(pool=poolname, dimension='usage', network=network_name) \
-                    .set(network_metrics.addresses if network_metrics.addresses else float('NaN'))
+                    .set(network_metrics.addresses if network_metrics.addresses is not None else float('NaN'))
 
             self.POOL_RESOURCES_UPDATED_TIMESTAMP \
                 .labels(pool=poolname, dimension='limit') \
