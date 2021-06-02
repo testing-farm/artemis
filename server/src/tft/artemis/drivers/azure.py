@@ -6,7 +6,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob
+from .. import Failure, JSONType, Knob, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import Environment
 from ..script import hook_engine
@@ -408,7 +408,13 @@ class AzureDriver(PoolDriver):
 
         image = r_image.unwrap()
 
-        logger.info(f'provisioning from image {image}')
+        log_dict_yaml(
+            logger.info,
+            'provisioning from',
+            {
+                'image': image.serialize_to_json()
+            }
+        )
 
         r_base_tags = self.get_guest_tags(session, guest_request)
 

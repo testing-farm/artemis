@@ -16,7 +16,7 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 
-from .. import Failure, JSONType, Knob
+from .. import Failure, JSONType, Knob, log_dict_yaml
 from ..db import GuestRequest
 from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
@@ -546,7 +546,14 @@ class AWSDriver(PoolDriver):
         image: AWSPoolImageInfo,
         guestname: str
     ) -> Result[ProvisioningProgress, Failure]:
-        logger.info(f'provisioning from image {image} and flavor {instance_type}')
+        log_dict_yaml(
+            logger.info,
+            'provisioning from',
+            {
+                'flavor': instance_type.serialize_to_json(),
+                'image': image.serialize_to_json()
+            }
+        )
 
         command = [
             'ec2', 'run-instances',
@@ -603,7 +610,14 @@ class AWSDriver(PoolDriver):
         instance_type: PoolFlavorInfo,
         image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
-        logger.info(f'provisioning from image {image} and flavor {instance_type}')
+        log_dict_yaml(
+            logger.info,
+            'provisioning from',
+            {
+                'flavor': instance_type.serialize_to_json(),
+                'image': image.serialize_to_json()
+            }
+        )
 
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)

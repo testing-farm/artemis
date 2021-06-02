@@ -190,7 +190,7 @@ def test_task_core_raises(logger, db, session, caplog, monkeypatch, task_core_ar
     assert_log(caplog, message='beginning', levelno=logging.INFO)
     assert_log(
         caplog,
-        message=MATCH(r'(?m)message: unhandled doer exception\n(?:.*\n)+    ValueError: dummy exception'),
+        message=MATCH(r'(?m)failure\n\nmessage: unhandled doer exception\n(?:.*\n)+    ValueError: dummy exception'),
         levelno=logging.ERROR
     )
 

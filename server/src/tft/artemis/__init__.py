@@ -118,7 +118,12 @@ class SerializableContainer:
         return cls(**serialized)  # type: ignore
 
 
-def format_struct_as_yaml(data: Any) -> str:
+# Two logging helpers, very similar to `format_dict` and `log_dict`, but emitting a YAML-ish output.
+# YAML is often more readable for humans, and, sometimes, we might use these on purpose, to provide
+# more readable output.
+#
+# TODO: move to gluetool - posibly as a switch to log_dict, no need for a stand-alone functions.
+def format_dict_yaml(data: Any) -> str:
     stream = ruamel.yaml.compat.StringIO()
 
     YAML = gluetool.utils.YAML()
@@ -128,6 +133,17 @@ def format_struct_as_yaml(data: Any) -> str:
     YAML.dump(data, stream)
 
     return stream.getvalue()
+
+
+def log_dict_yaml(
+    writer: gluetool.log.LoggingFunctionType,
+    intro: str,
+    data: Any
+) -> None:
+    writer(f'{intro}:\n{format_dict_yaml(data)}', extra={
+        'raw_intro': intro,
+        'raw_struct': data
+    })
 
 
 def process_output_to_str(output: gluetool.utils.ProcessOutput, stream: str = 'stdout') -> Optional[str]:
@@ -508,16 +524,10 @@ class Failure:
 
         details = self.get_log_details()
 
-        if label:
-            text = f'{label}\n\n{format_struct_as_yaml(details)}'
+        if not label:
+            label = 'failure'
 
-        else:
-            text = format_struct_as_yaml(details)
-
-        log_fn(
-            text,
-            exc_info=exc_info
-        )
+        log_fn(f'{label}\n\n{format_dict_yaml(details)}', exc_info=exc_info)
 
     def submit_to_sentry(self, logger: gluetool.log.ContextAdapter, **additional_tags: Any) -> None:
         if self.submited_to_sentry:

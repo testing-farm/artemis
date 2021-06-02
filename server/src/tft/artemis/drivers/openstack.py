@@ -9,7 +9,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob
+from .. import Failure, JSONType, Knob, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics
@@ -299,7 +299,14 @@ class OpenStackDriver(PoolDriver):
 
         image = r_image.unwrap()
 
-        logger.info(f'provisioning from image {image} and flavor {flavor}')
+        log_dict_yaml(
+            logger.info,
+            'provisioning from',
+            {
+                'flavor': flavor.serialize_to_json(),
+                'image': image.serialize_to_json()
+            }
+        )
 
         r_network = self._env_to_network(environment)
         if r_network.is_error:
