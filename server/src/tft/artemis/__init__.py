@@ -190,6 +190,7 @@ class Failure:
         caused_by: Optional['Failure'] = None,
         sentry: Optional[bool] = True,
         recoverable: bool = True,
+        fail_guest_request: bool = True,
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
@@ -215,7 +216,7 @@ class Failure:
         # to `ERROR`. This flag gives code chance to avoid this switch - there are places where
         # we can encounter irrecoverable failures without necessarily failing the whole request,
         # e.g. when releasing its resources.
-        self.fail_guest_request = True
+        self.fail_guest_request = fail_guest_request
 
         if scrubbed_command:
             self.details['scrubbed_command'] = scrubbed_command
@@ -267,6 +268,7 @@ class Failure:
         caused_by: Optional['Failure'] = None,
         sentry: Optional[bool] = True,
         recoverable: bool = True,
+        fail_guest_request: bool = True,
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
@@ -284,6 +286,46 @@ class Failure:
             ),
             caused_by=caused_by,
             recoverable=recoverable,
+            fail_guest_request=fail_guest_request,
+            scrubbed_command=scrubbed_command,
+            command_output=command_output,
+            environment=environment,
+            **details
+        )
+
+    @classmethod
+    def from_failure(
+        self,
+        message: str,
+        caused_by: 'Failure',
+        sentry: Optional[bool] = True,
+        # these are common "details" so we add them as extra keyword arguments with their types
+        scrubbed_command: Optional[List[str]] = None,
+        command_output: Optional[gluetool.utils.ProcessOutput] = None,
+        environment: Optional[Environment] = None,
+        **details: Any
+    ) -> 'Failure':
+        """
+        Create a new ``Failure`` instance, representing a higher-level view of the problem that's been
+        carried by ``failure``.
+
+        This method serves for creating a chain of failures - since it is often useful to provide better
+        error message, it is not a good approach to overwrite any attributes of the given failure. It is
+        easier to create a new one, to provide this higher-level context, to "wrap" the original "low level"
+        failure, keeping it attached to the new one.
+
+        The main advantages of this approach are:
+
+        * better higher-level context,
+        * no loss of information,
+        * ``recoverable`` effect is preserved.
+        """
+
+        return Failure(
+            message,
+            caused_by=caused_by,
+            recoverable=caused_by.recoverable,
+            fail_guest_request=caused_by.fail_guest_request,
             scrubbed_command=scrubbed_command,
             command_output=command_output,
             environment=environment,
@@ -723,9 +765,9 @@ class KnobSourceDB(KnobSource[T]):
             .one_or_none()
 
         if r.is_error:
-            return Error(Failure(
+            return Error(Failure.from_failure(
                 'Cannot fetch knob value from db',
-                caused_by=r.unwrap_error()
+                r.unwrap_error()
             ))
 
         record = r.unwrap()
@@ -1416,9 +1458,9 @@ def safe_db_change(
 
     if r.is_error:
         return Error(
-            Failure(
+            Failure.from_failure(
                 'failed to execute update query',
-                caused_by=r.unwrap_error(),
+                r.unwrap_error(),
                 query=stringify_query(session, query)
             )
         )
@@ -1446,9 +1488,9 @@ def safe_db_change(
             return Ok(False)
 
         return Error(
-            Failure(
+            Failure.from_failure(
                 'failed to commit query',
-                caused_by=failure,
+                failure,
                 query=stringify_query(session, query)
             )
         )
@@ -1703,9 +1745,9 @@ def load_validation_schema(schema_path: str) -> Result[JSONSchemaType, Failure]:
     )
 
     if r_schema.is_error:
-        return Error(Failure(
+        return Error(Failure.from_failure(
             'failed to load schema',
-            caused_by=r_schema.unwrap_error(),
+            r_schema.unwrap_error(),
             schema_path=schema_path
         ))
 

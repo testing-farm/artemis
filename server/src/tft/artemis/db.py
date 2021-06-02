@@ -936,9 +936,9 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
         r_all_tags = SafeQuery.from_session(session, GuestTag).all()
 
         if r_all_tags.is_error:
-            Failure(
+            Failure.from_failure(
                 'failed to load guest tags',
-                caused_by=r_all_tags.unwrap_error()
+                r_all_tags.unwrap_error()
             ).handle(logger)
 
             sys.exit(1)

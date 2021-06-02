@@ -92,13 +92,24 @@ class ArtemisHTTPError(HTTPError):
 
             details.update(get_failure_details_from_request(request))
 
-            Failure(
-                'API error',
-                caused_by=caused_by,
-                api_response_status=status,
-                api_response_payload=response,
-                **details
-            ).handle(logger or get_logger())
+            if caused_by is None:
+                failure = Failure(
+                    'API error',
+                    api_response_status=status,
+                    api_response_payload=response,
+                    **details
+                )
+
+            else:
+                failure = Failure.from_failure(
+                    'API error',
+                    caused_by,
+                    api_response_status=status,
+                    api_response_payload=response,
+                    **details
+                )
+
+            failure.handle(logger or get_logger())
 
 
 class InternalServerError(ArtemisHTTPError):

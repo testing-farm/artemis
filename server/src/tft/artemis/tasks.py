@@ -758,9 +758,9 @@ def task_core(
             state_change_failure = r_state_change.unwrap_error()
 
             # Describes *when* this change was needed, i.e. what we attempted to do. Brings more context for humans.
-            failure = Failure(
+            failure = Failure.from_failure(
                 'failed to mark guest request as failed',
-                caused_by=state_change_failure
+                state_change_failure
             )
 
             # State change failed because of recoverable failure => use it as an excuse to try again. We can expect the
@@ -902,9 +902,9 @@ def dispatch_task(
 
         return Ok(None)
 
-    return Error(Failure(
+    return Error(Failure.from_failure(
         'failed to dispatch task',
-        caused_by=r.unwrap_error(),
+        r.unwrap_error(),
         task_name=task.actor_name,
         task_args=args,
         task_delay=delay
@@ -1019,9 +1019,9 @@ def _update_guest_state(
     r = safe_db_change(logger, session, query)
 
     if r.is_error:
-        return Error(Failure(
+        return Error(Failure.from_failure(
             'failed to switch guest state',
-            caused_by=r.unwrap_error(),
+            r.unwrap_error(),
             current_state=current_state_label,
             new_state=new_state.value
         ))
@@ -1084,9 +1084,9 @@ def _update_snapshot_state(
     r = safe_db_change(logger, session, query)
 
     if r.is_error:
-        return Error(Failure(
+        return Error(Failure.from_failure(
             'failed to switch snapshot state',
-            caused_by=r.unwrap_error(),
+            r.unwrap_error(),
             current_state=current_state.value,
             new_state=new_state.value
         ))

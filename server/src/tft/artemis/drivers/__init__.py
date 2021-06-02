@@ -1147,9 +1147,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 r_diskspace = safe_call(UNITS, custom_flavor_spec['diskspace'])
 
                 if r_diskspace.is_error:
-                    return Error(Failure(
+                    return Error(Failure.from_failure(
                         'failed to parse flavor diskspace',
-                        caused_by=r_diskspace.unwrap_error(),
+                        r_diskspace.unwrap_error(),
                         customname=customname,
                         basename=basename,
                         diskspace=custom_flavor_spec['diskspace']

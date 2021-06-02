@@ -185,10 +185,10 @@ def collect_pool_can_acquire(
     if errors:
         pool, result = errors[0]
 
-        return Error(Failure(
+        return Error(Failure.from_failure(
             'failed to get pool can-acquire answer',
+            result.unwrap_error(),
             poolname=pool.poolname,
-            caused_by=result.unwrap_error()
         ))
 
     return Ok([
@@ -719,9 +719,9 @@ def run_routing_policies(
         RoutingMetrics.inc_policy_called(policy_name)
 
         if r.is_error:
-            return Error(Failure(
+            return Error(Failure.from_failure(
                 'failed to route guest request',
-                caused_by=r.unwrap_error(),
+                r.unwrap_error(),
                 history=_serialize_history()
             ))
 
