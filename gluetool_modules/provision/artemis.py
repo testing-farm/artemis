@@ -7,6 +7,7 @@ import six
 import sys
 
 import gluetool
+import gluetool.utils
 import gluetool_modules.libs
 import requests
 
@@ -194,8 +195,6 @@ class ArtemisAPI(object):
                 'environment': {
                     'hw': {
                         'arch': environment.arch
-                        # TODO: here's the place for HW constraints like `memory: ">= 4 GiB:"` once accepted by module
-                        # constraints: ...
                     },
                     'os': {
                         'compose': compose
@@ -209,6 +208,9 @@ class ArtemisAPI(object):
 
             if pool:
                 data['environment']['pool'] = pool
+
+            if cast(ArtemisProvisioner, self.module).hw_constraints:
+                data['environment']['hw']['constraints'] = cast(ArtemisProvisioner, self.module).hw_constraints
 
         elif self.version in ('v0.0.16', 'v0.0.17', 'v0.0.18'):
             data = {
@@ -674,6 +676,18 @@ class ArtemisProvisioner(gluetool.Module):
                 'metavar': 'COMPOSE',
                 'type': str
             },
+            'hw-constraint': {
+                'help': """
+                        HW requirements, expresses as key/value pairs. Keys can consist of several properties,
+                        e.g. ``disk.space='>= 40 GiB'``, such keys will be merged in the resulting environment
+                        with other keys sharing the path: ``cpu.family=79`` and ``cpu.model=6`` would be merged,
+                        not overwriting each other (default: none).
+                        """,
+                'metavar': 'KEY1.KEY2=VALUE',
+                'type': str,
+                'action': 'append',
+                'default': []
+            },
             'pool': {
                 'help': 'Desired pool',
                 'metavar': 'POOL',
@@ -774,8 +788,48 @@ class ArtemisProvisioner(gluetool.Module):
 
     shared_functions = ['provision', 'provisioner_capabilities']
 
+    @gluetool.utils.cached_property
+    def hw_constraints(self):
+        # type: () -> Optional[Dict[str, Any]]
+
+        normalized_constraints = gluetool.utils.normalize_multistring_option(self.option('hw-constraint'))
+
+        if not normalized_constraints:
+            return None
+
+        constraints = {}  # type: Dict[str, Any]
+
+        for raw_constraint in normalized_constraints:
+            path, value = raw_constraint.split('=', 1)
+
+            if not path or not value:
+                raise GlueError('Cannot parse HW constraint: {}'.format(raw_constraint))
+
+            # Walk the path, step by step, and initialize containers along the way. The last step is not
+            # a name of another nested container, but actually a name in the last container.
+            container = constraints
+            path_splitted = path.split('.')
+
+            while len(path_splitted) > 1:
+                step = path_splitted.pop(0)
+
+                if step not in container:
+                    container[step] = {}
+
+                container = container[step]
+
+            container[path_splitted.pop()] = value
+
+        log_dict(self.logger.debug, 'hw-constraints', constraints)
+
+        return constraints
+
     def sanity(self):
         # type: () -> None
+
+        # test whether parsing of HW requirements yields anything valid - the value is just ignored, we just want
+        # to be sure it doesn't raise any exception
+        self.hw_constraints
 
         if not self.option('provision'):
             return
