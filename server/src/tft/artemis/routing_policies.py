@@ -11,7 +11,7 @@ from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import Failure, Knob
+from . import Failure, JSONType, Knob, log_guest_event
 from .db import GuestRequest
 from .drivers import PoolCapabilities, PoolDriver
 from .environment import Environment
@@ -625,6 +625,31 @@ def run_routing_policies(
     # Avoiding circular imports (.metrics imports .tasks which imports .ruling_policies)
     from .metrics import RoutingMetrics
 
+    # Collecting all policy rulings along the way.
+    history: List[Tuple[str, PolicyRuling]] = []
+
+    def _serialize_history() -> List[JSONType]:
+        # `dataclasses.asdict()`` not usable here, because `PolicyRuling.allowed_pools` contains `PoolDriver` instances
+        # which are not data classes.
+        return [
+            {
+                'policy': policy_name,
+                'allowed-pools': [pool.poolname for pool in policy_ruling.allowed_pools],
+                'cancel': policy_ruling.cancel
+            }
+            for policy_name, policy_ruling in history
+        ]
+
+    # Just a tiny helper, to avoid repeating the parameters...
+    def _log_history() -> None:
+        log_guest_event(
+            logger,
+            session,
+            guest_request.guestname,
+            'routing-report',
+            history=_serialize_history()
+        )
+
     ruling = PolicyRuling()
     ruling.allowed_pools = pools[:]
 
@@ -638,10 +663,13 @@ def run_routing_policies(
         if r.is_error:
             return Error(Failure(
                 'failed to route guest request',
-                caused_by=r.unwrap_error()
+                caused_by=r.unwrap_error(),
+                history=_serialize_history()
             ))
 
         policy_ruling = r.unwrap()
+
+        history.append((policy_name, policy_ruling))
 
         if policy_ruling.cancel:
             # Mark all input pools are excluded
@@ -651,6 +679,8 @@ def run_routing_policies(
 
             ruling.allowed_pools = []
             ruling.cancel = True
+
+            _log_history()
 
             return Ok(ruling)
 
@@ -664,5 +694,7 @@ def run_routing_policies(
 
         # Now we can update our container with up-to-date results.
         ruling.allowed_pools = policy_ruling.allowed_pools
+
+    _log_history()
 
     return Ok(ruling)

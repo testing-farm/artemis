@@ -97,12 +97,20 @@ def mock_policies(mock_inputs):
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     return [
-        MagicMock(name='policy_foo<mock>', return_value=Ok(tft.artemis.routing_policies.PolicyRuling(
-            allowed_pools=[mock_pools[0], mock_pools[1]]
-        ))),
-        MagicMock(name='policy_bar<mock>', return_value=Ok(tft.artemis.routing_policies.PolicyRuling(
-            allowed_pools=[mock_pools[0]]
-        )))
+        MagicMock(
+            name='policy_foo<mock>',
+            policy_name='policy-foo',
+            return_value=Ok(tft.artemis.routing_policies.PolicyRuling(
+                allowed_pools=[mock_pools[0], mock_pools[1]]
+            ))
+        ),
+        MagicMock(
+            name='policy_bar<mock>',
+            policy_name='policy-bar',
+            return_value=Ok(tft.artemis.routing_policies.PolicyRuling(
+                allowed_pools=[mock_pools[0]]
+            )
+        ))
     ]
 
 
