@@ -451,8 +451,7 @@ Feel free to interrupt it anytime, nothing is saved until the very last step.
     #
     TITLE('** Artemis API URL **')
     TEXT("""
-URL of Artemis API, for example 'http://artemis.example.com'
-Currently artemis-cli needs just this URL.
+URL of Artemis API, for example 'http://artemis.example.com/v0.0.18'
 """)
 
     artemis_api_url = prompt(
@@ -464,12 +463,25 @@ Currently artemis-cli needs just this URL.
 
     NL()
 
+    TITLE('** Artemis API version **')
+    TEXT("""
+API version to use for talking to Artemis, for example 'v0.0.18'
+""")
+
+    artemis_api_version = prompt(
+        cfg,
+        QUESTION('Enter API version'),
+        type=str,
+        default=None
+    )
+
     tmp_config_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
 
     with tmp_config_file:
         print("""---
 
 artemis_api_url: {artemis_api_url}
+artemis_api_version: {artemis_api_version}
 """.format(**locals()), file=tmp_config_file)
 
         tmp_config_file.flush()
