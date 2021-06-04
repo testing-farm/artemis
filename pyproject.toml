@@ -100,6 +100,7 @@ test-schedule-runner-sti = "gluetool_modules.testing.test_schedule_runner_sti:ST
 test-scheduler-upgrades = "gluetool_modules.testing.test_scheduler_upgrades:TestSchedulerUpgrades"
 test-schedule-tmt = "gluetool_modules.testing.test_schedule_tmt:TestScheduleTMT"
 trigger-message = "gluetool_modules.helpers.trigger_message:TriggerMessage"
+upload-results = "gluetool_modules.helpers.upload_results:UploadResults"
 url-shortener = "gluetool_modules.helpers.url_shortener:URLShortener"
 
 [tool.poetry.dependencies]
