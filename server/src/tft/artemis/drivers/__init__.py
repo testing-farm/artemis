@@ -57,7 +57,7 @@ KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     has_db=False,
     per_pool=True,
     envvar='ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY',
-    envvar_cast=int,
+    cast_from_str=int,
     default=0
 )
 
@@ -67,7 +67,7 @@ KNOB_LOGGING_SLOW_CLI_COMMANDS: Knob[bool] = Knob(
     'logging.cli.slow-commands',
     has_db=False,
     envvar='ARTEMIS_LOG_SLOW_CLI_COMMANDS',
-    envvar_cast=gluetool.utils.normalize_bool_option,
+    cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
@@ -76,7 +76,7 @@ KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD: Knob[float] = Knob(
     'logging.cli.slow-command-threshold',
     has_db=False,
     envvar='ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD',
-    envvar_cast=float,
+    cast_from_str=float,
     default=10.0
 )
 
@@ -85,7 +85,7 @@ KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN: Knob[str] = Knob(
     'logging.cli.slow-command-pattern',
     has_db=False,
     envvar='ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN',
-    envvar_cast=str,
+    cast_from_str=str,
     default=r'.*'
 )
 

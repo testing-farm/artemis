@@ -100,7 +100,7 @@ KNOB_ACTOR_DEFAULT_RETRIES_COUNT: Knob[int] = Knob(
     'actor.default-retries-count',
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_RETRIES',
-    envvar_cast=int,
+    cast_from_str=int,
     default=5
 )
 
@@ -109,7 +109,7 @@ KNOB_ACTOR_DEFAULT_MIN_BACKOFF: Knob[int] = Knob(
     'actor.default-min-backoff',
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_MIN_BACKOFF',
-    envvar_cast=int,
+    cast_from_str=int,
     default=15
 )
 
@@ -118,7 +118,7 @@ KNOB_ACTOR_DEFAULT_MAX_BACKOFF: Knob[int] = Knob(
     'actor.default-max-backoff',
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_MAX_BACKOFF',
-    envvar_cast=int,
+    cast_from_str=int,
     default=60
 )
 
@@ -127,7 +127,7 @@ KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
     'broker.close-after-dispatch',
     has_db=False,
     envvar='ARTEMIS_CLOSE_AFTER_DISPATCH',
-    envvar_cast=gluetool.utils.normalize_bool_option,
+    cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
@@ -136,7 +136,7 @@ KNOB_DISPATCH_PREPARE_DELAY: Knob[int] = Knob(
     'actor.dispatch-preparing.delay',
     has_db=False,
     envvar='ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY',
-    envvar_cast=int,
+    cast_from_str=int,
     default=60
 )
 
@@ -145,7 +145,7 @@ KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
     'actor.delay-uniform-spread',
     has_db=False,
     envvar='ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD',
-    envvar_cast=int,
+    cast_from_str=int,
     default=5
 )
 
@@ -154,7 +154,7 @@ KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE: Knob[str] = Knob(
     'actor.refresh-pool-resources-metrics.schedule',
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE',
-    envvar_cast=str,
+    cast_from_str=str,
     default='* * * * *'
 )
 
@@ -164,7 +164,7 @@ KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
     'actor.refresh-pool-image-info.schedule',
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_SCHEDULE',
-    envvar_cast=str,
+    cast_from_str=str,
     default='*/5 * * * *'
 )
 
@@ -175,7 +175,7 @@ KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     per_pool=True,
     has_db=True,
     envvar='ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT',
-    envvar_cast=int,
+    cast_from_str=int,
     default=15
 )
 
@@ -185,7 +185,7 @@ KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE: Knob[str] = Knob(
     'actor.refresh-pool-flavor-info.schedule',
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_SCHEDULE',
-    envvar_cast=str,
+    cast_from_str=str,
     default='*/5 * * * *'
 )
 

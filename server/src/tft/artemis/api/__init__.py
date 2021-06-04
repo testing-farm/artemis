@@ -28,7 +28,7 @@ from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 from typing_extensions import Protocol
 
-from .. import __VERSION__, FailureDetailsType, JSONSchemaType, Knob
+from .. import __VERSION__, Failure, FailureDetailsType, JSONSchemaType, JSONType, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, safe_db_change, validate_data
 from ..context import DATABASE, LOGGER
@@ -53,7 +53,7 @@ KNOB_API_PROCESSES: Knob[int] = Knob(
     'api.processes',
     has_db=False,
     envvar='ARTEMIS_API_PROCESSES',
-    envvar_cast=int,
+    cast_from_str=int,
     default=1
 )
 
@@ -62,7 +62,7 @@ KNOB_API_THREADS: Knob[int] = Knob(
     'api.threads',
     has_db=False,
     envvar='ARTEMIS_API_THREADS',
-    envvar_cast=int,
+    cast_from_str=int,
     default=1
 )
 
@@ -71,7 +71,7 @@ KNOB_API_ENABLE_PROFILING: Knob[bool] = Knob(
     'api.profiling.enabled',
     has_db=False,
     envvar='ARTEMIS_API_ENABLE_PROFILING',
-    envvar_cast=gluetool.utils.normalize_bool_option,
+    cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
@@ -80,7 +80,7 @@ KNOB_API_PROFILE_LIMIT: Knob[int] = Knob(
     'api.profiling.limit',
     has_db=False,
     envvar='ARTEMIS_API_PROFILING_LIMIT',
-    envvar_cast=int,
+    cast_from_str=int,
     default=20
 )
 
@@ -89,7 +89,7 @@ KNOB_API_ENGINE_RELOAD_ON_CHANGE: Knob[bool] = Knob(
     'api.engine.reload-on-change',
     has_db=False,
     envvar='ARTEMIS_API_ENGINE_RELOAD_ON_CHANGE',
-    envvar_cast=gluetool.utils.normalize_bool_option,
+    cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
@@ -98,7 +98,7 @@ KNOB_API_ENGINE_DEBUG: Knob[bool] = Knob(
     'api.engine.debug',
     has_db=False,
     envvar='ARTEMIS_API_ENGINE_DEBUG',
-    envvar_cast=gluetool.utils.normalize_bool_option,
+    cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
@@ -407,7 +407,8 @@ class KnobUpdateRequest:
 @dataclasses.dataclass
 class KnobResponse:
     name: str
-    value: str
+    value: Any
+    cast: Optional[str] = None
 
 
 @molten.schema
@@ -894,12 +895,19 @@ class KnobManager:
     # Entry points hooked to routes
     #
     @staticmethod
-    def entry_get_knobs(manager: 'KnobManager') -> Tuple[str, List[KnobResponse]]:
-        return HTTP_200, manager.get_knobs()
+    def entry_get_knobs(
+        manager: 'KnobManager',
+        logger: gluetool.log.ContextAdapter
+    ) -> Tuple[str, List[KnobResponse]]:
+        return HTTP_200, manager.get_knobs(logger)
 
     @staticmethod
-    def entry_get_knob(manager: 'KnobManager', knobname: str) -> KnobResponse:
-        response = manager.get_knob(knobname)
+    def entry_get_knob(
+        manager: 'KnobManager',
+        knobname: str,
+        logger: gluetool.log.ContextAdapter
+    ) -> KnobResponse:
+        response = manager.get_knob(logger, knobname)
 
         if response is None:
             raise errors.NoSuchEntityError()
@@ -915,7 +923,7 @@ class KnobManager:
     ) -> KnobResponse:
         manager.set_knob(knobname, payload.value, logger)
 
-        response = manager.get_knob(knobname)
+        response = manager.get_knob(logger, knobname)
 
         if response is None:
             raise errors.NoSuchEntityError()
@@ -932,7 +940,25 @@ class KnobManager:
 
         return HTTP_204, None
 
-    def get_knobs(self) -> List[KnobResponse]:
+    def get_knobs(self, logger: gluetool.log.ContextAdapter) -> List[KnobResponse]:
+        knobs: Dict[str, KnobResponse] = {}
+
+        # First, collect all known editable knobs
+        for knobname, knob in Knob.DB_BACKED_KNOBS.items():
+            knobs[knobname] = KnobResponse(
+                name=knobname,
+                value=knob.static_value,
+                cast=knob.cast_name
+            )
+
+        # Then, get the actual DB records, and update what we collected in the previous step:
+        #
+        # * knobs we already saw may need a value update since the DB record is the source with higher priority;
+        # * knobs we haven't seen yet shall be added to the list. These are the per-pool knobs - each per-pool DB
+        #   record does not have its own knob variable - the knob name in the record does not match any existing
+        #   static knob, since `$poolname` placeholder in the name is replaced with the actual pool name. For these
+        #   records, we must find their "parent" knob, because we need to know its casting function (which applies
+        #   to all "child" records of the given per-pool-capable knob).
         with self.db.get_session() as session:
             r_knobs = artemis_db.SafeQuery.from_session(session, artemis_db.Knob) \
                 .all()
@@ -940,12 +966,30 @@ class KnobManager:
             if r_knobs.is_error:
                 raise errors.InternalServerError(caused_by=r_knobs.unwrap_error())
 
-            return [
-                KnobResponse(name=knob.knobname, value=knob.value)
-                for knob in r_knobs.unwrap()
-            ]
+            for record in r_knobs.unwrap():
+                if record.knobname not in knobs:
+                    parent_knob = Knob.get_per_pool_parent(logger, record.knobname)
 
-    def get_knob(self, knobname: str) -> Optional[KnobResponse]:
+                    if parent_knob is None:
+                        raise errors.InternalServerError(
+                            message='cannot find parent knob',
+                            failure_details={
+                                'knobname': record.knobname
+                            }
+                        )
+
+                    knobs[record.knobname] = KnobResponse(
+                        name=record.knobname,
+                        value=record.unserialize_value(),
+                        cast=parent_knob.cast_name
+                    )
+
+                else:
+                    knobs[record.knobname].value = record.unserialize_value()
+
+        return list(knobs.values())
+
+    def get_knob(self, logger: gluetool.log.ContextAdapter, knobname: str) -> Optional[KnobResponse]:
         with self.db.get_session() as session:
             r_knob = artemis_db.SafeQuery.from_session(session, artemis_db.Knob) \
                 .filter(artemis_db.Knob.knobname == knobname) \
@@ -957,27 +1001,74 @@ class KnobManager:
             knob_record = r_knob.unwrap()
 
             if knob_record is None:
-                return None
+                value = None
+
+            else:
+                value = knob_record.unserialize_value()
+
+            if knobname in Knob.DB_BACKED_KNOBS:
+                knob = Knob.DB_BACKED_KNOBS[knobname]
+
+            else:
+                parent_knob = Knob.get_per_pool_parent(logger, knobname)
+
+                if parent_knob is None:
+                    raise errors.InternalServerError(
+                        message='cannot find parent knob',
+                        failure_details={
+                            'knobname': knobname
+                        }
+                    )
+
+                knob = parent_knob
 
             return KnobResponse(
-                name=knob_record.knobname,
-                value=knob_record.value
+                name=knobname,
+                value=value,
+                cast=knob.cast_name
             )
 
     def set_knob(self, knobname: str, value: str, logger: gluetool.log.ContextAdapter) -> None:
+        failure_details = {
+            'knobname': knobname
+        }
+
         with self.db.get_session() as session:
+            knob = Knob.DB_BACKED_KNOBS.get(knobname)
+
+            if knob is None:
+                knob = Knob.get_per_pool_parent(logger, knobname)
+
+            if knob is None:
+                raise errors.NoSuchEntityError(logger=logger)
+
+            assert knob is not None
+            assert knob.cast_from_str is not None
+
+            try:
+                serialized_value: JSONType = artemis_db.Knob.serialize_value(knob.cast_from_str(value))
+
+            except Exception as exc:
+                raise errors.BadRequestError(
+                    message='Cannot convert value to type expected by the knob',
+                    logger=logger,
+                    caused_by=Failure.from_exc('cannot cast knob value', exc),
+                    failure_details=failure_details
+                )
+
             artemis_db.upsert(
                 logger,
                 session,
                 artemis_db.Knob,
                 {
+                    # using `knobname`, i.e. changing the original knob, not the parent
                     artemis_db.Knob.knobname: knobname
                 },
                 insert_data={
-                    artemis_db.Knob.value: value
+                    artemis_db.Knob.value: serialized_value
                 },
                 update_data={
-                    'value': value
+                    'value': serialized_value
                 }
             )
 

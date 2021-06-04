@@ -4,12 +4,13 @@ import itertools
 import json
 import logging
 import os
+import re
 import sys
 import traceback as _traceback
 import urllib.parse
 from types import FrameType, TracebackType
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Generic, Iterable, List, NoReturn, Optional, Tuple, \
-    Type, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Generic, Iterable, List, NoReturn, Optional, \
+    Pattern, Tuple, Type, TypeVar, Union, cast
 
 import dramatiq
 import dramatiq.brokers.rabbitmq
@@ -615,24 +616,24 @@ class KnobSourceEnv(KnobSource[T]):
     :param type_cast: a callback used to cast the raw string to the correct type.
     """
 
-    def __init__(self, knob: 'Knob[T]', envvar: str, type_cast: Callable[[str], T]) -> None:
+    def __init__(self, knob: 'Knob[T]', envvar: str) -> None:
         super(KnobSourceEnv, self).__init__(knob)
 
         self.envvar = envvar
-        self.type_cast = type_cast
 
     def _fetch_from_env(self, envvar: str) -> Result[Optional[T], Failure]:
         if envvar not in os.environ:
             return Ok(None)
 
+        assert self.knob.cast_from_str is not None
+
         return Ok(
-            self.type_cast(os.environ[envvar])
+            self.knob.cast_from_str(os.environ[envvar])
         )
 
     def to_repr(self) -> List[str]:
         return [
-            f'envvar="{self.envvar}"',
-            f'envvar-type-cast={self.type_cast.__name__}'
+            f'envvar="{self.envvar}"'
         ]
 
 
@@ -732,7 +733,7 @@ class KnobSourceDB(KnobSource[T]):
             return Ok(None)
 
         try:
-            return Ok(cast(T, json.loads(record.value)))
+            return Ok(cast(T, record.unserialize_value()))
 
         except json.JSONDecodeError as exc:
             return Error(Failure.from_exc('Cannot decode knob value', exc))
@@ -764,8 +765,8 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
     When the parent knob is enabled to provide pool-specific values (via ``per_pool=True``),
     then a special knob names are searched in the database instead of the original one:
 
-    * ``pool.${poolname}.${original knob name}``
-    * ``pool-defaults.${original knob name}``
+    * ``${original knob name}:${poolname}``
+    * ``${original knob name}``
     """
 
     def get_value(  # type: ignore  # match parent
@@ -775,7 +776,7 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
         pool: 'PoolDriver',
         **kwargs: Any
     ) -> Result[Optional[T], Failure]:
-        r_value = self._fetch_from_db(session, f'pool.{pool.poolname}.{self.knob.knobname}')
+        r_value = self._fetch_from_db(session, f'{self.knob.knobname}:{pool.poolname}')
 
         if r_value.is_error:
             return r_value
@@ -785,7 +786,7 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
         if value is not None:
             return r_value
 
-        return self._fetch_from_db(session, f'pool-defaults.{self.knob.knobname}')
+        return self._fetch_from_db(session, self.knob.knobname)
 
 
 class KnobSourceActual(KnobSource[T]):
@@ -849,10 +850,8 @@ class Knob(Generic[T]):
            # This knob does not support pool-specific values.
            per_pool=False,
 
-           # This knob gets its value from the following environment variable. It is necessary to provide
-           # a callback that casts the raw string value to the proper type.
+           # This knob gets its value from the following environment variable.
            envvar='ARTEMIS_LOG_JSON',
-           envvar_cast=gluetool.utils.normalize_bool_option,
 
            # This knob gets its value when created. Note that this is *very* similar to the default value,
            # but the default value should stand out as the default, while this parameter represents e.g.
@@ -861,7 +860,11 @@ class Knob(Generic[T]):
            actual=a_yaml_config_file['logging']['json'],
 
            # The default value - note that it is properly typed.
-           default=True
+           default=True,
+
+           # If the knob is backed by the database or environment variable, it is necessary to provide a callback
+           # that casts the raw string value to the proper type.
+           cast_from_str=gluetool.utils.normalize_bool_option
        )
 
     The knob can be used in a following way:
@@ -885,11 +888,20 @@ class Knob(Generic[T]):
     :param has_db: if set, the value may also be stored in the database.
     :param per_pool: if set, the knob may provide pool-specific values.
     :param envvar: if set, it is the name of the environment variable providing the value.
-    :param envvar_cast: a callback used to cast the raw environment variable content to the correct type.
-        Required when ``envvar`` is set.
     :param actual: if set, it is the currently known value, e.g. provided by a config file.
     :param default: if set, it is used as a default value.
+    :param cast_from_str: a callback used to cast the raw string value to the correct type. Required when ``envvar``
+        or ``has_db`` is set.
     """
+
+    #: Collect all known ``Knob`` instances that are backed by the DB.
+    DB_BACKED_KNOBS: Dict[str, 'Knob[Any]'] = {}
+
+    #: List of patterns matching knob names that belong to knobs with per-pool capability. These names cannot be
+    #: used for normal knobs.
+    RESERVED_PATTERNS: List[Pattern[str]] = [
+        re.compile(r'^([a-z\-.]+):.+$')
+    ]
 
     def __init__(
         self,
@@ -897,31 +909,43 @@ class Knob(Generic[T]):
         has_db: bool = True,
         per_pool: bool = False,
         envvar: Optional[str] = None,
-        envvar_cast: Optional[Callable[[str], T]] = None,
         actual: Optional[T] = None,
         default: Optional[T] = None,
+        cast_from_str: Optional[Callable[[str], T]] = None
     ) -> None:
         self.knobname = knobname
         self._sources: List[KnobSource[T]] = []
 
         self.per_pool = per_pool
 
+        self.cast_from_str = cast_from_str
+
         if has_db:
+            # has_db means it's possible to change the knob via API, which means artemis-cli will need
+            # to convert user input to proper type.
+            if not cast_from_str:
+                raise KnobError(self, 'has_db requested but no cast_from_str.')
+
             if per_pool:
                 self._sources.append(KnobSourceDBPerPool(self))
+
+                Knob.DB_BACKED_KNOBS[knobname] = self
+                Knob.DB_BACKED_KNOBS[f'{knobname}:$poolname'] = self
 
             else:
                 self._sources.append(KnobSourceDBGlobal(self))
 
+                Knob.DB_BACKED_KNOBS[knobname] = self
+
         if envvar is not None:
-            if not envvar_cast:
-                raise Exception(f'Knob {knobname} defined with envvar but no envvar_cast')
+            if not cast_from_str:
+                raise KnobError(self, 'envvar requested but no cast_from_str.')
 
             if per_pool:
-                self._sources.append(KnobSourceEnvPerPool(self, envvar, envvar_cast))
+                self._sources.append(KnobSourceEnvPerPool(self, envvar))
 
             else:
-                self._sources.append(KnobSourceEnvGlobal(self, envvar, envvar_cast))
+                self._sources.append(KnobSourceEnvGlobal(self, envvar))
 
         if actual is not None:
             self._sources.append(KnobSourceActual(self, actual))
@@ -939,8 +963,15 @@ class Knob(Generic[T]):
         # as it depends on envvar, actual or default value. For such knobs, we provide a shortcut,
         # easy-to-use `value` attribute - no `Result`, no `unwrap()` - given the possible sources,
         # it should never fail to get a value from such sources.
-        if not has_db and not per_pool:
-            value, failure = self._get_value()
+        #
+        # If the knob *is* backed by a database, it may still have other sources - if that's the case,
+        # we can deduce so called "static" value. This would be a value used when there's no record
+        # in DB for this knob, and we can use it when listing knobs as its current value, until overwritten
+        # by a DB record. We must skip sources that deal with DB or per-pool-capable sources - these
+        # are dynamic, their output depends on inputs (like pool name...).
+
+        def _get_static_value(skip_db: bool = False, skip_per_pool: bool = False) -> T:
+            value, failure = self._get_value(skip_db=skip_db, skip_per_pool=skip_per_pool)
 
             # If we fail to get value from envvar/default sources, then something is wrong. Maybe there's
             # just the envvar source, no default one, and environment variable is not set? In any case,
@@ -952,7 +983,13 @@ class Knob(Generic[T]):
                     failure=failure
                 )
 
-            self.value = value
+            return value
+
+        if has_db and len(self._sources) > 1:
+            self.static_value: T = _get_static_value(skip_db=True, skip_per_pool=True)
+
+        if not has_db and not per_pool:
+            self.value: T = _get_static_value()
 
     def __repr__(self) -> str:
         traits: List[str] = []
@@ -960,11 +997,19 @@ class Knob(Generic[T]):
         if self.per_pool:
             traits += ['per-pool=yes']
 
+        if self.cast_from_str:
+            traits += [f'cast-from-str={self.cast_from_str.__name__}']
+
         traits += sum([source.to_repr() for source in self._sources], [])
 
         return f'<Knob: {self.knobname}: {" ".join(traits)}>'
 
-    def _get_value(self, **kwargs: Any) -> Tuple[Optional[T], Optional[Failure]]:
+    def _get_value(
+        self,
+        skip_db: bool = False,
+        skip_per_pool: bool = False,
+        **kwargs: Any
+    ) -> Tuple[Optional[T], Optional[Failure]]:
         """
         The core method for getting the knob value. Returns two items:
 
@@ -973,6 +1018,12 @@ class Knob(Generic[T]):
         """
 
         for source in self._sources:
+            if skip_db and isinstance(source, KnobSourceDB):
+                continue
+
+            if skip_per_pool and isinstance(source, (KnobSourceEnvPerPool, KnobSourceDBPerPool)):
+                continue
+
             r = source.get_value(**kwargs)
 
             if r.is_error:
@@ -1007,6 +1058,48 @@ class Knob(Generic[T]):
 
         return Error(Failure('Cannot fetch knob value'))
 
+    @property
+    def cast_name(self) -> Optional[str]:
+        """
+        Return a name representing the casting function of a this knob.
+
+        Handles some corner cases and errors transparently.
+        """
+
+        # A knob that can be modified over API *must* have a casting function...
+        if self.cast_from_str is None:
+            return None
+
+        if self.cast_from_str is gluetool.utils.normalize_bool_option:
+            return 'bool'
+
+        return self.cast_from_str.__name__
+
+    @staticmethod
+    def get_per_pool_parent(logger: gluetool.log.ContextAdapter, knobname: str) -> Optional['Knob[Any]']:
+        """
+        For a given knobname - which belongs to a knob with per-pool capability - find its "parent" knob.
+
+        Per-pool knobs don't have 1:1 mapping between a Python :py:ref:`Knob` instance and its DB record.
+        But the "parent" knob, the one actually declared somewhere in the source, can be found by name
+        after stripping the pool name from the given knob name.
+        """
+
+        for pattern in Knob.RESERVED_PATTERNS:
+            match = pattern.match(knobname)
+
+            if match is None:
+                continue
+
+            parent_knobname = match.group(1)
+
+            if parent_knobname not in Knob.DB_BACKED_KNOBS:
+                return None
+
+            return Knob.DB_BACKED_KNOBS[parent_knobname]
+
+        return None
+
 
 #: Level of logging. Accepted values are Python logging levels as defined by Python's
 #: https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
@@ -1014,16 +1107,15 @@ KNOB_LOGGING_LEVEL: Knob[int] = Knob(
     'logging.level',
     has_db=False,
     envvar='ARTEMIS_LOG_LEVEL',
-    envvar_cast=lambda s: logging._nameToLevel.get(s.strip().upper(), logging.INFO),
-    default=logging.INFO
-)
+    cast_from_str=lambda s: logging._nameToLevel.get(s.strip().upper(), logging.INFO),
+    default=logging.INFO)
 
 #: If enabled, Artemis would emit log messages as JSON mappings.
 KNOB_LOGGING_JSON: Knob[bool] = Knob(
     'logging.json',
     has_db=False,
     envvar='ARTEMIS_LOG_JSON',
-    envvar_cast=gluetool.utils.normalize_bool_option,
+    cast_from_str=gluetool.utils.normalize_bool_option,
     default=True
 )
 
@@ -1032,7 +1124,7 @@ KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
     'config.dirpath',
     has_db=False,
     envvar='ARTEMIS_CONFIG_DIR',
-    envvar_cast=lambda s: os.path.expanduser(s.strip()),
+    cast_from_str=lambda s: os.path.expanduser(s.strip()),
     default=os.getcwd()
 )
 
@@ -1041,7 +1133,7 @@ KNOB_BROKER_URL: Knob[str] = Knob(
     'broker.url',
     has_db=False,
     envvar='ARTEMIS_BROKER_URL',
-    envvar_cast=str,
+    cast_from_str=str,
     default='amqp://guest:guest@127.0.0.1:5672'
 )
 
@@ -1050,7 +1142,7 @@ KNOB_CACHE_URL: Knob[str] = Knob(
     'cache.url',
     has_db=False,
     envvar='ARTEMIS_CACHE_URL',
-    envvar_cast=str,
+    cast_from_str=str,
     default='redis://127.0.0.1:6379'
 )
 
@@ -1061,7 +1153,7 @@ KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
     'broker.heartbeat-timeout',
     has_db=False,
     envvar='ARTEMIS_BROKER_HEARTBEAT_TIMEOUT',
-    envvar_cast=int,
+    cast_from_str=int,
     default=60
 )
 
@@ -1070,7 +1162,7 @@ KNOB_DB_URL: Knob[str] = Knob(
     'db.url',
     has_db=False,
     envvar='ARTEMIS_DB_URL',
-    envvar_cast=str,
+    cast_from_str=str,
     default='sqlite:///test.db'
 )
 
@@ -1079,7 +1171,7 @@ KNOB_VAULT_PASSWORD: Knob[Optional[str]] = Knob(
     'vault.password',
     has_db=False,
     envvar='ARTEMIS_VAULT_PASSWORD',
-    envvar_cast=str,
+    cast_from_str=str,
     default=''  # "empty" password, not set
 )
 
@@ -1088,7 +1180,7 @@ KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
     'vault.password.filepath',
     has_db=False,
     envvar='ARTEMIS_VAULT_PASSWORD_FILE',
-    envvar_cast=lambda s: os.path.expanduser(s.strip()),
+    cast_from_str=lambda s: os.path.expanduser(s.strip()),
     default=os.path.expanduser('~/.vault_password')
 )
 
@@ -1097,7 +1189,7 @@ KNOB_LOGGING_DB_QUERIES: Knob[bool] = Knob(
     'logging.db.queries',
     has_db=False,
     envvar='ARTEMIS_LOG_DB_QUERIES',
-    envvar_cast=gluetool.utils.normalize_bool_option,
+    cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
@@ -1108,7 +1200,7 @@ KNOB_LOGGING_DB_SLOW_QUERIES: Knob[bool] = Knob(
     # Never change it to `True`: querying DB while logging another DB query sounds too much like "endless recursion".
     has_db=False,
     envvar='ARTEMIS_LOG_DB_SLOW_QUERIES',
-    envvar_cast=gluetool.utils.normalize_bool_option,
+    cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
@@ -1118,7 +1210,7 @@ KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD: Knob[float] = Knob(
     # Never change it to `True`: querying DB while logging another DB query sounds too much like "endless recursion".
     has_db=False,
     envvar='ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD',
-    envvar_cast=float,
+    cast_from_str=float,
     default=10.0
 )
 
@@ -1127,7 +1219,7 @@ KNOB_LOGGING_DB_POOL: Knob[str] = Knob(
     'logging.db.pool',
     has_db=False,
     envvar='ARTEMIS_LOG_DB_POOL',
-    envvar_cast=str,
+    cast_from_str=str,
     default='no'
 )
 
@@ -1136,7 +1228,7 @@ KNOB_DB_POOL_SIZE: Knob[int] = Knob(
     'db.pool.size',
     has_db=False,
     envvar='ARTEMIS_DB_POOL_SIZE',
-    envvar_cast=int,
+    cast_from_str=int,
     default=20
 )
 
@@ -1145,7 +1237,7 @@ KNOB_DB_POOL_MAX_OVERFLOW: Knob[int] = Knob(
     'db.pool.max-overflow',
     has_db=False,
     envvar='ARTEMIS_DB_POOL_MAX_OVERFLOW',
-    envvar_cast=int,
+    cast_from_str=int,
     default=10
 )
 

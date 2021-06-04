@@ -74,7 +74,7 @@ KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
     'aws.spot-open-timeout',
     has_db=False,
     envvar='ARTEMIS_AWS_SPOT_OPEN_TIMEOUT',
-    envvar_cast=int,
+    cast_from_str=int,
     default=60
 )
 
@@ -83,7 +83,7 @@ KNOB_PENDING_TIMEOUT: Knob[int] = Knob(
     'aws.pending-timeout',
     has_db=False,
     envvar='ARTEMIS_AWS_PENDING_TIMEOUT',
-    envvar_cast=int,
+    cast_from_str=int,
     default=600
 )
 
@@ -92,7 +92,7 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
     'aws.update.tick',
     has_db=False,
     envvar='ARTEMIS_AWS_UPDATE_TICK',
-    envvar_cast=int,
+    cast_from_str=int,
     default=30
 )
 

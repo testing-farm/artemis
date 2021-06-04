@@ -51,7 +51,7 @@ KNOB_API_ENABLE_AUTHENTICATION: Knob[bool] = Knob(
     'api.enable-authentication',
     has_db=False,
     envvar='ARTEMIS_ENABLE_AUTHENTICATION',
-    envvar_cast=normalize_bool_option,
+    cast_from_str=normalize_bool_option,
     default=False
 )
 
@@ -61,7 +61,7 @@ KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
     'api.enable-authorization',
     has_db=False,
     envvar='ARTEMIS_ENABLE_AUTHORIZATION',
-    envvar_cast=normalize_bool_option,
+    cast_from_str=normalize_bool_option,
     default=False
 )
 

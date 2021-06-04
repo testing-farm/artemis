@@ -58,7 +58,7 @@ KNOB_ROUTE_REQUEST_MAX_TIME: Knob[int] = Knob(
     'route.request.max-time',
     has_db=True,
     envvar='ARTEMIS_ROUTE_REQUEST_MAX_TIME',
-    envvar_cast=int,
+    cast_from_str=int,
     default=6 * 3600
 )
 
@@ -68,7 +68,7 @@ KNOB_ROUTE_POOL_FORGIVING_TIME: Knob[int] = Knob(
     'route.pool.forgiving-time',
     has_db=True,
     envvar='ARTEMIS_ROUTE_POOL_FORGIVING_TIME',
-    envvar_cast=int,
+    cast_from_str=int,
     default=10 * 60
 )
 
@@ -77,7 +77,7 @@ KNOB_ROUTE_POOL_RESOURCE_THRESHOLD: Knob[float] = Knob(
     'route.pool.resource-threshold',
     has_db=True,
     envvar='ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD',
-    envvar_cast=float,
+    cast_from_str=float,
     default=90.0
 )
 
@@ -87,7 +87,7 @@ KNOB_ROUTE_POOL_ENABLED: Knob[bool] = Knob(
     has_db=True,
     per_pool=True,
     envvar='ARTEMIS_ROUTE_POOL_ENABLED',
-    envvar_cast=gluetool.utils.normalize_bool_option,
+    cast_from_str=gluetool.utils.normalize_bool_option,
     default=True
 )
 

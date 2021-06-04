@@ -18,7 +18,7 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
     'azure.update.tick',
     has_db=False,
     envvar='ARTEMIS_AZURE_UPDATE_TICK',
-    envvar_cast=int,
+    cast_from_str=int,
     default=30
 )
 

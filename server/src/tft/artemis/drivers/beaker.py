@@ -27,7 +27,7 @@ KNOB_RESERVATION_DURATION: Knob[int] = Knob(
     'beaker.reservation.duration',
     has_db=False,
     envvar='ARTEMIS_BEAKER_RESERVATION_DURATION',
-    envvar_cast=int,
+    cast_from_str=int,
     default=86400
 )
 
@@ -36,7 +36,7 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
     'beaker.update.tick',
     has_db=False,
     envvar='ARTEMIS_BEAKER_UPDATE_TICK',
-    envvar_cast=int,
+    cast_from_str=int,
     default=300
 )
 

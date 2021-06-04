@@ -28,7 +28,7 @@ from sqlalchemy.orm.query import Query as _Query
 if TYPE_CHECKING:  # noqa
     from mypy_extensions import VarArg
 
-    from . import Failure
+    from . import Failure, JSONType
 
 
 # Type variables for use in our generic types
@@ -677,6 +677,13 @@ class Knob(Base):
 
     knobname = Column(String(), primary_key=True, nullable=False)
     value = Column(String(), nullable=False)
+
+    @classmethod
+    def serialize_value(cls, value: 'JSONType') -> str:
+        return json.dumps(value)
+
+    def unserialize_value(self) -> 'JSONType':
+        return cast('JSONType', json.loads(self.value))
 
 
 # TODO: shuffle a bit with files to avoid local imports and to set this up conditionaly. It's probably not

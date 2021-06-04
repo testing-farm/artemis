@@ -23,7 +23,7 @@ KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
     has_db=False,
     envvar='ARTEMIS_OPENSTACK_BUILD_TIMEOUT',
-    envvar_cast=int,
+    cast_from_str=int,
     default=600
 )
 
@@ -32,7 +32,7 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
     'openstack.update.tick',
     has_db=False,
     envvar='ARTEMIS_OPENSTACK_UPDATE_TICK',
-    envvar_cast=int,
+    cast_from_str=int,
     default=30
 )
 
@@ -41,7 +41,7 @@ KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
     'openstack.default.console-url.expires',
     has_db=False,
     envvar='ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES',
-    envvar_cast=int,
+    cast_from_str=int,
     default=600
 )
 
