@@ -171,6 +171,32 @@ def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[Pool
     ])
 
 
+def collect_pool_can_acquire(
+    pools: List[PoolDriver],
+    environment: Environment
+) -> Result[List[Tuple[PoolDriver, bool]], Failure]:
+    r_answers = [
+        (pool, pool.can_acquire(environment))
+        for pool in pools
+    ]
+
+    errors = [(p, r) for p, r in r_answers if r.is_error]
+
+    if errors:
+        pool, result = errors[0]
+
+        return Error(Failure(
+            'failed to get pool can-acquire answer',
+            poolname=pool.poolname,
+            caused_by=result.unwrap_error()
+        ))
+
+    return Ok([
+        (pool, r.unwrap())
+        for pool, r in r_answers
+    ])
+
+
 def collect_pool_metrics(pools: List[PoolDriver]) -> Result[List[Tuple[PoolDriver, PoolMetrics]], Failure]:
     pool_metrics = [
         (pool, PoolMetrics(pool.poolname))
@@ -600,6 +626,33 @@ def policy_enough_resources(
             pool
             for pool, metrics in pool_metrics
             if has_enough(pool, metrics)
+        ]
+    ))
+
+
+@policy_boilerplate
+def policy_can_acquire(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Disallow pools that are already know they cannot acquire the given environment.
+    """
+
+    environment = Environment.unserialize_from_str(guest_request.environment)
+
+    r_answers = collect_pool_can_acquire(pools, environment)
+
+    if r_answers.is_error:
+        return Error(r_answers.unwrap_error())
+
+    return Ok(PolicyRuling(
+        allowed_pools=[
+            pool
+            for pool, answer in r_answers.unwrap()
+            if answer is True
         ]
     ))
 
