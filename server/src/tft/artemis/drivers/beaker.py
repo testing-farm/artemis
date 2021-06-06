@@ -453,7 +453,15 @@ class BeakerDriver(PoolDriver):
         :returns: Ok with True if guest can be acquired.
         """
 
-        return super(BeakerDriver, self).can_acquire(environment)
+        r_answer = super(BeakerDriver, self).can_acquire(environment)
+
+        if r_answer.is_error:
+            return Error(r_answer.unwrap_error())
+
+        if r_answer.unwrap() is False:
+            return r_answer
+
+        return Ok(environment.has_hw_constraints is not True)
 
     def acquire_guest(
         self,

@@ -123,7 +123,15 @@ class AzureDriver(PoolDriver):
         the given environment.
         """
 
-        return super(AzureDriver, self).can_acquire(environment)
+        r_answer = super(AzureDriver, self).can_acquire(environment)
+
+        if r_answer.is_error:
+            return Error(r_answer.unwrap_error())
+
+        if r_answer.unwrap() is False:
+            return r_answer
+
+        return Ok(environment.has_hw_constraints is not True)
 
     def update_guest(
         self,

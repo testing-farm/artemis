@@ -522,6 +522,10 @@ class Environment:
 
         return Environment.unserialize_from_json(json.loads(serialized))
 
+    @property
+    def has_hw_constraints(self) -> bool:
+        return self.hw.constraints is not None
+
     def get_hw_constraints(self) -> Result[Optional[ConstraintBase], 'Failure']:
         if self.hw.constraints is None:
             return Ok(None)
