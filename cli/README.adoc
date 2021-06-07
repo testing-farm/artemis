@@ -1,15 +1,10 @@
-= Artemis Command Line tool
-`artemis-cli` is command line tool for easier communication with `Artemis` service.
+:toc:
 
-== Installation
-* You need `python3`, `python3-devel` and `poetry` installed first.
-* `poetry install`
+== Artemis CLI
 
-== Usage
-Poetry works in virtual environment. To enable it, there are 2 options
+*TODO:* CLI-specific readme belongs here.
 
-* enable virtualenv: `poetry shell`
+`artemis-cli` is a simple CLI tool to use to manage requests and Artemis configuration.
 
-* run just one command in virtualenv: `poetry run artemis-cli --help`
-
-During first usage of `artemis-cli`, init procedure will be triggered to create configuration file.
+* For installation, see https://testing-farm.gitlab.io/artemis/for-users/artemis-cli/#installation
+* For simple provisioning workflow example, see https://testing-farm.gitlab.io/artemis/for-users/artemis-cli/#simple-provisioning-workflow

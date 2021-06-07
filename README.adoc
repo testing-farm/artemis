@@ -14,6 +14,8 @@ Each provisioning request is asynchronous by its nature: user submits a *guest r
 * For environment variables, see https://testing-farm.gitlab.io/artemis/for-admins/environment_variables/
 * For metrics, see https://testing-farm.gitlab.io/artemis/for-admins/metrics/
 
+* For Artemis CLI, see https://testing-farm.gitlab.io/artemis/for-users/artemis-cli/
+
 == SSH keys
 
 Artemis uses a single SSH key, called *master key*, to access all guests. This is strictly between Artemis and pools it uses. On top of that, each guest request states what *user key* the guest should be preinstalled on the guest, to make it accessible to the user.
@@ -21,93 +23,3 @@ Artemis uses a single SSH key, called *master key*, to access all guests. This i
 == API
 
 Specification of API is available at https://artemis6.docs.apiary.io/#reference.
-
-== How to provision a machine
-
-* the best way is to use artemis-cli
-* alternatively execute API call via web browser
-  * find out API url:`minishift openshift service --url artemis-api`
-  * add '_docs' to url and open in browser
-
-=== Example using artemis-cli
-Simple workflow example:
-
-* request Fedora-Rawhide, without any specific requirements except for architecture limitation using `artemis-cli guest create`
-+
-[source,shell]
-....
-$ artemis-cli guest create --keyname ci-key --arch x86_64 --compose Fedora-Rawhide
-{
-    "address": null,
-    "environment": {
-        "arch": "x86_64",
-        "compose": {
-            "id": "Fedora-Rawhide"
-        }
-    },
-    "guestname": "4264a144-6e1c-4c20-b37a-6d03e2d79b82",
-    "owner": "artemis",
-    "ssh": {
-        "keyname": "ci-key",
-        "port": 22,
-        "username": "root"
-    },
-    "state": "pending",
-    "user_data": {}
-}
-....
-+
-* guestname from create request is used in all consequent `artemis-cli guest` commands
-+
-[source,shell]
-....
-"guestname": "4264a144-6e1c-4c20-b37a-6d03e2d79b82",
-....
-+
-* periodicaly call `artemis-cli guest inspect` to get status, wait for `state == 'ready'`
-+
-[source,shell]
-....
-$ watch artemis-cli guest inspect 4264a144-6e1c-4c20-b37a-6d03e2d79b82
-{
-    "address": "10.0.141.183",
-    "environment": {
-        "arch": "x86_64",
-        "compose": {
-            "id": "Fedora-Rawhide"
-        }
-    },
-    "guestname": "4264a144-6e1c-4c20-b37a-6d03e2d79b82",
-    "owner": "artemis",
-    "ssh": {
-        "keyname": "ci-key",
-        "port": 22,
-        "username": "root"
-    },
-    "state": "ready",
-    "user_data": {}
-}
-....
-+
-* do your task on provisioned machine, connection parameters are part of response from `artemis-cli inspect`
-+
-
-[NOTE]
-====
-`artemis-cli guest events` is usefull for investigation of provisioning issues
-====
-+
-[NOTE]
-====
-If you can't access the provisioned machine by ssh, please check that the security group allows ssh traffic.
-
-To access the vm please use the ssh key you registered as the keypair in your project:
-`ssh -i path/to/artemis_private_key user@vm_ip`
-====
-+
-* return provisioned resources by running `artemis-cli guest cancel`
-[source,shell]
-....
-$ artemis-cli guest cancel 4264a144-6e1c-4c20-b37a-6d03e2d79b82
-guest "4264a144-6e1c-4c20-b37a-6d03e2d79b82" has been canceled
-....

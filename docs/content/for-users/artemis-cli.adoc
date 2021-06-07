@@ -1,0 +1,151 @@
+---
+title: "Aremis CLI"
+date: 2021-06-07T23:01:42+02:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== Artemis CLI
+
+`artemis-cli` is a simple CLI tool to use to manage requests and Artemis configuration.
+
+=== Installation
+
+[NOTE]
+====
+Artemis server and its CLI tool, `artemis-cli`, exist as separate projects in this repository. Each has its own requirements, and you have to install them as such. We are using https://python-poetry.org/[Poetry] to manage installations.
+====
+
+* Artemis CLI lives in `client` directory:
++
+[source,shell]
+....
+$ cd client/
+....
++
+* create a local installation of Artemis CLI:
++
+[source,shell]
+....
+$ poetry install
+....
++
+Poetry will take care of creating a dedicated virtual environment, installing requirements, and makes it accessible via `poetry run` or `poetry shell`.
++
+* call `artemis-cli`:
++
+[source,shell]
+....
+$ poetry run artemis-cli
+Usage: artemis-cli [OPTIONS] COMMAND [ARGS]...
+
+Options:
+  --config TEXT  Path to the configuration directory
+  --help         Show this message and exit.
+
+Commands:
+  guest     Guest related commands
+  init      Initialize configuration file.
+  knob      Knob related commands
+  snapshot  Snapshots related commands
+$
+....
++
+* to be of any use, you need to provide a configuration to point `artemis-cli` to the Artemis deployment you wish to manage. The following command will initialize the configuration file, `~/.config/artemis-cli/config.yaml`:
++
+[source,shell]
+....
+$ poetry run artemis-cli init
+....
++
+* the installation should be complete, you may verify it by running the following command - it should output list of current guest requests (which may be an empty list):
++
+[source,shell]
+....
+$ poetry run artemis-cli guest list
+....
+
+=== Simple provisioning workflow
+
+* submit a guest request, to provision a x86_64 machine running `Fedora-Rawhide` compose:
++
+[source,shell]
+....
+$ artemis-cli guest create --keyname ci-key --arch x86_64 --compose Fedora-Rawhide
+{
+    "address": null,
+    "environment": {
+        "hw": {
+            "arch": "x86_64"
+        },
+        "os": {
+            "compose": "Fedora-Rawhide"
+        }
+    },
+    "guestname": "4264a144-6e1c-4c20-b37a-6d03e2d79b82",
+    "owner": "artemis",
+    "ssh": {
+        "keyname": "ci-key",
+        "port": 22,
+        "username": "root"
+    },
+    "state": "pending",
+    "user_data": {},
+    "ctime": "2021-06-07 21:06:09.95"
+}
+....
++
+* `guestname` field gives you a handle to use when refering to this request in the future. For example, to check current state of the request, run following command:
++
+[source,shell]
+....
+$ artemis-cli guest inspect 4264a144-6e1c-4c20-b37a-6d03e2d79b82
+{
+    "address": "10.0.141.183",
+    "environment": {
+        "hw": {
+            "arch": "x86_64"
+        },
+        "os": {
+            "compose": "Fedora-Rawhide"
+        }
+    },
+    "guestname": "4264a144-6e1c-4c20-b37a-6d03e2d79b82",
+    "owner": "artemis",
+    "ssh": {
+        "keyname": "ci-key",
+        "port": 22,
+        "username": "root"
+    },
+    "state": "ready",
+    "user_data": {},
+    "ctime": "2021-06-07 21:06:09.95"
+}
+....
++
+* once `state` becomes `ready`, `address` field should provide you with an IP address you can connect to via SSH.
+* to cancel the request and release all its resources, run following command:
++
+[source,shell]
+....
+$ artemis-cli guest cancel 4264a144-6e1c-4c20-b37a-6d03e2d79b82
+guest "4264a144-6e1c-4c20-b37a-6d03e2d79b82" has been canceled
+$
+....
+
+[TIP]
+====
+`guest create` command accepts `--wait` option which does not report back immediately, but waits for the request to complete.
+====
+
+[TIP]
+====
+To inspect events related to the request, e.g. when investigating provisioning issues, use `guest inspect`:
+
+[source,shell]
+....
+$ artemis-cli guest events 4264a144-6e1c-4c20-b37a-6d03e2d79b82`
+...
+....
+====
