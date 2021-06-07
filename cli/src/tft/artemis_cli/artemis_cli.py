@@ -24,6 +24,8 @@ from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT=10000
+# seconds between consequent client requests
+POLLING_INTERVAL=10
 
 stackprinter.set_excepthook(
     style='darkbg2',
@@ -414,8 +416,7 @@ def cmd_guest_log(cfg: Configuration, guestname: str, logname: str, contenttype:
 
         while response.status_code in [202, 204] or is_null(response):
             response = artemis_get_guest_log(cfg, 'guests', guestname, logname, contenttype)
-            # XXX FIXME move magic number to a constant
-            time.sleep(10)
+            time.sleep(POLLING_INTERVAL)
 
     cfg.logger.info(prettify_json(True, response.json() or {}))
 

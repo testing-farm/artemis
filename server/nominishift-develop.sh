@@ -9,6 +9,7 @@ fi
 
 trap 'kill $(jobs -p)' EXIT
 
+export ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES=60
 export ARTEMIS_CONFIG_DIR="${ARTEMIS_CONFIG_DIR:-$(pwd)/configuration}"
 export ARTEMIS_BROKER_URL="${ARTEMIS_BROKER_URL:-amqp://guest:guest@127.0.0.1:5672}"
 export ARTEMIS_DB_URL="${ARTEMIS_DB_URL:-postgresql://artemis:artemis@127.0.0.1:5432/artemis}"

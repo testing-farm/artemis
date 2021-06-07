@@ -396,6 +396,7 @@ class GuestLogUpdateProgress:
 
     url: Optional[str] = None
     blob: Optional[str] = None
+    expires: Optional[datetime.datetime] = None
 
     #: If set, it represents a suggestion from the pool driver: it does not make much sense
     #: to run :py:meth:`PoolDriver.update_guest` sooner than this second in the future. If

@@ -1439,6 +1439,7 @@ class GuestLogResponse:
     blob: Optional[str]
 
     updated: datetime.datetime
+    expires: datetime.datetime
     complete: bool
 
     @classmethod
@@ -1448,6 +1449,7 @@ class GuestLogResponse:
             url=log.url,
             blob=log.blob,
             updated=log.updated,
+            expires=log.expires,
             complete=log.complete
         )
 
@@ -1485,6 +1487,10 @@ def get_guest_request_log(
 
         if not log:
             return HTTP_204, None
+        if log.expires and log.expires < datetime.datetime.utcnow():
+            guest_logger.info(f"Log has expired at {log.expires}! Will fetch a new one")
+            return HTTP_204, None
+
 
         return GuestLogResponse.from_db(log)
 
@@ -1712,7 +1718,9 @@ def generate_routes_v0_0_19(
             create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
             create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
             create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
-            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')
+            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET'),
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')
         ]),
         Include('/knobs', [
             create_route('/', KnobManager.entry_get_knobs, method='GET'),
@@ -1752,10 +1760,9 @@ def generate_routes_v0_0_18(
             create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
             create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
             create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
-            # XXX FIXME(ivasilev) To be removed once general logs approach is working with console url just another type of console log
-            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET'),
-            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),
-            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')
+            # XXX FIXME(ivasilev) To be removed once general logs approach is working with console url just another
+            # type of console log
+            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')
         ]),
         Include('/knobs', [
             create_route('/', KnobManager.entry_get_knobs, method='GET'),

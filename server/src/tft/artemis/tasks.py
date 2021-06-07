@@ -21,7 +21,7 @@ from typing_extensions import Protocol
 from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
     safe_call, safe_db_change
 from .context import DATABASE, LOGGER, SESSION, with_context
-from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogType, GuestRequest, Pool, SafeQuery, \
+from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestRequest, Pool, SafeQuery, \
     SnapshotRequest, SSHKey, upsert
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
@@ -1756,6 +1756,7 @@ def is_provisioning_tail_task(actor: Actor) -> bool:
     """
 
     return actor.actor_name in (
+        update_guest_log.actor_name,
         guest_request_prepare_finalize_pre_connect.actor_name,
         guest_request_prepare_finalize_post_connect.actor_name,
         prepare_verify_ssh.actor_name,
@@ -1996,9 +1997,10 @@ def do_update_guest_log(
         # let's try with another task run first.
 
         upsert(
+            logger,
             session,
             GuestLog,
-            {
+            primary_keys={
                 GuestLog.guestname: guestname,
                 GuestLog.logname: logname,
                 GuestLog.contenttype: contenttype
@@ -2010,7 +2012,7 @@ def do_update_guest_log(
 
         return handle_success('finished-task', return_value=RESCHEDULE)
 
-    if guest_log.complete:
+    if guest_log.complete and guest_log.expires > datetime.datetime.now():
         return handle_success('finished-task')
 
     r_update = workspace.pool.update_guest_log(
@@ -2035,12 +2037,15 @@ def do_update_guest_log(
             url=update_progress.url,
             blob=update_progress.blob,
             updated=datetime.datetime.utcnow(),
-            complete=update_progress.complete
+            complete=update_progress.complete,
+            expires=update_progress.expires
         )
 
     # flake8 is going to complain about `==` being used with booleans, but SQLAlchemy can't handle `is` when
     # creating the query, just `==`.
-    query = query.where(GuestLog.complete == False)  # noqa
+    # XXX FIXME(ivasilev) complete has to be reevaluated as many factors can affect it
+    # (is expired? is data fully fetched?)
+    #query = query.where(GuestLog.complete == False)  # noqa
 
     r_store = safe_db_change(logger, session, query)
 

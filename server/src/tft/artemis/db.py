@@ -258,8 +258,6 @@ def upsert(
 
     from sqlalchemy.dialects.postgresql import insert
 
-    from . import safe_db_change
-
     # Prepare condition for `WHERE` statement. Basically, we focus on given primary keys and their values. If we
     # were given multiple columns, we need to join them via `AND` so we could present just one value to `where`
     # parameter of the `on_conflict_update` clause.
@@ -498,7 +496,7 @@ class GuestRequest(Base):
     logs = relationship(
         'GuestLog',
         back_populates='guest',
-        cascade="all, delete",
+        cascade="all, delete, delete-orphan",
         passive_deletes=True
     )
 
@@ -547,7 +545,7 @@ class GuestLog(Base):
     __tablename__ = 'guest_logs'
 
     guestname = Column(String(), ForeignKey('guest_requests.guestname', ondelete='CASCADE'), nullable=False,
-        primary_key=True)
+                       primary_key=True)
     logname = Column(String(), nullable=False, primary_key=True)
     contenttype = Column(Enum(GuestLogContentType), nullable=False, primary_key=True)
 
@@ -556,6 +554,7 @@ class GuestLog(Base):
 
     updated = Column(DateTime(), nullable=True)
     complete = Column(Boolean(), nullable=False, default=True)
+    expires = Column(DateTime(), nullable=True)
 
     guest = relationship('GuestRequest', back_populates='logs')
 

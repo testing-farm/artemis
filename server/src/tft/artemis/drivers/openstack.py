@@ -882,28 +882,32 @@ class OpenStackDriver(PoolDriver):
                 contenttype=guest_log.contenttype
             ))
 
-        if guest_log.contenttype == GuestLogContentType.URL:
+        def _do_fetch(resource: str, json_format=True) -> Dict[str, str]:
             r_output = self._run_os([
                 'console',
-                'url',
+                resource,
                 'show',
                 OpenStackPoolData.unserialize(guest_request).instance_id
-            ])
+            ], json_format=json_format)
 
             if r_output.is_error:
                 return Error(r_output.unwrap_error())
 
-            output = cast(Dict[str, str], r_output.unwrap())
+            return cast(Dict[str, str], r_output.unwrap())
 
+        if guest_log.contenttype == GuestLogContentType.URL:
             return Ok(GuestLogUpdateProgress(
                 complete=True,
-                url=output['url']
+                url=_do_fetch('url')['url'],
+                expires=datetime.utcnow() + timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
             ))
 
         else:
             # run `os` and do some magic to update console log
+            output = _do_fetch('log', False)
             return Ok(GuestLogUpdateProgress(
-                complete=False,
-                blob='',
-                delay_update=30
+                complete=True,
+                blob=output,
+                delay_update=30,
+                expires=datetime.utcnow() + timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
             ))

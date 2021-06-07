@@ -27,6 +27,7 @@ def upgrade():
         sa.Column('blob', sa.String(), nullable=True),
         sa.Column('updated', sa.DateTime(), nullable=True),
         sa.Column('complete', sa.Boolean(), nullable=False),
+        sa.Column('expires', sa.DateTime(), nullable=True),
 
         sa.PrimaryKeyConstraint('guestname', 'logname', 'contenttype')
     )
