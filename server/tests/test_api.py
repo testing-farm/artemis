@@ -87,7 +87,7 @@ def test_api_redirects(api_client: molten.testing.TestClient):
 
 @pytest.mark.usefixtures('_schema_actual')
 def test_metrics(api_client: molten.testing.TestClient, db, logger, redis):
-    response = api_client.request('GET', f'/v{__VERSION__}/metrics')
+    response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/metrics')
 
     assert response.status_code == 200
 
