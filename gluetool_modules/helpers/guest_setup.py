@@ -271,7 +271,8 @@ class GuestSetup(gluetool.Module):
         context = gluetool.utils.dict_update(
             self.shared('eval_context'),
             {
-                'GUEST': guest
+                'GUEST': guest,
+                'COMPOSE': self.shared('compose')[0]
             }
         )
 
