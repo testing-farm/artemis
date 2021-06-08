@@ -2,18 +2,19 @@ import dataclasses
 import os
 import stat
 import threading
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple, cast
 
 import bs4
 import gluetool.log
 import gluetool.utils
+import pint
 import sqlalchemy.orm.session
 from gluetool.log import log_xml
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure, Knob
 from ..db import GuestRequest
-from ..environment import Environment
+from ..environment import And, Constraint, ConstraintBase, Environment, Operator, Or
 from ..metrics import PoolResourcesMetrics
 from ..script import hook_engine
 from . import CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
@@ -49,6 +50,180 @@ class BeakerPoolData(PoolData):
 @dataclasses.dataclass
 class BeakerPoolResourcesIDs(PoolResourcesIDs):
     job_id: Optional[str] = None
+
+
+#: Mapping of operators to their Beaker representation. :py:attr:`Operator.MATCH` is missing on purpose: it is
+#: intercepted in :py:func:`operator_to_beaker_op`.
+OPERATOR_SIGN_TO_OPERATOR = {
+    Operator.EQ: '==',
+    Operator.NEQ: '!=',
+    Operator.GT: '>',
+    Operator.GTE: '>=',
+    Operator.LT: '<',
+    Operator.LTE: '<='
+}
+
+
+def _new_tag(tag_name: str, **attrs: str) -> bs4.BeautifulSoup:
+    return bs4.BeautifulSoup('', 'xml').new_tag(tag_name, **attrs)
+
+
+def operator_to_beaker_op(operator: Operator, value: str) -> Tuple[str, str]:
+    """
+    Convert constraint operator to Beaker "op".
+    """
+
+    if operator in OPERATOR_SIGN_TO_OPERATOR:
+        return OPERATOR_SIGN_TO_OPERATOR[operator], value
+
+    # MATCH has special handling - convert the pattern to a wildcard form - and that may be weird :/
+    return 'like', value.replace('.*', '%').replace('.+', '%')
+
+
+def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.BeautifulSoup, Failure]:
+    """
+    Convert a given constraint to XML tree representing Beaker filter compatible with Beaker's ``hostRequires``
+    element.
+    """
+
+    if isinstance(constraint, And):
+        grouping_and = _new_tag('and')
+
+        for child_constraint in constraint.constraints:
+            r_child_element = constraint_to_beaker_filter(child_constraint)
+
+            if r_child_element.is_error:
+                return Error(r_child_element.unwrap_error())
+
+            grouping_and.append(r_child_element.unwrap())
+
+        return Ok(grouping_and)
+
+    if isinstance(constraint, Or):
+        grouping_or = _new_tag('or')
+
+        for child_constraint in constraint.constraints:
+            r_child_element = constraint_to_beaker_filter(child_constraint)
+
+            if r_child_element.is_error:
+                return Error(r_child_element.unwrap_error())
+
+            grouping_or.append(r_child_element.unwrap())
+
+        return Ok(grouping_or)
+
+    constraint = cast(Constraint, constraint)
+
+    if constraint.name.startswith('cpu.'):
+        cpu = _new_tag('cpu')
+
+        if constraint.name == 'cpu.cores':
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+            processors = _new_tag('processors', op=op, value=value)
+
+            cpu.append(processors)
+
+        if constraint.name == 'cpu.model':
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+            processors = _new_tag('model', op=op, value=value)
+
+            cpu.append(processors)
+
+        elif constraint.name == 'cpu.model_name':
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+            processors = _new_tag('model_name', op=op, value=value)
+
+            cpu.append(processors)
+
+        else:
+            return Error(Failure(
+                'contraint not supported by driver',
+                constraint=constraint.format()  # noqa: FS002
+            ))
+
+        return Ok(cpu)
+
+    if constraint.name.startswith('disk.'):
+        disk = _new_tag('disk')
+
+        if constraint.name == 'disk.space':
+            # `disk.space` is represented as quantity, for Beaker XML we need to convert to bytes, integer.
+            op, value = operator_to_beaker_op(
+                constraint.operator,
+                str(int(cast(pint.Quantity, constraint.value).to('B').magnitude))
+            )
+
+            size = _new_tag('size', op=op, value=value)
+
+            disk.append(size)
+
+        else:
+            return Error(Failure(
+                'contraint not supported by driver',
+                constraint=constraint.format()  # noqa: FS002
+            ))
+
+        return Ok(disk)
+
+    if constraint.name == 'arch':
+        op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+        system = _new_tag('system')
+        arch = _new_tag('arch', op=op, value=value)
+
+        system.append(arch)
+
+        return Ok(system)
+
+    if constraint.name == 'memory':
+        # `memory` is represented as quantity, for Beaker XML we need to convert to mibibytes, integer.
+        op, value = operator_to_beaker_op(
+            constraint.operator,
+            str(int(cast(pint.Quantity, constraint.value).to('MiB').magnitude))
+        )
+
+        system = _new_tag('system')
+        memory = _new_tag('memory', op=op, value=value)
+
+        system.append(memory)
+
+        return Ok(system)
+
+    return Error(Failure(
+        'contraint not supported by driver',
+        constraint=constraint.format()  # noqa: FS002
+    ))
+
+
+def environment_to_beaker_filter(environment: Environment) -> Result[bs4.BeautifulSoup, Failure]:
+    """
+    Convert a given environment to Beaker XML tree representing Beaker filter compatible with Beaker's ``hostRequires``
+    element.
+
+    .. note::
+
+       Converts the `environment`, not just the constraints: in our world, ``arch`` stands separated from
+       the constraints while in Beaker, ``arch`` is part of the XML filter subtree. Therefore if there are no
+       constraints, this helper emits a XML filter based on architecture alone.
+    """
+
+    r_constraints = environment.get_hw_constraints()
+
+    if r_constraints.is_error:
+        return Error(r_constraints.unwrap_error())
+
+    constraints = r_constraints.unwrap()
+
+    if constraints is None:
+        return constraint_to_beaker_filter(Constraint.from_arch(environment.hw.arch))
+
+    return constraint_to_beaker_filter(And([
+        Constraint.from_arch(environment.hw.arch),
+        constraints
+    ]))
 
 
 class BeakerDriver(PoolDriver):

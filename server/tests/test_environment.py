@@ -3,8 +3,9 @@ import textwrap
 import gluetool.utils
 import pytest
 
+import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS
+from tft.artemis.environment import UNITS, Environment
 
 
 @pytest.fixture(name='schema_v0_0_19')
@@ -441,3 +442,74 @@ def test_schema_logic_v0_0_19(schema_v0_0_19, logger):
         print(error)
 
     assert errors == []
+
+
+@pytest.mark.parametrize(('hw', 'expected'), [
+    (
+        """
+        ---
+
+        arch: "ppc64"
+        constraints:
+            and:
+              - cpu:
+                  model: ">= 5111808"
+              - cpu:
+                  model: "<= 5177343"
+        """,
+        '<and><system><arch op="==" value="ppc64"/></system><and><cpu><model op="&gt;=" value="5111808"/></cpu><cpu><model op="&lt;=" value="5177343"/></cpu></and></and>'
+    ),
+    (
+        """
+        ---
+
+        arch: "ppc64"
+        constraints:
+            cpu:
+              model_name: "=~ .*PPC970.*"
+        """,
+        '<and><system><arch op="==" value="ppc64"/></system><cpu><model_name op="like" value="%PPC970%"/></cpu></and>'
+    ),
+    (
+        """
+        ---
+
+        arch: "x86_64"
+        constraints:
+            disk:
+              space: ">= 60 GiB"
+        """,
+        '<and><system><arch op="==" value="x86_64"/></system><disk><size op="&gt;=" value="64424509440"/></disk></and>'
+    )
+], ids=[
+    'IBM__POWER9',
+    'IBM__POWER_PPC970',
+    'DISK__SIZE_MIN_60G'
+])
+def test_beaker_preset(logger, hw, expected):
+    spec = parse_spec(
+        """
+        ---
+
+        hw: {}
+
+        os:
+          compose: dummy-compose
+        """
+    )
+
+    spec['hw'] = parse_spec(hw)
+
+    print(spec)
+
+    environment = Environment.unserialize_from_json(spec)
+
+    r_host_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment)
+
+    assert r_host_filter.is_ok
+
+    host_filter = r_host_filter.unwrap()
+
+    print(host_filter)
+
+    assert str(host_filter) == expected
