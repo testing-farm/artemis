@@ -3,7 +3,7 @@
 #
 # Volume mounts:
 #
-#    /ARTIFACTS - all artifacts will be saved here
+#    /var/ARTIFACTS - all artifacts will be saved here
 #    /CONFIG - place for configuration
 #
 
@@ -11,8 +11,8 @@
 FROM quay.io/podman/stable:v2.0.6
 LABEL maintainer="tft@redhat.com"
 
-# workdir
-WORKDIR /ARTIFACTS
+# workdir, needs to be writable in all supported composes, even those based on rpm-ostree
+WORKDIR /var/ARTIFACTS
 
 # pycurl needs to be compiled against openssl to work properly
 ENV PYCURL_SSL_BACKEND=openssl
