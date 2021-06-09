@@ -13,9 +13,9 @@ from ..script import hook_engine
 from . import PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
     ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
 
-#: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
     'azure.update.tick',
+    'A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.',
     has_db=False,
     envvar='ARTEMIS_AZURE_UPDATE_TICK',
     cast_from_str=int,

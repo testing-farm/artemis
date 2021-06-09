@@ -69,27 +69,30 @@ JQ_QUERY_SUBNET_CIDR = jq.compile('.Subnets | .[] | .CidrBlock')
 JQ_QUERY_SUBNET_AVAILABLE_IPS = jq.compile('.Subnets | .[] | .AvailableIpAddressCount')
 
 
-#: How long, in seconds, is an spot instance request allowed to stay in `open` state until cancelled and reprovisioned.
 KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
     'aws.spot-open-timeout',
+    """
+    How long, in seconds, is an spot instance request allowed to stay in `open` state
+    until cancelled and reprovisioned.
+    """,
     has_db=False,
     envvar='ARTEMIS_AWS_SPOT_OPEN_TIMEOUT',
     cast_from_str=int,
     default=60
 )
 
-#: How long, in seconds, is an instance allowed to stay in `pending` state until cancelled and reprovisioned.
 KNOB_PENDING_TIMEOUT: Knob[int] = Knob(
     'aws.pending-timeout',
+    'How long, in seconds, is an instance allowed to stay in `pending` state until cancelled and reprovisioned.',
     has_db=False,
     envvar='ARTEMIS_AWS_PENDING_TIMEOUT',
     cast_from_str=int,
     default=600
 )
 
-#: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
     'aws.update.tick',
+    'A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.',
     has_db=False,
     envvar='ARTEMIS_AWS_UPDATE_TICK',
     cast_from_str=int,

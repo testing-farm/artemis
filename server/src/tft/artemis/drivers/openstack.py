@@ -18,27 +18,27 @@ from . import ConsoleUrlData, PoolCapabilities, PoolData, PoolDriver, PoolFlavor
     ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
     test_cli_error, vm_info_to_ip
 
-#: How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
+    'How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.',
     has_db=False,
     envvar='ARTEMIS_OPENSTACK_BUILD_TIMEOUT',
     cast_from_str=int,
     default=600
 )
 
-#: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
     'openstack.update.tick',
+    'A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.',
     has_db=False,
     envvar='ARTEMIS_OPENSTACK_UPDATE_TICK',
     cast_from_str=int,
     default=30
 )
 
-#: How long, in seconds, it takes for a console url to be qualified as expired.
 KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
     'openstack.default.console-url.expires',
+    'How long, in seconds, it takes for a console url to be qualified as expired.',
     has_db=False,
     envvar='ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES',
     cast_from_str=int,

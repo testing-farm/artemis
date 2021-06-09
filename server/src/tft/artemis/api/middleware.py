@@ -46,19 +46,21 @@ ADMIN_AUTH: List[Pattern[str]] = []
 # now. These knobs will change, eventually, to "enabled by default", as soon
 # as we implement all the steps.
 
-#: If enabled, API requests must pass authentication by providing proper username and token.
 KNOB_API_ENABLE_AUTHENTICATION: Knob[bool] = Knob(
     'api.enable-authentication',
+    'If enabled, API requests must pass authentication by providing proper username and token.',
     has_db=False,
     envvar='ARTEMIS_ENABLE_AUTHENTICATION',
     cast_from_str=normalize_bool_option,
     default=False
 )
 
-#: If enabled, API requests must pass authorization by providing username with privileges high enough
-#: for the requested action.
 KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
     'api.enable-authorization',
+    """
+    If enabled, API requests must pass authorization by providing username with privileges high enough
+    for the requested action.
+    """,
     has_db=False,
     envvar='ARTEMIS_ENABLE_AUTHORIZATION',
     cast_from_str=normalize_bool_option,

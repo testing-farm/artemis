@@ -53,37 +53,39 @@ class PolicyWrapperType(Protocol):
     policy_name: str
 
 
-#: A time, in seconds, after which a guest request is cancelled if provisioning haven't succeeded.
 KNOB_ROUTE_REQUEST_MAX_TIME: Knob[int] = Knob(
     'route.request.max-time',
+    'A time, in seconds, after which a guest request is cancelled if provisioning haven\'t succeeded.',
     has_db=True,
     envvar='ARTEMIS_ROUTE_REQUEST_MAX_TIME',
     cast_from_str=int,
     default=6 * 3600
 )
 
-#: A time, in seconds, after which a pool error during a guest provisioning is ignored and pool becomes eligible
-#: for said guest request again.
 KNOB_ROUTE_POOL_FORGIVING_TIME: Knob[int] = Knob(
     'route.pool.forgiving-time',
+    """
+    A time, in seconds, after which a pool error during a guest provisioning is ignored and pool becomes eligible
+    for said guest request again.
+    """,
     has_db=True,
     envvar='ARTEMIS_ROUTE_POOL_FORGIVING_TIME',
     cast_from_str=int,
     default=10 * 60
 )
 
-#: A percentage part of pool resource that, when reached, marks pool as depleted and not eligible for provisioning.
 KNOB_ROUTE_POOL_RESOURCE_THRESHOLD: Knob[float] = Knob(
     'route.pool.resource-threshold',
+    'A percentage part of pool resource that, when reached, marks pool as depleted and not eligible for provisioning.',
     has_db=True,
     envvar='ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD',
     cast_from_str=float,
     default=90.0
 )
 
-#: Allow disabling pools
 KNOB_ROUTE_POOL_ENABLED: Knob[bool] = Knob(
     'route.pool.enabled',
+    'Allow disabling pools.',
     has_db=True,
     per_pool=True,
     envvar='ARTEMIS_ROUTE_POOL_ENABLED',

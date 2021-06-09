@@ -48,54 +48,54 @@ DEFAULT_EVENTS_SORT_FIELD = 'updated'
 DEFAULT_EVENTS_SORT_BY = 'desc'
 
 
-#: Number of processes to spawn for servicing API requests.
 KNOB_API_PROCESSES: Knob[int] = Knob(
     'api.processes',
+    'Number of processes to spawn for servicing API requests.',
     has_db=False,
     envvar='ARTEMIS_API_PROCESSES',
     cast_from_str=int,
     default=1
 )
 
-#: Number of threads to spawn in each process for servicing API requests.
 KNOB_API_THREADS: Knob[int] = Knob(
     'api.threads',
+    'Number of threads to spawn in each process for servicing API requests.',
     has_db=False,
     envvar='ARTEMIS_API_THREADS',
     cast_from_str=int,
     default=1
 )
 
-#: If enabled, APi server will profile handling of each request, emitting a summary into log.
 KNOB_API_ENABLE_PROFILING: Knob[bool] = Knob(
     'api.profiling.enabled',
+    'If enabled, API server will profile handling of each request, emitting a summary into log.',
     has_db=False,
     envvar='ARTEMIS_API_ENABLE_PROFILING',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
-#: How many functions should be included in the summary.
 KNOB_API_PROFILE_LIMIT: Knob[int] = Knob(
     'api.profiling.limit',
+    'How many functions should be included in the summary.',
     has_db=False,
     envvar='ARTEMIS_API_PROFILING_LIMIT',
     cast_from_str=int,
     default=20
 )
 
-#: Reload API server when its code changes.
 KNOB_API_ENGINE_RELOAD_ON_CHANGE: Knob[bool] = Knob(
     'api.engine.reload-on-change',
+    'Reload API server when its code changes.',
     has_db=False,
     envvar='ARTEMIS_API_ENGINE_RELOAD_ON_CHANGE',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
-#: Run engine with a debugging enabled.
 KNOB_API_ENGINE_DEBUG: Knob[bool] = Knob(
     'api.engine.debug',
+    'Run engine with a debugging enabled.',
     has_db=False,
     envvar='ARTEMIS_API_ENGINE_DEBUG',
     cast_from_str=gluetool.utils.normalize_bool_option,
@@ -408,7 +408,9 @@ class KnobUpdateRequest:
 class KnobResponse:
     name: str
     value: Any
-    cast: Optional[str] = None
+    help: str
+    editable: bool
+    cast: Optional[str]
 
 
 @molten.schema
@@ -943,13 +945,21 @@ class KnobManager:
     def get_knobs(self, logger: gluetool.log.ContextAdapter) -> List[KnobResponse]:
         knobs: Dict[str, KnobResponse] = {}
 
-        # First, collect all known editable knobs
-        for knobname, knob in Knob.DB_BACKED_KNOBS.items():
+        # First, collect all known knobs.
+        for knobname, knob in Knob.ALL_KNOBS.items():
             knobs[knobname] = KnobResponse(
                 name=knobname,
                 value=knob.static_value,
-                cast=knob.cast_name
+                cast=knob.cast_name,
+                help=knob.help,
+                editable=False
             )
+
+        # Second, update editable knobs.
+        for knobname, knob in Knob.DB_BACKED_KNOBS.items():
+            assert knobname in knobs
+
+            knobs[knobname].editable = True
 
         # Then, get the actual DB records, and update what we collected in the previous step:
         #
@@ -981,7 +991,9 @@ class KnobManager:
                     knobs[record.knobname] = KnobResponse(
                         name=record.knobname,
                         value=record.unserialize_value(),
-                        cast=parent_knob.cast_name
+                        cast=parent_knob.cast_name,
+                        help=knob.help,
+                        editable=True
                     )
 
                 else:
@@ -1009,23 +1021,41 @@ class KnobManager:
             if knobname in Knob.DB_BACKED_KNOBS:
                 knob = Knob.DB_BACKED_KNOBS[knobname]
 
-            else:
-                parent_knob = Knob.get_per_pool_parent(logger, knobname)
+                return KnobResponse(
+                    name=knobname,
+                    value=value,
+                    help=knob.help,
+                    editable=True,
+                    cast=knob.cast_name
+                )
 
-                if parent_knob is None:
-                    raise errors.InternalServerError(
-                        message='cannot find parent knob',
-                        failure_details={
-                            'knobname': knobname
-                        }
-                    )
+            if knobname in Knob.ALL_KNOBS:
+                knob = Knob.ALL_KNOBS[knobname]
 
-                knob = parent_knob
+                return KnobResponse(
+                    name=knobname,
+                    value=value,
+                    help=knob.help,
+                    editable=False,
+                    cast=knob.cast_name
+                )
+
+            parent_knob = Knob.get_per_pool_parent(logger, knobname)
+
+            if parent_knob is None:
+                raise errors.InternalServerError(
+                    message='cannot find parent knob',
+                    failure_details={
+                        'knobname': knobname
+                    }
+                )
 
             return KnobResponse(
                 name=knobname,
                 value=value,
-                cast=knob.cast_name
+                cast=parent_knob.cast_name,
+                help=parent_knob.help,
+                editable=True
             )
 
     def set_knob(self, knobname: str, value: str, logger: gluetool.log.ContextAdapter) -> None:
@@ -1037,6 +1067,15 @@ class KnobManager:
             knob = Knob.DB_BACKED_KNOBS.get(knobname)
 
             if knob is None:
+                # If the knob is not backed by DB but it's in the list of all knobs, then it must be a knob
+                # that's not editable.
+                if knobname in Knob.ALL_KNOBS:
+                    raise errors.MethodNotAllowedError(
+                        message='Cannot modify non-editable knob',
+                        failure_details=failure_details
+                    )
+
+                # Try to find the parent knob for this one which is apparently a per-pool knob.
                 knob = Knob.get_per_pool_parent(logger, knobname)
 
             if knob is None:

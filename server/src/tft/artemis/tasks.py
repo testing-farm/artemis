@@ -95,63 +95,66 @@ def get_root_db(logger: Optional[gluetool.log.ContextAdapter] = None) -> DB:
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
 BROKER = get_broker()
 
-#:  A number of time a failing task get retried. Serves as a default value for tasks without custom setting.
 KNOB_ACTOR_DEFAULT_RETRIES_COUNT: Knob[int] = Knob(
     'actor.default-retries-count',
+    'A number of time a failing task get retried. Serves as a default value for tasks without custom setting.',
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_RETRIES',
     cast_from_str=int,
     default=5
 )
 
-#: The lowest possible delay, in seconds, before the next attempt to run a failed task.
 KNOB_ACTOR_DEFAULT_MIN_BACKOFF: Knob[int] = Knob(
     'actor.default-min-backoff',
+    'The lowest possible delay, in seconds, before the next attempt to run a failed task.',
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_MIN_BACKOFF',
     cast_from_str=int,
     default=15
 )
 
-#: The biggest possible delay, in seconds, before the next attempt to run a failed task.
 KNOB_ACTOR_DEFAULT_MAX_BACKOFF: Knob[int] = Knob(
     'actor.default-max-backoff',
+    'The biggest possible delay, in seconds, before the next attempt to run a failed task.',
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_MAX_BACKOFF',
     cast_from_str=int,
     default=60
 )
 
-#: When enabled, broker connection will be forcefully closed after every message dispatch.
 KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
     'broker.close-after-dispatch',
+    'When enabled, broker connection will be forcefully closed after every message dispatch.',
     has_db=False,
     envvar='ARTEMIS_CLOSE_AFTER_DISPATCH',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
-#: A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks.
 KNOB_DISPATCH_PREPARE_DELAY: Knob[int] = Knob(
     'actor.dispatch-preparing.delay',
+    """
+    A delay, in second, between successful acquire of a cloud instance
+    and dispatching of post-acquire preparation tasks.
+    """,
     has_db=False,
     envvar='ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY',
     cast_from_str=int,
     default=60
 )
 
-#: A range, in seconds, by which can a task delay be modified before use.
 KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
     'actor.delay-uniform-spread',
+    'A range, in seconds, by which can a task delay be modified before use.',
     has_db=False,
     envvar='ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD',
     cast_from_str=int,
     default=5
 )
 
-#: When to run pool image info refresh task, as a Cron-like specification.
 KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE: Knob[str] = Knob(
     'actor.refresh-pool-resources-metrics.schedule',
+    'When to run pool image info refresh task, as a Cron-like specification.',
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE',
     cast_from_str=str,
@@ -159,9 +162,9 @@ KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE: Knob[str] = Knob(
 )
 
 
-#: When to run pool image info refresh task, as a Cron-like specification.
 KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
     'actor.refresh-pool-image-info.schedule',
+    'When to run pool image info refresh task, as a Cron-like specification.',
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_SCHEDULE',
     cast_from_str=str,
@@ -169,9 +172,9 @@ KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
 )
 
 
-#: Prepare stage ssh timeout
 KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     'actor.verify-ssh.connect-timeout',
+    'Prepare stage SSH timeout.',
     per_pool=True,
     has_db=True,
     envvar='ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT',
@@ -180,9 +183,9 @@ KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
 )
 
 
-#: When to run OpenStack flavor info refresh task, as a Cron-like specification.
 KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE: Knob[str] = Knob(
     'actor.refresh-pool-flavor-info.schedule',
+    'When to run OpenStack flavor info refresh task, as a Cron-like specification.',
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_SCHEDULE',
     cast_from_str=str,

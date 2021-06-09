@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional, Union
 
 import gluetool.log
 import molten.http.query_params
-from molten import HTTP_400, HTTP_401, HTTP_403, HTTP_404, HTTP_409, HTTP_500, Request
+from molten import HTTP_400, HTTP_401, HTTP_403, HTTP_404, HTTP_405, HTTP_409, HTTP_500, Request
 from molten.errors import HTTPError
 
 from .. import Failure, FailureDetailsType, get_logger
@@ -256,6 +256,34 @@ class ConflictError(ArtemisHTTPError):
 
         super().__init__(
             status=HTTP_409,
+            message=message,
+            response=response,
+            headers=headers,
+            request=request,
+            report_as_failure=False,
+            logger=logger,
+            caused_by=caused_by,
+            failure_details=failure_details
+        )
+
+
+class MethodNotAllowedError(ArtemisHTTPError):
+    def __init__(
+        self,
+        *,
+        message: Optional[str] = None,
+        response: Optional[Any] = None,
+        headers: Optional[Any] = None,
+        request: Optional[Request] = None,
+        logger: Optional[gluetool.log.ContextAdapter] = None,
+        caused_by: Optional[Failure] = None,
+        failure_details: Optional[FailureDetailsType] = None
+    ) -> None:
+        if not message and not response:
+            message = 'This method is not compatible with the given resource'
+
+        super().__init__(
+            status=HTTP_405,
             message=message,
             response=response,
             headers=headers,

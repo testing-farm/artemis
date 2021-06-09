@@ -1,5 +1,6 @@
 import dataclasses
 import datetime
+import inspect
 import itertools
 import json
 import logging
@@ -894,6 +895,9 @@ class Knob(Generic[T]):
         or ``has_db`` is set.
     """
 
+    #: All known knobs.
+    ALL_KNOBS: Dict[str, 'Knob[Any]'] = {}
+
     #: Collect all known ``Knob`` instances that are backed by the DB.
     DB_BACKED_KNOBS: Dict[str, 'Knob[Any]'] = {}
 
@@ -906,6 +910,7 @@ class Knob(Generic[T]):
     def __init__(
         self,
         knobname: str,
+        help: str,
         has_db: bool = True,
         per_pool: bool = False,
         envvar: Optional[str] = None,
@@ -914,11 +919,15 @@ class Knob(Generic[T]):
         cast_from_str: Optional[Callable[[str], T]] = None
     ) -> None:
         self.knobname = knobname
+        self.help = inspect.cleandoc(help)
+
         self._sources: List[KnobSource[T]] = []
 
         self.per_pool = per_pool
 
         self.cast_from_str = cast_from_str
+
+        Knob.ALL_KNOBS[knobname] = self
 
         if has_db:
             # has_db means it's possible to change the knob via API, which means artemis-cli will need
@@ -928,6 +937,8 @@ class Knob(Generic[T]):
 
             if per_pool:
                 self._sources.append(KnobSourceDBPerPool(self))
+
+                Knob.ALL_KNOBS[f'{knobname}:$poolname'] = self
 
                 Knob.DB_BACKED_KNOBS[knobname] = self
                 Knob.DB_BACKED_KNOBS[f'{knobname}:$poolname'] = self
@@ -985,11 +996,12 @@ class Knob(Generic[T]):
 
             return value
 
-        if has_db and len(self._sources) > 1:
+        if len(self._sources) > 1:
             self.static_value: T = _get_static_value(skip_db=True, skip_per_pool=True)
 
         if not has_db and not per_pool:
             self.value: T = _get_static_value()
+            self.static_value = self.value
 
     def __repr__(self) -> str:
         traits: List[str] = []
@@ -1101,45 +1113,47 @@ class Knob(Generic[T]):
         return None
 
 
-#: Level of logging. Accepted values are Python logging levels as defined by Python's
-#: https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 KNOB_LOGGING_LEVEL: Knob[int] = Knob(
     'logging.level',
+    """
+    Level of logging. Accepted values are Python logging levels as defined by Python's
+    https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
+    """,
     has_db=False,
     envvar='ARTEMIS_LOG_LEVEL',
     cast_from_str=lambda s: logging._nameToLevel.get(s.strip().upper(), logging.INFO),
     default=logging.INFO)
 
-#: If enabled, Artemis would emit log messages as JSON mappings.
 KNOB_LOGGING_JSON: Knob[bool] = Knob(
     'logging.json',
+    'If enabled, Artemis would emit log messages as JSON mappings.',
     has_db=False,
     envvar='ARTEMIS_LOG_JSON',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=True
 )
 
-#: Path to a directory with configuration.
 KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
     'config.dirpath',
+    'Path to a directory with configuration.',
     has_db=False,
     envvar='ARTEMIS_CONFIG_DIR',
     cast_from_str=lambda s: os.path.expanduser(s.strip()),
     default=os.getcwd()
 )
 
-#: Broker URL.
 KNOB_BROKER_URL: Knob[str] = Knob(
     'broker.url',
+    'Broker URL.',
     has_db=False,
     envvar='ARTEMIS_BROKER_URL',
     cast_from_str=str,
     default='amqp://guest:guest@127.0.0.1:5672'
 )
 
-#: Cache URL.
 KNOB_CACHE_URL: Knob[str] = Knob(
     'cache.url',
+    'Cache URL.',
     has_db=False,
     envvar='ARTEMIS_CACHE_URL',
     cast_from_str=str,
@@ -1147,56 +1161,60 @@ KNOB_CACHE_URL: Knob[str] = Knob(
 )
 
 
-#: An interval, in seconds, after which a broker client should ping the server over the established connection to
-#: keep both parties aware the connection should be kept alive.
 KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
     'broker.heartbeat-timeout',
+    """
+    An interval, in seconds, after which a broker client should ping the server over the established connection to
+    keep both parties aware the connection should be kept alive.
+    """,
     has_db=False,
     envvar='ARTEMIS_BROKER_HEARTBEAT_TIMEOUT',
     cast_from_str=int,
     default=60
 )
 
-#: Database URL.
 KNOB_DB_URL: Knob[str] = Knob(
     'db.url',
+    'Database URL.',
     has_db=False,
     envvar='ARTEMIS_DB_URL',
     cast_from_str=str,
     default='sqlite:///test.db'
 )
 
-#: A password for decrypting files protected by Ansible Vault. Takes precedence over ``ARTEMIS_VAULT_PASSWORD_FILE``.
 KNOB_VAULT_PASSWORD: Knob[Optional[str]] = Knob(
     'vault.password',
+    'A password for decrypting files protected by Ansible Vault. Takes precedence over ARTEMIS_VAULT_PASSWORD_FILE.',
     has_db=False,
     envvar='ARTEMIS_VAULT_PASSWORD',
     cast_from_str=str,
     default=''  # "empty" password, not set
 )
 
-#: Path to a file with a password for decrypting files protected by Ansible Vault.
 KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
     'vault.password.filepath',
+    'Path to a file with a password for decrypting files protected by Ansible Vault.',
     has_db=False,
     envvar='ARTEMIS_VAULT_PASSWORD_FILE',
     cast_from_str=lambda s: os.path.expanduser(s.strip()),
     default=os.path.expanduser('~/.vault_password')
 )
 
-#: When enabled, Artemis would log SQL queries.
 KNOB_LOGGING_DB_QUERIES: Knob[bool] = Knob(
     'logging.db.queries',
+    'When enabled, Artemis would log SQL queries.',
     has_db=False,
     envvar='ARTEMIS_LOG_DB_QUERIES',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
-#: When enabled, Artemis would log "slow" queries - queries whose execution took longer than
-#: ``ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD`` seconds.
 KNOB_LOGGING_DB_SLOW_QUERIES: Knob[bool] = Knob(
     'logging.db.slow-queries',
+    """
+    When enabled, Artemis would log "slow" queries - queries whose execution took longer than
+    ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD seconds.
+    """,
     # Never change it to `True`: querying DB while logging another DB query sounds too much like "endless recursion".
     has_db=False,
     envvar='ARTEMIS_LOG_DB_SLOW_QUERIES',
@@ -1204,9 +1222,9 @@ KNOB_LOGGING_DB_SLOW_QUERIES: Knob[bool] = Knob(
     default=False
 )
 
-#: Minimal time, in seconds, spent executing a query for it to be reported as "slow".
 KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD: Knob[float] = Knob(
     'logging.db.slow-query-threshold',
+    'Minimal time, in seconds, spent executing a query for it to be reported as "slow".',
     # Never change it to `True`: querying DB while logging another DB query sounds too much like "endless recursion".
     has_db=False,
     envvar='ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD',
@@ -1214,27 +1232,28 @@ KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD: Knob[float] = Knob(
     default=10.0
 )
 
-#: When enabled, Artemis would log events related to database connection pool.
+
 KNOB_LOGGING_DB_POOL: Knob[str] = Knob(
     'logging.db.pool',
+    'When enabled, Artemis would log events related to database connection pool.',
     has_db=False,
     envvar='ARTEMIS_LOG_DB_POOL',
     cast_from_str=str,
     default='no'
 )
 
-#: Size of the DB connection pool.
 KNOB_DB_POOL_SIZE: Knob[int] = Knob(
     'db.pool.size',
+    'Size of the DB connection pool.',
     has_db=False,
     envvar='ARTEMIS_DB_POOL_SIZE',
     cast_from_str=int,
     default=20
 )
 
-#: Maximum size of connection pool overflow.
 KNOB_DB_POOL_MAX_OVERFLOW: Knob[int] = Knob(
     'db.pool.max-overflow',
+    'Maximum size of connection pool overflow.',
     has_db=False,
     envvar='ARTEMIS_DB_POOL_MAX_OVERFLOW',
     cast_from_str=int,

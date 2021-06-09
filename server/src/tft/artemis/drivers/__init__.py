@@ -50,10 +50,12 @@ PatchFlavorsSpecType = List[
 IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')  # noqa: FS003
 
 
-#: A delay, in seconds, to schedule pool resources release with. This may be useful for post mortem investigation
-#: of crashed resources.
 KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     'pool.dispatch-resource-cleanup',
+    """
+    A delay, in seconds, to schedule pool resources release with. This may be useful for post mortem investigation
+    of crashed resources.
+    """,
     has_db=False,
     per_pool=True,
     envvar='ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY',
@@ -61,28 +63,30 @@ KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     default=0
 )
 
-#: When enabled, Artemis would log "slow" CLI commands - commands whose execution took longer than
-#: ``ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD`` seconds.
 KNOB_LOGGING_SLOW_CLI_COMMANDS: Knob[bool] = Knob(
     'logging.cli.slow-commands',
+    """
+    When enabled, Artemis would log "slow" CLI commands - commands whose execution took longer than
+    ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD seconds.
+    """,
     has_db=False,
     envvar='ARTEMIS_LOG_SLOW_CLI_COMMANDS',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=False
 )
 
-#: Minimal time, in seconds, spent executing a CLI command for it to be reported as "slow".
 KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD: Knob[float] = Knob(
     'logging.cli.slow-command-threshold',
+    'Minimal time, in seconds, spent executing a CLI command for it to be reported as "slow".',
     has_db=False,
     envvar='ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD',
     cast_from_str=float,
     default=10.0
 )
 
-#: Log only slow commands matching the pattern.
 KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN: Knob[str] = Knob(
     'logging.cli.slow-command-pattern',
+    'Log only slow commands matching the pattern.',
     has_db=False,
     envvar='ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN',
     cast_from_str=str,

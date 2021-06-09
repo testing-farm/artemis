@@ -7,6 +7,7 @@ def test_knob_missing_sources():
     with pytest.raises(tft.artemis.KnobError) as excinfo:
         _: tft.artemis.Knob[str] = tft.artemis.Knob(
             'foo',
+            'dummy knob',
             has_db=False
         )
 
@@ -17,6 +18,7 @@ def test_knob_missing_default():
     with pytest.raises(tft.artemis.KnobError) as excinfo:
         _: tft.artemis.Knob[str] = tft.artemis.Knob(
             'foo',
+            'dummy knob',
             has_db=False,
             envvar='DUMMY_ENVVAR',
             cast_from_str=str
@@ -29,6 +31,7 @@ def test_knob_missing_cast():
     with pytest.raises(tft.artemis.KnobError) as excinfo:
         _: tft.artemis.Knob[str] = tft.artemis.Knob(
             'foo',
+            'dummy knob',
             has_db=True
         )
 
@@ -37,6 +40,7 @@ def test_knob_missing_cast():
     with pytest.raises(tft.artemis.KnobError) as excinfo:
         _: tft.artemis.Knob[str] = tft.artemis.Knob(
             'foo',
+            'dummy knob',
             has_db=False,
             envvar='DUMMY_ENVVAR'
         )

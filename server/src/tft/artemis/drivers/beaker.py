@@ -23,18 +23,18 @@ from . import CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, 
 NodeRefType = Any
 
 
-#: A time, in seconds, for which the guest would be initially reserved.
 KNOB_RESERVATION_DURATION: Knob[int] = Knob(
     'beaker.reservation.duration',
+    'A time, in seconds, for which the guest would be initially reserved.',
     has_db=False,
     envvar='ARTEMIS_BEAKER_RESERVATION_DURATION',
     cast_from_str=int,
     default=86400
 )
 
-#: A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.
 KNOB_UPDATE_TICK: Knob[int] = Knob(
     'beaker.update.tick',
+    'A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.',
     has_db=False,
     envvar='ARTEMIS_BEAKER_UPDATE_TICK',
     cast_from_str=int,
