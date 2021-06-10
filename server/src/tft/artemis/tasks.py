@@ -95,6 +95,62 @@ def get_root_db(logger: Optional[gluetool.log.ContextAdapter] = None) -> DB:
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
 BROKER = get_broker()
 
+
+class TaskPriority(enum.Enum):
+    """
+    Task priorities.
+
+    "The lower the numeric value, the higher priority!"
+    """
+
+    LOW = 300
+    DEFAULT = 200
+    HIGH = 100
+
+
+class TaskQueue(enum.Enum):
+    """
+    Task queues.
+    """
+
+    DEFAULT = 'default'
+    PERIODIC = 'periodic'
+    POOL_DATA_REFRESH = 'pool-data-refresh'
+
+
+def cast_priority(raw_value: str) -> int:
+    # First, try to find corresponding `TaskPriority` member.
+    try:
+        return cast(int, TaskPriority[raw_value.upper()].value)
+
+    except KeyError:
+        pass
+
+    # If we failed, the priority might be just an integer, a priority itself.
+    try:
+        return int(raw_value)
+
+    except ValueError:
+        pass
+
+    # None of the above: report issue, but proceed with the default priority instead.
+    Failure('unknown task priority', priority=raw_value).handle(_ROOT_LOGGER)
+
+    return TaskPriority.DEFAULT.value
+
+
+def cast_queue(raw_value: str) -> str:
+    # First, try to match the given value with a defined queue.
+    try:
+        return cast(str, TaskQueue[raw_value.upper()].value)
+
+    except KeyError:
+        pass
+
+    # Yep, not in our list, but that doesn't meen it's forbidden to use it. Keep the input.
+    return raw_value
+
+
 KNOB_ACTOR_DEFAULT_RETRIES_COUNT: Knob[int] = Knob(
     'actor.default-retries-count',
     'A number of time a failing task get retried. Serves as a default value for tasks without custom setting.',
@@ -120,6 +176,24 @@ KNOB_ACTOR_DEFAULT_MAX_BACKOFF: Knob[int] = Knob(
     envvar='ARTEMIS_ACTOR_DEFAULT_MAX_BACKOFF',
     cast_from_str=int,
     default=60
+)
+
+KNOB_ACTOR_DEFAULT_PRIORITY: Knob[int] = Knob(
+    'actor.default-priority',
+    'Task priority ("HIGH", "DEFAULT", "LOW" or any positive integer).',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DEFAULT_PRIORITY',
+    cast_from_str=cast_priority,
+    default=TaskPriority.DEFAULT.value
+)
+
+KNOB_ACTOR_DEFAULT_QUEUE: Knob[str] = Knob(
+    'actor.default-queue',
+    'Task queue ("default", "periodic", "pool-data-refresh" or any other string).',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DEFAULT_QUEUE',
+    cast_from_str=cast_queue,
+    default=TaskQueue.DEFAULT.value
 )
 
 KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
@@ -241,28 +315,6 @@ def FAIL(result: Result[Any, Failure]) -> DoerReturnType:
     return Error(result.unwrap_error())
 
 
-class TaskPriority(enum.Enum):
-    """
-    Task priorities.
-
-    "The lower the numeric value, the higher priority!"
-    """
-
-    LOW = 300
-    DEFAULT = 200
-    HIGH = 100
-
-
-class TaskQueue(enum.Enum):
-    """
-    Task queues.
-    """
-
-    DEFAULT = 'default'
-    PERIODIC = 'periodic'
-    POOL_DATA_REFRESH = 'pool-data-refresh'
-
-
 # Task doer type.
 class DoerType(Protocol):
     def __call__(
@@ -277,10 +329,14 @@ class DoerType(Protocol):
         ...
 
 
+# Task actor type *before* applying `@dramatiq.actor` decorator, which is hidden in our `@task` decorator.
+BareActorType = Callable[..., None]
+
+
 # Task actor type.
 class Actor(Protocol):
     actor_name: str
-    fn: Callable[..., None]
+    fn: BareActorType
 
     def send(
         self,
@@ -494,6 +550,32 @@ def actor_kwargs(
         kwargs['periodic'] = periodic
 
     return kwargs
+
+
+# Implementing the decorator as a class on purpose - it plays nicely with type annotations when used without
+# any arguments.
+class task:
+    def __init__(
+        self,
+        priority: TaskPriority = TaskPriority.DEFAULT,
+        queue_name: TaskQueue = TaskQueue.DEFAULT,
+        periodic: Optional[periodiq.CronSpec] = None
+    ) -> None:
+        self.priority = priority
+        self.queue_name = queue_name
+        self.periodic = periodic
+
+    def __call__(self, fn: BareActorType) -> Actor:
+        actor_name_uppersized = fn.__name__.upper()
+
+        dramatiq_kwargs = actor_kwargs(
+            actor_name_uppersized,
+            periodic=self.periodic,
+            priority=self.priority,
+            queue_name=self.queue_name
+        )
+
+        return cast(Actor, dramatiq.actor(fn, **dramatiq_kwargs))
 
 
 def run_doer(
@@ -1723,7 +1805,7 @@ def do_release_pool_resources(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('RELEASE_POOL_RESOURCES'))  # type: ignore  # Untyped decorator
+@task()
 def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional[str]) -> None:
     if guestname:
         logger = get_guest_logger('release-pool-resources', _ROOT_LOGGER, guestname)
@@ -2004,7 +2086,7 @@ def do_prepare_verify_ssh(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('PREPARE_VERIFY_SSH'))  # type: ignore  # Untyped decorator
+@task()
 def prepare_verify_ssh(guestname: str) -> None:
     task_core(
         cast(DoerType, do_prepare_verify_ssh),
@@ -2080,7 +2162,7 @@ def do_prepare_post_install_script(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('PREPARE_POST_INSTALL_SCRIPT'))  # type: ignore  # Untyped decorator
+@task()
 def prepare_post_install_script(guestname: str) -> None:
     task_core(
         cast(DoerType, do_prepare_post_install_script),
@@ -2150,7 +2232,7 @@ def do_guest_request_prepare_finalize_pre_connect(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('GUEST_REQUEST_PREPARE_FINALIZE_PRE_CONNECT'))  # type: ignore  # Untyped decorator
+@task()
 def guest_request_prepare_finalize_pre_connect(guestname: str) -> None:
     task_core(
         cast(DoerType, do_guest_request_prepare_finalize_pre_connect),
@@ -2210,7 +2292,7 @@ def do_guest_request_prepare_finalize_post_connect(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('GUEST_REQUEST_PREPARE_FINALIZE_POST_CONNECT'))  # type: ignore  # Untyped decorator
+@task()
 def guest_request_prepare_finalize_post_connect(guestname: str) -> None:
     task_core(
         cast(DoerType, do_guest_request_prepare_finalize_post_connect),
@@ -2297,7 +2379,7 @@ def do_release_guest_request(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('RELEASE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def release_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, do_release_guest_request),
@@ -2424,7 +2506,7 @@ def do_update_guest_request(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('UPDATE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def update_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, do_update_guest_request),
@@ -2558,7 +2640,7 @@ def do_acquire_guest_request(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('ACQUIRE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def acquire_guest_request(guestname: str, poolname: str) -> None:
     task_core(
         cast(DoerType, do_acquire_guest_request),
@@ -2684,7 +2766,7 @@ def do_route_guest_request(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('ROUTE_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def route_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, do_route_guest_request),
@@ -2758,7 +2840,7 @@ def do_release_snapshot_request(
     return handle_failure(r_delete, 'failed to release snapshot')
 
 
-@dramatiq.actor(**actor_kwargs('RELEASE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def release_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(
         cast(DoerType, do_release_snapshot_request),
@@ -2832,7 +2914,7 @@ def do_create_snapshot_start_guest(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_START_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def create_snapshot_start_guest(guestname: str, snapshotname: str) -> None:
     task_core(
         cast(DoerType, do_create_snapshot_start_guest),
@@ -2947,7 +3029,7 @@ def do_update_snapshot(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('UPDATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def update_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(
         cast(DoerType, do_update_snapshot),
@@ -3066,7 +3148,7 @@ def do_create_snapshot_create(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_CREATE_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def create_snapshot_create(guestname: str, snapshotname: str) -> None:
     task_core(
         cast(DoerType, do_create_snapshot_create),
@@ -3147,7 +3229,7 @@ def do_create_snapshot_stop_guest(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_STOP_GUEST_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def create_snapshot_stop_guest(guestname: str, snapshotname: str) -> None:
     task_core(
         cast(DoerType, do_create_snapshot_stop_guest),
@@ -3236,7 +3318,7 @@ def do_create_snapshot(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('CREATE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def create_snapshot(guestname: str, snapshotname: str) -> None:
     task_core(
         cast(DoerType, do_create_snapshot),
@@ -3295,7 +3377,7 @@ def do_route_snapshot_request(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('ROUTE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def route_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(
         cast(DoerType, do_route_snapshot_request),
@@ -3364,7 +3446,7 @@ def do_restore_snapshot_request(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('RESTORE_SNAPSHOT_REQUEST'))  # type: ignore  # Untyped decorator
+@task()
 def restore_snapshot_request(guestname: str, snapshotname: str) -> None:
     task_core(
         cast(DoerType, do_restore_snapshot_request),
@@ -3455,11 +3537,7 @@ def do_acquire_guest_console_url(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(  # type: ignore  # Untyped decorator
-    **actor_kwargs(
-        'ACQUIRE_GUEST_CONSOLE_URL',
-    )
-)
+@task()
 def acquire_guest_console_url(guestname: str) -> None:
     task_core(
         cast(DoerType, do_acquire_guest_console_url),
@@ -3468,12 +3546,9 @@ def acquire_guest_console_url(guestname: str) -> None:
     )
 
 
-@dramatiq.actor(  # type: ignore  # Untyped decorator
-    **actor_kwargs(
-        'REFRESH_POOL_RESOURCES_METRICS',
-        priority=TaskPriority.HIGH,
-        queue_name=TaskQueue.POOL_DATA_REFRESH
-    )
+@task(
+    priority=TaskPriority.HIGH,
+    queue_name=TaskQueue.POOL_DATA_REFRESH
 )
 def refresh_pool_resources_metrics(poolname: str) -> None:
     task_core(
@@ -3516,13 +3591,10 @@ def do_refresh_pool_resources_metrics_dispatcher(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(  # type: ignore  # Untyped decorator
-    **actor_kwargs(
-        'REFRESH_POOL_RESOURCES_METRICS',
-        periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value),
-        priority=TaskPriority.HIGH,
-        queue_name=TaskQueue.PERIODIC
-    )
+@task(
+    periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value),
+    priority=TaskPriority.HIGH,
+    queue_name=TaskQueue.PERIODIC
 )
 def refresh_pool_resources_metrics_dispatcher() -> None:
     """
@@ -3589,12 +3661,9 @@ def do_refresh_pool_image_info(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(  # type: ignore  # Untyped decorator
-    **actor_kwargs(
-        'REFRESH_POOL_IMAGE_INFO',
-        priority=TaskPriority.HIGH,
-        queue_name=TaskQueue.POOL_DATA_REFRESH
-    )
+@task(
+    priority=TaskPriority.HIGH,
+    queue_name=TaskQueue.POOL_DATA_REFRESH
 )
 def refresh_pool_image_info(poolname: str) -> None:
     task_core(
@@ -3637,13 +3706,10 @@ def do_refresh_pool_image_info_dispatcher(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(  # type: ignore  # Untyped decorator
-    **actor_kwargs(
-        'REFRESH_POOL_IMAGE_INFO',
-        periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value),
-        priority=TaskPriority.HIGH,
-        queue_name=TaskQueue.PERIODIC
-    )
+@task(
+    periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value),
+    priority=TaskPriority.HIGH,
+    queue_name=TaskQueue.PERIODIC
 )
 def refresh_pool_image_info_dispatcher() -> None:
     """
@@ -3710,13 +3776,7 @@ def do_refresh_pool_flavor_info(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(  # type: ignore  # Untyped decorator
-    **actor_kwargs(
-        'REFRESH_POOL_FLAVOR_INFO',
-        priority=TaskPriority.HIGH,
-        queue_name=TaskQueue.POOL_DATA_REFRESH
-    )
-)
+@task(priority=TaskPriority.HIGH, queue_name=TaskQueue.POOL_DATA_REFRESH)
 def refresh_pool_flavor_info(poolname: str) -> None:
     task_core(
         cast(DoerType, do_refresh_pool_flavor_info),
@@ -3758,13 +3818,10 @@ def do_refresh_pool_flavor_info_dispatcher(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(  # type: ignore  # Untyped decorator
-    **actor_kwargs(
-        'REFRESH_POOL_FLAVOR_INFO',
-        periodic=periodiq.cron(KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE.value),
-        priority=TaskPriority.HIGH,
-        queue_name=TaskQueue.PERIODIC
-    )
+@task(
+    periodic=periodiq.cron(KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE.value),
+    priority=TaskPriority.HIGH,
+    queue_name=TaskQueue.PERIODIC
 )
 def refresh_pool_flavor_info_dispatcher() -> None:
     """
