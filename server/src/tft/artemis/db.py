@@ -1,4 +1,3 @@
-import collections
 import datetime
 import enum
 import functools
@@ -225,7 +224,8 @@ def upsert(
     primary_keys: Dict[Any, Any],
     *,
     update_data: Optional[Dict[Any, Any]] = None,
-    insert_data: Optional[Dict[Any, Any]] = None
+    insert_data: Optional[Dict[Any, Any]] = None,
+    expected_records: Union[int, Tuple[int, int]] = 1
 ) -> Result[bool, 'Failure']:
     """
     Provide "INSERT ... ON CONFLICT UPDATE ..." primitive, also known as "UPSERT". Using primary key as a constraint,
@@ -296,6 +296,10 @@ def upsert(
             constraint=model.__table__.primary_key  # type: ignore
         )
 
+        # INSERT part of the query is still valid, but there's no ON CONFLICT UPDATE... Unfortunatelly,
+        # reporting changed rows for UPSERT has gaps :/ Setting to `1` for now, but it may change in the future.
+        expected_records = expected_records if expected_records is not None else 1
+
     else:
         statement = statement.on_conflict_do_update(
             constraint=model.__table__.primary_key,  # type: ignore
@@ -303,7 +307,9 @@ def upsert(
             where=where
         )
 
-    return safe_db_change(logger, session, statement)
+        expected_records = expected_records if expected_records is not None else 1
+
+    return safe_db_change(logger, session, statement, expected_records=expected_records)
 
 
 class UserRoles(enum.Enum):
@@ -933,34 +939,27 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
         sys.exit(1)
 
     with db.get_session() as session:
-        r_all_tags = SafeQuery.from_session(session, GuestTag).all()
-
-        if r_all_tags.is_error:
-            Failure.from_failure(
-                'failed to load guest tags',
-                r_all_tags.unwrap_error()
-            ).handle(logger)
-
-            sys.exit(1)
-
-        current_tags: Dict[str, GuestTagsType] = collections.defaultdict(dict)
-
-        for r in r_all_tags.unwrap():
-            current_tags[r.poolname][r.tag] = r.value
-
         def _add_tags(poolname: str, input_tags: GuestTagsType) -> None:
             for tag, value in input_tags.items():
                 logger.info('  Adding {}={}'.format(tag, value))
 
-                if tag in current_tags[poolname]:
-                    logger.info('    Already exists, skipping')
-                    continue
+                r = upsert(
+                    logger,
+                    session,
+                    GuestTag,
+                    {
+                        GuestTag.poolname: poolname,
+                        GuestTag.tag: tag
+                    },
+                    insert_data={
+                        GuestTag.value: value
+                    },
+                    update_data={
+                        'value': value
+                    }
+                )
 
-                session.add(GuestTag(
-                    poolname=poolname,
-                    tag=tag,
-                    value=value
-                ))
+                assert r.is_ok and r.unwrap() is True, 'Failed to initialize guest tag record'
 
         # Add system-level tags
         logger.info('Adding system-level guest tags')
@@ -971,23 +970,91 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
         for pool_config in server_config.get('pools', []):
             poolname = pool_config['name']
 
-            logger.info('Adding pool-level guest tag for pool {}'.format(poolname))
+            logger.info('Adding pool-level guest tags for pool {}'.format(poolname))
 
             _add_tags(poolname, cast(GuestTagsType, pool_config.get('guest_tags', {})))
 
-    with db.get_session() as session:
+        logger.info('Adding priority groups')
+
+        for priority_group_config in server_config.get('priority-groups', []):
+            logger.info('  Adding priority group "{}"'.format(
+                priority_group_config['name']
+            ))
+
+            r = upsert(
+                logger,
+                session,
+                PriorityGroup,
+                {
+                    PriorityGroup.name: priority_group_config['name']
+                },
+                # TODO: `ON CONFLICT DO NOTHING` UPSERT makes the mess out of expected rows, both 0 and 1 are valid.
+                expected_records=(0, 1)
+            )
+
+            assert r.is_ok and r.unwrap() is True, 'Failed to initialize priority group record'
+
+        logger.info('Adding pools')
+
+        for pool_config in server_config.get('pools', []):
+            logger.info('  Adding pool "{}"'.format(pool_config['name']))
+
+            pool_parameters = pool_config.get('parameters', {})
+
+            if pool_config['driver'] == 'openstack':
+                if 'project-domain-name' in pool_parameters and 'project-domain-id' in pool_parameters:
+                    from . import Failure
+
+                    Failure('Pool "{}" uses both project-domain-name and project-domain-id, name will be used'.format(
+                        pool_config['name']
+                    )).handle(logger)
+
+            r = upsert(
+                logger,
+                session,
+                Pool,
+                {
+                    Pool.poolname: pool_config['name']
+                },
+                insert_data={
+                    Pool.driver: pool_config['driver'],
+                    Pool.parameters: json.dumps(pool_parameters)
+                },
+                update_data={
+                    'parameters': json.dumps(pool_parameters)
+                }
+            )
+
+            assert r.is_ok and r.unwrap() is True, 'Failed to initialize pool record'
+
         # Insert our bootstrap users.
         def _add_user(username: str, role: UserRoles) -> None:
             logger.info('Adding user "{}" with role "{}"'.format(username, role.name))
 
-            user = User.create(username, role)
-            session.add(user)
+            # TODO: must handle case when the user exists, since we basically overwrite the tokens...
+            admin_token, admin_token_hash = User.generate_token()
+            provisioning_token, provisioning_token_hash = User.generate_token()
 
-            admin_token, user.admin_token = User.generate_token()
-            provisioning_token, user.provisioning_token = User.generate_token()
+            r = upsert(
+                logger,
+                session,
+                User,
+                {
+                    User.username: username
+                },
+                insert_data={
+                    User.admin_token: admin_token_hash,
+                    User.provisioning_token: provisioning_token_hash
+                },
+                # TODO: `ON CONFLICT DO NOTHING` UPSERT makes the mess out of expected rows, both 0 and 1 are valid.
+                expected_records=(0, 1)
+            )
 
-            logger.info('Default admin token for user "{}" is "{}"'.format(username, admin_token))
-            logger.info('Default provisioning token for user "{}" is "{}"'.format(username, provisioning_token))
+            assert r.is_ok and r.unwrap() is True, 'Failed to initialize user record'
+
+#            if r.unwrap() is True:
+#                logger.info('Default admin token for user "{}" is "{}"'.format(username, admin_token))
+#                logger.info('Default provisioning token for user "{}" is "{}"'.format(username, provisioning_token))
 
         # In one of the future patches, this will get few changes:
         #
@@ -1014,46 +1081,24 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
                 key_config['owner']
             ))
 
-            session.add(
-                SSHKey(
-                    keyname=key_config['name'],
-                    enabled=True,
-                    ownername=key_config['owner'],
-                    file=key_config['file']
-                )
+            r = upsert(
+                logger,
+                session,
+                SSHKey,
+                {
+                    SSHKey.keyname: key_config['name']
+                },
+                insert_data={
+                    SSHKey.enabled: True,
+                    SSHKey.ownername: key_config['owner'],
+                    SSHKey.file: key_config['file'],
+                },
+                update_data={
+                    'file': key_config['file']
+                }
             )
 
-        for priority_group_config in server_config.get('priority-groups', []):
-            logger.info('Adding priority group "{}"'.format(
-                priority_group_config['name']
-            ))
-
-            session.add(
-                PriorityGroup(
-                    name=priority_group_config['name']
-                )
-            )
-
-        for pool_config in server_config.get('pools', []):
-            logger.info('Adding pool "{}"'.format(pool_config['name']))
-
-            pool_parameters = pool_config.get('parameters', {})
-
-            if pool_config['driver'] == 'openstack':
-                if 'project-domain-name' in pool_parameters and 'project-domain-id' in pool_parameters:
-                    from . import Failure
-
-                    Failure('Pool "{}" uses both project-domain-name and project-domain-id, name will be used'.format(
-                        pool_config['name']
-                    )).handle(logger)
-
-            session.add(
-                Pool(
-                    poolname=pool_config['name'],
-                    driver=pool_config['driver'],
-                    parameters=json.dumps(pool_parameters)
-                )
-            )
+            assert r.is_ok and r.unwrap() is True, 'Failed to initialize SSH key record'
 
 
 def init_postgres() -> None:

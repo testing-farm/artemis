@@ -1440,7 +1440,7 @@ def safe_db_change(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     query: Any,
-    expected_records: int = 1
+    expected_records: Union[int, Tuple[int, int]] = 1,
 ) -> Result[bool, Failure]:
     """
     Execute a given SQL query, ``INSERT``, ``UPDATE`` or ``DELETE``, followed by an explicit commit. Verify
@@ -1452,7 +1452,7 @@ def safe_db_change(
         a :py:class:`Failure` instance.
     """
 
-    logger.debug(f'safe db change: {stringify_query(session, query)}')
+    logger.debug(f'safe db change: {stringify_query(session, query)} - expect {expected_records} records')
 
     r = safe_call(session.execute, query)
 
@@ -1470,12 +1470,30 @@ def safe_db_change(
         r.value
     )
 
-    if query_result.rowcount != expected_records:
-        logger.warning(f'expected {expected_records} matching rows, found {query_result.rowcount}')
+    if query_result.is_insert:
+        # TODO: INSERT sets this correctly, but what about INSERT + ON CONFLICT? If the row exists,
+        # TODO: rowcount is set to 0, but the (optional) UPDATE did happen, so... UPSERT should probably
+        # TODO: be ready to accept both 0 and 1. We might need to return more than just true/false for
+        # TODO: ON CONFLICT to become auditable.
+        affected_rows = query_result.rowcount
+
+    else:
+        affected_rows = query_result.rowcount
+
+    if isinstance(expected_records, tuple):
+        if not (expected_records[0] <= affected_rows <= expected_records[1]):
+            logger.warning(
+                f'expected {expected_records[0]} - {expected_records[1]} matching rows, found {affected_rows}'
+            )
+
+            return Ok(False)
+
+    elif affected_rows != expected_records:
+        logger.warning(f'expected {expected_records} matching rows, found {affected_rows}')
 
         return Ok(False)
 
-    logger.debug(f'found {query_result.rowcount} matching rows, as expected')
+    logger.debug(f'found {affected_rows} matching rows, as expected')
 
     r = safe_call(session.commit)
 

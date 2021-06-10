@@ -80,9 +80,9 @@ case $APP in
         ;;
     initdb)
         # Initialize or upgrade the database to the latest version
-        poetry run alembic upgrade head
+        poetry run alembic upgrade head || { echo "failed to upgrade DB Schema"; exit 1; }
         # Initialize records from server.yml
-        poetry run artemis-init-postgres-schema
+        poetry run artemis-init-postgres-schema || { echo "failed to initialize DB content"; exit 1; }
         exit 0
         ;;
     scheduler)
