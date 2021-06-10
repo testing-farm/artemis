@@ -1080,12 +1080,12 @@ class ProvisioningMetrics(MetricsBase):
         }
         # fields are in form `from_pool:to_pool`
         self.failover = {
-            cast(Tuple[str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_FAILOVER).items()
         }
         # fields are in form `from_pool:to_pool`
         self.failover_success = {
-            cast(Tuple[str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_FAILOVER_SUCCESS).items()
         }
         # Using `query` directly, because we need just limited set of fields, and we need our `Query`
@@ -1322,7 +1322,7 @@ class RoutingMetrics(MetricsBase):
         }
         # fields are in form `policy:pool:allowed`
         self.policy_rulings = {
-            cast(Tuple[str, str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_RULINGS).items()
         }
 
@@ -1617,27 +1617,27 @@ class TaskMetrics(MetricsBase):
 
         # queue:actor => count
         self.overall_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_MESSAGES).items()
         }
         self.overall_errored_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_ERRORED_MESSAGES).items()
         }
         self.overall_retried_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_RETRIED_MESSAGES).items()
         }
         self.overall_rejected_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_REJECTED_MESSAGES).items()
         }
         self.current_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_CURRENT_MESSAGES).items()
         }
         self.current_delayed_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_CURRENT_DELAYED_MESSAGES).items()
         }
         # queue:actor:bucket:poolname => count
@@ -1645,7 +1645,7 @@ class TaskMetrics(MetricsBase):
         self.message_durations = {}
 
         for field, count in get_metric_fields(logger, cache, self._KEY_MESSAGE_DURATIONS).items():
-            field_split = tuple(field.split(':'))
+            field_split = tuple(field.split(':', 3))
 
             if len(field_split) == 3:
                 field_split = field_split + ('undefined',)
@@ -1792,7 +1792,7 @@ class APIMetrics(MetricsBase):
             logger,
             cache,
             APIMetrics._KEY_REQUEST_DURATIONS,
-            '{}:{}:{}'.format(method, path, bucket)
+            '{}:{}:{}'.format(method, bucket, path)
         )
 
         return Ok(None)
@@ -1817,7 +1817,7 @@ class APIMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, APIMetrics._KEY_REQUEST_COUNT, '{}:{}:{}'.format(method, path, status))
+        inc_metric_field(logger, cache, APIMetrics._KEY_REQUEST_COUNT, '{}:{}:{}'.format(method, status, path))
         return Ok(None)
 
     @staticmethod
@@ -1904,21 +1904,24 @@ class APIMetrics(MetricsBase):
 
         super(APIMetrics, self).sync()
 
-        # method:path => count
+        # NOTE: some paths may contain `:` => `path` must be the last bit, and `split()` must be called
+        # with limited number of splits to prevent `path` exploding.
+
+        # method:bucket:path => count
         self.request_durations = {
-            cast(Tuple[str, str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_DURATIONS).items()
         }
 
-        # method:path:status => count
+        # method:status:path => count
         self.request_count = {
-            cast(Tuple[str, str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_COUNT).items()
         }
 
         # method:path => count
         self.request_inprogress_count = {
-            cast(Tuple[str, str], tuple(field.split(':'))): count
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_INPROGRESS_COUNT).items()
         }
 
@@ -1934,23 +1937,31 @@ class APIMetrics(MetricsBase):
 
         # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
         # since we don't track the exact duration, just what bucket it falls into.
-        for (method, path, bucket_threshold), count in self.request_durations.items():
+        for (method, bucket_threshold, path), count in self.request_durations.items():
             bucket_index = HTTP_REQUEST_DURATION_BUCKETS.index(
                 prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
             )
 
-            self.REQUEST_DURATIONS.labels(method, path)._buckets[bucket_index].set(count)
-            self.REQUEST_DURATIONS.labels(method, path)._sum.inc(float(bucket_threshold) * count)
+            self.REQUEST_DURATIONS \
+                .labels(method=method, path=path) \
+                ._buckets[bucket_index].set(count)
+            self.REQUEST_DURATIONS \
+                .labels(method=method, path=path) \
+                ._sum.inc(float(bucket_threshold) * count)
 
         reset_counters(self.REQUEST_COUNT)
 
-        for (method, path, status), count in self.request_count.items():
-            self.REQUEST_COUNT.labels(method, path, status)._value.set(count)
+        for (method, status, path), count in self.request_count.items():
+            self.REQUEST_COUNT \
+                .labels(method=method, path=path, status=status) \
+                ._value.set(count)
 
         reset_counters(self.REQUESTS_INPROGRESS_COUNT)
 
         for (method, path), count in self.request_inprogress_count.items():
-            self.REQUESTS_INPROGRESS_COUNT.labels(method, path)._value.set(count)
+            self.REQUESTS_INPROGRESS_COUNT \
+                .labels(method=method, path=path) \
+                ._value.set(count)
 
 
 @dataclasses.dataclass
