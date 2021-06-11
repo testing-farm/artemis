@@ -168,9 +168,6 @@ class PoolImageInfo(SerializableContainer):
     def __repr__(self) -> str:
         return f'<PoolImageInfo: name={self.name} id={self.id}>'
 
-    def serialize_to_json(self) -> Dict[str, Any]:
-        return dataclasses.asdict(self)
-
 
 @dataclasses.dataclass(repr=False)
 class PoolFlavorInfo(SerializableContainer):
