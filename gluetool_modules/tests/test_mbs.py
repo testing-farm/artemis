@@ -81,6 +81,11 @@ def fixture_get(mbs_module_info, monkeypatch):
             mbs_module_info['scmurl'] = 'nourl'
             response.json.return_value = {'items': [mbs_module_info]}
 
+        # NSVC search - scm url is None
+        elif location.startswith('None/module-build-service/1/module-builds/?context=empty-scm-url'):
+            mbs_module_info['scmurl'] = None
+            response.json.return_value = {'items': [mbs_module_info]}
+
         return response
 
     monkeypatch.setattr(gluetool_modules.infrastructure.mbs.requests, 'get', dummy_request)
@@ -198,8 +203,9 @@ def test_no_dependencies(module, monkeypatch, get, tags, mbs_module_info):
         assert module.primary_task().dependencies is None
 
 
-def test_no_scm_url(module, get, tags):
-    module._config['nsvc'] = ['rust-toolset:rhel8:820181105234334:no-scm-url']
+@pytest.mark.parametrize("context", ['no-scm-url', 'empty-scm-url'])
+def test_no_scm_url(module, get, tags, context):
+    module._config['nsvc'] = ['rust-toolset:rhel8:820181105234334:{}'.format(context)]
 
     module.execute()
 
