@@ -93,8 +93,12 @@ class OpenStackDriver(PoolDriver):
         if r_capabilities.is_error:
             return r_capabilities
 
-        r_capabilities.unwrap().supports_native_post_install_script = True
-        r_capabilities.unwrap().supports_console_url = True
+        capabilities = r_capabilities.unwrap()
+
+        capabilities.supports_native_post_install_script = True
+        capabilities.supports_console_url = True
+        capabilities.supports_snapshots = True
+
         return r_capabilities
 
     def _run_os(self, options: List[str], json_format: bool = True) -> Result[Union[JSONType, str], Failure]:

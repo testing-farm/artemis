@@ -46,7 +46,6 @@ pools:
       post-install-script: "{{ openstack.vms.post_install_script }}"
 
       capabilities:
-        supports-snapshots: true
         supports-spot-instances: false
         supported-architectures:
           - x86_64
@@ -68,8 +67,6 @@ pools:
       post-install-script: "{{ azure.vms.post_install_script }}"
 
       capabilities:
-        # snapshot feature is not yet implemented for Azure driver
-        supports-snapshots: false
         supports-spot-instances: false
         supported-architectures:
           - x86_64
@@ -167,7 +164,6 @@ pools:
       #      model-name: "Intel(R) Xeon(R) CPU E5-2676 v3 @ 2.40GHz"
 
       capabilities:
-        supports-snapshots: False
         supports-spot-instances: {{ aws.vms.use_spot_instances | default(true) }}
         supported-architectures:
           - x86_64
@@ -190,7 +186,6 @@ pools:
       {% endif -%}
 
       capabilities:
-        supports-snapshots: False
         supports-spot-instances: false
         # supports any architecture - there may be other constraints based on distro vs. arch support,
         # but in general, Beaker is open

@@ -255,6 +255,8 @@ def flavor_to_key(
 @dataclasses.dataclass
 class PoolCapabilities:
     supported_architectures: Union[List[str], _AnyArchitecture] = AnyArchitecture
+
+    #: If set, the pool driver can handle snapshots.
     supports_snapshots: bool = False
     supports_console_url: bool = False
 
