@@ -2,7 +2,7 @@ import dataclasses
 import os
 import stat
 import threading
-from typing import Any, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import bs4
 import gluetool.log
@@ -227,6 +227,25 @@ def environment_to_beaker_filter(environment: Environment) -> Result[bs4.Beautif
 
 
 class BeakerDriver(PoolDriver):
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        poolname: str,
+        pool_config: Dict[str, Any]
+    ) -> None:
+        super(BeakerDriver, self).__init__(logger, poolname, pool_config)
+
+        # Prepare `bkr` command with options we can already deduce.
+        self._bkr_command = [
+            'bkr'
+        ]
+
+        if self.pool_config.get('username') and self.pool_config.get('password'):
+            self._bkr_command += [
+                '--username', self.pool_config['username'],
+                '--password', self.pool_config['password']
+            ]
+
     def _run_bkr(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -241,15 +260,9 @@ class BeakerDriver(PoolDriver):
             describing the problem.
         """
 
-        if self.pool_config.get('username') and self.pool_config.get('password'):
-            options.extend([
-                '--username', self.pool_config['username'],
-                '--password', self.pool_config['password']
-            ])
-
         r_run = run_cli_tool(
             logger,
-            ['bkr'] + options,
+            self._bkr_command + options,
             json_output=False
         )
 
