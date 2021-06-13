@@ -101,15 +101,20 @@ class AuthContext:
 
     user: Optional[User] = None
 
+    _serialized_fields = (
+        'is_authentication_enabled',
+        'is_authorization_enabled',
+        'is_empty',
+        'is_invalid_request',
+        'is_authenticated',
+        'is_authorized',
+        'username'
+    )
+
     def serialize(self) -> str:
         return json.dumps({
-            'is_authentication_enabled': self.is_authentication_enabled,
-            'is_authorization_enabled': self.is_authorization_enabled,
-            'is_empty': self.is_empty,
-            'is_invalid_request': self.is_invalid_request,
-            'is_authenticated': self.is_authenticated,
-            'is_authorized': self.is_authorized,
-            'username': self.username
+            field: getattr(self, field)
+            for field in self._serialized_fields
         })
 
     @classmethod
@@ -122,10 +127,8 @@ class AuthContext:
             is_authorization_enabled=unserialized['is_authorization_enabled']
         )
 
-        ctx.is_empty = unserialized['is_empty']
-        ctx.is_invalid_request = unserialized['is_invalid_request']
-        ctx.is_authenticated = unserialized['is_authenticated']
-        ctx.is_authorized = unserialized['is_authorized']
+        for field in AuthContext._serialized_fields:
+            setattr(ctx, field, unserialized[field])
 
         return ctx
 
@@ -181,6 +184,10 @@ class AuthContext:
             self.is_invalid_request = True
             return
 
+        if not username or not password:
+            self.is_invalid_request = True
+            return
+
         try:
             self.username, self.token = urllib.parse.unquote(username), urllib.parse.unquote(password)
 
@@ -201,6 +208,7 @@ class AuthContext:
             return
 
         assert self.username is not None
+        assert self.token is not None
 
         r_user = SafeQuery.from_session(session, User) \
             .filter(User.username == self.username) \
@@ -214,12 +222,12 @@ class AuthContext:
         if not user:
             return
 
-        if token_type == 'provisioning' and user.provisioning_token == self.token:
+        if token_type == 'provisioning' and user.provisioning_token == User.hash_token(self.token):
             self.user = user
             self.is_authenticated = True
             return
 
-        if token_type == 'admin' and user.admin_token == self.token:
+        if token_type == 'admin' and user.admin_token == User.hash_token(self.token):
             self.user = user
             self.is_authenticated = True
 
