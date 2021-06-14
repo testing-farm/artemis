@@ -1067,16 +1067,18 @@ class AWSDriver(PoolDriver):
         if r_subnet.is_error:
             return Error(r_subnet.unwrap_error())
 
-        # Extracting available IPs...
-        resources.usage.networks[subnet_id] = PoolNetworkResources(
-            addresses=JQ_QUERY_SUBNET_AVAILABLE_IPS.input(r_subnet.unwrap()).first()
-        )
-
-        # ... and total IPs.
+        # Extract the total number of IPs...
         cidr = JQ_QUERY_SUBNET_CIDR.input(r_subnet.unwrap()).first()
         network = ipaddress.ip_network(cidr)
 
         # drop network address and broadcast
         resources.limits.networks[subnet_id] = PoolNetworkResources(addresses=network.num_addresses - 2)
+
+        # .. and usage - AWS reports "available", but we want "usage", really.
+        available_ips = JQ_QUERY_SUBNET_AVAILABLE_IPS.input(r_subnet.unwrap()).first()
+
+        resources.usage.networks[subnet_id] = PoolNetworkResources(
+            addresses=resources.limits.networks[subnet_id].addresses - available_ips
+        )
 
         return Ok(resources)
