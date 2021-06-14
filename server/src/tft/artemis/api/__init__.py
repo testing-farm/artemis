@@ -1433,13 +1433,13 @@ def restore_snapshot_request(
 @molten.schema
 @dataclasses.dataclass
 class GuestLogResponse:
-    contenttype: artemis_db.GuestLogContentType
+    contenttype: str
 
     url: Optional[str]
     blob: Optional[str]
 
-    updated: datetime.datetime
-    expires: datetime.datetime
+    updated: Optional[datetime.datetime]
+    expires: Optional[datetime.datetime]
     complete: bool
 
     @classmethod
@@ -1519,7 +1519,7 @@ def create_guest_request_log(
     if r_dispatch.is_error:
         raise errors.InternalServerError(
             logger=guest_logger,
-            caused_by=r_dispatch,
+            caused_by=r_dispatch.unwrap_error(),
             failure_details=failure_details
         )
 

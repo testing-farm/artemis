@@ -2013,7 +2013,8 @@ def do_update_guest_log(
 
         return handle_success('finished-task', return_value=RESCHEDULE)
 
-    if guest_log.complete and guest_log.expires > datetime.datetime.now():
+    logs_expired = guest_log.expires and guest_log.expires > datetime.datetime.now()
+    if guest_log.complete and not logs_expired:
         return handle_success('finished-task')
 
     r_update = workspace.pool.update_guest_log(

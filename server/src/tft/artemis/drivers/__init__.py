@@ -884,7 +884,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        raise Error(Failure('cannot provide guest log: functionality not supported for this cloud driver'))
+        return Error(Failure('cannot provide guest log: functionality not supported for this cloud driver'))
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         capabilities = PoolCapabilities()
