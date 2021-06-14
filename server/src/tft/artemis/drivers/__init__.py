@@ -884,7 +884,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        raise NotImplementedError()
+        raise Error(Failure('cannot provide guest log: functionality not supported for this cloud driver'))
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         capabilities = PoolCapabilities()
@@ -960,7 +960,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
         }
 
         if guest_request.user_data:
-            # XXX FIXME(ivasilev) Fix in a different patch
             tags.update(json.loads(guest_request.user_data) or {})
 
         tags['ArtemisGuestName'] = guest_request.guestname

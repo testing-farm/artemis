@@ -258,6 +258,8 @@ def upsert(
 
     from sqlalchemy.dialects.postgresql import insert
 
+    from . import safe_db_change
+
     # Prepare condition for `WHERE` statement. Basically, we focus on given primary keys and their values. If we
     # were given multiple columns, we need to join them via `AND` so we could present just one value to `where`
     # parameter of the `on_conflict_update` clause.
@@ -301,7 +303,7 @@ def upsert(
             where=where
         )
 
-    session.execute(statement)
+    return safe_db_change(logger, session, statement)
 
 
 class UserRoles(enum.Enum):

@@ -902,12 +902,11 @@ class OpenStackDriver(PoolDriver):
                 expires=datetime.utcnow() + timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
             ))
 
-        else:
-            # run `os` and do some magic to update console log
-            output = _do_fetch('log', False)
-            return Ok(GuestLogUpdateProgress(
-                complete=True,
-                blob=output,
-                delay_update=30,
-                expires=datetime.utcnow() + timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
-            ))
+        # run `os` and do some magic to update console log
+        output = _do_fetch('log', False)
+        return Ok(GuestLogUpdateProgress(
+            complete=True,
+            blob=output,
+            delay_update=30,
+            expires=datetime.utcnow() + timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
+        ))
