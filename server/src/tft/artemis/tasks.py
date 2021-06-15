@@ -21,7 +21,7 @@ from typing_extensions import Protocol
 from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
     safe_call, safe_db_change
 from .context import DATABASE, LOGGER, SESSION, with_context
-from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestRequest, Pool, SafeQuery, \
+from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
     SnapshotRequest, SSHKey, upsert
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
@@ -1972,14 +1972,24 @@ def do_update_guest_log(
     handle_success('enter-task')
 
     workspace = Workspace(logger, session, cancel, handle_failure)
-    workspace.load_guest_request(guestname, state=GuestState.READY)
-    workspace.load_gr_pool()
+    workspace.load_guest_request(guestname)
 
     if workspace.result:
         return workspace.result
 
     assert workspace.gr
-    assert workspace.gr.address
+
+    if workspace.gr.state in (GuestState.CONDEMNED.value, GuestState.ERROR.value):
+        return handle_success('finished-task')
+
+    if workspace.gr.pool is None:
+        return handle_success('finished-task', return_value=RESCHEDULE)
+
+    workspace.load_gr_pool()
+
+    if workspace.result:
+        return workspace.result
+
     assert workspace.pool
 
     r_guest_log = SafeQuery.from_session(session, GuestLog) \
@@ -1997,7 +2007,7 @@ def do_update_guest_log(
         # We're the first: create the record, and reschedule. We *could* proceed and try to fetch the data, too,
         # let's try with another task run first.
 
-        upsert(
+        r_upsert = upsert(
             logger,
             session,
             GuestLog,
@@ -2007,30 +2017,56 @@ def do_update_guest_log(
                 GuestLog.contenttype: contenttype
             },
             insert_data={
-                GuestLog.complete: False
+                GuestLog.state: GuestLogState.PENDING
             }
         )
 
+        if r_upsert.is_error:
+            return handle_failure(r_upsert, 'failed to create log record')
+
         return handle_success('finished-task', return_value=RESCHEDULE)
 
-    logs_expired = guest_log.expires and guest_log.expires > datetime.datetime.now()
-    if guest_log.complete and not logs_expired:
+    logger.debug(f'guest-log: {guest_log.logname} {guest_log.contenttype} {guest_log.state}')
+
+    if guest_log.state == GuestLogState.ERROR:
+        # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
+        # to different pool, and here the could succeed - but it's never going to be tried again since it's
+        # in ERROR state and there's no way to "reset" the state - possibly do that in API via POST.
         return handle_success('finished-task')
 
-    r_update = workspace.pool.update_guest_log(
-        workspace.gr,
-        guest_log
-    )
+    elif guest_log.state == GuestLogState.COMPLETE:
+        if not guest_log.is_expired:
+            return handle_success('finished-task')
+
+        r_update = workspace.pool.update_guest_log(
+            workspace.gr,
+            guest_log
+        )
+
+    elif guest_log.state == GuestLogState.PENDING:
+        r_update = workspace.pool.update_guest_log(
+            workspace.gr,
+            guest_log
+        )
+
+    elif guest_log.state == GuestLogState.IN_PROGRESS:
+        r_update = workspace.pool.update_guest_log(
+            workspace.gr,
+            guest_log
+        )
 
     if r_update.is_error:
         return handle_failure(r_update, 'failed to update the log')
 
     update_progress = r_update.unwrap()
 
+    logger.debug(f'update-progress: {update_progress}')
+
     query = sqlalchemy \
         .update(GuestLog.__table__) \
         .where(GuestLog.guestname == workspace.gr.guestname) \
         .where(GuestLog.logname == logname) \
+        .where(GuestLog.state == guest_log.state) \
         .where(GuestLog.contenttype == contenttype) \
         .where(GuestLog.updated == guest_log.updated) \
         .where(GuestLog.url == guest_log.url) \
@@ -2039,15 +2075,9 @@ def do_update_guest_log(
             url=update_progress.url,
             blob=update_progress.blob,
             updated=datetime.datetime.utcnow(),
-            complete=update_progress.complete,
+            state=update_progress.state,
             expires=update_progress.expires
         )
-
-    # flake8 is going to complain about `==` being used with booleans, but SQLAlchemy can't handle `is` when
-    # creating the query, just `==`.
-    # XXX FIXME(ivasilev) complete has to be reevaluated as many factors can affect it
-    # (is expired? is data fully fetched?)
-    #query = query.where(GuestLog.complete == False)  # noqa
 
     r_store = safe_db_change(logger, session, query)
 
@@ -2057,14 +2087,24 @@ def do_update_guest_log(
     if r_store.unwrap() is not True:
         return handle_success('finished-task', return_value=RESCHEDULE)
 
-    if not update_progress.complete:
-        workspace.dispatch_task(
-            update_guest_log,
-            guestname,
-            logname,
-            contenttype.value,
-            delay=update_progress.delay_update or KNOB_UPDATE_GUEST_LOG_DELAY.value
-        )
+    if update_progress.state == GuestLogState.PENDING:
+        Failure('guest log update should not result in PENDING').handle(logger)
+
+        return handle_success('finished-task', return_value=RESCHEDULE)
+
+    if update_progress.state == GuestLogState.COMPLETE:
+        return handle_success('finished-task')
+
+    if update_progress.state == GuestLogState.ERROR:
+        return handle_success('finished-task')
+
+    workspace.dispatch_task(
+        update_guest_log,
+        guestname,
+        logname,
+        contenttype.value,
+        delay=update_progress.delay_update or KNOB_UPDATE_GUEST_LOG_DELAY.value
+    )
 
     if workspace.result:
         return workspace.result
@@ -2320,38 +2360,6 @@ def do_guest_request_prepare_finalize_post_connect(
 
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
-
-    # TODO: missing return value test!
-    # assert workspace.gr
-    #
-    # r_upsert = upsert(
-    #     logger,
-    #     session,
-    #     GuestLog,
-    #     {
-    #         GuestLog.guestname: workspace.gr.guestname,
-    #         GuestLog.logname: 'console',
-    #         GuestLog.logtype: GuestLogType.CONSOLE,
-    #         GuestLog.contenttype: GuestLogContentType.BLOB
-    #     },
-    #     insert_data={
-    #         getattr(GuestLog, 'blob'): ''
-    #     },
-    #     update_data={
-    #         'blob': ''
-    #     }
-    # )
-    #
-    # if r_upsert.is_error:
-    #     return handle_failure(r_upsert)
-    #
-    # workspace.dispatch_task(
-    #     update_guest_log,
-    #      workspace.gr.guestname,
-    #     'console',
-    #     GuestLogType.CONSOLE.value,
-    #     GuestLogContentType.BLOB.value
-    # )
 
     workspace.update_guest_state(
         GuestState.READY,

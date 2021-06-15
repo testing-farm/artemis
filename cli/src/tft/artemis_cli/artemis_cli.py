@@ -14,13 +14,12 @@ import click_completion
 import click_spinner
 import requests
 import stackprinter
+
 from tft import artemis_cli
 
-from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
-               artemis_create, artemis_delete, artemis_get_console_url,
-               artemis_get_guest_log, artemis_create_guest_log,
-               artemis_inspect, artemis_restore, artemis_update, confirm,
-               fetch_remote, prettify_json, prettify_yaml, prompt)
+from . import GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger, artemis_create, artemis_create_guest_log, \
+    artemis_delete, artemis_get_console_url, artemis_get_guest_log, artemis_inspect, artemis_restore, artemis_update, \
+    confirm, fetch_artemis, fetch_remote, prettify_json, prettify_yaml, prompt
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT=10000
@@ -401,21 +400,63 @@ def cmd_guest_events(
 @click.argument('logname', metavar='LOGNAME',)
 @click.argument('contenttype', metavar='CONTENTTYPE',)
 @click.option('--wait', is_flag=True, default=False, help='Poll the server till the log is ready')
+@click.option('--force', is_flag=True, default=False, help='Force request')
 @click.pass_obj
-def cmd_guest_log(cfg: Configuration, guestname: str, logname: str, contenttype: str, wait:bool) -> None:
-    response = artemis_get_guest_log(cfg, 'guests', guestname, logname, contenttype)
-    if response.status_code == 204:
-        # first time asking for this type of log
-        response = artemis_create_guest_log(cfg, 'guests', guestname, logname, contenttype)
+def cmd_guest_log(cfg: Configuration, guestname: str, logname: str, contenttype: str, wait:bool, force: bool) -> None:
+    if force:
+        response = fetch_artemis(
+            cfg,
+            '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+            method='post',
+            allow_statuses=[202]
+        )
 
-    if wait:
-        def is_null(response):
-            return not response.json() or all(not response.json().get(x) for x in ['url', 'blob'])
+    else:
+        response = fetch_artemis(
+            cfg,
+            '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+            allow_statuses=[200, 404, 409]
+        )
 
+        if response.status_code == 404:
+            # first time asking for this type of log
+            response = fetch_artemis(
+                cfg,
+                '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+                method='post',
+                allow_statuses=[202]
+            )
+
+        elif response.status_code == 409:
+            # exists, but it's expired
+            response = fetch_artemis(
+                cfg,
+                '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+                method='post',
+                allow_statuses=[202]
+            )
+
+    if response.status_code != 200 and wait:
         with click_spinner.spinner():
-            while response.status_code in [202, 204] or is_null(response):
-                response = artemis_get_guest_log(cfg, 'guests', guestname, logname, contenttype)
+            while True:
+                response = fetch_artemis(
+                    cfg,
+                    '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+                    allow_statuses=[200, 404, 409]
+                )
+
+                # the request may still report conflict, until Artemis actually gets to it.
+                if response.status_code in (404, 409):
+                    pass
+
+                elif response.status_code == 200:
+                    break
+
+                else:
+                    cfg.logger.error('unexpected status code {}'.format(response.status_code))
+
                 time.sleep(cfg.provisioning_poll_interval)
+
         click.echo(GREEN('Guest log obtained.'))
 
     cfg.logger.info(prettify_json(True, response.json() or {}))

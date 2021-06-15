@@ -315,13 +315,17 @@ class UserRoles(enum.Enum):
     ADMIN = 'ADMIN'
 
 
+class GuestLogState(enum.Enum):
+    PENDING = 'pending'
+    IN_PROGRESS = 'in-progress'
+    COMPLETE = 'complete'
+    # Note: this state does *not* demand a retry - it is a final state
+    ERROR = 'error'
+
+
 class GuestLogContentType(enum.Enum):
     URL = 'url'
     BLOB = 'blob'
-
-
-class GuestLogType(enum.Enum):
-    CONSOLE = 'console'
 
 
 class User(Base):
@@ -494,13 +498,7 @@ class GuestRequest(Base):
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
-
-    logs = relationship(
-        'GuestLog',
-        back_populates='guest',
-        cascade="all, delete, delete-orphan",
-        passive_deletes=True
-    )
+    logs = relationship('GuestLog', back_populates='guest')
 
     def log_event(
         self,
@@ -546,19 +544,26 @@ class GuestRequest(Base):
 class GuestLog(Base):
     __tablename__ = 'guest_logs'
 
-    guestname = Column(String(), ForeignKey('guest_requests.guestname', ondelete='CASCADE'), nullable=False,
-                       primary_key=True)
+    guestname = Column(String(), ForeignKey('guest_requests.guestname'), nullable=False, primary_key=True)
     logname = Column(String(), nullable=False, primary_key=True)
     contenttype = Column(Enum(GuestLogContentType), nullable=False, primary_key=True)
+
+    state = Column(Enum(GuestLogState), nullable=True, default=GuestLogState.PENDING)
 
     url = Column(String(), nullable=True)
     blob = Column(String(), nullable=True)
 
     updated = Column(DateTime(), nullable=True)
-    complete = Column(Boolean(), nullable=False, default=True)
     expires = Column(DateTime(), nullable=True)
 
     guest = relationship('GuestRequest', back_populates='logs')
+
+    @property
+    def is_expired(self) -> bool:
+        if self.expires is None:
+            return False
+
+        return self.expires < datetime.datetime.utcnow()
 
 
 class GuestEvent(Base):

@@ -25,7 +25,7 @@ from typing_extensions import Protocol
 from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
     process_output_to_str, refresh_cached_set, safe_call
 from ..context import CACHE, LOGGER
-from ..db import GuestLog, GuestRequest, GuestTag, SnapshotRequest, SSHKey
+from ..db import GuestLog, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk
 from ..metrics import PoolCostsMetrics, PoolResourcesMetrics, ResourceType
 
@@ -392,7 +392,7 @@ class PoolResourcesIDs:
 
 @dataclasses.dataclass
 class GuestLogUpdateProgress:
-    complete: bool = False
+    state: GuestLogState
 
     url: Optional[str] = None
     blob: Optional[str] = None
@@ -884,7 +884,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        return Error(Failure('cannot provide guest log: functionality not supported for this cloud driver'))
+        # TODO logs: add a list of supported logs to capabilities
+        # cannot provide guest log: functionality not supported for this cloud driver
+        return Ok(GuestLogUpdateProgress(
+            state=GuestLogState.ERROR
+        ))
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         capabilities = PoolCapabilities()

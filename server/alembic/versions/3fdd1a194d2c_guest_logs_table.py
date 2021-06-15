@@ -6,9 +6,9 @@ Revises: 5f50a93ea161
 Create Date: 2021-05-26 14:37:45.750543
 
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = '3fdd1a194d2c'
@@ -26,7 +26,7 @@ def upgrade():
         sa.Column('url', sa.String(), nullable=True),
         sa.Column('blob', sa.String(), nullable=True),
         sa.Column('updated', sa.DateTime(), nullable=True),
-        sa.Column('complete', sa.Boolean(), nullable=False),
+        sa.Column('state', sa.String(), nullable=False),
         sa.Column('expires', sa.DateTime(), nullable=True),
 
         sa.PrimaryKeyConstraint('guestname', 'logname', 'contenttype')
