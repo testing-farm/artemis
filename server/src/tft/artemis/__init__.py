@@ -1433,7 +1433,7 @@ def stringify_query(session: sqlalchemy.orm.session.Session, query: Any) -> str:
     to string.
     """
 
-    return cast(str, query.compile(dialect=session.bind.dialect))
+    return str(query.compile(dialect=session.bind.dialect))
 
 
 def safe_db_change(
