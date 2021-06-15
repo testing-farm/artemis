@@ -163,12 +163,8 @@ properties:
                       enum:
                         - "any"
 
-                supports-snapshots:
-                  type: boolean
-
               required:
                 - supported-architectures
-                - supports-snapshots
 
             custom-flavors:
               type: array
