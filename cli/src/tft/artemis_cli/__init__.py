@@ -5,7 +5,7 @@ import shlex
 import subprocess
 import sys
 from typing import (Any, Callable, Dict, Iterable, List, NamedTuple, NoReturn,
-                    Optional, Tuple, TypeVar, cast)
+                    Optional, Tuple, TypeVar)
 
 import click
 import click_spinner
@@ -60,7 +60,7 @@ class Logger:
 class Configuration:
     raw_config: Optional[Any] = None
 
-    logger: Optional[Logger] = None
+    logger: Logger = dataclasses.field(default_factory=Logger)
 
     config_dirpath: Optional[str] = None
     config_filepath: Optional[str] = None
@@ -69,10 +69,11 @@ class Configuration:
 
     output_format: str = 'human'
 
-    artemis_api_url: str = None
-    artemis_api_version: str = None
+    artemis_api_url: Optional[str] = None
+    artemis_api_version: Optional[str] = None
 
     provisioning_poll_interval: float = 10
+
 
 # Colorization
 def BLUE(s: str) -> str:
@@ -148,7 +149,7 @@ def prettify_yaml(flag: bool, data: Any) -> str:
 
     Y.dump(data, stream)
 
-    return cast(str, stream.getvalue())
+    return stream.getvalue()
 
 
 def execute_command(
@@ -202,7 +203,7 @@ def fetch_remote(
     spinner: bool = False,
     method: str = 'get',
     request_kwargs: Optional[Dict[str, Any]] = None,
-    on_error: Optional[Callable[[requests.Response], None]] = None,
+    on_error: Optional[Callable[[requests.Response, Dict[str, Any]], None]] = None,
     allow_statuses: Optional[List[int]] = None
 ) -> requests.Response:
 
@@ -237,23 +238,25 @@ def fetch_remote(
 
     return res
 
+
 def fetch_artemis(
-    cfg,
-    endpoint,
-    method='get',
-    request_kwargs=None,
-    logger=None,
-    allow_statuses=None
-):
+    cfg: Configuration,
+    endpoint: str,
+    method: str = 'get',
+    request_kwargs: Optional[Dict[str, Any]] = None,
+    logger: Optional[Logger] = None,
+    allow_statuses: Optional[List[int]] = None
+) -> requests.Response:
     assert cfg.artemis_api_url is not None
     if not logger:
         logger = Logger()
-    def _error_callback(res: requests.Response, request_kwargs) -> None:
+
+    def _error_callback(res: requests.Response, request_kwargs: Dict[str, Any]) -> None:
         assert logger is not None
 
         logger.error(
-                'Failed to communicate with Artemis API Server, responded with code {}: {}'
-                '\nRequest:\n{}\n{}'.format(res.status_code, res.reason, res.request.url, request_kwargs)
+            'Failed to communicate with Artemis API Server, responded with code {}: {}'
+            '\nRequest:\n{}\n{}'.format(res.status_code, res.reason, res.request.url, request_kwargs)
         )
 
     return fetch_remote(
@@ -265,23 +268,97 @@ def fetch_artemis(
         allow_statuses=allow_statuses
     )
 
-def artemis_inspect(cfg, resource, rid, params=None, data=None, logger=None):
-    return fetch_artemis(cfg, '/{}/{}'.format(resource, rid), request_kwargs={'json': data, 'params': params}, logger=None)
 
-def artemis_create(cfg, resource, data, logger=None):
-    return fetch_artemis(cfg, '/{}'.format(resource), method='post', request_kwargs={'json': data}, logger=None)
+def artemis_inspect(
+    cfg: Configuration,
+    resource: str,
+    rid: str,
+    params: Optional[Dict[str, Any]] = None,
+    data: Optional[Dict[str, Any]] = None,
+    logger: Optional[Logger] = None
+) -> requests.Response:
+    return fetch_artemis(
+        cfg,
+        '/{}/{}'.format(resource, rid),
+        request_kwargs={'json': data, 'params': params},
+        logger=None
+    )
 
-def artemis_update(cfg, resource, data, logger=None):
-    return fetch_artemis(cfg, '/{}'.format(resource), method='put', request_kwargs={'json': data}, logger=None)
 
-def artemis_restore(cfg, resource, rid, data=None, logger=None):
-    return fetch_artemis(cfg, '/{}/{}/restore'.format(resource, rid), method='post', request_kwargs={'json': data}, logger=None)
+def artemis_create(
+    cfg: Configuration,
+    resource: str,
+    data: Dict[str, Any],
+    logger: Optional[Logger] = None
+) -> requests.Response:
+    return fetch_artemis(
+        cfg,
+        '/{}'.format(resource),
+        method='post',
+        request_kwargs={'json': data},
+        logger=None
+    )
 
-def artemis_delete(cfg, resource, rid, logger=None):
-    return fetch_artemis(cfg, '{}/{}'.format(resource, rid), method='delete', logger=None, allow_statuses=[200, 201, 204, 404, 409])
 
-def artemis_get_console_url(cfg, resource, rid, logger=None):
-    return fetch_artemis(cfg, '/{}/{}/console/url'.format(resource, rid), request_kwargs={}, logger=None)
+def artemis_update(
+    cfg: Configuration,
+    resource: str,
+    data: Dict[str, Any],
+    logger: Optional[Logger] = None
+) -> requests.Response:
+    return fetch_artemis(
+        cfg,
+        '/{}'.format(resource),
+        method='put',
+        request_kwargs={'json': data},
+        logger=None
+    )
+
+
+def artemis_restore(
+    cfg: Configuration,
+    resource: str,
+    rid: str,
+    data: Optional[Dict[str, Any]] = None,
+    logger: Optional[Logger] = None
+) -> requests.Response:
+    return fetch_artemis(
+        cfg,
+        '/{}/{}/restore'.format(resource, rid),
+        method='post',
+        request_kwargs={'json': data},
+        logger=None
+    )
+
+
+def artemis_delete(
+    cfg: Configuration,
+    resource: str,
+    rid: str,
+    logger: Optional[Logger] = None
+) -> requests.Response:
+    return fetch_artemis(
+        cfg,
+        '{}/{}'.format(resource, rid),
+        method='delete',
+        logger=None,
+        allow_statuses=[200, 201, 204, 404, 409]
+    )
+
+
+def artemis_get_console_url(
+    cfg: Configuration,
+    resource: str,
+    rid: str,
+    logger: Optional[Logger] = None
+) -> requests.Response:
+    return fetch_artemis(
+        cfg,
+        '/{}/{}/console/url'.format(resource, rid),
+        request_kwargs={},
+        logger=None
+    )
+
 
 def confirm(
     cfg: Configuration,

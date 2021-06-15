@@ -15,6 +15,10 @@ tests:
   script:
     - make -C server/ test
 
+    - cd cli/
+    - IN_TEST=yes tox -v
+    - cd ..
+
     # Once we polish client/, we would start using shared pre-commit instance. For now, Tox already installed one for
     # us, we can use it.
     - cd server/

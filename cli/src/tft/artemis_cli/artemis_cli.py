@@ -4,24 +4,24 @@ import shutil
 import sys
 import tempfile
 import urllib
-from itertools import cycle
+import urllib.parse
 from time import sleep
-from typing import Any, Callable, List, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 
 import click
 import click_completion
 import click_spinner
 import requests
 import stackprinter
-from tft import artemis_cli
 
 from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
                artemis_create, artemis_delete, artemis_get_console_url,
                artemis_inspect, artemis_restore, artemis_update, confirm,
-               fetch_remote, prettify_json, prettify_yaml, prompt)
+               load_yaml, prettify_json, prettify_yaml, prompt,
+               validate_struct)
 
 # to prevent infinite loop in pagination support
-PAGINATION_MAX_COUNT=10000
+PAGINATION_MAX_COUNT = 10000
 
 stackprinter.set_excepthook(
     style='darkbg2',
@@ -37,7 +37,12 @@ click_completion.init()
 
 @click.group()
 @click.pass_context
-@click.option('--config', type=str, default=click.get_app_dir('artemis-cli'), help='Path to the configuration directory')
+@click.option(
+    '--config',
+    type=str,
+    default=click.get_app_dir('artemis-cli'),
+    help='Path to the configuration directory'
+)
 def cli_root(ctx: Any, config: str) -> None:
     ctx.ensure_object(Configuration)
 
@@ -59,9 +64,9 @@ def cli_root(ctx: Any, config: str) -> None:
         ctx.invoke(cmd_init)
         sys.exit(0)
 
-    cfg.raw_config = artemis_cli.load_yaml(cfg.config_filepath)
+    cfg.raw_config = load_yaml(cfg.config_filepath)
 
-    validation = artemis_cli.validate_struct(cfg.raw_config, 'config')
+    validation = validate_struct(cfg.raw_config, 'config')
 
     if not validation.result or cfg.raw_config is None:
 
@@ -79,7 +84,6 @@ def cli_root(ctx: Any, config: str) -> None:
             NL()
             click.echo(RED('Empty configuration file'))
             NL()
-
 
         click.echo(YELLOW(
             'Running configuration wizard'
@@ -164,6 +168,7 @@ def cmd_snapshot_cancel(
 def cmd_guest(cfg: Configuration) -> None:
     pass
 
+
 @cmd_guest.command(name='create', short_help='Create provisioning request')
 @click.option('--keyname', required=True, help='name of ssh key')
 @click.option('--priority-group', help='name of priority group')
@@ -178,20 +183,20 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.pass_obj
 def cmd_guest_create(
         cfg: Configuration,
-        keyname: str = None,
-        arch: str = None,
-        hw_constraints: str = None,
-        compose: str = None,
-        pool: str = None,
-        snapshots = False,
-        spot_instance = None,
-        priority_group = None,
-        post_install_script: str = None,
-        wait: bool = None
+        keyname: Optional[str] = None,
+        arch: Optional[str] = None,
+        hw_constraints: Optional[str] = None,
+        compose: Optional[str] = None,
+        pool: Optional[str] = None,
+        snapshots: Optional[bool] = None,
+        spot_instance: Optional[bool] = None,
+        priority_group: Optional[str] = None,
+        post_install_script: Optional[str] = None,
+        wait: Optional[bool] = None
 ) -> None:
     assert cfg.artemis_api_version is not None
 
-    environment = {}
+    environment: Dict[str, Any] = {}
 
     if cfg.artemis_api_version == 'v0.0.19':
         environment['hw'] = {
@@ -226,7 +231,7 @@ def cmd_guest_create(
 
     post_install = None
     if post_install_script:
-        logger=Logger()
+        logger = Logger()
         # check that post_install_script is a valid file and read it
         if os.path.isfile(post_install_script):
             with open(post_install_script) as f:
@@ -245,11 +250,11 @@ def cmd_guest_create(
                 post_install_script))
 
     data = {
-            'environment': environment,
-            'keyname': keyname,
-            'priority_group': 'default-priority',
-            'post_install_script': post_install,
-            }
+        'environment': environment,
+        'keyname': keyname,
+        'priority_group': 'default-priority',
+        'post_install_script': post_install,
+    }
 
     response = artemis_create(cfg, 'guests/', data)
     print(prettify_json(True, response.json()))
@@ -285,7 +290,6 @@ def cmd_guest_create(
 @cmd_guest.command(name='inspect', short_help='Inspect provisioning request')
 @click.argument('guestname', metavar='ID', default=None,)
 @click.pass_obj
-#def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
 def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
     response = artemis_inspect(cfg, 'guests', guestname)
     print(prettify_json(True, response.json()))
@@ -295,7 +299,7 @@ def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
 @click.argument('guestnames', metavar='ID...', default=None, nargs=-1,)
 @click.pass_obj
 def cmd_cancel(cfg: Configuration, guestnames: List[str]) -> None:
-    logger=Logger()
+    logger = Logger()
     for guestname in guestnames:
         response = artemis_delete(cfg, 'guests', guestname, logger=logger)
         if response.status_code == 404:
@@ -312,6 +316,7 @@ def cmd_guest_list(cfg: Configuration) -> None:
     response = artemis_inspect(cfg, 'guests', '')
     print(prettify_json(True, response.json()))
 
+
 @cmd_guest.command(name='events', short_help='List event log')
 @click.argument('guestname', metavar='ID', required=False, default=None)
 @click.option('--page-size', type=int, default=50, help='Number of events per page')
@@ -323,14 +328,14 @@ def cmd_guest_list(cfg: Configuration) -> None:
 @click.pass_obj
 def cmd_guest_events(
         cfg: Configuration,
-        guestname: Optional[str],
-        page_size: Optional[int],
-        page: Optional[int],
-        since: Optional[str],
-        until: Optional[str],
-        first: Optional[int],
-        last: Optional[int]
-)-> None:
+        page_size: int,
+        guestname: Optional[str] = None,
+        page: Optional[int] = None,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        first: Optional[int] = None,
+        last: Optional[int] = None
+) -> None:
     """
     Prints event log
 
@@ -338,12 +343,12 @@ def cmd_guest_events(
     Event log support pagination (with default value on Artemi server).
     Events can be also limited by first N values.
     """
-    params = {}
+    params: Dict[str, Any] = {}
     # sorting by 'updated', 'asc' is default, 'desc' is used for --last
     params['sort_field'] = 'updated'
     params['sort_by'] = 'asc'
 
-    def _set_param(name, value):
+    def _set_param(name: Any, value: Any) -> None:
         if value:
             params[name] = value
 
@@ -372,14 +377,14 @@ def cmd_guest_events(
 
     if page or first or last:
         # request for specific page
-        response = artemis_inspect(cfg, 'guests', rid , params=params)
+        response = artemis_inspect(cfg, 'guests', rid, params=params)
         results_json = response.json()
     else:
         # get all pages
         results_json = []
         for page in range(1, PAGINATION_MAX_COUNT):
             params['page'] = page
-            response = artemis_inspect(cfg, 'guests', rid , params=params)
+            response = artemis_inspect(cfg, 'guests', rid, params=params)
             results_json = results_json + response.json()
             if len(response.json()) < page_size:
                 # last page, result is complete
