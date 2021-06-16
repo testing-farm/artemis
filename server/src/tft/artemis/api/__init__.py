@@ -483,7 +483,7 @@ class CreateUserRequest:
     Schema describing a request to create a new user account.
     """
 
-    role: artemis_db.UserRoles
+    role: str
 
 
 @molten.schema
@@ -500,7 +500,7 @@ class UserResponse:
     def from_db(cls, user: artemis_db.User) -> 'UserResponse':
         return cls(
             username=user.username,
-            role=artemis_db.UserRoles[user.role],
+            role=artemis_db.UserRoles(user.role),
         )
 
 
@@ -1294,14 +1294,16 @@ class UserManager:
 
     @staticmethod
     def entry_get_users(manager: 'UserManager') -> List[UserResponse]:
-        return [
-            UserResponse.from_db(user)
-            for user in manager.get_users()
-        ]
+        with manager.db.get_session() as session:
+            return [
+                UserResponse.from_db(user)
+                for user in manager.get_users(session)
+            ]
 
     @staticmethod
     def entry_get_user(manager: 'UserManager', username: str) -> UserResponse:
-        return UserResponse.from_db(manager.get_user(username))
+        with manager.db.get_session() as session:
+            return UserResponse.from_db(manager.get_user(session, username))
 
     @staticmethod
     def entry_create_user(
@@ -1310,9 +1312,21 @@ class UserManager:
         username: str,
         user_request: CreateUserRequest
     ) -> Tuple[str, UserResponse]:
-        manager.create_user(logger, username, user_request)
+        try:
+            actual_role = artemis_db.UserRoles(user_request.role)
 
-        return HTTP_201, UserResponse.from_db(manager.get_user(username))
+        except ValueError:
+            raise errors.BadRequestError(
+                failure_details={
+                    'username': username,
+                    'role': user_request.role
+                }
+            )
+
+        manager.create_user(logger, username, actual_role)
+
+        with manager.db.get_session() as session:
+            return HTTP_201, UserResponse.from_db(manager.get_user(session, username))
 
     @staticmethod
     def entry_delete_user(
@@ -1347,46 +1361,38 @@ class UserManager:
     #
     # Actual API workers
     #
-    def get_users(self) -> List[artemis_db.User]:
-        with self.db.get_session() as session:
-            r_users = artemis_db.SafeQuery.from_session(session, artemis_db.User).all()
+    def get_users(self, session: sqlalchemy.orm.session.Session) -> List[artemis_db.User]:
+        r_users = artemis_db.SafeQuery.from_session(session, artemis_db.User).all()
 
-            if r_users.is_error:
-                raise errors.InternalServerError(caused_by=r_users.unwrap_error())
+        if r_users.is_error:
+            raise errors.InternalServerError(caused_by=r_users.unwrap_error())
 
-            return r_users.unwrap()
+        return r_users.unwrap()
 
     def get_user(
         self,
+        session: sqlalchemy.orm.session.Session,
         username: str,
-        session: Optional[sqlalchemy.orm.session.Session] = None
     ) -> artemis_db.User:
-        def _get_user(session: sqlalchemy.orm.session.Session) -> artemis_db.User:
-            r_user = artemis_db.SafeQuery.from_session(session, artemis_db.User) \
-                .filter(artemis_db.User.username == username) \
-                .one_or_none()
+        r_user = artemis_db.SafeQuery.from_session(session, artemis_db.User) \
+            .filter(artemis_db.User.username == username) \
+            .one_or_none()
 
-            if r_user.is_error:
-                raise errors.InternalServerError(caused_by=r_user.unwrap_error())
+        if r_user.is_error:
+            raise errors.InternalServerError(caused_by=r_user.unwrap_error())
 
-            user = r_user.unwrap()
+        user = r_user.unwrap()
 
-            if not user:
-                raise errors.NoSuchEntityError()
+        if not user:
+            raise errors.NoSuchEntityError()
 
-            return user
-
-        if session is not None:
-            return _get_user(session)
-
-        with self.db.get_session() as session:
-            return _get_user(session)
+        return user
 
     def create_user(
         self,
         logger: gluetool.log.ContextAdapter,
         username: str,
-        user_request: CreateUserRequest
+        role: artemis_db.UserRoles
     ) -> None:
         with self.db.get_session() as session:
             perform_safe_db_change(
@@ -1394,7 +1400,7 @@ class UserManager:
                 session,
                 sqlalchemy.insert(artemis_db.User.__table__).values(
                     username=username,
-                    role=user_request.role.value
+                    role=role.value
                 )
             )
 
@@ -1405,7 +1411,7 @@ class UserManager:
     ) -> None:
         with self.db.get_session() as session:
             # Provides nicer error when the user does not exist
-            _ = self.get_user(username, session=session)
+            _ = self.get_user(session, username)
 
             perform_safe_db_change(
                 logger,
@@ -1426,7 +1432,7 @@ class UserManager:
     ) -> TokenResetResponse:
         with self.db.get_session() as session:
             # Provides nicer error when the user does not exist
-            user = self.get_user(username, session=session)
+            user = self.get_user(session, username)
 
             token, token_hash = artemis_db.User.generate_token()
 
@@ -1997,7 +2003,7 @@ def generate_routes_v0_0_21(
             create_route('/{username}', UserManager.entry_get_user, method='GET'),
             create_route('/{username}', UserManager.entry_create_user, method='POST'),
             create_route('/{username}', UserManager.entry_delete_user, method='DELETE'),
-            create_route('/{username}/{tokenname}/reset', UserManager.entry_reset_token, method='POST')
+            create_route('/{username}/tokens/{tokentype}/reset', UserManager.entry_reset_token, method='POST')
         ]),
         create_route('/metrics', get_metrics),
         create_route('/about', get_about),
@@ -2219,6 +2225,7 @@ def run_app() -> molten.app.App:
         SnapshotRequestManagerComponent(),
         KnobManagerComponent(),
         CacheManagerComponent(),
+        UserManagerComponent(),
         AuthContextComponent(),
         MetricsComponent(metrics_tree)
     ]

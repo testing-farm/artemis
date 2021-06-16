@@ -656,3 +656,82 @@ def cmd_knob_delete(
 
     if response.ok:
         logger.info('knob "{}" has been removed'.format(knobname))
+
+
+@cli_root.group(name='user', short_help='User management commands')
+@click.pass_obj
+def cmd_user(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_user.group(name='token', short_help='User token management commands')
+@click.pass_obj
+def cmd_token(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_user.command(name='list', short_help='List all users')
+@click.pass_obj
+def cmd_user_list(cfg: Configuration) -> None:
+    print(prettify_yaml(True, artemis_inspect(cfg, 'users', '').json()))
+
+
+@cmd_user.command(name='inspect', short_help='Inspect a user')
+@click.argument('username', required=True, type=str)
+@click.pass_obj
+def cmd_user_inspect(
+    cfg: Configuration,
+    username: str
+) -> None:
+    print(prettify_yaml(True, artemis_inspect(cfg, 'users', username).json()))
+
+
+@cmd_user.command(name='create', short_help='Create a user')
+@click.argument('username', required=True, type=str)
+@click.argument('role', required=True, type=click.Choice(['USER', 'ADMIN'], case_sensitive=False))
+@click.pass_obj
+def cmd_user_create(
+        cfg: Configuration,
+        username: str,
+        role: str
+) -> None:
+    print(prettify_yaml(True, artemis_create(
+        cfg,
+        'users/{}'.format(username),
+        {
+            'role': role
+        }
+    ).json()))
+
+
+@cmd_user.command(name='delete', short_help='Delete a user')
+@click.argument('username', required=True, type=str)
+@click.pass_obj
+def cmd_user_delete(
+    cfg: Configuration,
+    username: str
+) -> None:
+    response = artemis_delete(cfg, 'users', username, logger=cfg.logger)
+
+    if response.status_code == 404:
+        cfg.logger.error('user "{}" does not exist'.format(username))
+
+    if response.ok:
+        cfg.logger.info('user "{}" has been removed'.format(username))
+
+
+@cmd_token.command(name='reset', short_help='Reset user\'s token')
+@click.argument('username', required=True, type=str)
+@click.argument('tokentype', required=True, type=click.Choice(['provisioning', 'admin'], case_sensitive=False))
+@click.pass_obj
+def cmd_user_token_reset(
+    cfg: Configuration,
+    username: str,
+    tokentype: str
+) -> None:
+    response = artemis_create(cfg, 'users/{}/tokens/{}/reset'.format(username, tokentype), {}, logger=cfg.logger)
+
+    if response.status_code != 201:
+        cfg.logger.error('failed to reset token: {}'.format(response.text))
+
+    print(prettify_yaml(True, response.json()))
