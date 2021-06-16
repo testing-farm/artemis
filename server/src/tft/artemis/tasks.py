@@ -12,6 +12,7 @@ import dramatiq
 import gluetool.log
 import periodiq
 import sqlalchemy
+import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
 import stackprinter
@@ -275,6 +276,26 @@ KNOB_UPDATE_GUEST_LOG_DELAY: Knob[int] = Knob(
     envvar='ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY',
     cast_from_str=int,
     default=60
+)
+
+
+KNOB_GC_EVENTS_SCHEDULE: Knob[str] = Knob(
+    'gc.events.schedule',
+    'When to run garbage collection task for guest request events.',
+    has_db=False,
+    envvar='ARTEMIS_GC_EVENTS_SCHEDULE',
+    cast_from_str=str,
+    default='15 */4 * * *'
+)
+
+
+KNOB_GC_EVENTS_THRESHOLD: Knob[int] = Knob(
+    'gc.events.threshold',
+    'How old must the guest events be to be removed, in seconds.',
+    has_db=False,
+    envvar='ARTEMIS_GC_EVENTS_THRESHOLD',
+    cast_from_str=int,
+    default=86400 * 30  # 30 days
 )
 
 
@@ -4120,4 +4141,65 @@ def refresh_pool_flavor_info_dispatcher() -> None:
     task_core(
         cast(DoerType, do_refresh_pool_flavor_info_dispatcher),
         logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-flavor-info-dispatcher')
+    )
+
+
+def do_gc_events(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event
+) -> DoerReturnType:
+    handle_success, handle_failure, _ = create_event_handlers(
+        logger,
+        session,
+        task='gc-events'
+    )
+
+    handle_success('entered-task')
+
+    deadline = datetime.datetime.utcnow() - datetime.timedelta(seconds=KNOB_GC_EVENTS_THRESHOLD.value)
+
+    logger.warning(f'removing events older than {deadline}')
+
+    # TODO: INTERVAL is PostgreSQL-specific. We don't plan to use another DB, but, if we chose to, this would have
+    # to be rewritten.
+    guest_count_subquery = session.query(  # type: ignore # untyped function "query"
+        GuestRequest.guestname
+    ).subquery('t')
+
+    query = sqlalchemy \
+        .delete(
+            GuestEvent.__table__    # type: ignore  # GuestRequest *has* __table__
+        ) \
+        .where(GuestEvent.guestname.notin_(guest_count_subquery)) \
+        .where(sqlalchemy.func.age(GuestEvent.updated) >= sqlalchemy.func.cast(
+            '{} SECONDS'.format(KNOB_GC_EVENTS_THRESHOLD.value),
+            sqlalchemy.dialects.postgresql.INTERVAL
+        ))
+
+    r_execute = safe_call(session.execute, query)
+
+    if r_execute.is_error:
+        return handle_failure(r_execute, 'failed to select')
+
+    query_result = cast(
+        sqlalchemy.engine.ResultProxy,
+        r_execute.unwrap()
+    )
+
+    logger.warning(f'removed {query_result.rowcount} events')
+
+    return handle_success('finished-task')
+
+
+@task(
+    periodic=periodiq.cron(KNOB_GC_EVENTS_SCHEDULE.value),
+    priority=TaskPriority.LOW,
+    queue_name=TaskQueue.PERIODIC
+)
+def gc_events() -> None:
+    task_core(
+        cast(DoerType, do_gc_events),
+        logger=TaskLogger(_ROOT_LOGGER, 'gc-events')
     )
