@@ -25,7 +25,7 @@ from typing_extensions import Protocol
 from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
     process_output_to_str, refresh_cached_set, safe_call
 from ..context import CACHE, LOGGER
-from ..db import GuestRequest, GuestTag, SnapshotRequest, SSHKey
+from ..db import GuestLog, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk
 from ..metrics import PoolCostsMetrics, PoolResourcesMetrics, ResourceType
 
@@ -387,6 +387,20 @@ class PoolResourcesIDs:
         data['ctime'] = datetime.datetime.strptime(data['ctime'], RESOURCE_CTIME_FMT) if data['ctime'] else None
 
         return cls(**data)  # type: ignore
+
+
+@dataclasses.dataclass
+class GuestLogUpdateProgress:
+    state: GuestLogState
+
+    url: Optional[str] = None
+    blob: Optional[str] = None
+    expires: Optional[datetime.datetime] = None
+
+    #: If set, it represents a suggestion from the pool driver: it does not make much sense
+    #: to run :py:meth:`PoolDriver.update_guest` sooner than this second in the future. If
+    #: left unset, Artemis core will probably run the update as soon as possible.
+    delay_update: Optional[int] = None
 
 
 class PoolDriver(gluetool.log.LoggerMixin):
@@ -863,6 +877,17 @@ class PoolDriver(gluetool.log.LoggerMixin):
             or specification of error.
         """
         raise NotImplementedError()
+
+    def update_guest_log(
+        self,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        # TODO logs: add a list of supported logs to capabilities
+        # cannot provide guest log: functionality not supported for this cloud driver
+        return Ok(GuestLogUpdateProgress(
+            state=GuestLogState.ERROR
+        ))
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         capabilities = PoolCapabilities()

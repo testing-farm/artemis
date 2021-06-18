@@ -17,12 +17,13 @@ from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 
 from .. import Failure, JSONType, Knob, log_dict_yaml
-from ..db import GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
-from . import GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
-    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
+from . import GuestLogUpdateProgress, GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, \
+    PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
+    run_cli_tool, test_cli_error
 
 #
 # Custom typing types
@@ -68,6 +69,9 @@ JQ_QUERY_SUBNET_CIDR = jq.compile('.Subnets | .[] | .CidrBlock')
 #: Extract number of available IPs of a subnet, as available from ``describe-subnets``.
 JQ_QUERY_SUBNET_AVAILABLE_IPS = jq.compile('.Subnets | .[] | .AvailableIpAddressCount')
 
+#: Extract console output from ``get-console-output`` output.
+JQ_QUERY_CONSOLE_OUTPUT = jq.compile('.Output')
+
 
 KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
     'aws.spot-open-timeout',
@@ -95,6 +99,15 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
     'A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.',
     has_db=False,
     envvar='ARTEMIS_AWS_UPDATE_TICK',
+    cast_from_str=int,
+    default=30
+)
+
+KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
+    'aws.console.blob.expires',
+    'How long, in seconds, to take between updating guest console log.',
+    has_db=False,
+    envvar='ARTEMIS_AWS_CONSOLE_BLOB_UPDATE_TICK',
     cast_from_str=int,
     default=30
 )
@@ -1082,3 +1095,57 @@ class AWSDriver(PoolDriver):
         )
 
         return Ok(resources)
+
+    def update_guest_log(
+        self,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        if guest_log.logname != 'console' or guest_log.contenttype != GuestLogContentType.BLOB:
+            # anything but "console/blob" is unsupported so far
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.ERROR
+            ))
+
+        # We're left with console/blob.
+
+        # According to [1], there are two options:
+        #
+        # * cached, buffered blob stored after the most recent transition state of the instance (start, stop, ...)
+        # * the "latest output" - which is available only for instances powered by Nitro.
+        #
+        # Since we're not yet familiar with Nitro instances, and the driver can't really track this bit of information
+        # and tell the difference, let's start with fetching the cached blob, and possibly merging them if the change,
+        # to capture logs across reboots.
+        #
+        # [1] https://docs.aws.amazon.com/cli/latest/reference/ec2/get-console-output.html
+
+        pool_data = AWSPoolData.unserialize(guest_request)
+
+        # This can actually happen, spot instances may take some time to get the instance ID.
+        if pool_data.instance_id is None:
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.PENDING,
+                delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
+            ))
+
+        r_output = self._aws_command([
+            'ec2',
+            'get-console-output',
+            '--instance-id', pool_data.instance_id
+        ])
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        output = cast(str, JQ_QUERY_CONSOLE_OUTPUT.input(r_output.unwrap()).first())
+
+        # TODO logs: do some sort of magic to find out whether the blob we just got is already in DB.
+        # Maybe use difflib, or use delimiters and timestamps. We do not want to overide what we already have.
+
+        return Ok(GuestLogUpdateProgress(
+            state=GuestLogState.IN_PROGRESS,
+            # TODO logs: well, this *is* overwriting what we already downloaded... Do something.
+            blob=output,
+            delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
+        ))

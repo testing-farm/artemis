@@ -3,6 +3,7 @@ import os.path
 import shutil
 import sys
 import tempfile
+import time
 import urllib
 import urllib.parse
 from time import sleep
@@ -17,7 +18,7 @@ import stackprinter
 from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
                artemis_create, artemis_delete, artemis_get_console_url,
                artemis_inspect, artemis_restore, artemis_update, confirm,
-               load_yaml, prettify_json, prettify_yaml, prompt,
+               fetch_artemis, load_yaml, prettify_json, prettify_yaml, prompt,
                validate_struct)
 
 # to prevent infinite loop in pagination support
@@ -198,7 +199,7 @@ def cmd_guest_create(
 
     environment: Dict[str, Any] = {}
 
-    if cfg.artemis_api_version == 'v0.0.19':
+    if cfg.artemis_api_version in ('v0.0.19', 'v0.0.20'):
         environment['hw'] = {
             'arch': arch
         }
@@ -399,6 +400,90 @@ def cmd_guest_events(
     print(prettify_json(True, results_json))
 
 
+@cmd_guest.command(name='logs', short_help='Get specific logs from the guest')
+@click.argument('guestname', metavar='ID', default=None,)
+@click.argument('logname', metavar='LOGNAME',)
+@click.argument('contenttype', metavar='CONTENTTYPE',)
+@click.option('--wait', is_flag=True, default=False, help='Poll the server till the log is ready')
+@click.option('--force', is_flag=True, default=False, help='Force request')
+@click.pass_obj
+def cmd_guest_log(
+        cfg: Configuration,
+        guestname: str,
+        logname: str,
+        contenttype: str,
+        wait: bool,
+        force: bool
+) -> None:
+    if force:
+        response = fetch_artemis(
+            cfg,
+            '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+            method='post',
+            allow_statuses=[202]
+        )
+
+    else:
+        response = fetch_artemis(
+            cfg,
+            '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+            allow_statuses=[200, 404, 409]
+        )
+
+        if response.status_code == 404:
+            # first time asking for this type of log
+            response = fetch_artemis(
+                cfg,
+                '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+                method='post',
+                allow_statuses=[202]
+            )
+
+        elif response.status_code == 409:
+            # exists, but it's expired
+            # TODO: yes, it runs virtually the same code as 404 above, and these two will be merged once things
+            # settle down.
+            response = fetch_artemis(
+                cfg,
+                '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+                method='post',
+                allow_statuses=[202]
+            )
+
+    if wait:
+        res_error = False
+        with click_spinner.spinner():
+            while True:
+                response = fetch_artemis(
+                    cfg,
+                    '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+                    allow_statuses=[200, 404, 409]
+                )
+
+                # the request may still report conflict, until Artemis actually gets to it.
+                if response.status_code in (404, 409):
+                    pass
+
+                elif response.status_code == 200:
+                    state = response.json()['state']
+                    res_error = (state == 'error')
+                    contenttype = response.json()['contenttype']
+                    blob = response.json()['blob']
+                    is_blob_ready = (state == 'in-progress' and contenttype == 'blob' and blob)
+                    if state == 'complete' or is_blob_ready or res_error:
+                        break
+
+                else:
+                    cfg.logger.error('unexpected status code {}'.format(response.status_code))
+
+                time.sleep(cfg.provisioning_poll_interval)
+
+        click.echo(GREEN('Guest log obtained.') if not res_error else RED('An error occurred.'))
+
+    cfg.logger.info(prettify_json(True, response.json() or {}))
+
+
+# XXX FIXME(ivasilev) Switch to the generalized guest logs approach with console url being a special log type
 @cmd_guest.group(name='console', short_help='Console related commands')
 @click.pass_obj
 def cmd_console(cfg: Configuration) -> None:

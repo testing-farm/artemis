@@ -10,13 +10,13 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, Knob, log_dict_yaml
-from ..db import GuestRequest, SnapshotRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import UNITS, Environment
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
-from . import ConsoleUrlData, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, PoolImageInfo, PoolResourcesIDs, \
-    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
-    test_cli_error, vm_info_to_ip
+from . import ConsoleUrlData, GuestLogUpdateProgress, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, \
+    PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
+    create_tempfile, run_cli_tool, test_cli_error, vm_info_to_ip
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -37,7 +37,7 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
 )
 
 KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
-    'openstack.default.console-url.expires',
+    'openstack.console.url.expires',
     'How long, in seconds, it takes for a console url to be qualified as expired.',
     has_db=False,
     envvar='ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES',
@@ -45,7 +45,17 @@ KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
     default=600
 )
 
+KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
+    'openstack.console.blob.update-tick',
+    'How long, in seconds, to take between updating guest console log.',
+    has_db=False,
+    envvar='ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK',
+    cast_from_str=int,
+    default=30
+)
+
 MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'^No server with a name or ID')
+INSTANCE_NOT_READY_ERROR_PATTERN = re.compile(r'^Instance [a-z0-9\-]+ is not ready')
 
 
 @dataclasses.dataclass
@@ -873,3 +883,75 @@ class OpenStackDriver(PoolDriver):
                 exc,
                 flavor_info=r_flavors.unwrap()
             ))
+
+    def update_guest_log(
+        self,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        if guest_log.logname != 'console':
+            # anything but "console" is unsupported so far
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.ERROR
+            ))
+
+        def _do_fetch(resource: str, json_format: bool = True) -> Result[Optional[JSONType], Failure]:
+            r_output = self._run_os([
+                'console',
+                resource,
+                'show',
+                OpenStackPoolData.unserialize(guest_request).instance_id
+            ], json_format=json_format)
+
+            if r_output.is_error:
+                failure = r_output.unwrap_error()
+
+                # Detect "instance not ready".
+                if test_cli_error(failure, INSTANCE_NOT_READY_ERROR_PATTERN):
+                    return Ok(None)
+
+            return r_output
+
+        if guest_log.contenttype == GuestLogContentType.URL:
+            r_output = _do_fetch('url')
+
+            if r_output.is_error:
+                return Error(r_output.unwrap_error())
+
+            output = r_output.unwrap()
+
+            if output is None:
+                return Ok(GuestLogUpdateProgress(
+                    state=GuestLogState.IN_PROGRESS,
+                    delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
+                ))
+
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.COMPLETE,
+                url=cast(Dict[str, str], output)['url'],
+                expires=datetime.utcnow() + timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
+            ))
+
+        # We're left with console/blob.
+        r_output = _do_fetch('log', json_format=False)
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        # TODO logs: do some sort of magic to find out whether the blob we just got is already in DB.
+        # Maybe use difflib, or use delimiters and timestamps. We do not want to overide what we already have.
+
+        output = r_output.unwrap()
+
+        if output is None:
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.IN_PROGRESS,
+                delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
+            ))
+
+        return Ok(GuestLogUpdateProgress(
+            state=GuestLogState.IN_PROGRESS,
+            # TODO logs: well, this *is* overwriting what we already downloaded... Do something.
+            blob=cast(str, output),
+            delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
+        ))

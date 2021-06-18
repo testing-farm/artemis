@@ -21,7 +21,8 @@ from typing_extensions import Protocol
 from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
     safe_call, safe_db_change
 from .context import DATABASE, LOGGER, SESSION, with_context
-from .db import DB, GuestEvent, GuestRequest, Pool, SafeQuery, SnapshotRequest, SSHKey
+from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
+    SnapshotRequest, SSHKey, upsert
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver
@@ -266,6 +267,16 @@ KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE: Knob[str] = Knob(
     default='*/5 * * * *'
 )
 
+#: A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks.
+KNOB_UPDATE_GUEST_LOG_DELAY: Knob[int] = Knob(
+    'actor.dispatch-preparing.delay',
+    'How often to run guest log update',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY',
+    cast_from_str=int,
+    default=60
+)
+
 
 POOL_DRIVERS = {
     'aws': aws_driver.AWSDriver,
@@ -375,7 +386,8 @@ class DispatchTaskType(Protocol):
 class SuccessHandlerType(Protocol):
     def __call__(
         self,
-        eventname: str
+        eventname: str,
+        return_value: DoerReturnType = SUCCESS
     ) -> DoerReturnType:
         ...
 
@@ -1836,6 +1848,12 @@ def is_provisioning_tail_task(actor: Actor) -> bool:
     )
 
 
+def is_logging_tail_task(actor: Actor) -> bool:
+    return actor.actor_name in (
+        update_guest_log.actor_name,
+    )
+
+
 def do_handle_provisioning_chain_tail(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -2020,6 +2038,267 @@ def handle_provisioning_chain_tail(
 
     # Failures were already handled by this point
     return False
+
+
+def do_handle_logging_chain_tail(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    logname: str,
+    contenttype: GuestLogContentType
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='provisioning-tail'
+    )
+
+    handle_success('entered-task')
+
+    query = sqlalchemy \
+        .update(GuestLog.__table__) \
+        .where(GuestLog.guestname == guestname) \
+        .where(GuestLog.logname == logname) \
+        .where(GuestLog.contenttype == contenttype) \
+        .values(
+            updated=datetime.datetime.utcnow(),
+            state=GuestLogState.ERROR
+        )
+
+    r_store = safe_db_change(logger, session, query)
+
+    if r_store.is_error:
+        return handle_failure(r_store, 'failed to update the log')
+
+    if r_store.unwrap() is not True:
+        return handle_success('finished-task', return_value=RESCHEDULE)
+
+    return handle_success('finished-task')
+
+
+def handle_logging_chain_tail(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    guestname: str,
+    logname: str,
+    contenttype: GuestLogContentType,
+    actor: Actor
+) -> bool:
+    cancel = threading.Event()
+
+    # for update_guest_log, drop the log record to ERROR state
+    if actor.actor_name == update_guest_log.actor_name:
+        r = do_handle_logging_chain_tail(
+            logger,
+            db,
+            session,
+            cancel,
+            guestname,
+            logname,
+            contenttype
+        )
+
+    else:
+        Failure(
+            'actor not covered by logging chain tail',
+            guestname=guestname,
+            actor_name=actor.actor_name
+        ).handle(logger)
+
+        return False
+
+    if r.is_ok:
+        if r is SUCCESS:
+            return True
+
+        if r is RESCHEDULE:
+            return False
+
+        Failure(
+            'unexpected result of logging chain tail',
+            guestname=guestname,
+            logname=logname,
+            contenttype=contenttype.value,
+            actor_name=actor.actor_name
+        ).handle(logger)
+
+        return False
+
+    # Failures were already handled by this point
+    return False
+
+
+def do_update_guest_log(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    guestname: str,
+    logname: str,
+    contenttype: GuestLogContentType
+) -> DoerReturnType:
+    handle_success, handle_failure, spice_details = create_event_handlers(
+        logger,
+        session,
+        guestname=guestname,
+        task='update-guest-log'
+    )
+
+    handle_success('enter-task')
+
+    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.load_guest_request(guestname)
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+
+    r_guest_log = SafeQuery.from_session(session, GuestLog) \
+        .filter(GuestLog.guestname == workspace.gr.guestname) \
+        .filter(GuestLog.logname == logname) \
+        .filter(GuestLog.contenttype == contenttype) \
+        .one_or_none()
+
+    if r_guest_log.is_error:
+        return handle_failure(r_guest_log, 'failed to fetch the log')
+
+    guest_log = r_guest_log.unwrap()
+
+    if guest_log is None:
+        # We're the first: create the record, and reschedule. We *could* proceed and try to fetch the data, too,
+        # let's try with another task run first.
+
+        r_upsert = upsert(
+            logger,
+            session,
+            GuestLog,
+            primary_keys={
+                GuestLog.guestname: guestname,
+                GuestLog.logname: logname,
+                GuestLog.contenttype: contenttype
+            },
+            insert_data={
+                GuestLog.state: GuestLogState.PENDING
+            }
+        )
+
+        if r_upsert.is_error:
+            return handle_failure(r_upsert, 'failed to create log record')
+
+        return handle_success('finished-task', return_value=RESCHEDULE)
+
+    logger.warning(f'guest-log: {guest_log.logname} {guest_log.contenttype} {guest_log.state}')
+
+    if guest_log.state == GuestLogState.ERROR:
+        # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
+        # to different pool, and here the could succeed - but it's never going to be tried again since it's
+        # in ERROR state and there's no way to "reset" the state - possibly do that in API via POST.
+        return handle_success('finished-task')
+
+    # TODO logs: it'd be nice to change logs' state to something final
+    if workspace.gr.state in (GuestState.CONDEMNED.value, GuestState.ERROR.value):
+        logger.warning('guest can no longer provide any useful logs')
+
+        return handle_success('finished-task')
+
+    if workspace.gr.pool is None:
+        logger.warning('guest request has no pool at this moment, reschedule')
+
+        return handle_success('finished-task', return_value=RESCHEDULE)
+
+    workspace.load_gr_pool()
+
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.pool
+
+    if guest_log.state == GuestLogState.COMPLETE:
+        if not guest_log.is_expired:
+            return handle_success('finished-task')
+
+        r_update = workspace.pool.update_guest_log(
+            workspace.gr,
+            guest_log
+        )
+
+    elif guest_log.state == GuestLogState.PENDING:
+        r_update = workspace.pool.update_guest_log(
+            workspace.gr,
+            guest_log
+        )
+
+    elif guest_log.state == GuestLogState.IN_PROGRESS:
+        r_update = workspace.pool.update_guest_log(
+            workspace.gr,
+            guest_log
+        )
+
+    if r_update.is_error:
+        return handle_failure(r_update, 'failed to update the log')
+
+    update_progress = r_update.unwrap()
+
+    logger.warning(f'update-progress: {update_progress}')
+
+    query = sqlalchemy \
+        .update(GuestLog.__table__) \
+        .where(GuestLog.guestname == workspace.gr.guestname) \
+        .where(GuestLog.logname == logname) \
+        .where(GuestLog.state == guest_log.state) \
+        .where(GuestLog.contenttype == contenttype) \
+        .where(GuestLog.updated == guest_log.updated) \
+        .where(GuestLog.url == guest_log.url) \
+        .where(GuestLog.blob == guest_log.blob) \
+        .values(
+            url=update_progress.url,
+            blob=update_progress.blob,
+            updated=datetime.datetime.utcnow(),
+            state=update_progress.state,
+            expires=update_progress.expires
+        )
+
+    r_store = safe_db_change(logger, session, query)
+
+    if r_store.is_error:
+        return handle_failure(r_store, 'failed to update the log')
+
+    if r_store.unwrap() is not True:
+        return handle_success('finished-task', return_value=RESCHEDULE)
+
+    if update_progress.state == GuestLogState.COMPLETE:
+        return handle_success('finished-task')
+
+    if update_progress.state == GuestLogState.ERROR:
+        return handle_success('finished-task')
+
+    # PENDING or IN_PROGRESS proceed the same way
+    workspace.dispatch_task(
+        update_guest_log,
+        guestname,
+        logname,
+        contenttype.value,
+        delay=update_progress.delay_update or KNOB_UPDATE_GUEST_LOG_DELAY.value
+    )
+
+    if workspace.result:
+        return workspace.result
+
+    return handle_success('finished-task')
+
+
+@dramatiq.actor(**actor_kwargs('UPDATE_GUEST_LOG'))  # type: ignore  # Untyped decorator
+def update_guest_log(guestname: str, logname: str, contenttype: str) -> None:
+    task_core(
+        cast(DoerType, do_update_guest_log),
+        logger=get_guest_logger('update-guest-log', _ROOT_LOGGER, guestname),
+        doer_args=(guestname, logname, GuestLogContentType(contenttype))
+    )
 
 
 def do_prepare_verify_ssh(

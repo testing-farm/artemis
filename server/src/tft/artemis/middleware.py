@@ -10,6 +10,7 @@ import dramatiq.middleware.retries
 import gluetool.log
 from dramatiq.common import compute_backoff, current_millis
 
+from .db import GuestLogContentType
 from .guest import GuestLogger
 
 if TYPE_CHECKING:
@@ -100,36 +101,71 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
             # message seems to be the only way. It's quite likely it will fail again, giving us another
             # chance for release & revert. Note that this applies to situations where "release & revert"
             # attempt fails, i.e. DB or broker issues, most likely.
+            #
+            # The very same situation we face when working on guest logs - if we run out of retries, we
+            # must handle the fallout somehow.
 
-            from .tasks import TaskLogger, handle_provisioning_chain_tail, is_provisioning_tail_task
+            from . import Failure
+            from .tasks import TaskLogger, handle_logging_chain_tail, handle_provisioning_chain_tail, \
+                is_logging_tail_task, is_provisioning_tail_task
 
-            if is_provisioning_tail_task(actor):
-                tail_logger = TaskLogger(logger, 'provisioning-tail')
+            def fail_message(logger: gluetool.log.ContextAdapter, error_message: str) -> None:
+                Failure(error_message).handle(logger)
+
+                message.fail()
+
+            if is_provisioning_tail_task(actor) or is_logging_tail_task(actor):
+                if is_provisioning_tail_task(actor):
+                    tail_logger = TaskLogger(logger, 'provisioning-tail')
+
+                elif is_logging_tail_task(actor):
+                    tail_logger = TaskLogger(logger, 'logging-tail')
 
                 if not guestname:
-                    from . import Failure
+                    return fail_message(tail_logger, 'cannot handle chain tail with undefined guestname')
 
-                    Failure(
-                        'cannot handle provisioning tail with undefined guestname',
-                    ).handle(tail_logger)
+                if is_logging_tail_task(actor):
+                    logname = actor_arguments['logname'] if actor_arguments and 'logname' in actor_arguments else None
+                    contenttype = actor_arguments['contenttype'] \
+                        if actor_arguments and 'contenttype' in actor_arguments else None
 
-                    message.fail()
-                    return
+                    if not logname or not contenttype:
+                        return fail_message(
+                            tail_logger,
+                            'cannot handle chain tail with undefined logname or contenttype'
+                        )
 
                 db = get_root_db(tail_logger)
 
                 with db.get_session() as session:
-                    if handle_provisioning_chain_tail(
-                        tail_logger,
-                        db,
-                        session,
-                        guestname,
-                        actor
-                    ):
-                        tail_logger.info('successfuly handled the provisioning tail')
-                        return
+                    if is_provisioning_tail_task(actor):
+                        if handle_provisioning_chain_tail(
+                            tail_logger,
+                            db,
+                            session,
+                            guestname,
+                            actor
+                        ):
+                            tail_logger.info('successfuly handled the provisioning tail')
+                            return
 
-                tail_logger.error('failed to handle the provisioning tail')
+                    elif is_logging_tail_task(actor):
+                        assert logname is not None
+                        assert contenttype is not None
+
+                        if handle_logging_chain_tail(
+                            tail_logger,
+                            db,
+                            session,
+                            guestname,
+                            logname,
+                            GuestLogContentType(contenttype),
+                            actor
+                        ):
+                            tail_logger.info('successfuly handled the logging tail')
+                            return
+
+                tail_logger.error('failed to handle the chain tail')
 
                 # This would cause the message to be dropped, effectively halting any work towards provisioning
                 # of the guest.
@@ -140,10 +176,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
 
             else:
                 # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
-                logger.warning('retries: retries exceeded for message {}.'.format(message.message_id))
-                message.fail()
-
-                return
+                return fail_message(logger, 'retries exceeded for message {}'.format(message.message_id))
 
         message.options["retries"] += 1
         message.options["traceback"] = traceback.format_exc(limit=30)

@@ -321,6 +321,19 @@ class UserRoles(enum.Enum):
     ADMIN = 'ADMIN'
 
 
+class GuestLogState(enum.Enum):
+    PENDING = 'pending'
+    IN_PROGRESS = 'in-progress'
+    COMPLETE = 'complete'
+    # Note: this state does *not* demand a retry - it is a final state
+    ERROR = 'error'
+
+
+class GuestLogContentType(enum.Enum):
+    URL = 'url'
+    BLOB = 'blob'
+
+
 class User(Base):
     __tablename__ = 'users'
 
@@ -531,6 +544,29 @@ class GuestRequest(Base):
             since=since,
             until=until
         )
+
+
+class GuestLog(Base):
+    __tablename__ = 'guest_logs'
+
+    guestname = Column(String(), nullable=False, primary_key=True)
+    logname = Column(String(), nullable=False, primary_key=True)
+    contenttype = Column(Enum(GuestLogContentType), nullable=False, primary_key=True)
+
+    state = Column(Enum(GuestLogState), nullable=False, default=GuestLogState.PENDING)
+
+    url = Column(String(), nullable=True)
+    blob = Column(String(), nullable=True)
+
+    updated = Column(DateTime(), nullable=True)
+    expires = Column(DateTime(), nullable=True)
+
+    @property
+    def is_expired(self) -> bool:
+        if self.expires is None:
+            return False
+
+        return self.expires < datetime.datetime.utcnow()
 
 
 class GuestEvent(Base):
