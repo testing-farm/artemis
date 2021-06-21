@@ -41,6 +41,16 @@ definitions:
     required: []
     additionalProperties: false
 
+  patch_flavor_disk:
+    type: object
+
+    properties:
+      space:
+        type: string
+
+    required: []
+    additionalProperties: false
+
   patch_flavor:
     type: object
 
@@ -50,6 +60,9 @@ definitions:
 
       cpu:
         "$ref": "#/definitions/patch_flavor_cpu"
+
+      disk:
+        "$ref": "#/definitions/patch_flavor_disk"
 
     required:
       - name

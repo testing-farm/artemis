@@ -1244,6 +1244,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
                     cpu_patch.get('model-name', None)
                 )
 
+            if 'disk' in patch_flavor_spec:
+                disk_patch = cast(Dict[str, Union[str, int]], patch_flavor_spec['disk'])
+
+                flavor.diskspace = cast(
+                    Optional[str],
+                    disk_patch.get('space', None)
+                )
+
         return Ok(None)
 
     def _fetch_pool_flavor_info_from_config(
