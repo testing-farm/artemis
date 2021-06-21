@@ -13,7 +13,7 @@ coverage:  ## Run tests with coverage
 test:  ## Run all tests
 	tox
 
-docs:
+docs:  ## Generate source code documentation
 	tox -e autodocs
 
 gen-db-revision:  ## Generate new DB revision
