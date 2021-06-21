@@ -552,7 +552,7 @@ class AWSDriver(PoolDriver):
         block_device_mappings = r_block_device_mappings.unwrap()
 
         if flavor.diskspace is not None:
-            return self._set_root_disk_size(block_device_mappings, flavor.diskspace)
+            return self._set_root_disk_size(block_device_mappings, int(flavor.diskspace.to('GiB').magnitude))
 
         if 'default-root-disk-size' in self.pool_config:
             return self._set_root_disk_size(block_device_mappings, self.pool_config['default-root-disk-size'])
