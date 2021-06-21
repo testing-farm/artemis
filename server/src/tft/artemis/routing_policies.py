@@ -31,10 +31,7 @@ class PolicyRuling:
     cancel: bool = False
 
     def __repr__(self) -> str:
-        return '<PolicyRuling: cancel={} allowed_pools={}>'.format(
-            self.cancel,
-            gluetool.log.format_dict(self.allowed_pools)
-        )
+        return f'<PolicyRuling: cancel={self.cancel} allowed_pools={gluetool.log.format_dict(self.allowed_pools)}>'
 
 
 PolicyReturnType = Result[PolicyRuling, Failure]
@@ -123,7 +120,7 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
             if r.is_error:
                 return r
 
-            policy_logger.debug('ruling: {}'.format(r.unwrap()))
+            policy_logger.debug(f'ruling: {r.unwrap()}')
 
             return r
 
@@ -541,7 +538,7 @@ def policy_timeout_reached(
 
     validity = events[0].updated + datetime.timedelta(seconds=r_time.unwrap())
 
-    logger.info('event created {}, valid until {}'.format(str(events[0].updated), str(validity)))
+    logger.info(f'event created {events[0].updated}, valid until {validity}')
 
     if datetime.datetime.utcnow() > validity:
         return Ok(PolicyRuling(cancel=True))
@@ -584,19 +581,18 @@ def policy_enough_resources(
         def is_enough(metric_name: str, limit: int, usage: int) -> bool:
             # Very crude trim. We could be smarter, but this should be enough to not hit the limit.
             usage_level = usage / limit
+            answer = usage_level < threshold
 
-            logger.debug('is-enough: {}.{}: {} / {} < {}: {}'.format(
-                pool.poolname, metric_name, usage, limit, threshold, usage_level < threshold
-            ))
+            logger.debug(f'{pool.poolname}.{metric_name}: {usage} / {limit} < {threshold}: {answer}')
 
-            return usage_level < threshold
+            return answer
 
         resources_depletion = metrics.resources.get_depletion(is_enough)
 
         if not resources_depletion.is_depleted():
             return True
 
-        logger.warning('{}: depleted'.format(pool.poolname))
+        logger.warning(f'{pool.poolname}: depleted')
 
         for metric_name in sorted(resources_depletion.depleted_resources()):
             if metric_name.startswith('network.'):
@@ -604,20 +600,14 @@ def policy_enough_resources(
                 limit = metrics.resources.limits.networks.get(network_name)
                 usage = metrics.resources.usage.networks.get(network_name)
 
-                logger.warning('{}: "{}" depleted: {} used, {} limit'.format(
-                    pool.poolname,
-                    metric_name,
-                    usage.addresses if usage and usage.addresses is not None else '<unknown>',
-                    limit.addresses if limit and limit.addresses is not None else '<unknown>',
-                ))
+                usage_formatted = usage.addresses if usage and usage.addresses is not None else '<unknown>'
+                limit_formatted = limit.addresses if limit and limit.addresses is not None else '<unknown>'
 
             else:
-                logger.warning('{}: "{}" depleted: {} used, {} limit'.format(
-                    pool.poolname,
-                    metric_name,
-                    getattr(metrics.resources.usage, metric_name),
-                    getattr(metrics.resources.limits, metric_name)
-                ))
+                usage_formatted = getattr(metrics.resources.usage, metric_name)
+                limit_formatted = getattr(metrics.resources.limits, metric_name)
+
+            logger.warning(f'{pool.poolname}.{metric_name}: depleted, {usage_formatted} of {limit_formatted}')
 
         return False
 

@@ -45,7 +45,7 @@ class ScriptEngine:
         variables = gluetool.utils.load_yaml(filepath)
 
         if not isinstance(variables, dict):
-            raise Exception('Cannot add variables from {}, not a key: value format'.format(filepath))
+            raise Exception(f'Cannot add variables from {filepath}, not a key: value format')
 
         self.variables.update(variables)
 
@@ -59,12 +59,12 @@ class ScriptEngine:
         return self.functions[name](**kwargs)
 
     def run_hook(self, name: str, **kwargs: Any) -> Result[Any, Failure]:
-        return self.run('hook_{}'.format(name.upper()), **kwargs)
+        return self.run(f'hook_{name.upper()}', **kwargs)
 
 
 def hook_engine(hook_name: str) -> Result[ScriptEngine, Failure]:
-    script_filepath = os.getenv('ARTEMIS_HOOK_{}'.format(hook_name.upper()), None)
-    hook_callback_name = 'hook_{}'.format(hook_name.upper())
+    script_filepath = os.getenv(f'ARTEMIS_HOOK_{hook_name.upper()}', None)
+    hook_callback_name = f'hook_{hook_name.upper()}'
 
     if not script_filepath:
         return Error(Failure(
