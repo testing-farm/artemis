@@ -52,10 +52,10 @@ jinja2.defaults.DEFAULT_FILTERS.update(
 from . import db as artemis_db  # noqa: E402
 from . import middleware as artemis_middleware  # noqa: E402
 from . import vault as artemis_vault  # noqa: E402
-from .environment import Environment  # noqa: E402
 
 if TYPE_CHECKING:
     from .drivers import PoolDriver
+    from .environment import Environment
 
 stackprinter.set_excepthook(
     style='darkbg2',
@@ -194,7 +194,7 @@ class Failure:
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
-        environment: Optional[Environment] = None,
+        environment: Optional['Environment'] = None,
         **details: Any
     ):
         self.message = message
@@ -272,7 +272,7 @@ class Failure:
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
-        environment: Optional[Environment] = None,
+        environment: Optional['Environment'] = None,
         **details: Any
     ):
         # type: (...) -> Failure
@@ -302,7 +302,7 @@ class Failure:
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
-        environment: Optional[Environment] = None,
+        environment: Optional['Environment'] = None,
         **details: Any
     ) -> 'Failure':
         """
@@ -337,7 +337,7 @@ class Failure:
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
-        environment: Optional[Environment] = None,
+        environment: Optional['Environment'] = None,
         **details: Any
     ) -> None:
         self.details.update(details)

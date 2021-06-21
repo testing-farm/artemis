@@ -3,16 +3,14 @@ import enum
 import json
 import operator
 import re
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, cast
 
 import gluetool.log
 import pint
 from gluetool.result import Ok, Result
 from pint import Quantity
 
-if TYPE_CHECKING:
-    from . import Failure
-
+from . import Failure, SerializableContainer
 
 #: Unit registry, used and shared by all code.
 UNITS = pint.UnitRegistry()
@@ -61,8 +59,8 @@ ConstraintValueType = Union[int, Quantity, str]
 # Note: some cloud services do use the term "flavor", to describe the very same concept. We hijack it for our use,
 # because we use the same concept, and other terms - e.g. "instance type" - are not as good looking.
 #
-@dataclasses.dataclass
-class FlavorCpu:
+@dataclasses.dataclass(repr=False)
+class FlavorCpu(SerializableContainer):
     """
     For the purpose of HW requirements, this class represents a HW properties related to CPU
     and CPU cores of a flavor.
@@ -91,9 +89,18 @@ class FlavorCpu:
     #: CPU model name.
     model_name: Optional[str] = None
 
+    def format_fields(self) -> List[str]:
+        return [
+            f'cpu.{field.name}={getattr(self, field.name)}'
+            for field in dataclasses.fields(self)
+        ]
 
-@dataclasses.dataclass
-class FlavorDisk:
+    def __repr__(self) -> str:
+        return f'<FlavorCpu: {" ".join(self.format_fields())}>'
+
+
+@dataclasses.dataclass(repr=True)
+class FlavorDisk(SerializableContainer):
     """
     For the purpose of HW requirements, this class represents a HW properties related to persistent storage a flavor.
 
@@ -106,12 +113,41 @@ class FlavorDisk:
     #: Total size of the disk storage, in bytes.
     space: Optional[Quantity] = None
 
+    def format_fields(self) -> List[str]:
+        return [
+            f'disk.{field.name}={getattr(self, field.name)}'
+            for field in dataclasses.fields(self)
+        ]
 
-@dataclasses.dataclass
-class Flavor:
+    def __repr__(self) -> str:
+        return f'<FlavorDisk: {" ".join(self.format_fields())}>'
+
+    def serialize_to_json(self) -> Dict[str, Any]:
+        serialized = dataclasses.asdict(self)
+
+        if self.space is not None:
+            serialized['space'] = str(self.space)
+
+        return serialized
+
+    @classmethod
+    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'FlavorDisk':
+        disk = cls(**serialized)
+
+        if disk.space is not None:
+            disk.space = UNITS(disk.space)
+
+        return disk
+
+
+@dataclasses.dataclass(repr=False)
+class Flavor(SerializableContainer):
     """
     For the purpose of HW requirements, this class represents a HW properties of a flavor.
     """
+
+    name: str
+    id: str
 
     #: HW architecture of the flavor.
     arch: Optional[str] = None
@@ -124,6 +160,47 @@ class Flavor:
 
     #: RAM size, in bytes.
     memory: Optional[Quantity] = None
+
+    def format_fields(self) -> List[str]:
+        return self.cpu.format_fields() + self.disk.format_fields() + [
+            f'{field.name}={getattr(self, field.name)}'
+            for field in dataclasses.fields(self)
+            if field.name not in ('cpu', 'disk')
+        ]
+
+    def __repr__(self) -> str:
+        return f'<PoolFlavorInfo: {" ".join(self.format_fields())}>'
+
+    # TODO: because of a circular dependency, we can't derive this class from SerializableContainer :/
+    def serialize_to_json(self) -> Dict[str, Any]:
+        serialized = dataclasses.asdict(self)
+
+        if self.memory is not None:
+            serialized['memory'] = str(self.memory)
+
+        serialized['disk'] = self.disk.serialize_to_json()
+
+        return serialized
+
+    @classmethod
+    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'Flavor':
+        flavor = cls(**serialized)
+
+        if flavor.memory is not None:
+            flavor.memory = UNITS(flavor.memory)
+
+        flavor.cpu = FlavorCpu.unserialize_from_json(serialized['cpu'])
+        flavor.disk = FlavorDisk.unserialize_from_json(serialized['disk'])
+
+        return flavor
+
+    def clone(self) -> 'Flavor':
+        # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone even cpu and disk info.
+        clone = dataclasses.replace(self)
+        clone.cpu = dataclasses.replace(self.cpu)
+        clone.disk = dataclasses.replace(self.disk)
+
+        return clone
 
 
 class Operator(enum.Enum):

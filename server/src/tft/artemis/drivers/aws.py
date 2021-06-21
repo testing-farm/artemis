@@ -20,12 +20,12 @@ from typing_extensions import TypedDict
 
 from .. import Failure, JSONType, Knob, log_dict_yaml
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Environment
+from ..environment import UNITS, Environment, Flavor, FlavorCpu
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
-from . import GuestLogUpdateProgress, GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, \
-    PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
-    run_cli_tool, test_cli_error
+from . import GuestLogUpdateProgress, GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
+    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, \
+    test_cli_error
 
 #
 # Custom typing types
@@ -307,7 +307,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[PoolFlavorInfo, Failure]:
+    ) -> Result[Flavor, Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(logger, environment)
 
         if r_suitable_flavors.is_error:
@@ -324,16 +324,16 @@ class AWSDriver(PoolDriver):
                 self.pool_config['default-instance-type']
             )
 
-        if self.pool_config['default-instance-type'] in [flavor.name for flavor, _ in suitable_flavors]:
+        if self.pool_config['default-instance-type'] in [flavor.name for flavor in suitable_flavors]:
             logger.info('default flavor among suitable ones, using it')
 
             return Ok([
                 flavor
-                for flavor, _ in suitable_flavors
+                for flavor in suitable_flavors
                 if flavor.name == self.pool_config['default-instance-type']
             ][0])
 
-        return Ok(suitable_flavors[0][0])
+        return Ok(suitable_flavors[0])
 
     def _env_to_image(
         self,
@@ -472,7 +472,7 @@ class AWSDriver(PoolDriver):
     def _get_spot_price(
         self,
         logger: gluetool.log.ContextAdapter,
-        instance_type: PoolFlavorInfo,
+        instance_type: Flavor,
         image: AWSPoolImageInfo
     ) -> Result[float, Failure]:
 
@@ -543,7 +543,7 @@ class AWSDriver(PoolDriver):
     def _create_block_device_mappings(
         self,
         image: AWSPoolImageInfo,
-        flavor: PoolFlavorInfo
+        flavor: Flavor
     ) -> Result[Optional[APIBlockDeviceMappingsType], Failure]:
         """
         Prepare block device mapping according to given flavor.
@@ -558,8 +558,8 @@ class AWSDriver(PoolDriver):
         :param flavor: flavor providing the disk space information.
         """
 
-        if flavor.diskspace is not None:
-            return self._set_root_disk_size(image, int(flavor.diskspace.to('GiB').magnitude))
+        if flavor.disk.space is not None:
+            return self._set_root_disk_size(image, int(flavor.disk.space.to('GiB').magnitude))
 
         if 'default-root-disk-size' in self.pool_config:
             return self._set_root_disk_size(image, self.pool_config['default-root-disk-size'])
@@ -569,7 +569,7 @@ class AWSDriver(PoolDriver):
     def _request_instance(
         self,
         logger: gluetool.log.ContextAdapter,
-        instance_type: PoolFlavorInfo,
+        instance_type: Flavor,
         image: AWSPoolImageInfo,
         guestname: str
     ) -> Result[ProvisioningProgress, Failure]:
@@ -634,7 +634,7 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        instance_type: PoolFlavorInfo,
+        instance_type: Flavor,
         image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
         log_dict_yaml(
@@ -1015,7 +1015,7 @@ class AWSDriver(PoolDriver):
                 image_info=r_images.unwrap()
             ))
 
-    def fetch_pool_flavor_info(self) -> Result[List[PoolFlavorInfo], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
 
         r_flavors = self._aws_command(
@@ -1035,10 +1035,12 @@ class AWSDriver(PoolDriver):
 
         try:
             return Ok([
-                PoolFlavorInfo(
+                Flavor(
                     name=flavor['InstanceType'],
                     id=flavor['InstanceType'],
-                    cores=int(flavor['VCpuInfo']['DefaultVCpus']),
+                    cpu=FlavorCpu(
+                        cores=int(flavor['VCpuInfo']['DefaultVCpus'])
+                    ),
                     # memory is reported in MB
                     memory=int(flavor['MemoryInfo']['SizeInMiB']) * UNITS.mebibytes
                 )

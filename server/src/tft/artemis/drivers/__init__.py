@@ -15,7 +15,6 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Pattern, Tuple
 import gluetool
 import gluetool.log
 import gluetool.utils
-import pint
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
@@ -26,11 +25,10 @@ from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, 
     process_output_to_str, refresh_cached_set, safe_call
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
-from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk
+from ..environment import UNITS, Environment, Flavor
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 
 T = TypeVar('T')
-S = TypeVar('S', bound=SerializableContainer)
 
 
 GuestTagsType = Dict[str, str]
@@ -169,86 +167,23 @@ class PoolImageInfo(SerializableContainer):
         return f'<PoolImageInfo: name={self.name} id={self.id}>'
 
 
-@dataclasses.dataclass(repr=False)
-class PoolFlavorInfo(SerializableContainer):
-    """
-    Describes important information about an OpenStack flavor.
-    """
-
-    name: str
-    id: str
-
-    # TODO: introduce structure, in the longterm we don't want the flat namespace, but rather follow
-    # environment.Flavor - and we probably would like to merge these two classes into one, to avoid
-    # wasting time and translation in the driver.
-
-    #: Number of cores.
-    cores: Optional[int] = None
-    #: CPU family number.
-    cpu_family: Optional[int] = None
-    #: CPU family name.
-    cpu_family_name: Optional[str] = None
-    #: CPU model number.
-    cpu_model: Optional[int] = None
-    #: CPU model name.
-    cpu_model_name: Optional[str] = None
-    #: Size of RAM available, in bytes.
-    memory: Optional[pint.Quantity] = None
-    #: Size of the main storage, in bytes.
-    diskspace: Optional[pint.Quantity] = None
-
-    def __repr__(self) -> str:
-        formatted_fields = " ".join([
-            f"{field.name}={str(getattr(self, field.name))}"
-            for field in dataclasses.fields(self)
-        ])
-
-        return f'<PoolFlavorInfo: {formatted_fields}>'
-
-    # Custom serialization - we have to take care of Quantity instances, and unserialize them correctly.
-    def serialize_to_json(self) -> Dict[str, Any]:
-        serialized = dataclasses.asdict(self)
-
-        if self.memory is not None:
-            serialized['memory'] = str(self.memory)
-
-        if self.diskspace is not None:
-            serialized['diskspace'] = str(self.diskspace)
-
-        return serialized
-
-    @classmethod
-    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'PoolFlavorInfo':
-        flavor = cls(**serialized)
-
-        if flavor.memory is not None:
-            flavor.memory = UNITS(flavor.memory)
-
-        if flavor.diskspace is not None:
-            flavor.diskspace = UNITS(flavor.diskspace)
-
-        return flavor
-
-
 class FlavorKeyGetterType(Protocol):
     def __call__(
         self,
-        flavor_pair: Tuple[PoolFlavorInfo, Flavor]
+        flavor: Flavor
     ) -> Tuple[int, Union[int, Quantity], Union[int, Quantity]]:
         pass
 
 
 def flavor_to_key(
-    flavor_pair: Tuple[PoolFlavorInfo, Flavor]
+    flavor: Flavor
 ) -> Tuple[int, Union[int, Quantity], Union[int, Quantity]]:
-    pool_flavor, _ = flavor_pair
-
     # All are optional, meaning "don't care", and in this sorting it doesn't matter (possible?)
     # TODO: better algorithm would be better, one aware of optional values (first? last?)
     return (
-        pool_flavor.cores or 0,
-        pool_flavor.memory or 0,
-        pool_flavor.diskspace or 0
+        flavor.cpu.cores or 0,
+        flavor.memory or 0,
+        flavor.disk.space or 0
     )
 
 
@@ -562,7 +497,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         flavorname: str
-    ) -> Result[PoolFlavorInfo, Failure]:
+    ) -> Result[Flavor, Failure]:
         """
         Find a flavor matching the given name.
 
@@ -573,7 +508,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             CACHE.get(),
             self.flavor_info_cache_key,
             flavorname,
-            PoolFlavorInfo
+            Flavor
         )
 
         if r_flavor.is_error:
@@ -594,7 +529,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         logger: gluetool.log.ContextAdapter,
         environment: Environment,
         sort_key_getter: FlavorKeyGetterType = flavor_to_key
-    ) -> Result[List[Tuple[PoolFlavorInfo, Flavor]], Failure]:
+    ) -> Result[List[Flavor], Failure]:
         """
         Evaluate the given environment, and return flavors suitable for the environment given its HW constraints.
 
@@ -618,39 +553,19 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         # For each flavor info and arch, create a Flavor description we can then match against the HW constraints.
         # TODO: what if some flavors are not supported on all arches?
-        flavors: List[Tuple[PoolFlavorInfo, Flavor]] = []
+        flavors: List[Flavor] = []
 
-        for pool_flavor in pool_flavors:
+        for flavor in pool_flavors:
             if capabilities.supported_architectures is AnyArchitecture:
-                flavor = Flavor(
-                    arch=None,
-                    cpu=FlavorCpu(
-                        cores=pool_flavor.cores
-                    ),
-                    disk=FlavorDisk(
-                        space=pool_flavor.diskspace
-                    ),
-                    memory=pool_flavor.memory
-                )
-
-                flavors.append((pool_flavor, flavor))
+                flavors.append(flavor)
 
             else:
                 assert isinstance(capabilities.supported_architectures, list)
 
                 for arch in capabilities.supported_architectures:
-                    flavor = Flavor(
-                        arch=arch,
-                        cpu=FlavorCpu(
-                            cores=pool_flavor.cores
-                        ),
-                        disk=FlavorDisk(
-                            space=pool_flavor.diskspace
-                        ),
-                        memory=pool_flavor.memory
-                    )
+                    arch_flavor = dataclasses.replace(flavor, arch=arch)
 
-                    flavors.append((pool_flavor, flavor))
+                    flavors.append(arch_flavor)
 
         gluetool.log.log_dict(logger.debug, 'available flavors', flavors)
 
@@ -669,8 +584,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         # The actual filter: pick flavors that pass the test and match the requirements.
         suitable_flavors = [
-            (pool_flavor, flavor)
-            for pool_flavor, flavor in flavors
+            flavor
+            for flavor in flavors
             if constraints.eval_flavor(logger, flavor) is True
         ]
 
@@ -1130,7 +1045,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return get_cached_item(CACHE.get(), self.image_info_cache_key, imagename, self.image_info_class)
 
-    def fetch_pool_flavor_info(self) -> Result[List[PoolFlavorInfo], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         """
         Responsible for fetching the most up-to-date flavor info..
 
@@ -1144,8 +1059,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def _fetch_custom_pool_flavor_info_from_config(
         self,
         logger: gluetool.log.ContextAdapter,
-        flavors: Dict[str, PoolFlavorInfo]
-    ) -> Result[List[PoolFlavorInfo], Failure]:
+        flavors: Dict[str, Flavor]
+    ) -> Result[List[Flavor], Failure]:
         """
         "Fetch" custom flavors specified in driver configuration. These are clones of existing flavors, but with
         some of the original properties changed in the clone.
@@ -1173,10 +1088,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
                     basename=basename
                 ))
 
-            custom_flavor = dataclasses.replace(
-                flavors[basename],
-                name=customname
-            )
+            base_flavor = flavors[basename]
+
+            custom_flavor = base_flavor.clone()
+            custom_flavor.name = customname
 
             custom_flavors.append(custom_flavor)
 
@@ -1195,7 +1110,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                             space=disk_patch['space']
                         ))
 
-                    custom_flavor.diskspace = r_space.unwrap()
+                    custom_flavor.disk.space = r_space.unwrap()
 
         gluetool.log.log_dict(logger.debug, 'custom flavors', custom_flavors)
 
@@ -1204,7 +1119,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def _fetch_patched_pool_flavor_info_from_config(
         self,
         logger: gluetool.log.ContextAdapter,
-        flavors: Dict[str, PoolFlavorInfo]
+        flavors: Dict[str, Flavor]
     ) -> Result[None, Failure]:
         """
         "Patch" existing flavors as specified by configuration. Some information may not be available via API,
@@ -1235,19 +1150,19 @@ class PoolDriver(gluetool.log.LoggerMixin):
             if 'cpu' in patch_flavor_spec:
                 cpu_patch = cast(Dict[str, Union[str, int]], patch_flavor_spec['cpu'])
 
-                flavor.cpu_family = cast(
+                flavor.cpu.family = cast(
                     Optional[int],
                     cpu_patch.get('family', None)
                 )
-                flavor.cpu_family_name = cast(
+                flavor.cpu.family_name = cast(
                     Optional[str],
                     cpu_patch.get('family-name', None)
                 )
-                flavor.cpu_model = cast(
+                flavor.cpu.model = cast(
                     Optional[int],
                     cpu_patch.get('model', None)
                 )
-                flavor.cpu_model_name = cast(
+                flavor.cpu.model_name = cast(
                     Optional[str],
                     cpu_patch.get('model-name', None)
                 )
@@ -1255,18 +1170,26 @@ class PoolDriver(gluetool.log.LoggerMixin):
             if 'disk' in patch_flavor_spec:
                 disk_patch = cast(Dict[str, Union[str, int]], patch_flavor_spec['disk'])
 
-                flavor.diskspace = cast(
-                    Optional[str],
-                    disk_patch.get('space', None)
-                )
+                if 'space' in disk_patch:
+                    r_space = safe_call(UNITS, disk_patch['space'])
+
+                    if r_space.is_error:
+                        return Error(Failure.from_failure(
+                            'failed to parse patched flavor disk.space',
+                            r_space.unwrap_error(),
+                            flavorname=flavorname,
+                            space=disk_patch['space']
+                        ))
+
+                    flavor.disk.space = r_space.unwrap()
 
         return Ok(None)
 
     def _fetch_pool_flavor_info_from_config(
         self,
         logger: gluetool.log.ContextAdapter,
-        flavors: List[PoolFlavorInfo]
-    ) -> Result[List[PoolFlavorInfo], Failure]:
+        flavors: List[Flavor]
+    ) -> Result[List[Flavor], Failure]:
         """
         "Fetch" flavor infos from the driver configuration. This includes both custom flavors and patch information.
 
@@ -1344,7 +1267,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(None)
 
-    def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[PoolFlavorInfo], Failure]:
+    def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
         """
         Retrieve "current" flavor info metrics, as stored in the cache. Given how the information is acquired,
         it will **always** be slightly outdated.
@@ -1357,7 +1280,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
            is unknown.
         """
 
-        return get_cached_item(CACHE.get(), self.flavor_info_cache_key, flavorname, PoolFlavorInfo)
+        return get_cached_item(CACHE.get(), self.flavor_info_cache_key, flavorname, Flavor)
 
     def get_cached_pool_image_infos(self) -> Result[List[PoolImageInfo], Failure]:
         """
@@ -1366,12 +1289,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return get_cached_items_as_list(CACHE.get(), self.image_info_cache_key, self.image_info_class)
 
-    def get_cached_pool_flavor_infos(self) -> Result[List[PoolFlavorInfo], Failure]:
+    def get_cached_pool_flavor_infos(self) -> Result[List[Flavor], Failure]:
         """
         Retrieve all flavor info known to the pool.
         """
 
-        return get_cached_items_as_list(CACHE.get(), self.flavor_info_cache_key, PoolFlavorInfo)
+        return get_cached_items_as_list(CACHE.get(), self.flavor_info_cache_key, Flavor)
 
 
 def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -> Result[Optional[str], Failure]:

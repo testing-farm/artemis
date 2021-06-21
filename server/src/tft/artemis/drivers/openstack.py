@@ -12,12 +12,12 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, Knob, log_dict_yaml
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
-from ..environment import UNITS, Environment
+from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
-from . import ConsoleUrlData, GuestLogUpdateProgress, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, \
-    PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
-    create_tempfile, run_cli_tool, test_cli_error
+from . import ConsoleUrlData, GuestLogUpdateProgress, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
+    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, \
+    run_cli_tool, test_cli_error
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -187,7 +187,7 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment
-    ) -> Result[PoolFlavorInfo, Failure]:
+    ) -> Result[Flavor, Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(logger, environment)
 
         if r_suitable_flavors.is_error:
@@ -201,16 +201,16 @@ class OpenStackDriver(PoolDriver):
 
             return self._map_environment_to_flavor_info_by_cache_by_name(logger, self.pool_config['default-flavor'])
 
-        if self.pool_config['default-flavor'] in [flavor.name for flavor, _ in suitable_flavors]:
+        if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
             logger.info('default flavor among suitable ones, using it')
 
             return Ok([
                 flavor
-                for flavor, _ in suitable_flavors
+                for flavor in suitable_flavors
                 if flavor.name == self.pool_config['default-flavor']
             ][0])
 
-        return Ok(suitable_flavors[0][0])
+        return Ok(suitable_flavors[0])
 
     def _env_to_image(
         self,
@@ -852,7 +852,7 @@ class OpenStackDriver(PoolDriver):
                 image_info=r_images.unwrap()
             ))
 
-    def fetch_pool_flavor_info(self) -> Result[List[PoolFlavorInfo], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         # Flavors are described by OpenStack CLI with the following structure:
         # [
         #   {
@@ -880,14 +880,18 @@ class OpenStackDriver(PoolDriver):
 
         try:
             return Ok([
-                PoolFlavorInfo(
+                Flavor(
                     name=flavor['Name'],
                     id=flavor['ID'],
-                    cores=int(flavor['VCPUs']),
+                    cpu=FlavorCpu(
+                        cores=int(flavor['VCPUs'])
+                    ),
                     # memory is reported in MiB
                     memory=int(flavor['RAM']) * UNITS.mebibytes,
-                    # diskspace is reported in GiB
-                    diskspace=int(flavor['Disk']) * UNITS.gibibytes
+                    disk=FlavorDisk(
+                        # diskspace is reported in GiB
+                        space=int(flavor['Disk']) * UNITS.gibibytes
+                    )
                 )
                 for flavor in cast(List[Dict[str, str]], r_flavors.unwrap())
                 if flavor_name_pattern is None or flavor_name_pattern.match(flavor['Name'])

@@ -45,6 +45,8 @@ def test_example_simple(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             memory=UNITS('8 GiB')
         )
     ) is True
@@ -52,6 +54,8 @@ def test_example_simple(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             memory=UNITS('9 GiB')
         )
     ) is False
@@ -74,6 +78,8 @@ def test_example_cpu(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             cpu=tft.artemis.environment.FlavorCpu(
                 processors=2,
                 cores=16,
@@ -98,6 +104,8 @@ def test_example_disk(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             disk=tft.artemis.environment.FlavorDisk(
                 space=UNITS('500 GiB')
             )
@@ -107,6 +115,8 @@ def test_example_disk(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             disk=tft.artemis.environment.FlavorDisk(
                 space=UNITS('600 GiB')
             )
@@ -116,14 +126,20 @@ def test_example_disk(logger):
 
 def test_example_operators(logger):
     flavor_big = tft.artemis.environment.Flavor(
+        name='dummy-flavor',
+        id='dummy-flavor',
         memory=UNITS('9 GiB')
     )
 
     flavor_right = tft.artemis.environment.Flavor(
+        name='dummy-flavor',
+        id='dummy-flavor',
         memory=UNITS('8 GiB')
     )
 
     flavor_small = tft.artemis.environment.Flavor(
+        name='dummy-flavor',
+        id='dummy-flavor',
         memory=UNITS('7 GiB')
     )
 
@@ -246,6 +262,8 @@ def test_example_units_conversion(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             memory=UNITS('8 GiB')
         )
     ) is True
@@ -266,6 +284,8 @@ def test_example_regex(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             cpu=tft.artemis.environment.FlavorCpu(
                 model_name='someAMDmodel'
             )
@@ -275,6 +295,8 @@ def test_example_regex(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             cpu=tft.artemis.environment.FlavorCpu(
                 model_name='someIntelmodel'
             )
@@ -305,6 +327,8 @@ def test_example_logic(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             cpu=tft.artemis.environment.FlavorCpu(
                 family=15,
                 model=65
@@ -315,6 +339,8 @@ def test_example_logic(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             cpu=tft.artemis.environment.FlavorCpu(
                 family=15,
                 model=67
@@ -325,6 +351,8 @@ def test_example_logic(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             cpu=tft.artemis.environment.FlavorCpu(
                 family=15,
                 model=69
@@ -335,6 +363,8 @@ def test_example_logic(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             cpu=tft.artemis.environment.FlavorCpu(
                 family=15,
                 model=70
@@ -345,6 +375,8 @@ def test_example_logic(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             cpu=tft.artemis.environment.FlavorCpu(
                 family=17,
                 model=65
@@ -369,6 +401,8 @@ def test_clueless_flavor(logger):
     assert constraint.eval_flavor(
         logger,
         tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
             cpu=tft.artemis.environment.FlavorCpu(
                 family=79,
                 model_name=None
