@@ -85,6 +85,7 @@ def db(logger, db_url):
 
     try:
         tft.artemis.db.DB.instance = None
+        tft.artemis.tasks._ROOT_DB = None
 
         yield tft.artemis.db.DB(logger, db_url)
 

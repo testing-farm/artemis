@@ -1,7 +1,7 @@
 import datetime
 import inspect
 import traceback
-from typing import TYPE_CHECKING, Dict, Optional, Set, Union
+from typing import TYPE_CHECKING, Dict, Optional, Set, Union, cast
 
 import dramatiq.broker
 import dramatiq.message
@@ -14,7 +14,13 @@ from .db import GuestLogContentType
 from .guest import GuestLogger
 
 if TYPE_CHECKING:
+    from . import ExceptionInfoType
     from .tasks import Actor
+
+
+# Dramatiq does not have a global default for maximal number of retries, the value is only present as a default
+# of `Retries` middleware's `retries` keyword parameter.
+DEFAULT_MAX_RETRIES = 20
 
 
 def _actor_arguments(
@@ -32,7 +38,7 @@ def _actor_arguments(
         Failure(
             'actor signature parameters does not match message content',
             signature=[name for name in signature.parameters.keys()],
-            arguments=message._message[2]
+            arguments=[repr(arg) for arg in message._message[2]]
         ).handle(logger)
 
         return {}
@@ -41,6 +47,189 @@ def _actor_arguments(
         name: message._message[2][index]
         for index, name in enumerate(signature.parameters.keys())
     }
+
+
+def _get_message_limit(
+    message: dramatiq.broker.MessageProxy,
+    actor: 'Actor',
+    key: str,
+    default: int
+) -> int:
+    value = cast(Optional[int], message.options.get(key))
+
+    if value:
+        return value
+
+    value = cast(Optional[int], actor.options.get(key))
+
+    if value:
+        return value
+
+    return default
+
+
+def _message_max_retries(message: dramatiq.broker.MessageProxy, actor: 'Actor') -> int:
+    return _get_message_limit(message, actor, 'max_retries', DEFAULT_MAX_RETRIES)
+
+
+def _message_min_backoff(message: dramatiq.broker.MessageProxy, actor: 'Actor') -> int:
+    return _get_message_limit(message, actor, 'min_backoff', dramatiq.middleware.retries.DEFAULT_MIN_BACKOFF)
+
+
+def _message_max_backoff(message: dramatiq.broker.MessageProxy, actor: 'Actor') -> int:
+    return _get_message_limit(message, actor, 'max_backoff', dramatiq.middleware.retries.DEFAULT_MAX_BACKOFF)
+
+
+def _message_backoff(
+    message: dramatiq.broker.MessageProxy,
+    actor: 'Actor',
+    retries: int
+) -> int:
+    return cast(
+        int,
+        compute_backoff(
+            retries,
+            factor=_message_min_backoff(message, actor),
+            max_backoff=_message_max_backoff(message, actor)
+        )[1]
+    )
+
+
+def _retry_message(
+    logger: gluetool.log.ContextAdapter,
+    broker: dramatiq.broker.Broker,
+    message: dramatiq.message.Message,
+    actor: 'Actor',
+    exc_info: Optional['ExceptionInfoType'] = None
+) -> None:
+    """
+    Enqueue a given message while increasing its "retried" count by 1.
+    """
+
+    message.options['retries'] = message.options.get('retries', 0) + 1
+
+    if exc_info:
+        message.options['traceback'] = '\n'.join(traceback.format_exception(*exc_info, limit=30))
+
+    retries = cast(int, message.options['retries'])
+    backoff = _message_backoff(message, actor, retries)
+
+    retry_at = datetime.datetime.utcnow() + datetime.timedelta(milliseconds=backoff)
+
+    logger.info(f'retries: message={message.message_id} retries={retries} backoff={backoff} retrying-at={retry_at}')
+
+    broker.enqueue(message, delay=backoff)
+
+
+def _fail_message(
+    logger: gluetool.log.ContextAdapter,
+    message: dramatiq.message.Message,
+    error_message: str
+) -> None:
+    """
+    Mark the given message as failed.
+    """
+
+    from . import Failure
+
+    Failure(error_message).handle(logger)
+
+    message.fail()
+
+
+def _handle_tails(
+    logger: gluetool.log.ContextAdapter,
+    message: dramatiq.message.Message,
+    actor: 'Actor',
+    actor_arguments: Dict[str, Optional[str]]
+) -> bool:
+    """
+    Handle the "tails": when we run out of retries on a task, we cannot just let it fail, but we must take
+    of whatever resources it might have allocated.
+
+    We have different handlers for each chain of tasks, and these handlers take care of their particular cleanup.
+    The task here is to dispatch the correct handler.
+    """
+
+    from .tasks import TaskLogger, get_root_db, handle_logging_chain_tail, handle_provisioning_chain_tail, \
+        is_logging_tail_task, is_provisioning_tail_task
+
+    if is_provisioning_tail_task(actor):
+        tail_logger: gluetool.log.ContextAdapter = TaskLogger(logger, 'provisioning-tail')
+
+    elif is_logging_tail_task(actor):
+        tail_logger = TaskLogger(logger, 'logging-tail')
+
+    else:
+        tail_logger = logger
+
+    guestname = actor_arguments['guestname'] if actor_arguments and 'guestname' in actor_arguments else None
+
+    # So far, all tail work within the context of a particular guest, therefore there must be a guestname.
+    if not guestname:
+        _fail_message(tail_logger, message, 'cannot handle chain tail with undefined guestname')
+
+        return True
+
+    # Logging chain has additional arguments
+    if is_logging_tail_task(actor):
+        logname = actor_arguments['logname'] \
+            if actor_arguments and 'logname' in actor_arguments else None
+
+        contenttype = actor_arguments['contenttype'] \
+            if actor_arguments and 'contenttype' in actor_arguments else None
+
+        if not logname or not contenttype:
+            _fail_message(
+                tail_logger,
+                message,
+                'cannot handle logging chain tail with undefined logname or contenttype'
+            )
+
+            return True
+
+    db = get_root_db(tail_logger)
+
+    with db.get_session() as session:
+        if is_provisioning_tail_task(actor):
+            if handle_provisioning_chain_tail(
+                tail_logger,
+                db,
+                session,
+                guestname,
+                actor
+            ):
+                tail_logger.info('successfuly handled the provisioning tail')
+
+                return True
+
+        elif is_logging_tail_task(actor):
+            assert logname is not None
+            assert contenttype is not None
+
+            if handle_logging_chain_tail(
+                tail_logger,
+                db,
+                session,
+                guestname,
+                logname,
+                GuestLogContentType(contenttype),
+                actor
+            ):
+                tail_logger.info('successfuly handled the logging tail')
+
+                return True
+
+    tail_logger.error('failed to handle the chain tail')
+
+    # This would cause the message to be dropped, effectively halting any work towards provisioning
+    # of the guest or capturing its logs.
+    #
+    # In the spirit of "let's try again...", falling through to rescheduling the original task.
+    #
+    # message.fail()
+
+    return False
 
 
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class cannot subclass 'Retries
@@ -53,18 +242,20 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         result: None = None,
         exception: Optional[BaseException] = None
     ) -> None:
+        # If the task did not raise an exception, there's obviously no need to retry it in the future. We're done.
         if exception is None:
             return
 
         from . import get_logger
-        from .tasks import get_root_db
 
         logger = get_logger()
 
-        actor = broker.get_actor(message.actor_name)
-        retries = message.options.setdefault("retries", 0)
-        max_retries = message.options.get("max_retries") or actor.options.get("max_retries", self.max_retries)
-        retry_when = actor.options.get("retry_when", self.retry_when)
+        actor = cast('Actor', broker.get_actor(message.actor_name))
+
+        # `retries` key is initialized to 0 - while other fields are optional, this one is expected to exist.
+        retries = message.options.setdefault('retries', 0)
+        max_retries = _message_max_retries(message, actor)
+        retry_when = actor.options.get('retry_when', self.retry_when)
 
         actor_arguments = _actor_arguments(logger, message, actor)
 
@@ -73,122 +264,21 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         if guestname:
             logger = GuestLogger(logger, guestname)
 
-        logger.info(
-            'retries: message={} actor={} attempts={} max_retries={}'.format(
-                message.message_id, message.actor_name, retries, max_retries
-            )
-        )
+        logger.info(f'retries: message={message.message_id} actor={actor.actor_name} current-retries={retries} max-retries={max_retries}')  # noqa
 
         if retry_when is not None and not retry_when(retries, exception) or \
            retry_when is None and max_retries is not None and retries >= max_retries:
-            # Handle the provisioning "tail": when we run out of retries on a task that works on
-            # provisioning, and we need to release anything we already acquired, and start again.
-            #
-            # By this point, most likely, the provisioning is probably stuck with a broken pool,
-            # or we already have a guest and we can't reach it, or something like that. Something
-            # happened after routing and before successfully reaching READY state. We need to
-            # release all the resources we have, to avoid leaks, and fall back to routing.
-            #
-            # This error path should be relatively cheap and straightforward, but not free of points
-            # where it can fail on its own - after all, it will try to load the guest request from
-            # database, and schedule routing task. It can fail, it may fail. The problem is, what to
-            # do in such a situation? We don't want to reschedule the message, that would reschedule
-            # the original task and by this time we kind of decided it's doomed and it's time to start
-            # again. We can't schedule this "release & revert to routing" as a standalone task - we did
-            # fail to schedule the routing task, we probably won't get away with a different actor.
-            #
-            # As of now, if we want to keep any chance of falling back to routing, rescheduling the
-            # message seems to be the only way. It's quite likely it will fail again, giving us another
-            # chance for release & revert. Note that this applies to situations where "release & revert"
-            # attempt fails, i.e. DB or broker issues, most likely.
-            #
-            # The very same situation we face when working on guest logs - if we run out of retries, we
-            # must handle the fallout somehow.
 
-            from . import Failure
-            from .tasks import TaskLogger, handle_logging_chain_tail, handle_provisioning_chain_tail, \
-                is_logging_tail_task, is_provisioning_tail_task
+            from .tasks import is_logging_tail_task, is_provisioning_tail_task
 
-            def fail_message(logger: gluetool.log.ContextAdapter, error_message: str) -> None:
-                Failure(error_message).handle(logger)
+            # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
+            if not is_provisioning_tail_task(actor) and not is_logging_tail_task(actor):
+                return _fail_message(logger, message, f'retries exceeded for message {message.message_id}')
 
-                message.fail()
+            if _handle_tails(logger, message, actor, actor_arguments) is True:
+                return
 
-            if is_provisioning_tail_task(actor) or is_logging_tail_task(actor):
-                if is_provisioning_tail_task(actor):
-                    tail_logger = TaskLogger(logger, 'provisioning-tail')
-
-                elif is_logging_tail_task(actor):
-                    tail_logger = TaskLogger(logger, 'logging-tail')
-
-                if not guestname:
-                    return fail_message(tail_logger, 'cannot handle chain tail with undefined guestname')
-
-                if is_logging_tail_task(actor):
-                    logname = actor_arguments['logname'] if actor_arguments and 'logname' in actor_arguments else None
-                    contenttype = actor_arguments['contenttype'] \
-                        if actor_arguments and 'contenttype' in actor_arguments else None
-
-                    if not logname or not contenttype:
-                        return fail_message(
-                            tail_logger,
-                            'cannot handle chain tail with undefined logname or contenttype'
-                        )
-
-                db = get_root_db(tail_logger)
-
-                with db.get_session() as session:
-                    if is_provisioning_tail_task(actor):
-                        if handle_provisioning_chain_tail(
-                            tail_logger,
-                            db,
-                            session,
-                            guestname,
-                            actor
-                        ):
-                            tail_logger.info('successfuly handled the provisioning tail')
-                            return
-
-                    elif is_logging_tail_task(actor):
-                        assert logname is not None
-                        assert contenttype is not None
-
-                        if handle_logging_chain_tail(
-                            tail_logger,
-                            db,
-                            session,
-                            guestname,
-                            logname,
-                            GuestLogContentType(contenttype),
-                            actor
-                        ):
-                            tail_logger.info('successfuly handled the logging tail')
-                            return
-
-                tail_logger.error('failed to handle the chain tail')
-
-                # This would cause the message to be dropped, effectively halting any work towards provisioning
-                # of the guest.
-                #
-                # In the spirit of "let's try again...", falling through to rescheduling the original task.
-                #
-                # message.fail()
-
-            else:
-                # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
-                return fail_message(logger, 'retries exceeded for message {}'.format(message.message_id))
-
-        message.options["retries"] += 1
-        message.options["traceback"] = traceback.format_exc(limit=30)
-        min_backoff = message.options.get("min_backoff") or actor.options.get("min_backoff", self.min_backoff)
-        max_backoff = message.options.get("max_backoff") or actor.options.get("max_backoff", self.max_backoff)
-        max_backoff = min(max_backoff, dramatiq.middleware.retries.DEFAULT_MAX_BACKOFF)
-        _, backoff = compute_backoff(retries, factor=min_backoff, max_backoff=max_backoff)
-
-        retry_at = datetime.datetime.utcnow() + datetime.timedelta(milliseconds=backoff)
-        logger.info("retries: message={} backoff={} retrying_at='{}'".format(message.message_id, backoff, retry_at))
-
-        broker.enqueue(message, delay=backoff)
+        _retry_message(logger, broker, message, actor)
 
 
 class Prometheus(dramatiq.middleware.Middleware):  # type: ignore  # Class cannot subclass 'Middleware'

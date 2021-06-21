@@ -348,6 +348,7 @@ BareActorType = Callable[..., None]
 class Actor(Protocol):
     actor_name: str
     fn: BareActorType
+    options: Dict[str, Any]
 
     def send(
         self,
