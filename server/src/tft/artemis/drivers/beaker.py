@@ -1,5 +1,6 @@
 import dataclasses
 import os
+import re
 import stat
 import threading
 from typing import Any, Dict, List, Optional, Tuple, cast
@@ -15,10 +16,10 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, Knob
 from ..db import GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, Operator, Or
-from ..metrics import PoolResourcesMetrics, ResourceType
+from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
 from . import CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool
+    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
 
 NodeRefType = Any
 
@@ -40,6 +41,8 @@ KNOB_UPDATE_TICK: Knob[int] = Knob(
     cast_from_str=int,
     default=300
 )
+
+NO_DISTRO_MATCHES_RECIPE_ERROR_PATTEN = re.compile(r'^Exception: .+:No distro tree matches Recipe:')
 
 
 @dataclasses.dataclass
@@ -270,6 +273,21 @@ class BeakerDriver(PoolDriver):
             return Error(r_run.unwrap_error())
 
         return Ok(r_run.unwrap())
+
+    def _handle_no_distro_matches_recipe_error(
+        self,
+        failure: Failure,
+        guest_request: GuestRequest
+    ) -> Result[ProvisioningProgress, Failure]:
+        failure.recoverable = False
+
+        PoolMetrics.inc_error(self.poolname, 'no-distro-matches-recipe')
+
+        return Ok(ProvisioningProgress(
+            state=ProvisioningState.CANCEL,
+            pool_data=BeakerPoolData.unserialize(guest_request),
+            pool_failures=[failure]
+        ))
 
     def _dispatch_resource_cleanup(
         self,
@@ -619,6 +637,11 @@ class BeakerDriver(PoolDriver):
             )
 
             if r_reschedule_job.is_error:
+                failure = r_reschedule_job.unwrap_error()
+
+                if test_cli_error(failure, NO_DISTRO_MATCHES_RECIPE_ERROR_PATTEN):
+                    return self._handle_no_distro_matches_recipe_error(failure, guest_request)
+
                 return Error(r_reschedule_job.unwrap_error())
 
             return Ok(ProvisioningProgress(
@@ -676,6 +699,11 @@ class BeakerDriver(PoolDriver):
         r_create_job = self._create_job(logger, Environment.unserialize_from_str(guest_request.environment))
 
         if r_create_job.is_error:
+            failure = r_create_job.unwrap_error()
+
+            if test_cli_error(failure, NO_DISTRO_MATCHES_RECIPE_ERROR_PATTEN):
+                return self._handle_no_distro_matches_recipe_error(failure, guest_request)
+
             return Error(r_create_job.unwrap_error())
 
         # The returned guest doesn't have address. The address will be added by executing `update_guest()`
