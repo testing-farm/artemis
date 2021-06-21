@@ -37,7 +37,7 @@ AWS_INSTANCE_SPECIFICATION = Template("""
 {
   "ImageId": "{{ ami_id }}",
   "KeyName": "{{ key_name }}",
-  "InstanceType": "{{ instance_type.name }}",
+  "InstanceType": "{{ instance_type.id }}",
   "Placement": {
     "AvailabilityZone": "{{ availability_zone }}"
   },
@@ -444,7 +444,7 @@ class AWSDriver(PoolDriver):
 
         r_spot_price = self._aws_command([
             'ec2', 'describe-spot-price-history',
-            f'--instance-types={instance_type.name}',
+            f'--instance-types={instance_type.id}',
             f'--availability-zone={availability_zone}',
             f'--product-descriptions={image.platform_details}',
             '--max-items=1'
@@ -579,7 +579,7 @@ class AWSDriver(PoolDriver):
             'ec2', 'run-instances',
             '--image-id', image.id,
             '--key-name', self.pool_config['master-key-name'],
-            '--instance-type', instance_type.name
+            '--instance-type', instance_type.id
         ]
 
         if 'subnet-id' in self.pool_config:
