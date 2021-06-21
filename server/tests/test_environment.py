@@ -353,6 +353,30 @@ def test_example_logic(logger):
     ) is False
 
 
+def test_clueless_flavor(logger):
+    constraint = parse_hw(
+        """
+        ---
+
+        cpu:
+            family: 79
+            model_name: AMD
+        """
+    )
+
+    print(constraint.format())
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            cpu=tft.artemis.environment.FlavorCpu(
+                family=79,
+                model_name=None
+            )
+        )
+    ) is False
+
+
 def test_schema_no_constraints_v0_0_19(schema_v0_0_19, logger):
     spec = parse_spec(
         """

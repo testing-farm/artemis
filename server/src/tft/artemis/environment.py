@@ -304,10 +304,17 @@ class Constraint(ConstraintBase):
         while property_path:
             flavor_property = getattr(flavor_property, property_path.pop(0))
 
-        result = self.operator_handler(  # type: ignore  # Too many arguments - mypy issue #5485
-            flavor_property,
-            self.value
-        )
+        if flavor_property is None:
+            # Hard to compare `None` with a constraint. Flavor can't provide - or doesn't feel like providing - more
+            # specific value. Unless told otherwise, we should mark the evaluation as failed, and keep looking for
+            # better mach.
+            result = False
+
+        else:
+            result = self.operator_handler(  # type: ignore  # Too many arguments - mypy issue #5485
+                flavor_property,
+                self.value
+            )
 
         logger.debug('eval-flavor: {} {} {} {} => {}'.format(
             self.name,
