@@ -180,6 +180,7 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
 @click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
 @click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
+@click.option('--user-data', required=False, help='User data to be saved with guest request')
 @click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
 @click.pass_obj
 def cmd_guest_create(
@@ -193,6 +194,7 @@ def cmd_guest_create(
         spot_instance: Optional[bool] = None,
         priority_group: Optional[str] = None,
         post_install_script: Optional[str] = None,
+        user_data: Optional[str] = None,
         wait: Optional[bool] = None
 ) -> None:
     assert cfg.artemis_api_version is not None
@@ -250,11 +252,16 @@ def cmd_guest_create(
             logger.error("Post-install-script {} is not present locally and can't be downloaded".format(
                 post_install_script))
 
+    gr_user_data = {key: value for key, value in [prop.split('=') for prop in user_data.split(',')]} \
+        if user_data \
+        else None
+
     data = {
         'environment': environment,
         'keyname': keyname,
         'priority_group': 'default-priority',
         'post_install_script': post_install,
+        'user_data': gr_user_data
     }
 
     response = artemis_create(cfg, 'guests/', data)
