@@ -8,12 +8,14 @@ import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 
+import boto3
+import boto3.exceptions
 import gluetool.log
 import jq
 import sqlalchemy.orm.session
 from gluetool.log import log_blob, log_dict
 from gluetool.result import Error, Ok, Result
-from gluetool.utils import normalize_bool_option
+from gluetool.utils import cached_property, normalize_bool_option
 from jinja2 import Template
 
 from .. import Failure, JSONType, Knob, log_dict_yaml
@@ -166,20 +168,14 @@ def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold
 class AWSDriver(PoolDriver):
     image_info_class = AWSPoolImageInfo
 
-    def __init__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        poolname: str,
-        pool_config: Dict[str, Any]
-    ) -> None:
-        super(AWSDriver, self).__init__(logger, poolname, pool_config)
-        self.environ = {
-            **os.environ,
-            "AWS_ACCESS_KEY_ID": self.pool_config['access-key-id'],
-            "AWS_SECRET_ACCESS_KEY": self.pool_config['secret-access-key'],
-            "AWS_DEFAULT_REGION": self.pool_config['default-region'],
-            "AWS_DEFAULT_OUTPUT": 'json'
-        }
+    @cached_property
+    def ec2_client(self) -> Any:
+        return boto3.client(
+            'ec2',
+            aws_access_key_id=self.pool_config['access-key-id'],
+            aws_secret_access_key=self.pool_config['secret-access-key'],
+            region_name=self.pool_config['default-region']
+        )
 
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         r_capabilities = super(AWSDriver, self).capabilities()
@@ -341,25 +337,28 @@ class AWSDriver(PoolDriver):
         self,
         guest_request: GuestRequest
     ) -> Result[InstanceOwnerType, Failure]:
+        try:
+            output = self.ec2_client.describe_instances(
+                InstanceIds=[
+                    AWSPoolData.unserialize(guest_request).instance_id
+                ]
+            )
 
-        aws_options = [
-            'ec2',
-            'describe-instances',
-            f'--instance-id={AWSPoolData.unserialize(guest_request).instance_id}'
-        ]
-
-        r_output = self._aws_command(aws_options, key='Reservations')
-
-        # command returned an unxpected result
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
-
-        output = cast(List[Dict[str, Any]], r_output.unwrap())
+        except boto3.exceptions.Boto3Error as exc:
+            return Error(Failure.from_exc(
+                'failed to describe instance',
+                exc
+            ))
 
         # get instance info from command output
         try:
-            instance = output[0]['Instances'][0]
-            owner = output[0]['OwnerId']
+            reservation = cast(
+                List[Dict[str, Any]],
+                output['Reservations']
+            )[0]
+
+            return Ok((reservation['Instances'][0], reservation['OwnerId']))
+
         except (KeyError, IndexError) as error:
             return Error(
                 Failure.from_exc(
@@ -369,25 +368,24 @@ class AWSDriver(PoolDriver):
                 )
             )
 
-        return Ok((instance, owner))
-
     def _describe_spot_instance(
         self,
         guest_request: GuestRequest
     ) -> Result[Dict[str, Any], Failure]:
-        aws_options = [
-            'ec2',
-            'describe-spot-instance-requests',
-            f'--spot-instance-request-ids={AWSPoolData.unserialize(guest_request).spot_instance_id}'
-        ]
+        try:
+            output = self.ec2_client.describe_spot_instance_requests(
+                SpotInstanceRequestIds=[
+                    AWSPoolData.unserialize(guest_request).spot_instance_id
+                ]
+            )
 
-        r_output = self._aws_command(aws_options, key='SpotInstanceRequests')
+        except boto3.exceptions.Boto3Error as exc:
+            return Error(Failure.from_exc(
+                'failed to describe spot instance',
+                exc
+            ))
 
-        # command returned an unxpected result
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
-
-        return Ok(cast(List[Dict[str, Any]], r_output.unwrap())[0])
+        return Ok(cast(List[Dict[str, Any]], output['SpotInstanceRequests'])[0])
 
     def _aws_command(self, args: List[str], key: Optional[str] = None) -> Result[JSONType, Failure]:
         """
@@ -487,7 +485,7 @@ class AWSDriver(PoolDriver):
     ) -> Result[Optional[BlockDeviceMappingsType], Failure]:
 
         try:
-            block_device_mappings[0]['Ebs']['VolumeSize'] = root_disk_size
+            block_device_mappings[0]['Ebs']['VolumeSize'] = int(root_disk_size)
         except (KeyError, IndexError) as error:
             return Error(
                 Failure.from_exc(
