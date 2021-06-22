@@ -1044,6 +1044,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         r_resource_metrics = self.fetch_pool_resources_metrics(logger)
 
         if r_resource_metrics.is_error:
+            PoolMetrics(self.poolname).inc_error(self.poolname, 'resource-metrics-refresh-failed')
+
             return Error(r_resource_metrics.unwrap_error())
 
         resources = r_resource_metrics.unwrap()
@@ -1099,6 +1101,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         r_image_info = self.fetch_pool_image_info()
 
         if r_image_info.is_error:
+            PoolMetrics(self.poolname).inc_error(self.poolname, 'image-info-refresh-failed')
+
             return Error(r_image_info.unwrap_error())
 
         r_refresh = refresh_cached_set(
@@ -1308,6 +1312,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         r_flavor_info = self.fetch_pool_flavor_info()
 
         if r_flavor_info.is_error:
+            PoolMetrics(self.poolname).inc_error(self.poolname, 'flavor-info-refresh-failed')
+
             return Error(r_flavor_info.unwrap_error())
 
         real_flavors = r_flavor_info.unwrap()
