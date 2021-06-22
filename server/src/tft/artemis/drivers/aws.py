@@ -1,4 +1,5 @@
 import base64
+import copy
 import dataclasses
 import ipaddress
 import json
@@ -15,6 +16,7 @@ from gluetool.log import log_blob, log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
+from typing_extensions import TypedDict
 
 from .. import Failure, JSONType, Knob, log_dict_yaml
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -28,8 +30,29 @@ from . import GuestLogUpdateProgress, GuestTagsType, PoolCapabilities, PoolData,
 #
 # Custom typing types
 #
-BlockDeviceMappingsType = List[Dict[str, Any]]
 InstanceOwnerType = Tuple[Dict[str, Any], str]
+
+
+# Represent various parts of JSON blobs returned by API queries
+#
+# NOTE: not *all* fields and keys are listed, only those our code uses.
+class APIBlockDeviceMappingEbsType(TypedDict):
+    VolumeSize: int
+
+
+class APIBlockDeviceMappingType(TypedDict):
+    Ebs: APIBlockDeviceMappingEbsType
+
+
+APIBlockDeviceMappingsType = List[APIBlockDeviceMappingType]
+
+
+class APIImageType(TypedDict):
+    Name: str
+    ImageId: str
+    PlatformDetails: str
+    BlockDeviceMappings: APIBlockDeviceMappingsType
+
 
 MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist')
 
@@ -134,6 +157,9 @@ class AWSPoolData(PoolData):
 class AWSPoolImageInfo(PoolImageInfo):
     #: Carries ``PlatformDetails`` field as provided by AWS image description.
     platform_details: str
+
+    #: Carries ``BlockDeviceMappings`` field as provided by AWS image description.
+    block_device_mappings: APIBlockDeviceMappingsType
 
     def __repr__(self) -> str:
         return f'<AWSPoolImageInfo: name={self.name} id={self.id} platform-details={self.platform_details}>'
@@ -492,9 +518,14 @@ class AWSDriver(PoolDriver):
 
     def _set_root_disk_size(
         self,
-        block_device_mappings: BlockDeviceMappingsType,
+        image: AWSPoolImageInfo,
         root_disk_size: int
-    ) -> Result[Optional[BlockDeviceMappingsType], Failure]:
+    ) -> Result[Optional[APIBlockDeviceMappingsType], Failure]:
+        # TODO: this copy might be pointless since image info containers are created when being fetched from cache,
+        # TODO: and changing it here should not affect any other guest request since every provisioning entry point
+        # TODO: fetches its own container. But, for the sake of safety, let's create a copy until we can prove or
+        # TODO: assure this statement is correct.
+        block_device_mappings = copy.deepcopy(image.block_device_mappings)
 
         try:
             block_device_mappings[0]['Ebs']['VolumeSize'] = root_disk_size
@@ -509,38 +540,11 @@ class AWSDriver(PoolDriver):
 
         return Ok(block_device_mappings)
 
-    def _get_block_device_mappings(self, image_id: str) -> Result[BlockDeviceMappingsType, Failure]:
-
-        # get image block device mappings
-        command = [
-            'ec2', 'describe-images',
-            '--image-id', image_id,
-        ]
-
-        r_image = self._aws_command(command, key='Images', commandname='aws.ec2-describe-images')
-
-        if r_image.is_error:
-            return Error(r_image.unwrap_error())
-
-        image = cast(List[Dict[str, BlockDeviceMappingsType]], r_image.unwrap())
-
-        try:
-            return Ok(image[0]['BlockDeviceMappings'])
-
-        except (KeyError, IndexError) as error:
-            return Error(
-                Failure.from_exc(
-                    'Failed to get block device mappings',
-                    error,
-                    image=image
-                )
-            )
-
     def _create_block_device_mappings(
         self,
         image: AWSPoolImageInfo,
         flavor: PoolFlavorInfo
-    ) -> Result[Optional[BlockDeviceMappingsType], Failure]:
+    ) -> Result[Optional[APIBlockDeviceMappingsType], Failure]:
         """
         Prepare block device mapping according to given flavor.
 
@@ -554,18 +558,11 @@ class AWSDriver(PoolDriver):
         :param flavor: flavor providing the disk space information.
         """
 
-        r_block_device_mappings = self._get_block_device_mappings(image_id=image.id)
-
-        if r_block_device_mappings.is_error:
-            return Error(r_block_device_mappings.unwrap_error())
-
-        block_device_mappings = r_block_device_mappings.unwrap()
-
         if flavor.diskspace is not None:
-            return self._set_root_disk_size(block_device_mappings, int(flavor.diskspace.to('GiB').magnitude))
+            return self._set_root_disk_size(image, int(flavor.diskspace.to('GiB').magnitude))
 
         if 'default-root-disk-size' in self.pool_config:
-            return self._set_root_disk_size(block_device_mappings, self.pool_config['default-root-disk-size'])
+            return self._set_root_disk_size(image, self.pool_config['default-root-disk-size'])
 
         return Ok(None)
 
@@ -1005,9 +1002,10 @@ class AWSDriver(PoolDriver):
                 AWSPoolImageInfo(
                     name=image['Name'],
                     id=image['ImageId'],
-                    platform_details=image['PlatformDetails']
+                    platform_details=image['PlatformDetails'],
+                    block_device_mappings=image['BlockDeviceMappings']
                 )
-                for image in cast(List[Dict[str, str]], r_images.unwrap())
+                for image in cast(List[APIImageType], r_images.unwrap())
             ])
 
         except KeyError as exc:
