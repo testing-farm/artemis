@@ -249,6 +249,7 @@ class Ansible(gluetool.Module):
                      json_output=False,  # type: bool
                      logger=None,  # type: Optional[gluetool.log.ContextAdapter]
                      log_filepath=None,  # type: Optional[str]
+                     extra_options=None,  # type: Optional[List[str]]
                      extra_vars_filename_prefix=EXTRA_VARS_FILENAME_PREFIX,  # type: str
                      extra_vars_filename_suffix=EXTRA_VARS_FILENAME_SUFFIX,  # type: str
                      ansible_playbook_filepath=None  # type: Optional[str]
@@ -269,6 +270,7 @@ class Ansible(gluetool.Module):
         :param logger: Optional logger to use for logging. If no set, guest's logger is used by default.
         :param str log_filepath: Path to a file to store Ansible output in. If not set, ``ansible-output.txt``
             is created in the current directory.
+        :param list(str) extra_options: extra options specified as a list of strings, passed to Ansible
         :param str extra_vars_filename_prefix: prefix used to name files generated from extra vars template files.
         :param str extra_vars_filename_suffix: suffix used to name files generated from extra vars template files.
         :returns: Instance of :py:class:`AnsibleOutput`.
@@ -292,6 +294,8 @@ class Ansible(gluetool.Module):
 
         ansible_playbook_filepath = ansible_playbook_filepath or self.option('ansible-playbook-filepath')
 
+        extra_options = extra_options or []
+
         cmd = [
             ansible_playbook_filepath,
             '-i', inventory,
@@ -308,6 +312,11 @@ class Ansible(gluetool.Module):
                 '--extra-vars',
                 ' '.join(['{}="{}"'.format(k, v) for k, v in variables.iteritems()])
             ]
+
+        if extra_options:
+            log_dict(guest.debug, 'extra_options', extra_options)
+
+            cmd += extra_options
 
         # Export common context variables
         context = gluetool.utils.dict_update(
