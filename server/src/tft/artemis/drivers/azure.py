@@ -82,7 +82,10 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         imagename: str
     ) -> Result[PoolImageInfo, Failure]:
-        r_images_show = self._run_cmd_with_auth(['vm', 'image', 'show', '--urn', imagename])
+        r_images_show = self._run_cmd_with_auth(
+            ['vm', 'image', 'show', '--urn', imagename],
+            commandname='az.vm-image-show'
+        )
 
         if r_images_show.is_error:
             return Error(r_images_show.unwrap_error())
@@ -106,7 +109,7 @@ class AzureDriver(PoolDriver):
 
         def _delete_resource(res_id: str) -> Any:
             options = ['resource', 'delete', '--ids', res_id]
-            return self._run_cmd_with_auth(options, json_format=False)
+            return self._run_cmd_with_auth(options, json_format=False, commandname='az.resource-delete')
 
         if resource_ids.instance_id is not None:
             r_delete = _delete_resource(resource_ids.instance_id)
@@ -205,11 +208,11 @@ class AzureDriver(PoolDriver):
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
         cmd = ['resource', 'list', '--tag', f'uid={pool_data.instance_name}']
-        resources_by_tag = self._run_cmd_with_auth(cmd).unwrap()
+        resources_by_tag = self._run_cmd_with_auth(cmd, commandname='az.resource-list').unwrap()
 
         def _delete_resource(res_id: str) -> Any:
             options = ['resource', 'delete', '--ids', res_id]
-            return self._run_cmd_with_auth(options, json_format=False)
+            return self._run_cmd_with_auth(options, json_format=False, commandname='az.resource-delete')
 
         # delete vm first, resources second
         assorted_resource_ids = [
@@ -323,12 +326,19 @@ class AzureDriver(PoolDriver):
             guest_request,
             cancelled)
 
-    def _run_cmd(self, options: List[str], json_format: bool = True) -> Result[Union[JSONType, str], Failure]:
+    def _run_cmd(
+        self,
+        options: List[str],
+        json_format: bool = True,
+        commandname: Optional[str] = None
+    ) -> Result[Union[JSONType, str], Failure]:
         r_run = run_cli_tool(
             self.logger,
             ['az'] + options,
             json_output=json_format,
-            command_scrubber=lambda cmd: (['azure'] + options)
+            command_scrubber=lambda cmd: (['azure'] + options),
+            poolname=self.poolname,
+            commandname=commandname
         )
 
         if r_run.is_error:
@@ -343,7 +353,8 @@ class AzureDriver(PoolDriver):
         self,
         options: List[str],
         json_format: bool = True,
-        with_login: bool = True
+        with_login: bool = True,
+        commandname: Optional[str] = None
     ) -> Result[Union[JSONType, str], Failure]:
         if with_login:
             login_output = self._login()
@@ -351,7 +362,7 @@ class AzureDriver(PoolDriver):
             if login_output.is_error:
                 return Error(login_output.unwrap_error())
 
-        return self._run_cmd(options, json_format)
+        return self._run_cmd(options, json_format, commandname=commandname)
 
     def _login(self) -> Result[None, Failure]:
         # login if credentials have been passed -> try to login
@@ -360,7 +371,7 @@ class AzureDriver(PoolDriver):
                 'login',
                 '--username', self.pool_config['username'],
                 '--password', self.pool_config['password']
-            ])
+            ], commandname='az.login')
 
             if login_output.is_error:
                 return Error(login_output.unwrap_error())
@@ -376,7 +387,7 @@ class AzureDriver(PoolDriver):
             'show',
             '-d',
             '--ids', AzurePoolData.unserialize(guest_request).instance_id
-        ])
+        ], commandname='az.vm-show')
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
@@ -481,7 +492,7 @@ class AzureDriver(PoolDriver):
                     for tag, value in tags.items()
                 ]
 
-            return self._run_cmd_with_auth(az_options)
+            return self._run_cmd_with_auth(az_options, commandname='az.vm-create')
 
         if guest_request.post_install_script:
             # user has specified custom script to execute, contents stored as post_install_script

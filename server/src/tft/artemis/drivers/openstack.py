@@ -115,12 +115,18 @@ class OpenStackDriver(PoolDriver):
 
         return r_capabilities
 
-    def _run_os(self, options: List[str], json_format: bool = True) -> Result[Union[JSONType, str], Failure]:
+    def _run_os(
+        self,
+        options: List[str],
+        json_format: bool = True,
+        commandname: Optional[str] = None
+    ) -> Result[Union[JSONType, str], Failure]:
         """
         Run os command with additional options and return output in json format
 
         :param List(str) options: options for the command
         :param bool json_format: returns json format if true
+        :param commandname: if specified, driver will increase "CLI calls" metrics for this ``commandname``.
         :rtype: result.Result[str, Failure]
         :returns: :py:class:`result.Result` with output, or specification of error.
         """
@@ -136,7 +142,9 @@ class OpenStackDriver(PoolDriver):
             self.logger,
             os_base + options,
             json_output=json_format,
-            command_scrubber=lambda cmd: (['openstack'] + options)
+            command_scrubber=lambda cmd: (['openstack'] + options),
+            poolname=self.poolname,
+            commandname=commandname
         )
 
         if r_run.is_error:
@@ -274,7 +282,7 @@ class OpenStackDriver(PoolDriver):
             OpenStackPoolData.unserialize(guest_request).instance_id
         ]
 
-        r_output = self._run_os(os_options)
+        r_output = self._run_os(os_options, commandname='os.server-show')
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
@@ -287,7 +295,7 @@ class OpenStackDriver(PoolDriver):
     ) -> Result[Any, Failure]:
         os_options = ['image', 'show', snapshot_request.snapshotname]
 
-        r_output = self._run_os(os_options)
+        r_output = self._run_os(os_options, commandname='os.image-show')
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
@@ -362,7 +370,7 @@ class OpenStackDriver(PoolDriver):
                 tags['ArtemisGuestLabel']
             ]
 
-            return self._run_os(os_options)
+            return self._run_os(os_options, commandname='os.server-create')
 
         if guest_request.post_install_script:
             # user has specified custom script to execute, contents stored as post_install_script
@@ -435,7 +443,7 @@ class OpenStackDriver(PoolDriver):
     ) -> Result[bool, Failure]:
         logger.info('stoping the guest instance')
         os_options = ['server', 'stop', OpenStackPoolData.unserialize(guest_request).instance_id]
-        r_stop = self._run_os(os_options, json_format=False)
+        r_stop = self._run_os(os_options, json_format=False, commandname='os.server-stop')
 
         if r_stop.is_error:
             return Error(r_stop.unwrap_error())
@@ -449,7 +457,7 @@ class OpenStackDriver(PoolDriver):
     ) -> Result[bool, Failure]:
         logger.info('starting the guest instance')
         os_options = ['server', 'start', OpenStackPoolData.unserialize(guest_request).instance_id]
-        r_start = self._run_os(os_options, json_format=False)
+        r_start = self._run_os(os_options, json_format=False, commandname='os.server-start')
 
         if r_start.is_error:
             return Error(r_start.unwrap_error())
@@ -488,7 +496,7 @@ class OpenStackDriver(PoolDriver):
         os_options = [
             'console', 'url', 'show', instance_id
         ]
-        r_output = self._run_os(os_options)
+        r_output = self._run_os(os_options, commandname='os.console-url-show')
         if r_output.is_error:
             return Error(r_output.unwrap_error())
         # NOTE(ivasilev) The following cast is needed to keep quiet the typing check
@@ -509,7 +517,7 @@ class OpenStackDriver(PoolDriver):
             OpenStackPoolData.unserialize(guest_request).instance_id
         ]
 
-        r_output = self._run_os(os_options)
+        r_output = self._run_os(os_options, commandname='os.server-image-create')
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
@@ -558,7 +566,7 @@ class OpenStackDriver(PoolDriver):
     ) -> Result[bool, Failure]:
         os_options = ['image', 'delete', snapshot_request.snapshotname]
 
-        r_output = self._run_os(os_options, json_format=False)
+        r_output = self._run_os(os_options, json_format=False, commandname='os.image-delete')
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
@@ -577,7 +585,7 @@ class OpenStackDriver(PoolDriver):
             OpenStackPoolData.unserialize(guest_request).instance_id
         ]
 
-        r_output = self._run_os(os_options, json_format=False)
+        r_output = self._run_os(os_options, json_format=False, commandname='os.server-rebuild')
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
@@ -720,7 +728,7 @@ class OpenStackDriver(PoolDriver):
                 'delete',
                 '--wait',
                 resource_ids.instance_id
-            ], json_format=False)
+            ], json_format=False, commandname='os.server-delete')
 
             if r_output.is_error:
                 # Irrecoverable failures in release-pool-resources chain shouldn't influence the guest request.
@@ -747,7 +755,8 @@ class OpenStackDriver(PoolDriver):
 
         r_query_limits = self._run_os(
             ['limits', 'show', '--absolute', '--reserved'],
-            json_format=True
+            json_format=True,
+            commandname='os.limits-show'
         )
 
         if r_query_limits.is_error:
@@ -795,7 +804,7 @@ class OpenStackDriver(PoolDriver):
             'availability',
             'list',
             '--ip-version', self.pool_config['ip-version']
-        ], json_format=True)
+        ], json_format=True, commandname='os.ip-availability-list')
 
         if r_networks.is_error:
             return Error(r_networks.unwrap_error())
@@ -825,7 +834,7 @@ class OpenStackDriver(PoolDriver):
         return Ok(resources)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        r_images = self._run_os(['image', 'list'])
+        r_images = self._run_os(['image', 'list'], commandname='os.image-list')
 
         if r_images.is_error:
             return Error(r_images.unwrap_error())
@@ -858,7 +867,7 @@ class OpenStackDriver(PoolDriver):
         #   ...
         # ]
 
-        r_flavors = self._run_os(['flavor', 'list'])
+        r_flavors = self._run_os(['flavor', 'list'], commandname='os.flavor-list')
 
         if r_flavors.is_error:
             return Error(r_flavors.unwrap_error())
@@ -908,7 +917,7 @@ class OpenStackDriver(PoolDriver):
                 resource,
                 'show',
                 OpenStackPoolData.unserialize(guest_request).instance_id
-            ], json_format=json_format)
+            ], json_format=json_format, commandname=f'console-{resource}-show')
 
             if r_output.is_error:
                 failure = r_output.unwrap_error()

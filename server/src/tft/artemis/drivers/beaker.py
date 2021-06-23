@@ -252,7 +252,8 @@ class BeakerDriver(PoolDriver):
     def _run_bkr(
         self,
         logger: gluetool.log.ContextAdapter,
-        options: List[str]
+        options: List[str],
+        commandname: Optional[str] = None
     ) -> Result[CLIOutput, Failure]:
         """
         Run bkr command with additional options
@@ -266,7 +267,9 @@ class BeakerDriver(PoolDriver):
         r_run = run_cli_tool(
             logger,
             self._bkr_command + options,
-            json_output=False
+            json_output=False,
+            poolname=self.poolname,
+            commandname=commandname
         )
 
         if r_run.is_error:
@@ -307,7 +310,7 @@ class BeakerDriver(PoolDriver):
         resource_ids = BeakerPoolResourcesIDs.unserialize(raw_resource_ids)
 
         if resource_ids.job_id is not None:
-            r_output = self._run_bkr(logger, ['job-cancel', resource_ids.job_id])
+            r_output = self._run_bkr(logger, ['job-cancel', resource_ids.job_id], commandname='bkr.job-cancel')
 
             if r_output.is_error:
                 return Error(r_output.unwrap_error())
@@ -393,7 +396,7 @@ class BeakerDriver(PoolDriver):
             '--reserve-duration', str(KNOB_RESERVATION_DURATION.value)
         ]
 
-        r_workflow_simple = self._run_bkr(logger, options)
+        r_workflow_simple = self._run_bkr(logger, options, commandname='bkr.workflow-simple')
         if r_workflow_simple.is_error:
             return Error(r_workflow_simple.unwrap_error())
 
@@ -433,7 +436,7 @@ class BeakerDriver(PoolDriver):
             # Temporary file has limited permissions, but we'd like to make the file inspectable.
             os.chmod(job_filepath, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
 
-            r_job_submit = self._run_bkr(logger, ['job-submit', job_filepath])
+            r_job_submit = self._run_bkr(logger, ['job-submit', job_filepath], commandname='bkr.job-submit')
 
         if r_job_submit.is_error:
             return Error(r_job_submit.unwrap_error())
@@ -511,7 +514,7 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with job results, or specification of error.
         """
 
-        r_results = self._run_bkr(logger, ['job-results', job_id])
+        r_results = self._run_bkr(logger, ['job-results', job_id], commandname='bkr.job-results')
 
         if r_results.is_error:
             return Error(r_results.unwrap_error())
@@ -752,7 +755,8 @@ class BeakerDriver(PoolDriver):
 
         r_query_instances = self._run_bkr(
             logger,
-            ['system-list', '--mine']
+            ['system-list', '--mine'],
+            commandname='bkr.system-list'
         )
 
         if r_query_instances.is_error:

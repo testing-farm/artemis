@@ -1398,7 +1398,10 @@ def run_cli_tool(
     json_output: bool = False,
     command_scrubber: Optional[Callable[[List[str]], List[str]]] = None,
     allow_empty: bool = True,
-    env: Optional[Dict[str, str]] = None
+    env: Optional[Dict[str, str]] = None,
+    # for CLI calls metrics
+    poolname: Optional[str] = None,
+    commandname: Optional[str] = None
 ) -> Result[CLIOutput, Failure]:
     """
     Run a given command, and return its output.
@@ -1429,17 +1432,23 @@ def run_cli_tool(
 
     command_scrubber = command_scrubber or _noop_scrubber
 
-    if KNOB_LOGGING_SLOW_CLI_COMMANDS.value is True:
-        start_time = time.monotonic()
+    start_time = time.monotonic()
 
-    def _log_slow_command(output: gluetool.utils.ProcessOutput) -> None:
+    def _log_command(output: gluetool.utils.ProcessOutput) -> None:
+        command_time = time.monotonic() - start_time
+
+        if poolname is not None and commandname is not None:
+            PoolMetrics.inc_cli_call(
+                poolname,
+                commandname,
+                command_time
+            )
+
         if KNOB_LOGGING_SLOW_CLI_COMMANDS.value is not True:
             return
 
         if SLOW_CLI_COMMAND_PATTERN.match(command_join(command)) is None:
             return
-
-        command_time = time.monotonic() - start_time
 
         if command_time < KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD.value:
             return
@@ -1457,7 +1466,7 @@ def run_cli_tool(
         output = gluetool.utils.Command(command, logger=logger).run(env=env)
 
     except gluetool.glue.GlueCommandError as exc:
-        _log_slow_command(exc.output)
+        _log_command(exc.output)
 
         return Error(Failure.from_exc(
             'error running CLI command',
@@ -1467,7 +1476,7 @@ def run_cli_tool(
         ))
 
     else:
-        _log_slow_command(output)
+        _log_command(output)
 
     if output.stdout is None:
         if not allow_empty:

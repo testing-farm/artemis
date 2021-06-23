@@ -79,8 +79,10 @@ Following metrics are generated for every known pool, and represent limits and c
 * `pool_image_info_updated_timestamp` (gauge): Last time pool image info has been updated.
 * `pool_flavor_info_updated_timestamp` (gauge): Last time pool flavor info has been updated.
 
-=== Pool errors
+=== Pool operations
 
+* `cli_calls` (counter): Overall total number of CLI commands executed, per pool and command name.
+* `cli_call_duration_seconds` (histogram): The time spent executing CLI commands, by pool and command name.
 * `pool_errors` (counter): Overall total number of pool errors, per pool and error.
 
 == Other components

@@ -231,7 +231,7 @@ class AWSDriver(PoolDriver):
             r_output = self._aws_command([
                 'ec2', 'cancel-spot-instance-requests',
                 f'--spot-instance-request-ids={resource_ids.spot_instance_id}'
-            ])
+            ], commandname='aws.ec2-cancel-spot-instance-requests')
 
             if r_output.is_error:
                 return Error(r_output.unwrap_error())
@@ -242,7 +242,7 @@ class AWSDriver(PoolDriver):
             r_output = self._aws_command([
                 'ec2', 'terminate-instances',
                 f'--instance-ids={resource_ids.instance_id}'
-            ])
+            ], commandname='aws.ec2-terminate-instances')
 
             if r_output.is_error:
                 return Error(r_output.unwrap_error())
@@ -347,7 +347,7 @@ class AWSDriver(PoolDriver):
             f'--instance-id={AWSPoolData.unserialize(guest_request).instance_id}'
         ]
 
-        r_output = self._aws_command(aws_options, key='Reservations')
+        r_output = self._aws_command(aws_options, key='Reservations', commandname='aws.ec2-describe-instances')
 
         # command returned an unxpected result
         if r_output.is_error:
@@ -380,7 +380,11 @@ class AWSDriver(PoolDriver):
             f'--spot-instance-request-ids={AWSPoolData.unserialize(guest_request).spot_instance_id}'
         ]
 
-        r_output = self._aws_command(aws_options, key='SpotInstanceRequests')
+        r_output = self._aws_command(
+            aws_options,
+            key='SpotInstanceRequests',
+            commandname='aws.ec2-describe-spot-instance-requests'
+        )
 
         # command returned an unxpected result
         if r_output.is_error:
@@ -388,7 +392,12 @@ class AWSDriver(PoolDriver):
 
         return Ok(cast(List[Dict[str, Any]], r_output.unwrap())[0])
 
-    def _aws_command(self, args: List[str], key: Optional[str] = None) -> Result[JSONType, Failure]:
+    def _aws_command(
+        self,
+        args: List[str],
+        key: Optional[str] = None,
+        commandname: Optional[str] = None
+    ) -> Result[JSONType, Failure]:
         """
         Runs command via aws cli and returns a dictionary with command reply.
 
@@ -402,7 +411,9 @@ class AWSDriver(PoolDriver):
             self.logger,
             command,
             json_output=True,
-            env=self.environ
+            env=self.environ,
+            poolname=self.poolname,
+            commandname=commandname
         )
 
         if r_run.is_error:
@@ -447,7 +458,7 @@ class AWSDriver(PoolDriver):
             f'--availability-zone={availability_zone}',
             f'--product-descriptions={image.platform_details}',
             '--max-items=1'
-        ], key='SpotPriceHistory')
+        ], key='SpotPriceHistory', commandname='aws.ec2-describe-spot-price-history')
 
         if r_spot_price.is_error:
             return Error(r_spot_price.unwrap_error())
@@ -506,7 +517,7 @@ class AWSDriver(PoolDriver):
             '--image-id', image_id,
         ]
 
-        r_image = self._aws_command(command, key='Images')
+        r_image = self._aws_command(command, key='Images', commandname='aws.ec2-describe-images')
 
         if r_image.is_error:
             return Error(r_image.unwrap_error())
@@ -598,7 +609,7 @@ class AWSDriver(PoolDriver):
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
 
-        r_instance_request = self._aws_command(command, key='Instances')
+        r_instance_request = self._aws_command(command, key='Instances', commandname='aws.ec2-run-instances')
 
         if r_instance_request.is_error:
             return Error(r_instance_request.unwrap_error())
@@ -681,7 +692,7 @@ class AWSDriver(PoolDriver):
             'ec2', 'request-spot-instances',
             f'--spot-price={spot_price}',
             f'--launch-specification={" ".join(specification.split())}',
-        ], key='SpotInstanceRequests')
+        ], key='SpotInstanceRequests', commandname='aws.ec2-request-spot-instances')
 
         if r_spot_request.is_error:
             return Error(r_spot_request.unwrap_error())
@@ -875,7 +886,7 @@ class AWSDriver(PoolDriver):
             'tag-resources',
             '--resource-arn-list', arn,
             '--tags', ','.join([f'{tag}={value}' for tag, value in tags.items()])
-        ])
+        ], commandname='aws.resourcegroupstaggingapi-tag-resources')
 
         # do not fail if failed to tag
         if r_tag.is_error:
@@ -980,7 +991,11 @@ class AWSDriver(PoolDriver):
         return Ok(True)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        r_images = self._aws_command(['ec2', 'describe-images', '--owner=self'], key='Images')
+        r_images = self._aws_command(
+            ['ec2', 'describe-images', '--owner=self'],
+            key='Images',
+            commandname='aws.ec2-describe-images'
+        )
 
         if r_images.is_error:
             return Error(r_images.unwrap_error())
@@ -1005,7 +1020,11 @@ class AWSDriver(PoolDriver):
     def fetch_pool_flavor_info(self) -> Result[List[PoolFlavorInfo], Failure]:
         # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
 
-        r_flavors = self._aws_command(['ec2', 'describe-instance-types'], key='InstanceTypes')
+        r_flavors = self._aws_command(
+            ['ec2', 'describe-instance-types'],
+            key='InstanceTypes',
+            commandname='aws.ec2-describe-instance-types'
+        )
 
         if r_flavors.is_error:
             return Error(r_flavors.unwrap_error())
@@ -1056,7 +1075,7 @@ class AWSDriver(PoolDriver):
         r_instances = self._aws_command([
             'ec2', 'describe-instances',
             '--filter', f'Name=subnet-id,Values={subnet_id}'
-        ])
+        ], commandname='aws.ec2-describe-instances')
 
         if r_instances.is_error:
             return Error(r_instances.unwrap_error())
@@ -1074,7 +1093,7 @@ class AWSDriver(PoolDriver):
         r_subnet = self._aws_command([
             'ec2', 'describe-subnets',
             '--filter', f'Name=subnet-id,Values={subnet_id}'
-        ])
+        ], commandname='aws.ec2-describe-subnets')
 
         if r_subnet.is_error:
             return Error(r_subnet.unwrap_error())
@@ -1132,7 +1151,7 @@ class AWSDriver(PoolDriver):
             'ec2',
             'get-console-output',
             '--instance-id', pool_data.instance_id
-        ])
+        ], commandname='aws.ec2-get-console-output')
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())

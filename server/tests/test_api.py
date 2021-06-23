@@ -140,7 +140,9 @@ def test_metrics(api_client: molten.testing.TestClient, db, logger, redis):
         ('pool_resources_snapshot', 'gauge'),
         ('pool_resources_updated_timestamp', 'gauge'),
         # Pool errors
-        ('pool_errors', 'counter')
+        ('pool_errors', 'counter'),
+        ('cli_calls', 'counter'),
+        ('cli_call_duration_seconds', 'histogram')
     )
 
     for metric_name, metric_type in expected_metrics:

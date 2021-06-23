@@ -85,6 +85,15 @@ HTTP_REQUEST_DURATION_BUCKETS = (
     prometheus_client.utils.INF
 )
 
+# CLI call duration buckets, in seconds. Spanning from 1 second up to 10 minutes.
+CLI_CALL_DURATION_BUCKETS = (
+    # -> 60 seconds
+    1, 2, 5, 10, 20, 30, 40, 50, 60,
+    # -> 600 seconds
+    120, 180, 240, 300, 360, 420, 480, 540, 600,
+    prometheus_client.utils.INF
+)
+
 
 def reset_counters(metric: Union[Counter, Gauge]) -> None:
     """
@@ -683,6 +692,8 @@ class PoolMetrics(MetricsBase):
     """
 
     _KEY_ERRORS = 'metrics.pool.{poolname}.errors'
+    _KEY_CLI_CALLS = 'metrics.pool.{poolname}.cli-calls'
+    _KEY_CLI_CALLS_DURATIONS = 'metrics.pool.{poolname}.cli-calls.durations'
 
     # Image & flavor refresh process does not have their own metrics, hence using this container to track the "last
     # update" timestamp.
@@ -701,6 +712,11 @@ class PoolMetrics(MetricsBase):
     image_info_updated_timestamp: Optional[float]
     flavor_info_updated_timestamp: Optional[float]
 
+    # commandname => count
+    cli_calls: Dict[str, int]
+    # bucket:commandname => count
+    cli_calls_durations: Dict[Tuple[str, str], int]
+
     def __init__(self, poolname: str) -> None:
         """
         Metrics of a particular pool.
@@ -709,6 +725,7 @@ class PoolMetrics(MetricsBase):
         """
 
         self.key_errors = self._KEY_ERRORS.format(poolname=poolname)
+
         self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(
             poolname=poolname,
             info='image'
@@ -717,6 +734,9 @@ class PoolMetrics(MetricsBase):
             poolname=poolname,
             info='flavor'
         )
+
+        self.key_cli_calls = self._KEY_CLI_CALLS.format(poolname=poolname)
+        self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)
 
         self.poolname = poolname
         self.resources = PoolResourcesMetrics(poolname)
@@ -729,6 +749,9 @@ class PoolMetrics(MetricsBase):
 
         self.image_info_updated_timestamp = None
         self.flavor_info_updated_timestamp = None
+
+        self.cli_calls = {}
+        self.cli_calls_durations = {}
 
         self.__post_init__()
 
@@ -794,6 +817,44 @@ class PoolMetrics(MetricsBase):
         inc_metric_field(logger, cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error)
         return Ok(None)
 
+    @staticmethod
+    @with_context
+    def inc_cli_call(
+        poolname: str,
+        commandname: str,
+        duration: float,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase counter for a given CLI command by 1.
+
+        :param poolname: pool that executed the command.
+        :param commandname: command "ID" - something to tell commands and group of commands apart.
+        :param duration: duration of the command session, in seconds.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        # raw count
+        inc_metric_field(
+            logger,
+            cache,
+            PoolMetrics._KEY_CLI_CALLS.format(poolname=poolname),
+            commandname
+        )
+
+        # duration
+        bucket = min([threshold for threshold in CLI_CALL_DURATION_BUCKETS if threshold > duration])
+
+        inc_metric_field(
+            logger,
+            cache,
+            PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname), '{}:{}'.format(bucket, commandname))
+
+        return Ok(None)
+
     @with_context
     def sync(
         self,
@@ -856,6 +917,25 @@ class PoolMetrics(MetricsBase):
 
         self.flavor_info_updated_timestamp = updated if updated is None else float(updated)
 
+        # commandname => count
+        self.cli_calls = {
+            field: count
+            for field, count in get_metric_fields(
+                logger,
+                cache,
+                self._KEY_CLI_CALLS.format(poolname=self.poolname)
+            ).items()
+        }
+
+        # bucket:commandname => count
+        self.cli_calls_durations = {
+            cast(Tuple[str, str], tuple(field.split(':', 2))): count
+            for field, count in get_metric_fields(
+                logger,
+                cache,
+                self._KEY_CLI_CALLS_DURATIONS.format(poolname=self.poolname)).items()
+        }
+
 
 @dataclasses.dataclass
 class UndefinedPoolMetrics(MetricsBase):
@@ -876,6 +956,9 @@ class UndefinedPoolMetrics(MetricsBase):
     image_info_updated_timestamp: Optional[float]
     flavor_info_updated_timestamp: Optional[float]
 
+    cli_calls: Dict[str, int]
+    cli_calls_durations: Dict[Tuple[str, str], int]
+
     def __init__(self, poolname: str) -> None:
         """
         Metrics of a particular pool.
@@ -894,6 +977,9 @@ class UndefinedPoolMetrics(MetricsBase):
 
         self.image_info_updated_timestamp = None
         self.flavor_info_updated_timestamp = None
+
+        self.cli_calls = {}
+        self.cli_calls_durations = {}
 
         self.__post_init__()
 
@@ -1050,6 +1136,21 @@ class PoolsMetrics(MetricsBase):
             registry=registry
         )
 
+        self.CLI_CALLS = Counter(
+            'cli_calls',
+            'Overall total number of CLI commands executed, per pool and command name.',
+            ['pool', 'command'],
+            registry=registry
+        )
+
+        self.CLI_CALLS_DURATIONS = Histogram(
+            'cli_call_duration_seconds',
+            'The time spent executing CLI commands, by pool and command name.',
+            ['pool', 'command'],
+            buckets=CLI_CALL_DURATION_BUCKETS,
+            registry=registry
+        )
+
     def update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
@@ -1059,6 +1160,8 @@ class PoolsMetrics(MetricsBase):
 
         reset_counters(self.POOL_ERRORS)
         reset_counters(self.POOL_COSTS)
+        reset_counters(self.CLI_CALLS)
+        reset_histogram(self.CLI_CALLS_DURATIONS)
 
         for poolname, pool_metrics in self.pools.items():
             for state in pool_metrics.current_guest_request_count_per_state:
@@ -1119,6 +1222,25 @@ class PoolsMetrics(MetricsBase):
             self.POOL_FLAVOR_INFO_UPDATED_TIMESTAMP \
                 .labels(pool=poolname) \
                 .set(pool_metrics.flavor_info_updated_timestamp or float('NaN'))
+
+            for commandname, count in pool_metrics.cli_calls.items():
+                self.CLI_CALLS \
+                    .labels(pool=poolname, command=commandname) \
+                    ._value.set(count)
+
+            for (bucket_threshold, commandname), count in pool_metrics.cli_calls_durations.items():
+                bucket_index = CLI_CALL_DURATION_BUCKETS.index(
+                    prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
+                )
+
+                self.CLI_CALLS_DURATIONS \
+                    .labels(pool=poolname, command=commandname) \
+                    ._buckets[bucket_index] \
+                    .set(count)
+                self.CLI_CALLS_DURATIONS \
+                    .labels(pool=poolname, command=commandname) \
+                    ._sum \
+                    .inc(float(bucket_threshold) * count)
 
 
 @dataclasses.dataclass
