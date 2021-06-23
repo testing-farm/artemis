@@ -1202,6 +1202,16 @@ KNOB_CACHE_URL: Knob[str] = Knob(
     default='redis://127.0.0.1:6379'
 )
 
+KNOB_BROKER_CONFIRM_DELIVERY: Knob[bool] = Knob(
+    'broker.confirm-delivery',
+    """
+    If set, every attempt to enqueue a messages will require a confirmation from the broker.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_BROKER_CONFIRM_DELIVERY',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=True
+)
 
 KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
     'broker.heartbeat-timeout',
@@ -1350,6 +1360,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
         parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
 
         broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
+            confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value,
             middleware=[
                 dramatiq.middleware.age_limit.AgeLimit(),
                 dramatiq.middleware.time_limit.TimeLimit(),
