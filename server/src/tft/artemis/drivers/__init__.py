@@ -27,7 +27,7 @@ from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, 
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk
-from ..metrics import PoolCostsMetrics, PoolResourcesMetrics, ResourceType
+from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 
 T = TypeVar('T')
 S = TypeVar('S', bound=SerializableContainer)
@@ -1101,7 +1101,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_image_info.is_error:
             return Error(r_image_info.unwrap_error())
 
-        return refresh_cached_set(
+        r_refresh = refresh_cached_set(
             CACHE.get(),
             self.image_info_cache_key,
             {
@@ -1110,6 +1110,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if ii.name
             }
         )
+
+        if r_refresh.is_error:
+            return Error(r_refresh.unwrap_error())
+
+        PoolMetrics(self.poolname).refresh_image_info_updated_timestamp(self.poolname)
+
+        return Ok(None)
 
     def get_cached_pool_image_info(self, imagename: str) -> Result[Optional[PoolImageInfo], Failure]:
         """
@@ -1302,7 +1309,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_config_flavors.is_error:
             return Error(r_config_flavors.unwrap_error())
 
-        return refresh_cached_set(
+        r_refresh = refresh_cached_set(
             CACHE.get(),
             self.flavor_info_cache_key,
             {
@@ -1311,6 +1318,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if fi.name
             }
         )
+
+        if r_refresh.is_error:
+            return Error(r_refresh.unwrap_error())
+
+        PoolMetrics(self.poolname).refresh_image_info_updated_timestamp(self.poolname)
+
+        return Ok(None)
 
     def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[PoolFlavorInfo], Failure]:
         """

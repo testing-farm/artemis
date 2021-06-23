@@ -684,6 +684,10 @@ class PoolMetrics(MetricsBase):
 
     _KEY_ERRORS = 'metrics.pool.{poolname}.errors'
 
+    # Image & flavor refresh process does not have their own metrics, hence using this container to track the "last
+    # update" timestamp.
+    _KEY_INFO_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.{info}.updated_timestamp'
+
     poolname: str
 
     resources: PoolResourcesMetrics
@@ -694,6 +698,9 @@ class PoolMetrics(MetricsBase):
 
     errors: Dict[str, int]
 
+    image_info_updated_timestamp: Optional[float]
+    flavor_info_updated_timestamp: Optional[float]
+
     def __init__(self, poolname: str) -> None:
         """
         Metrics of a particular pool.
@@ -702,6 +709,14 @@ class PoolMetrics(MetricsBase):
         """
 
         self.key_errors = self._KEY_ERRORS.format(poolname=poolname)
+        self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(
+            poolname=poolname,
+            info='image'
+        )
+        self.key_flavor_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(
+            poolname=poolname,
+            info='flavor'
+        )
 
         self.poolname = poolname
         self.resources = PoolResourcesMetrics(poolname)
@@ -712,7 +727,51 @@ class PoolMetrics(MetricsBase):
 
         self.errors = {}
 
+        self.image_info_updated_timestamp = None
+        self.flavor_info_updated_timestamp = None
+
         self.__post_init__()
+
+    @staticmethod
+    @with_context
+    def _refresh_info_updated_timestamp(
+        pool: str,
+        info: str,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        safe_call(
+            cast(Callable[[str, float], None], cache.set),
+            PoolMetrics._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=pool, info=info),
+            datetime.datetime.timestamp(datetime.datetime.utcnow())
+        )
+
+        return Ok(None)
+
+    @staticmethod
+    def refresh_image_info_updated_timestamp(
+        pool: str
+    ) -> Result[None, Failure]:
+        """
+        Update "latest updated" timestamp of pool image info cache to current time.
+
+        :param pool: pool whose cache has been updated.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        return PoolMetrics._refresh_info_updated_timestamp(pool, 'image')
+
+    @staticmethod
+    def refresh_flavor_info_updated_timestamp(
+        pool: str
+    ) -> Result[None, Failure]:
+        """
+        Update "latest updated" timestamp of pool flavor info cache to current time.
+
+        :param pool: pool whose cache has been updated.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        return PoolMetrics._refresh_info_updated_timestamp(pool, 'flavor')
 
     @staticmethod
     @with_context
@@ -783,6 +842,20 @@ class PoolMetrics(MetricsBase):
             for errorname, count in get_metric_fields(logger, cache, self.key_errors).items()
         }
 
+        updated = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self.key_image_info_refresh_timestamp)
+
+        self.image_info_updated_timestamp = updated if updated is None else float(updated)
+
+        updated = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self.key_flavor_info_refresh_timestamp)
+
+        self.flavor_info_updated_timestamp = updated if updated is None else float(updated)
+
 
 @dataclasses.dataclass
 class UndefinedPoolMetrics(MetricsBase):
@@ -800,6 +873,9 @@ class UndefinedPoolMetrics(MetricsBase):
 
     errors: Dict[str, int]
 
+    image_info_updated_timestamp: Optional[float]
+    flavor_info_updated_timestamp: Optional[float]
+
     def __init__(self, poolname: str) -> None:
         """
         Metrics of a particular pool.
@@ -815,6 +891,9 @@ class UndefinedPoolMetrics(MetricsBase):
         self.current_guest_request_count_per_state = {}
 
         self.errors = {}
+
+        self.image_info_updated_timestamp = None
+        self.flavor_info_updated_timestamp = None
 
         self.__post_init__()
 
@@ -957,6 +1036,20 @@ class PoolsMetrics(MetricsBase):
 
         self.POOL_RESOURCES_UPDATED_TIMESTAMP = _create_pool_resource_metric('updated_timestamp')
 
+        self.POOL_IMAGE_INFO_UPDATED_TIMESTAMP = Gauge(
+            'pool_image_info_updated_timestamp',
+            'Last time pool image info has been updated.',
+            ['pool'],
+            registry=registry
+        )
+
+        self.POOL_FLAVOR_INFO_UPDATED_TIMESTAMP = Gauge(
+            'pool_flavor_info_updated_timestamp',
+            'Last time pool flavor info has been updated.',
+            ['pool'],
+            registry=registry
+        )
+
     def update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
@@ -1018,6 +1111,14 @@ class PoolsMetrics(MetricsBase):
             self.POOL_RESOURCES_UPDATED_TIMESTAMP \
                 .labels(pool=poolname, dimension='usage') \
                 .set(pool_metrics.resources.usage.updated_timestamp or float('NaN'))
+
+            self.POOL_IMAGE_INFO_UPDATED_TIMESTAMP \
+                .labels(pool=poolname) \
+                .set(pool_metrics.image_info_updated_timestamp or float('NaN'))
+
+            self.POOL_FLAVOR_INFO_UPDATED_TIMESTAMP \
+                .labels(pool=poolname) \
+                .set(pool_metrics.flavor_info_updated_timestamp or float('NaN'))
 
 
 @dataclasses.dataclass
