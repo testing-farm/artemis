@@ -130,6 +130,8 @@ class TestingFarmRequest(LoggerMixin, object):
 
         self.playbooks = test[type]['playbooks'] if type == 'sti' else None
 
+        self.plans = test[type]['name'] if type == 'fmf' else None
+
         self.environments_requested = request['environments_requested']
 
         self.webhook_url = None
@@ -332,8 +334,14 @@ class TestingFarmRequestModule(gluetool.Module):
             for environment in request.environments_requested:
                 environment['arch'] = self.option('arch')
 
+        if request.type == 'fmf':
+            plans = request.plans if request.plans else 'all'
+        else:
+            plans = '<not applicable>'
+
         log_dict(self.info, "Initialized with {}".format(request.id), {
             'type': request.type,
+            'plans': plans,
             'url': request.url,
             'ref': request.ref,
             'variables': self.user_variables() or '<no variables specified>',

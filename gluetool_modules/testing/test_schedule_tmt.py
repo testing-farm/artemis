@@ -316,6 +316,11 @@ class TestScheduleTMT(Module):
         else:
             command.extend(['--filter', 'enabled:true'])
 
+        plans_regex = self.shared('testing_farm_request').plans
+
+        if plans_regex:
+            command.extend([plans_regex])
+
         try:
             tmt_output = Command(command).run(cwd=repodir)
 
