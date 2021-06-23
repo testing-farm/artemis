@@ -182,9 +182,10 @@ class TestingFarmRequest(LoggerMixin, object):
                                    timeout=self._module.option('retry-timeout'),
                                    tick=self._module.option('retry-tick'))
 
-    def update(self, state=None, overall_result=None, xunit=None, summary=None):
+    def update(self, state=None, overall_result=None, xunit=None, summary=None, artifacts_url=None):
         payload = {}
         result = {}
+        run = {}
 
         if self._api_key:
             payload.update({
@@ -211,9 +212,19 @@ class TestingFarmRequest(LoggerMixin, object):
                 'summary': summary
             })
 
+        if artifacts_url:
+            run.update({
+                'artifacts': artifacts_url
+            })
+
         if result:
             payload.update({
                 'result': result
+            })
+
+        if run:
+            payload.update({
+                'run': run
             })
 
         self._api.put_request(self.id, payload)

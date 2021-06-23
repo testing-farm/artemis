@@ -17,7 +17,7 @@ class TestingFarmRequestStateReporter(gluetool.Module):
         self.require_shared('testing_farm_request')
 
         request = self.shared('testing_farm_request')
-        request.update(state=STATE_RUNNING)
+        request.update(state=STATE_RUNNING, artifacts_url=self.shared('coldstore_url'))
 
     def destroy(self, failure=None):
         if failure is not None and isinstance(failure.exc_info[1], SystemExit):
@@ -31,15 +31,25 @@ class TestingFarmRequestStateReporter(gluetool.Module):
 
         if failure:
             self.info('reporting pipeline state - error')
-            request.update(state=STATE_ERROR, summary=str(failure.exc_info[1].message), overall_result='error')
+            request.update(
+                state=STATE_ERROR,
+                summary=str(failure.exc_info[1].message),
+                overall_result='error',
+                artifacts_url=self.shared('coldstore_url')
+            )
             return
 
         test_results = self.shared('results')
 
         if not test_results:
             self.info('reporting pipeline state - error - no results')
-            request.update(state=STATE_ERROR, overall_result='error')
+            request.update(state=STATE_ERROR, overall_result='error', artifacts_url=self.shared('coldstore_url'))
             return
 
         self.info('reporting pipeline state - complete')
-        request.update(state=STATE_COMPLETE, overall_result=test_results['overall-result'], xunit=str(test_results))
+        request.update(
+            state=STATE_COMPLETE,
+            overall_result=test_results['overall-result'],
+            xunit=str(test_results),
+            artifacts_url=self.shared('coldstore_url')
+        )
