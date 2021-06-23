@@ -1,0 +1,3 @@
+description: Artemis service - API, dispatcher, worker, scheduler, PostgreSQL, RabbitMQ and Redis.
+name: artemis
+version: v0.0.1

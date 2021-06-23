@@ -1,0 +1,864 @@
+apiVersion: v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: {{ .Values.app_name }}
+    component: redis
+  name: {{ .Values.app_name }}-redis
+spec:
+  replicas: 1
+  selector:
+    app: {{ .Values.app_name }}
+    component: redis
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app_name }}
+        component: redis
+    spec:
+      containers:
+      - image: {{ .Values.redis_image }}
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -xc
+              - sleep 15 && redis-cli config set save ""
+        livenessProbe:
+          failureThreshold: 3
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 6379
+          timeoutSeconds: 5
+        name: redis
+        ports:
+        - containerPort: {{ .Values.redis_port }}
+        readinessProbe:
+          failureThreshold: 3
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 6379
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: {{ .Values.redis_resources_limits_cpu }}
+            memory: {{ .Values.redis_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.redis_resources_requests_cpu }}
+            memory: {{ .Values.redis_resources_requests_memory }}
+      - image: {{ .Values.redis_exporter_image }}
+        name: exporter
+        ports:
+        - containerPort: {{ .Values.redis_exporter_port }}
+        resources:
+          limits:
+            cpu: {{ .Values.redis_exporter_resources_limits_cpu }}
+            memory: {{ .Values.redis_exporter_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.redis_exporter_resources_requests_cpu }}
+            memory: {{ .Values.redis_exporter_resources_requests_memory }}
+  triggers:
+  - type: ConfigChange
+---
+apiVersion: v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: {{ .Values.app_name }}
+    component: rabbitmq
+  name: {{ .Values.app_name }}-rabbitmq
+spec:
+  replicas: 1
+  selector:
+    app: {{ .Values.app_name }}
+    component: rabbitmq
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app_name }}
+        component: rabbitmq
+    spec:
+      containers:
+      - env:
+        - name: HOSTNAME
+          value: {{ .Values.app_name }}-rabbitmq
+        image: {{ .Values.rabbitmq_image }}
+        livenessProbe:
+          failureThreshold: 3
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 5672
+          timeoutSeconds: 5
+        name: rabbitmq
+        ports:
+        - containerPort: {{ .Values.rabbitmq_port }}
+        readinessProbe:
+          failureThreshold: 3
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 5672
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: {{ .Values.rabbitmq_resources_limits_cpu }}
+            memory: {{ .Values.rabbitmq_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.rabbitmq_resources_requests_cpu }}
+            memory: {{ .Values.rabbitmq_resources_requests_memory }}
+        volumeMounts:
+        - mountPath: {{ .Values.rabbitmq_volume_path }}
+          name: {{ .Values.app_name }}-rabbitmq-pvc
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - rm -f {{ .Values.rabbitmq_volume_path }}/.erlang.cookie
+        image: quay.io/testing-farm/alpine
+        name: remove-cookie
+        volumeMounts:
+        - mountPath: {{ .Values.rabbitmq_volume_path }}
+          name: {{ .Values.app_name }}-rabbitmq-pvc
+      volumes:
+      - name: {{ .Values.app_name }}-rabbitmq-pvc
+        persistentVolumeClaim:
+          claimName: {{ .Values.app_name }}-rabbitmq-pvc
+  triggers:
+  - type: ConfigChange
+---
+apiVersion: v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: {{ .Values.app_name }}
+    component: postgres
+  name: {{ .Values.app_name }}-postgres
+spec:
+  replicas: 1
+  selector:
+    app: {{ .Values.app_name }}
+    component: postgres
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app_name }}
+        component: postgres
+    spec:
+      containers:
+      - env:
+        - name: POSTGRESQL_USER
+          value: {{ .Values.postgresql_user }}
+        - name: POSTGRESQL_PASSWORD
+          value: {{ .Values.postgresql_password }}
+        - name: POSTGRESQL_DATABASE
+          value: {{ .Values.postgresql_database }}
+        image: {{ .Values.postgresql_image }}
+        livenessProbe:
+          failureThreshold: 3
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 5432
+          timeoutSeconds: 5
+        name: postgres
+        ports:
+        - containerPort: {{ .Values.postgresql_port }}
+        readinessProbe:
+          failureThreshold: 3
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 5432
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: {{ .Values.postgresql_resources_limits_cpu }}
+            memory: {{ .Values.postgresql_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.postgresql_resources_requests_cpu }}
+            memory: {{ .Values.postgresql_resources_requests_memory }}
+        volumeMounts:
+        - mountPath: {{ .Values.postgresql_volume_path }}
+          name: {{ .Values.app_name }}-postgres-pvc
+      - env:
+        - name: ADMINER_DEFAULT_SERVER
+          value: {{ .Values.app_name }}-postgres
+        - name: ADMINER_DESIGN
+          value: pepa-linha
+        image: {{ .Values.postgresql_adminer_image }}
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: adminer
+        ports:
+        - containerPort: {{ .Values.postgresql_adminer_port }}
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: {{ .Values.postgresql_adminer_resources_limits_cpu }}
+            memory: {{ .Values.postgresql_adminer_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.postgresql_adminer_resources_requests_cpu }}
+            memory: {{ .Values.postgresql_adminer_resources_requests_memory }}
+      - env:
+        - name: DATA_SOURCE_NAME
+          value: postgres://{{ .Values.postgresql_user }}:{{ .Values.postgresql_password }}@{{ .Values.app_name }}-postgres:{{ .Values.postgresql_port }}/{{ .Values.postgresql_database }}?sslmode=disable
+        image: {{ .Values.postgresql_exporter_image }}
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 9187
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: exporter
+        ports:
+        - containerPort: {{ .Values.postgresql_exporter_port }}
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 9187
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: {{ .Values.postgresql_exporter_resources_limits_cpu }}
+            memory: {{ .Values.postgresql_exporter_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.postgresql_exporter_resources_requests_cpu }}
+            memory: {{ .Values.postgresql_exporter_resources_requests_memory }}
+      volumes:
+      - name: {{ .Values.app_name }}-postgres-pvc
+        persistentVolumeClaim:
+          claimName: {{ .Values.app_name }}-postgres-pvc
+  triggers:
+  - type: ConfigChange
+---
+apiVersion: v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: {{ .Values.app_name }}
+    component: api
+  name: {{ .Values.app_name }}-api
+spec:
+  replicas: 1
+  selector:
+    app: {{ .Values.app_name }}
+    component: api
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app_name }}
+        component: api
+    spec:
+      containers:
+      - args:
+        - api
+        command:
+        - /entrypoint.sh
+        env:
+        - name: ARTEMIS_BROKER_URL
+          value: amqp://{{ .Values.rabbitmq_user }}:{{ .Values.rabbitmq_password }}@{{ .Values.app_name }}-rabbitmq:{{ .Values.rabbitmq_port }}
+        - name: ARTEMIS_DB_URL
+          value: postgresql://{{ .Values.postgresql_user }}:{{ .Values.postgresql_password }}@{{ .Values.app_name }}-postgres:{{ .Values.postgresql_port }}/{{ .Values.postgresql_database }}
+        - name: ARTEMIS_CACHE_URL
+          value: redis://{{ .Values.app_name }}-redis:{{ .Values.redis_port }}
+        - name: ARTEMIS_CONFIG_DIR
+          value: {{ .Values.configmap_mount_path }}
+        - name: ARTEMIS_VAULT_PASSWORD_FILE
+          value: {{ .Values.configmap_mount_path }}/.vault_pass
+        - name: SENTRY_DSN
+          value: {{ .Values.sentry_dsn }}
+        - name: SENTRY_BASE_URL
+          value: {{ .Values.sentry_base_url }}
+        - name: ARTEMIS_LOG_DB_POOL
+          value: {{ .Values.log_db_pool }}
+        - name: ARTEMIS_LOG_JSON
+          value: {{ .Values.log_json }}
+        - name: ARTEMIS_LOG_DIR
+          value: {{ .Values.log_storage_volume_path }}
+        - name: ARTEMIS_API_PROCESSES
+          value: {{ .Values.api_processes }}
+        - name: ARTEMIS_API_THREADS
+          value: {{ .Values.api_threads }}
+        - name: ARTEMIS_LOG_DB_SLOW_QUERIES
+          value: "no"
+        - name: ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD
+          value: "10"
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /guests/
+            port: {{ .Values.api_target_port }}
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: api
+        ports:
+        - containerPort: {{ .Values.api_port }}
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /guests/
+            port: {{ .Values.api_target_port }}
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: {{ .Values.api_resources_limits_cpu }}
+            memory: {{ .Values.api_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.api_resources_requests_cpu }}
+            memory: {{ .Values.api_resources_requests_memory }}
+        volumeMounts:
+        - mountPath: {{ .Values.configmap_mount_path }}
+          name: {{ .Values.configmap_name }}
+        - mountPath: {{ .Values.log_storage_volume_path }}
+          name: {{ .Values.app_name }}-api-log-storage-pvc
+      initContainers:
+      - command:
+        - /wait-for-postgres.sh
+        env:
+        - name: POSTGRESQL_HOSTNAME
+          value: {{ .Values.app_name }}-postgres
+        - name: POSTGRESQL_USER
+          value: {{ .Values.postgresql_user }}
+        - name: POSTGRESQL_PASSWORD
+          value: {{ .Values.postgresql_password }}
+        - name: POSTGRESQL_PORT
+          value: {{ .Values.postgresql_port }}
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: wait-for-postgres
+      - args:
+        - initdb
+        command:
+        - /entrypoint.sh
+        env:
+        - name: ARTEMIS_CONFIG_DIR
+          value: {{ .Values.configmap_mount_path }}
+        - name: ARTEMIS_DB_URL
+          value: postgresql://{{ .Values.postgresql_user }}:{{ .Values.postgresql_password }}@{{ .Values.app_name }}-postgres:{{ .Values.postgresql_port }}/{{ .Values.postgresql_database }}
+        - name: ARTEMIS_VAULT_PASSWORD_FILE
+          value: {{ .Values.configmap_mount_path }}/.vault_pass
+        - name: SENTRY_DSN
+          value: {{ .Values.sentry_dsn }}
+        - name: SENTRY_BASE_URL
+          value: {{ .Values.sentry_base_url }}
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: initdb
+        volumeMounts:
+        - mountPath: {{ .Values.configmap_mount_path }}
+          name: {{ .Values.configmap_name }}
+      - command:
+        - /wait-for-rabbitmq.sh
+        env:
+        - name: RABBITMQ_HOSTNAME
+          value: {{ .Values.app_name }}-rabbitmq
+        - name: RABBITMQ_PORT
+          value: {{ .Values.rabbitmq_port }}
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: wait-for-rabbitmq
+      - command:
+        - /wait-for-redis.sh
+        env:
+        - name: REDIS_HOSTNAME
+          value: {{ .Values.app_name }}-redis
+        - name: REDIS_PORT
+          value: {{ .Values.redis_port }}
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: wait-for-redis
+      volumes:
+      - configMap:
+          name: {{ .Values.configmap_name }}
+        name: {{ .Values.configmap_name }}
+      - name: {{ .Values.app_name }}-api-log-storage-pvc
+        persistentVolumeClaim:
+          claimName: {{ .Values.app_name }}-api-log-storage-pvc
+  triggers:
+  - type: ConfigChange
+---
+apiVersion: v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: {{ .Values.app_name }}
+    component: worker
+  name: {{ .Values.app_name }}-worker
+spec:
+  replicas: 1
+  selector:
+    app: {{ .Values.app_name }}
+    component: worker
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app_name }}
+        component: worker
+    spec:
+      containers:
+      - args:
+        - worker
+        command:
+        - /entrypoint.sh
+        env:
+        - name: ARTEMIS_BROKER_URL
+          value: amqp://{{ .Values.rabbitmq_user }}:{{ .Values.rabbitmq_password }}@{{ .Values.app_name }}-rabbitmq:{{ .Values.rabbitmq_port }}
+        - name: ARTEMIS_DB_URL
+          value: postgresql://{{ .Values.postgresql_user }}:{{ .Values.postgresql_password }}@{{ .Values.app_name }}-postgres:{{ .Values.postgresql_port }}/{{ .Values.postgresql_database }}
+        - name: ARTEMIS_CACHE_URL
+          value: redis://{{ .Values.app_name }}-redis:{{ .Values.redis_port }}
+        - name: ARTEMIS_CONFIG_DIR
+          value: {{ .Values.configmap_mount_path }}
+        - name: ARTEMIS_VAULT_PASSWORD_FILE
+          value: {{ .Values.configmap_mount_path }}/.vault_pass
+        - name: KRB_CCACHE
+          value: {{ .Values.kerberos_ccache }}
+        - name: SENTRY_DSN
+          value: {{ .Values.sentry_dsn }}
+        - name: SENTRY_BASE_URL
+          value: {{ .Values.sentry_base_url }}
+        - name: ARTEMIS_LOG_DB_POOL
+          value: {{ .Values.log_db_pool }}
+        - name: ARTEMIS_LOG_JSON
+          value: {{ .Values.log_json }}
+        - name: ARTEMIS_WORKER_PROCESSES
+          value: {{ .Values.worker_processes }}
+        - name: ARTEMIS_WORKER_THREADS
+          value: {{ .Values.worker_threads }}
+        - name: ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_RETRIES
+          value: {{ .Values.actor_route_guest_request_retries }}
+        - name: ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_MAX_BACKOFF
+          value: {{ .Values.actor_route_guest_request_max_backoff }}
+        - name: ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_RETRIES
+          value: {{ .Values.actor_prepare_verify_ssh_retries }}
+        - name: ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_MAX_BACKOFF
+          value: {{ .Values.actor_prepare_verify_ssh_max_backoff }}
+        - name: ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_RETRIES
+          value: {{ .Values.actor_acquire_guest_request_retries }}
+        - name: ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_MAX_BACKOFF
+          value: {{ .Values.actor_acquire_guest_request_max_backoff }}
+        - name: ARTEMIS_LOG_DIR
+          value: {{ .Values.log_storage_volume_path }}
+        - name: ARTEMIS_CLOSE_AFTER_DISPATCH
+          value: {{ .Values.close_after_dispatch }}
+        - name: ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD
+          value: {{ .Values.route_pool_resource_threshold }}
+        - name: ARTEMIS_LOG_DB_SLOW_QUERIES
+          value: "no"
+        - name: ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD
+          value: "10"
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: worker
+        resources:
+          limits:
+            cpu: {{ .Values.worker_resources_limits_cpu }}
+            memory: {{ .Values.worker_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.worker_resources_requests_cpu }}
+            memory: {{ .Values.worker_resources_requests_memory }}
+        volumeMounts:
+        - mountPath: {{ .Values.configmap_mount_path }}
+          name: {{ .Values.configmap_name }}
+        - mountPath: {{ .Values.kerberos_ccache_dir }}
+          name: kerberos
+        - mountPath: {{ .Values.log_storage_volume_path }}
+          name: {{ .Values.app_name }}-worker-log-storage-pvc
+      - image: {{ .Values.kerberos_image }}
+        imagePullPolicy: Always
+        name: kerberos
+        resources:
+          limits:
+            cpu: {{ .Values.kerberos_resources_limits_cpu }}
+            memory: {{ .Values.kerberos_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.kerberos_resources_requests_cpu }}
+            memory: {{ .Values.kerberos_resources_requests_memory }}
+        volumeMounts:
+        - mountPath: {{ .Values.kerberos_ccache_dir }}
+          name: kerberos
+      initContainers:
+      - command:
+        - /wait-for-api.sh
+        env:
+        - name: API_HOSTNAME
+          value: {{ .Values.app_name }}-api
+        - name: API_PORT
+          value: {{ .Values.api_port }}
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: wait-for-api
+      terminationGracePeriodSeconds: 600
+      volumes:
+      - configMap:
+          name: {{ .Values.configmap_name }}
+        name: {{ .Values.configmap_name }}
+      - emptyDir:
+          medium: Memory
+        name: kerberos
+      - name: {{ .Values.app_name }}-worker-log-storage-pvc
+        persistentVolumeClaim:
+          claimName: {{ .Values.app_name }}-worker-log-storage-pvc
+  triggers:
+  - type: ConfigChange
+---
+apiVersion: v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: {{ .Values.app_name }}
+    component: periodic-worker
+  name: {{ .Values.app_name }}-periodic-worker
+spec:
+  replicas: 1
+  selector:
+    app: {{ .Values.app_name }}
+    component: periodic-worker
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app_name }}
+        component: periodic-worker
+    spec:
+      containers:
+      - args:
+        - worker
+        command:
+        - /entrypoint.sh
+        env:
+        - name: ARTEMIS_BROKER_URL
+          value: amqp://{{ .Values.rabbitmq_user }}:{{ .Values.rabbitmq_password }}@{{ .Values.app_name }}-rabbitmq:{{ .Values.rabbitmq_port }}
+        - name: ARTEMIS_DB_URL
+          value: postgresql://{{ .Values.postgresql_user }}:{{ .Values.postgresql_password }}@{{ .Values.app_name }}-postgres:{{ .Values.postgresql_port }}/{{ .Values.postgresql_database }}
+        - name: ARTEMIS_CACHE_URL
+          value: redis://{{ .Values.app_name }}-redis:{{ .Values.redis_port }}
+        - name: ARTEMIS_CONFIG_DIR
+          value: {{ .Values.configmap_mount_path }}
+        - name: ARTEMIS_VAULT_PASSWORD_FILE
+          value: {{ .Values.configmap_mount_path }}/.vault_pass
+        - name: KRB_CCACHE
+          value: {{ .Values.kerberos_ccache }}
+        - name: SENTRY_DSN
+          value: {{ .Values.sentry_dsn }}
+        - name: SENTRY_BASE_URL
+          value: {{ .Values.sentry_base_url }}
+        - name: ARTEMIS_LOG_DB_POOL
+          value: {{ .Values.log_db_pool }}
+        - name: ARTEMIS_LOG_JSON
+          value: {{ .Values.log_json }}
+        - name: ARTEMIS_WORKER_PROCESSES
+          value: {{ .Values.periodic_worker_processes }}
+        - name: ARTEMIS_WORKER_THREADS
+          value: {{ .Values.periodic_worker_threads }}
+        - name: ARTEMIS_WORKER_QUEUES
+          value: periodic pool-data-refresh
+        - name: ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_RETRIES
+          value: {{ .Values.actor_route_guest_request_retries }}
+        - name: ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_MAX_BACKOFF
+          value: {{ .Values.actor_route_guest_request_max_backoff }}
+        - name: ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_RETRIES
+          value: {{ .Values.actor_prepare_verify_ssh_retries }}
+        - name: ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_MAX_BACKOFF
+          value: {{ .Values.actor_prepare_verify_ssh_max_backoff }}
+        - name: ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_RETRIES
+          value: {{ .Values.actor_acquire_guest_request_retries }}
+        - name: ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_MAX_BACKOFF
+          value: {{ .Values.actor_acquire_guest_request_max_backoff }}
+        - name: ARTEMIS_LOG_DIR
+          value: {{ .Values.log_storage_volume_path }}
+        - name: ARTEMIS_CLOSE_AFTER_DISPATCH
+          value: {{ .Values.close_after_dispatch }}
+        - name: ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD
+          value: {{ .Values.route_pool_resource_threshold }}
+        - name: ARTEMIS_LOG_DB_SLOW_QUERIES
+          value: "no"
+        - name: ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD
+          value: "10"
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: worker
+        resources:
+          limits:
+            cpu: {{ .Values.periodic_worker_resources_limits_cpu }}
+            memory: {{ .Values.periodic_worker_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.periodic_worker_resources_requests_cpu }}
+            memory: {{ .Values.periodic_worker_resources_requests_memory }}
+        volumeMounts:
+        - mountPath: {{ .Values.configmap_mount_path }}
+          name: {{ .Values.configmap_name }}
+        - mountPath: {{ .Values.kerberos_ccache_dir }}
+          name: kerberos
+        - mountPath: {{ .Values.log_storage_volume_path }}
+          name: {{ .Values.app_name }}-periodic-worker-log-storage-pvc
+      - image: {{ .Values.kerberos_image }}
+        imagePullPolicy: Always
+        name: kerberos
+        resources:
+          limits:
+            cpu: {{ .Values.kerberos_resources_limits_cpu }}
+            memory: {{ .Values.kerberos_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.kerberos_resources_requests_cpu }}
+            memory: {{ .Values.kerberos_resources_requests_memory }}
+        volumeMounts:
+        - mountPath: {{ .Values.kerberos_ccache_dir }}
+          name: kerberos
+      initContainers:
+      - command:
+        - /wait-for-api.sh
+        env:
+        - name: API_HOSTNAME
+          value: {{ .Values.app_name }}-api
+        - name: API_PORT
+          value: {{ .Values.api_port }}
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: wait-for-api
+      terminationGracePeriodSeconds: 600
+      volumes:
+      - configMap:
+          name: {{ .Values.configmap_name }}
+        name: {{ .Values.configmap_name }}
+      - emptyDir:
+          medium: Memory
+        name: kerberos
+      - name: {{ .Values.app_name }}-periodic-worker-log-storage-pvc
+        persistentVolumeClaim:
+          claimName: {{ .Values.app_name }}-periodic-worker-log-storage-pvc
+  triggers:
+  - type: ConfigChange
+---
+apiVersion: v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: {{ .Values.app_name }}
+    component: scheduler
+  name: {{ .Values.app_name }}-scheduler
+spec:
+  replicas: 1
+  selector:
+    app: {{ .Values.app_name }}
+    component: scheduler
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app_name }}
+        component: scheduler
+    spec:
+      containers:
+      - args:
+        - scheduler
+        command:
+        - /entrypoint.sh
+        env:
+        - name: ARTEMIS_BROKER_URL
+          value: amqp://{{ .Values.rabbitmq_user }}:{{ .Values.rabbitmq_password }}@{{ .Values.app_name }}-rabbitmq:{{ .Values.rabbitmq_port }}
+        - name: ARTEMIS_DB_URL
+          value: postgresql://{{ .Values.postgresql_user }}:{{ .Values.postgresql_password }}@{{ .Values.app_name }}-postgres:{{ .Values.postgresql_port }}/{{ .Values.postgresql_database }}
+        - name: ARTEMIS_CACHE_URL
+          value: redis://{{ .Values.app_name }}-redis:{{ .Values.redis_port }}
+        - name: ARTEMIS_CONFIG_DIR
+          value: {{ .Values.configmap_mount_path }}
+        - name: ARTEMIS_VAULT_PASSWORD_FILE
+          value: {{ .Values.configmap_mount_path }}/.vault_pass
+        - name: SENTRY_DSN
+          value: {{ .Values.sentry_dsn }}
+        - name: SENTRY_BASE_URL
+          value: {{ .Values.sentry_base_url }}
+        - name: ARTEMIS_LOG_DB_POOL
+          value: {{ .Values.log_db_pool }}
+        - name: ARTEMIS_LOG_JSON
+          value: {{ .Values.log_json }}
+        - name: ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_RETRIES
+          value: {{ .Values.actor_route_guest_request_retries }}
+        - name: ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_MAX_BACKOFF
+          value: {{ .Values.actor_route_guest_request_max_backoff }}
+        - name: ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_RETRIES
+          value: {{ .Values.actor_prepare_verify_ssh_retries }}
+        - name: ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_MAX_BACKOFF
+          value: {{ .Values.actor_prepare_verify_ssh_max_backoff }}
+        - name: ARTEMIS_LOG_DIR
+          value: {{ .Values.log_storage_volume_path }}
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: scheduler
+        resources:
+          limits:
+            cpu: {{ .Values.scheduler_resources_limits_cpu }}
+            memory: {{ .Values.scheduler_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.scheduler_resources_requests_cpu }}
+            memory: {{ .Values.scheduler_resources_requests_memory }}
+        volumeMounts:
+        - mountPath: {{ .Values.configmap_mount_path }}
+          name: {{ .Values.configmap_name }}
+        - mountPath: {{ .Values.log_storage_volume_path }}
+          name: {{ .Values.app_name }}-scheduler-log-storage-pvc
+      initContainers:
+      - command:
+        - /wait-for-api.sh
+        env:
+        - name: API_HOSTNAME
+          value: {{ .Values.app_name }}-api
+        - name: API_PORT
+          value: {{ .Values.api_port }}
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: wait-for-api
+      terminationGracePeriodSeconds: 600
+      volumes:
+      - configMap:
+          name: {{ .Values.configmap_name }}
+        name: {{ .Values.configmap_name }}
+      - name: {{ .Values.app_name }}-scheduler-log-storage-pvc
+        persistentVolumeClaim:
+          claimName: {{ .Values.app_name }}-scheduler-log-storage-pvc
+  triggers:
+  - type: ConfigChange
+---
+apiVersion: v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: {{ .Values.app_name }}
+    component: dispatcher
+  name: {{ .Values.app_name }}-dispatcher
+spec:
+  replicas: 1
+  selector:
+    app: {{ .Values.app_name }}
+    component: dispatcher
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app_name }}
+        component: dispatcher
+    spec:
+      containers:
+      - args:
+        - dispatcher
+        command:
+        - /entrypoint.sh
+        env:
+        - name: ARTEMIS_BROKER_URL
+          value: amqp://{{ .Values.rabbitmq_user }}:{{ .Values.rabbitmq_password }}@{{ .Values.app_name }}-rabbitmq:{{ .Values.rabbitmq_port }}
+        - name: ARTEMIS_DB_URL
+          value: postgresql://{{ .Values.postgresql_user }}:{{ .Values.postgresql_password }}@{{ .Values.app_name }}-postgres:{{ .Values.postgresql_port }}/{{ .Values.postgresql_database }}
+        - name: ARTEMIS_CACHE_URL
+          value: redis://{{ .Values.app_name }}-redis:{{ .Values.redis_port }}
+        - name: ARTEMIS_CONFIG_DIR
+          value: {{ .Values.configmap_mount_path }}
+        - name: ARTEMIS_VAULT_PASSWORD_FILE
+          value: {{ .Values.configmap_mount_path }}/.vault_pass
+        - name: SENTRY_DSN
+          value: {{ .Values.sentry_dsn }}
+        - name: SENTRY_BASE_URL
+          value: {{ .Values.sentry_base_url }}
+        - name: ARTEMIS_LOG_DB_POOL
+          value: {{ .Values.log_db_pool }}
+        - name: ARTEMIS_LOG_JSON
+          value: {{ .Values.log_json }}
+        - name: ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_RETRIES
+          value: {{ .Values.actor_route_guest_request_retries }}
+        - name: ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_MAX_BACKOFF
+          value: {{ .Values.actor_route_guest_request_max_backoff }}
+        - name: ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_RETRIES
+          value: {{ .Values.actor_prepare_verify_ssh_retries }}
+        - name: ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_MAX_BACKOFF
+          value: {{ .Values.actor_prepare_verify_ssh_max_backoff }}
+        - name: ARTEMIS_LOG_DIR
+          value: {{ .Values.log_storage_volume_path }}
+        - name: ARTEMIS_CLOSE_AFTER_DISPATCH
+          value: {{ .Values.close_after_dispatch }}
+        - name: ARTEMIS_LOG_DB_SLOW_QUERIES
+          value: "no"
+        - name: ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD
+          value: "10"
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        name: dispatcher
+        resources:
+          limits:
+            cpu: {{ .Values.dispatcher_resources_limits_cpu }}
+            memory: {{ .Values.dispatcher_resources_limits_memory }}
+          requests:
+            cpu: {{ .Values.dispatcher_resources_requests_cpu }}
+            memory: {{ .Values.dispatcher_resources_requests_memory }}
+        volumeMounts:
+        - mountPath: {{ .Values.configmap_mount_path }}
+          name: {{ .Values.configmap_name }}
+        - mountPath: {{ .Values.log_storage_volume_path }}
+          name: {{ .Values.app_name }}-dispatcher-log-storage-pvc
+      initContainers:
+      - command:
+        - /wait-for-api.sh
+        env:
+        - name: API_HOSTNAME
+          value: {{ .Values.app_name }}-api
+        - name: API_PORT
+          value: {{ .Values.api_port }}
+        image: {{ .Values.image }}
+        name: wait-for-api
+      terminationGracePeriodSeconds: 600
+      volumes:
+      - configMap:
+          name: {{ .Values.configmap_name }}
+        name: {{ .Values.configmap_name }}
+      - name: {{ .Values.app_name }}-dispatcher-log-storage-pvc
+        persistentVolumeClaim:
+          claimName: {{ .Values.app_name }}-dispatcher-log-storage-pvc
+  triggers:
+  - type: ConfigChange
