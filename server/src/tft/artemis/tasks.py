@@ -2871,9 +2871,6 @@ def do_acquire_guest_request(
 
         raise Exception(r.error)
 
-    # TODO: instead of switching to READY, we need to switch into transient state instead,
-    # and upload the requested key to the guest (using our master key).
-
     # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
     # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
     # save guest's address. In both cases, we must be sure nobody else did any changes before us.
