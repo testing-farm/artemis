@@ -251,8 +251,8 @@ class AWSDriver(PoolDriver):
 
         return Ok(None)
 
-    def can_acquire(self, environment: Environment) -> Result[bool, Failure]:
-        r_answer = super(AWSDriver, self).can_acquire(environment)
+    def can_acquire(self, logger: gluetool.log.ContextAdapter, environment: Environment) -> Result[bool, Failure]:
+        r_answer = super(AWSDriver, self).can_acquire(logger, environment)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -260,12 +260,11 @@ class AWSDriver(PoolDriver):
         if r_answer.unwrap() is False:
             return r_answer
 
-        r_image = self._env_to_image(self.logger, environment)
+        r_image = self._env_to_image(logger, environment)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
-        # TODO: fix once we have better logger
-        r_type = self._env_to_instance_type(self.logger, environment)
+        r_type = self._env_to_instance_type(logger, environment)
         if r_type.is_error:
             return Error(r_type.unwrap_error())
 

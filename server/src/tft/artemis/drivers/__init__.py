@@ -495,6 +495,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def can_acquire(
         self,
+        logger: gluetool.log.ContextAdapter,
         environment: Environment
     ) -> Result[bool, Failure]:
         """

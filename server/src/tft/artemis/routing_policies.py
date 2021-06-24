@@ -169,11 +169,12 @@ def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[Pool
 
 
 def collect_pool_can_acquire(
+    logger: gluetool.log.ContextAdapter,
     pools: List[PoolDriver],
     environment: Environment
 ) -> Result[List[Tuple[PoolDriver, bool]], Failure]:
     r_answers = [
-        (pool, pool.can_acquire(environment))
+        (pool, pool.can_acquire(logger, environment))
         for pool in pools
     ]
 
@@ -633,7 +634,7 @@ def policy_can_acquire(
 
     environment = Environment.unserialize_from_str(guest_request.environment)
 
-    r_answers = collect_pool_can_acquire(pools, environment)
+    r_answers = collect_pool_can_acquire(logger, pools, environment)
 
     if r_answers.is_error:
         return Error(r_answers.unwrap_error())
