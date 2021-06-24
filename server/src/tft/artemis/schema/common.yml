@@ -13,8 +13,8 @@ definitions:
       base:
         type: string
 
-      diskspace:
-        type: string
+      disk:
+        "$ref": "#/definitions/patch_flavor_disk"
 
     required:
       - name

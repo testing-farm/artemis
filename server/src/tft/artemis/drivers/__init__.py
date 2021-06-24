@@ -1179,19 +1179,22 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
             custom_flavors.append(custom_flavor)
 
-            if 'diskspace' in custom_flavor_spec:
-                r_diskspace = safe_call(UNITS, custom_flavor_spec['diskspace'])
+            if 'disk' in custom_flavor_spec:
+                disk_patch = cast(Dict[str, Union[str, int]], custom_flavor_spec['disk'])
 
-                if r_diskspace.is_error:
-                    return Error(Failure.from_failure(
-                        'failed to parse flavor diskspace',
-                        r_diskspace.unwrap_error(),
-                        customname=customname,
-                        basename=basename,
-                        diskspace=custom_flavor_spec['diskspace']
-                    ))
+                if 'space' in disk_patch:
+                    r_space = safe_call(UNITS, disk_patch['space'])
 
-                custom_flavor.diskspace = r_diskspace.unwrap()
+                    if r_space.is_error:
+                        return Error(Failure.from_failure(
+                            'failed to parse custom flavor disk.space',
+                            r_space.unwrap_error(),
+                            customname=customname,
+                            basename=basename,
+                            space=disk_patch['space']
+                        ))
+
+                    custom_flavor.diskspace = r_space.unwrap()
 
         gluetool.log.log_dict(logger.debug, 'custom flavors', custom_flavors)
 
