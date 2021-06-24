@@ -3921,12 +3921,6 @@ def do_refresh_pool_image_info(
     cancel: threading.Event,
     poolname: str
 ) -> DoerReturnType:
-    # TODO: once context hits tasks completely, this won't be needed. Until that, we update it on our own,
-    # to avoid introducing parameters in driver methods.
-    LOGGER.set(logger)
-    DATABASE.set(db)
-    SESSION.set(session)
-
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,
         session,
@@ -4036,12 +4030,6 @@ def do_refresh_pool_flavor_info(
     cancel: threading.Event,
     poolname: str
 ) -> DoerReturnType:
-    # TODO: once context hits tasks completely, this won't be needed. Until that, we update it on our own,
-    # to avoid introducing parameters in driver methods.
-    LOGGER.set(logger)
-    DATABASE.set(db)
-    SESSION.set(session)
-
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,
         session,
