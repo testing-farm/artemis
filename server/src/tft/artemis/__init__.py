@@ -1332,6 +1332,16 @@ KNOB_DB_POOL_MAX_OVERFLOW: Knob[int] = Knob(
     default=10
 )
 
+KNOB_POOL_ENABLED: Knob[bool] = Knob(
+    'pool.enabled',
+    'If unset for a pool, the given pool is ignored by Artemis in general.',
+    has_db=True,
+    per_pool=True,
+    envvar='ARTEMIS_POOL_ENABLED',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=True
+)
+
 
 def get_logger() -> gluetool.log.ContextAdapter:
     gluetool.color.switch(True)

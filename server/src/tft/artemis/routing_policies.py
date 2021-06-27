@@ -82,7 +82,7 @@ KNOB_ROUTE_POOL_RESOURCE_THRESHOLD: Knob[float] = Knob(
 
 KNOB_ROUTE_POOL_ENABLED: Knob[bool] = Knob(
     'route.pool.enabled',
-    'Allow disabling pools.',
+    'If unset for a pool, the given pool is ignored by the routing.',
     has_db=True,
     per_pool=True,
     envvar='ARTEMIS_ROUTE_POOL_ENABLED',

@@ -19,8 +19,8 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, log_guest_event, metrics, \
-    safe_call, safe_db_change
+from . import KNOB_POOL_ENABLED, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
+    log_guest_event, metrics, safe_call, safe_db_change
 from .context import DATABASE, LOGGER, SESSION, with_context
 from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
     SnapshotRequest, SSHKey, upsert
@@ -1174,7 +1174,8 @@ def _get_pool(
 
 def get_pools(
     logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session
+    session: sqlalchemy.orm.session.Session,
+    enabled_only: bool = True
 ) -> Result[List[PoolDriver], Failure]:
     r_pools = SafeQuery.from_session(session, Pool).all()
 
@@ -1185,6 +1186,15 @@ def get_pools(
 
     for pool_record in r_pools.unwrap():
         pool_driver_class = POOL_DRIVERS[pool_record.driver]
+
+        if enabled_only is True:
+            r_enabled = KNOB_POOL_ENABLED.get_value(session=session, poolname=pool_record.poolname)
+
+            if r_enabled.is_error:
+                return Error(r_enabled.unwrap_error())
+
+            if r_enabled.unwrap() is not True:
+                continue
 
         pools += [
             pool_driver_class(logger, pool_record.poolname, json.loads(pool_record.parameters))
