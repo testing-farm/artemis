@@ -706,13 +706,23 @@ class KnobSourceEnvPerPool(KnobSourceEnv[T]):
     :param type_cast: a callback used to cast the raw string to the correct type.
     """
 
-    def get_value(  # type: ignore  # match parent
+    def get_value(
         self,
         *,
-        pool: 'PoolDriver',
+        poolname: Optional[str] = None,
+        pool: Optional['PoolDriver'] = None,
         **kwargs: Any
     ) -> Result[Optional[T], Failure]:
-        r_value = self._fetch_from_env(f'{self.envvar}_{pool.poolname}')
+        if poolname is not None:
+            pass
+
+        elif pool is not None:
+            poolname = pool.poolname
+
+        else:
+            return Error(Failure('either pool or poolname must be specified'))
+
+        r_value = self._fetch_from_env(f'{self.envvar}_{poolname}')
 
         if r_value.is_error:
             return r_value
@@ -816,10 +826,20 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
         self,
         *,
         session: Session,
-        pool: 'PoolDriver',
+        poolname: Optional[str] = None,
+        pool: Optional['PoolDriver'] = None,
         **kwargs: Any
     ) -> Result[Optional[T], Failure]:
-        r_value = self._fetch_from_db(session, f'{self.knob.knobname}:{pool.poolname}')
+        if poolname is not None:
+            pass
+
+        elif pool is not None:
+            poolname = pool.poolname
+
+        else:
+            return Error(Failure('either pool or poolname must be specified'))
+
+        r_value = self._fetch_from_db(session, f'{self.knob.knobname}:{poolname}')
 
         if r_value.is_error:
             return r_value
