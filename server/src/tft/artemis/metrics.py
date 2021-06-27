@@ -702,6 +702,7 @@ class PoolMetrics(MetricsBase):
 
     poolname: str
     enabled: bool
+    routing_enabled: bool
 
     resources: PoolResourcesMetrics
     costs: PoolCostsMetrics
@@ -745,6 +746,7 @@ class PoolMetrics(MetricsBase):
 
         self.poolname = poolname
         self.enabled = False
+        self.routing_enabled = True
 
         self.resources = PoolResourcesMetrics(poolname)
         self.costs = PoolCostsMetrics(poolname)
@@ -899,6 +901,19 @@ class PoolMetrics(MetricsBase):
 
         self.enabled = r_enabled.unwrap() or False  # True => True, False => False, None => False
 
+        # avoid circular imports
+        from .routing_policies import KNOB_ROUTE_POOL_ENABLED
+
+        r_routing_enabled = KNOB_ROUTE_POOL_ENABLED.get_value(session=session, poolname=self.poolname)
+
+        # TODO: sync should return Result
+        if r_routing_enabled.is_error:
+            r_routing_enabled.unwrap_error().handle(logger)
+
+            return
+
+        self.routing_enabled = r_routing_enabled.unwrap()
+
         self.current_guest_request_count = cast(
             Tuple[int],
             session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
@@ -982,6 +997,7 @@ class UndefinedPoolMetrics(MetricsBase):
 
     poolname: str
     enabled: bool
+    routing_enabled: bool
 
     resources: PoolResourcesMetrics
     costs: PoolCostsMetrics
@@ -1007,6 +1023,7 @@ class UndefinedPoolMetrics(MetricsBase):
 
         self.poolname = poolname
         self.enabled = False
+        self.routing_enabled = True
 
         self.resources = PoolResourcesMetrics(poolname)
         self.costs = PoolCostsMetrics(poolname)
@@ -1140,6 +1157,13 @@ class PoolsMetrics(MetricsBase):
             registry=registry
         )
 
+        self.POOL_ROUTING_ENABLED = Gauge(
+            'pool_routing_enabled',
+            'Current enabled/disabled pool routing state by pool.',
+            ['pool'],
+            registry=registry
+        )
+
         self.CURRENT_GUEST_REQUEST_COUNT = Gauge(
             'current_guest_request_count',
             'Current number of guest requests being provisioned by pool and state.',
@@ -1221,7 +1245,8 @@ class PoolsMetrics(MetricsBase):
         reset_histogram(self.CLI_CALLS_DURATIONS)
 
         for poolname, pool_metrics in self.pools.items():
-            self.POOL_ENABLED.labels(poolname).set(1 if pool_metrics.enabled is True else 0)
+            self.POOL_ENABLED.labels(pool=poolname).set(1 if pool_metrics.enabled else 0)
+            self.POOL_ROUTING_ENABLED.labels(pool=poolname).set(1 if pool_metrics.routing_enabled else 0)
 
             for state in pool_metrics.current_guest_request_count_per_state:
                 self.CURRENT_GUEST_REQUEST_COUNT \
