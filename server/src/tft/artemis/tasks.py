@@ -4145,7 +4145,7 @@ def do_gc_events(
 
     deadline = datetime.datetime.utcnow() - datetime.timedelta(seconds=KNOB_GC_EVENTS_THRESHOLD.value)
 
-    logger.warning(f'removing events older than {deadline}')
+    logger.info(f'removing events older than {deadline}')
 
     # TODO: INTERVAL is PostgreSQL-specific. We don't plan to use another DB, but, if we chose to, this would have
     # to be rewritten.
@@ -4173,7 +4173,7 @@ def do_gc_events(
         r_execute.unwrap()
     )
 
-    logger.warning(f'removed {query_result.rowcount} events')
+    logger.info(f'removed {query_result.rowcount} events')
 
     return handle_success('finished-task')
 

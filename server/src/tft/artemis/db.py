@@ -582,10 +582,12 @@ class GuestEvent(Base):
         self,
         eventname: str,
         guestname: str,
+        updated: Optional[datetime.datetime] = None,
         **details: Any
     ) -> None:
         self.eventname = eventname
         self.guestname = guestname
+        self.updated = updated or datetime.datetime.utcnow()
         self.details = json.dumps(details)
 
     # This is not very friendly... In our code, when we access event details, we want to get the unserialized form.
