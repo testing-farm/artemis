@@ -1166,7 +1166,8 @@ class KnobManager:
             assert knob.cast_from_str is not None
 
             try:
-                serialized_value: JSONType = artemis_db.Knob.serialize_value(knob.cast_from_str(value))
+                casted_value = knob.cast_from_str(value)
+                serialized_value: JSONType = artemis_db.Knob.serialize_value(casted_value)
 
             except Exception as exc:
                 raise errors.BadRequestError(
@@ -1191,6 +1192,8 @@ class KnobManager:
                     'value': serialized_value
                 }
             )
+
+        logger.info(f'knob changed: {knobname} = {casted_value}')
 
     def delete_knob(self, logger: gluetool.log.ContextAdapter, knobname: str) -> None:
         with self.db.get_session() as session:
