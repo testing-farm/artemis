@@ -18,8 +18,8 @@ import stackprinter
 from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
                artemis_create, artemis_delete, artemis_get_console_url,
                artemis_inspect, artemis_restore, artemis_update, confirm,
-               fetch_artemis, load_yaml, prettify_json, prettify_yaml, prompt,
-               validate_struct)
+               fetch_artemis, load_yaml, prettify_json, prettify_yaml,
+               print_table, prompt, validate_struct)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000
@@ -615,7 +615,22 @@ def cmd_knob(cfg: Configuration) -> None:
 @cmd_knob.command(name='list', short_help='List all knobs')
 @click.pass_obj
 def cmd_knob_list(cfg: Configuration) -> None:
-    print(prettify_yaml(True, artemis_inspect(cfg, 'knobs', '').json()))
+    knobs = cast(List[Dict[str, str]], artemis_inspect(cfg, 'knobs', '').json())
+
+    table = [
+        ['Name', 'Value', 'Editable', 'Help']
+    ] + [
+        [
+            knob['name'],
+            knob["value"],
+            knob['cast'],
+            'yes' if knob['editable'] else 'no',
+            knob['help']
+        ]
+        for knob in sorted(knobs, key=lambda x: x['name'])
+    ]
+
+    print_table(table)
 
 
 @cmd_knob.command(name='get', short_help='Get knob value')
