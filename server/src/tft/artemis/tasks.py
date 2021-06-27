@@ -32,6 +32,7 @@ from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver
 from .drivers import beaker as beaker_driver
+from .drivers import localhost as localhost_driver
 from .drivers import openstack as openstack_driver
 from .guest import GuestLogger, GuestState, SnapshotLogger
 from .profile import Profiler
@@ -307,6 +308,7 @@ KNOB_GC_EVENTS_THRESHOLD: Knob[int] = Knob(
 POOL_DRIVERS = {
     'aws': aws_driver.AWSDriver,
     'beaker': beaker_driver.BeakerDriver,
+    'localhost': localhost_driver.LocalhostDriver,
     'openstack': openstack_driver.OpenStackDriver,
     'azure': azure_driver.AzureDriver,
 }
