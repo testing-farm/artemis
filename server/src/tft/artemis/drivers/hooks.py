@@ -9,7 +9,7 @@ import gluetool.log
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
 
-from .. import KNOB_CONFIG_DIRPATH, Failure
+from .. import KNOB_CONFIG_DIRPATH, Failure, log_dict_yaml
 from ..environment import Environment
 from . import PoolDriver, PoolImageInfo
 
@@ -84,7 +84,7 @@ def map_environment_to_image_info(
         unsuccessfull.
     """
 
-    logger.info(f'deciding image name for {environment}')
+    log_dict_yaml(logger.info, 'deciding image name for environment', environment.serialize_to_json())
 
     try:
         r_image_name = map_compose_to_imagename_by_pattern_map(
@@ -99,9 +99,20 @@ def map_environment_to_image_info(
 
         imagename = r_image_name.unwrap()
 
-        logger.info(f'mapped {environment} to image name {imagename}')
+        log_dict_yaml(logger.info, 'compose mapped to image name', {
+            'environment': environment.serialize_to_json(),
+            'image-name': imagename
+        })
 
-        return pool.map_image_name_to_image_info(logger, imagename)
+        r_image = pool.map_image_name_to_image_info(logger, imagename)
+
+        if r_image.is_ok:
+            log_dict_yaml(logger.info, 'compose mapped to image', {
+                'environment': environment.serialize_to_json(),
+                'image': r_image.unwrap().serialize_to_json()
+            })
+
+        return r_image
 
     except Exception as exc:
         return Error(Failure.from_exc(

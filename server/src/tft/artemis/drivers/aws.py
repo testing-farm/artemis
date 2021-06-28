@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 import gluetool.log
 import jq
 import sqlalchemy.orm.session
-from gluetool.log import log_blob, log_dict
+from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
@@ -506,12 +506,13 @@ class AWSDriver(PoolDriver):
 
         spot_price_bid_percentage = self.pool_config['spot-price-bid-percentage']
 
-        log_dict(logger.info, f'using spot price {price} for', {
+        log_dict_yaml(logger.info, 'using spot price', {
             'availability zone': self.pool_config['availability-zone'],
             'current price': current_price,
-            'instance type': instance_type,
+            'instance type': instance_type.serialize_to_json(),
             'product description': image.platform_details,
-            'bid': f'{spot_price_bid_percentage}%'
+            'bid': f'{spot_price_bid_percentage}%',
+            'print': price
         })
 
         return Ok(price)
@@ -573,14 +574,10 @@ class AWSDriver(PoolDriver):
         image: AWSPoolImageInfo,
         guestname: str
     ) -> Result[ProvisioningProgress, Failure]:
-        log_dict_yaml(
-            logger.info,
-            'provisioning from',
-            {
-                'flavor': instance_type.serialize_to_json(),
-                'image': image.serialize_to_json()
-            }
-        )
+        log_dict_yaml(logger.info, 'provisioning from', {
+            'flavor': instance_type.serialize_to_json(),
+            'image': image.serialize_to_json()
+        })
 
         command = [
             'ec2', 'run-instances',
@@ -637,14 +634,10 @@ class AWSDriver(PoolDriver):
         instance_type: Flavor,
         image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
-        log_dict_yaml(
-            logger.info,
-            'provisioning from',
-            {
-                'flavor': instance_type.serialize_to_json(),
-                'image': image.serialize_to_json()
-            }
-        )
+        log_dict_yaml(logger.info, 'provisioning from', {
+            'flavor': instance_type.serialize_to_json(),
+            'image': image.serialize_to_json()
+        })
 
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)
@@ -683,7 +676,7 @@ class AWSDriver(PoolDriver):
             block_device_mappings=r_block_device_mappings.unwrap()
         )
 
-        log_blob(logger.info, 'spot request launch specification', specification)
+        log_dict_yaml(logger.info, 'spot request launch specification', json.loads(specification))
 
         r_spot_request = self._aws_command([
             'ec2', 'request-spot-instances',
@@ -931,7 +924,7 @@ class AWSDriver(PoolDriver):
     ) -> Result[ProvisioningProgress, Failure]:
         environment = Environment.unserialize_from_str(guest_request.environment)
 
-        logger.info(f'provisioning environment {environment.serialize_to_json()}')
+        log_dict_yaml(logger.info, 'provisioning environment', environment.serialize_to_json())
 
         # get instance type from environment
         r_instance_type = self._env_to_instance_type(logger, environment)

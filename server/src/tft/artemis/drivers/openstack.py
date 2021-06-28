@@ -311,7 +311,11 @@ class OpenStackDriver(PoolDriver):
     ) -> Result[ProvisioningProgress, Failure]:
         environment = Environment.unserialize_from_str(guest_request.environment)
 
-        logger.info(f'provisioning environment {guest_request.environment}')
+        log_dict_yaml(
+            logger.info,
+            'provisioning environment',
+            environment.serialize_to_json()
+        )
 
         r_flavor = self._env_to_flavor(logger, environment)
         if r_flavor.is_error:
