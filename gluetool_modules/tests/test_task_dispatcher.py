@@ -17,7 +17,9 @@ def fixture_module():
 
 @pytest.fixture(name='module_run_module')
 def fixture_module_run_module(module, monkeypatch):
-    run_module_mock = MagicMock()
+    run_module_mock = MagicMock(
+        return_value=(None, None)
+    )
 
     monkeypatch.setattr(
         'gluetool.Module.run_module',
