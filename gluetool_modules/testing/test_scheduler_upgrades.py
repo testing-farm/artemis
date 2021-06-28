@@ -51,6 +51,7 @@ class TestSchedulerUpgrades(gluetool.Module):
 
     def binary_rpms_list(self, compose_url, components):
         # List of binary package names is obtained from compose metadata (metadata/rpms.json).
+        # Only x86_64 builds are considered, upgrades for other arches are not yet supported.
         metadate_rpms_json_path = '{}/metadata/rpms.json'.format(compose_url)
 
         with gluetool.utils.requests(logger=self.logger) as requests:
@@ -78,7 +79,7 @@ class TestSchedulerUpgrades(gluetool.Module):
         log_dict(self.info, 'binary rpm names', binary_rpms_list)
 
         if not binary_rpms_list:
-            log_dict(self.warn, 'No binary rpm names found for packages', components)
+            log_dict(self.warn, 'No x86_64 binary rpm names found for packages', components)
 
         return binary_rpms_list
 
