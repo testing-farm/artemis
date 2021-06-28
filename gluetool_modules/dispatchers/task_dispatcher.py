@@ -144,4 +144,10 @@ class TaskDispatcher(gluetool.Module):
             log_dict(self.debug, 'command to dispatch', [module, args])
             self.info('    {} {}'.format(module, ' '.join(args)))
 
-            self.run_module(module, args)
+            failure, destroy_failure = self.run_module(module, args)
+
+            if failure:
+                raise gluetool.GlueError('failed to dispatch command: {}'.format(failure.exception))
+
+            if destroy_failure:
+                self.warn('failed to clean after dispatching: {}'.format(destroy_failure.exception), sentry=True)
