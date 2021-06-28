@@ -176,6 +176,9 @@ class PipelineStateReporter(gluetool.Module):
             },
             'final-state-map': {
                 'help': 'Instructions to decide the final state of the pipeline.'
+            },
+            'error-reason-map': {
+                'help': 'Instructions to decide the error reason. By default the error message from the pipline.'
             }
         }),
         ('Tweaks', {
@@ -259,6 +262,13 @@ class PipelineStateReporter(gluetool.Module):
             return []
 
         return gluetool.utils.load_yaml(self.option('artifact-map'), logger=self.logger)
+
+    @gluetool.utils.cached_property
+    def error_reason_map(self):
+        if not self.option('error-reason-map'):
+            return []
+
+        return gluetool.utils.load_yaml(self.option('error-reason-map'), logger=self.logger)
 
     @gluetool.utils.cached_property
     def test_docs_map(self):
@@ -427,7 +437,7 @@ class PipelineStateReporter(gluetool.Module):
         # an exception may have been raised and by always reporting the properties we can be
         # sure even the 'complete' report would be connected with the original issue, and
         # therefore open to investigation.
-        body['reason'] = error_message
+        body['reason'] = self._get_error_reason(error_message)
         body['issue_url'] = error_url
 
         render_context = gluetool.utils.dict_update(self.shared('eval_context'), {
@@ -599,6 +609,33 @@ class PipelineStateReporter(gluetool.Module):
             return instr['docs']
 
         return None
+
+    def _get_error_reason(self, error_message):
+        """
+        Read instructions from a file to determine the error reason. By default return the error message.
+        """
+
+        context = gluetool.utils.dict_update(self.shared('eval_context'), {
+            'ERROR_MESSAGE': error_message
+        })
+
+        for instr in self.error_reason_map:
+            log_dict(self.debug, 'error reason instruction', instr)
+
+            if not self.shared('evaluate_rules', instr.get('rule', 'True'), context=context):
+                self.debug('denied by rules')
+                continue
+
+            if 'reason' not in instr:
+                self.warn('Error reason rules matched but did not yield any error reason', sentry=True)
+                continue
+
+            reason = gluetool.utils.render_template(instr['reason'], logger=self.logger, **context)
+            self.debug("error reason set to '{}'".format(reason))
+
+            return reason
+
+        return error_message
 
     def destroy(self, failure=None):
         if failure is not None and isinstance(failure.exc_info[1], SystemExit):
