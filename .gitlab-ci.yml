@@ -2,8 +2,6 @@
 
 stages:
   - test
-  - build-docker
-  - deploy
 
 # Use our custom image. See https://gitlab.com/testing-farm/images/-/tree/master/python-ci-image
 image: "quay.io/testing-farm/python-ci-image"
@@ -24,6 +22,8 @@ image: "quay.io/testing-farm/python-ci-image"
 #
 .tests:
   extends: .locale
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
   before_script:
     - dnf -y install krb5-devel libcurl-devel popt-devel postgresql-devel libxml2-devel
 
@@ -107,36 +107,3 @@ generate-docs:
   artifacts:
     paths:
       - .tox/py27-doctest/tmp/docs/build/html
-
-#
-# BUILD steps
-#
-
-# Trigger Docker build
-build-docker-images:
-  stage: build-docker
-  extends: .locale
-  only:
-    - master@baseos-qe/gluetool-modules
-  script:
-    - tower-cli workflow_job launch --monitor -W "[BaseOS CI] [build] [docker] Production chain" | tee tower_output.log
-    - grep 'failed' tower_output.log && { echo 'At least one of subtasks failed!'; exit 1; } || exit 0
-
-build-docker-images-devel:
-  stage: build-docker
-  extends: .locale
-  only:
-    - devel@baseos-qe/gluetool-modules
-  script:
-    - tower-cli workflow_job launch --monitor -W "[BaseOS CI] [build] [docker] Devel chain" | tee tower_output.log
-    - grep 'failed' tower_output.log && { echo 'At least one of subtasks failed!'; exit 1; } || exit 0
-
-# Trigger staging deployment
-deploy-to-staging:
-  stage: deploy
-  extends: .locale
-  only:
-    - devel@baseos-qe/gluetool-modules
-  script:
-    - tower-cli workflow_job launch --monitor -W "[BaseOS CI] [deploy] [staging] Image" | tee tower_output.log
-    - grep 'failed' tower_output.log && { echo 'At least one of subtasks failed!'; exit 1; } || exit 0
