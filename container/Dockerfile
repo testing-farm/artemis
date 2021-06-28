@@ -11,7 +11,7 @@
 #   * worker
 #
 
-FROM quay.io/testing-farm/promtail:v2.0.0 as PROMTAIL_SOURCE
+FROM quay.io/testing-farm/promtail:v2.2.1 as PROMTAIL_SOURCE
 FROM registry.fedoraproject.org/fedora-minimal:34
 
 COPY --from=PROMTAIL_SOURCE /promtail /usr/bin/
