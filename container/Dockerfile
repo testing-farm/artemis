@@ -53,6 +53,8 @@ RUN    microdnf -y install bash \
                            postgresql \
                            poetry \
                            python3.7 \
+                           # required by `openstack`
+                           which \
     && microdnf clean all \
     && rm -rf /var/cache/dnf \
     && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
