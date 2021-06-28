@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
+import jq
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
@@ -16,7 +17,7 @@ from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, R
 from ..script import hook_engine
 from . import ConsoleUrlData, GuestLogUpdateProgress, PoolCapabilities, PoolData, PoolDriver, PoolFlavorInfo, \
     PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
-    create_tempfile, run_cli_tool, test_cli_error, vm_info_to_ip
+    create_tempfile, run_cli_tool, test_cli_error
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -56,6 +57,9 @@ KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
 
 MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'^No server with a name or ID')
 INSTANCE_NOT_READY_ERROR_PATTERN = re.compile(r'^Instance [a-z0-9\-]+ is not ready')
+
+# IP address is suplied in a list of mappings
+JQ_QUERY_INSTANCE_IPV4_ADDRESS = jq.compile('.addresses | to_entries[0].value[0]')
 
 
 @dataclasses.dataclass
@@ -666,11 +670,15 @@ class OpenStackDriver(PoolDriver):
                 delay_update=KNOB_UPDATE_TICK.value
             ))
 
-        r_ip_address = vm_info_to_ip(output, 'addresses')
+        try:
+            ip_address = cast(str, JQ_QUERY_INSTANCE_IPV4_ADDRESS.input(output).first())
 
-        if r_ip_address.is_error:
-            return Error(r_ip_address.unwrap_error())
-        ip_address = r_ip_address.unwrap()
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'failed to parse IP address',
+                exc,
+                output=output
+            ))
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
