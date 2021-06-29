@@ -91,8 +91,19 @@ class InstallRepository(gluetool.Module):
                     'xargs -n1 curl -sO'
                 ).format(download_path, repo_id)
             )
-        sut_installation.add_step('Install rpms', 'yum -y install {}/*[^.src].rpm'.format(download_path),
-                                  ignore_exception=True)
+
+        packages = '{}/*[^.src].rpm'.format(download_path)
+
+        # note: library does the magic in using DNF is needed \o/
+        sut_installation.add_step('Reinstall packages', 'yum -y reinstall {}'.format(packages), ignore_exception=True)
+        sut_installation.add_step('Downgrade packages', 'yum -y downgrade {}'.format(packages), ignore_exception=True)
+        sut_installation.add_step('Update packages', 'yum -y update {}'.format(packages), ignore_exception=True)
+        sut_installation.add_step('Install packages', 'yum -y install {}'.format(packages), ignore_exception=True)
+
+        sut_installation.add_step(
+            'Verify all packages installed',
+            "ls {} | sed 's/.rpm$//' | xargs rpm -q".format(packages)
+        )
 
         with Action(
                 'installing rpm artifacts',
