@@ -280,15 +280,21 @@ class BeakerDriver(PoolDriver):
     def _handle_no_distro_matches_recipe_error(
         self,
         failure: Failure,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        pool_data: Optional[BeakerPoolData] = None
     ) -> Result[ProvisioningProgress, Failure]:
+        # TODO: it would be cleaner to use some "empty" pool data but there are types guarding the pool data
+        # from ever to be optional. But since we return CANCEL anyway, it should be safe until we find a better
+        # way.
+        pool_data = pool_data or BeakerPoolData(job_id='never-to-be-used')
+
         failure.recoverable = False
 
         PoolMetrics.inc_error(self.poolname, 'no-distro-matches-recipe')
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.CANCEL,
-            pool_data=BeakerPoolData.unserialize(guest_request),
+            pool_data=pool_data,
             pool_failures=[failure]
         ))
 
@@ -643,7 +649,11 @@ class BeakerDriver(PoolDriver):
                 failure = r_reschedule_job.unwrap_error()
 
                 if test_cli_error(failure, NO_DISTRO_MATCHES_RECIPE_ERROR_PATTEN):
-                    return self._handle_no_distro_matches_recipe_error(failure, guest_request)
+                    return self._handle_no_distro_matches_recipe_error(
+                        failure,
+                        guest_request,
+                        pool_data=BeakerPoolData.unserialize(guest_request)
+                    )
 
                 return Error(r_reschedule_job.unwrap_error())
 
@@ -699,7 +709,11 @@ class BeakerDriver(PoolDriver):
             of error.
         """
 
-        r_create_job = self._create_job(logger, Environment.unserialize_from_str(guest_request.environment))
+        environment = Environment.unserialize_from_str(guest_request.environment)
+
+        logger.info(f'provisioning environment {environment.serialize_to_json()}')
+
+        r_create_job = self._create_job(logger, environment)
 
         if r_create_job.is_error:
             failure = r_create_job.unwrap_error()
