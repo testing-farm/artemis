@@ -7,6 +7,17 @@ stages:
 image: "quay.io/testing-farm/python-ci-image"
 
 #
+# Poetry and MyPy colors
+#
+.colors:
+  variables:
+    TERM: "xterm"
+    POETRY_ADDOPTS: "--ansi"
+    MYPY_FORCE_COLOR: "1"
+    PYTEST_ADDOPTS: "--color=yes"
+
+
+#
 # Some of the jobs require locale to be set, some fail with is. Those which need it can inherit this section.
 #
 .locale:
@@ -28,7 +39,7 @@ image: "quay.io/testing-farm/python-ci-image"
 # TEST steps
 #
 .tests:
-  extends: [.locale, .merge-request]
+  extends: [.colors, .locale, .merge-request]
   before_script:
     - dnf -y install krb5-devel libcurl-devel popt-devel postgresql-devel libxml2-devel
 
@@ -63,7 +74,7 @@ static-analysis-coala:
 
 # Static analysis - type checks
 type-check:
-  extends: .merge-request
+  extends: [.colors, .merge-request]
   stage: test
   script:
     - tox -v -e type-check
