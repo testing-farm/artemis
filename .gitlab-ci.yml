@@ -18,12 +18,17 @@ image: "quay.io/testing-farm/python-ci-image"
     LANG: "en_US.utf8"
 
 #
+# Mark tests to run for merge requests
+#
+.merge-request:
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+
+#
 # TEST steps
 #
 .tests:
-  extends: .locale
-  rules:
-    - if: $CI_MERGE_REQUEST_IID
+  extends: [.locale, .merge-request]
   before_script:
     - dnf -y install krb5-devel libcurl-devel popt-devel postgresql-devel libxml2-devel
 
@@ -50,6 +55,7 @@ static-analysis:
 #
 # Note: coala integration is better done directly via gitlab's docker support
 static-analysis-coala:
+  extends: .merge-request
   stage: test
   image: quay.io/testing-farm/coala:latest
   script:
@@ -57,12 +63,14 @@ static-analysis-coala:
 
 # Static analysis - type checks
 type-check:
+  extends: .merge-request
   stage: test
   script:
     - tox -v -e type-check
 
 # Installation Fedora
 installation-fedora:
+  extends: .merge-request
   stage: test
   image: registry.fedoraproject.org/fedora:32
   script:
@@ -73,6 +81,7 @@ installation-fedora:
 
 # Installation Centos8
 installation-centos8:
+  extends: .merge-request
   stage: test
   image: registry.centos.org/centos/centos:8
   script:
@@ -83,6 +92,7 @@ installation-centos8:
 
 # Installation RHEL8
 installation-rhel8:
+  extends: .merge-request
   stage: test
   # using universal base images for RHEL8
   # https://access.redhat.com/articles/4238681
