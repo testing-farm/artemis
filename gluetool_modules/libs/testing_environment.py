@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Union  # noqa
 
 
 ComposeType = Union[str, gluetool_modules.libs._UniqObject]
-ArchType = str
+ArchType = Union[str, gluetool_modules.libs._UniqObject]
 SnapshotsType = bool
 
 

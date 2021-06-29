@@ -313,7 +313,7 @@ class TestScheduleTMT(Module):
         # For each plan, architecture and compose, create a schedule entry
         for plan in plans:
             for tec in testing_environment_constraints:
-                if tec.arch == cast(str, tec.ANY):
+                if tec.arch == tec.ANY:
                     self.warn('TMT scheduler does not support open constraints', sentry=True)
                     continue
 
