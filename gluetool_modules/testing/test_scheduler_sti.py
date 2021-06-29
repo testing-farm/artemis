@@ -173,7 +173,7 @@ class TestSchedulerSTI(gluetool.Module):
         # For each playbook, architecture and compose, create a schedule entry
         for playbook in playbooks:
             for tec in testing_environment_constraints:
-                if tec.arch == cast(str, tec.ANY):
+                if tec.arch == tec.ANY:
                     self.warn('STI scheduler does not support open constraints', sentry=True)
                     continue
 
