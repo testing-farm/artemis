@@ -603,9 +603,14 @@ class ArtemisGuest(NetworkedGuest):
 
     def destroy(self):
         # type: () -> None
+
+        self.info('destroying guest')
+
         self._release_snapshots()
         self._release_instance()
         cast(ArtemisProvisioner, self._module).remove_from_list(self)
+
+        self.info('successfully released')
 
 
 class ArtemisProvisioner(gluetool.Module):
@@ -1012,6 +1017,6 @@ class ArtemisProvisioner(gluetool.Module):
             return
 
         for guest in self.guests[:]:
-            guest.info('Canceling guest')
             guest.destroy()
-            guest.info('Successfully removed guest')
+
+        self.info('successfully removed all guests')

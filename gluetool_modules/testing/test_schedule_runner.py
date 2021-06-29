@@ -228,6 +228,11 @@ class TestScheduleRunner(gluetool.Module):
         ):
             schedule_entry.guest.destroy()
 
+    def _cleanup(self, schedule_entry):
+        # type: (TestScheduleEntry) -> None
+
+        self._destroy_guest(schedule_entry)
+
     def _run_tests(self, schedule_entry):
         # type: (TestScheduleEntry) -> None
 
@@ -386,13 +391,19 @@ class TestScheduleRunner(gluetool.Module):
                 # but leaving that for another patch as we don't have unified "report results"
                 # structure yet.
 
+                _shift(schedule_entry, TestScheduleEntryStage.CLEANUP)
+
+                engine.enqueue_jobs(_job(schedule_entry, 'cleanup', self._cleanup))
+
+            elif schedule_entry.stage == TestScheduleEntryStage.CLEANUP:
+                schedule_entry.info('cleanup finished')
+
                 _shift(schedule_entry, TestScheduleEntryStage.COMPLETE)
 
                 _finish_action(schedule_entry)
 
-                # If parallelization is off, destroy guest and enqueue new entry
+                # If parallelization is off, enqueue new entry
                 if schedule_queue:
-                    self._destroy_guest(schedule_entry)
                     schedule_queue_entry = schedule_queue.pop(0)
                     _set_action(schedule_queue_entry)
                     engine.enqueue_jobs(_job(schedule_queue_entry, 'get entry ready', self._get_entry_ready))
@@ -413,12 +424,20 @@ class TestScheduleRunner(gluetool.Module):
             elif schedule_entry.stage == TestScheduleEntryStage.RUNNING:
                 schedule_entry.error('test execution failed: {}'.format(exc), exc_info=exc_info)
 
+            elif schedule_entry.stage == TestScheduleEntryStage.CLEANUP:
+                schedule_entry.error('cleanup failed: {}'.format(exc), exc_info=exc_info)
+
+            if schedule_entry.stage in (
+                TestScheduleEntryStage.GUEST_PROVISIONED, TestScheduleEntryStage.GUEST_SETUP,
+                TestScheduleEntryStage.PREPARED, TestScheduleEntryStage.RUNNING
+            ):
+                self._cleanup(schedule_entry)
+
             _shift(schedule_entry, TestScheduleEntryStage.COMPLETE, new_state=TestScheduleEntryState.ERROR)
 
             _finish_action(schedule_entry)
 
             if schedule_queue:
-                self._destroy_guest(schedule_entry)
                 schedule_queue_entry = schedule_queue.pop(0)
                 _set_action(schedule_queue_entry)
                 engine.enqueue_jobs(_job(schedule_queue_entry, 'get entry ready', self._get_entry_ready))

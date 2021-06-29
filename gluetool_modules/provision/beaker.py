@@ -338,11 +338,16 @@ class BeakerGuest(NetworkedGuest):
 
     def destroy(self):
         # type: () -> None
+
+        self.info('destroying guest')
+
         if self._is_static:
             return
 
         cast(BeakerProvisioner, self._module)._release_dynamic_guest(self)
         cast(BeakerProvisioner, self._module).remove_from_list(self)
+
+        self.info('successfully released')
 
 
 class BeakerProvisioner(gluetool.Module):
