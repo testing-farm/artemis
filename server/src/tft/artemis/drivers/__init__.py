@@ -24,7 +24,7 @@ from typing_extensions import Protocol, TypedDict
 from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
     process_output_to_str, refresh_cached_set, safe_call
 from ..context import CACHE, LOGGER
-from ..db import GuestLog, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import UNITS, Environment, Flavor
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 
@@ -236,6 +236,9 @@ class PoolCapabilities:
     #: execute it in the preparation stage.
     supports_native_post_install_script: bool = False
 
+    #: List of log name/log content type pairs describing that logs are supported by the driver.
+    supported_guest_logs: List[Tuple[str, GuestLogContentType]] = dataclasses.field(default_factory=list)
+
     def supports_arch(self, arch: str) -> bool:
         """
         Check whether a given architecture is supported. It is either listed among architectures supported
@@ -250,6 +253,9 @@ class PoolCapabilities:
         # Here we know the attribute must be a list, because we ruled out the `AnyArchitecture` above, but mypy
         # can't deduce it.
         return arch in cast(List[str], self.supported_architectures)
+
+    def supports_guest_log(self, logname: str, contenttype: GuestLogContentType) -> bool:
+        return (logname, contenttype) in self.supported_guest_logs
 
 
 @dataclasses.dataclass

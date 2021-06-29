@@ -204,7 +204,12 @@ class AWSDriver(PoolDriver):
         if r_capabilities.is_error:
             return r_capabilities
 
-        r_capabilities.unwrap().supports_native_post_install_script = True
+        capabilities = r_capabilities.unwrap()
+        capabilities.supports_native_post_install_script = True
+        capabilities.supported_guest_logs = [
+            ('console', GuestLogContentType.BLOB)
+        ]
+
         return r_capabilities
 
     def sanity(self) -> Result[bool, Failure]:

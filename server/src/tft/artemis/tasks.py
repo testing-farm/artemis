@@ -28,7 +28,7 @@ from . import KNOB_POOL_ENABLED, Failure, Knob, get_broker, get_db, get_logger, 
 from .context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
     SnapshotRequest, SSHKey, safe_db_change, upsert
-from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
+from .drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver
 from .drivers import beaker as beaker_driver
@@ -2261,7 +2261,7 @@ def do_update_guest_log(
 
         return handle_success('finished-task', return_value=RESCHEDULE)
 
-    logger.warning(f'guest-log: {guest_log.logname} {guest_log.contenttype} {guest_log.state}')
+    logger.warning(f'logname={logname} contenttype={contenttype} state={guest_log.state}')
 
     if guest_log.state == GuestLogState.ERROR:
         # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
@@ -2287,7 +2287,30 @@ def do_update_guest_log(
 
     assert workspace.pool
 
-    if guest_log.state == GuestLogState.COMPLETE:
+    r_capabilities = workspace.pool.capabilities()
+
+    if r_capabilities.is_error:
+        return handle_failure(r_capabilities, 'failed to fetch pool capabilities')
+
+    capabilities = r_capabilities.unwrap()
+
+    if not capabilities.supports_guest_log(logname, contenttype):
+        # If the guest request reached its final states, there's no chance for a pool change in the future,
+        # therefore UNSUPPORTED becomes final state as well.
+        if workspace.gr.state in (GuestState.READY.value, GuestState.CONDEMNED.value):
+            return handle_success('finished-task')
+
+        r_update: Result[GuestLogUpdateProgress, Failure] = Ok(GuestLogUpdateProgress(
+            state=GuestLogState.UNSUPPORTED
+        ))
+
+    elif guest_log.state == GuestLogState.UNSUPPORTED:
+        r_update = workspace.pool.update_guest_log(
+            workspace.gr,
+            guest_log
+        )
+
+    elif guest_log.state == GuestLogState.COMPLETE:
         if not guest_log.is_expired:
             return handle_success('finished-task')
 
@@ -2346,7 +2369,7 @@ def do_update_guest_log(
     if update_progress.state == GuestLogState.ERROR:
         return handle_success('finished-task')
 
-    # PENDING or IN_PROGRESS proceed the same way
+    # PENDING, IN_PROGRESS and UNSUPPORTED proceed the same way
     workspace.dispatch_task(
         update_guest_log,
         guestname,

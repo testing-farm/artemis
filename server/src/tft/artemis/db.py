@@ -418,6 +418,9 @@ class UserRoles(enum.Enum):
 
 
 class GuestLogState(enum.Enum):
+    #: Given that Artemis may switch to another pool in the future, until the request is in ``READY`` state,
+    #: this particular state is transient.
+    UNSUPPORTED = 'unsupported'
     PENDING = 'pending'
     IN_PROGRESS = 'in-progress'
     COMPLETE = 'complete'

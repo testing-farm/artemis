@@ -103,6 +103,10 @@ class OpenStackDriver(PoolDriver):
         capabilities.supports_native_post_install_script = True
         capabilities.supports_console_url = True
         capabilities.supports_snapshots = True
+        capabilities.supported_guest_logs = [
+            ('console', GuestLogContentType.BLOB),
+            ('console', GuestLogContentType.URL)
+        ]
 
         return r_capabilities
 
