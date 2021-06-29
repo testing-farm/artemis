@@ -254,7 +254,10 @@ class TestScheduleTMT(Module):
 
         except GlueCommandError as exc:
             assert exc.output.stderr
-            log_blob(self.error, "Failed to get list of plans".format(command), exc.output.stderr)
+            log_dict(self.error, "Failed to get list of plans", {
+                'command': ' '.join(command),
+                'exception': exc.output.stderr
+            })
             six.reraise(*sys.exc_info())
 
         assert tmt_output.stdout
@@ -310,7 +313,7 @@ class TestScheduleTMT(Module):
         # For each plan, architecture and compose, create a schedule entry
         for plan in plans:
             for tec in testing_environment_constraints:
-                if tec.arch == tec.ANY:
+                if tec.arch == cast(str, tec.ANY):
                     self.warn('TMT scheduler does not support open constraints', sentry=True)
                     continue
 

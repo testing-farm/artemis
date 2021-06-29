@@ -12,7 +12,7 @@ from gluetool_modules.libs.testing_environment import TestingEnvironment
 from gluetool_modules.libs.test_schedule import TestSchedule, TestScheduleEntry as BaseTestScheduleEntry
 
 # Type annotations
-from typing import Any, Dict, List, Optional  # noqa
+from typing import Any, cast, Dict, List, Optional  # noqa
 
 
 class TestScheduleEntry(BaseTestScheduleEntry):
@@ -173,7 +173,7 @@ class TestSchedulerSTI(gluetool.Module):
         # For each playbook, architecture and compose, create a schedule entry
         for playbook in playbooks:
             for tec in testing_environment_constraints:
-                if tec.arch == tec.ANY:
+                if tec.arch == cast(str, tec.ANY):
                     self.warn('STI scheduler does not support open constraints', sentry=True)
                     continue
 
