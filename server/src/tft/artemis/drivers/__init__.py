@@ -1364,6 +1364,7 @@ def run_cli_tool(
             PoolMetrics.inc_cli_call(
                 poolname,
                 commandname,
+                output.exit_code,
                 command_time
             )
 

@@ -693,6 +693,7 @@ class PoolMetrics(MetricsBase):
 
     _KEY_ERRORS = 'metrics.pool.{poolname}.errors'
     _KEY_CLI_CALLS = 'metrics.pool.{poolname}.cli-calls'
+    _KEY_CLI_EXIT_CODES = 'metrics.pool.{poolname}.cli-calls.exit-codes'
     _KEY_CLI_CALLS_DURATIONS = 'metrics.pool.{poolname}.cli-calls.durations'
 
     # Image & flavor refresh process does not have their own metrics, hence using this container to track the "last
@@ -714,6 +715,8 @@ class PoolMetrics(MetricsBase):
 
     # commandname => count
     cli_calls: Dict[str, int]
+    # commandname:exitcode => count
+    cli_calls_exit_codes: Dict[Tuple[str, str], int]
     # bucket:commandname => count
     cli_calls_durations: Dict[Tuple[str, str], int]
 
@@ -736,6 +739,7 @@ class PoolMetrics(MetricsBase):
         )
 
         self.key_cli_calls = self._KEY_CLI_CALLS.format(poolname=poolname)
+        self.key_cli_calls_exit_codes = self._KEY_CLI_EXIT_CODES.format(poolname=poolname)
         self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)
 
         self.poolname = poolname
@@ -751,6 +755,7 @@ class PoolMetrics(MetricsBase):
         self.flavor_info_updated_timestamp = None
 
         self.cli_calls = {}
+        self.cli_calls_exit_codes = {}
         self.cli_calls_durations = {}
 
         self.__post_init__()
@@ -822,6 +827,7 @@ class PoolMetrics(MetricsBase):
     def inc_cli_call(
         poolname: str,
         commandname: str,
+        exit_code: int,
         duration: float,
         logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
@@ -831,6 +837,7 @@ class PoolMetrics(MetricsBase):
 
         :param poolname: pool that executed the command.
         :param commandname: command "ID" - something to tell commands and group of commands apart.
+        :param exit_code: exit code of the command.
         :param duration: duration of the command session, in seconds.
         :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
@@ -843,6 +850,14 @@ class PoolMetrics(MetricsBase):
             cache,
             PoolMetrics._KEY_CLI_CALLS.format(poolname=poolname),
             commandname
+        )
+
+        # exit code
+        inc_metric_field(
+            logger,
+            cache,
+            PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),
+            f'{commandname}:{exit_code}'
         )
 
         # duration
@@ -927,6 +942,16 @@ class PoolMetrics(MetricsBase):
             ).items()
         }
 
+        # commandname:exit-code => count
+        self.cli_calls_exit_codes = {
+            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            for field, count in get_metric_fields(
+                logger,
+                cache,
+                self.key_cli_calls_exit_codes
+            ).items()
+        }
+
         # bucket:commandname => count
         self.cli_calls_durations = {
             cast(Tuple[str, str], tuple(field.split(':', 2))): count
@@ -957,6 +982,7 @@ class UndefinedPoolMetrics(MetricsBase):
     flavor_info_updated_timestamp: Optional[float]
 
     cli_calls: Dict[str, int]
+    cli_calls_exit_codes: Dict[Tuple[str, str], int]
     cli_calls_durations: Dict[Tuple[str, str], int]
 
     def __init__(self, poolname: str) -> None:
@@ -979,6 +1005,7 @@ class UndefinedPoolMetrics(MetricsBase):
         self.flavor_info_updated_timestamp = None
 
         self.cli_calls = {}
+        self.cli_calls_exit_codes = {}
         self.cli_calls_durations = {}
 
         self.__post_init__()
@@ -1143,6 +1170,13 @@ class PoolsMetrics(MetricsBase):
             registry=registry
         )
 
+        self.CLI_CALLS_EXIT_CODES = Counter(
+            'cli_calls_exit_codes',
+            'Overall total number of CLI commands exit codes, per pool, command name and exit code.',
+            ['pool', 'command', 'exit_code'],
+            registry=registry
+        )
+
         self.CLI_CALLS_DURATIONS = Histogram(
             'cli_call_duration_seconds',
             'The time spent executing CLI commands, by pool and command name.',
@@ -1161,6 +1195,7 @@ class PoolsMetrics(MetricsBase):
         reset_counters(self.POOL_ERRORS)
         reset_counters(self.POOL_COSTS)
         reset_counters(self.CLI_CALLS)
+        reset_counters(self.CLI_CALLS_EXIT_CODES)
         reset_histogram(self.CLI_CALLS_DURATIONS)
 
         for poolname, pool_metrics in self.pools.items():
@@ -1226,6 +1261,11 @@ class PoolsMetrics(MetricsBase):
             for commandname, count in pool_metrics.cli_calls.items():
                 self.CLI_CALLS \
                     .labels(pool=poolname, command=commandname) \
+                    ._value.set(count)
+
+            for (commandname, exit_code), count in pool_metrics.cli_calls_exit_codes.items():
+                self.CLI_CALLS_EXIT_CODES \
+                    .labels(pool=poolname, command=commandname, exit_code=exit_code) \
                     ._value.set(count)
 
             for (bucket_threshold, commandname), count in pool_metrics.cli_calls_durations.items():

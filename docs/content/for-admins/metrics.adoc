@@ -82,6 +82,7 @@ Following metrics are generated for every known pool, and represent limits and c
 === Pool operations
 
 * `cli_calls` (counter): Overall total number of CLI commands executed, per pool and command name.
+* `cli_calls_exit_codes` (counter): Overall total number of CLI commands exit codes, per pool, command name and exit code.
 * `cli_call_duration_seconds` (histogram): The time spent executing CLI commands, by pool and command name.
 * `pool_errors` (counter): Overall total number of pool errors, per pool and error.
 
