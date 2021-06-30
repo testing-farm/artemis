@@ -85,6 +85,19 @@ TEST_DOCS_MAP = [
     }
 ]
 
+ERROR_REASON_MAP = [
+    {
+        'rules': '1 != 1'
+    },
+    {
+        'rules': 'PRIMARY_TASK'
+    },
+    {
+       'rules': 'PRIMARY_TASK',
+       'reason': 'some-reason'
+    }
+]
+
 RUN = {
     'debug': 'http://example.com/debug',
     'url': 'http://example.com/url'
@@ -110,7 +123,13 @@ def test_dont_report_running(module, log):
 
 
 def test_no_maps(module):
-    assert [module.artifact_map, module.run_map, module.final_state_map] == [[], [], []]
+    assert [
+        module.artifact_map,
+        module.run_map,
+        module.final_state_map,
+        module.error_reason_map,
+        module.test_docs_map
+    ] == [[], [], [], [], []]
 
 
 @pytest.fixture(name='rules_engine')
@@ -135,7 +154,8 @@ def fixture_maps(module, monkeypatch):
         'artifact-map': ARTIFACT_MAP,
         'run-map': RUN_MAP,
         'final-state-map': FINAL_STATE_MAP,
-        'test-docs-map': TEST_DOCS_MAP
+        'test-docs-map': TEST_DOCS_MAP,
+        'error-reason-map': ERROR_REASON_MAP
     })
 
     # fake load yaml to directly return our maps
@@ -182,7 +202,11 @@ def fixture_namespace(module, monkeypatch, task):
 @pytest.fixture(name='mock_namespace')
 def fixture_mock_namespace(module, monkeypatch):
     monkeypatch.setattr(module, '_get_test_namespace', lambda: 'namespace')
-    monkeypatch.setattr(gluetool.utils, 'render_template', lambda *args, **kwargs: 'topic')
+    monkeypatch.setattr(
+        gluetool.utils,
+        'render_template',
+        lambda *args, **kwargs: 'some-reason' if 'ERROR_MESSAGE' in kwargs else 'topic'
+    )
 
 
 @pytest.fixture(name='publish_messages')
@@ -280,7 +304,7 @@ def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish
         'namespace': 'namespace',
         'docs': 'some-docs',
         'note': 'some-note',
-        'reason': None,
+        'reason': 'some-reason',
         'type': 'some-type',
         'version': '0.1.0'
     }
