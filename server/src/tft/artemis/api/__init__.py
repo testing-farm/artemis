@@ -29,7 +29,7 @@ from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 from typing_extensions import Protocol
 
-from .. import __VERSION__, Failure, FailureDetailsType, JSONSchemaType, JSONType, Knob
+from .. import __VERSION__, KNOB_LOGGING_JSON, Failure, FailureDetailsType, JSONSchemaType, JSONType, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, safe_db_change, validate_data
 from ..context import DATABASE, LOGGER
@@ -2365,6 +2365,23 @@ def main() -> NoReturn:
     if KNOB_API_ENGINE_RELOAD_ON_CHANGE.value is True:
         gunicorn_options += [
             '--reload'
+        ]
+
+    if KNOB_LOGGING_JSON.value is True:
+        # See https://docs.gunicorn.org/en/stable/settings.html#access-log-format
+        gunicorn_options += [
+            '--access-logformat',
+            json.dumps({
+                'client': '%(h)s',
+                'request_method': '%(m)s',
+                'request_path': '%(U)s',
+                'request_query_string': '%(q)s',
+                'request_status_line': '%(r)s',
+                'request_user_agent': '%(a)s',
+                'response_code': '%(s)s',
+                'response_length': '%(B)s',
+                'duration': '%(D)s'
+            })
         ]
 
     os.execve(
