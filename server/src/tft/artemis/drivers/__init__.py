@@ -1466,7 +1466,10 @@ def run_remote(
     command: List[str],
     *,
     key: SSHKey,
-    ssh_timeout: int
+    ssh_timeout: int,
+    # for CLI calls metrics
+    poolname: Optional[str] = None,
+    commandname: Optional[str] = None
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -1485,7 +1488,9 @@ def run_remote(
                 # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
                 # parameters. Therefore joining it into a single string here, instead of bothering the caller.
                 command_join(command)
-            ]
+            ],
+            poolname=poolname,
+            commandname=commandname
         )
 
 
@@ -1496,7 +1501,10 @@ def copy_to_remote(
     dst: str,
     *,
     key: SSHKey,
-    ssh_timeout: int
+    ssh_timeout: int,
+    # for CLI calls metrics
+    poolname: Optional[str] = None,
+    commandname: Optional[str] = None
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -1512,7 +1520,9 @@ def copy_to_remote(
                 '-o', f'ConnectTimeout={ssh_timeout}',
                 src,
                 f'root@{guest_request.address}:{dst}',
-            ]
+            ],
+            poolname=poolname,
+            commandname=commandname
         )
 
 
@@ -1523,7 +1533,10 @@ def copy_from_remote(
     dst: str,
     *,
     key: SSHKey,
-    ssh_timeout: int
+    ssh_timeout: int,
+    # for CLI calls metrics
+    poolname: Optional[str] = None,
+    commandname: Optional[str] = None
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -1539,7 +1552,9 @@ def copy_from_remote(
                 '-o', f'ConnectTimeout={ssh_timeout}',
                 f'root@{guest_request.address}:{src}',
                 dst
-            ]
+            ],
+            poolname=poolname,
+            commandname=commandname
         )
 
 

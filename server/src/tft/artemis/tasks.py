@@ -2378,7 +2378,9 @@ def do_prepare_verify_ssh(
         workspace.gr,
         ['bash', '-c', 'echo ping'],
         key=r_master_key.unwrap(),
-        ssh_timeout=r_ssh_timeout.unwrap()
+        ssh_timeout=r_ssh_timeout.unwrap(),
+        poolname=workspace.pool.poolname,
+        commandname='prepare-verify-ssh.shell-ping'
     )
 
     if r_ssh.is_error:
@@ -2453,7 +2455,9 @@ def do_prepare_post_install_script(
             post_install_filepath,
             POST_INSTALL_SCRIPT_REMOTE_FILEPATH,
             key=r_master_key.unwrap(),
-            ssh_timeout=r_ssh_timeout.unwrap()
+            ssh_timeout=r_ssh_timeout.unwrap(),
+            poolname=workspace.pool.poolname,
+            commandname='prepare-post-install-script.copy-to-remote'
         )
 
     if r_upload.is_error:
@@ -2464,7 +2468,9 @@ def do_prepare_post_install_script(
         workspace.gr,
         ['/bin/sh', POST_INSTALL_SCRIPT_REMOTE_FILEPATH],
         key=r_master_key.unwrap(),
-        ssh_timeout=r_ssh_timeout.unwrap()
+        ssh_timeout=r_ssh_timeout.unwrap(),
+        poolname=workspace.pool.poolname,
+        commandname='prepare-post-install-script.execute'
     )
 
     if r_ssh.is_error:
