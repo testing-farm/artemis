@@ -10,6 +10,8 @@ import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import dramatiq
+import dramatiq.broker
+import dramatiq.middleware.current_message
 import gluetool.log
 import gluetool.utils
 import periodiq
@@ -23,7 +25,7 @@ from typing_extensions import Protocol
 
 from . import KNOB_POOL_ENABLED, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
     log_guest_event, metrics, safe_call, safe_db_change
-from .context import DATABASE, LOGGER, SESSION, with_context
+from .context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
     SnapshotRequest, SSHKey, upsert
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
@@ -757,6 +759,7 @@ def task_core(
     # TODO: once we get nicer method, set context explicitly here
     LOGGER.set(logger)
     DATABASE.set(db)
+    CURRENT_MESSAGE.set(dramatiq.middleware.current_message.CurrentMessage.get_current_message())
 
     # Small helper so we can keep all session-related stuff inside one block, and avoid repetition or more than
     # one `get_session()` call.
@@ -2378,7 +2381,11 @@ def do_prepare_verify_ssh(
 
     assert workspace.gr
     assert workspace.gr.address
+    assert workspace.gr.poolname
     assert workspace.pool
+
+    from .middleware import NOTE_POOLNAME, set_message_note
+    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     r_master_key = _get_master_key()
 
@@ -2453,7 +2460,11 @@ def do_prepare_post_install_script(
 
     assert workspace.gr
     assert workspace.gr.address
+    assert workspace.gr.poolname
     assert workspace.pool
+
+    from .middleware import NOTE_POOLNAME, set_message_note
+    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     r_master_key = _get_master_key()
 
@@ -2530,6 +2541,10 @@ def do_guest_request_prepare_finalize_pre_connect(
         return workspace.result
 
     assert workspace.gr
+    assert workspace.gr.poolname
+
+    from .middleware import NOTE_POOLNAME, set_message_note
+    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     tasks: List[Actor] = []
 
@@ -2596,6 +2611,15 @@ def do_guest_request_prepare_finalize_post_connect(
     workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
 
+    if workspace.result:
+        return workspace.result
+
+    assert workspace.gr
+    assert workspace.gr.poolname
+
+    from .middleware import NOTE_POOLNAME, set_message_note
+    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
+
     workspace.update_guest_state(
         GuestState.READY,
         current_state=GuestState.PREPARING
@@ -2607,7 +2631,6 @@ def do_guest_request_prepare_finalize_post_connect(
     logger.info('successfully provisioned')
 
     # calculate provisioning duration time
-    assert workspace.gr is not None
     provisioning_duration = (datetime.datetime.utcnow() - workspace.gr.ctime).total_seconds()
     logger.info("provisioning duration: {}s".format(provisioning_duration))
 
@@ -2618,9 +2641,6 @@ def do_guest_request_prepare_finalize_post_connect(
     _handle_successful_failover(logger, session, workspace)
 
     # update metrics counter for successfully provisioned guest requests
-    assert workspace.gr
-    assert workspace.gr.poolname is not None
-
     metrics.ProvisioningMetrics.inc_success(workspace.gr.poolname)
 
     return handle_success('finished-task')
@@ -2680,6 +2700,9 @@ def do_release_guest_request(
     assert workspace.gr
 
     if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
+        from .middleware import NOTE_POOLNAME, set_message_note
+        set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
+
         spice_details['poolname'] = workspace.gr.poolname
 
         workspace.load_gr_pool()
@@ -2747,6 +2770,10 @@ def do_update_guest_request(
 
     assert workspace.gr
     assert workspace.pool
+    assert workspace.gr.poolname
+
+    from .middleware import NOTE_POOLNAME, set_message_note
+    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     spice_details['poolname'] = workspace.gr.poolname
     current_pool_data = workspace.gr.pool_data
@@ -3847,6 +3874,11 @@ def do_acquire_guest_console_url(
     workspace.load_gr_pool()
     assert workspace.pool
     assert workspace.gr
+    assert workspace.gr.poolname
+
+    from .middleware import NOTE_POOLNAME, set_message_note
+    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
+
     r_console = workspace.pool.acquire_console_url(logger, workspace.gr)
     if r_console.is_error:
         handle_failure(r_console, 'failed to get guest console')

@@ -281,12 +281,49 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         _retry_message(logger, broker, message, actor)
 
 
+MESSAGE_NOTE_OPTION_KEY = 'artemis_notes'
+NOTE_POOLNAME = 'poolname'
+
+
+# TODO: once circular imports are resolved, use @with_context
+def set_message_note(note: str, value: str) -> None:
+    """
+    Attach a "note" to the current message.
+
+    Tasks may need to expose some additional information that cannot be passed to middleware directly, to extend
+    context available to the middleware. This information in stored under special keys of current message's ``options``
+    mapping.
+    """
+
+    from .context import CURRENT_MESSAGE
+
+    options = cast(Dict[str, Dict[str, str]], CURRENT_MESSAGE.get().options)
+    options.setdefault(MESSAGE_NOTE_OPTION_KEY, {})
+    options[MESSAGE_NOTE_OPTION_KEY][note] = value
+
+
+def get_metric_note(note: str) -> Optional[str]:
+    """
+    Get an optional note from the current message.
+    """
+
+    from .context import CURRENT_MESSAGE
+
+    options = cast(Dict[str, Dict[str, str]], CURRENT_MESSAGE.get().options)
+
+    return options.get(MESSAGE_NOTE_OPTION_KEY, {}).get(note)
+
+
 class Prometheus(dramatiq.middleware.Middleware):  # type: ignore  # Class cannot subclass 'Middleware'
     def __init__(self) -> None:
         super(Prometheus, self).__init__()
 
         self._delayed_messages: Set[str] = set()
         self._message_start_times: Dict[str, int] = {}
+
+    @property
+    def actor_options(self) -> Set[str]:
+        return {MESSAGE_NOTE_OPTION_KEY}
 
     def after_nack(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
         from .metrics import TaskMetrics
@@ -341,11 +378,23 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore  # Class canno
 
         message_start_time = self._message_start_times.pop(message.message_id, current_millis())
         message_duration = current_millis() - message_start_time
+
+        # Extract the poolname. `None` is a good starting value, but it turns out that most of the tasks
+        # relate to a particular pool in one way or another. Some tasks are given the poolname as a parameter,
+        # and some can tell us by attaching a note to the message.
+        poolname: Optional[str] = None
+
+        if 'poolname' in actor_arguments:
+            poolname = actor_arguments['poolname']
+
+        elif message.options:
+            poolname = get_metric_note(NOTE_POOLNAME)
+
         TaskMetrics.inc_message_durations(
             message.queue_name,
             message.actor_name,
             message_duration,
-            actor_arguments.get('poolname', None)
+            poolname
         )
 
         TaskMetrics.dec_current_messages(*labels)
