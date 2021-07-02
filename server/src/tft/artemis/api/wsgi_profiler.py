@@ -1,34 +1,19 @@
-import cProfile
-import io
-import pstats
-import time
-from typing import Any
-
-from gluetool.log import log_blob
+from typing import Any, cast
 
 # No relative import here - this file is used by gunicorn directly, not imported by our code.
 # This will fool mypy into thinking we can't import them, but we really can.
 from tft.artemis import get_logger  # type: ignore
 from tft.artemis.api import KNOB_API_PROFILE_LIMIT  # type: ignore
+from tft.artemis.profile import Profiler  # type: ignore
 
 
 def pre_request(worker: Any, request: Any) -> None:
-    worker.start_time = time.time()
-
-    worker.profile = cProfile.Profile()
-    worker.profile.enable()
+    worker.profiler = Profiler()
+    worker.profiler.start()
 
 
 def post_request(worker: Any, request: Any, *args: Any) -> None:
-    worker.profile.disable()
+    profiler = cast(Profiler, worker.profiler)  # type: ignore  # mypy reports redundant cast, it's a mypy issue
 
-    worker.elapsed_time = time.time() - worker.start_time
-
-    logger = get_logger()
-
-    s = io.StringIO()
-
-    ps = pstats.Stats(worker.profile, stream=s).sort_stats('time', 'cumulative')
-    ps.print_stats(KNOB_API_PROFILE_LIMIT.value)
-
-    log_blob(logger.info, '"{} {}", spent {:.3}'.format(request.method, request.uri, worker.elapsed_time), s.getvalue())
+    profiler.stop()
+    profiler.log(get_logger(), f'profiled "{request.method} {request.uri}"', limit=KNOB_API_PROFILE_LIMIT.value)
