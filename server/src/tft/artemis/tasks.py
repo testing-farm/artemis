@@ -2,6 +2,7 @@ import concurrent.futures
 import contextvars
 import datetime
 import enum
+import inspect
 import json
 import os
 import random
@@ -10,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import dramatiq
 import gluetool.log
+import gluetool.utils
 import periodiq
 import sqlalchemy
 import sqlalchemy.dialects.postgresql
@@ -30,6 +32,7 @@ from .drivers import azure as azure_driver
 from .drivers import beaker as beaker_driver
 from .drivers import openstack as openstack_driver
 from .guest import GuestLogger, GuestState, SnapshotLogger
+from .profile import Profiler
 from .routing_policies import PolicyRuling
 from .script import hook_engine
 
@@ -730,6 +733,16 @@ def task_core(
 ) -> None:
     logger.begin()
 
+    profiler = Profiler()
+
+    # TODO: implement a proper decorator, or merge this into @task decorator - but @task seems to be flawed,
+    # which requires a fix, therefore merge this into @task once it gets fixed.
+    actor_name = inspect.stack()[1].frame.f_code.co_name
+    profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
+
+    if profile_actor:
+        profiler.start()
+
     db = db or get_root_db()
     cancel = cancel or threading.Event()
 
@@ -836,6 +849,10 @@ def task_core(
         failure.handle(logger)
 
         doer_result = Error(failure)
+
+    if profile_actor:
+        profiler.stop()
+        profiler.log(logger, 'profiling report')
 
     if doer_result.is_ok:
         result = doer_result.unwrap()
