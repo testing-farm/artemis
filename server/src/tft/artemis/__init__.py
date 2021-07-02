@@ -18,6 +18,7 @@ import dramatiq.brokers.rabbitmq
 import dramatiq.brokers.stub
 import dramatiq.middleware.age_limit
 import dramatiq.middleware.callbacks
+import dramatiq.middleware.current_message
 import dramatiq.middleware.shutdown
 import dramatiq.middleware.time_limit
 import dramatiq.rate_limits.backends
@@ -1371,6 +1372,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
             dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
             dramatiq.middleware.callbacks.Callbacks(),
             dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
+            dramatiq.middleware.current_message.CurrentMessage(),
             artemis_middleware.Prometheus(),
             artemis_middleware.Retries(),
             periodiq.PeriodiqMiddleware()
@@ -1397,6 +1399,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
                 dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
                 dramatiq.middleware.callbacks.Callbacks(),
                 dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
+                dramatiq.middleware.current_message.CurrentMessage(),
                 artemis_middleware.Prometheus(),
                 artemis_middleware.Retries(),
                 periodiq.PeriodiqMiddleware()
