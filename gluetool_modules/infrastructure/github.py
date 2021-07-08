@@ -244,6 +244,28 @@ class GitHubAPI(object):
 
         return self._set_commit_status(url, status_data)
 
+    def get_file(self, pull_request, file_path):
+        # type: (GitHubPullRequest, str) -> str
+        """
+        Get a single file from the repository.
+
+        Refer to https://docs.github.com/en/rest/reference/repos#get-repository-content
+        for the API endpoint documentation.
+        """
+        path = 'repos/{owner}/{repo}/contents/{file_path}'.format(
+            owner=pull_request.owner, repo=pull_request.repo, file_path=file_path
+        )
+        url = self._compose_url(path)
+
+        response = self._get(url)
+
+        if isinstance(response.json(), list):
+            raise gluetool.GlueError('The {file_path} is a directory'.format(file_path=file_path))
+
+        response = self._get(response.json()['download_url'])
+
+        return response.content
+
 
 class GitHubPullRequest(object):
     ARTIFACT_NAMESPACE = 'github-pr'
@@ -265,9 +287,9 @@ class GitHubPullRequest(object):
 
         self.component = self.repo
 
-        github_api = module.github_api()
+        self.github_api = module.github_api()
 
-        pull_request = github_api.get_pull_request(self.owner, self.repo, self.pull_number)
+        pull_request = self.github_api.get_pull_request(self.owner, self.repo, self.pull_number)
 
         self.clone_url = pull_request['base']['repo']['clone_url']
         self.source_clone_url = pull_request['head']['repo']['clone_url']
@@ -288,20 +310,20 @@ class GitHubPullRequest(object):
         self.pull_head_branch_owner = pull_request['head']['user']['login']
 
         if self.comment_id:
-            comment = github_api.get_comment(self.owner, self.repo, self.comment_id)
+            comment = self.github_api.get_comment(self.owner, self.repo, self.comment_id)
 
             # if the triggering event was comment, commit sha is not available
             comment_created = comment['created_at']
             last_commit = pull_request['head']['sha']
 
-            commit = github_api.get_commit_by_timestamp(self.owner, self.repo, last_commit, comment_created)
+            commit = self.github_api.get_commit_by_timestamp(self.owner, self.repo, last_commit, comment_created)
             self.commit_sha = commit['sha']
 
             self.comment = comment['body']
             self.comment_author = comment['user']['login']
             self.comment_author_role = comment['author_association']
         else:
-            commit = github_api.get_commit(self.owner, self.repo, self.commit_sha)
+            commit = self.github_api.get_commit(self.owner, self.repo, self.commit_sha)
             self.comment = None
             self.comment_author = None
             self.comment_author_role = None
@@ -310,7 +332,7 @@ class GitHubPullRequest(object):
         self.commit_timestamp = commit['commit']['author']['date']
         self.commit_message = commit['commit']['message']
 
-        commit_statuses = github_api.get_commit_statuses(self.owner, self.repo, self.commit_sha)
+        commit_statuses = self.github_api.get_commit_statuses(self.owner, self.repo, self.commit_sha)
 
         self.commit_state = commit_statuses['state']
         self.commit_statuses = {}  # type: Dict[str, Dict[str, str]]
@@ -321,9 +343,11 @@ class GitHubPullRequest(object):
                 'updated_at': status['updated_at']
             }
 
-        self.pull_author_is_collaborator = github_api.is_collaborator(self.owner, self.repo, self.pull_author)
-        self.comment_author_is_collaborator = github_api.is_collaborator(self.owner, self.repo, self.comment_author)
-        self.pull_head_branch_owner_is_collaborator = github_api.is_collaborator(
+        self.pull_author_is_collaborator = self.github_api.is_collaborator(self.owner, self.repo, self.pull_author)
+        self.comment_author_is_collaborator = self.github_api.is_collaborator(
+            self.owner, self.repo, self.comment_author
+        )
+        self.pull_head_branch_owner_is_collaborator = self.github_api.is_collaborator(
             self.owner, self.repo, self.pull_head_branch_owner
         )
 
@@ -332,7 +356,7 @@ class GitHubPullRequest(object):
         else:
             self.labels = []
 
-        commits = github_api.get_pr_commits(self.owner, self.repo, self.pull_number)
+        commits = self.github_api.get_pr_commits(self.owner, self.repo, self.pull_number)
         depends_on_regex = re.compile(r'\s*Depends-On:\s*(.*/pull/|#)(\d+)', flags=re.IGNORECASE)
         depends_on = []  # type: List[str]
         for commit_message in [c['commit']['message'] for c in reversed(commits)]:
@@ -353,6 +377,15 @@ class GitHubPullRequest(object):
     def task_arches(self):
         # type: () -> TaskArches
         return TaskArches(True, ['noarch'])
+
+    def get_file(self, path):
+        # type: (str) -> str
+        """
+        Return the content of a file in the pull request.
+        """
+        content = self.github_api.get_file(self, path)
+        assert isinstance(content, str)
+        return content
 
 
 class PullRequestID(object):
