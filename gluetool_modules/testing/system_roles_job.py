@@ -4,7 +4,7 @@
 import gluetool
 import gluetool_modules.libs.dispatch_job
 
-from gluetool.utils import render_template
+from gluetool.utils import render_template, from_yaml, cached_property
 
 
 class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, gluetool.Module):
@@ -83,6 +83,10 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
             'help': 'Dictionary of compose substring/artemis options key-value pairs',
             'action': 'append',
             'default': []
+        },
+        'metadata-path': {
+            'help': 'Path to a metadata file',
+            'default': ''
         }
     })
 
@@ -125,6 +129,50 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
 
         return False
 
+    @cached_property
+    def parse_platforms_from_meta(self):
+
+        meta_file = from_yaml(
+            self.shared('primary_task').get_file(self.option('metadata-path'))
+        )
+
+        return meta_file['galaxy_info']['platforms']
+
+    @cached_property
+    def get_transformed_platforms(self):
+        """
+        In Ansible the 'EL' platform means both RHEL and CentOS.
+        It is needed to be transformed to simplify compose check.
+        The method replaces `EL` platform with `RHEL` and `CentOS`.
+        """
+        platforms = self.parse_platforms_from_meta
+        transformed_platforms = []
+        for platform in platforms:
+            if platform['name'] == 'EL':
+                transformed_platforms.append({'name': 'RHEL', 'versions': platform['versions']})
+                transformed_platforms.append({'name': 'CentOS', 'versions': platform['versions']})
+            else:
+                transformed_platforms.append(platform)
+        return transformed_platforms
+
+    def is_compose_supported(self, compose):
+        """
+        Check if compose is supported. The method tries to find
+        `name-version` substring in compose name where name is a distribution name
+        and version is a major version of the distribution.
+        """
+        platforms = self.get_transformed_platforms
+
+        for platform in platforms:
+            for version in platform['versions']:
+                if version == 'all':
+                    if platform['name'] in compose:
+                        return True
+                else:
+                    if '{}-{}'.format(platform['name'], version) in compose:
+                        return True
+        return False
+
     def execute(self):
 
         common_build_params = {
@@ -157,6 +205,15 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
                 pr_label = '{}/ansible-{}/(citool)'.format(
                     compose, ansible_version
                 )
+
+                if not self.is_compose_supported(compose):
+                    self.shared(
+                        'set_pr_status',
+                        'success',
+                        'The role does not support this platform. Skipping.',
+                        context=pr_label
+                    )
+                    continue
 
                 if primary_task.comment and primary_task.commit_statuses.get(pr_label):
                     # if comment is [citest bad] comment, trigger only failure or error tests
