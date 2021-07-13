@@ -67,6 +67,12 @@ class TestScheduleRunner(gluetool.Module):
             'default': 'no',
             'metavar': 'yes|no'
         },
+        'max-parallel': {
+            'help': 'Maximum number of entries running in parallel. (default: %(default)s)',
+            'type': int,
+            'default': 0,
+            'metavar': 'NUMBER'
+        },
         'schedule-entry-attribute-map': {
             'help': """Path to file with schedule entry attributes and rules, when to use them. See modules's
                     docstring for more details. (default: %(default)s)""",
@@ -108,7 +114,12 @@ class TestScheduleRunner(gluetool.Module):
         # type: () -> None
 
         if normalize_bool_option(self.option('parallelize')):
-            self.info('Will run schedule entries in parallel')
+            if self.option('max-parallel'):
+                self.info(
+                    'Will run schedule entries in parallel, {} entries at once'.format(self.option('max-parallel'))
+                )
+            else:
+                self.info('Will run schedule entries in parallel')
 
         else:
             self.info('Will run schedule entries serially')
@@ -240,7 +251,7 @@ class TestScheduleRunner(gluetool.Module):
     def _run_schedule(self, schedule):
         # type: (TestSchedule) -> None
 
-        schedule_queue = schedule[:] if not self.parallelize else None
+        schedule_queue = schedule[:] if not self.parallelize or self.option('max-parallel') else None
 
         def _job(schedule_entry, name, target):
             # type: (TestScheduleEntry, str, Callable[[TestScheduleEntry], Any]) -> Job
@@ -450,15 +461,32 @@ class TestScheduleRunner(gluetool.Module):
         )
 
         if self.parallelize:
-            for schedule_entry in schedule:
-                # We spawn new action for each schedule entry - we don't enter its context anywhere though!
-                # It serves only as a link between "schedule" action and "doing X to move entry forward" subactions,
-                # capturing lifetime of the schedule entry. It is then closed when we switch the entry to COMPLETE
-                # stage.
+            if self.option('max-parallel'):
+                for _ in range(self.option('max-parallel')):
 
-                _set_action(schedule_entry)
+                    assert schedule_queue is not None
 
-                engine.enqueue_jobs(_job(schedule_entry, 'get entry ready', self._get_entry_ready))
+                    if not schedule_queue:
+                        break
+
+                    schedule_queue_entry = schedule_queue.pop(0)
+
+                    assert schedule_queue_entry.testing_environment is not None
+
+                    _set_action(schedule_queue_entry)
+
+                    engine.enqueue_jobs(_job(schedule_queue_entry, 'get entry ready', self._get_entry_ready))
+
+            else:
+                for schedule_entry in schedule:
+                    # We spawn new action for each schedule entry - we don't enter its context anywhere though!
+                    # It serves only as a link between "schedule" action and "doing X to move entry forward" subactions,
+                    # capturing lifetime of the schedule entry. It is then closed when we switch the entry to COMPLETE
+                    # stage.
+
+                    _set_action(schedule_entry)
+
+                    engine.enqueue_jobs(_job(schedule_entry, 'get entry ready', self._get_entry_ready))
         else:
 
             assert schedule_queue is not None
