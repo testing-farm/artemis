@@ -7,15 +7,20 @@ from gluetool.log import log_dict
 
 import requests
 
+# Type annotations
+from typing import Any, Dict, List, Optional, Union, cast  # noqa
+
 
 class PagureApi(object):
 
     def __init__(self, pagure_url, pagure_url_port, module):
+        # type: (str, str, Pagure) -> None
         self.pagure_url = pagure_url
         self.pagure_url_port = pagure_url_port
         self.module = module
 
     def _get_json(self, location):
+        # type: (str) -> Dict[str, Any]
         url = '{}/{}'.format(self.pagure_url, location)
 
         self.module.debug('[Pagure API]: {}'.format(url))
@@ -27,18 +32,24 @@ class PagureApi(object):
 
         log_dict(self.module.debug, '[Pagure API] output', output)
 
+        assert isinstance(output, dict)
+
         return output
 
     def get_pull_request_info(self, project_name, pull_request_id):
+        # type: (str, str) -> Dict[str, Any]
         return self._get_json('api/0/{}/pull-request/{}'.format(project_name, pull_request_id))
 
     def get_project_info(self, project_name):
+        # type: (str) -> Dict[str, Any]
         return self._get_json('api/0/{}'.format(project_name))
 
     def get_clone_url(self, full_name):
+        # type: (str) -> str
         return '{}/{}.git'.format(self.pagure_url_port, full_name)
 
     def get_pr_ui_url(self, full_name, pull_request_id):
+        # type: (str, str) -> str
         return '{}/{}/pull-request/{}'.format(self.pagure_url, full_name, pull_request_id)
 
 
@@ -50,22 +61,26 @@ class PullRequestID(object):
     """
 
     def __init__(self, repository_name, repository_pr_id, comment_id=None):
+        # type: (str, str, Optional[str]) -> None
         self.repository_name = repository_name
         self.repository_pr_id = repository_pr_id
         self.comment_id = int(comment_id) if comment_id else None
 
     def __str__(self):
+        # type: () -> str
         if self.comment_id:
             return '{}:{}:{}'.format(self.repository_name, self.repository_pr_id, self.comment_id)
 
         return '{}:{}'.format(self.repository_name, self.repository_pr_id)
 
     def __repr__(self):
+        # type: () -> str
         return self.__str__()
 
 
 class PagureProject(object):
     def __init__(self, module, full_name):
+        # type: (Pagure, str) -> None
         self.module = module
         self.logger = module.logger
 
@@ -82,6 +97,7 @@ class PagurePullRequest(object):
     ARTIFACT_NAMESPACE = 'dist-git-pr'
 
     def __init__(self, module, pull_request_id):
+        # type: (Pagure, PullRequestID) -> None
         self.module = module
         self.logger = module.logger
 
@@ -118,6 +134,7 @@ class PagurePullRequest(object):
 
     @cached_property
     def url(self):
+        # type: () -> str
         return self.module.pagure_api().get_pr_ui_url(
             self.pull_request_id.repository_name,
             self.pull_request_id.repository_pr_id
@@ -156,11 +173,13 @@ class Pagure(gluetool.Module):
     shared_functions = ['primary_task', 'tasks', 'pagure_api']
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
         super(Pagure, self).__init__(*args, **kwargs)
-        self._pull_requests = []
+        self._pull_requests = []  # type: List[PagurePullRequest]
 
     @property
     def eval_context(self):
+        # type: () -> Dict[str, Union[str, PagurePullRequest, List[PagurePullRequest]]]
         __content__ = {  # noqa
             'ARTIFACT_TYPE': """
                              Type of the artifact, ``dist-git-pr`` in the case of ``pagure`` module.
@@ -188,6 +207,7 @@ class Pagure(gluetool.Module):
 
     @cached_property
     def _pagure_api(self):
+        # type: () -> PagureApi
         return PagureApi(self.option('pagure-url'), self.option('pagure-url-port'), self)
 
     def pagure_api(self):
@@ -195,23 +215,24 @@ class Pagure(gluetool.Module):
         """
         Returns PagureApi instance.
         """
-        return self._pagure_api
+        return cast(PagureApi, self._pagure_api)
 
     def primary_task(self):
-        # type: () -> PagurePullRequest
+        # type: () -> Optional[PagurePullRequest]
         """
         Returns first PagurePullRequest instance.
         """
         return self._pull_requests[0] if self._pull_requests else None
 
     def tasks(self):
-        # type: () -> [PagurePullRequest]
+        # type: () -> List[PagurePullRequest]
         """
         Returns all available PagurePullRequest instance.
         """
         return self._pull_requests
 
     def execute(self):
+        # type: () -> None
 
         for pull_request_option in normalize_multistring_option(self.option('pull-request')):
 
