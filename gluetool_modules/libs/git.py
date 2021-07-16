@@ -177,7 +177,31 @@ class RemoteGitRepository(gluetool.log.LoggerMixin):
             stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH  # noqa: E501  # line too long
         )
 
-        if ref:
+        if ref and ref.startswith('refs/pull'):
+            # Fetch the pull request
+            try:
+                gluetool.utils.Command([
+                    'git',
+                    '-C', actual_path,
+                    'fetch',
+                    clone_url,
+                    '{}:{}'.format(ref, ref)
+                ]).run()
+
+            except gluetool.GlueCommandError as exc:
+                raise gluetool.GlueError('Failed to fetch ref {}: {}'.format(ref, exc.output.stderr))
+
+            try:
+                gluetool.utils.Command([
+                    'git',
+                    '-C', actual_path,
+                    'checkout', ref
+                ]).run()
+
+            except gluetool.GlueCommandError as exc:
+                raise gluetool.GlueError('Failed to checkout branch {}: {}'.format(ref, exc.output.stderr))
+
+        elif ref:
             # Default branch name of a checkout via hash, we always checkout a "named" branch
             branch_name = ref[:8]
 
