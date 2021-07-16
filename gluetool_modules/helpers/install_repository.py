@@ -102,7 +102,7 @@ class InstallRepository(gluetool.Module):
 
         sut_installation.add_step(
             'Verify all packages installed',
-            "ls {} | sed 's/.rpm$//' | xargs rpm -q".format(packages)
+            "ls {} | sed 's/.*\/\(.*\).rpm$/\\1/' | xargs rpm -q".format(packages)
         )
 
         with Action(
