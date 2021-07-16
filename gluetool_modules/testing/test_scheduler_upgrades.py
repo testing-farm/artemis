@@ -64,30 +64,30 @@ class TestSchedulerUpgrades(gluetool.Module):
 
         # List of binary package names is obtained from compose metadata (metadata/rpms.json).
         # Only x86_64 builds are considered, upgrades for other arches are not yet supported.
-        metadate_rpms_json_path = '{}/metadata/rpms.json'.format(compose_url)
+        metadata_rpms_json_path = '{}/metadata/rpms.json'.format(compose_url)
 
         with gluetool.utils.requests(logger=self.logger) as requests:
             try:
-                response = requests.get(metadate_rpms_json_path)
+                response = requests.get(metadata_rpms_json_path)
                 response.raise_for_status()
             except requests.exceptions.RequestException:
-                raise gluetool.GlueError('Unable to fetch compose metadata from: {}'.format(metadate_rpms_json_path))
+                raise gluetool.GlueError('Unable to fetch compose metadata from: {}'.format(metadata_rpms_json_path))
 
-        metadate_rpms_json = response.json()
+        metadata_rpms_json = response.json()
 
-        binary_rpms_list = []
+        binary_rpms_set = set()
 
-        for repo_name in metadate_rpms_json['payload']['rpms']:
-            for srpm_name in metadate_rpms_json['payload']['rpms'][repo_name]['x86_64']:
+        for repo_name in metadata_rpms_json['payload']['rpms']:
+            for srpm_name in metadata_rpms_json['payload']['rpms'][repo_name]['x86_64']:
                 if splitFilename(srpm_name)[0] in components:
-                    binary_rpms_list.extend(
-                        metadate_rpms_json['payload']['rpms'][repo_name]['x86_64'][srpm_name].keys()
+                    binary_rpms_set.update(
+                        metadata_rpms_json['payload']['rpms'][repo_name]['x86_64'][srpm_name].keys()
                     )
 
-        binary_rpms_list = [package.encode('utf-8') for package in binary_rpms_list if not package.endswith('.src')]
-        log_dict(self.debug, 'binary rpm nevrs', binary_rpms_list)
+        binary_rpms_set = {package.encode('utf-8') for package in binary_rpms_set if not package.endswith('.src')}
+        log_dict(self.debug, 'binary rpm nevrs', sorted(binary_rpms_set))
 
-        binary_rpms_list = [splitFilename(package)[0] for package in binary_rpms_list]
+        binary_rpms_list = sorted({splitFilename(package)[0] for package in binary_rpms_set})
         log_dict(self.info, 'binary rpm names', binary_rpms_list)
 
         if not binary_rpms_list:
