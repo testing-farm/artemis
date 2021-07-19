@@ -3,7 +3,7 @@
 
 import gluetool
 
-from typing import Dict, List  # noqa
+from typing import Dict, List, Optional, Any # noqa
 
 
 class BrewBuildOptions(gluetool.Module):
@@ -49,10 +49,12 @@ class BrewBuildOptions(gluetool.Module):
 
     shared_functions = ['brew_build_task_params']
 
-    def brew_build_task_params(self):
-        # type: () -> Dict[str, str]
+    def brew_build_task_params(self, artifacts=None):
+        # type: (Optional[List[Any]]) -> Dict[str, str]
         """
         Return mapping with options for ``/distribution/install/brew-build``, to install currently known artifacts.
+
+        If no artifacts are provided, they are extracted from primary task.
         """
 
         self.require_shared('primary_task', 'tasks')
@@ -61,13 +63,14 @@ class BrewBuildOptions(gluetool.Module):
         tasks = []  # type: List[int]
         builds = []  # type: List[int]
 
+        input_tasks = artifacts if artifacts else self.shared('tasks')
+
         if gluetool.utils.normalize_bool_option(self.option('install-task-not-build')):
             self.debug('asked to install by task ID')
-
-            tasks = [task.id for task in self.shared('tasks')]
+            tasks = [task.id for task in input_tasks]
 
         else:
-            for task in self.shared('tasks'):
+            for task in input_tasks:
                 if task.scratch:
                     self.debug('task {} is a scratch build, using task ID for installation'.format(task.id))
 
