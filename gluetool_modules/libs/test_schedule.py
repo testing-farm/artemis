@@ -108,6 +108,9 @@ class TestScheduleEntryStage(GlueEnum):
     #: Test schedule runner began running tests of this entry.
     RUNNING = 'running'
 
+    #: Tests are done, we now only release what must be released.
+    CLEANUP = 'cleanup'
+
     #: Tests finished, there is nothing left to perform.
     COMPLETE = 'complete'
 
