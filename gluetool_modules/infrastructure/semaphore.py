@@ -6,6 +6,9 @@ from gluetool.log import log_dict
 
 import requests
 
+# Type annotations
+from typing import Any, List, Union  # noqa
+
 
 class Semaphore(gluetool.Module):
     """
@@ -71,10 +74,11 @@ class Semaphore(gluetool.Module):
 
     required_options = ('api-url',)
 
-    shared_functions = ('semaphore_component_states',)
+    shared_functions = ['semaphore_component_states']
 
     @gluetool.utils.cached_property
     def instructions_map(self):
+        # type: () -> Union[List[Any], Any]
         if not self.option('instructions-map'):
             return []
 
@@ -85,6 +89,7 @@ class Semaphore(gluetool.Module):
 
     @gluetool.utils.cached_property
     def component_states(self):
+        # type: () -> Any
         # caching, for now - suppose the pipeline finishes quickly enough so that states wouldn't change
 
         local_source = self.option('local-response-components')
@@ -101,6 +106,7 @@ class Semaphore(gluetool.Module):
         return response['data']
 
     def semaphore_component_states(self):
+        # type: () -> Any
         """
         Returns a list of states of monitored components.
 
@@ -112,6 +118,7 @@ class Semaphore(gluetool.Module):
         return self.component_states
 
     def execute(self):
+        # type: () -> None
         self.require_shared('evaluate_rules')
 
         # For each component, each instruction is checked whether it applies
