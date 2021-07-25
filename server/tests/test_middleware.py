@@ -212,9 +212,12 @@ def fixture_logging_message(logging_actor, logging_actor_arguments):
     return dramatiq.broker.MessageProxy(message)
 
 
-def test_handle_tails_missing_guestname(logger, provisioning_message, provisioning_actor, provisioning_actor_arguments, monkeypatch):
+def test_handle_tails_missing_guestname(caplog, logger, provisioning_message, provisioning_actor, provisioning_actor_arguments, monkeypatch):
     mock_fail_message = MagicMock(name='_fail_message<mock>')
     monkeypatch.setattr(tft.artemis.middleware, '_fail_message', mock_fail_message)
+
+    mock_retry_message = MagicMock(name='_retry_message<mock>')
+    monkeypatch.setattr(tft.artemis.middleware, '_retry_message', mock_retry_message)
 
     del provisioning_actor_arguments['guestname']
 
@@ -225,16 +228,18 @@ def test_handle_tails_missing_guestname(logger, provisioning_message, provisioni
         provisioning_actor_arguments
     ) is True
 
-    mock_fail_message.assert_called_once_with(
-        ANY,
-        provisioning_message,
-        'cannot handle chain tail with undefined guestname'
-    )
+    mock_fail_message.assert_not_called()
+    mock_retry_message.assert_not_called()
+
+    assert_failure_log(caplog, 'failed to extract actor arguments')
 
 
-def test_handle_tails_missing_log_params(logger, logging_message, logging_actor, logging_actor_arguments, monkeypatch):
+def test_handle_tails_missing_log_params(caplog, logger, logging_message, logging_actor, logging_actor_arguments, monkeypatch):
     mock_fail_message = MagicMock(name='_fail_message<mock>')
     monkeypatch.setattr(tft.artemis.middleware, '_fail_message', mock_fail_message)
+
+    mock_retry_message = MagicMock(name='_retry_message<mock>')
+    monkeypatch.setattr(tft.artemis.middleware, '_retry_message', mock_retry_message)
 
     del logging_actor_arguments['logname']
     del logging_actor_arguments['contenttype']
@@ -246,16 +251,18 @@ def test_handle_tails_missing_log_params(logger, logging_message, logging_actor,
         logging_actor_arguments
     ) is True
 
-    mock_fail_message.assert_called_once_with(
-        ANY,
-        logging_message,
-        'cannot handle logging chain tail with undefined logname or contenttype'
-    )
+    mock_fail_message.assert_not_called()
+    mock_retry_message.assert_not_called()
+
+    assert_failure_log(caplog, 'failed to extract actor arguments')
 
 
 def test_handle_tails_provisioning(db, caplog, logger, provisioning_message, provisioning_actor, provisioning_actor_arguments, monkeypatch):
-    mock_handle_tail = MagicMock(name='handle_provisioning_chain_tail<mock>')
-    monkeypatch.setattr(tft.artemis.tasks, 'handle_provisioning_chain_tail', mock_handle_tail)
+    mock_do_handle_tail = MagicMock(
+        name='handle_tail<mock>',
+        return_value=tft.artemis.tasks.SUCCESS
+    )
+    monkeypatch.setattr(provisioning_actor.options['tail_handler'], 'do_handle_tail', mock_do_handle_tail)
 
     assert tft.artemis.middleware._handle_tails(
         logger,
@@ -264,20 +271,27 @@ def test_handle_tails_provisioning(db, caplog, logger, provisioning_message, pro
         provisioning_actor_arguments
     ) is True
 
-    mock_handle_tail.assert_called_once_with(
+    mock_do_handle_tail.assert_called_once_with(
         ANY,
         db,
         ANY,
-        provisioning_actor_arguments['guestname'],
+        ANY,
         provisioning_actor,
+        provisioning_actor_arguments,
+        {
+            'guestname': 'dummy-guestname'
+        }
     )
 
-    assert_log(caplog, message='successfuly handled the provisioning tail', levelno=logging.INFO)
+    assert_log(caplog, message='successfuly handled the chain tail', levelno=logging.INFO)
 
 
 def test_handle_tails_logging(db, caplog, logger, logging_message, logging_actor, logging_actor_arguments, monkeypatch):
-    mock_handle_tail = MagicMock(name='handle_logging_chain_tail<mock>')
-    monkeypatch.setattr(tft.artemis.tasks, 'handle_logging_chain_tail', mock_handle_tail)
+    mock_do_handle_tail = MagicMock(
+        name='handle_tail<mock>',
+        return_value=tft.artemis.tasks.SUCCESS
+    )
+    monkeypatch.setattr(logging_actor.options['tail_handler'], 'do_handle_tail', mock_do_handle_tail)
 
     assert tft.artemis.middleware._handle_tails(
         logger,
@@ -286,32 +300,18 @@ def test_handle_tails_logging(db, caplog, logger, logging_message, logging_actor
         logging_actor_arguments
     ) is True
 
-    mock_handle_tail.assert_called_once_with(
+    mock_do_handle_tail.assert_called_once_with(
         ANY,
         db,
         ANY,
-        logging_actor_arguments['guestname'],
-        logging_actor_arguments['logname'],
-        tft.artemis.db.GuestLogContentType(logging_actor_arguments['contenttype']),
+        ANY,
         logging_actor,
+        logging_actor_arguments,
+        {
+            'guestname': 'dummy-guestname',
+            'logname': 'console',
+            'contenttype': 'url'
+        }
     )
 
-    assert_log(caplog, message='successfuly handled the logging tail', levelno=logging.INFO)
-
-
-def test_handle_tails_unknown(db, caplog, logger, message, actor, actor_arguments, monkeypatch):
-    mock_fail_message = MagicMock(name='_fail_message<mock>')
-    monkeypatch.setattr(tft.artemis.middleware, '_fail_message', mock_fail_message)
-
-    actor_arguments['guestname'] = 'dummy-guestname'
-
-    assert tft.artemis.middleware._handle_tails(
-        logger,
-        message,
-        actor,
-        actor_arguments
-    ) is False
-
-    mock_fail_message.assert_not_called()
-
-    assert_log(caplog, message='failed to handle the chain tail', levelno=logging.ERROR)
+    assert_log(caplog, message='successfuly handled the chain tail', levelno=logging.INFO)

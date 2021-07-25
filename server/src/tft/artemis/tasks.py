@@ -601,11 +601,14 @@ class task:
         self,
         priority: TaskPriority = TaskPriority.DEFAULT,
         queue_name: TaskQueue = TaskQueue.DEFAULT,
-        periodic: Optional[periodiq.CronSpec] = None
+        periodic: Optional[periodiq.CronSpec] = None,
+        tail_handler: Optional['TailHandler'] = None
     ) -> None:
         self.priority = priority
         self.queue_name = queue_name
         self.periodic = periodic
+
+        self.tail_handler = tail_handler
 
     def __call__(self, fn: BareActorType) -> Actor:
         actor_name_uppersized = fn.__name__.upper()
@@ -617,7 +620,13 @@ class task:
             queue_name=self.queue_name
         )
 
-        return cast(Actor, dramatiq.actor(fn, **dramatiq_kwargs))
+        dramatiq_actor = dramatiq.actor(
+            fn,
+            tail_handler=self.tail_handler,
+            **dramatiq_kwargs
+        )
+
+        return cast(Actor, dramatiq_actor)
 
 
 def run_doer(
@@ -1851,6 +1860,282 @@ def _handle_successful_failover(
         metrics.ProvisioningMetrics.inc_failover_success(previous_poolname, poolname)
 
 
+class TailHandler:
+    def get_failure_details(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        db: DB,
+        session: sqlalchemy.orm.session.Session,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]]
+    ) -> Dict[str, str]:
+        return {}
+
+    def get_logger(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]]
+    ) -> gluetool.log.ContextAdapter:
+        return logger
+
+    def assert_actor_arguments(self, actor_arguments: Dict[str, Optional[str]], *names: str) -> bool:
+        return all([name in actor_arguments for name in names])
+
+    def extract_actor_arguments(self, actor_arguments: Dict[str, Optional[str]], *names: str) -> List[Optional[str]]:
+        return [actor_arguments[name] for name in names]
+
+    def do_handle_tail(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        db: DB,
+        session: sqlalchemy.orm.session.Session,
+        cancel: threading.Event,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]],
+        failure_details: Dict[str, str]
+    ) -> DoerReturnType:
+        raise NotImplementedError()
+
+    def handle_tail(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        db: DB,
+        session: sqlalchemy.orm.session.Session,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]]
+    ) -> bool:
+        cancel = threading.Event()
+
+        logger = self.get_logger(logger, actor, actor_arguments)
+        failure_details = self.get_failure_details(logger, db, session, actor, actor_arguments)
+
+        r = self.do_handle_tail(logger, db, session, cancel, actor, actor_arguments, failure_details)
+
+        if r.is_ok:
+            if r is SUCCESS:
+                logger.info('successfuly handled the chain tail')
+
+                return True
+
+            if r is RESCHEDULE:
+                logger.warning('failed to handle the chain tail')
+
+                return False
+
+            if is_ignore_result(r):
+                logger.warning('failed to handle the chain tail but ignoring the error')
+
+                return True
+
+            print(r.unwrap())
+            Failure(
+                'unexpected outcome of tail handler',
+                actor_name=actor.actor_name,
+                **cast(Any, failure_details)
+            ).handle(logger)
+
+            return False
+
+        # Failures were already handled by this point
+        return False
+
+
+class ProvisioningTailHandler(TailHandler):
+    def __init__(self, current_state: GuestState, new_state: GuestState) -> None:
+        self.current_state = current_state
+        self.new_state = new_state
+
+    def get_failure_details(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        db: DB,
+        session: sqlalchemy.orm.session.Session,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]]
+    ) -> Dict[str, str]:
+        details: Dict[str, str] = {}
+
+        if 'guestname' in actor_arguments:
+            details['guestname'] = cast(str, actor_arguments['guestname'])
+
+        return details
+
+    def get_logger(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]]
+    ) -> gluetool.log.ContextAdapter:
+        return TaskLogger(logger, 'provisioning-tail')
+
+    def do_handle_tail(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        db: DB,
+        session: sqlalchemy.orm.session.Session,
+        cancel: threading.Event,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]],
+        failure_details: Dict[str, str]
+    ) -> DoerReturnType:
+        handle_success, handle_failure, spice_details = create_event_handlers(
+            logger,
+            session,
+            task='provisioning-tail',
+            **failure_details
+        )
+
+        # Chicken and egg problem: we need guestname for logging context, but if it's missing,
+        # we need to report the failure, and that's usually done by calling `handle_failure`.
+        # Which needs guestname...
+        if not self.assert_actor_arguments(actor_arguments, 'guestname'):
+            r: DoerReturnType = Error(Failure(
+                'cannot handle chain tail with undefined arguments',
+                actor_arguments=actor_arguments
+            ))
+
+            handle_failure(r, 'failed to extract actor arguments')
+
+            return IGNORE(r)
+
+        guestname, *_ = self.extract_actor_arguments(actor_arguments, 'guestname')
+
+        # guestname can never be None
+        assert guestname is not None
+
+        workspace = Workspace(logger, session, cancel, handle_failure)
+        workspace.load_guest_request(guestname, state=self.current_state)
+
+        if workspace.result:
+            return workspace.result
+
+        assert workspace.gr
+
+        if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
+            spice_details['poolname'] = workspace.gr.poolname
+
+            workspace.load_gr_pool()
+
+            if workspace.result:
+                return workspace.result
+
+            assert workspace.pool
+
+            r_release = workspace.pool.release_guest(logger, workspace.gr)
+
+            if r_release.is_error:
+                handle_failure(r_release, 'failed to release guest resources')
+
+                return RESCHEDULE
+
+        workspace.update_guest_state(
+            self.new_state,
+            current_state=self.current_state,
+            set_values={
+                'poolname': None,
+                'pool_data': json.dumps({}),
+                'address': None
+            },
+            current_pool_data=workspace.gr.pool_data
+        )
+
+        if self.new_state == GuestState.ROUTING:
+            workspace.dispatch_task(route_guest_request, guestname)
+
+        if workspace.result:
+            return workspace.result
+
+        logger.info('reverted to {}'.format(self.new_state.value))
+
+        return handle_success('finished-task')
+
+
+class LoggingTailHandler(TailHandler):
+    def get_failure_details(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        db: DB,
+        session: sqlalchemy.orm.session.Session,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]]
+    ) -> Dict[str, str]:
+        details: Dict[str, str] = {}
+
+        if 'guestname' in actor_arguments:
+            details['guestname'] = cast(str, actor_arguments['guestname'])
+
+        if 'logname' in actor_arguments:
+            details['logname'] = cast(str, actor_arguments['logname'])
+
+        if 'contenttype' in actor_arguments:
+            details['contenttype'] = cast(str, actor_arguments['contenttype'])
+
+        return details
+
+    def get_logger(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]]
+    ) -> gluetool.log.ContextAdapter:
+        return TaskLogger(logger, 'logging-tail')
+
+    def do_handle_tail(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        db: DB,
+        session: sqlalchemy.orm.session.Session,
+        cancel: threading.Event,
+        actor: Actor,
+        actor_arguments: Dict[str, Optional[str]],
+        failure_details: Dict[str, str]
+    ) -> DoerReturnType:
+        handle_success, handle_failure, spice_details = create_event_handlers(
+            logger,
+            session,
+            task='logging-tail',
+            **failure_details
+        )
+
+        if not self.assert_actor_arguments(actor_arguments, 'guestname', 'logname', 'contenttype'):
+            r: DoerReturnType = Error(Failure(
+                'cannot handle logging tail with undefined arguments',
+                actor_arguments=actor_arguments
+            ))
+
+            handle_failure(r, 'failed to extract actor arguments')
+
+            return IGNORE(r)
+
+        guestname, logname, contenttype = self.extract_actor_arguments(
+            actor_arguments,
+            'guestname',
+            'logname',
+            'contenttype'
+        )
+
+        query = sqlalchemy \
+            .update(GuestLog.__table__) \
+            .where(GuestLog.guestname == guestname) \
+            .where(GuestLog.logname == logname) \
+            .where(GuestLog.contenttype == contenttype) \
+            .values(
+                updated=datetime.datetime.utcnow(),
+                state=GuestLogState.ERROR
+            )
+
+        r_store = safe_db_change(logger, session, query)
+
+        if r_store.is_error:
+            return handle_failure(r_store, 'failed to update the log')
+
+        if r_store.unwrap() is not True:
+            return handle_success('finished-task', return_value=RESCHEDULE)
+
+        return handle_success('finished-task')
+
+
 def do_release_pool_resources(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -1897,306 +2182,6 @@ def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional
         logger=logger,
         doer_args=(poolname, resource_ids, guestname)
     )
-
-
-def is_provisioning_tail_task(actor: Actor) -> bool:
-    """
-    Returns ``True`` if the given task is considered to be part of the provisioning "tail",
-    i.e. tasks that take care of provisioning and follow up tasks.
-    """
-
-    return actor.actor_name in (
-        guest_request_prepare_finalize_pre_connect.actor_name,
-        guest_request_prepare_finalize_post_connect.actor_name,
-        prepare_verify_ssh.actor_name,
-        acquire_guest_request.actor_name,
-        update_guest_request.actor_name,
-        route_guest_request.actor_name
-    )
-
-
-def is_logging_tail_task(actor: Actor) -> bool:
-    return actor.actor_name in (
-        update_guest_log.actor_name,
-    )
-
-
-def do_handle_provisioning_chain_tail(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
-    guestname: str,
-    current_state: GuestState,
-    new_state: GuestState = GuestState.ROUTING
-) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
-        guestname=guestname,
-        task='provisioning-tail'
-    )
-
-    handle_success('entered-task')
-
-    workspace = Workspace(logger, session, cancel, handle_failure)
-    workspace.load_guest_request(guestname, state=current_state)
-
-    if workspace.result:
-        return workspace.result
-
-    assert workspace.gr
-
-    if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
-        spice_details['poolname'] = workspace.gr.poolname
-
-        workspace.load_gr_pool()
-
-        if workspace.result:
-            return workspace.result
-
-        assert workspace.pool
-
-        r_release = workspace.pool.release_guest(logger, workspace.gr)
-
-        if r_release.is_error:
-            handle_failure(r_release, 'failed to release guest resources')
-
-            return RESCHEDULE
-
-    workspace.update_guest_state(
-        new_state,
-        current_state=current_state,
-        set_values={
-            'poolname': None,
-            'pool_data': json.dumps({}),
-            'address': None
-        },
-        current_pool_data=workspace.gr.pool_data
-    )
-
-    if new_state == GuestState.ROUTING:
-        workspace.dispatch_task(route_guest_request, guestname)
-
-    if workspace.result:
-        return workspace.result
-
-    logger.info('reverted to {}'.format(new_state.value))
-
-    return handle_success('finished-task')
-
-
-def handle_provisioning_chain_tail(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    guestname: str,
-    actor: Actor
-) -> bool:
-    cancel = threading.Event()
-
-    # for acquire_guest, move from PROVISIONING back to ROUTING
-    if actor.actor_name == acquire_guest_request.actor_name:
-        r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
-            guestname,
-            GuestState.PROVISIONING,
-            GuestState.ROUTING
-        )
-
-    # for do_update_guest, move from PROMISED back to ROUTING
-    elif actor.actor_name == update_guest_request.actor_name:
-        r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
-            guestname,
-            GuestState.PROMISED,
-            GuestState.ROUTING
-        )
-
-    # for route_guest_request, stay in ROUTING
-    elif actor.actor_name == route_guest_request.actor_name:
-        r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
-            guestname,
-            GuestState.ROUTING,
-            GuestState.ERROR
-        )
-
-    # for post-acquire prepare chain final task, revert to ROUTING
-    elif actor.actor_name == guest_request_prepare_finalize_pre_connect.actor_name:
-        r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
-            guestname,
-            GuestState.PREPARING,
-            GuestState.ROUTING
-        )
-
-    # for post-acquire prepare chain final task, revert to ROUTING
-    elif actor.actor_name == guest_request_prepare_finalize_post_connect.actor_name:
-        r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
-            guestname,
-            GuestState.PREPARING,
-            GuestState.ROUTING
-        )
-
-    # for post-acquire verify chain tasks, revert to ROUTING
-    elif actor.actor_name == prepare_verify_ssh.actor_name:
-        r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
-            guestname,
-            GuestState.PREPARING,
-            GuestState.ROUTING
-        )
-
-    # for post-acquire verify chain tasks, revert to ROUTING
-    elif actor.actor_name == prepare_post_install_script.actor_name:
-        r = do_handle_provisioning_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
-            guestname,
-            GuestState.PREPARING,
-            GuestState.ROUTING
-        )
-
-    else:
-        Failure(
-            'actor not covered by provisioning chain tail',
-            guestname=guestname,
-            actor_name=actor.actor_name
-        ).handle(logger)
-
-        return False
-
-    if r.is_ok:
-        if r is SUCCESS:
-            return True
-
-        if r is RESCHEDULE:
-            return False
-
-        Failure(
-            'unexpected result of provisioning chain tail',
-            guestname=guestname,
-            actor_name=actor.actor_name
-        ).handle(logger)
-
-        return False
-
-    # Failures were already handled by this point
-    return False
-
-
-def do_handle_logging_chain_tail(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
-    guestname: str,
-    logname: str,
-    contenttype: GuestLogContentType
-) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
-        guestname=guestname,
-        task='provisioning-tail'
-    )
-
-    handle_success('entered-task')
-
-    query = sqlalchemy \
-        .update(GuestLog.__table__) \
-        .where(GuestLog.guestname == guestname) \
-        .where(GuestLog.logname == logname) \
-        .where(GuestLog.contenttype == contenttype) \
-        .values(
-            updated=datetime.datetime.utcnow(),
-            state=GuestLogState.ERROR
-        )
-
-    r_store = safe_db_change(logger, session, query)
-
-    if r_store.is_error:
-        return handle_failure(r_store, 'failed to update the log')
-
-    if r_store.unwrap() is not True:
-        return handle_success('finished-task', return_value=RESCHEDULE)
-
-    return handle_success('finished-task')
-
-
-def handle_logging_chain_tail(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    guestname: str,
-    logname: str,
-    contenttype: GuestLogContentType,
-    actor: Actor
-) -> bool:
-    cancel = threading.Event()
-
-    # for update_guest_log, drop the log record to ERROR state
-    if actor.actor_name == update_guest_log.actor_name:
-        r = do_handle_logging_chain_tail(
-            logger,
-            db,
-            session,
-            cancel,
-            guestname,
-            logname,
-            contenttype
-        )
-
-    else:
-        Failure(
-            'actor not covered by logging chain tail',
-            guestname=guestname,
-            actor_name=actor.actor_name
-        ).handle(logger)
-
-        return False
-
-    if r.is_ok:
-        if r is SUCCESS:
-            return True
-
-        if r is RESCHEDULE:
-            return False
-
-        Failure(
-            'unexpected result of logging chain tail',
-            guestname=guestname,
-            logname=logname,
-            contenttype=contenttype.value,
-            actor_name=actor.actor_name
-        ).handle(logger)
-
-        return False
-
-    # Failures were already handled by this point
-    return False
 
 
 def do_update_guest_log(
@@ -2382,7 +2367,7 @@ def do_update_guest_log(
     return handle_success('finished-task')
 
 
-@dramatiq.actor(**actor_kwargs('UPDATE_GUEST_LOG'))  # type: ignore  # Untyped decorator
+@task(tail_handler=LoggingTailHandler())
 def update_guest_log(guestname: str, logname: str, contenttype: str) -> None:
     task_core(
         cast(DoerType, do_update_guest_log),
@@ -2461,7 +2446,7 @@ def do_prepare_verify_ssh(
     return handle_success('finished-task')
 
 
-@task()
+@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
 def prepare_verify_ssh(guestname: str) -> None:
     task_core(
         cast(DoerType, do_prepare_verify_ssh),
@@ -2545,7 +2530,7 @@ def do_prepare_post_install_script(
     return handle_success('finished-task')
 
 
-@task()
+@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
 def prepare_post_install_script(guestname: str) -> None:
     task_core(
         cast(DoerType, do_prepare_post_install_script),
@@ -2619,7 +2604,7 @@ def do_guest_request_prepare_finalize_pre_connect(
     return handle_success('finished-task')
 
 
-@task()
+@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
 def guest_request_prepare_finalize_pre_connect(guestname: str) -> None:
     task_core(
         cast(DoerType, do_guest_request_prepare_finalize_pre_connect),
@@ -2684,7 +2669,7 @@ def do_guest_request_prepare_finalize_post_connect(
     return handle_success('finished-task')
 
 
-@task()
+@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
 def guest_request_prepare_finalize_post_connect(guestname: str) -> None:
     task_core(
         cast(DoerType, do_guest_request_prepare_finalize_post_connect),
@@ -2881,7 +2866,15 @@ def do_update_guest_request(
         if workspace.result:
             return workspace.result
 
-        if handle_provisioning_chain_tail(logger, db, session, workspace.gr.guestname, update_guest_request):
+        if ProvisioningTailHandler(GuestState.PROMISED, GuestState.ROUTING).handle_tail(
+            logger,
+            db,
+            session,
+            update_guest_request,
+            {
+                'guestname': workspace.gr.guestname
+            }
+        ):
             return handle_success('finished-task')
 
         return RESCHEDULE
@@ -2915,7 +2908,7 @@ def do_update_guest_request(
     return handle_success('finished-task')
 
 
-@task()
+@task(tail_handler=ProvisioningTailHandler(GuestState.PROMISED, GuestState.ROUTING))
 def update_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, do_update_guest_request),
@@ -3010,7 +3003,16 @@ def do_acquire_guest_request(
         if workspace.result:
             return workspace.result
 
-        if handle_provisioning_chain_tail(logger, db, session, workspace.gr.guestname, acquire_guest_request):
+        if ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.ROUTING).handle_tail(
+            logger,
+            db,
+            session,
+            acquire_guest_request,
+            {
+                'guestname': workspace.gr.guestname,
+                'poolname': workspace.pool.poolname
+            }
+        ):
             return handle_success('finished-task')
 
         return RESCHEDULE
@@ -3046,7 +3048,7 @@ def do_acquire_guest_request(
     return handle_success('finished-task')
 
 
-@task()
+@task(tail_handler=ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.ROUTING))
 def acquire_guest_request(guestname: str, poolname: str) -> None:
     task_core(
         cast(DoerType, do_acquire_guest_request),
@@ -3172,7 +3174,7 @@ def do_route_guest_request(
     return handle_success('finished-task')
 
 
-@task()
+@task(tail_handler=ProvisioningTailHandler(GuestState.ROUTING, GuestState.ERROR))
 def route_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, do_route_guest_request),

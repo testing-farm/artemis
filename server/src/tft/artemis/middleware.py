@@ -10,7 +10,6 @@ import dramatiq.middleware.retries
 import gluetool.log
 from dramatiq.common import compute_backoff, current_millis
 
-from .db import GuestLogContentType
 from .guest import GuestLogger
 
 if TYPE_CHECKING:
@@ -151,74 +150,16 @@ def _handle_tails(
     The task here is to dispatch the correct handler.
     """
 
-    from .tasks import TaskLogger, get_root_db, handle_logging_chain_tail, handle_provisioning_chain_tail, \
-        is_logging_tail_task, is_provisioning_tail_task
+    from .tasks import TailHandler, get_root_db
 
-    if is_provisioning_tail_task(actor):
-        tail_logger: gluetool.log.ContextAdapter = TaskLogger(logger, 'provisioning-tail')
-
-    elif is_logging_tail_task(actor):
-        tail_logger = TaskLogger(logger, 'logging-tail')
-
-    else:
-        tail_logger = logger
-
-    guestname = actor_arguments['guestname'] if actor_arguments and 'guestname' in actor_arguments else None
-
-    # So far, all tail work within the context of a particular guest, therefore there must be a guestname.
-    if not guestname:
-        _fail_message(tail_logger, message, 'cannot handle chain tail with undefined guestname')
-
-        return True
-
-    # Logging chain has additional arguments
-    if is_logging_tail_task(actor):
-        logname = actor_arguments['logname'] \
-            if actor_arguments and 'logname' in actor_arguments else None
-
-        contenttype = actor_arguments['contenttype'] \
-            if actor_arguments and 'contenttype' in actor_arguments else None
-
-        if not logname or not contenttype:
-            _fail_message(
-                tail_logger,
-                message,
-                'cannot handle logging chain tail with undefined logname or contenttype'
-            )
-
-            return True
+    tail_handler = cast(TailHandler, actor.options['tail_handler'])
+    tail_logger = tail_handler.get_logger(logger, actor, actor_arguments)
 
     db = get_root_db(tail_logger)
 
     with db.get_session() as session:
-        if is_provisioning_tail_task(actor):
-            if handle_provisioning_chain_tail(
-                tail_logger,
-                db,
-                session,
-                guestname,
-                actor
-            ):
-                tail_logger.info('successfuly handled the provisioning tail')
-
-                return True
-
-        elif is_logging_tail_task(actor):
-            assert logname is not None
-            assert contenttype is not None
-
-            if handle_logging_chain_tail(
-                tail_logger,
-                db,
-                session,
-                guestname,
-                logname,
-                GuestLogContentType(contenttype),
-                actor
-            ):
-                tail_logger.info('successfuly handled the logging tail')
-
-                return True
+        if tail_handler.handle_tail(tail_logger, db, session, actor, actor_arguments):
+            return True
 
     tail_logger.error('failed to handle the chain tail')
 
@@ -233,6 +174,19 @@ def _handle_tails(
 
 
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class cannot subclass 'Retries
+    @property
+    def actor_options(self) -> Set[str]:
+        return {
+            # These come from our superclass...
+            'max_retries',
+            'min_backoff',
+            'max_backoff',
+            'retry_when',
+            'throws',
+            # ... and this one is our addition so we could attach tail handler to each actor.
+            'tail_handler'
+        }
+
     def after_process_message(
         self,
         broker: dramatiq.broker.Broker,
@@ -269,10 +223,8 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         if retry_when is not None and not retry_when(retries, exception) or \
            retry_when is None and max_retries is not None and retries >= max_retries:
 
-            from .tasks import is_logging_tail_task, is_provisioning_tail_task
-
             # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
-            if not is_provisioning_tail_task(actor) and not is_logging_tail_task(actor):
+            if actor.options.get('tail_handler') is None:
                 return _fail_message(logger, message, f'retries exceeded for message {message.message_id}')
 
             if _handle_tails(logger, message, actor, actor_arguments) is True:
