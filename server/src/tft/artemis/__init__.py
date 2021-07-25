@@ -23,6 +23,7 @@ import dramatiq.middleware.shutdown
 import dramatiq.middleware.time_limit
 import dramatiq.rate_limits.backends
 import dramatiq.rate_limits.concurrent
+import gluetool.action
 import gluetool.log
 import gluetool.sentry
 import gluetool.utils
@@ -1355,6 +1356,37 @@ KNOB_POOL_ENABLED: Knob[bool] = Knob(
     default=True
 )
 
+KNOB_TRACING_ENABLED: Knob[bool] = Knob(
+    'tracing.enabled',
+    'If set, tracing is enabled and Artemis will report spans.',
+    has_db=False,
+    per_pool=False,
+    envvar='ARTEMIS_TRACING_ENABLED',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+KNOB_TRACING_SERVICE_NAME: Knob[str] = Knob(
+    'tracing.service-name',
+    'A service name to use for reporting tracing spans.',
+    has_db=False,
+    per_pool=False,
+    envvar='ARTEMIS_TRACING_SERVICE_NAME',
+    cast_from_str=str,
+    default='artemis'
+)
+
+
+KNOB_TRACING_REPORTING_URL: Knob[str] = Knob(
+    'tracing.reporting-url',
+    'A remote tracing collector to send reports to.',
+    has_db=False,
+    per_pool=False,
+    envvar='ARTEMIS_TRACING_REPORTING_URL',
+    cast_from_str=str,
+    default='jaeger://localhost:6831'
+)
+
 
 def get_logger() -> gluetool.log.ContextAdapter:
     gluetool.color.switch(True)
@@ -1462,6 +1494,41 @@ def get_vault() -> artemis_vault.Vault:
             password = f.read()
 
     return artemis_vault.Vault(password)
+
+
+def get_tracer() -> Optional[gluetool.action.Tracer]:
+    logger = get_logger()
+
+    try:
+        parsed_url = urllib.parse.urlparse(KNOB_TRACING_REPORTING_URL.value)
+
+        if not parsed_url.netloc:
+            Failure('invalid tracing reporting host URL').handle(get_logger())
+
+            return None
+
+        hostname, port = parsed_url.netloc.split(':', 1)
+
+        tracer = gluetool.action.Tracer(
+            service_name=KNOB_TRACING_SERVICE_NAME.value,
+            logger=logger,
+            reporting_host=hostname,
+            reporting_port=int(port)
+        )
+
+        logger.info('tracing enabled')
+
+        return tracer
+
+    except Exception as exc:
+        Failure.from_exc('invalid tracing reporting host URL', exc).handle(get_logger())
+
+        return None
+
+
+if KNOB_TRACING_ENABLED.value is True:
+    # It's good enough to instantiate the tracer for the tracing to begin working.
+    gluetool_tracer = get_tracer()
 
 
 def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Failure]:

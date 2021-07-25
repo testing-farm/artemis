@@ -3,6 +3,7 @@ import threading
 
 import dramatiq
 import dramatiq.brokers.stub
+import gluetool.action
 import gluetool.log
 import gluetool.utils
 import pytest
@@ -31,6 +32,11 @@ def broker():
 
     return broker
 
+@pytest.fixture
+def root_action():
+    with gluetool.action.Action('dummy-action') as action:
+        yield action
+
 
 @pytest.fixture
 def worker(broker):
@@ -42,21 +48,21 @@ def worker(broker):
     worker.stop()
 
 
-def test_run_doer(logger, db, cancel):
+def test_run_doer(logger, db, cancel, root_action):
     def foo(_logger, _db, _session, _cancel, bar):
         return bar
 
     with db.get_session() as session:
-        assert tft.artemis.tasks.run_doer(logger, db, session, cancel, foo, 'test_run_doer', 79) == 79
+        assert tft.artemis.tasks.run_doer(logger, db, session, cancel, root_action, foo, 'test_run_doer', 79) == 79
 
 
-def test_run_doer_exception(logger, db, cancel):
+def test_run_doer_exception(logger, db, cancel, root_action):
     def foo(_logger, _db, _session, _cancel):
         raise Exception('foo')
 
     with db.get_session() as session:
         with pytest.raises(Exception, match=r'foo'):
-            assert tft.artemis.tasks.run_doer(logger, db, session, cancel, foo, 'test_run_doer_exception') == 79
+            assert tft.artemis.tasks.run_doer(logger, db, session, cancel, root_action, foo, 'test_run_doer_exception') == 79
 
 
 def test_dispatch_task(logger, monkeypatch):
@@ -114,7 +120,7 @@ def task_core_args(logger, monkeypatch):
     cancel = threading.Event()
 
     run_doer = MagicMock(name='mock_run_doer')
-    doer = MagicMock(name='mock_doer')
+    doer = MagicMock(name='mock_doer', __name__='mock_doer')
     doer_args = (
         MagicMock(name='mock_doer_arg1'),
         MagicMock(name='mock_doer_arg2')
@@ -143,7 +149,7 @@ def test_task_core_ok(logger, db, session, caplog, monkeypatch, task_core_args):
     )
 
     run_doer.assert_has_calls([
-        call(task_logger, db, session, cancel, doer, 'test_task_core_ok', *doer_args, **doer_kwargs),
+        call(task_logger, db, session, cancel, ANY, doer, 'test_task_core_ok', *doer_args, **doer_kwargs),
         call().is_ok.__bool__(),
         call().unwrap()
     ])

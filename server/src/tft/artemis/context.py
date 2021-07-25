@@ -33,6 +33,7 @@ import functools
 from typing import Any, Callable, Dict, Tuple, TypeVar
 
 import dramatiq.broker
+import gluetool.action
 import gluetool.log
 import redis
 import sqlalchemy.orm.session

@@ -20,6 +20,7 @@ import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
 import stackprinter
+from gluetool.action import Action
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
@@ -357,6 +358,8 @@ def FAIL(result: Result[Any, Failure]) -> DoerReturnType:
 
 # Task doer type.
 class DoerType(Protocol):
+    __name__: str
+
     def __call__(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -625,6 +628,7 @@ def run_doer(
     db: DB,
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
+    parent_action: Action,
     fn: DoerType,
     actor_name: str,
     *args: Any,
@@ -696,7 +700,14 @@ def run_doer(
                 profiler.start()
 
             try:
-                return thread_context.run(fn, logger, db, session, cancel, *args, **kwargs)
+                with Action('run-doer', parent=parent_action, logger=logger, tags={
+                    'doer': fn.__name__,
+                    'doer-args': args,
+                    'doer-kwargs': kwargs
+                }) as thread_root_action:
+                    Action.set_thread_root(thread_root_action)
+
+                    return thread_context.run(fn, logger, db, session, cancel, *args, **kwargs)
 
             finally:
                 if profile_actor:
@@ -754,6 +765,14 @@ def task_core(
         profiler = Profiler()
         profiler.start()
 
+    task_action = Action('task-core', logger=logger, tags={
+        'doer': doer.__name__,
+        'doer-args': doer_args,
+        'doer-kwargs': doer_kwargs
+    })
+
+    Action.set_thread_root(task_action)
+
     db = db or get_root_db()
     cancel = cancel or threading.Event()
 
@@ -785,6 +804,7 @@ def task_core(
             db,
             session,
             cancel,
+            task_action,
             doer,
             actor_name,
             *doer_args,
@@ -881,12 +901,15 @@ def task_core(
         if is_ignore_result(doer_result):
             logger.warning('message processing encountered error and requests waiver')
 
+        task_action.finish()
         logger.finished()
 
         if result is Reschedule:
             raise Exception('message processing requested reschedule')
 
         return
+
+    task_action.finish()
 
     # To avoid chain a of exceptions in the log - which we already logged above - raise a generic,
     # insignificant exception to notify scheduler that this task failed and needs to be retried.
