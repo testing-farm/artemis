@@ -13,6 +13,7 @@ import click
 import click_completion
 import click_spinner
 import requests
+import semver
 import stackprinter
 
 from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
@@ -34,6 +35,16 @@ stackprinter.set_excepthook(
 )
 
 click_completion.init()
+
+
+API_FEATURE_VERSIONS = {
+    feature: semver.VersionInfo.parse(version)
+    for feature, version in (
+        ('hw-constraints', '0.0.19'),
+        ('arch-under-hw', '0.0.19'),
+        ('supported-baseline', '0.0.17')
+    )
+}
 
 
 @click.group()
@@ -94,7 +105,7 @@ def cli_root(ctx: Any, config: str) -> None:
         sys.exit(0)
 
     cfg.artemis_api_url = cfg.raw_config['artemis_api_url']
-    cfg.artemis_api_version = cfg.raw_config['artemis_api_version']
+    cfg.artemis_api_version = semver.VersionInfo.parse(cfg.raw_config['artemis_api_version'])
     assert cfg.artemis_api_url is not None
 
     if 'provisioning_poll_interval' in cfg.raw_config:
@@ -199,7 +210,13 @@ def cmd_guest_create(
 
     environment: Dict[str, Any] = {}
 
-    if cfg.artemis_api_version in ('v0.0.19', 'v0.0.20'):
+    if cfg.artemis_api_version < API_FEATURE_VERSIONS['supported-baseline']:
+        cfg.logger.error('Unsupported API version {}, the oldest supported is {}'.format(
+            cfg.artemis_api_version,
+            API_FEATURE_VERSIONS['supported-baseline']
+        ))
+
+    if cfg.artemis_api_version >= API_FEATURE_VERSIONS['hw-constraints']:
         environment['hw'] = {
             'arch': arch
         }
@@ -211,14 +228,11 @@ def cmd_guest_create(
             except Exception as exc:
                 cfg.logger.error('failed to parse HW constraints: {}'.format(exc))
 
-    elif cfg.artemis_api_version in ('v0.0.17', 'v0.0.18'):
+    elif hw_constraints is not None:
+        cfg.logger.error('HW constraints are supported with API 0.0.19 and newer')
+
+    if cfg.artemis_api_version < API_FEATURE_VERSIONS['arch-under-hw']:
         environment['arch'] = arch
-
-        if hw_constraints is not None:
-            cfg.logger.error('HW constraints are supported with API v0.0.19 and newer')
-
-    else:
-        cfg.logger.error('Unsupported API version {}'.format(cfg.artemis_api_version))
 
     environment['os'] = {'compose': compose}
 
@@ -555,7 +569,7 @@ URL of Artemis API, for example 'http://artemis.example.com/v0.0.18'
 
     TITLE('** Artemis API version **')
     TEXT("""
-API version to use for talking to Artemis, for example 'v0.0.18'
+API version to use for talking to Artemis, for example '0.0.18'
 """)
 
     artemis_api_version = prompt(

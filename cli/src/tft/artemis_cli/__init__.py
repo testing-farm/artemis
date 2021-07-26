@@ -14,6 +14,7 @@ import pkg_resources
 import requests
 import ruamel.yaml
 import ruamel.yaml.compat
+import semver
 import tabulate
 import urlnormalizer
 
@@ -70,7 +71,7 @@ class Configuration:
     output_format: str = 'human'
 
     artemis_api_url: Optional[str] = None
-    artemis_api_version: Optional[str] = None
+    artemis_api_version: Optional[semver.VersionInfo] = None
 
     provisioning_poll_interval: float = 10
 

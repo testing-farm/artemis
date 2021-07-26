@@ -21,6 +21,8 @@ jsonschema = "*"
 tabulate = "*"
 urlnormalizer = "^1.2.5"
 click_completion = "^0.5.2"
+# TODO: once 3.0.0 is released, it should provide type annotations
+semver = "^2.13.0"
 stackprinter = "^0.2.4"
 rich = "^2.2.6"
 
