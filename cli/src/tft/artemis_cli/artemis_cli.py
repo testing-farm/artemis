@@ -40,6 +40,7 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('skip-prepare-verify-ssh', '0.0.24'),
         ('hw-constraints', '0.0.19'),
         ('arch-under-hw', '0.0.19'),
         ('supported-baseline', '0.0.17')
@@ -191,6 +192,12 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
 @click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
 @click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
+@click.option(
+    '--skip-prepare-verify-ssh/--no-skip-prepare-verify-ssh',
+    is_flag=True,
+    default=False,
+    help='If set, provisioning will skip SSH verification step.'
+)
 @click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
 @click.pass_obj
 def cmd_guest_create(
@@ -204,17 +211,30 @@ def cmd_guest_create(
         spot_instance: Optional[bool] = None,
         priority_group: Optional[str] = None,
         post_install_script: Optional[str] = None,
+        skip_prepare_verify_ssh: bool = False,
         wait: Optional[bool] = None
 ) -> None:
     assert cfg.artemis_api_version is not None
 
     environment: Dict[str, Any] = {}
 
+    data: Dict[str, Any] = {
+        'environment': environment,
+        'keyname': keyname,
+        'priority_group': 'default-priority'
+    }
+
     if cfg.artemis_api_version < API_FEATURE_VERSIONS['supported-baseline']:
         cfg.logger.error('Unsupported API version {}, the oldest supported is {}'.format(
             cfg.artemis_api_version,
             API_FEATURE_VERSIONS['supported-baseline']
         ))
+
+    if cfg.artemis_api_version >= API_FEATURE_VERSIONS['skip-prepare-verify-ssh']:
+        data['skip_prepare_verify_ssh'] = skip_prepare_verify_ssh
+
+    elif skip_prepare_verify_ssh is True:
+        cfg.logger.error('--skip-prepare-verify-ssh is supported with API v0.0.24 and newer')
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['hw-constraints']:
         environment['hw'] = {
@@ -264,12 +284,7 @@ def cmd_guest_create(
             logger.error("Post-install-script {} is not present locally and can't be downloaded".format(
                 post_install_script))
 
-    data = {
-        'environment': environment,
-        'keyname': keyname,
-        'priority_group': 'default-priority',
-        'post_install_script': post_install,
-    }
+    data['post_install_script'] = post_install
 
     response = artemis_create(cfg, 'guests/', data)
     print(prettify_json(True, response.json()))

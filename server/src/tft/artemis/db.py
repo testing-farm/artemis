@@ -602,6 +602,10 @@ class GuestRequest(Base):
     # User specified data
     user_data = Column(Text(), nullable=False)
 
+    #: If set, the provisioning will skip preparation steps and assume the guest is reachable as soon as it becomes
+    #: active.
+    skip_prepare_verify_ssh = Column(Boolean(), nullable=False, server_default='false')
+
     # Contents of a script to be run when the guest becomes active
     post_install_script = Column(Text(), nullable=True)
 

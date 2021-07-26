@@ -2704,14 +2704,24 @@ def dispatch_preparing_pre_connect(
     Tier 1: verify the basic accessibility of the guest.
     """
 
-    workspace.dispatch_group(
-        [
-            prepare_verify_ssh
-        ],
-        workspace.guestname,
-        on_complete=guest_request_prepare_finalize_pre_connect,
-        delay=KNOB_DISPATCH_PREPARE_DELAY.value
-    )
+    assert workspace.gr
+
+    tasks: List[Actor] = []
+
+    # Running verify-ssh step is optional - user might have requested us to skip the step.
+    if not workspace.gr.skip_prepare_verify_ssh:
+        tasks += [prepare_verify_ssh]
+
+    if tasks:
+        workspace.dispatch_group(
+            tasks,
+            workspace.guestname,
+            on_complete=guest_request_prepare_finalize_pre_connect,
+            delay=KNOB_DISPATCH_PREPARE_DELAY.value
+        )
+
+    else:
+        workspace.dispatch_task(guest_request_prepare_finalize_pre_connect, workspace.guestname)
 
 
 def do_release_guest_request(
