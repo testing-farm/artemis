@@ -320,19 +320,13 @@ def rewrite_request_path(path: str) -> str:
     if match is not None:
         groups = match.groupdict()
 
-        return '/{}guests/GUESTNAME{}'.format(
-            groups.get('version') or '',
-            groups.get('url_rest') or ''
-        )
+        return f'/{groups.get("version") or ""}guests/GUESTNAME{groups.get("url_rest") or ""}'
 
     match = SNAPSHOT_ROUTE_PATTERN.match(path)
     if match is not None:
         groups = match.groupdict()
 
-        return '/{}guests/GUESTNAME/snapshots/SNAPSHOTNAME{}'.format(
-            groups.get('version') or '',
-            groups.get('url_rest') or ''
-        )
+        return f'/{groups.get("version") or ""}guests/GUESTNAME/snapshots/SNAPSHOTNAME{groups.get("url_rest") or ""}'
 
     return path
 

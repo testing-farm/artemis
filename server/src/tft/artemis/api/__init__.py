@@ -1918,7 +1918,7 @@ def _create_route(
     Without this Molten requirement, we could just use `Route(...)` and be done with it.
     """
 
-    return Route(template, handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
+    return Route(template, handler, method=method, name=f'{name_prefix}{handler.__name__}')
 
 
 def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
@@ -1957,7 +1957,7 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
                         redirect_type=molten.RedirectType.PERMANENT
                     )
 
-                return Route(template, real_handler, method=method, name='{}{}'.format(name_prefix, handler.__name__))
+                return Route(template, real_handler, method=method, name=f'{name_prefix}{handler.__name__}')
 
         else:
             def create_route(
@@ -1985,39 +1985,39 @@ def generate_routes_v0_0_21(
         Include('/guests', [
             create_route('/', get_guest_requests, method='GET'),
             create_route('/', create_guest_request_v0_0_20, method='POST'),
-            create_route('/{guestname}', get_guest_request),
-            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/{guestname}', get_guest_request),  # noqa: FS003
+            create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
             create_route('/events', get_events),
-            create_route('/{guestname}/events', get_guest_events),
-            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
-            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
-            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
-            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
-            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),
-            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')
+            create_route('/{guestname}/events', get_guest_events),  # noqa: FS003
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')  # noqa: FS003,E501
         ]),
         Include('/knobs', [
             create_route('/', KnobManager.entry_get_knobs, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
-            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')  # noqa: FS003
         ]),
         Include('/users', [
             create_route('/', UserManager.entry_get_users, method='GET'),
-            create_route('/{username}', UserManager.entry_get_user, method='GET'),
-            create_route('/{username}', UserManager.entry_create_user, method='POST'),
-            create_route('/{username}', UserManager.entry_delete_user, method='DELETE'),
-            create_route('/{username}/tokens/{tokentype}/reset', UserManager.entry_reset_token, method='POST')
+            create_route('/{username}', UserManager.entry_get_user, method='GET'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_create_user, method='POST'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_delete_user, method='DELETE'),  # noqa: FS003
+            create_route('/{username}/tokens/{tokentype}/reset', UserManager.entry_reset_token, method='POST')  # noqa: FS003,E501
         ]),
         create_route('/metrics', get_metrics),
         create_route('/about', get_about),
         Include('/_cache', [
-            Include('/pools/{poolname}', [
+            Include('/pools/{poolname}', [  # noqa: FS003
                 create_route('/image-info', CacheManager.entry_pool_image_info),
                 create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
             ])
         ]),
-        create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
         create_route('/_schema', OpenAPIHandler(metadata=metadata))
     ]
 
@@ -2033,32 +2033,32 @@ def generate_routes_v0_0_20(
         Include('/guests', [
             create_route('/', get_guest_requests, method='GET'),
             create_route('/', create_guest_request_v0_0_20, method='POST'),
-            create_route('/{guestname}', get_guest_request),
-            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/{guestname}', get_guest_request),  # noqa: FS003
+            create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
             create_route('/events', get_events),
-            create_route('/{guestname}/events', get_guest_events),
-            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
-            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
-            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
-            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
-            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),
-            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')
+            create_route('/{guestname}/events', get_guest_events),  # noqa: FS003
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')  # noqa: FS003,E501
         ]),
         Include('/knobs', [
             create_route('/', KnobManager.entry_get_knobs, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
-            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')  # noqa: FS003
         ]),
         create_route('/metrics', get_metrics),
         create_route('/about', get_about),
         Include('/_cache', [
-            Include('/pools/{poolname}', [
+            Include('/pools/{poolname}', [  # noqa: FS003
                 create_route('/image-info', CacheManager.entry_pool_image_info),
                 create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
             ])
         ]),
-        create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
         create_route('/_schema', OpenAPIHandler(metadata=metadata))
     ]
 
@@ -2074,31 +2074,31 @@ def generate_routes_v0_0_19(
         Include('/guests', [
             create_route('/', get_guest_requests, method='GET'),
             create_route('/', create_guest_request_v0_0_19, method='POST'),
-            create_route('/{guestname}', get_guest_request),
-            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/{guestname}', get_guest_request),  # noqa: FS003
+            create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
             create_route('/events', get_events),
-            create_route('/{guestname}/events', get_guest_events),
-            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
-            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
-            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
-            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
-            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')
+            create_route('/{guestname}/events', get_guest_events),  # noqa: FS003
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),  # noqa: FS003,E501
+            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')  # noqa: FS003
         ]),
         Include('/knobs', [
             create_route('/', KnobManager.entry_get_knobs, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
-            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')  # noqa: FS003
         ]),
         create_route('/metrics', get_metrics),
         create_route('/about', get_about),
         Include('/_cache', [
-            Include('/pools/{poolname}', [
+            Include('/pools/{poolname}', [  # noqa: FS003
                 create_route('/image-info', CacheManager.entry_pool_image_info),
                 create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
             ])
         ]),
-        create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
         create_route('/_schema', OpenAPIHandler(metadata=metadata))
     ]
 
@@ -2114,31 +2114,31 @@ def generate_routes_v0_0_18(
         Include('/guests', [
             create_route('/', get_guest_requests, method='GET'),
             create_route('/', create_guest_request_v0_0_18, method='POST'),
-            create_route('/{guestname}', get_guest_request),
-            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/{guestname}', get_guest_request),  # noqa: FS003
+            create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
             create_route('/events', get_events),
-            create_route('/{guestname}/events', get_guest_events),
-            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
-            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
-            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
-            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),
-            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')
+            create_route('/{guestname}/events', get_guest_events),  # noqa: FS003
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),  # noqa: FS003,E501
+            create_route('/{guestname}/console/url', acquire_guest_console_url, method='GET')  # noqa: FS003
         ]),
         Include('/knobs', [
             create_route('/', KnobManager.entry_get_knobs, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
-            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')  # noqa: FS003
         ]),
         create_route('/metrics', get_metrics),
         create_route('/about', get_about),
         Include('/_cache', [
-            Include('/pools/{poolname}', [
+            Include('/pools/{poolname}', [  # noqa: FS003
                 create_route('/image-info', CacheManager.entry_pool_image_info),
                 create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
             ])
         ]),
-        create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
         create_route('/_schema', OpenAPIHandler(metadata=metadata))
     ]
 
@@ -2153,30 +2153,30 @@ def generate_routes_v0_0_17(
         Include('/guests', [
             create_route('/', get_guest_requests, method='GET'),
             create_route('/', create_guest_request_v0_0_17, method='POST'),
-            create_route('/{guestname}', get_guest_request),
-            create_route('/{guestname}', delete_guest, method='DELETE'),
+            create_route('/{guestname}', get_guest_request),  # noqa: FS003
+            create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
             create_route('/events', get_events),
-            create_route('/{guestname}/events', get_guest_events),
-            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),
-            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),
-            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),
-            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')
+            create_route('/{guestname}/events', get_guest_events),  # noqa: FS003
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST')  # noqa: FS003,E501
         ]),
         Include('/knobs', [
             create_route('/', KnobManager.entry_get_knobs, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),
-            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),
-            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')  # noqa: FS003
         ]),
         create_route('/metrics', get_metrics),
         create_route('/about', get_about),
         Include('/_cache', [
-            Include('/pools/{poolname}', [
+            Include('/pools/{poolname}', [  # noqa: FS003
                 create_route('/image-info', CacheManager.entry_pool_image_info),
                 create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
             ])
         ]),
-        create_route('/_docs', OpenAPIUIHandler(schema_route_name='{}OpenAPIUIHandler'.format(name_prefix))),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
         create_route('/_schema', OpenAPIHandler(metadata=metadata))
     ]
 
@@ -2276,7 +2276,7 @@ def run_app() -> molten.app.App:
 
     for milestone_version, routes_generator, compatible_versions in API_MILESTONES:
         # Preload environment schema.
-        r_schema = load_validation_schema('environment-{}.yml'.format(milestone_version))
+        r_schema = load_validation_schema(f'environment-{milestone_version}.yml')
 
         if r_schema.is_error:
             r_schema.unwrap_error().handle(logger)
@@ -2286,11 +2286,11 @@ def run_app() -> molten.app.App:
         ENVIRONMENT_SCHEMAS[milestone_version] = r_schema.unwrap()
 
         # Create the base API endpoints of this version.
-        logger.info('API: /{}'.format(milestone_version))
+        logger.info(f'API: /{milestone_version}')
 
         routes += routes_generator(
-            '/{}'.format(milestone_version),
-            '{}_'.format(milestone_version),
+            f'/{milestone_version}',
+            f'{milestone_version}_',
             metadata
         )
 
@@ -2303,20 +2303,20 @@ def run_app() -> molten.app.App:
             # "toplevel" is a pseudo-version, similar to "current" - it's backed by "current", and its endpoints
             # have no version prefix. Once all clients lear to use versioned API, we will drop this dog-leg.
             if compatible_version == 'toplevel':
-                logger.info('API: / => /{}'.format(milestone_version))
+                logger.info(f'API: / => /{milestone_version}')
 
                 endpoint_root = ''
 
             else:
-                logger.info('API: /{} => /{}'.format(compatible_version, milestone_version))
+                logger.info(f'API: /{compatible_version} => /{milestone_version}')
 
-                endpoint_root = '/{}'.format(compatible_version)
+                endpoint_root = f'/{compatible_version}'
 
             routes += routes_generator(
                 endpoint_root,
-                'legacy_{}_'.format(compatible_version),
+                f'legacy_{compatible_version}_',
                 metadata,
-                redirect_to_prefix='/{}'.format(milestone_version)
+                redirect_to_prefix=f'/{milestone_version}'
             )
 
     def log_routes() -> None:
@@ -2325,10 +2325,10 @@ def run_app() -> molten.app.App:
         def _extract_routes(items: List[Union[Route, Include]], prefix: str = '') -> None:
             for item in items:
                 if isinstance(item, Route):
-                    extracted_routes.append('{}{} (name={})'.format(prefix, item.template, item.name))
+                    extracted_routes.append(f'{prefix}{item.template} (name={item.name})')
 
                 else:
-                    _extract_routes(item.routes, prefix='{}{}'.format(prefix, item.prefix))
+                    _extract_routes(item.routes, prefix=f'{prefix}{item.prefix}')
 
         _extract_routes(routes)
 
