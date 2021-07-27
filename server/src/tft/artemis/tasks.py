@@ -1047,7 +1047,7 @@ def _update_guest_state(
     guestname: str,
     new_state: GuestState,
     current_state: Optional[GuestState] = None,
-    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime]]] = None,
+    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
     current_pool_data: Optional[str] = None,
     **details: Any
 ) -> Result[bool, Failure]:
@@ -1067,12 +1067,12 @@ def _update_guest_state(
     if set_values:
         values = set_values
         values.update({
-            'state': new_state.value
+            'state': new_state
         })
 
     else:
         values = {
-            'state': new_state.value
+            'state': new_state
         }
 
     query = sqlalchemy \
@@ -1080,7 +1080,7 @@ def _update_guest_state(
         .where(GuestRequest.guestname == guestname)
 
     if current_state is not None:
-        query = query.where(GuestRequest.state == current_state.value)
+        query = query.where(GuestRequest.state == current_state)
 
     if current_pool_data:
         query = query.where(GuestRequest.pool_data == current_pool_data)
@@ -1138,18 +1138,18 @@ def _update_snapshot_state(
     if set_values:
         values = set_values
         values.update({
-            'state': new_state.value
+            'state': new_state
         })
 
     else:
         values = {
-            'state': new_state.value
+            'state': new_state
         }
 
     query = sqlalchemy \
         .update(SnapshotRequest.__table__) \
         .where(SnapshotRequest.snapshotname == snapshotname) \
-        .where(SnapshotRequest.state == current_state.value) \
+        .where(SnapshotRequest.state == current_state) \
         .values(**values)
 
     r = safe_db_change(logger, session, query)
@@ -1389,7 +1389,7 @@ class Workspace:
         else:
             r = SafeQuery.from_session(self.session, GuestRequest) \
                 .filter(GuestRequest.guestname == guestname) \
-                .filter(GuestRequest.state == state.value) \
+                .filter(GuestRequest.state == state) \
                 .one_or_none()
 
         if r.is_error:
@@ -1431,7 +1431,7 @@ class Workspace:
 
         r = SafeQuery.from_session(self.session, SnapshotRequest) \
             .filter(SnapshotRequest.snapshotname == snapshotname) \
-            .filter(SnapshotRequest.state == state.value) \
+            .filter(SnapshotRequest.state == state) \
             .one_or_none()
 
         if r.is_error:
@@ -1594,7 +1594,7 @@ class Workspace:
         self,
         new_state: GuestState,
         current_state: Optional[GuestState] = None,
-        set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime]]] = None,
+        set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
         current_pool_data: Optional[str] = None,
         **details: Any
     ) -> None:
@@ -2270,7 +2270,7 @@ def do_update_guest_log(
         return handle_success('finished-task')
 
     # TODO logs: it'd be nice to change logs' state to something final
-    if workspace.gr.state in (GuestState.CONDEMNED.value, GuestState.ERROR.value):
+    if workspace.gr.state in (GuestState.CONDEMNED, GuestState.ERROR):
         logger.warning('guest can no longer provide any useful logs')
 
         return handle_success('finished-task')
@@ -2738,7 +2738,7 @@ def do_release_guest_request(
     query = sqlalchemy \
         .delete(GuestRequest.__table__) \
         .where(GuestRequest.guestname == guestname) \
-        .where(GuestRequest.state == GuestState.CONDEMNED.value)
+        .where(GuestRequest.state == GuestState.CONDEMNED)
 
     r_delete = safe_db_change(logger, session, query)
 
@@ -3194,7 +3194,7 @@ def do_release_snapshot_request(
     query = sqlalchemy \
         .delete(SnapshotRequest.__table__) \
         .where(SnapshotRequest.snapshotname == snapshotname) \
-        .where(SnapshotRequest.state == GuestState.RELEASING.value)
+        .where(SnapshotRequest.state == GuestState.RELEASING)
 
     r_delete = safe_db_change(logger, session, query)
 

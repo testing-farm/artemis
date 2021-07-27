@@ -81,7 +81,7 @@ def main() -> None:
         # For each pending guest request, start their processing by submitting the first, routing task.
         with db.get_session() as session:
             r_pending_sr = SafeQuery.from_session(session, SnapshotRequest) \
-                .filter(SnapshotRequest.state == GuestState.PENDING.value) \
+                .filter(SnapshotRequest.state == GuestState.PENDING) \
                 .all()
 
             if r_pending_sr.is_ok:
@@ -92,7 +92,7 @@ def main() -> None:
                 Failure('failed to fetch pending snapshot requests').handle(root_logger)
 
             r_restoring_sr = SafeQuery.from_session(session, SnapshotRequest) \
-                .filter(SnapshotRequest.state == GuestState.CONDEMNED.value) \
+                .filter(SnapshotRequest.state == GuestState.CONDEMNED) \
                 .all()
 
             if r_restoring_sr.is_ok:
@@ -103,7 +103,7 @@ def main() -> None:
                 Failure('failed to fetch condemned snapshot requests').handle(root_logger)
 
             r_restoring_sr = SafeQuery.from_session(session, SnapshotRequest) \
-                .filter(SnapshotRequest.state == GuestState.RESTORING.value) \
+                .filter(SnapshotRequest.state == GuestState.RESTORING) \
                 .all()
 
             if r_restoring_sr.is_ok:

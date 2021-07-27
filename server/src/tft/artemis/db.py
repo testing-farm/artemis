@@ -24,6 +24,8 @@ from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Intege
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
 
+from .guest import GuestState
+
 if TYPE_CHECKING:  # noqa
     from mypy_extensions import VarArg
 
@@ -583,7 +585,7 @@ class GuestRequest(Base):
     # we should use the same approach. Maybe it's possible to limit the static default to SQLite only.
     ctime = Column(DateTime(), nullable=False, default=datetime.datetime.utcnow)
 
-    state = Column(String(250), nullable=False)
+    state = Column(Enum(GuestState), nullable=False)
 
     address = Column(String(250), nullable=True)
 
@@ -770,7 +772,7 @@ class SnapshotRequest(Base):
     guestname = Column(String(250), ForeignKey('guest_requests.guestname'), nullable=False)
     poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
 
-    state = Column(String(250), nullable=False)
+    state = Column(Enum(GuestState), nullable=False)
 
     start_again = Column(Boolean(), nullable=False)
 

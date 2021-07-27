@@ -572,7 +572,7 @@ class GuestRequestManager:
                     poolname=None,
                     pool_data=json.dumps({}),
                     user_data=json.dumps(guest_request.user_data),
-                    state=GuestState.ROUTING.value,
+                    state=GuestState.ROUTING,
                     post_install_script=guest_request.post_install_script,
                 ),
                 conflict_error=errors.InternalServerError,
@@ -688,7 +688,7 @@ class GuestRequestManager:
                     failure_details=failure_details
                 )
 
-            if guest_request.state != GuestState.CONDEMNED.value:
+            if guest_request.state != GuestState.CONDEMNED:
                 snapshot_count_subquery = session.query(  # type: ignore # untyped function "query"
                     sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
                 ).filter(
@@ -699,7 +699,7 @@ class GuestRequestManager:
                     .update(artemis_db.GuestRequest.__table__) \
                     .where(artemis_db.GuestRequest.guestname == guestname) \
                     .where(snapshot_count_subquery.c.snapshot_count == 0) \
-                    .values(state=GuestState.CONDEMNED.value)
+                    .values(state=GuestState.CONDEMNED)
 
                 # The query can miss either with existing snapshots, or when the guest request has been
                 # removed from DB already. The "gone already" situation could be better expressed by
@@ -870,7 +870,7 @@ class SnapshotRequestManager:
                     snapshotname=snapshotname,
                     guestname=guestname,
                     poolname=None,
-                    state=GuestState.PENDING.value,
+                    state=GuestState.PENDING,
                     start_again=snapshot_request.start_again
                 ),
                 conflict_error=errors.InternalServerError,
@@ -908,7 +908,7 @@ class SnapshotRequestManager:
                 .update(artemis_db.SnapshotRequest.__table__) \
                 .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
                 .where(artemis_db.SnapshotRequest.guestname == guestname) \
-                .values(state=GuestState.CONDEMNED.value)
+                .values(state=GuestState.CONDEMNED)
 
             # Unline guest requests, here seem to be no possibility of conflict or relationships we must
             # preserve. Given the query, snapshot request already being removed seems to be the only option
@@ -932,8 +932,8 @@ class SnapshotRequestManager:
                 .update(artemis_db.SnapshotRequest.__table__) \
                 .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
                 .where(artemis_db.SnapshotRequest.guestname == guestname) \
-                .where(artemis_db.SnapshotRequest.state != GuestState.CONDEMNED.value) \
-                .values(state=GuestState.RESTORING.value)
+                .where(artemis_db.SnapshotRequest.state != GuestState.CONDEMNED) \
+                .values(state=GuestState.RESTORING)
 
             # Similarly to guest request removal, two options exist: either the snapshot is already gone,
             # or it's marked as condemned. Again, we cannot tell which of these happened. "404 Not Found"
