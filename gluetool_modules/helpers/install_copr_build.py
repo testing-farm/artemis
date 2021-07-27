@@ -61,13 +61,10 @@ class InstallCoprBuild(gluetool.Module):
         if stage != GuestSetupStage.ARTIFACT_INSTALLATION:
             return r_overloaded_guest_setup_output
 
-        if self.request_builds:
-            primary_task = self.request_builds[0]
-        else:
-            primary_task = self.shared('primary_task')
+        builds = self.request_builds or self.shared('tasks')
 
         # no artifact to install
-        if not primary_task:
+        if not builds:
             return r_overloaded_guest_setup_output
 
         guest_setup_output = r_overloaded_guest_setup_output.unwrap() or []
@@ -77,18 +74,23 @@ class InstallCoprBuild(gluetool.Module):
             '{}-{}'.format(self.option('log-dir-name'), guest.name)
         )
 
-        sut_installation = SUTInstallation(self, installation_log_dirpath, primary_task, logger=guest.logger)
+        sut_installation = SUTInstallation(self, installation_log_dirpath, builds[0], logger=guest.logger)
+        joined_rpm_urls = ''
 
-        sut_installation.add_step('Download copr repository', 'curl {} --output /etc/yum.repos.d/copr_build.repo',
-                                  items=primary_task.repo_url)
+        for number, build in enumerate(builds, 1):
+            sut_installation.add_step(
+                'Download copr repository',
+                'curl {{}} --output /etc/yum.repos.d/copr_build-{}-{}.repo'.format(build.project.replace('/', '_'), number),
+                items=build.repo_url
+            )
 
-        # reinstall command has to be called for each rpm separately, hence list of rpms is used
-        sut_installation.add_step('Reinstall packages', 'yum -y reinstall {}',
-                                  items=primary_task.rpm_urls, ignore_exception=True)
+            # reinstall command has to be called for each rpm separately, hence list of rpms is used
+            sut_installation.add_step('Reinstall packages', 'yum -y reinstall {}',
+                                      items=build.rpm_urls, ignore_exception=True)
 
-        # downgrade, update and install commands are called just once with all rpms followed, hence list of
-        # rpms is joined to one item
-        joined_rpm_urls = ' '.join(primary_task.rpm_urls)
+            # downgrade, update and install commands are called just once with all rpms followed, hence list of
+            # rpms is joined to one item
+            joined_rpm_urls = '{} {}'.format(joined_rpm_urls, ' '.join(build.rpm_urls))
 
         sut_installation.add_step('Downgrade packages', 'yum -y downgrade {}',
                                   items=joined_rpm_urls, ignore_exception=True)
@@ -97,14 +99,15 @@ class InstallCoprBuild(gluetool.Module):
         sut_installation.add_step('Install packages', 'yum -y install {}',
                                   items=joined_rpm_urls, ignore_exception=True)
 
-        sut_installation.add_step('Verify packages installed', 'rpm -q {}', items=primary_task.rpm_names)
+        for build in builds:
+            sut_installation.add_step('Verify packages installed', 'rpm -q {}', items=build.rpm_names)
 
         sut_result = sut_installation.run(guest)
 
         guest_setup_output += [
             GuestSetupOutput(
                 stage=stage,
-                label='Copr build installation',
+                label='Copr build(s) installation',
                 log_path=installation_log_dirpath,
                 additional_data=sut_installation
             )
