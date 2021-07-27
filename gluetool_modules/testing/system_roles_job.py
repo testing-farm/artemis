@@ -136,7 +136,7 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
             self.shared('primary_task').get_file(self.option('metadata-path'))
         )
 
-        return meta_file['galaxy_info']['platforms']
+        return meta_file['galaxy_info'].get('platforms', None)
 
     @cached_property
     def get_transformed_platforms(self):
@@ -146,6 +146,9 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
         The method replaces `EL` platform with `RHEL` and `CentOS`.
         """
         platforms = self.parse_platforms_from_meta
+        if not platforms:
+            return None
+
         transformed_platforms = []
         for platform in platforms:
             if platform['name'] == 'EL':
@@ -162,6 +165,9 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
         and version is a major version of the distribution.
         """
         platforms = self.get_transformed_platforms
+        # If no platform is specified, the role supports all platforms
+        if not platforms:
+            return True
 
         for platform in platforms:
             for version in platform['versions']:
