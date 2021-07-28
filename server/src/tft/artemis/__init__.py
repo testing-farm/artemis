@@ -786,11 +786,7 @@ class KnobSourceDB(KnobSource[T]):
         if not record:
             return Ok(None)
 
-        try:
-            return Ok(cast(T, record.unserialize_value()))
-
-        except json.JSONDecodeError as exc:
-            return Error(Failure.from_exc('Cannot decode knob value', exc))
+        return Ok(cast(T, record.value))
 
     def to_repr(self) -> List[str]:
         return [

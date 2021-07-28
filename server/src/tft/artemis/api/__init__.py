@@ -29,7 +29,7 @@ from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 from typing_extensions import Protocol
 
-from .. import __VERSION__, KNOB_LOGGING_JSON, Failure, FailureDetailsType, JSONSchemaType, JSONType, Knob
+from .. import __VERSION__, KNOB_LOGGING_JSON, Failure, FailureDetailsType, JSONSchemaType, Knob
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, validate_data
 from ..context import DATABASE, LOGGER
@@ -1061,14 +1061,14 @@ class KnobManager:
 
                     knobs[record.knobname] = KnobResponse(
                         name=record.knobname,
-                        value=record.unserialize_value(),
+                        value=record.value,
                         cast=parent_knob.cast_name,
                         help=knob.help,
                         editable=True
                     )
 
                 else:
-                    knobs[record.knobname].value = record.unserialize_value()
+                    knobs[record.knobname].value = record.value
 
         return list(knobs.values())
 
@@ -1087,7 +1087,7 @@ class KnobManager:
                 value = None
 
             else:
-                value = knob_record.unserialize_value()
+                value = knob_record.value
 
             if knobname in Knob.DB_BACKED_KNOBS:
                 knob = Knob.DB_BACKED_KNOBS[knobname]
@@ -1157,7 +1157,6 @@ class KnobManager:
 
             try:
                 casted_value = knob.cast_from_str(value)
-                serialized_value: JSONType = artemis_db.Knob.serialize_value(casted_value)
 
             except Exception as exc:
                 raise errors.BadRequestError(
@@ -1176,10 +1175,10 @@ class KnobManager:
                     artemis_db.Knob.knobname: knobname
                 },
                 insert_data={
-                    artemis_db.Knob.value: serialized_value
+                    artemis_db.Knob.value: casted_value
                 },
                 update_data={
-                    'value': serialized_value
+                    'value': casted_value
                 }
             )
 
