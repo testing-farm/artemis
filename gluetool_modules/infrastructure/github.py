@@ -286,6 +286,7 @@ class GitHubPullRequest(object):
         self.depends_on = []  # type: List[str]
 
         self.component = self.repo
+        self.component_id = self.component
 
         self.github_api = module.github_api()
 
