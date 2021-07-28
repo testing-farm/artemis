@@ -17,17 +17,22 @@ branch_labels = None
 depends_on = None
 
 
+# NOTE: this revision downgrade becomes no-op: after upgrade, there's no way how to gracefully handle downgrade
+# if there are existing records. It's not possible to fit 64 chars long tokens into 32 chars, truncating tokens
+# would render them unusable. Therefore both upgrade and downgrade work with string columns without any particular
+# size, allowing the downgrade to proceed.
+
 def upgrade():
     with op.batch_alter_table('users', schema=None) as batch_op:
         batch_op.alter_column(
             'admin_token',
-            type_=sa.String(length=64),
+            type_=sa.String(),
             server_default='undefined',
             nullable=False
         )
         batch_op.alter_column(
             'provisioning_token',
-            type_=sa.String(length=64),
+            type_=sa.String(),
             server_default='undefined',
             nullable=False
         )
@@ -37,13 +42,13 @@ def downgrade():
     with op.batch_alter_table('users', schema=None) as batch_op:
         batch_op.alter_column(
             'admin_token',
-            type_=sa.String(length=32),
+            type_=sa.String(),
             server_default='undefined',
             nullable=False
         )
         batch_op.alter_column(
             'provisioning_token',
-            type_=sa.String(length=32),
+            type_=sa.String(),
             server_default='undefined',
             nullable=False
         )

@@ -35,7 +35,7 @@ def downgrade():
         sa.Column('from_pool', sa.VARCHAR(length=250), nullable=False),
         sa.Column('to_pool', sa.VARCHAR(length=250), nullable=False),
         sa.Column('count', sa.INTEGER(), nullable=True),
-        sa.Column('updated', sa.DATETIME(), nullable=True),
+        sa.Column('updated', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['from_pool'], ['pools.poolname'], ),
         sa.ForeignKeyConstraint(['to_pool'], ['pools.poolname'], ),
         sa.PrimaryKeyConstraint('from_pool', 'to_pool')
@@ -64,7 +64,6 @@ def downgrade():
         sa.Column('pool_name', sa.VARCHAR(), nullable=False),
         sa.Column('allowed', sa.BOOLEAN(), nullable=False),
         sa.Column('count', sa.INTEGER(), nullable=True),
-        sa.CheckConstraint('allowed IN (0, 1)'),
         sa.PrimaryKeyConstraint('policy_name', 'pool_name', 'allowed')
     )
     op.create_table(
@@ -72,7 +71,7 @@ def downgrade():
         sa.Column('from_pool', sa.VARCHAR(length=250), nullable=False),
         sa.Column('to_pool', sa.VARCHAR(length=250), nullable=False),
         sa.Column('count', sa.INTEGER(), nullable=True),
-        sa.Column('updated', sa.DATETIME(), nullable=True),
+        sa.Column('updated', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['from_pool'], ['pools.poolname'], ),
         sa.ForeignKeyConstraint(['to_pool'], ['pools.poolname'], ),
         sa.PrimaryKeyConstraint('from_pool', 'to_pool')
