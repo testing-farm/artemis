@@ -363,7 +363,7 @@ class GuestEvent:
         return cls(
             eventname=event.eventname,
             guestname=event.guestname,
-            details=json.loads(event.details) if event.details else {},
+            details=event.details,
             updated=event.updated
         )
 

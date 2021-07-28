@@ -1482,7 +1482,7 @@ def log_guest_event(
         sqlalchemy.insert(artemis_db.GuestEvent.__table__).values(  # type: ignore  # GuestEvent *has* __table__
             guestname=guestname,
             eventname=eventname,
-            details=json.dumps(details)
+            _details=details
         )
     )
 

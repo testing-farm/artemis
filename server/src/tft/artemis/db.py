@@ -2,7 +2,6 @@ import datetime
 import enum
 import functools
 import hashlib
-import json
 import logging
 import os
 import secrets
@@ -686,7 +685,11 @@ class GuestEvent(Base):
     updated = Column(DateTime, default=datetime.datetime.utcnow)
     guestname = Column(String(250), nullable=False, index=True)
     eventname = Column(String(250), nullable=False)
-    details = Column(Text())
+
+    # Details are stored as JSON blob, in a "hidden" column - when accessing event details, we'd like them to be
+    # typed correctly, and there will never ever be an event having a list or an integer as a detail, it will always
+    # be a mapping. Therefore `_details` column and `details` property to apply proper cast call.
+    _details = Column(JSON(), nullable=False, server_default='{}')
 
     def __init__(
         self,
@@ -698,25 +701,11 @@ class GuestEvent(Base):
         self.eventname = eventname
         self.guestname = guestname
         self.updated = updated or datetime.datetime.utcnow()
-        self.details = json.dumps(details)
+        self._details = details
 
-    # This is not very friendly... In our code, when we access event details, we want to get the unserialized form.
-    # And we want a nice name, like `details`: `event.details` should be Python-friendly, unserialized details. They
-    # are read-only anyway, and we do `details = ...` just once, when we initialize the event just before inserting
-    # it to the database.
-    #
-    # But `details` is already used for the column, and therefore it is `str`. The best solution would be to rename
-    # the column (e.g. `_details` or `details_serialized`), and add `details` property for transparent unserialize.
-    # TODO: another patch...
     @property
-    def details_unserialized(self) -> Dict[str, Any]:
-        if not self.details:
-            return {}
-
-        return cast(
-            Dict[str, Any],
-            json.loads(self.details)
-        )
+    def details(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], self._details)
 
     @classmethod
     def fetch(
