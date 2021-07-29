@@ -1,3 +1,11 @@
+"""
+Guest environment specification and handling.
+
+Each guest request carries an environment specification, and Artemis will provision a VM satisfying the given request.
+This specification includes both software requirements - compose - and hardware requirements - architecture, memory
+size, etc.
+"""
+
 import dataclasses
 import enum
 import json
@@ -62,8 +70,7 @@ ConstraintValueType = Union[int, Quantity, str]
 @dataclasses.dataclass(repr=False)
 class FlavorCpu(SerializableContainer):
     """
-    For the purpose of HW requirements, this class represents a HW properties related to CPU
-    and CPU cores of a flavor.
+    Represents HW properties related to CPU and CPU cores of a flavor.
 
     .. note::
 
@@ -90,19 +97,31 @@ class FlavorCpu(SerializableContainer):
     model_name: Optional[str] = None
 
     def format_fields(self) -> List[str]:
+        """
+        Return formatted representation of flavor properties.
+
+        :returns: list of formatted properties.
+        """
+
         return [
             f'cpu.{field.name}={getattr(self, field.name)}'
             for field in dataclasses.fields(self)
         ]
 
     def __repr__(self) -> str:
+        """
+        Return text representation of flavor properties.
+
+        :returns: human-readable rendering of flavor properties.
+        """
+
         return f'<FlavorCpu: {" ".join(self.format_fields())}>'
 
 
 @dataclasses.dataclass(repr=True)
 class FlavorDisk(SerializableContainer):
     """
-    For the purpose of HW requirements, this class represents a HW properties related to persistent storage a flavor.
+    Represents a HW properties related to persistent storage a flavor.
 
     .. note::
 
@@ -114,15 +133,33 @@ class FlavorDisk(SerializableContainer):
     space: Optional[Quantity] = None
 
     def format_fields(self) -> List[str]:
+        """
+        Return formatted representation of flavor properties.
+
+        :returns: list of formatted properties.
+        """
+
         return [
             f'disk.{field.name}={getattr(self, field.name)}'
             for field in dataclasses.fields(self)
         ]
 
     def __repr__(self) -> str:
+        """
+        Return text representation of flavor properties.
+
+        :returns: human-readable rendering of flavor properties.
+        """
+
         return f'<FlavorDisk: {" ".join(self.format_fields())}>'
 
     def serialize_to_json(self) -> Dict[str, Any]:
+        """
+        Serialize properties to JSON.
+
+        :returns: serialized form of flavor properties.
+        """
+
         serialized = dataclasses.asdict(self)
 
         if self.space is not None:
@@ -132,6 +169,13 @@ class FlavorDisk(SerializableContainer):
 
     @classmethod
     def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'FlavorDisk':
+        """
+        Unserialize properties from JSON.
+
+        :param serialized: serialized form of flavor properties.
+        :returns: disk properties of a flavor.
+        """
+
         disk = cls(**serialized)
 
         if disk.space is not None:
@@ -143,10 +187,13 @@ class FlavorDisk(SerializableContainer):
 @dataclasses.dataclass(repr=False)
 class Flavor(SerializableContainer):
     """
-    For the purpose of HW requirements, this class represents a HW properties of a flavor.
+    Represents various properties of a flavor.
     """
 
+    #: Human-readable name of the flavor.
     name: str
+
+    #: ID of the flavor as known to flavor's driver.
     id: str
 
     #: HW architecture of the flavor.
@@ -162,6 +209,12 @@ class Flavor(SerializableContainer):
     memory: Optional[Quantity] = None
 
     def format_fields(self) -> List[str]:
+        """
+        Return formatted representation of flavor properties.
+
+        :returns: list of formatted properties.
+        """
+
         return self.cpu.format_fields() + self.disk.format_fields() + [
             f'{field.name}={getattr(self, field.name)}'
             for field in dataclasses.fields(self)
@@ -169,10 +222,22 @@ class Flavor(SerializableContainer):
         ]
 
     def __repr__(self) -> str:
+        """
+        Return text representation of flavor properties.
+
+        :returns: human-readable rendering of flavor properties.
+        """
+
         return f'<PoolFlavorInfo: {" ".join(self.format_fields())}>'
 
     # TODO: because of a circular dependency, we can't derive this class from SerializableContainer :/
     def serialize_to_json(self) -> Dict[str, Any]:
+        """
+        Serialize properties to JSON.
+
+        :returns: serialized form of flavor properties.
+        """
+
         serialized = dataclasses.asdict(self)
 
         if self.memory is not None:
@@ -184,6 +249,13 @@ class Flavor(SerializableContainer):
 
     @classmethod
     def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'Flavor':
+        """
+        Unserialize properties from JSON.
+
+        :param serialized: serialized form of flavor properties.
+        :returns: flavor instance.
+        """
+
         flavor = cls(**serialized)
 
         if flavor.memory is not None:
@@ -195,6 +267,12 @@ class Flavor(SerializableContainer):
         return flavor
 
     def clone(self) -> 'Flavor':
+        """
+        Create a copy of this flavor.
+
+        :returns: new instance with the very same properties.
+        """
+
         # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone even cpu and disk info.
         clone = dataclasses.replace(self)
         clone.cpu = dataclasses.replace(self.cpu)
@@ -204,6 +282,10 @@ class Flavor(SerializableContainer):
 
 
 class Operator(enum.Enum):
+    """
+    Binary operators available for comparison of constraints and flavor properties.
+    """
+
     EQ = '=='
     NEQ = '!='
     GT = '>'
@@ -214,6 +296,14 @@ class Operator(enum.Enum):
 
 
 def match(text: str, pattern: str) -> bool:
+    """
+    Match a text against a given regular expression.
+
+    :param text: string to examine.
+    :param pattern: regular expression.
+    :returns: ``True`` if pattern matches the string.
+    """
+
     return re.match(pattern, text) is not None
 
 
@@ -246,7 +336,18 @@ OPERATOR_TO_HANDLER: Dict[Operator, OperatorHandlerType] = {
 # without the burden of huge boilerplate of code. It is intercepted on the border between the constraint parser
 # and the rest of the code, and converted to proper `Failure`.
 class ParseError(Exception):
+    """
+    Raised when HW constraint parsing fails.
+    """
+
     def __init__(self, constraint_name: str, raw_value: str) -> None:
+        """
+        Raise when HW constraint parsing fails.
+
+        :param constraint_name: name of the constraint that caused issues.
+        :param raw_value: original raw value.
+        """
+
         super(ParseError, self).__init__('failed to parse a constraint')
 
         self.constraint_name = constraint_name
@@ -261,16 +362,25 @@ class ConstraintBase:
     def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> bool:
         """
         Inspect the given flavor, and decide whether it fits the limits imposed by this constraint.
+
+        :param logger: logger to use for logging.
+        :param flavor: flavor to test.
+        :returns: ``True`` if the given flavor satisfies the constraint.
         """
 
-        raise NotImplementedError()
+        return False
 
     def format(self, prefix: str = '') -> str:
         """
         Return pretty text representation of this constraint.
+
+        The output provides nicer formatting for humans to easier grasp the tree-like nature of the constraint tree.
+
+        :param prefix: characters to prepend to each line of the formatted output.
+        :returns: prettified, human-readable rendering of the constraint.
         """
 
-        raise NotImplementedError()
+        return '<not implemented>'
 
 
 class CompoundConstraint(ConstraintBase):
@@ -283,16 +393,42 @@ class CompoundConstraint(ConstraintBase):
         reducer: Callable[[List[bool]], bool],
         constraints: Optional[List[ConstraintBase]] = None
     ) -> None:
+        """
+        Construct a compound constraint, constraint imposed to more than one dimension.
+
+        :param reducer: a callable reducing a list of results from child constraints into the final answer.
+        :param constraints: child contraints.
+        """
+
         self.reducer = reducer
         self.constraints = constraints or []
 
     def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> bool:
+        """
+        Compare given flavor against the constraint.
+
+        The constraint will evaluate its subconstraints, and merge their results into one final answer.
+
+        :param logger: logger to use for logging.
+        :param flavor: flavor to test.
+        :returns: ``True`` if the given flavor satisfies the constraint.
+        """
+
         return self.reducer([
             constraint.eval_flavor(logger, flavor)
             for constraint in self.constraints
         ])
 
     def format(self, prefix: str = '') -> str:
+        """
+        Return pretty text representation of this constraint.
+
+        The output provides nicer formatting for humans to easier grasp the tree-like nature of the constraint tree.
+
+        :param prefix: characters to prepend to each line of the formatted output.
+        :returns: prettified, human-readable rendering of the constraint.
+        """
+
         if len(self.constraints) == 1:
             return f'{prefix}{self.constraints[0].format()}'
 
@@ -314,15 +450,22 @@ class Constraint(ConstraintBase):
     A constraint imposing a particular limit to one of the system properties.
     """
 
+    #: Name of the constraint. Used for logging purposes, usually matches the name of the system property.
     name: str
+
+    #: A binary operation to use for comparing the constraint value and the value specified by system or flavor.
     operator: Operator
-    value: ConstraintValueType
 
     # A callable comparing the flavor value and the constraint value.
     operator_handler: OperatorHandlerType
 
+    #: Constraint value.
+    value: ConstraintValueType
+
     # Stored for possible inspection by more advanced processing.
     raw_value: str
+
+    #: If set, it is a raw unit specified by the constraint.
     unit: Optional[str] = None
 
     @classmethod
@@ -332,6 +475,17 @@ class Constraint(ConstraintBase):
         raw_value: str,
         as_quantity: bool = True
     ) -> T:
+        """
+        Parse raw constraint specification into our internal representation.
+
+        :param name: name of the constraint.
+        :param raw_value: raw value of the constraint.
+        :param as_quantity: if set, value is treated as a quantity containing also unit, and as such the raw value is
+            converted to :py:`pint.Quantity` instance.
+        :raises ParseError: when parsing fails.
+        :returns: a :py:class:`Constraint` representing the given specification.
+        """
+
         parsed_value = VALUE_PATTERN.match(raw_value)
 
         if not parsed_value:
@@ -363,6 +517,17 @@ class Constraint(ConstraintBase):
 
     @classmethod
     def from_arch(cls: Type[T], value: str) -> T:
+        """
+        Create a constraint for ``arch`` HW requirement.
+
+        ``arch`` field holds special position: it is a HW constraint, but it's not optional, and cannot be used under
+        ``and`` or ``or`` blocks. For HW constraint processing, it makes sense to create an internal constraint out
+        of ``arch``, to join it with the rest of the constraints by one virtual ``and`` on top level.
+
+        :param value: value of ``arch`` field of an environment.
+        :returns: constraint instance.
+        """
+
         return cls(
             name='arch',
             operator=Operator.EQ,
@@ -372,9 +537,23 @@ class Constraint(ConstraintBase):
         )
 
     def __repr__(self) -> str:
+        """
+        Return text representation of the constrain suitable for logging.
+
+        :returns: human-readable rendering of the constraint.
+        """
+
         return f'(FLAVOR.{self.name} {self.operator.value} {self.value})'
 
     def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> bool:
+        """
+        Compare given flavor against the constraint.
+
+        :param logger: logger to use for logging.
+        :param flavor: flavor to test.
+        :returns: ``True`` if the given flavor satisfies the constraint.
+        """
+
         flavor_property = cast(Any, flavor)
         property_path = self.name.split('.')
 
@@ -404,22 +583,60 @@ class Constraint(ConstraintBase):
         return result
 
     def format(self, prefix: str = '') -> str:
+        """
+        Return pretty text representation of this constraint.
+
+        The output provides nicer formatting for humans to easier grasp the tree-like nature of the constraint tree.
+
+        :param prefix: characters to prepend to each line of the formatted output.
+        :returns: prettified, human-readable rendering of the constraint.
+        """
+
+        return f'(FLAVOR.{self.name} {self.operator.value} {self.value})'
+
         return f'{prefix}{repr(self)}'
 
 
 @dataclasses.dataclass
 class And(CompoundConstraint):
+    """
+    Represents constraints that are grouped in ``and`` fashion.
+    """
+
     def __init__(self, constraints: Optional[List[ConstraintBase]] = None) -> None:
+        """
+        Hold constraints that are grouped in ``and`` fashion.
+
+        :param constraints: list of constraints to group.
+        """
+
         super(And, self).__init__(all, constraints=constraints)
 
 
 @dataclasses.dataclass
 class Or(CompoundConstraint):
+    """
+    Represents constraints that are grouped in ``or`` fashion.
+    """
+
     def __init__(self, constraints: Optional[List[ConstraintBase]] = None) -> None:
+        """
+        Hold constraints that are grouped in ``or`` fashion.
+
+        :param constraints: list of constraints to group.
+        """
+
         super(Or, self).__init__(any, constraints=constraints)
 
 
 def _parse_cpu(spec: SpecType) -> ConstraintBase:
+    """
+    Parse a cpu-related constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
     group = And()
 
     group.constraints += [
@@ -441,6 +658,13 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
 
 
 def _parse_disk(spec: SpecType) -> ConstraintBase:
+    """
+    Parse a disk-related constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
     group = And()
 
     group.constraints += [
@@ -456,6 +680,13 @@ def _parse_disk(spec: SpecType) -> ConstraintBase:
 
 
 def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
+    """
+    Parse actual constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
     group = And()
 
     if 'arch' in spec:
@@ -477,6 +708,13 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
 
 def _parse_and(spec: SpecType) -> ConstraintBase:
+    """
+    Parse an ``and`` clause holding one or more subblocks or constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
     group = And()
 
     group.constraints += [
@@ -491,6 +729,13 @@ def _parse_and(spec: SpecType) -> ConstraintBase:
 
 
 def _parse_or(spec: SpecType) -> ConstraintBase:
+    """
+    Parse an ``or`` clause holding one or more subblocks or constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
     group = Or()
 
     group.constraints += [
@@ -505,6 +750,13 @@ def _parse_or(spec: SpecType) -> ConstraintBase:
 
 
 def _parse_block(spec: SpecType) -> ConstraintBase:
+    """
+    Parse a generic block of HW constraints - may contain ``and`` and ``or`` subblocks and actual constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
     if 'and' in spec:
         return _parse_and(spec['and'])
 
@@ -516,6 +768,13 @@ def _parse_block(spec: SpecType) -> ConstraintBase:
 
 
 def constraints_from_environment_requirements(spec: SpecType) -> Result[ConstraintBase, 'Failure']:
+    """
+    Convert raw specification of HW constraints to our internal representation.
+
+    :param spec: raw constraints specification as stored in an environment.
+    :returns: root of HW constraints tree.
+    """
+
     from . import safe_call
 
     r_constraints = safe_call(_parse_block, spec)
@@ -528,19 +787,31 @@ def constraints_from_environment_requirements(spec: SpecType) -> Result[Constrai
 
 @dataclasses.dataclass
 class HWRequirements:
+    """
+    Represents HQ requirements of the environment.
+    """
+
+    #: Requested architecture.
     arch: str
+
+    #: Additional HW constraints.
     constraints: Optional[SpecType] = None
 
 
 @dataclasses.dataclass
 class OsRequirements:
+    """
+    Represents OS requirements of the environment.
+    """
+
+    #: Compose ID/name.
     compose: str
 
 
 @dataclasses.dataclass(repr=False)
 class Environment:
     """
-    Represents a testing environment and its dimensions.
+    Represents an environment and its dimensions.
 
     Derived from https://gitlab.com/testing-farm/eunomia but limited to fields that affect
     the provisioning: for example, environment variables nor repositories would have no
@@ -557,11 +828,19 @@ class Environment:
     spot_instance: Optional[bool] = None
 
     def __repr__(self) -> str:
+        """
+        Return text representation of the environment suitable for logging.
+
+        :returns: human-readable rendering of the environment.
+        """
+
         return json.dumps(dataclasses.asdict(self))
 
     def serialize_to_json(self) -> Dict[str, Any]:
         """
-        Serialize testing environment to a JSON dictionary.
+        Serialize environment to a JSON.
+
+        :returns: serialized environment.
         """
 
         return dataclasses.asdict(self)
@@ -569,7 +848,10 @@ class Environment:
     @classmethod
     def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'Environment':
         """
-        Construct a testing environment from a JSON representation of fields and their values.
+        Construct an environment from its JSON serialized form.
+
+        :param serialized: serialized environment.
+        :returns: new :py:class:`Environment` instance.
         """
 
         env = Environment(**serialized)
@@ -581,9 +863,21 @@ class Environment:
 
     @property
     def has_hw_constraints(self) -> bool:
+        """
+        Check whether the environment contains any HW constraints.
+
+        :returns: ``True`` if environment contains HW constraints, ``False`` otherwise.
+        """
+
         return self.hw.constraints is not None
 
     def get_hw_constraints(self) -> Result[Optional[ConstraintBase], 'Failure']:
+        """
+        Extract HW constraints from the environment.
+
+        :returns: HW constraints when the environment contains any, ``None`` otherwise.
+        """
+
         if self.hw.constraints is None:
             return Ok(None)
 
