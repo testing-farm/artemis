@@ -6,13 +6,13 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, Knob, log_dict_yaml
+from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import Environment
 from ..metrics import ResourceType
 from ..script import hook_engine
-from . import PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, \
+    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
 
 AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'Microsoft.Compute/virtualMachines': ResourceType.VIRTUAL_MACHINE,
@@ -21,15 +21,6 @@ AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'Microsoft.Network/publicIPAddresses': ResourceType.STATIC_IP,
     'Microsfot.Network/networkInterfaces': ResourceType.NETWORK_INTERFACE
 }
-
-KNOB_UPDATE_TICK: Knob[int] = Knob(
-    'azure.update.tick',
-    'A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.',
-    has_db=False,
-    envvar='ARTEMIS_AZURE_UPDATE_TICK',
-    cast_from_str=int,
-    default=30
-)
 
 
 @dataclasses.dataclass
@@ -432,6 +423,11 @@ class AzureDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         r_image = self._env_to_image(logger, guest_request.environment)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
@@ -522,5 +518,5 @@ class AzureDriver(PoolDriver):
                 instance_name=tags['ArtemisGuestLabel'],
                 resource_group=self.pool_config['resource-group']
             ),
-            delay_update=KNOB_UPDATE_TICK.value
+            delay_update=r_delay.unwrap()
         ))

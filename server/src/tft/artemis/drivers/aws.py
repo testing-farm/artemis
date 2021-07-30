@@ -23,9 +23,9 @@ from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, Environment, Flavor, FlavorCpu
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
-from . import GuestLogUpdateProgress, GuestTagsType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
-    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, \
-    test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, PoolCapabilities, PoolData, \
+    PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
+    run_cli_tool, test_cli_error
 
 #
 # Custom typing types
@@ -115,15 +115,6 @@ KNOB_PENDING_TIMEOUT: Knob[int] = Knob(
     envvar='ARTEMIS_AWS_PENDING_TIMEOUT',
     cast_from_str=int,
     default=600
-)
-
-KNOB_UPDATE_TICK: Knob[int] = Knob(
-    'aws.update.tick',
-    'A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.',
-    has_db=False,
-    envvar='ARTEMIS_AWS_UPDATE_TICK',
-    cast_from_str=int,
-    default=30
 )
 
 KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
@@ -579,6 +570,11 @@ class AWSDriver(PoolDriver):
             'image': image.serialize_to_json()
         })
 
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         command = [
             'ec2', 'run-instances',
             '--image-id', image.id,
@@ -623,7 +619,7 @@ class AWSDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=AWSPoolData(instance_id=instance_id),
-            delay_update=KNOB_UPDATE_TICK.value
+            delay_update=r_delay.unwrap()
         ))
 
     def _request_spot_instance(
@@ -638,6 +634,11 @@ class AWSDriver(PoolDriver):
             'flavor': instance_type.serialize_to_json(),
             'image': image.serialize_to_json()
         })
+
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
 
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)
@@ -695,7 +696,7 @@ class AWSDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=AWSPoolData(spot_instance_id=spot_instance_id),
-            delay_update=KNOB_UPDATE_TICK.value
+            delay_update=r_delay.unwrap()
         ))
 
     def _do_update_spot_instance(
@@ -703,6 +704,11 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         pool_data = AWSPoolData.unserialize(guest_request)
 
         assert pool_data.spot_instance_id is not None
@@ -726,7 +732,7 @@ class AWSDriver(PoolDriver):
                     instance_id=spot_instance['InstanceId'],
                     spot_instance_id=pool_data.spot_instance_id
                 ),
-                delay_update=KNOB_UPDATE_TICK.value
+                delay_update=r_delay.unwrap()
             ))
 
         if state == 'open':
@@ -756,7 +762,7 @@ class AWSDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=pool_data,
-            delay_update=KNOB_UPDATE_TICK.value
+            delay_update=r_delay.unwrap()
         ))
 
     def _do_update_instance(
@@ -765,6 +771,11 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         r_output = self._describe_instance(guest_request)
 
         if r_output.is_error:
@@ -803,7 +814,7 @@ class AWSDriver(PoolDriver):
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=pool_data,
-                delay_update=KNOB_UPDATE_TICK.value
+                delay_update=r_delay.unwrap()
             ))
 
         # tag the instance if requested

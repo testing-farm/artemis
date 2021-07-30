@@ -18,8 +18,9 @@ from ..db import GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, Operator, Or
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
-from . import CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, \
+    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
+    test_cli_error
 
 NodeRefType = Any
 
@@ -33,14 +34,6 @@ KNOB_RESERVATION_DURATION: Knob[int] = Knob(
     default=86400
 )
 
-KNOB_UPDATE_TICK: Knob[int] = Knob(
-    'beaker.update.tick',
-    'A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.',
-    has_db=False,
-    envvar='ARTEMIS_BEAKER_UPDATE_TICK',
-    cast_from_str=int,
-    default=300
-)
 
 NO_DISTRO_MATCHES_RECIPE_ERROR_PATTEN = re.compile(r'^Exception: .+:No distro tree matches Recipe:')
 
@@ -603,6 +596,11 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with guest, or specification of error.
         """
 
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         r_job_results = self._get_job_results(logger, BeakerPoolData.unserialize(guest_request).job_id)
 
         if r_job_results.is_error:
@@ -635,7 +633,7 @@ class BeakerDriver(PoolDriver):
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=BeakerPoolData.unserialize(guest_request),
-                delay_update=KNOB_UPDATE_TICK.value
+                delay_update=r_delay.unwrap()
             ))
 
         if job_status.lower() == 'fail':
@@ -660,7 +658,7 @@ class BeakerDriver(PoolDriver):
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=BeakerPoolData(job_id=r_reschedule_job.unwrap()),
-                delay_update=KNOB_UPDATE_TICK.value
+                delay_update=r_delay.unwrap()
             ))
 
         return Error(Failure(
@@ -711,6 +709,11 @@ class BeakerDriver(PoolDriver):
 
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         r_create_job = self._create_job(logger, guest_request.environment)
 
         if r_create_job.is_error:
@@ -728,7 +731,7 @@ class BeakerDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=BeakerPoolData(job_id=r_create_job.unwrap()),
-            delay_update=KNOB_UPDATE_TICK.value
+            delay_update=r_delay.unwrap()
         ))
 
     def release_guest(

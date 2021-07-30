@@ -91,6 +91,18 @@ KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN: Knob[str] = Knob(
     default=r'.*'
 )
 
+KNOB_UPDATE_GUEST_REQUEST_TICK: Knob[int] = Knob(
+    'pool.update-guest-request-tick',
+    'A delay, in seconds, between two calls of `update-guest-request` task checking provisioning progress.',
+    # TODO: enable DB backing, but that will require more handling in drivers if fetching this value fails.
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_UPDATE_GUEST_REQUEST_TICK',
+    cast_from_str=int,
+    default=30
+)
+
+
 # Precompile the slow command pattern
 try:
     SLOW_CLI_COMMAND_PATTERN = re.compile(KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN.value)

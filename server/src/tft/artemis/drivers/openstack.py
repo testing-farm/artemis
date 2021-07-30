@@ -15,9 +15,9 @@ from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Sna
 from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
-from . import ConsoleUrlData, GuestLogUpdateProgress, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
-    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, \
-    run_cli_tool, test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, ConsoleUrlData, GuestLogUpdateProgress, PoolCapabilities, PoolData, \
+    PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
+    create_tempfile, run_cli_tool, test_cli_error
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -26,15 +26,6 @@ KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     envvar='ARTEMIS_OPENSTACK_BUILD_TIMEOUT',
     cast_from_str=int,
     default=600
-)
-
-KNOB_UPDATE_TICK: Knob[int] = Knob(
-    'openstack.update.tick',
-    'A delay, in seconds, between two calls of `update-guest-request` checking provisioning progress.',
-    has_db=False,
-    envvar='ARTEMIS_OPENSTACK_UPDATE_TICK',
-    cast_from_str=int,
-    default=30
 )
 
 KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
@@ -315,6 +306,11 @@ class OpenStackDriver(PoolDriver):
             guest_request._environment
         )
 
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         r_flavor = self._env_to_flavor(logger, guest_request.environment)
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
@@ -398,7 +394,7 @@ class OpenStackDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=OpenStackPoolData(instance_id=instance_id),
-            delay_update=KNOB_UPDATE_TICK.value
+            delay_update=r_delay.unwrap()
         ))
 
     def _get_guest_status(
@@ -513,6 +509,11 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         snapshot_request: SnapshotRequest
     ) -> Result[ProvisioningProgress, Failure]:
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         os_options = [
             'server', 'image', 'create',
             '--name', snapshot_request.snapshotname,
@@ -527,7 +528,7 @@ class OpenStackDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=OpenStackPoolData.unserialize(guest_request),
-            delay_update=KNOB_UPDATE_TICK.value
+            delay_update=r_delay.unwrap()
         ))
 
     def update_snapshot(
@@ -537,6 +538,11 @@ class OpenStackDriver(PoolDriver):
         canceled: Optional[threading.Event] = None,
         start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         r_output = self._show_snapshot(snapshot_request)
 
         if r_output.is_error:
@@ -554,7 +560,7 @@ class OpenStackDriver(PoolDriver):
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=OpenStackPoolData.unserialize(guest_request),
-                delay_update=KNOB_UPDATE_TICK.value
+                delay_update=r_delay.unwrap()
             ))
 
         return Ok(ProvisioningProgress(
@@ -627,6 +633,11 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         r_output = self._show_guest(guest_request)
 
         if r_output.is_error:
@@ -676,7 +687,7 @@ class OpenStackDriver(PoolDriver):
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=OpenStackPoolData.unserialize(guest_request),
-                delay_update=KNOB_UPDATE_TICK.value
+                delay_update=r_delay.unwrap()
             ))
 
         try:
