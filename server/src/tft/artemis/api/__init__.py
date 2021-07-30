@@ -1274,7 +1274,7 @@ class CacheManager:
 
             return Response(
                 status=HTTP_200,
-                content=json.dumps({
+                content=gluetool.log.format_dict({
                     info.name: info.serialize_to_json()
                     for info in r_infos.unwrap()
                 }),
