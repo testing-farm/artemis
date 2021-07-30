@@ -20,7 +20,7 @@ import sqlalchemy.event
 import sqlalchemy.ext.declarative
 import sqlalchemy.sql.expression
 from gluetool.result import Error, Ok, Result
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
 
@@ -437,7 +437,11 @@ class Pool(Base):
 
     poolname = Column(String(250), primary_key=True, nullable=False)
     driver = Column(String(250), nullable=False)
-    parameters = Column(Text(), nullable=False)
+    _parameters = Column(JSON(), nullable=False)
+
+    @property
+    def parameters(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], self._parameters)
 
     guests = relationship('GuestRequest', back_populates='pool')
 
@@ -1056,10 +1060,10 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
                 },
                 insert_data={
                     Pool.driver: pool_config['driver'],
-                    Pool.parameters: json.dumps(pool_parameters)
+                    Pool._parameters: pool_parameters
                 },
                 update_data={
-                    'parameters': json.dumps(pool_parameters)
+                    '_parameters': pool_parameters
                 }
             )
 
@@ -1137,6 +1141,84 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize SSH key record'
+
+
+def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
+    """
+    Generate SQL statements for converting a column from a text type to JSON while preserving data.
+
+    This is a helper for Alembic, easing very common schema transformation.
+
+    :param op: Alembic's ``op`` object, providing access to Alembic's operations.
+    :param tablename: name of the table to modify.
+    :param columnname: name of the column to modify.
+    :param rename_to: if set, the column will be renamed to this name. This may be useful when our model would like
+        to apply some additional processing - renaming the column to some "hidden" name, keeping the actual name
+        for model-level ``property`` to make the code more readable.
+    """
+
+    final_columnname = rename_to or columnname
+
+    # create a temporary JSON column
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.add_column(Column(f'__tmp_{columnname}', JSON(), nullable=False, server_default='{}'))
+
+    # copy data from the existing column to the temporary one, and cast them to JSON type
+    if op.get_bind().dialect.name == 'postgresql':
+        op.get_bind().execute(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::json')
+    else:
+        op.get_bind().execute(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}')
+
+    # drop the original column, and create it as JSON
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.drop_column(columnname)
+        batch_op.add_column(Column(final_columnname, JSON(), nullable=False, server_default='{}'))
+
+    # copy data from the temporary column to its final location (no casting needed, they have the very same type)
+    op.get_bind().execute(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}')
+
+    # drop the temporary column
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.drop_column(f'__tmp_{columnname}')
+
+
+def convert_column_json_to_str(op: Any, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
+    """
+    Generate SQL statements for converting a column from a JSON type to a text type while preserving data.
+
+    This is a helper for Alembic, easing very common schema transformation.
+
+    :param op: Alembic's ``op`` object, providing access to Alembic's operations.
+    :param tablename: name of the table to modify.
+    :param columnname: name of the column to modify.
+    :param rename_to: if set, the column will be renamed to this name. This may be useful when our model would like
+        to apply some additional processing - renaming the column to some "hidden" name, keeping the actual name
+        for model-level ``property`` to make the code more readable.
+    """
+
+    final_columnname = rename_to or columnname
+
+    # create a temporary text column
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.add_column(Column(f'__tmp_{columnname}', Text(), nullable=False, server_default='{}'))
+
+    # copy data from the existing column to the temporary one, and them to text
+    if op.get_bind().dialect.name == 'postgresql':
+        op.get_bind().execute(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::text')
+    else:
+        op.get_bind().execute(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}')
+
+    # drop the original column, and create it as text
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.drop_column(columnname)
+        batch_op.add_column(Column(final_columnname, Text(), nullable=False, server_default='{}'))
+
+    # copy data from the temporary column to its final location (no casting needed, they have the very same type)
+    op.get_bind().execute(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}')
+
+    # drop the temporary column
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.drop_column(f'__tmp_{columnname}')
 
 
 def init_postgres() -> None:

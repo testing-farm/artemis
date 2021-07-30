@@ -1184,7 +1184,7 @@ def _get_pool(
         ))
 
     pool_driver_class = POOL_DRIVERS[pool_record.driver]
-    driver = pool_driver_class(logger, poolname, json.loads(pool_record.parameters))
+    driver = pool_driver_class(logger, poolname, pool_record.parameters)
 
     r_sanity = driver.sanity()
 
@@ -1219,7 +1219,7 @@ def get_pools(
                 continue
 
         pools += [
-            pool_driver_class(logger, pool_record.poolname, json.loads(pool_record.parameters))
+            pool_driver_class(logger, pool_record.poolname, pool_record.parameters)
         ]
 
     # NOTE(ivasilev) Currently Azure driver can't guarantee proper authentication in case of more than one Azure
