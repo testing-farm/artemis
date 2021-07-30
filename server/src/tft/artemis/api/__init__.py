@@ -321,7 +321,7 @@ class GuestResponse:
         return cls(
             guestname=guest.guestname,
             owner=guest.ownername,
-            environment=json.loads(guest.environment),
+            environment=guest.environment.serialize_to_json(),
             address=guest.address,
             ssh=GuestSSHInfo(
                 guest.ssh_username,
@@ -574,7 +574,7 @@ class GuestRequestManager:
                 session,
                 sqlalchemy.insert(artemis_db.GuestRequest.__table__).values(
                     guestname=guestname,
-                    environment=json.dumps(guest_request.environment),
+                    _environment=guest_request.environment,
                     ownername=DEFAULT_GUEST_REQUEST_OWNER,
                     ssh_keyname=guest_request.keyname,
                     ssh_port=DEFAULT_SSH_PORT,

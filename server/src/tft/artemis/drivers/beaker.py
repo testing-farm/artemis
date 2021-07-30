@@ -13,7 +13,7 @@ import sqlalchemy.orm.session
 from gluetool.log import log_xml
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, Knob
+from .. import Failure, Knob, log_dict_yaml
 from ..db import GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, Operator, Or
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
@@ -642,7 +642,7 @@ class BeakerDriver(PoolDriver):
             r_reschedule_job = self._reschedule_job(
                 logger,
                 BeakerPoolData.unserialize(guest_request).job_id,
-                Environment.unserialize_from_str(guest_request.environment)
+                guest_request.environment
             )
 
             if r_reschedule_job.is_error:
@@ -709,11 +709,9 @@ class BeakerDriver(PoolDriver):
             of error.
         """
 
-        environment = Environment.unserialize_from_str(guest_request.environment)
+        log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
-        logger.info(f'provisioning environment {environment.serialize_to_json()}')
-
-        r_create_job = self._create_job(logger, environment)
+        r_create_job = self._create_job(logger, guest_request.environment)
 
         if r_create_job.is_error:
             failure = r_create_job.unwrap_error()

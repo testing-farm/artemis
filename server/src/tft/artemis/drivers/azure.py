@@ -320,6 +320,9 @@ class AzureDriver(PoolDriver):
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
         """
+
+        log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
+
         return self._do_acquire_guest(
             logger,
             session,
@@ -429,9 +432,7 @@ class AzureDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
-        environment = Environment.unserialize_from_str(guest_request.environment)
-
-        r_image = self._env_to_image(logger, environment)
+        r_image = self._env_to_image(logger, guest_request.environment)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 

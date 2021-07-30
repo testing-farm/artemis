@@ -309,21 +309,19 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
-        environment = Environment.unserialize_from_str(guest_request.environment)
-
         log_dict_yaml(
             logger.info,
             'provisioning environment',
-            environment.serialize_to_json()
+            guest_request._environment
         )
 
-        r_flavor = self._env_to_flavor(logger, environment)
+        r_flavor = self._env_to_flavor(logger, guest_request.environment)
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
 
         flavor = r_flavor.unwrap()
 
-        r_image = self._env_to_image(logger, environment)
+        r_image = self._env_to_image(logger, guest_request.environment)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
@@ -338,7 +336,7 @@ class OpenStackDriver(PoolDriver):
             }
         )
 
-        r_network = self._env_to_network(environment)
+        r_network = self._env_to_network(guest_request.environment)
         if r_network.is_error:
             return Error(r_network.unwrap_error())
 

@@ -1,7 +1,6 @@
 import dataclasses
 import datetime
 import functools
-import json
 from typing import Callable, List, Tuple, Type, cast
 
 import gluetool.log
@@ -296,14 +295,12 @@ def policy_match_pool_name(
     If guest request requires a specific pool by its name, disallow any other pools.
     """
 
-    environment = Environment.unserialize_from_str(guest_request.environment)
-
-    if environment.pool:
+    if guest_request.environment.pool:
         return Ok(PolicyRuling(
             allowed_pools=[
                 pool
                 for pool in pools
-                if pool.poolname == environment.pool
+                if pool.poolname == guest_request.environment.pool
             ]
         ))
 
@@ -323,8 +320,6 @@ def policy_supports_architecture(
     Disallow pools that don't support requested architecture.
     """
 
-    environment = Environment.unserialize_from_str(guest_request.environment)
-
     r_capabilities = collect_pool_capabilities(pools)
 
     if r_capabilities.is_error:
@@ -336,7 +331,7 @@ def policy_supports_architecture(
         allowed_pools=[
             pool
             for pool, capabilities in pool_capabilities
-            if capabilities.supports_arch(environment.hw.arch)
+            if capabilities.supports_arch(guest_request.environment.hw.arch)
         ]
     ))
 
@@ -352,9 +347,7 @@ def policy_supports_snapshots(
     If guest request requires snapshot support, disallow all pools that lack this capability.
     """
 
-    environment = Environment.unserialize_from_str(guest_request.environment)
-
-    if environment.snapshots is not True:
+    if guest_request.environment.snapshots is not True:
         return Ok(PolicyRuling(
             allowed_pools=pools
         ))
@@ -386,11 +379,9 @@ def policy_supports_spot_instances(
     If guest request requires spot instance, disallow all pools that lack this capability.
     """
 
-    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
-
     # If request does not insist on using spot or non-spot instance, we can easily move forward and use any
     # pool we've been given.
-    if environment.spot_instance is None:
+    if guest_request.environment.spot_instance is None:
         return Ok(PolicyRuling(
             allowed_pools=pools
         ))
@@ -408,7 +399,7 @@ def policy_supports_spot_instances(
         allowed_pools=[
             pool
             for pool, capabilities in pool_capabilities
-            if capabilities.supports_spot_instances is environment.spot_instance
+            if capabilities.supports_spot_instances is guest_request.environment.spot_instance
         ]
     ))
 
@@ -425,12 +416,10 @@ def policy_prefer_spot_instances(
     are returned - *prefer*, not *allow only*.
     """
 
-    environment = Environment.unserialize_from_json(json.loads(guest_request.environment))
-
     # If request does insist on using spot or non-spot instance, we should not mess with its request by
     # possibly removing the group it requests. For such environments, do nothing and let other policies
     # apply their magic.
-    if environment.spot_instance is not None:
+    if guest_request.environment.spot_instance is not None:
         return Ok(PolicyRuling(
             allowed_pools=pools
         ))
@@ -657,9 +646,7 @@ def policy_can_acquire(
     Disallow pools that are already know they cannot acquire the given environment.
     """
 
-    environment = Environment.unserialize_from_str(guest_request.environment)
-
-    r_answers = collect_pool_can_acquire(logger, pools, environment)
+    r_answers = collect_pool_can_acquire(logger, pools, guest_request.environment)
 
     if r_answers.is_error:
         return Error(r_answers.unwrap_error())

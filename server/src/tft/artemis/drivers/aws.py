@@ -922,19 +922,17 @@ class AWSDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
-        environment = Environment.unserialize_from_str(guest_request.environment)
-
-        log_dict_yaml(logger.info, 'provisioning environment', environment.serialize_to_json())
+        log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
         # get instance type from environment
-        r_instance_type = self._env_to_instance_type(logger, environment)
+        r_instance_type = self._env_to_instance_type(logger, guest_request.environment)
         if r_instance_type.is_error:
             return Error(r_instance_type.unwrap_error())
 
         instance_type = r_instance_type.unwrap()
 
         # find out image from enviroment
-        r_image = self._env_to_image(logger, environment)
+        r_image = self._env_to_image(logger, guest_request.environment)
 
         if r_image.is_error:
             return Error(r_image.unwrap_error())

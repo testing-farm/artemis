@@ -15,7 +15,6 @@ just a couple of parameters - together with fixtures, this makes the actual test
 
 import collections
 import datetime
-import json
 
 import pytest
 import sqlalchemy
@@ -338,7 +337,7 @@ def do_test_policy_match_pool_name(mock_inputs, pool_name, expected_pools):
         hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
         os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
         pool=pool_name
-    ).serialize_to_str()
+    )
 
     r_ruling = tft.artemis.routing_policies.policy_match_pool_name(mock_logger, mock_session, mock_pools, mock_guest_request)
 
@@ -381,7 +380,7 @@ def do_test_policy_supports_architecture(mock_inputs, provide_arch):
         hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
         os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
         snapshots=False
-    ).serialize_to_str()
+    )
 
     r_ruling = tft.artemis.routing_policies.policy_supports_architecture(mock_logger, mock_session, mock_pools, mock_guest_request)
 
@@ -419,12 +418,10 @@ def do_test_policy_supports_snapshots(mock_inputs, require_snapshots, provide_sn
     if provide_snapshots:
         mock_pools[0].capabilities = lambda: Ok(tft.artemis.drivers.PoolCapabilities(supports_snapshots=True))
 
-    mock_guest_request.environment = json.dumps(
-        tft.artemis.environment.Environment(
-            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-            snapshots=require_snapshots
-        ).serialize_to_json()
+    mock_guest_request.environment = tft.artemis.environment.Environment(
+        hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+        os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+        snapshots=require_snapshots
     )
 
     r_ruling = tft.artemis.routing_policies.policy_supports_snapshots(mock_logger, mock_session, mock_pools, mock_guest_request)

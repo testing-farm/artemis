@@ -28,6 +28,7 @@ if TYPE_CHECKING:  # noqa
     from mypy_extensions import VarArg
 
     from . import Failure, JSONType
+    from .environment import Environment
 
 
 # Type variables for use in our generic types
@@ -450,10 +451,17 @@ class GuestRequest(Base):
     __tablename__ = 'guest_requests'
 
     guestname = Column(String(250), primary_key=True, nullable=False)
-    environment = Column(Text(), nullable=False)
+    _environment = Column(JSON(), nullable=False)
     ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
     priorityname = Column(String(250), ForeignKey('priority_groups.name'), nullable=True)
     poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
+
+    @property
+    def environment(self) -> 'Environment':
+        # avoid circular imports
+        from .environment import Environment
+
+        return Environment.unserialize_from_json(cast(Dict[str, Any], self._environment))
 
     # This is tricky:
     # * we want to keep `nullable=False`, because `ctime` cannot ever be set to `NULL`. That way we're not forced
