@@ -419,6 +419,7 @@ def test_safe_query_no_change_on_error(caplog, logger, session, monkeypatch):
     assert failure is mock_failure
 
 
+@pytest.mark.usefixtures('skip_postgresql')
 def test_safe_query_get_error(caplog, logger, session):
     """
     Test handling of genuine SQLAlchemy error: without any schema or records, fetch a record.

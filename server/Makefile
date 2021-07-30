@@ -13,6 +13,29 @@ coverage:  ## Run tests with coverage
 test:  ## Run all tests
 	tox
 
+integration-tests:  ## Run tests against real services
+	# Spawn the real processes, and we have a bunch of them handy
+	docker-compose up -d postgres
+
+	# Wait for PostgreSQL to become available
+	while /bin/true; do \
+	    pg_isready --host 127.0.0.1 --port 5432; \
+	    if [[ "$$?" == "0" ]]; then break; fi; \
+	    sleep 1; \
+	done
+
+	# Our user lacks power to create database, grant it that right. Another option would be to have a dedicated user
+	# for managing DBs, but that would require greater rework of how tests are handling DB.
+	PGPASSWORD=mysecretpassword psql --host 127.0.0.1 --port 5432 -U postgres -c "ALTER USER artemis CREATEDB"
+
+	# Unit tests
+	tox -e py37 -- --against-db-url="postgresql://artemis:artemis@127.0.0.1:5432/unit_test_db"
+
+	# DB schema upgrade/downgrade
+	ARTEMIS_DB_URL="postgresql://artemis:artemis@127.0.0.1:5432/artemis" tox -e py37-database-migrations
+
+	docker-compose down
+
 docs:  ## Generate source code documentation
 	tox -e autodocs
 
