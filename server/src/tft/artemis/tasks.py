@@ -24,10 +24,10 @@ from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
 from . import KNOB_POOL_ENABLED, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
-    log_guest_event, metrics, safe_call, safe_db_change
+    log_guest_event, metrics, safe_call
 from .context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
-    SnapshotRequest, SSHKey, upsert
+    SnapshotRequest, SSHKey, safe_db_change, upsert
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver

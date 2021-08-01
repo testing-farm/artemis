@@ -1467,99 +1467,6 @@ def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Fail
         return Error(Failure.from_exc('exception raised inside a safe block', exc))
 
 
-def stringify_query(session: sqlalchemy.orm.session.Session, query: Any) -> str:
-    """
-    Return string representation of a given DB query.
-
-    This helper wraps one tricky piece of information: since SQLAlchemy supports many SQL dialects,
-    and these dialects can add custom operations to queries, it is necessary to be aware of the dialect
-    when compiling the query. "Compilation" is what happens when we ask SQLAlchemy to transform the query
-    to string.
-    """
-
-    return str(query.compile(dialect=session.bind.dialect))
-
-
-def safe_db_change(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    query: Any,
-    expected_records: Union[int, Tuple[int, int]] = 1,
-) -> Result[bool, Failure]:
-    """
-    Execute a given SQL query, ``INSERT``, ``UPDATE`` or ``DELETE``, followed by an explicit commit. Verify
-    the expected number of records has been changed (or created).
-
-    :returns: a valid boolean result if queries were executed successfully: ``True`` if changes were made, and
-        the number of changed records matched the expectation, ``False`` otherwise. If the queries - including the
-        commit - were rejected by lower layers or database, an invalid result is returned, wrapping
-        a :py:class:`Failure` instance.
-    """
-
-    logger.debug(f'safe db change: {stringify_query(session, query)} - expect {expected_records} records')
-
-    r = safe_call(session.execute, query)
-
-    if r.is_error:
-        return Error(
-            Failure.from_failure(
-                'failed to execute update query',
-                r.unwrap_error(),
-                query=stringify_query(session, query)
-            )
-        )
-
-    query_result = cast(
-        sqlalchemy.engine.ResultProxy,
-        r.value
-    )
-
-    if query_result.is_insert:
-        # TODO: INSERT sets this correctly, but what about INSERT + ON CONFLICT? If the row exists,
-        # TODO: rowcount is set to 0, but the (optional) UPDATE did happen, so... UPSERT should probably
-        # TODO: be ready to accept both 0 and 1. We might need to return more than just true/false for
-        # TODO: ON CONFLICT to become auditable.
-        affected_rows = query_result.rowcount
-
-    else:
-        affected_rows = query_result.rowcount
-
-    if isinstance(expected_records, tuple):
-        if not (expected_records[0] <= affected_rows <= expected_records[1]):
-            logger.warning(
-                f'expected {expected_records[0]} - {expected_records[1]} matching rows, found {affected_rows}'
-            )
-
-            return Ok(False)
-
-    elif affected_rows != expected_records:
-        logger.warning(f'expected {expected_records} matching rows, found {affected_rows}')
-
-        return Ok(False)
-
-    logger.debug(f'found {affected_rows} matching rows, as expected')
-
-    r = safe_call(session.commit)
-
-    if r.is_error:
-        failure = r.unwrap_error()
-
-        if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-            logger.warning(f'expected {expected_records} matching rows, found 0')
-
-            return Ok(False)
-
-        return Error(
-            Failure.from_failure(
-                'failed to commit query',
-                failure,
-                query=stringify_query(session, query)
-            )
-        )
-
-    return Ok(True)
-
-
 def log_guest_event(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -1568,6 +1475,8 @@ def log_guest_event(
     **details: Any
 ) -> Result[None, Failure]:
     """ Create event log record for guest """
+
+    from .db import safe_db_change
 
     r = safe_db_change(
         logger,

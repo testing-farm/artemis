@@ -31,7 +31,7 @@ from typing_extensions import Protocol
 
 from .. import __VERSION__, KNOB_LOGGING_JSON, Failure, FailureDetailsType, JSONSchemaType, JSONType, Knob
 from .. import db as artemis_db
-from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, safe_db_change, validate_data
+from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, validate_data
 from ..context import DATABASE, LOGGER
 from ..guest import GuestState
 from ..script import hook_engine
@@ -260,7 +260,7 @@ def perform_safe_db_change(
     * do nothing and return when the query didn't fail and changed expected number of records.
     """
 
-    r_change = safe_db_change(logger, session, query)
+    r_change = artemis_db.safe_db_change(logger, session, query)
 
     if r_change.is_error:
         raise errors.InternalServerError(

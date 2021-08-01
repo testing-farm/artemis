@@ -4,8 +4,7 @@ import sqlalchemy.ext.declarative
 from mock import MagicMock
 from sqlalchemy import Column, Integer, Text
 
-from tft.artemis import safe_db_change
-from tft.artemis.db import GuestRequest, SafeQuery, upsert
+from tft.artemis.db import GuestRequest, SafeQuery, safe_db_change, upsert
 
 from . import assert_failure_log
 
