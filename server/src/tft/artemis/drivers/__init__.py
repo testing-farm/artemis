@@ -19,7 +19,7 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from pint import Quantity
-from typing_extensions import Protocol
+from typing_extensions import Protocol, TypedDict
 
 from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
     process_output_to_str, refresh_cached_set, safe_call
@@ -34,15 +34,37 @@ T = TypeVar('T')
 GuestTagsType = Dict[str, str]
 
 
-PatchFlavorsSpecType = List[
-    Dict[
-        str,
-        Union[
-            str,
-            Dict[str, Union[str, int]]
-        ]
-    ]
-]
+# Types for configuration of custom/patched flavors
+#
+# NOTE: sometimes we cannot use class-based approach to TypedDict because some keys contain dashes.
+
+#: pools[].parameters.{custom-flavors,patch-flavors}[].cpu
+ConfigFlavorCPUSpecType = TypedDict(
+    'ConfigFlavorCPUSpecType',
+    {
+        'family': Optional[int],
+        'family-name': Optional[str],
+        'model': Optional[int],
+        'model-name': Optional[str]
+    }
+)
+
+
+#: pools[].parameters.{custom-flavors,patch-flavors}[].disk
+class ConfigFlavorDiskSpecType(TypedDict):
+    space: Optional[Union[int, str]]
+
+
+#: pools[].parameters.patch-flavors[]
+class ConfigFlavorSpecType(TypedDict):
+    name: str
+    cpu: ConfigFlavorCPUSpecType
+    disk: ConfigFlavorDiskSpecType
+
+
+#: pools[].parameters.custom-flavors[]
+class ConfigCustomFlavorSpecType(ConfigFlavorSpecType):
+    base: str
 
 
 IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')  # noqa: FS003
@@ -334,6 +356,50 @@ class PoolResourcesIDs:
         data['ctime'] = datetime.datetime.strptime(data['ctime'], RESOURCE_CTIME_FMT) if data['ctime'] else None
 
         return cls(**data)  # type: ignore
+
+
+def _apply_flavor_specification(
+    flavor: Flavor,
+    flavor_spec: ConfigFlavorSpecType
+) -> Result[None, Failure]:
+    """
+    Apply a flavor specification - originating from the configuration - to a given flavor.
+
+    This is a helper for building custom and patching existing flavors. Both kinds use the same configuration
+    fields.
+    """
+
+    if 'cpu' in flavor_spec:
+        cpu_patch = flavor_spec['cpu']
+
+        if 'family' in cpu_patch:
+            flavor.cpu.family = cpu_patch['family']
+
+        if 'family-name' in cpu_patch:
+            flavor.cpu.family_name = cpu_patch['family-name']
+
+        if 'model' in cpu_patch:
+            flavor.cpu.model = cpu_patch['model']
+
+        if 'model-name' in cpu_patch:
+            flavor.cpu.model_name = cpu_patch['model-name']
+
+    if 'disk' in flavor_spec:
+        disk_patch = flavor_spec['disk']
+
+        if 'space' in disk_patch:
+            r_space = safe_call(UNITS, disk_patch['space'])
+
+            if r_space.is_error:
+                return Error(Failure.from_failure(
+                    'failed to parse flavor disk.space',
+                    r_space.unwrap_error(),
+                    space=disk_patch['space']
+                ))
+
+            flavor.disk.space = r_space.unwrap()
+
+    return Ok(None)
 
 
 @dataclasses.dataclass
@@ -1080,7 +1146,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param flavors: actual existing flavors that serve as basis for custom flavors.
         """
 
-        custom_flavor_specs = cast(List[Dict[str, str]], self.pool_config.get('custom-flavors', []))
+        custom_flavor_specs = cast(List[ConfigCustomFlavorSpecType], self.pool_config.get('custom-flavors', []))
 
         if not custom_flavor_specs:
             return Ok([])
@@ -1107,22 +1173,16 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
             custom_flavors.append(custom_flavor)
 
-            if 'disk' in custom_flavor_spec:
-                disk_patch = cast(Dict[str, Union[str, int]], custom_flavor_spec['disk'])
+            r_apply_spec = _apply_flavor_specification(custom_flavor, custom_flavor_spec)
 
-                if 'space' in disk_patch:
-                    r_space = safe_call(UNITS, disk_patch['space'])
+            if r_apply_spec.is_error:
+                failure = r_apply_spec.unwrap_error()
+                failure.update(
+                    customname=customname,
+                    basename=basename
+                )
 
-                    if r_space.is_error:
-                        return Error(Failure.from_failure(
-                            'failed to parse custom flavor disk.space',
-                            r_space.unwrap_error(),
-                            customname=customname,
-                            basename=basename,
-                            space=disk_patch['space']
-                        ))
-
-                    custom_flavor.disk.space = r_space.unwrap()
+                return Error(failure)
 
         gluetool.log.log_dict(logger.debug, 'custom flavors', custom_flavors)
 
@@ -1140,7 +1200,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param flavors: actual existing flavors that serve as basis for custom flavors.
         """
 
-        patch_flavor_specs = cast(PatchFlavorsSpecType, self.pool_config.get('patch-flavors', []))
+        patch_flavor_specs = cast(List[ConfigFlavorSpecType], self.pool_config.get('patch-flavors', []))
 
         if not patch_flavor_specs:
             return Ok(None)
@@ -1148,7 +1208,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         gluetool.log.log_dict(logger.debug, 'base flavors', flavors)
 
         for patch_flavor_spec in patch_flavor_specs:
-            flavorname = cast(str, patch_flavor_spec['name'])
+            flavorname = patch_flavor_spec['name']
 
             if flavorname not in flavors:
                 return Error(Failure(
@@ -1158,42 +1218,15 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
             flavor = flavors[flavorname]
 
-            # Don't worry about types, config schema makes sure the types are correct.
-            if 'cpu' in patch_flavor_spec:
-                cpu_patch = cast(Dict[str, Union[str, int]], patch_flavor_spec['cpu'])
+            r_apply_spec = _apply_flavor_specification(flavor, patch_flavor_spec)
 
-                flavor.cpu.family = cast(
-                    Optional[int],
-                    cpu_patch.get('family', None)
-                )
-                flavor.cpu.family_name = cast(
-                    Optional[str],
-                    cpu_patch.get('family-name', None)
-                )
-                flavor.cpu.model = cast(
-                    Optional[int],
-                    cpu_patch.get('model', None)
-                )
-                flavor.cpu.model_name = cast(
-                    Optional[str],
-                    cpu_patch.get('model-name', None)
+            if r_apply_spec.is_error:
+                failure = r_apply_spec.unwrap_error()
+                failure.update(
+                    flavorname=flavorname
                 )
 
-            if 'disk' in patch_flavor_spec:
-                disk_patch = cast(Dict[str, Union[str, int]], patch_flavor_spec['disk'])
-
-                if 'space' in disk_patch:
-                    r_space = safe_call(UNITS, disk_patch['space'])
-
-                    if r_space.is_error:
-                        return Error(Failure.from_failure(
-                            'failed to parse patched flavor disk.space',
-                            r_space.unwrap_error(),
-                            flavorname=flavorname,
-                            space=disk_patch['space']
-                        ))
-
-                    flavor.disk.space = r_space.unwrap()
+                return Error(failure)
 
         return Ok(None)
 
