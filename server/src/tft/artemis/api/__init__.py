@@ -557,17 +557,6 @@ class GuestRequestManager:
             failure_details
         )
 
-        # In v0.0.17, internal representation of environment changes, for some time it will not match the API
-        # specification exactly. This situation will remain with us for couple of versions, until addition of
-        # HW requirements settles down. Here we add code handling the possible issues.
-
-        # COMPAT: internal `arch` is replaced with `hw.arch` - move `arch` to proper position, and drop it from
-        # the input. Drop once API catches up with internal format.
-        if 'arch' in guest_request.environment:
-            guest_request.environment['hw'] = {
-                'arch': guest_request.environment.pop('arch')
-            }
-
         with self.db.get_session() as session:
             perform_safe_db_change(
                 guest_logger,

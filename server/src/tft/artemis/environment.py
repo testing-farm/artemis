@@ -572,18 +572,6 @@ class Environment:
         Construct a testing environment from a JSON representation of fields and their values.
         """
 
-        # COMPAT: handle serialized pre-v0.0.17 environments. Drop once v0.0.16 compatibility is removed.
-        if 'arch' in serialized:
-            if 'hw' in serialized:
-                serialized['hw'] = serialized['arch']
-
-            else:
-                serialized['hw'] = {
-                    'arch': serialized['arch']
-                }
-
-            del serialized['arch']
-
         env = Environment(**serialized)
 
         env.hw = HWRequirements(**serialized['hw'])
