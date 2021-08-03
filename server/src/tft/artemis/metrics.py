@@ -30,7 +30,7 @@ import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
 
-from . import __VERSION__, Failure
+from . import __VERSION__, KNOB_POOL_ENABLED, Failure
 from . import db as artemis_db
 from . import safe_call
 from .context import DATABASE, SESSION, with_context
@@ -701,6 +701,7 @@ class PoolMetrics(MetricsBase):
     _KEY_INFO_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.{info}.updated_timestamp'
 
     poolname: str
+    enabled: bool
 
     resources: PoolResourcesMetrics
     costs: PoolCostsMetrics
@@ -743,6 +744,8 @@ class PoolMetrics(MetricsBase):
         self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)
 
         self.poolname = poolname
+        self.enabled = False
+
         self.resources = PoolResourcesMetrics(poolname)
         self.costs = PoolCostsMetrics(poolname)
 
@@ -887,6 +890,15 @@ class PoolMetrics(MetricsBase):
 
         super(PoolMetrics, self).sync()
 
+        r_enabled = KNOB_POOL_ENABLED.get_value(session=session, poolname=self.poolname)
+
+        if r_enabled.is_error:
+            r_enabled.unwrap_error().handle(logger)
+
+            return
+
+        self.enabled = r_enabled.unwrap() or False  # True => True, False => False, None => False
+
         self.current_guest_request_count = cast(
             Tuple[int],
             session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
@@ -969,6 +981,7 @@ class UndefinedPoolMetrics(MetricsBase):
     """
 
     poolname: str
+    enabled: bool
 
     resources: PoolResourcesMetrics
     costs: PoolCostsMetrics
@@ -993,6 +1006,8 @@ class UndefinedPoolMetrics(MetricsBase):
         """
 
         self.poolname = poolname
+        self.enabled = False
+
         self.resources = PoolResourcesMetrics(poolname)
         self.costs = PoolCostsMetrics(poolname)
 
@@ -1075,7 +1090,7 @@ class PoolsMetrics(MetricsBase):
         # Avoid circullar imports
         from .tasks import get_pools
 
-        r_pools = get_pools(logger, session)
+        r_pools = get_pools(logger, session, enabled_only=False)
 
         if r_pools.is_error:
             r_pools.unwrap_error().handle(logger)
@@ -1117,6 +1132,13 @@ class PoolsMetrics(MetricsBase):
                 ['pool', 'network', 'dimension'],
                 registry=registry
             )
+
+        self.POOL_ENABLED = Gauge(
+            'pool_enabled',
+            'Current enabled/disabled pool state by pool.',
+            ['pool'],
+            registry=registry
+        )
 
         self.CURRENT_GUEST_REQUEST_COUNT = Gauge(
             'current_guest_request_count',
@@ -1199,6 +1221,8 @@ class PoolsMetrics(MetricsBase):
         reset_histogram(self.CLI_CALLS_DURATIONS)
 
         for poolname, pool_metrics in self.pools.items():
+            self.POOL_ENABLED.labels(poolname).set(1 if pool_metrics.enabled is True else 0)
+
             for state in pool_metrics.current_guest_request_count_per_state:
                 self.CURRENT_GUEST_REQUEST_COUNT \
                     .labels(poolname, state.value) \
