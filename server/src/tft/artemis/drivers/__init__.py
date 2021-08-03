@@ -1263,7 +1263,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_refresh.is_error:
             return Error(r_refresh.unwrap_error())
 
-        PoolMetrics(self.poolname).refresh_image_info_updated_timestamp(self.poolname)
+        PoolMetrics(self.poolname).refresh_flavor_info_updated_timestamp(self.poolname)
 
         return Ok(None)
 
