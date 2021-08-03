@@ -64,8 +64,8 @@ class Profiler:
 
     def format(
         self,
-        sort_stats: Tuple[str, str] = ('time', 'cumulative'),
-        limit: int = 20
+        sort_stats: Tuple[str, str] = ('cumulative', 'time'),
+        limit: int = 30
     ) -> str:
         """
         Format captured profiling data report.
@@ -96,8 +96,8 @@ class Profiler:
         self,
         logger: gluetool.log.ContextAdapter,
         label: str,
-        sort_stats: Tuple[str, str] = ('time', 'cumulative'),
-        limit: int = 20
+        sort_stats: Tuple[str, str] = ('cumulative', 'time'),
+        limit: int = 30
     ) -> None:
         """
         Log captured profiling data report.
