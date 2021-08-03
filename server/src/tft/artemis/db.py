@@ -945,21 +945,21 @@ class DB:
                 cls.instance = super(DB, cls).__new__(cls)
                 cls.instance._setup_instance(logger, url, application_name=application_name)
 
-            return cls.instance
+        return cls.instance
 
     @contextmanager
     def get_session(self) -> Iterator[sqlalchemy.orm.session.Session]:
-        with DB._lock:
-            session = self._sessionmaker()
+        Session = sqlalchemy.orm.scoped_session(self._sessionmaker)
+        session = Session()
 
-            if self._echo_pool:
-                from .metrics import DBPoolMetrics
+        if self._echo_pool:
+            from .metrics import DBPoolMetrics
 
-                gluetool.log.log_dict(
-                    self.logger.info,
-                    'pool metrics',
-                    DBPoolMetrics.load(self.logger, self, session)  # type: ignore
-                )
+            gluetool.log.log_dict(
+                self.logger.info,
+                'pool metrics',
+                DBPoolMetrics.load(self.logger, self, session)  # type: ignore
+            )
 
         try:
             yield session
@@ -987,7 +987,7 @@ class DB:
             raise
 
         finally:
-            session.close()
+            cast(Callable[[], None], Session.remove)()
 
 
 def validate_config(
