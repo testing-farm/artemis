@@ -47,7 +47,7 @@ def test_run_doer(logger, db, cancel):
         return bar
 
     with db.get_session() as session:
-        assert tft.artemis.tasks.run_doer(logger, db, session, cancel, foo, 79) == 79
+        assert tft.artemis.tasks.run_doer(logger, db, session, cancel, foo, 'test_run_doer', 79) == 79
 
 
 def test_run_doer_exception(logger, db, cancel):
@@ -56,7 +56,7 @@ def test_run_doer_exception(logger, db, cancel):
 
     with db.get_session() as session:
         with pytest.raises(Exception, match=r'foo'):
-            assert tft.artemis.tasks.run_doer(logger, db, session, cancel, foo) == 79
+            assert tft.artemis.tasks.run_doer(logger, db, session, cancel, foo, 'test_run_doer_exception') == 79
 
 
 def test_dispatch_task(logger, monkeypatch):
@@ -143,7 +143,7 @@ def test_task_core_ok(logger, db, session, caplog, monkeypatch, task_core_args):
     )
 
     run_doer.assert_has_calls([
-        call(task_logger, db, session, cancel, doer, *doer_args, **doer_kwargs),
+        call(task_logger, db, session, cancel, doer, 'test_task_core_ok', *doer_args, **doer_kwargs),
         call().is_ok.__bool__(),
         call().unwrap()
     ])

@@ -625,6 +625,7 @@ def run_doer(
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event,
     fn: DoerType,
+    actor_name: str,
     *args: Any,
     **kwargs: Any
 ) -> DoerReturnType:
@@ -686,16 +687,22 @@ def run_doer(
         # do its setup and call our function when context is set properly.
         thread_context = contextvars.copy_context()
 
-        doer_future = executor.submit(
-            thread_context.run,
-            fn,
-            logger,
-            db,
-            session,
-            cancel,
-            *args,
-            **kwargs
-        )
+        def _thread_trampoline() -> DoerReturnType:
+            profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
+
+            if profile_actor:
+                profiler = Profiler()
+                profiler.start()
+
+            try:
+                return thread_context.run(fn, logger, db, session, cancel, *args, **kwargs)
+
+            finally:
+                if profile_actor:
+                    profiler.stop()
+                    profiler.log(logger, 'profiling report (inner)')
+
+        doer_future = executor.submit(_thread_trampoline)
 
         _wait('doer finished in regular mode')
 
@@ -737,14 +744,13 @@ def task_core(
 ) -> None:
     logger.begin()
 
-    profiler = Profiler()
-
     # TODO: implement a proper decorator, or merge this into @task decorator - but @task seems to be flawed,
     # which requires a fix, therefore merge this into @task once it gets fixed.
     actor_name = inspect.stack()[1].frame.f_code.co_name
     profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
 
     if profile_actor:
+        profiler = Profiler()
         profiler.start()
 
     db = db or get_root_db()
@@ -773,7 +779,16 @@ def task_core(
         assert doer_args is not None
         assert doer_kwargs is not None
 
-        doer_result = run_doer(logger, db, session, cancel, doer, *doer_args, **doer_kwargs)
+        doer_result = run_doer(
+            logger,
+            db,
+            session,
+            cancel,
+            doer,
+            actor_name,
+            *doer_args,
+            **doer_kwargs
+        )
 
         # "Ignored" failures - failures the tasks don't wish to repeat by running the task again - need
         # special handling: we have to mark the guest request as failed. Without this step, client will
@@ -857,7 +872,7 @@ def task_core(
 
     if profile_actor:
         profiler.stop()
-        profiler.log(logger, 'profiling report')
+        profiler.log(logger, 'profiling report (outer)')
 
     if doer_result.is_ok:
         result = doer_result.unwrap()
