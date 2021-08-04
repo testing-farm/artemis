@@ -723,7 +723,7 @@ class KnobSourceEnvPerPool(KnobSourceEnv[T]):
         else:
             return Error(Failure('either pool or poolname must be specified'))
 
-        r_value = self._fetch_from_env(f'{self.envvar}_{poolname}')
+        r_value = self._fetch_from_env(f'{self.envvar}_{poolname.replace("-", "_")}')
 
         if r_value.is_error:
             return r_value

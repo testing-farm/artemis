@@ -121,7 +121,7 @@ Prepare stage SSH connection verification timeout is configurable using:
 
 Besides this variable, it is possible to override the timeout value per pool:
 
-* `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_*` (int): Pool-specific SSH connection timeout value, in seconds. The environmental variable is suffixed with uppercased pool name. For example for pool named `foo` the variable name would be `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_FOO`. If not defined, global value is used.
+* `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_*` (int): Pool-specific SSH connection timeout value, in seconds. The environmental variable is suffixed with pool name, with underscores replacing dashes. For example for pool named `foo-bar` the variable name would be `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_foo_bar`. If not defined, global value is used.
 
 ==== Pool resource cleanup
 
