@@ -313,6 +313,41 @@ def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish
     strptime(generated_at, "%Y-%m-%d %H:%M:%S.%f")
 
 
+def test_execute_reason_in_note(ci_info, evaluate, monkeypatch, module, mock_namespace, publish_messages):
+    module._config.update({
+        'label':  'some-label',
+        'note': None,
+        'test-category': 'some-category',
+        'test-type': 'some-type',
+        'thread-id': 'some-thread-id',
+        'version': '0.1.0',
+    })
+
+    module.execute()
+
+    assert publish_messages['message'].headers == ARTIFACT
+
+    generated_at = publish_messages['message'].body.pop('generated_at')
+
+    assert publish_messages['message'].body == {
+        'artifact': ARTIFACT,
+        'ci': CI,
+        'run': RUN,
+        'category': 'some-category',
+        'label': 'some-label',
+        'issue_url': None,
+        'namespace': 'namespace',
+        'docs': 'some-docs',
+        'note': 'some-reason',
+        'reason': 'some-reason',
+        'type': 'some-type',
+        'version': '0.1.0'
+    }
+
+    # check if generated_at has expected format, will traceback if not
+    strptime(generated_at, "%Y-%m-%d %H:%M:%S.%f")
+
+
 def test_destroy_sysexit(module):
     assert module.destroy(failure=MagicMock(exc_info=[None, SystemExit()])) == None
 

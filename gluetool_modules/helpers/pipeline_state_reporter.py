@@ -96,6 +96,13 @@ class PipelineStateReporter(gluetool.Module):
 
        # Final "catch the rest" instruction to set "complete" is not necessary
        # - state: complete
+
+    **Reason of failure**
+
+    If pipeline failed, the ``reason`` value in the message is filled with an error message or a custom message
+    provided by error-reason mapping. The ``note`` value in the message is filled with the same data, if it wasn't
+    filled by ``--note`` option. This allows to show the error message to users in the CI dashboard.
+
     """
 
     name = 'pipeline-state-reporter'
@@ -438,6 +445,12 @@ class PipelineStateReporter(gluetool.Module):
         # sure even the 'complete' report would be connected with the original issue, and
         # therefore open to investigation.
         body['reason'] = self._get_error_reason(error_message)
+
+        # If the note wasn't been set by the module option, add error reason there.
+        # CI dashboard will show the note as a reason to failed or skipped test.
+        if not body['note']:
+            body['note'] = self._get_error_reason(error_message)
+
         body['issue_url'] = error_url
 
         render_context = gluetool.utils.dict_update(self.shared('eval_context'), {
