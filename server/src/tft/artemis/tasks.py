@@ -26,7 +26,7 @@ from typing_extensions import Protocol
 from . import KNOB_POOL_ENABLED, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
     log_guest_event, metrics, safe_call
 from .context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
-from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
+from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, PriorityGroup, SafeQuery, \
     SnapshotRequest, SSHKey, safe_db_change, upsert
 from .drivers import PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
@@ -389,6 +389,7 @@ class Actor(Protocol):
         args: Optional[Tuple[Any, ...]] = None,
         kwargs: Optional[Dict[str, Any]] = None,
         delay: Optional[int] = None,
+        broker_priority: Optional[int] = None,
         **options: Any
     ) -> None:
         ...
@@ -397,6 +398,16 @@ class Actor(Protocol):
         self,
         *args: Any
     ) -> dramatiq.Message:
+        ...
+
+    def message_with_options(
+        self,
+        args: Optional[Tuple[Any, ...]] = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+        delay: Optional[int] = None,
+        broker_priority: Optional[int] = None,
+        **options: Any
+    ) -> None:
         ...
 
 
@@ -931,7 +942,9 @@ def dispatch_task(
     logger: gluetool.log.ContextAdapter,
     task: Actor,
     *args: Any,
-    delay: Optional[int] = None
+    delay: Optional[int] = None,
+    priority_group: Optional[PriorityGroup] = None,
+    broker_priority: Optional[int] = None
 ) -> Result[None, Failure]:
     """
     Dispatch a given task.
@@ -940,16 +953,22 @@ def dispatch_task(
     :param task: callable, a Dramatiq task, to dispatch.
     :param args: positional parameters to pass to the task.
     :param delay: if set, the task will be delayed by this many seconds.
+    :param broker_priority: if set, the message will be given priority withing all messages known to the broker.
+        The higher the value, the sooner the message will be delivered.
     """
 
-    if delay is None:
-        r = safe_call(task.send, *args)
-
-    else:
+    if delay is not None:
         delay = _randomize_delay(delay)
 
-        # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
-        r = safe_call(task.send_with_options, args=args, delay=delay * 1000)
+    broker_priority = broker_priority or (priority_group.priority if priority_group is not None else None)
+
+    # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
+    r = safe_call(
+        task.send_with_options,
+        args=args,
+        delay=delay * 1000 if delay is not None else None,
+        broker_priority=broker_priority
+    )
 
     if r.is_ok:
         formatted_args = [
@@ -959,6 +978,11 @@ def dispatch_task(
         if delay is not None:
             formatted_args += [
                 'delay={}'.format(delay)
+            ]
+
+        if broker_priority is not None:
+            formatted_args += [
+                'broker-priority={}'.format(broker_priority)
             ]
 
         logger.info('scheduled task {}({})'.format(
@@ -978,7 +1002,8 @@ def dispatch_task(
         r.unwrap_error(),
         task_name=task.actor_name,
         task_args=args,
-        task_delay=delay
+        task_delay=delay,
+        task_broker_priority=broker_priority
     ))
 
 
@@ -987,7 +1012,9 @@ def dispatch_group(
     tasks: List[Actor],
     *args: Any,
     on_complete: Optional[Actor] = None,
-    delay: Optional[int] = None
+    delay: Optional[int] = None,
+    priority_group: Optional[PriorityGroup] = None,
+    broker_priority: Optional[int] = None
 ) -> Result[None, Failure]:
     """
     Dispatch given tasks as a group.
@@ -997,16 +1024,20 @@ def dispatch_group(
     :param args: positional parameters to pass to all tasks.
     :param on_complete: a task to dispatch when group tasks complete.
     :param delay: if set, the task will be delayed by this many seconds.
+    :param broker_priority: if set, the messages in the group will be given priority withing all messages known to
+        the broker. The higher the value, the sooner the message will be delivered.
     """
+
+    broker_priority = broker_priority or (priority_group.priority if priority_group is not None else None)
 
     try:
         group = dramatiq.group([
-            task.message(*args)
+            task.message_with_options(*args, broker_priority=broker_priority)
             for task in tasks
         ])
 
         if on_complete:
-            group.add_completion_callback(on_complete.message(*args))
+            group.add_completion_callback(on_complete.message_with_options(*args, broker_priority=broker_priority))
 
         if delay is None:
             group.run()
@@ -1025,6 +1056,11 @@ def dispatch_group(
                 'delay={}'.format(delay)
             ]
 
+        if broker_priority is not None:
+            formatted_args += [
+                'broker-priority={}'.format(broker_priority)
+            ]
+
         logger.info('scheduled group ({})({})'.format(
             ' | '.join([task.actor_name for task in tasks]),
             ', '.join(formatted_args)
@@ -1035,7 +1071,9 @@ def dispatch_group(
             'failed to dispatch group',
             exc,
             group_tasks=[task.actor_name for task in tasks],
-            group_args=args
+            group_args=args,
+            group_delay=delay,
+            group_broker_priority=broker_priority
         ))
 
     return Ok(None)
@@ -1761,11 +1799,17 @@ class Workspace:
 
         assert False, 'unreachable'
 
-    def dispatch_task(self, task: Actor, *args: Any, delay: Optional[int] = None) -> None:
+    def dispatch_task(
+        self,
+        task: Actor,
+        *args: Any,
+        delay: Optional[int] = None,
+        broker_priority: Optional[int] = None
+    ) -> None:
         if self.result:
             return
 
-        r = dispatch_task(self.logger, task, *args, delay=delay)
+        r = dispatch_task(self.logger, task, *args, delay=delay, broker_priority=broker_priority)
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to dispatch update task')
@@ -1776,12 +1820,20 @@ class Workspace:
         tasks: List[Actor],
         *args: Any,
         on_complete: Optional[Actor] = None,
-        delay: Optional[int] = None
+        delay: Optional[int] = None,
+        broker_priority: Optional[int] = None
     ) -> None:
         if self.result:
             return
 
-        r = dispatch_group(self.logger, tasks, *args, on_complete=on_complete, delay=delay)
+        r = dispatch_group(
+            self.logger,
+            tasks,
+            *args,
+            on_complete=on_complete,
+            delay=delay,
+            broker_priority=broker_priority
+        )
 
         if r.is_error:
             self.result = self.handle_failure(r, 'failed to dispatch group')

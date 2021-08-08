@@ -524,6 +524,7 @@ class PriorityGroup(Base):
     __tablename__ = 'priority_groups'
 
     name = Column(String(250), primary_key=True, nullable=False)
+    priority = Column(Integer(), nullable=False, server_default=0)
 
     guests = relationship('GuestRequest', back_populates='priority_group')
 
@@ -1123,11 +1124,13 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
                 logger,
                 session,
                 PriorityGroup,
-                {
-                    PriorityGroup.name: priority_group_config['name']
+                insert_data={
+                    PriorityGroup.name: priority_group_config['name'],
+                    PriorityGroup.priority: priority_group_config['priority']
                 },
-                # TODO: `ON CONFLICT DO NOTHING` UPSERT makes the mess out of expected rows, both 0 and 1 are valid.
-                expected_records=(0, 1)
+                update_data={
+                    'priority': priority_group_config['priority']
+                }
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize priority group record'

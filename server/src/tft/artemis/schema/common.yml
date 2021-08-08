@@ -126,8 +126,12 @@ properties:
         name:
           type: string
 
+        priority:
+          type: integer
+
       required:
        - name
+       - priority
 
   guest_tags:
     type: object
