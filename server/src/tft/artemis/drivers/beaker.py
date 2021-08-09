@@ -120,7 +120,7 @@ def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.Beauti
 
             cpu.append(processors)
 
-        if constraint.name == 'cpu.model':
+        elif constraint.name == 'cpu.model':
             op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             processors = _new_tag('model', op=op, value=value)
