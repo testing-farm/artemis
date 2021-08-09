@@ -28,7 +28,7 @@ def _schema_empty(session, _schema_actual):
     session.add(tft.artemis.db.Pool(
         poolname='dummy-pool',
         driver='dummy-driver',
-        parameters='{}'
+        _parameters={}
     ))
 
     session.add(tft.artemis.db.PriorityGroup(
@@ -44,12 +44,12 @@ def _schema_empty(session, _schema_actual):
 
     session.add(tft.artemis.db.GuestRequest(
         guestname='dummy-guest',
-        environment='{}',
+        _environment={},
         ownername='dummy-user',
         priorityname='dummy-priority-group',
         poolname='dummy-pool',
         ctime=datetime.datetime.utcnow(),
-        state=tft.artemis.guest.GuestState.READY.value,
+        state=tft.artemis.guest.GuestState.READY,
         address=None,
         ssh_keyname='dummy-key',
         ssh_port=22,
