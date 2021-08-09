@@ -51,6 +51,12 @@ expose_hooks() {
     done
 }
 
+# This is an important setting: do not allow Dramatiq to fetch more messages than needed. Fetch new message
+# once task is done and completed, avoid pre-fetching multiple messages at once. Pre-fetching messes with
+# priorities, and may lead to lost messages (although only in some very rare conditions).
+# TODO: make this controllable via ARTEMIS_* variable.
+export dramatiq_queue_prefetch=1
+
 ARTEMIS_CONTAINER_LOG_METHOD="${ARTEMIS_CONTAINER_LOG_METHOD:-file}"
 ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH="${ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH:-/promtail-config/promtail.yaml}"
 ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS="${ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS:-}"
