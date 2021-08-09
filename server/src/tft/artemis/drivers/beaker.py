@@ -534,13 +534,13 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         job_results: bs4.BeautifulSoup
-    ) -> Result[str, Failure]:
+    ) -> Result[Tuple[str, str], Failure]:
         """
-        Parse job results and return job status
+        Parse job results and return its result and status.
 
         :param bs4.BeautifulSoup job_results: Job results in xml format.
-        :rtype: result.Result[str, Failure]
-        :returns: :py:class:`result.Result` with job status, or specification of error.
+        :rtype: result.Result[Tuple[str, str], Failure]
+        :returns: a tuple with two items, job result and status, or specification of error.
         """
 
         if not job_results.find('job') or len(job_results.find_all('job')) != 1:
@@ -549,13 +549,21 @@ class BeakerDriver(PoolDriver):
                 job_results=job_results.prettify()
             ))
 
-        if not job_results.find('job')['result']:
+        job = job_results.find('job')
+
+        if not job['result']:
             return Error(Failure(
                 'job results XML does not contain result attribute',
                 job_results=job_results.prettify()
             ))
 
-        return Ok(job_results.find('job')['result'])
+        if not job['status']:
+            return Error(Failure(
+                'job results XML does not contain status attribute',
+                job_results=job_results.prettify()
+            ))
+
+        return Ok((job['result'].lower(), job['status'].lower()))
 
     def _parse_guest_address(
         self,
@@ -613,11 +621,11 @@ class BeakerDriver(PoolDriver):
         if r_job_status.is_error:
             return Error(r_job_status.unwrap_error())
 
-        job_status = r_job_status.unwrap()
+        job_result, job_status = r_job_status.unwrap()
 
-        logger.info(f'current job status {BeakerPoolData.unserialize(guest_request).job_id}:{job_status}')
+        logger.info(f'current job status {BeakerPoolData.unserialize(guest_request).job_id}:{job_result}:{job_status}')
 
-        if job_status.lower() == 'pass':
+        if job_result == 'pass':
             r_guest_address = self._parse_guest_address(logger, job_results)
 
             if r_guest_address.is_error:
@@ -629,14 +637,16 @@ class BeakerDriver(PoolDriver):
                 address=r_guest_address.unwrap()
             ))
 
-        if job_status.lower() == 'new':
+        if job_result == 'new':
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=BeakerPoolData.unserialize(guest_request),
                 delay_update=r_delay.unwrap()
             ))
 
-        if job_status.lower() == 'fail':
+        job_is_failed = job_result == 'fail' or job_status == 'aborted'
+
+        if job_is_failed:
             r_reschedule_job = self._reschedule_job(
                 logger,
                 BeakerPoolData.unserialize(guest_request).job_id,
@@ -663,6 +673,7 @@ class BeakerDriver(PoolDriver):
 
         return Error(Failure(
             'unknown status',
+            job_result=job_result,
             job_status=job_status,
             job_results=job_results.prettify()
         ))
