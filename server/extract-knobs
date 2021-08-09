@@ -1,0 +1,124 @@
+#!/usr/bin/env python
+
+"""
+Extract knobs and their information from the source code, and render a documentation page for them.
+"""
+
+import argparse
+import importlib
+import inspect
+import pkgutil
+import sys
+from typing import Any, List, Optional
+
+import jinja2
+import jinja2.defaults
+import jinja2_ansible_filters.core_filters
+
+
+def _knob_envvar(knob) -> Optional[str]:
+    """
+    """
+
+    from tft.artemis import KnobSourceEnv
+
+    for source in knob._sources:
+        if not isinstance(source, KnobSourceEnv):
+            continue
+
+        return source.envvar
+
+    return None
+
+
+def _knob_editable(knob) -> bool:
+    from tft.artemis import KnobSourceDB
+
+    for source in knob._sources:
+        if not isinstance(source, KnobSourceDB):
+            continue
+
+        return True
+
+    return False
+
+
+def _knob_default(knob) -> Optional[str]:
+    from tft.artemis import KnobSourceDefault
+
+    for source in knob._sources:
+        if not isinstance(source, KnobSourceDefault):
+            continue
+
+        if source.default_label is not None:
+            return source.default_label
+
+        if isinstance(source.default, bool):
+            return 'yes' if source.default else 'no'
+
+        return source.default
+
+    return None
+
+
+jinja2.defaults.DEFAULT_FILTERS['knob_envvar'] = _knob_envvar
+jinja2.defaults.DEFAULT_FILTERS['knob_editable'] = _knob_editable
+jinja2.defaults.DEFAULT_FILTERS['knob_default'] = _knob_default
+
+jinja2.defaults.DEFAULT_FILTERS.update(
+    jinja2_ansible_filters.core_filters.FilterModule().filters()
+)
+
+
+from tft.artemis import Knob  # noqa
+
+
+def extract_knobs(options: argparse.Namespace) -> List[Knob]:
+    knobs = []
+
+    def is_knob(o: Any) -> bool:
+        return isinstance(o, Knob)
+
+    known_knobs: List[str] = []
+
+    for module_info in pkgutil.walk_packages(['src/tft/artemis'], 'tft.artemis.'):
+        module = importlib.import_module(module_info.name)
+
+        # print(module_info.name, inspect.getmembers(module, is_knob))
+
+        for _, knob in inspect.getmembers(module, is_knob):
+            if knob.knobname in known_knobs:
+                continue
+
+            knobs.append(knob)
+            known_knobs.append(knob.knobname)
+
+    return sorted(knobs, key=lambda x: x.knobname)
+
+
+def render_page(options: argparse.Namespace, knobs: Knob) -> str:
+    with open(options.template_file) as f:
+        template = jinja2.Template(f.read())
+
+    return template.render(KNOBS=knobs)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--template-file',
+        help='Path to the documentation page template.',
+        default='../docs/content/for-admins/knobs.adoc.j2'
+    )
+
+    options = parser.parse_args(sys.argv[1:])
+
+    knobs = extract_knobs(options)
+
+    rendered_page = render_page(options, knobs)
+
+    print(rendered_page)
+
+
+if __name__ == '__main__':
+    main()

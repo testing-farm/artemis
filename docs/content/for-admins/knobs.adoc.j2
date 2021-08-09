@@ -1,0 +1,78 @@
+---
+title: "Knobs"
+date: 2021-03-12T10:22:42+01:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+To allow control of its behavior, Artemis works with a concept of "knobs". A knob is a named value that affects Artemis
+in some way, and it is possible to change the value by a maintainer. Value of each knob is provided by two or more
+sources:
+
+1. (optional) the database. Can be changed in runtine with `artemis-cli knob` command.
+2. the environment variable. Cannot be changed in runtime, only when components starts.
+3. (optional) the given "actual" value, e.g. by a configuration file. Cannot be changed in runtime.
+4. the default value. Cannot be changed because it is part of the source code.
+
+[NOTE]
+====
+Each and every knob has a default value, and each and every knob accepts an environment variable as its source. This
+allows a sane starting position and provides a way to setup Artemis as needed without the need for runtime changes.
+====
+
+[NOTE]
+====
+Some knobs allow different values when applied to different pools. Such knobs do have one default value which is
+used when per-pool value is not specified. To modify the per-pool values special environment variable and knob names are
+necessary:
+
+* to change value for a particular pool, use `${original environment variable}_${pool name}` environment
+variable. For example, `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_dummy_pool` would affect pool named `dummy-pool`.
+Note `-` being replaced with `_` - `-` is not always allowed to be part of an environment variable, therefore it is
+replaced with an underscore.
+* to change value for a particular pool, use `${original knob name}:${pool name}` knob name when using `artemis-cli knob
+set` command. For example, `actor.verify-ssh.connect-timeout:dummy-pool` would affect pool named `dummy-pool`.
+====
+
+[NOTE]
+====
+To specify boolean, two-state values, Artemis accepts a wide range of values: `yes`, `true`, `1`, `y`, and `on` to mark
+"enabled" or "allowed" state, and corresponding negative values to express "disabled" or "disallowed". All values are
+case-insensitive.
+====
+
+[TIP]
+====
+For full list of accepted environment variables, see xref:environment-variables.adoc[this page]. You can find all
+variables listed bellow, too, but if you are looking for environment variables, then this dedicated page should help you
+quicker.
+====
+
+[%header,cols="2,1,2,3,1"]
+|===
+|Knob
+|Cast
+|Environment variable
+|Default
+|Editable?
+
+{% for knob in KNOBS %}
+|`{{ knob.knobname }}`
+|`{{ knob.cast_name }}`
+|`{{ knob | knob_envvar }}`
+|`{{ knob | knob_default }}`
+|{{ 'yes' if knob | knob_editable else 'no' }}
+
+{% if knob.per_pool %}
+|`{{ knob.knobname }}:$poolname`
+|
+|`{{ knob | knob_envvar }}_$poolname`
+|
+|
+{% endif %}
+
+5+|{{ knob.help }}
+{% endfor %}
+
+|===

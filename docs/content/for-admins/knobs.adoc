@@ -1,0 +1,508 @@
+---
+title: "Knobs"
+date: 2021-03-12T10:22:42+01:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+To allow control of its behavior, Artemis works with a concept of "knobs". A knob is a named value that affects Artemis
+in some way, and it is possible to change the value by a maintainer. Value of each knob is provided by two or more
+sources:
+
+1. (optional) the database. Can be changed in runtine with `artemis-cli knob` command.
+2. the environment variable. Cannot be changed in runtime, only when components starts.
+3. (optional) the given "actual" value, e.g. by a configuration file. Cannot be changed in runtime.
+4. the default value. Cannot be changed because it is part of the source code.
+
+[NOTE]
+====
+Each and every knob has a default value, and each and every knob accepts an environment variable as its source. This
+allows a sane starting position and provides a way to setup Artemis as needed without the need for runtime changes.
+====
+
+[NOTE]
+====
+Some knobs allow different values when applied to different pools. Such knobs do have one default value which is
+used when per-pool value is not specified. To modify the per-pool values special environment variable and knob names are
+necessary:
+
+* to change value for a particular pool, use `${original environment variable}_${pool name}` environment
+variable. For example, `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_dummy_pool` would affect pool named `dummy-pool`.
+Note `-` being replaced with `_` - `-` is not always allowed to be part of an environment variable, therefore it is
+replaced with an underscore.
+* to change value for a particular pool, use `${original knob name}:${pool name}` knob name when using `artemis-cli knob
+set` command. For example, `actor.verify-ssh.connect-timeout:dummy-pool` would affect pool named `dummy-pool`.
+====
+
+[NOTE]
+====
+To specify boolean, two-state values, Artemis accepts a wide range of values: `yes`, `true`, `1`, `y`, and `on` to mark
+"enabled" or "allowed" state, and corresponding negative values to express "disabled" or "disallowed". All values are
+case-insensitive.
+====
+
+[TIP]
+====
+For full list of accepted environment variables, see xref:environment-variables.adoc[this page]. You can find all
+variables listed bellow, too, but if you are looking for environment variables, then this dedicated page should help you
+quicker.
+====
+
+[%header,cols="2,1,2,3,1"]
+|===
+|Knob
+|Cast
+|Environment variable
+|Default
+|Editable?
+
+
+|`actor.default-max-backoff`
+|`int`
+|`ARTEMIS_ACTOR_DEFAULT_MAX_BACKOFF`
+|`60`
+|no
+
+
+
+5+|The biggest possible delay, in seconds, before the next attempt to run a failed task.
+
+|`actor.default-min-backoff`
+|`int`
+|`ARTEMIS_ACTOR_DEFAULT_MIN_BACKOFF`
+|`15`
+|no
+
+
+
+5+|The lowest possible delay, in seconds, before the next attempt to run a failed task.
+
+|`actor.default-priority`
+|`cast_priority`
+|`ARTEMIS_ACTOR_DEFAULT_PRIORITY`
+|`DEFAULT`
+|no
+
+
+
+5+|Task priority ("HIGH", "DEFAULT", "LOW" or any positive integer).
+
+|`actor.default-queue`
+|`cast_queue`
+|`ARTEMIS_ACTOR_DEFAULT_QUEUE`
+|`default`
+|no
+
+
+
+5+|Task queue ("default", "periodic", "pool-data-refresh" or any other string).
+
+|`actor.default-retries-count`
+|`int`
+|`ARTEMIS_ACTOR_DEFAULT_RETRIES`
+|`5`
+|no
+
+
+
+5+|A number of time a failing task get retried. Serves as a default value for tasks without custom setting.
+
+|`actor.delay-uniform-spread`
+|`int`
+|`ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD`
+|`5`
+|no
+
+
+
+5+|A range, in seconds, by which can a task delay be modified before use.
+
+|`actor.dispatch-preparing.delay`
+|`int`
+|`ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY`
+|`60`
+|no
+
+
+
+5+|A delay, in second, between successful acquire of a cloud instance
+and dispatching of post-acquire preparation tasks.
+
+|`actor.refresh-pool-flavor-info.schedule`
+|`str`
+|`ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_SCHEDULE`
+|`*/5 * * * *`
+|no
+
+
+
+5+|When to run OpenStack flavor info refresh task, as a Cron-like specification.
+
+|`actor.refresh-pool-image-info.schedule`
+|`str`
+|`ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_SCHEDULE`
+|`*/5 * * * *`
+|no
+
+
+
+5+|When to run pool image info refresh task, as a Cron-like specification.
+
+|`actor.refresh-pool-resources-metrics.schedule`
+|`str`
+|`ARTEMIS_ACTOR_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE`
+|`* * * * *`
+|no
+
+
+
+5+|When to run pool image info refresh task, as a Cron-like specification.
+
+|`actor.verify-ssh.connect-timeout`
+|`int`
+|`ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT`
+|`15`
+|yes
+
+
+|`actor.verify-ssh.connect-timeout:$poolname`
+|
+|`ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_$poolname`
+|
+|
+
+
+5+|Prepare stage SSH timeout.
+
+|`api.enable-authentication`
+|`bool`
+|`ARTEMIS_ENABLE_AUTHENTICATION`
+|`no`
+|no
+
+
+
+5+|If enabled, API requests must pass authentication by providing proper username and token.
+
+|`api.enable-authorization`
+|`bool`
+|`ARTEMIS_ENABLE_AUTHORIZATION`
+|`no`
+|no
+
+
+
+5+|If enabled, API requests must pass authorization by providing username with privileges high enough
+for the requested action.
+
+|`api.engine.debug`
+|`bool`
+|`ARTEMIS_API_ENGINE_DEBUG`
+|`no`
+|no
+
+
+
+5+|Run engine with a debugging enabled.
+
+|`api.engine.reload-on-change`
+|`bool`
+|`ARTEMIS_API_ENGINE_RELOAD_ON_CHANGE`
+|`no`
+|no
+
+
+
+5+|Reload API server when its code changes.
+
+|`api.processes`
+|`int`
+|`ARTEMIS_API_PROCESSES`
+|`1`
+|no
+
+
+
+5+|Number of processes to spawn for servicing API requests.
+
+|`api.profiling.enabled`
+|`bool`
+|`ARTEMIS_API_ENABLE_PROFILING`
+|`no`
+|no
+
+
+
+5+|If enabled, API server will profile handling of each request, emitting a summary into log.
+
+|`api.profiling.limit`
+|`int`
+|`ARTEMIS_API_PROFILING_LIMIT`
+|`20`
+|no
+
+
+
+5+|How many functions should be included in the summary.
+
+|`api.threads`
+|`int`
+|`ARTEMIS_API_THREADS`
+|`1`
+|no
+
+
+
+5+|Number of threads to spawn in each process for servicing API requests.
+
+|`aws.console.blob.expires`
+|`int`
+|`ARTEMIS_AWS_CONSOLE_BLOB_UPDATE_TICK`
+|`30`
+|no
+
+
+
+5+|How long, in seconds, to take between updating guest console log.
+
+|`aws.pending-timeout`
+|`int`
+|`ARTEMIS_AWS_PENDING_TIMEOUT`
+|`600`
+|no
+
+
+
+5+|How long, in seconds, is an instance allowed to stay in `pending` state until cancelled and reprovisioned.
+
+|`aws.spot-open-timeout`
+|`int`
+|`ARTEMIS_AWS_SPOT_OPEN_TIMEOUT`
+|`60`
+|no
+
+
+
+5+|How long, in seconds, is an spot instance request allowed to stay in `open` state
+until cancelled and reprovisioned.
+
+|`beaker.reservation.duration`
+|`int`
+|`ARTEMIS_BEAKER_RESERVATION_DURATION`
+|`86400`
+|no
+
+
+
+5+|A time, in seconds, for which the guest would be initially reserved.
+
+|`broker.close-after-dispatch`
+|`bool`
+|`ARTEMIS_CLOSE_AFTER_DISPATCH`
+|`no`
+|no
+
+
+
+5+|When enabled, broker connection will be forcefully closed after every message dispatch.
+
+|`config.dirpath`
+|`<lambda>`
+|`ARTEMIS_CONFIG_DIR`
+|`$CWD`
+|no
+
+
+
+5+|Path to a directory with configuration.
+
+|`gc.events.schedule`
+|`str`
+|`ARTEMIS_GC_EVENTS_SCHEDULE`
+|`15 */4 * * *`
+|no
+
+
+
+5+|When to run garbage collection task for guest request events.
+
+|`gc.events.threshold`
+|`int`
+|`ARTEMIS_GC_EVENTS_THRESHOLD`
+|`2592000`
+|no
+
+
+
+5+|How old must the guest events be to be removed, in seconds.
+
+|`logging.cli.slow-command-pattern`
+|`str`
+|`ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN`
+|`.*`
+|no
+
+
+
+5+|Log only slow commands matching the pattern.
+
+|`logging.cli.slow-command-threshold`
+|`float`
+|`ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD`
+|`10.0`
+|no
+
+
+
+5+|Minimal time, in seconds, spent executing a CLI command for it to be reported as "slow".
+
+|`logging.cli.slow-commands`
+|`bool`
+|`ARTEMIS_LOG_SLOW_CLI_COMMANDS`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would log "slow" CLI commands - commands whose execution took longer than
+ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD seconds.
+
+|`logging.json`
+|`bool`
+|`ARTEMIS_LOG_JSON`
+|`yes`
+|no
+
+
+
+5+|If enabled, Artemis would emit log messages as JSON mappings.
+
+|`openstack.build-timeout`
+|`int`
+|`ARTEMIS_OPENSTACK_BUILD_TIMEOUT`
+|`600`
+|no
+
+
+
+5+|How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
+
+|`openstack.console.blob.update-tick`
+|`int`
+|`ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK`
+|`30`
+|no
+
+
+
+5+|How long, in seconds, to take between updating guest console log.
+
+|`openstack.console.url.expires`
+|`int`
+|`ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES`
+|`600`
+|no
+
+
+
+5+|How long, in seconds, it takes for a console url to be qualified as expired.
+
+|`pool.dispatch-resource-cleanup`
+|`int`
+|`ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY`
+|`0`
+|no
+
+
+|`pool.dispatch-resource-cleanup:$poolname`
+|
+|`ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY_$poolname`
+|
+|
+
+
+5+|A delay, in seconds, to schedule pool resources release with. This may be useful for post mortem investigation
+of crashed resources.
+
+|`pool.enabled`
+|`bool`
+|`ARTEMIS_POOL_ENABLED`
+|`yes`
+|yes
+
+
+|`pool.enabled:$poolname`
+|
+|`ARTEMIS_POOL_ENABLED_$poolname`
+|
+|
+
+
+5+|If unset for a pool, the given pool is ignored by Artemis in general.
+
+|`pool.update-guest-request-tick`
+|`int`
+|`ARTEMIS_UPDATE_GUEST_REQUEST_TICK`
+|`30`
+|no
+
+
+|`pool.update-guest-request-tick:$poolname`
+|
+|`ARTEMIS_UPDATE_GUEST_REQUEST_TICK_$poolname`
+|
+|
+
+
+5+|A delay, in seconds, between two calls of `update-guest-request` task checking provisioning progress.
+
+|`route.pool.enabled`
+|`bool`
+|`ARTEMIS_ROUTE_POOL_ENABLED`
+|`yes`
+|yes
+
+
+|`route.pool.enabled:$poolname`
+|
+|`ARTEMIS_ROUTE_POOL_ENABLED_$poolname`
+|
+|
+
+
+5+|If unset for a pool, the given pool is ignored by the routing.
+
+|`route.pool.forgiving-time`
+|`int`
+|`ARTEMIS_ROUTE_POOL_FORGIVING_TIME`
+|`600`
+|yes
+
+
+
+5+|A time, in seconds, after which a pool error during a guest provisioning is ignored and pool becomes eligible
+for said guest request again.
+
+|`route.pool.resource-threshold`
+|`float`
+|`ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD`
+|`90.0`
+|yes
+
+
+
+5+|A percentage part of pool resource that, when reached, marks pool as depleted and not eligible for provisioning.
+
+|`route.request.max-time`
+|`int`
+|`ARTEMIS_ROUTE_REQUEST_MAX_TIME`
+|`21600`
+|yes
+
+
+
+5+|A time, in seconds, after which a guest request is cancelled if provisioning haven't succeeded.
+
+
+|===

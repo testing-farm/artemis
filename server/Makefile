@@ -39,6 +39,9 @@ integration-tests:  ## Run tests against real services
 docs:  ## Generate source code documentation
 	tox -e autodocs
 
+docs-knobs: install  ## Generate up-to-date documentation of knobs
+	poetry run ./extract-knobs --template-file ../docs/content/for-admins/knobs.adoc.j2 > ../docs/content/for-admins/knobs.adoc
+
 gen-db-revision:  ## Generate new DB revision
 	rm -rf test.db
 	poetry run alembic upgrade head

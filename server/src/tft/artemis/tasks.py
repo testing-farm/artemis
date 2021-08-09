@@ -192,7 +192,8 @@ KNOB_ACTOR_DEFAULT_PRIORITY: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_PRIORITY',
     cast_from_str=cast_priority,
-    default=TaskPriority.DEFAULT.value
+    default=TaskPriority.DEFAULT.value,
+    default_label='DEFAULT'
 )
 
 KNOB_ACTOR_DEFAULT_QUEUE: Knob[str] = Knob(

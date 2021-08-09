@@ -743,19 +743,28 @@ class KnobSourceDefault(KnobSource[T]):
     Use the given default value as the actual value of the knob.
 
     :param default: the value to be presented as the knob value.
+    :param default_label: if provided, it is used in documentation instead of the actual default value.
+        Since the default value expression is evaluated during import, the actual value may be pointless
+        from the documentation point of view.
     """
 
-    def __init__(self, knob: 'Knob[T]', default: T) -> None:
+    def __init__(self, knob: 'Knob[T]', default: T, default_label: Optional[str] = None) -> None:
         super(KnobSourceDefault, self).__init__(knob)
 
         self.default = default
+        self.default_label = default_label
 
     def get_value(self, **kwargs: Any) -> Result[Optional[T], Failure]:
         return Ok(self.default)
 
     def to_repr(self) -> List[str]:
+        if self.default_label is None:
+            return [
+                f'default="{self.default}"'
+            ]
+
         return [
-            f'default="{self.default}"'
+            f'default="{self.default_label}" ({self.default})'
         ]
 
 
@@ -952,6 +961,9 @@ class Knob(Generic[T]):
     :param envvar: if set, it is the name of the environment variable providing the value.
     :param actual: if set, it is the currently known value, e.g. provided by a config file.
     :param default: if set, it is used as a default value.
+    :param default_label: if provided, it is used in documentation instead of the actual default value.
+        Since the default value expression is evaluated during import, the actual value may be pointless
+        from the documentation point of view.
     :param cast_from_str: a callback used to cast the raw string value to the correct type. Required when ``envvar``
         or ``has_db`` is set.
     """
@@ -977,6 +989,7 @@ class Knob(Generic[T]):
         envvar: Optional[str] = None,
         actual: Optional[T] = None,
         default: Optional[T] = None,
+        default_label: Optional[str] = None,
         cast_from_str: Optional[Callable[[str], T]] = None
     ) -> None:
         self.knobname = knobname
@@ -1023,7 +1036,7 @@ class Knob(Generic[T]):
             self._sources.append(KnobSourceActual(self, actual))
 
         if default is not None:
-            self._sources.append(KnobSourceDefault(self, default))
+            self._sources.append(KnobSourceDefault(self, default, default_label=default_label))
 
         if not self._sources:
             raise KnobError(
@@ -1200,7 +1213,8 @@ KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_CONFIG_DIR',
     cast_from_str=lambda s: os.path.expanduser(s.strip()),
-    default=os.getcwd()
+    default=os.getcwd(),
+    default_label='$CWD'
 )
 
 KNOB_BROKER_URL: Knob[str] = Knob(
