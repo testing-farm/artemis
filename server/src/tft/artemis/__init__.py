@@ -340,7 +340,7 @@ class Failure:
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         **details: Any
-    ) -> None:
+    ) -> 'Failure':
         self.details.update(details)
 
         if scrubbed_command:
@@ -351,6 +351,8 @@ class Failure:
 
         if environment:
             self.details['environment'] = environment
+
+        return self
 
     @classmethod
     def _exception_details(
