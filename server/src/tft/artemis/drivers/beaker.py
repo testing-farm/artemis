@@ -377,6 +377,16 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with job xml, or specification of error.
         """
 
+        beaker_filter: Optional[bs4.BeautifulSoup] = None
+
+        if environment.has_hw_constraints:
+            r_beaker_filter = environment_to_beaker_filter(environment)
+
+            if r_beaker_filter.is_error:
+                return Error(r_beaker_filter.unwrap_error())
+
+            beaker_filter = r_beaker_filter.unwrap()
+
         r_distro = self._environment_to_image(logger, environment)
 
         if r_distro.is_error:
@@ -402,7 +412,7 @@ class BeakerDriver(PoolDriver):
         bkr_output = r_workflow_simple.unwrap()
 
         try:
-            return Ok(bs4.BeautifulSoup(bkr_output.stdout, 'xml'))
+            job_xml = bs4.BeautifulSoup(bkr_output.stdout, 'xml')
 
         except Exception as exc:
             return Error(Failure.from_exc(
@@ -410,6 +420,26 @@ class BeakerDriver(PoolDriver):
                 exc,
                 command_output=bkr_output.process_output
             ))
+
+        if beaker_filter is None:
+            return Ok(job_xml)
+
+        log_xml(logger.debug, 'job', job_xml)
+        log_xml(logger.debug, 'filter', beaker_filter)
+
+        host_requires = job_xml.find_all('hostRequires')
+
+        if len(job_xml.find_all('hostRequires')) != 1:
+            return Error(Failure(
+                'job XML is missing hostRequires element',
+                job=job_xml.prettify()
+            ))
+
+        host_requires.append(beaker_filter)
+
+        log_xml(logger.debug, 'job with filter', job_xml)
+
+        return Ok(job_xml)
 
     def _submit_job(
         self,
@@ -688,6 +718,7 @@ class BeakerDriver(PoolDriver):
         :returns: Ok with True if guest can be acquired.
         """
 
+        # First, check the parent class, maybe its tests already have the answer.
         r_answer = super(BeakerDriver, self).can_acquire(logger, environment)
 
         if r_answer.is_error:
@@ -696,7 +727,29 @@ class BeakerDriver(PoolDriver):
         if r_answer.unwrap() is False:
             return r_answer
 
-        return Ok(environment.has_hw_constraints is not True)
+        # Parent implementation does not care, but we still might: support for HW constraints is still
+        # far from being complete and fully tested, therefore we should check whether we are able to
+        # convert the constraints - if there are any - to a Beaker XML filter.
+
+        if not environment.has_hw_constraints:
+            return Ok(True)
+
+        r_constraints = environment.get_hw_constraints()
+
+        if r_constraints.is_error:
+            return Error(r_constraints.unwrap_error())
+
+        constraints = r_constraints.unwrap()
+
+        # since `has_hw_constraints` was positive, there should be constraints...
+        assert constraints is not None
+
+        r_filter = constraint_to_beaker_filter(constraints)
+
+        if r_filter.is_error:
+            return Error(r_filter.unwrap_error())
+
+        return Ok(True)
 
     def acquire_guest(
         self,
