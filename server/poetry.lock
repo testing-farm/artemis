@@ -1135,6 +1135,14 @@ optional = false
 python-versions = ">=3.5"
 
 [[package]]
+name = "pyinstrument"
+version = "4.0.2"
+description = "Call stack profiler for Python. Shows you why your code is slow!"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
 name = "pyparsing"
 version = "2.3.0"
 description = "Python parsing module"
@@ -1747,7 +1755,7 @@ testing = ["pytest (>=3.5,!=3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake
 [metadata]
 lock-version = "1.1"
 python-versions = "~3.7"
-content-hash = "44466c626103156e94ae4a933c309bd7541ef8f32a696644f595b31d89e27110"
+content-hash = "e61f6fbb0344e22c2c3f5436bd5557681a2f40f19bd07aad2ad29c677e2cfd9c"
 
 [metadata.files]
 alabaster = [
@@ -2489,6 +2497,31 @@ pyflakes = [
 pygments = [
     {file = "Pygments-2.7.1-py3-none-any.whl", hash = "sha256:307543fe65c0947b126e83dd5a61bd8acbd84abec11f43caebaf5534cbc17998"},
     {file = "Pygments-2.7.1.tar.gz", hash = "sha256:926c3f319eda178d1bd90851e4317e6d8cdb5e292a3386aac9bd75eca29cf9c7"},
+]
+pyinstrument = [
+    {file = "pyinstrument-4.0.2-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:470974d46bc95ff4281651d1859248393248f1c8246d96e898e8ab2327b6a52e"},
+    {file = "pyinstrument-4.0.2-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:5fef832e08c0165d8d5e37f936b596711aee9ea72dd719fed3477b24eeeee1c5"},
+    {file = "pyinstrument-4.0.2-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:fecdff1086dc5e33d5a36ebf6033c1c3cc401d5b2789458bf68d6859603922fd"},
+    {file = "pyinstrument-4.0.2-cp37-cp37m-manylinux2010_i686.whl", hash = "sha256:d1e84f0b8037d9012ecb4d7754ed593a08dd656e3b53bd94fc0496f06c725c13"},
+    {file = "pyinstrument-4.0.2-cp37-cp37m-manylinux2010_x86_64.whl", hash = "sha256:1883f6a4f39de3c924f8efa36ef18a5043c47a75923c3bf297e4027ed2e5b28e"},
+    {file = "pyinstrument-4.0.2-cp37-cp37m-win32.whl", hash = "sha256:deb51666933b95ca01f993d5ddb6a60373e400fb8b95a70b9ac56a6dff4f86dc"},
+    {file = "pyinstrument-4.0.2-cp37-cp37m-win_amd64.whl", hash = "sha256:9109e27d00fe56a7d0f00c92baa8c087e2649c258556c9cd46881bd747051484"},
+    {file = "pyinstrument-4.0.2-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:6ffd74277facd9b1c263ee0bb9e367b104cf52d5572b5b07d5095e6ab9305b44"},
+    {file = "pyinstrument-4.0.2-cp38-cp38-manylinux1_i686.whl", hash = "sha256:f78d6bf6774fbd97697276ef9864b205ebca03682de3ddac4f23426f70550e82"},
+    {file = "pyinstrument-4.0.2-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:d848016ca230fe2d2a968f56c705329dbbe87a2664b563c1754f92627b4a8b14"},
+    {file = "pyinstrument-4.0.2-cp38-cp38-manylinux2010_i686.whl", hash = "sha256:70614f1b4d82254de7270c954ba73311d91973cbc0e72e12ea5cf8af243b9cae"},
+    {file = "pyinstrument-4.0.2-cp38-cp38-manylinux2010_x86_64.whl", hash = "sha256:56820782228c5d2fd56c5b71276930880ff44d3b5c629afe09f46fcc1a8ecbb3"},
+    {file = "pyinstrument-4.0.2-cp38-cp38-win32.whl", hash = "sha256:434b29f278ef7e35761b926751df6963bd56dd6f7ff592d683bfc1737895751b"},
+    {file = "pyinstrument-4.0.2-cp38-cp38-win_amd64.whl", hash = "sha256:8b173d7c31777a0e81d35e16bbb9b8a7bf2da14e0bc8f3a4a32c31ef9ca2ae14"},
+    {file = "pyinstrument-4.0.2-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:f5ed5e6764a250d0cfcfa1dd67c0d5e44cf23633236c561977835b9961326d23"},
+    {file = "pyinstrument-4.0.2-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:28a5ca7248a4806e94df8e60cb289f9726124f62b4a7a406c9bc003236ec3861"},
+    {file = "pyinstrument-4.0.2-cp39-cp39-manylinux1_i686.whl", hash = "sha256:5f04c7175fab14022204895b01f7d2774a049f843be789824fc648c3a3aa0801"},
+    {file = "pyinstrument-4.0.2-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:285d94cb94a0165fb03ea14025a1d52f4af34ffd07a2eeeb842cff730566771c"},
+    {file = "pyinstrument-4.0.2-cp39-cp39-manylinux2010_i686.whl", hash = "sha256:60aa8e132ace6345425926dce07b5a78f2c3821104548a9589d0c9c0c3dcff56"},
+    {file = "pyinstrument-4.0.2-cp39-cp39-manylinux2010_x86_64.whl", hash = "sha256:ae41d5d2d5426a1e4b2b3947d6975353ee8201e02345c2359df5ea8a5bb572f3"},
+    {file = "pyinstrument-4.0.2-cp39-cp39-win32.whl", hash = "sha256:4b8cfef48ed51eacaa41a7bedda6180ff6a70431c96f2f06d7620f0e7a1d6867"},
+    {file = "pyinstrument-4.0.2-cp39-cp39-win_amd64.whl", hash = "sha256:d313be8b25125709f5046f52a3ff0c852bb0b8b22611cec16c0b5df02dbf3a4e"},
+    {file = "pyinstrument-4.0.2.tar.gz", hash = "sha256:abdd80708f37d0d64b43133b494c773187ef0d970a8c0bce42b3e21f4701b7eb"},
 ]
 pyparsing = [
     {file = "pyparsing-2.3.0-py2.py3-none-any.whl", hash = "sha256:40856e74d4987de5d01761a22d1621ae1c7f8774585acae358aa5c5936c6c90b"},

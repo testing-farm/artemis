@@ -9,6 +9,7 @@ import time
 from typing import List, Optional, Tuple, TypeVar
 
 import gluetool.log
+import pyinstrument
 
 T = TypeVar('T')
 
@@ -27,6 +28,7 @@ class Profiler:
         self.stop_time: Optional[float] = None
 
         self._profiler: Optional[cProfile.Profile] = None
+        self._callstack_profiler: Optional[pyinstrument.Profiler] = None
 
     @property
     def elapsed_time(self) -> Optional[float]:
@@ -50,12 +52,18 @@ class Profiler:
         self.start_time = time.time()
 
         self._profiler = cProfile.Profile()
+        self._callstack_profiler = pyinstrument.Profiler()
+
         self._profiler.enable()
+        self._callstack_profiler.start()
 
     def stop(self) -> None:
         """
         Terminate profiling.
         """
+
+        if self._callstack_profiler:
+            self._callstack_profiler.stop()
 
         if self._profiler:
             self._profiler.disable()
@@ -89,6 +97,11 @@ class Profiler:
             # TODO: this could be done in a better way - splitlines() just to get them merged
             # by `\n` one the next line?
             lines += s.getvalue().splitlines()
+            lines += ['']
+
+        if self._callstack_profiler is not None:
+            lines += self._callstack_profiler.output_text(unicode=False, color=True).splitlines()
+            lines += ['']
 
         return '\n'.join(lines)
 
