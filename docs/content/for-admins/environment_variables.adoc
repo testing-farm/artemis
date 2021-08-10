@@ -87,6 +87,7 @@ case-insensitive.
 
 === Routing
 
+* `ARTEMIS_CACHE_PATTERN_MAPS` (bool): If enabled, pattern maps loaded by pools would be cached. Default: `yes`.
 * `ARTEMIS_HOOK_ROUTE` (string): Routing script, to be called by `route-guest-request` task.
 * `ARTEMIS_ROUTE_REQUEST_MAX_TIME` (int): A time, in seconds, after which a guest request is cancelled if provisioning haven't succeeded. Default: `21600`.
 * `ARTEMIS_ROUTE_POOL_FORGIVING_TIME` (int): A time, in seconds, after which a pool error during a guest provisioning is ignored and pool becomes eligible for said guest request again. Default: `600`.

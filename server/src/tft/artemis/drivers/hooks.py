@@ -3,19 +3,80 @@ Helpers for driver hooks. Common, often-used actions and primitives.
 """
 
 import os
-from typing import Optional
+import threading
+from typing import Dict, Optional, Tuple
 
 import gluetool.log
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
 
-from .. import KNOB_CONFIG_DIRPATH, Failure, log_dict_yaml
+from .. import KNOB_CONFIG_DIRPATH, Failure, Knob, log_dict_yaml
 from ..environment import Environment
 from . import PoolDriver, PoolImageInfo
+
+KNOB_CACHE_PATTERN_MAPS: Knob[bool] = Knob(
+    'pool.cache-pattern-maps',
+    'If enabled, pattern maps loaded by pools would be cached.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_CACHE_PATTERN_MAPS',
+    default=True,
+    cast_from_str=gluetool.utils.normalize_bool_option
+)
+
+
+_PATTERN_MAP_CACHE: Dict[str, Tuple[float, gluetool.utils.PatternMap]] = {}
+_PATTERN_MAP_CACHE_LOCK = threading.Lock()
+
+
+def get_pattern_map(
+    logger: gluetool.log.ContextAdapter,
+    filepath: str,
+    use_cache: bool = True
+) -> Result[gluetool.utils.PatternMap, Failure]:
+    if not use_cache:
+        try:
+            return Ok(gluetool.utils.PatternMap(filepath, allow_variables=True, logger=logger))
+
+        except Exception as exc:
+            return Error(Failure.from_exc('cannot load mapping file', exc, filepath=filepath))
+
+    def _refresh_cache() -> Result[gluetool.utils.PatternMap, Failure]:
+        try:
+            stat = os.stat(filepath)
+            pattern_map = gluetool.utils.PatternMap(filepath, allow_variables=True, logger=logger)
+
+        except Exception as exc:
+            return Error(Failure.from_exc('cannot load mapping file', exc, filepath=filepath))
+
+        logger.info(f'pattern-map-cache: {filepath} - refreshing')
+
+        _PATTERN_MAP_CACHE[filepath] = (stat.st_mtime, pattern_map)
+
+        return Ok(pattern_map)
+
+    with _PATTERN_MAP_CACHE_LOCK:
+        if filepath not in _PATTERN_MAP_CACHE:
+            logger.debug(f'pattern-map-cache: {filepath} - not in cache')
+
+            return _refresh_cache()
+
+        stamp, pattern_map = _PATTERN_MAP_CACHE[filepath]
+        stat = os.stat(filepath)
+
+        if stat.st_mtime > stamp:
+            logger.warning(f'pattern-map-cache: {filepath} - outdated')
+
+            return _refresh_cache()
+
+        logger.debug(f'pattern-map-cache: {filepath} - using cached')
+
+        return Ok(pattern_map)
 
 
 def map_compose_to_imagename_by_pattern_map(
     logger: gluetool.log.ContextAdapter,
+    pool: PoolDriver,
     compose_id: str,
     mapping_filename: Optional[str] = None,
     mapping_filepath: Optional[str] = None
@@ -43,11 +104,17 @@ def map_compose_to_imagename_by_pattern_map(
 
     logger.debug(f'using pattern map {mapping_filepath}')
 
-    try:
-        pattern_map = gluetool.utils.PatternMap(mapping_filepath, allow_variables=True, logger=logger)
+    r_cache_enabled = KNOB_CACHE_PATTERN_MAPS.get_value(poolname=pool.poolname)
 
-    except Exception as exc:
-        return Error(Failure.from_exc('cannot open compose/image mapping', exc, compose=compose_id))
+    if r_cache_enabled.is_error:
+        return Error(r_cache_enabled.unwrap_error())
+
+    r_pattern_map = get_pattern_map(logger, mapping_filepath, use_cache=r_cache_enabled.unwrap())
+
+    if r_pattern_map.is_error:
+        return Error(r_pattern_map.unwrap_error().update(compose=compose_id))
+
+    pattern_map = r_pattern_map.unwrap()
 
     try:
         imagename = pattern_map.match(compose_id)
@@ -89,6 +156,7 @@ def map_environment_to_image_info(
     try:
         r_image_name = map_compose_to_imagename_by_pattern_map(
             logger,
+            pool,
             environment.os.compose,
             mapping_filename=mapping_filename,
             mapping_filepath=mapping_filepath
