@@ -125,9 +125,9 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
             r_enabled = knob_enabled.get_value(session=session)
 
             if r_enabled.is_error:
-                return Error(Failure(
+                return Error(Failure.from_failure(
                     'failed to test policy enablement',
-                    caused_by=r_enabled.unwrap_error()
+                    r_enabled.unwrap_error()
                 ))
 
             if r_enabled.unwrap() is not True:
@@ -177,9 +177,9 @@ def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[Pool
     first_error_pair = next(iter(errors), None)
 
     if first_error_pair:
-        return Error(Failure(
+        return Error(Failure.from_failure(
             'failed to get pool capabilities',
-            caused_by=first_error_pair[1].unwrap_error()
+            first_error_pair[1].unwrap_error()
         ))
 
     return Ok([
