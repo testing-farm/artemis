@@ -99,6 +99,7 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
 
         return mapping
 
+    @cached_property
     def compose_sub_to_artemis_options(self):
         mapping = {}
 
@@ -113,6 +114,23 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
                     continue
 
         return mapping
+
+    def compose_substring_evaluation(self, substring, compose):
+        """
+        Match compose substring with compose name.
+        Add support of `all` and `|` separator for several substrings.
+        Returns True if substring matches
+        """
+        if substring.lower() == 'all':
+            return True
+        if '|' in substring:
+            for sub in substring.split('|'):
+                if sub in compose:
+                    return True
+        else:
+            if substring in compose:
+                return True
+        return False
 
     def access_control(self):
         primary_task = self.shared('primary_task')
@@ -236,7 +254,7 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
                 self.build_params = common_build_params.copy()
 
                 for substring, option in self.compose_sub_to_artemis_options().items():
-                    if substring in compose.lower():
+                    if self.compose_substring_evaluation(substring, compose):
                         self.build_params['artemis_options'] += option
 
                 self.build_params['guess_environment_options'] += ' --compose-method=force --compose={}'.format(compose)
