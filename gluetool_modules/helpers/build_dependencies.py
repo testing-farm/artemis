@@ -5,6 +5,8 @@ import gluetool
 from gluetool.log import log_dict
 from gluetool.utils import normalize_multistring_option
 
+from typing import Union, List, Optional, Any, cast # noqa
+
 
 class BuildDependencies(gluetool.Module):
     """
@@ -59,17 +61,22 @@ class BuildDependencies(gluetool.Module):
     }
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
         super(BuildDependencies, self).__init__(*args, **kwargs)
-        self.companions = None
+        self.companions = None  # type: Optional[List[str]]
 
     @gluetool.utils.cached_property
     def companion_target_fallback_map(self):
+        # type: () -> Optional[gluetool.utils.PatternMap]
+
         if not self.option('companion-target-fallback-map'):
             return None
 
         return gluetool.utils.PatternMap(self.option('companion-target-fallback-map'), logger=self.logger)
 
     def _find_task_for_target_and_component(self, session, target, component):
+        # type: (Any, str, str) -> Optional[int]
         """
         Find the most recent task ID for given component and build target.
 
@@ -105,7 +112,7 @@ class BuildDependencies(gluetool.Module):
                 try:
                     alternative_target = self.companion_target_fallback_map.match(target)
 
-                except gluetool.GlueError as exc:
+                except gluetool.GlueError:
                     self.warn("Cannot fall back from a target '{}'".format(target), sentry=True)
                     self.warn("No builds found for component '{}' and target '{}'".format(component, target))
                     return None
@@ -123,6 +130,7 @@ class BuildDependencies(gluetool.Module):
         return int(builds[0]['task_id'])
 
     def _companions_from_koji(self):
+        # type: () -> List[int]
         """
         Probably the simplest dynamic method: look for the most recent build for each companion,
         with the matching build target.
@@ -135,6 +143,8 @@ class BuildDependencies(gluetool.Module):
 
         session = self.shared('koji_session')
         primary_task = self.shared('primary_task')
+
+        assert self.companions is not None
 
         self.info('Looking for companions {}'.format(', '.join(self.companions)))
 
@@ -151,6 +161,9 @@ class BuildDependencies(gluetool.Module):
         return real_task_ids
 
     def _companions_from_copr(self):
+        # type: () -> List[str]
+
+        assert self.companions is not None
 
         self.require_shared('copr_api', 'primary_task')
 
@@ -202,6 +215,7 @@ class BuildDependencies(gluetool.Module):
     }
 
     def sanity(self):
+        # type: () -> None
         method = self.option('method')
 
         self.companions = normalize_multistring_option(self.option('companions'))
@@ -218,6 +232,7 @@ class BuildDependencies(gluetool.Module):
             )
 
     def execute(self):
+        # type: () -> None
         self.require_shared('primary_task', 'tasks')
 
         if self.option('method') is None:
@@ -233,6 +248,7 @@ class BuildDependencies(gluetool.Module):
             # would obviously fail. To avoid that situation, if the primary component is present on the list
             # of companions, remove it, that way we would just try to install A's build under the test.
             primary_component = self.shared('primary_task').component
+            assert self.companions is not None
             if primary_component in self.companions:
                 self.info("removing primary component '{}' from a list of companions".format(primary_component))
 
@@ -247,7 +263,7 @@ class BuildDependencies(gluetool.Module):
                 "Unknown 'guessing' method '{}'".format(self.option('method'))
             )
 
-        additional_task_ids = method(self)
+        additional_task_ids = cast(Union[List[int], List[str]], method(self))
 
         current_tasks_ids = [task.id for task in self.shared('tasks')]
 
