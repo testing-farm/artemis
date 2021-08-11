@@ -1,0 +1,61 @@
+---
+title: "Drivers"
+date: 2021-08-11T08:10:36+01:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== Drivers
+
+A driver acts on the boundary between Artemis core and a given provisioning service. By implementing basic methods like "inspect VM" or "release resources", provides necessary level of polymorphism, allowing Artemis to switch transparently between pools as needed.
+
+=== Driver capabilities
+
+Capabilities are features whose support is built-in into the driver. The support is usually optional, and the feature may be disabled, but it is not possible to enable feature driver does not support.
+
+* `supports-snapshots`: the driver can handle snapshots of some kind.
+* `supports-spot-instances`: the driver can handle spot instance requests.
+* `supports-native-post-install-script`: the driver can handle the post-installation script on its own. Artemis core will execute the script in the preparation stage for drivers that do no have this capability.
+* `supported-guest-logs`: list of log name/log content type pairs describing what logs are supported by the driver.
+
+[%header,cols="1,1,1,1,1"]
+|===
+|Driver
+|supports-snapshots
+|supports-spot-instances
+|supports-native-post-install-script
+|supported-guest-logs
+
+|`aws`
+|[red]#no#
+|[green]#yes#
+|[green]#yes#
+|console/blob
+
+|`azure`
+|[red]#no#
+|[red]#no#
+|[green]#yes#
+|-
+
+|`beaker`
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|-
+
+|`localhost`
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|-
+
+|`openstack`
+|[green]#yes#
+|[red]#no#
+|[green]#yes#
+|console/blob
+console/URL
+
+|===
