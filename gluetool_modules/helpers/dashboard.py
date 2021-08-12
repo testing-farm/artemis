@@ -4,6 +4,8 @@
 import gluetool
 import gluetool_modules.libs
 
+from typing import Dict  # noqa
+
 
 class Dashboard(gluetool.Module):
     """
@@ -25,10 +27,12 @@ class Dashboard(gluetool.Module):
 
     @property
     def dashboard_url(self):
+        # type: () -> str
         return gluetool.utils.render_template(self.option('dashboard-url-template'), **self.shared('eval_context'))
 
     @property
     def eval_context(self):
+        # type: () -> Dict[str, str]
         # To render dashboard URL, we need eval context. When asked to provide eval context, we want to
         # include dashboard URL. Voila, infinite recursion: eval_context => dasboard_url => eval_context => ...
 
@@ -46,6 +50,7 @@ class Dashboard(gluetool.Module):
         }
 
     def execute(self):
+        # type: () -> None
         if not self.dashboard_url:
             self.warn('Dashboard URL seems to be empty')
             return
