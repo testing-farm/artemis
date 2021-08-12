@@ -33,6 +33,7 @@ from .. import __VERSION__, KNOB_LOGGING_JSON, Failure, FailureDetailsType, JSON
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, validate_data
 from ..context import DATABASE, LOGGER
+from ..environment import Environment
 from ..guest import GuestState
 from ..script import hook_engine
 from ..tasks import get_snapshot_logger
@@ -117,7 +118,7 @@ def _validate_environment(
     environment: Any,
     schema: JSONSchemaType,
     failure_details: Dict[str, str]
-) -> None:
+) -> Environment:
     r_validation = validate_data(environment, schema)
 
     if r_validation.is_error:
@@ -138,6 +139,19 @@ def _validate_environment(
                 'errors': validation_errors
             },
             logger=logger,
+            failure_details=failure_details
+        )
+
+    try:
+        return Environment.unserialize_from_json(environment)
+
+    except Exception as exc:
+        raise errors.BadRequestError(
+            response={
+                'message': 'Bad request'
+            },
+            logger=logger,
+            caused_by=Failure.from_exc('failed to parse environment', exc),
             failure_details=failure_details
         )
 
@@ -550,7 +564,7 @@ class GuestRequestManager:
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
         # Validate given environment specification
-        _validate_environment(
+        environment = _validate_environment(
             guest_logger,
             guest_request.environment,
             environment_schema,
@@ -563,7 +577,7 @@ class GuestRequestManager:
                 session,
                 sqlalchemy.insert(artemis_db.GuestRequest.__table__).values(
                     guestname=guestname,
-                    _environment=guest_request.environment,
+                    _environment=environment.serialize_to_json(),
                     ownername=DEFAULT_GUEST_REQUEST_OWNER,
                     ssh_keyname=guest_request.keyname,
                     ssh_port=DEFAULT_SSH_PORT,
@@ -585,6 +599,7 @@ class GuestRequestManager:
                 guestname,
                 'created',
                 **{
+                    'environment': environment.serialize_to_json(),
                     'user_data': guest_request.user_data
                 }
             )
