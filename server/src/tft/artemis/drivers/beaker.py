@@ -674,7 +674,10 @@ class BeakerDriver(PoolDriver):
                 delay_update=r_delay.unwrap()
             ))
 
-        job_is_failed = job_result == 'fail' or job_status == 'aborted'
+        job_is_failed = \
+            job_result == 'fail' \
+            or job_status == 'aborted' \
+            or (job_status == 'reserved' and job_result == 'warn')  # job failed, needs a bit more time to update status
 
         if job_is_failed:
             r_reschedule_job = self._reschedule_job(
