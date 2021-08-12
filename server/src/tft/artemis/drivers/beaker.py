@@ -366,7 +366,8 @@ class BeakerDriver(PoolDriver):
     def _create_job_xml(
         self,
         logger: gluetool.log.ContextAdapter,
-        environment: Environment
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
     ) -> Result[bs4.BeautifulSoup, Failure]:
         """
         Create job xml with bkr workflow-simple and environment variables
@@ -379,27 +380,34 @@ class BeakerDriver(PoolDriver):
 
         beaker_filter: Optional[bs4.BeautifulSoup] = None
 
-        if environment.has_hw_constraints:
-            r_beaker_filter = environment_to_beaker_filter(environment)
+        if guest_request.environment.has_hw_constraints:
+            r_beaker_filter = environment_to_beaker_filter(guest_request.environment)
 
             if r_beaker_filter.is_error:
                 return Error(r_beaker_filter.unwrap_error())
 
             beaker_filter = r_beaker_filter.unwrap()
 
-        r_distro = self._environment_to_image(logger, environment)
+        r_distro = self._environment_to_image(logger, guest_request.environment)
 
         if r_distro.is_error:
             return Error(r_distro.unwrap_error())
 
         distro = r_distro.unwrap()
 
+        self.log_acquisition_attempt(
+            logger,
+            session,
+            guest_request,
+            image=distro
+        )
+
         options = [
             'workflow-simple',
             '--dry-run',
             '--prettyxml',
             '--distro', distro.id,
-            '--arch', environment.hw.arch,
+            '--arch', guest_request.environment.hw.arch,
             '--task', '/distribution/dummy',
             '--reserve',
             '--reserve-duration', str(KNOB_RESERVATION_DURATION.value)
@@ -495,11 +503,13 @@ class BeakerDriver(PoolDriver):
     def _create_job(
         self,
         logger: gluetool.log.ContextAdapter,
-        environment: Environment
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
     ) -> Result[str, Failure]:
         r_job_xml = self._create_job_xml(
             logger,
-            environment
+            session,
+            guest_request
         )
 
         if r_job_xml.is_error:
@@ -510,8 +520,9 @@ class BeakerDriver(PoolDriver):
     def _reschedule_job(
         self,
         logger: gluetool.log.ContextAdapter,
-        job_id: str,
-        environment: Environment
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        job_id: str
     ) -> Result[str, Failure]:
         """
         Reschedule a Beaker job. Cancel the old job with `job_id`, create and
@@ -528,7 +539,7 @@ class BeakerDriver(PoolDriver):
         if r_job_cancel.is_error:
             return Error(r_job_cancel.unwrap_error())
 
-        return self._create_job(logger, environment)
+        return self._create_job(logger, session, guest_request)
 
     def _get_job_results(
         self,
@@ -682,8 +693,9 @@ class BeakerDriver(PoolDriver):
         if job_is_failed:
             r_reschedule_job = self._reschedule_job(
                 logger,
-                BeakerPoolData.unserialize(guest_request).job_id,
-                guest_request.environment
+                session,
+                guest_request,
+                BeakerPoolData.unserialize(guest_request).job_id
             )
 
             if r_reschedule_job.is_error:
@@ -781,7 +793,7 @@ class BeakerDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_create_job = self._create_job(logger, guest_request.environment)
+        r_create_job = self._create_job(logger, session, guest_request)
 
         if r_create_job.is_error:
             failure = r_create_job.unwrap_error()

@@ -22,7 +22,7 @@ from pint import Quantity
 from typing_extensions import Protocol, TypedDict
 
 from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
-    process_output_to_str, refresh_cached_set, safe_call
+    log_dict_yaml, log_guest_event, process_output_to_str, refresh_cached_set, safe_call
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import UNITS, Environment, Flavor
@@ -199,6 +199,19 @@ class PoolImageInfo(SerializableContainer):
 
     def __repr__(self) -> str:
         return f'<PoolImageInfo: name={self.name} id={self.id}>'
+
+    def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
+        """
+        Serialize properties to JSON while scrubbing sensitive information.
+
+        :returns: serialized form of flavor properties.
+        """
+
+        serialized = dataclasses.asdict(self)
+
+        del serialized['id']
+
+        return serialized
 
 
 class FlavorKeyGetterType(Protocol):
@@ -688,6 +701,37 @@ class PoolDriver(gluetool.log.LoggerMixin):
         gluetool.log.log_blob(logger.debug, 'constraints', constraints.format())  # noqa: FS002
 
         return Ok(sorted_suitable_flavors)
+
+    def log_acquisition_attempt(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        flavor: Optional[Flavor] = None,
+        image: Optional[PoolImageInfo] = None
+    ) -> Result[None, Failure]:
+        details: Any = {}
+        scrubbed_details: Any = {}
+
+        if flavor is not None:
+            details['flavor'] = flavor.serialize_to_json()
+            scrubbed_details['flavor'] = flavor.serialize_to_json_scrubbed()
+
+        if image is not None:
+            details['image'] = image.serialize_to_json()
+            scrubbed_details['image'] = image.serialize_to_json_scrubbed()
+
+        log_dict_yaml(logger.info, 'provisioning from', details)
+
+        log_guest_event(
+            logger,
+            session,
+            guest_request.guestname,
+            'acquisition-attempt',
+            **scrubbed_details
+        )
+
+        return Ok(None)
 
     def acquire_guest(
         self,

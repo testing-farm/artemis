@@ -434,12 +434,11 @@ class AzureDriver(PoolDriver):
 
         image = r_image.unwrap()
 
-        log_dict_yaml(
-            logger.info,
-            'provisioning from',
-            {
-                'image': image.serialize_to_json()
-            }
+        self.log_acquisition_attempt(
+            logger,
+            session,
+            guest_request,
+            image=image
         )
 
         r_base_tags = self.get_guest_tags(session, guest_request)

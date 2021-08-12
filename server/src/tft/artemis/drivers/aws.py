@@ -37,6 +37,7 @@ InstanceOwnerType = Tuple[Dict[str, Any], str]
 #
 # NOTE: not *all* fields and keys are listed, only those our code uses.
 class APIBlockDeviceMappingEbsType(TypedDict):
+    SnapshotId: str
     VolumeSize: int
 
 
@@ -154,6 +155,14 @@ class AWSPoolImageInfo(PoolImageInfo):
 
     def __repr__(self) -> str:
         return f'<AWSPoolImageInfo: name={self.name} id={self.id} platform-details={self.platform_details}>'
+
+    def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
+        serialized = super(AWSPoolImageInfo, self).serialize_to_json_scrubbed()
+
+        for bd_mapping in serialized['block_device_mappings']:
+            del bd_mapping['Ebs']['SnapshotId']
+
+        return serialized
 
 
 @dataclasses.dataclass
@@ -570,11 +579,6 @@ class AWSDriver(PoolDriver):
         image: AWSPoolImageInfo,
         guestname: str
     ) -> Result[ProvisioningProgress, Failure]:
-        log_dict_yaml(logger.info, 'provisioning from', {
-            'flavor': instance_type.serialize_to_json(),
-            'image': image.serialize_to_json()
-        })
-
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
 
         if r_delay.is_error:
@@ -635,11 +639,6 @@ class AWSDriver(PoolDriver):
         instance_type: Flavor,
         image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
-        log_dict_yaml(logger.info, 'provisioning from', {
-            'flavor': instance_type.serialize_to_json(),
-            'image': image.serialize_to_json()
-        })
-
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
 
         if r_delay.is_error:
@@ -963,6 +962,14 @@ class AWSDriver(PoolDriver):
         # created implicitly, or, when this pool don't provide spot instances, we submit an instance request. There
         # is no explicit request to transition from spot instance request to instance updates - once spot request is
         # fulfilled, we're given instance ID to work with.
+
+        self.log_acquisition_attempt(
+            logger,
+            session,
+            guest_request,
+            flavor=instance_type,
+            image=image
+        )
 
         if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
             return self._request_spot_instance(logger, session, guest_request, instance_type, image)

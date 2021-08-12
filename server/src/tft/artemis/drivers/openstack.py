@@ -328,13 +328,12 @@ class OpenStackDriver(PoolDriver):
 
         image = r_image.unwrap()
 
-        log_dict_yaml(
-            logger.info,
-            'provisioning from',
-            {
-                'flavor': flavor.serialize_to_json(),
-                'image': image.serialize_to_json()
-            }
+        self.log_acquisition_attempt(
+            logger,
+            session,
+            guest_request,
+            flavor=flavor,
+            image=image
         )
 
         r_network = self._env_to_network(guest_request.environment)

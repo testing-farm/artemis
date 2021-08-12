@@ -23,6 +23,12 @@ class LocalhostDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
+        self.log_acquisition_attempt(
+            logger,
+            session,
+            guest_request
+        )
+
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
             pool_data=PoolData(),

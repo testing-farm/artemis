@@ -247,6 +247,19 @@ class Flavor(SerializableContainer):
 
         return serialized
 
+    def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
+        """
+        Serialize properties to JSON while scrubbing sensitive information.
+
+        :returns: serialized form of flavor properties.
+        """
+
+        serialized = self.serialize_to_json()
+
+        del serialized['id']
+
+        return serialized
+
     @classmethod
     def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'Flavor':
         """
