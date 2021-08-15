@@ -1160,54 +1160,35 @@ class KnobManager:
         }
 
         with self.db.get_session() as session:
-            knob = Knob.DB_BACKED_KNOBS.get(knobname)
+            r_changed = Knob.set_value(logger, session, knobname, value)
 
-            if knob is None:
-                # If the knob is not backed by DB but it's in the list of all knobs, then it must be a knob
-                # that's not editable.
-                if knobname in Knob.ALL_KNOBS:
+            if r_changed.is_error:
+                failure = r_changed.unwrap_error()
+
+                if failure.message == 'cannot modify non-editable knob':
                     raise errors.MethodNotAllowedError(
                         message='Cannot modify non-editable knob',
+                        caused_by=failure,
+                        logger=logger,
                         failure_details=failure_details
                     )
 
-                # Try to find the parent knob for this one which is apparently a per-pool knob.
-                knob = Knob.get_per_pool_parent(logger, knobname)
+                if failure.message == 'cannot find knob':
+                    raise errors.NoSuchEntityError(
+                        caused_by=failure,
+                        logger=logger,
+                        failure_details=failure_details
+                    )
 
-            if knob is None:
-                raise errors.NoSuchEntityError(logger=logger)
+                if failure.message == 'cannot convert knob value to expected type':
+                    raise errors.BadRequestError(
+                        message='Cannot convert value to type expected by the knob',
+                        logger=logger,
+                        caused_by=failure,
+                        failure_details=failure_details
+                    )
 
-            assert knob is not None
-            assert knob.cast_from_str is not None
-
-            try:
-                casted_value = knob.cast_from_str(value)
-
-            except Exception as exc:
-                raise errors.BadRequestError(
-                    message='Cannot convert value to type expected by the knob',
-                    logger=logger,
-                    caused_by=Failure.from_exc('cannot cast knob value', exc),
-                    failure_details=failure_details
-                )
-
-            artemis_db.upsert(
-                logger,
-                session,
-                artemis_db.Knob,
-                {
-                    # using `knobname`, i.e. changing the original knob, not the parent
-                    artemis_db.Knob.knobname: knobname
-                },
-                insert_data={
-                    artemis_db.Knob.value: casted_value
-                },
-                update_data={
-                    'value': casted_value
-                }
-            )
-
-        logger.info(f'knob changed: {knobname} = {casted_value}')
+        logger.info(f'knob changed: {knobname} = {r_changed.unwrap()}')
 
     def delete_knob(self, logger: gluetool.log.ContextAdapter, knobname: str) -> None:
         with self.db.get_session() as session:

@@ -1193,6 +1193,63 @@ class Knob(Generic[T]):
 
         return None
 
+    @staticmethod
+    def set_value(
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        knobname: str,
+        value: str
+    ) -> Result[Any, Failure]:
+        knob = Knob.DB_BACKED_KNOBS.get(knobname)
+
+        if knob is None:
+            # If the knob is not backed by DB but it's in the list of all knobs, then it must be a knob
+            # that's not editable.
+            if knobname in Knob.ALL_KNOBS:
+                return Error(Failure(
+                    'cannot modify non-editable knob',
+                    knobname=knobname
+                ))
+
+            # Try to find the parent knob for this one which is apparently a per-pool knob.
+            knob = Knob.get_per_pool_parent(logger, knobname)
+
+        if knob is None:
+            return Error(Failure(
+                'cannot find knob',
+                knobname=knobname
+            ))
+
+        assert knob.cast_from_str is not None
+
+        try:
+            casted_value = knob.cast_from_str(value)
+
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'cannot convert knob value to expected type',
+                exc,
+                knobname=knobname
+            ))
+
+        artemis_db.upsert(
+            logger,
+            session,
+            artemis_db.Knob,
+            {
+                # using `knobname`, i.e. changing the original knob, not the parent
+                artemis_db.Knob.knobname: knobname
+            },
+            insert_data={
+                artemis_db.Knob.value: casted_value
+            },
+            update_data={
+                'value': casted_value
+            }
+        )
+
+        return Ok(casted_value)
+
 
 KNOB_LOGGING_LEVEL: Knob[int] = Knob(
     'logging.level',

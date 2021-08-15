@@ -22,6 +22,7 @@ from gluetool.result import Error, Ok, Result
 from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
+from typing_extensions import TypedDict
 
 from .guest import GuestState
 
@@ -1049,7 +1050,12 @@ def validate_config(
 
 
 def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
+    from . import Knob as KnobModel
     from .drivers import GuestTagsType
+
+    class KnobConfig(TypedDict):
+        name: str
+        value: Union[str, bool, int, float]
 
     # Note: the current approach of "init schema" is crappy, it basically either succeeds or fails at
     # the first conflict, skipping the rest. To avoid collisions, it must be refactored, and sooner
@@ -1080,6 +1086,24 @@ def _init_schema(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dic
         sys.exit(1)
 
     with db.get_session() as session:
+        def _add_knob(knobname: str, value: Any) -> None:
+            logger.info(f'  Adding {knobname}={value}')
+
+            r_changed = KnobModel.set_value(logger, session, knobname, value)
+
+            if r_changed.is_error:
+                logger.error(r_changed.unwrap_error().message)
+
+            assert r_changed.is_ok, 'Failed to initialize knob record'
+
+        # Set knobs
+        logger.info('Setting knobs')
+
+        for _knob_config in server_config.get('knobs', []):
+            knob_config = cast(KnobConfig, _knob_config)
+
+            _add_knob(knob_config['name'], knob_config['value'])
+
         def _add_tags(poolname: str, input_tags: GuestTagsType) -> None:
             for tag, value in input_tags.items():
                 logger.info('  Adding {}={}'.format(tag, value))

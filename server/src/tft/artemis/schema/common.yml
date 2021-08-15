@@ -76,7 +76,24 @@ definitions:
 
     additionalProperties: false
 
+  knob:
+    type: object
+
+    properties:
+      name:
+        type: string
+      value:
+        anyOf:
+          - type: string
+          - type: boolean
+          - type: number
+
 properties:
+
+  knobs:
+    type: array
+    items:
+      "$ref": "#/definitions/knob"
 
   users:
     type: array
