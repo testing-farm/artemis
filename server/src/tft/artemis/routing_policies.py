@@ -10,7 +10,7 @@ from gluetool.log import log_dict, log_table
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import Failure, JSONType, Knob, log_guest_event, partition
+from . import Failure, JSONType, Knob, partition
 from .db import GuestRequest
 from .drivers import PoolCapabilities, PoolDriver
 from .environment import Environment
@@ -706,10 +706,9 @@ def run_routing_policies(
 
     # Just a tiny helper, to avoid repeating the parameters...
     def _log_history() -> None:
-        log_guest_event(
+        guest_request.log_event(
             logger,
             session,
-            guest_request.guestname,
             'routing-report',
             history=_serialize_history()
         )

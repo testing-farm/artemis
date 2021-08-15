@@ -23,8 +23,7 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import KNOB_POOL_ENABLED, Failure, Knob, get_broker, get_db, get_logger, log_error_guest_event, \
-    log_guest_event, metrics, safe_call
+from . import KNOB_POOL_ENABLED, Failure, Knob, get_broker, get_db, get_logger, metrics, safe_call
 from .context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
     SnapshotRequest, SSHKey, safe_db_change, upsert
@@ -477,7 +476,7 @@ def create_event_handlers(
         return_value: DoerReturnType = SUCCESS
     ) -> DoerReturnType:
         if guestname:
-            log_guest_event(
+            GuestRequest.log_event_by_guestname(
                 logger,
                 session,
                 guestname,
@@ -497,7 +496,7 @@ def create_event_handlers(
         failure.handle(logger, label=label, sentry=sentry, guestname=guestname, **spice_details)
 
         if guestname:
-            log_error_guest_event(
+            GuestRequest.log_error_event_by_guestname(
                 logger,
                 session,
                 guestname,

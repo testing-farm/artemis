@@ -34,7 +34,6 @@ import pkg_resources
 import redis
 import ruamel.yaml
 import ruamel.yaml.compat
-import sqlalchemy.orm.session
 import stackprinter
 from gluetool.result import Error, Ok, Result
 from sqlalchemy.orm.session import Session
@@ -1509,75 +1508,6 @@ def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Fail
 
     except Exception as exc:
         return Error(Failure.from_exc('exception raised inside a safe block', exc))
-
-
-def log_guest_event(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    guestname: str,
-    eventname: str,
-    **details: Any
-) -> Result[None, Failure]:
-    """ Create event log record for guest """
-
-    from .db import safe_db_change
-
-    r = safe_db_change(
-        logger,
-        session,
-        sqlalchemy.insert(artemis_db.GuestEvent.__table__).values(  # type: ignore  # GuestEvent *has* __table__
-            guestname=guestname,
-            eventname=eventname,
-            _details=details
-        )
-    )
-
-    if r.is_error:
-        failure = r.unwrap_error()
-
-        failure.details.update({
-            'guestname': guestname,
-            'eventname': eventname
-        })
-
-        gluetool.log.log_dict(logger.warning, f'failed to log event {eventname}', details)
-
-        # TODO: this handle() call can be removed once we fix callers of log_guest_event and they start consuming
-        # its return value. At this moment, they ignore it, therefore we have to keep reporting the failures on
-        # our own.
-        failure.handle(
-            logger,
-            label='failed to store guest event',
-            guestname=guestname,
-            eventname=eventname
-        )
-
-        return Error(failure)
-
-    gluetool.log.log_dict(logger.info, f'logged event {eventname}', details)
-
-    return Ok(None)
-
-
-def log_error_guest_event(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    guestname: str,
-    message: str,
-    failure: Failure
-) -> Result[None, Failure]:
-    """ Create event log record for guest """
-
-    return log_guest_event(
-        logger,
-        session,
-        guestname,
-        'error',
-        error=message,
-        **{
-            'failure': failure.get_event_details()
-        }
-    )
 
 
 #

@@ -22,7 +22,7 @@ from pint import Quantity
 from typing_extensions import Protocol, TypedDict
 
 from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
-    log_dict_yaml, log_guest_event, process_output_to_str, refresh_cached_set, safe_call
+    log_dict_yaml, process_output_to_str, refresh_cached_set, safe_call
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import UNITS, Environment, Flavor
@@ -798,10 +798,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         log_dict_yaml(logger.info, 'provisioning from', details)
 
-        log_guest_event(
+        guest_request.log_event(
             logger,
             session,
-            guest_request.guestname,
             'acquisition-attempt',
             **scrubbed_details
         )

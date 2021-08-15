@@ -625,18 +625,203 @@ class GuestRequest(Base):
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
 
+    @classmethod
+    def log_event_by_guestname(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guestname: str,
+        eventname: str,
+        **details: Any
+    ) -> Result[None, 'Failure']:
+        """
+        Store new event record representing a given event.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guestname: guest request name to attach the event to.
+        :param eventname: event name.
+        :param details: additional event details. The mapping will be stored as a JSON blob.
+        """
+
+        r = safe_db_change(
+            logger,
+            session,
+            sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore  # GuestEvent *has* __table__
+                guestname=guestname,
+                eventname=eventname,
+                _details=details
+            )
+        )
+
+        if r.is_error:
+            failure = r.unwrap_error()
+
+            failure.details.update({
+                'guestname': guestname,
+                'eventname': eventname
+            })
+
+            gluetool.log.log_dict(logger.warning, f'failed to log event {eventname}', details)
+
+            # TODO: this handle() call can be removed once we fix callers of log_guest_event and they start consuming
+            # its return value. At this moment, they ignore it, therefore we have to keep reporting the failures on
+            # our own.
+            failure.handle(
+                logger,
+                label='failed to store guest event',
+                guestname=guestname,
+                eventname=eventname
+            )
+
+            return Error(failure)
+
+        gluetool.log.log_dict(logger.info, f'logged event {eventname}', details)
+
+        return Ok(None)
+
     def log_event(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         eventname: str,
-        **details: Optional[Dict[Any, Any]]
-    ) -> None:
-        """ Create event log record for guest """
+        **details: Any
+    ) -> Result[None, 'Failure']:
+        """
+        Store new event record representing a given event.
 
-        from . import log_guest_event
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param eventname: event name.
+        :param details: additional event details. The mapping will be stored as a JSON blob.
+        """
 
-        log_guest_event(logger, session, self.guestname, eventname, **details)
+        return self.__class__.log_event_by_guestname(
+            logger,
+            session,
+            self.guestname,
+            eventname,
+            **details
+        )
+
+    @classmethod
+    def log_error_event_by_guestname(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guestname: str,
+        message: str,
+        failure: 'Failure',
+        **details: Any
+    ) -> Result[None, 'Failure']:
+        """
+        Store new event record representing a given error.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guestname: guest request name to attach the event to.
+        :param message: error message.
+        :param failure: failure representing the error.
+        :param details: additional event details. The mapping will be stored as a JSON blob.
+        """
+
+        details['failure'] = failure.get_event_details()
+
+        return cls.log_event_by_guestname(
+            logger,
+            session,
+            guestname,
+            'error',
+            error=message,
+            **details
+        )
+
+    def log_error_event(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        message: str,
+        failure: 'Failure',
+        **details: Any
+    ) -> Result[None, 'Failure']:
+        """
+        Store new event record representing a given error.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param message: error message.
+        :param failure: failure representing the error.
+        :param details: additional event details. The mapping will be stored as a JSON blob.
+        """
+
+        return self.__class__.log_error_event_by_guestname(
+            logger,
+            session,
+            self.guestname,
+            message,
+            failure,
+            **details
+        )
+
+    @classmethod
+    def log_warning_event_by_guestname(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guestname: str,
+        message: str,
+        failure: Optional['Failure'] = None,
+        **details: Any
+    ) -> Result[None, 'Failure']:
+        """
+        Store new event record representing a given warning.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guestname: guest request name to attach the event to.
+        :param message: error message.
+        :param failure: failure representing the error.
+        :param details: additional event details. The mapping will be stored as a JSON blob.
+        """
+
+        if failure is not None:
+            details['failure'] = failure.get_event_details()
+
+        return cls.log_event_by_guestname(
+            logger,
+            session,
+            guestname,
+            'warning',
+            error=message,
+            **details
+        )
+
+    def log_warning_event(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        message: str,
+        failure: Optional['Failure'] = None,
+        **details: Any
+    ) -> Result[None, 'Failure']:
+        """
+        Store new event record representing a given warning.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param message: error message.
+        :param failure: failure representing the error.
+        :param details: additional event details. The mapping will be stored as a JSON blob.
+        """
+
+        return self.__class__.log_warning_event_by_guestname(
+            logger,
+            session,
+            self.guestname,
+            message,
+            failure=failure,
+            **details
+        )
 
     @property
     def is_promised(self) -> bool:

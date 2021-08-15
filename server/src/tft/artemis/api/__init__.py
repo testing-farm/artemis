@@ -34,7 +34,7 @@ from typing_extensions import Protocol
 
 from .. import __VERSION__, KNOB_LOGGING_JSON, Failure, FailureDetailsType, JSONSchemaType, Knob
 from .. import db as artemis_db
-from .. import get_db, get_logger, load_validation_schema, log_guest_event, metrics, validate_data
+from .. import get_db, get_logger, load_validation_schema, metrics, validate_data
 from ..context import DATABASE, LOGGER
 from ..environment import Environment
 from ..guest import GuestState
@@ -630,7 +630,7 @@ class GuestRequestManager:
                 failure_details=failure_details
             )
 
-            log_guest_event(
+            artemis_db.GuestRequest.log_event_by_guestname(
                 guest_logger,
                 session,
                 guestname,
@@ -760,7 +760,12 @@ class GuestRequestManager:
                 # user should resolve the conflict and try again.
                 perform_safe_db_change(guest_logger, session, query)
 
-                log_guest_event(guest_logger, session, guestname, 'condemned')
+                artemis_db.GuestRequest.log_event_by_guestname(
+                    guest_logger,
+                    session,
+                    guestname,
+                    'condemned'
+                )
 
             r_dispatch = dispatch_task(guest_logger, release_guest_request, guestname)
 
@@ -929,7 +934,7 @@ class SnapshotRequestManager:
                 failure_details=failure_details
             )
 
-            log_guest_event(
+            artemis_db.GuestRequest.log_event_by_guestname(
                 snapshot_logger,
                 session,
                 guestname,
@@ -967,7 +972,12 @@ class SnapshotRequestManager:
             # here - what else could cause the query *not* marking the record as condemned?
             perform_safe_db_change(snapshot_logger, session, query, conflict_error=errors.NoSuchEntityError)
 
-            log_guest_event(snapshot_logger, session, guestname, 'snapshot-condemned')
+            artemis_db.GuestRequest.log_event_by_guestname(
+                snapshot_logger,
+                session,
+                guestname,
+                'snapshot-condemned'
+            )
 
     def restore_snapshot(
         self,
