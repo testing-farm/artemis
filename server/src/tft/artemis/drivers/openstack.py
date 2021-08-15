@@ -41,6 +41,7 @@ KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
     'openstack.console.blob.update-tick',
     'How long, in seconds, to take between updating guest console log.',
     has_db=False,
+    per_pool=True,
     envvar='ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK',
     cast_from_str=int,
     default=30
@@ -932,6 +933,13 @@ class OpenStackDriver(PoolDriver):
                 state=GuestLogState.ERROR
             ))
 
+        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(poolname=self.poolname)
+
+        if r_delay_update.is_error:
+            return Error(r_delay_update.unwrap_error())
+
+        delay_update = r_delay_update.unwrap()
+
         def _do_fetch(resource: str, json_format: bool = True) -> Result[Optional[JSONType], Failure]:
             r_output = self._run_os([
                 'console',
@@ -960,7 +968,7 @@ class OpenStackDriver(PoolDriver):
             if output is None:
                 return Ok(GuestLogUpdateProgress(
                     state=GuestLogState.IN_PROGRESS,
-                    delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
+                    delay_update=delay_update
                 ))
 
             return Ok(GuestLogUpdateProgress(
@@ -983,12 +991,12 @@ class OpenStackDriver(PoolDriver):
         if output is None:
             return Ok(GuestLogUpdateProgress(
                 state=GuestLogState.IN_PROGRESS,
-                delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
+                delay_update=delay_update
             ))
 
         return Ok(GuestLogUpdateProgress(
             state=GuestLogState.IN_PROGRESS,
             # TODO logs: well, this *is* overwriting what we already downloaded... Do something.
             blob=cast(str, output),
-            delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
+            delay_update=delay_update
         ))
