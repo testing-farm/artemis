@@ -1,9 +1,8 @@
-{{- if not (include "artemis.useExistingConfigMap" .) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ template "artemis.fullname" . }}-server
   namespace: {{ .Release.Namespace }}
 data:
-  {{ (.Files.Glob "config/*").AsConfig | indent 2 }}
-{{- end }}
+  server.yml: |
+    {{ .Values.configuration | nindent 4 }}

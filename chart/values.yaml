@@ -188,8 +188,13 @@ postgresql:
               description: "Disk space used by the database"
 
 rabbitmq:
+  auth:
+    username: "artemis"
+    password: "artemis"
   plugins: "rabbitmq_management"
   clustering:
+    enabled: false
+  persistence:
     enabled: false
 
 redis:

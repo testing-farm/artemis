@@ -12,3 +12,4 @@ spec:
   ports:
   - name: {{ template "artemis.api.fullname" . }}
     port: {{ template "artemis.api.port" . }}
+    targetPort: 8001

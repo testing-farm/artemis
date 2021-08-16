@@ -20,6 +20,17 @@ spec:
         app.kubernetes.io/app: {{ template "artemis.fullname" . }}
         app.kubernetes.io/component: worker
     spec:
+      volumes:
+      - name: artemis-config
+        projected:
+          sources:
+          - configMap:
+              name: {{ template "artemis.fullname" . }}-server
+          - configMap:
+              name: {{ template "artemis.configMapName" . }}
+      - name: kerberos
+        emptyDir:
+          medium: Memory
       containers:
       - name: {{ template "artemis.worker.fullname" . }}
         image: {{ template "artemis.image" . }}
@@ -32,6 +43,8 @@ spec:
         args:
         - worker
         volumeMounts:
+        - name: artemis-config
+          mountPath: {{ template "artemis.configDirMountPath" . }}
         - name: kerberos
           mountPath: {{ template "artemis.kerberos.ccacheDir" . }}
       {{- if .Values.kerberos.enabled }}
@@ -53,7 +66,3 @@ spec:
           value: {{ template "artemis.api.host" . }}
         - name: API_PORT
           value: {{ include "artemis.api.port" . | quote }}
-      volumes:
-      - name: kerberos
-        emptyDir:
-          medium: Memory

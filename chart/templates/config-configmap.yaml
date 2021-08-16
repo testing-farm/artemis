@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+data:
+  {{ (.Files.Glob "config/*").AsConfig | nindent 2 }}

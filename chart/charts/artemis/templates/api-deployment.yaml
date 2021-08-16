@@ -81,5 +81,9 @@ spec:
           value: {{ include "artemis.redis.port" . | quote }}
       volumes:
       - name: artemis-config
-        configMap:
-          name: {{ template "artemis.fullname" . }}-config
+        projected:
+          sources:
+          - configMap:
+              name: {{ template "artemis.fullname" . }}-server
+          - configMap:
+              name: {{ template "artemis.configMapName" . }}

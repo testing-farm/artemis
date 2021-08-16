@@ -108,3 +108,11 @@ Override credentials and hosts of services with ones configured here
 {{- define "artemis.redis.port" -}}
 {{- 6379 -}}
 {{- end -}}
+
+{{- define "artemis.useExistingConfigMap" -}}
+{{- true -}}
+{{- end -}}
+
+{{- define "artemis.configMapName" -}}
+{{- printf "%s-config" (include "fullname" .) -}}
+{{- end -}}

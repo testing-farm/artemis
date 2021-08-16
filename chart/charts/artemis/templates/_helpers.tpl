@@ -97,3 +97,20 @@ Kerberos
 {{- define "artemis.kerberos.ccacheDir" -}}
 {{- printf "/tmp/krb5cc" -}}
 {{- end -}}
+
+{{- define "artemis.useExistingConfigMap" -}}
+{{/* Probably can be done more elegantly */}}
+{{- if .Values.existingConfigMap -}}
+  {{- true -}}
+{{- else -}}
+  {{- false -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "artemis.configMapName" -}}
+{{- if .Values.existingConfigMap -}}
+  {{- .Values.existingConfigMap -}}
+{{- else -}}
+  {{- printf "%s-config" (include "artemis.fullname" .) -}}
+{{- end -}}
+{{- end -}}
