@@ -111,20 +111,23 @@ class PipelineStateReporter(gluetool.Module):
 
     options = [
         ('CI team options', {
-            'ci-name': {
+            'contact-name': {
                 'help': "Human-readable name of the CI system, e.g. 'BaseOS CI'.",
             },
-            'ci-team': {
+            'contact-team': {
                 'help': "Human-readable name of the team running the testing, e.g. 'BaseOS QE'."
             },
-            'ci-url': {
+            'contact-url': {
                 'help': 'URL of the CI system.'
             },
-            'ci-contact-email': {
+            'contact-email': {
                 'help': 'Team or CI system contact e-mail.'
             },
-            'ci-contact-irc': {
+            'contact-irc': {
                 'help': 'Team or CI system IRC channel.'
+            },
+            'contact-docs': {
+                'help': 'URL of documentation of the CI system.'
             }
         }),
         ('PR options', {
@@ -200,6 +203,9 @@ class PipelineStateReporter(gluetool.Module):
             'version': {
                 'help': 'Current version of emitted messages (default: %(default)s).',
                 'default': None
+            },
+            'pipeline-name': {
+                'help': 'A human readable name of the pipeline.'
             }
         }),
         ('General options', {
@@ -215,7 +221,7 @@ class PipelineStateReporter(gluetool.Module):
     ]
 
     required_options = (
-        'ci-name', 'ci-team', 'ci-url', 'ci-contact-email', 'ci-contact-irc',
+        'contact-name', 'contact-team', 'contact-url', 'contact-email', 'contact-irc', 'contact-docs',
         'bus-topic',
         'test-namespace')
 
@@ -338,49 +344,56 @@ class PipelineStateReporter(gluetool.Module):
         return subject_info
 
     def _artifact_info(self):
-        return self._subject_info('artifact', self.artifact_map,)
+        artifact = self._subject_info('artifact', self.artifact_map,)
+        if 'id' in artifact:
+            try:
+                artifact['id'] = int(artifact['id'])
+            except ValueError:
+                self.warn('Could not convert artifact id to integer, leaving as string')
 
-    def _ci_info(self):
+        return artifact
+
+    def _contact_info(self):
         return {
-            'name': self.option('ci-name'),
-            'team': self.option('ci-team'),
-            'url': self.option('ci-url'),
-            'email': self.option('ci-contact-email'),
-            'irc': self.option('ci-contact-irc')
+            'name': self.option('contact-name'),
+            'team': self.option('contact-team'),
+            'url': self.option('contact-url'),
+            'email': self.option('contact-email'),
+            'irc': self.option('contact-irc'),
+            'docs': self.option('contact-docs')
         }
 
     def _run_info(self):
         return self._subject_info('run', self.run_map)
 
-    def _init_message(self, test_category, test_docs, test_namespace, test_type, thread_id):
+    def _init_message(self, thread_id):
         headers = {}
         body = {}
 
         artifact = self._artifact_info()
-        ci = self._ci_info()
+        contact = self._contact_info()
         run = self._run_info()
 
         headers.update(artifact)
 
-        body['ci'] = ci
+        body['contact'] = contact
         body['run'] = run
         body['artifact'] = artifact
 
-        body['type'] = test_type or self.option('test-type')
-        body['category'] = test_category or self.option('test-category')
-        body['label'] = self.option('label')
         body['note'] = self.option('note')
-        body['namespace'] = test_namespace or self._get_test_namespace()
-        body['docs'] = test_docs or self._get_test_docs()
 
         body['generated_at'] = datetime.datetime.utcnow().isoformat(' ')
         body['version'] = self.option('version')
 
+        body['pipeline'] = {
+            'name': self.shared('eval_context').get('JENKINS_BUILD_URL') or self.option('pipeline-name')
+        }
+
         if thread_id is not None:
-            body['thread_id'] = thread_id
+            body['pipeline']['id'] = thread_id
 
         elif self.has_shared('thread_id'):
-            body['thread_id'] = self.shared('thread_id')
+            body['pipeline']['id'] = self.shared('thread_id')
 
         return headers, body
 
@@ -420,7 +433,14 @@ class PipelineStateReporter(gluetool.Module):
         distros = distros or []
         topic = topic or self.option('bus-topic')
 
-        headers, body = self._init_message(test_category, test_docs, test_namespace, test_type, thread_id)
+        headers, body = self._init_message(thread_id)
+
+        body['test'] = {
+            'category': test_category or self.option('test-category'),
+            'docs': test_docs or self._get_test_docs(),
+            'namespace': test_namespace or self._get_test_namespace(),
+            'type': test_type or self.option('test-type'),
+        }
 
         if state == STATE_COMPLETE:
             body['system'] = [
@@ -431,11 +451,11 @@ class PipelineStateReporter(gluetool.Module):
                 } for label, distro, provider in distros
             ]
 
-            body['status'] = test_overall_result
+            body['test']['result'] = test_overall_result
 
             if test_results is not None:
                 compressed = zlib.compress(str(test_results))
-                body['xunit'] = base64.b64encode(compressed)
+                body['test']['xunit'] = base64.b64encode(compressed)
 
             if self.has_shared('notification_recipients'):
                 body['recipients'] = self.shared('notification_recipients')

@@ -18,7 +18,8 @@ CI = {
     'team': 'Fake Team',
     'url': 'Fake URL',
     'email': 'Fake Email',
-    'irc': 'Fake IRC'
+    'irc': 'Fake IRC',
+    'docs': 'Fake docs URL'
 }
 
 ARTIFACT_MAP = [
@@ -45,7 +46,7 @@ ARTIFACT_MAP = [
 ARTIFACT = {
     'branch': 'fixing-bz17',
     'component': 'dummy-package',
-    'id': '123456',
+    'id': 123456,
     'issuer': 'bar',
     'nvr': 'dummy-package-1.2.3-79.el7',
     'scratch': 'False',
@@ -140,11 +141,13 @@ def fixture_rules_engine():
 @pytest.fixture(name='ci_info')
 def fixture_ci_info(module):
     module._config.update({
-        'ci-name': 'Fake CI',
-        'ci-team': 'Fake Team',
-        'ci-url': 'Fake URL',
-        'ci-contact-email': 'Fake Email',
-        'ci-contact-irc': 'Fake IRC'
+        'contact-name': 'Fake CI',
+        'contact-team': 'Fake Team',
+        'contact-url': 'Fake URL',
+        'contact-email': 'Fake Email',
+        'contact-irc': 'Fake IRC',
+        'contact-docs': 'Fake docs URL',
+        'pipeline-name': 'BaseOS CI'
     })
 
 
@@ -219,7 +222,7 @@ def fixture_publish_messages(module):
         'test-category': 'some-category',
         'test-type': 'some-type',
         'thread-id': 'some-thread-id',
-        'version': '0.1.0',
+        'version': '1.1.6',
     })
 
     def mock_publish_bus_messages(message, topic):
@@ -261,9 +264,9 @@ def test_eval_context(module, namespace, global_eval_context):
 
 
 def test_init_message_thread_id(module, evaluate):
-    _, body = module._init_message('category', 'docs', 'namespace', 'type', 'thread_id')
+    _, body = module._init_message('thread_id')
 
-    assert body['thread_id'] == 'thread_id'
+    assert body['pipeline']['id'] == 'thread_id'
 
 
 def test_init_message_shared_thread_id(ci_info, evaluate, monkeypatch, module):
@@ -273,9 +276,9 @@ def test_init_message_shared_thread_id(ci_info, evaluate, monkeypatch, module):
         'evaluate_rules': 'something'
     })
 
-    _, body = module._init_message('category', 'docs', 'namespace', 'type', None)
-
-    assert body['thread_id'] == 'shared-thread-id'
+    _, body = module._init_message(None)
+    print(body)
+    assert body['pipeline']['id'] == 'shared-thread-id'
 
 
 def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish_messages):
@@ -285,7 +288,7 @@ def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish
         'test-category': 'some-category',
         'test-type': 'some-type',
         'thread-id': 'some-thread-id',
-        'version': '0.1.0',
+        'version': '1.1.6',
     })
 
     module.execute()
@@ -296,17 +299,21 @@ def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish
 
     assert publish_messages['message'].body == {
         'artifact': ARTIFACT,
-        'ci': CI,
+        'contact': CI,
         'run': RUN,
-        'category': 'some-category',
-        'label': 'some-label',
         'issue_url': None,
-        'namespace': 'namespace',
-        'docs': 'some-docs',
         'note': 'some-note',
         'reason': 'some-reason',
-        'type': 'some-type',
-        'version': '0.1.0'
+        'version': '1.1.6',
+        'test': {
+            'category': 'some-category',
+            'docs': 'some-docs',
+            'namespace': 'namespace',
+            'type': 'some-type',
+        },
+        'pipeline': {
+            'name': 'BaseOS CI'
+        }
     }
 
     # check if generated_at has expected format, will traceback if not
@@ -315,12 +322,15 @@ def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish
 
 def test_execute_reason_in_note(ci_info, evaluate, monkeypatch, module, mock_namespace, publish_messages):
     module._config.update({
-        'label':  'some-label',
         'note': None,
-        'test-category': 'some-category',
-        'test-type': 'some-type',
-        'thread-id': 'some-thread-id',
-        'version': '0.1.0',
+        'pipeline': {
+            'id': 'some-id'
+        },
+        'test': {
+            'category': 'some-category',
+            'type': 'some-type',
+        },
+        'version': '1.1.6',
     })
 
     module.execute()
@@ -331,17 +341,21 @@ def test_execute_reason_in_note(ci_info, evaluate, monkeypatch, module, mock_nam
 
     assert publish_messages['message'].body == {
         'artifact': ARTIFACT,
-        'ci': CI,
+        'contact': CI,
         'run': RUN,
-        'category': 'some-category',
-        'label': 'some-label',
         'issue_url': None,
-        'namespace': 'namespace',
-        'docs': 'some-docs',
         'note': 'some-reason',
+        'pipeline': {
+            'name': 'BaseOS CI',
+        },
         'reason': 'some-reason',
-        'type': 'some-type',
-        'version': '0.1.0'
+        'test': {
+            'category': 'some-category',
+            'docs': 'some-docs',
+            'namespace': 'namespace',
+            'type': 'some-type',
+        },
+        'version': '1.1.6',
     }
 
     # check if generated_at has expected format, will traceback if not
@@ -358,7 +372,7 @@ def test_destroy(module, evaluate, publish_messages, mock_namespace):
 
     # test with failure and publish_bus_messages
     module.destroy(failure=MagicMock(sentry_event_url='sentry-url'))
-    assert publish_messages['message'].body['status'] == 'unknown'
+    assert publish_messages['message'].body['test']['result'] == 'unknown'
     assert publish_messages['message'].body['issue_url'] == 'sentry-url'
 
 
@@ -372,7 +386,7 @@ def test_destroy_with_results_and_recipients(module, evaluate, mock_namespace, p
     # test without failure
     module.destroy()
 
-    assert publish_messages['message'].body['status'] == 'passed'
+    assert publish_messages['message'].body['test']['result'] == 'passed'
     assert publish_messages['message'].body['recipients'] == 'batman'
 
 
