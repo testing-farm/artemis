@@ -61,20 +61,24 @@ spec:
           mountPath: {{ template "artemis.configDirMountPath" . }}
       - name: wait-for-rabbitmq
         image: {{ template "artemis.image" . }}
-        imagePullPolicy: Always
+        imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
         command:
         - /wait-for-rabbitmq.sh
-        envFrom:
-        - configMapRef:
-            name: {{ template "artemis.fullname" . }}-env-rabbitmq
+        env:
+        - name: RABBITMQ_HOSTNAME
+          value: {{ template "artemis.rabbitmq.host" . }}
+        - name: RABBITMQ_PORT
+          value: {{ include "artemis.rabbitmq.port" . | quote }}
       - name: wait-for-redis
         image: {{ template "artemis.image" . }}
         imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
         command:
         - /wait-for-redis.sh
-        envFrom:
-        - configMapRef:
-            name: {{ template "artemis.fullname" . }}-env-redis
+        env:
+        - name: REDIS_HOSTNAME
+          value: {{ template "artemis.redis.host" . }}
+        - name: REDIS_PORT
+          value: {{ include "artemis.redis.port" . | quote }}
       volumes:
       - name: artemis-config
         configMap:

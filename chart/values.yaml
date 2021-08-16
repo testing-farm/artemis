@@ -13,7 +13,7 @@ global:
     port: 6379
 
 artemis:
-  configuration: |-
+  configuration: |
     config_here...
 
   vaultPassword: ""
@@ -185,6 +185,11 @@ postgresql:
           - size_bytes:
               usage: "GAUGE"
               description: "Disk space used by the database"
+
+rabbitmq:
+  plugins: "rabbitmq_management"
+  clustering:
+    enabled: false
 
 redis:
   metrics:

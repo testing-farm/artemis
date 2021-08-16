@@ -102,5 +102,9 @@ Override credentials and hosts of services with ones configured here
 {{- end -}}
 
 {{- define "artemis.redis.host" -}}
-{{- printf "%s.%s.svc" (include "redis.fullname" .) .Release.Namespace -}}
+{{- printf "%s-master.%s.svc" (include "redis.fullname" .) .Release.Namespace -}}
+{{- end -}}
+
+{{- define "artemis.redis.port" -}}
+{{- 6379 -}}
 {{- end -}}

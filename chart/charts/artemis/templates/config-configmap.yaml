@@ -3,5 +3,5 @@ kind: ConfigMap
 metadata:
   name: {{ template "artemis.fullname" . }}-config
 data:
-  server.yml: |-
-    {{ toYaml .Values.configuration | nindent 4 }}
+  server.yml: |
+    {{ .Values.configuration | nindent 4 }}
