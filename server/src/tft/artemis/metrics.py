@@ -603,7 +603,7 @@ class PoolResourcesMetrics(MetricsBase):
             if network_limit.addresses is None or network_usage.addresses is None:
                 continue
 
-            if is_enough('network.addresses', network_limit.addresses, network_usage.addresses):
+            if is_enough(f'network.addresses.{network_name}', network_limit.addresses, network_usage.addresses):
                 continue
 
             delta.networks.append(network_name)

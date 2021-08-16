@@ -6,7 +6,7 @@ from typing import Callable, List, Tuple, Type, cast
 import gluetool.log
 import gluetool.utils
 import sqlalchemy
-from gluetool.log import log_dict
+from gluetool.log import log_dict, log_table
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
@@ -583,8 +583,6 @@ def policy_enough_resources(
 
     pool_metrics = r_pool_metrics.unwrap()
 
-    log_dict(logger.info, 'pool metrics', pool_metrics)
-
     r_threshold = KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session=session)
 
     if r_threshold.is_error:
@@ -592,13 +590,23 @@ def policy_enough_resources(
 
     threshold = r_threshold.unwrap() / 100.0
 
+    # Hold usage report - pools and resources that were checked, and the outcome of the check.
+    usage_report: List[List[str]] = []
+
     def has_enough(pool: PoolDriver, metrics: PoolMetrics) -> bool:
         def is_enough(metric_name: str, limit: int, usage: int) -> bool:
             # Very crude trim. We could be smarter, but this should be enough to not hit the limit.
             usage_level = usage / limit
             answer = usage_level < threshold
 
-            logger.debug(f'{pool.poolname}.{metric_name}: {usage} / {limit} < {threshold}: {answer}')
+            usage_report.append([
+                pool.poolname,
+                metric_name,
+                str(limit),
+                str(usage),
+                str(limit * threshold),
+                str(answer)
+            ])
 
             return answer
 
@@ -607,32 +615,27 @@ def policy_enough_resources(
         if not resources_depletion.is_depleted():
             return True
 
-        logger.warning(f'{pool.poolname}: depleted')
-
-        for metric_name in sorted(resources_depletion.depleted_resources()):
-            if metric_name.startswith('network.'):
-                network_name = metric_name[8:]
-                limit = metrics.resources.limits.networks.get(network_name)
-                usage = metrics.resources.usage.networks.get(network_name)
-
-                usage_formatted = usage.addresses if usage and usage.addresses is not None else '<unknown>'
-                limit_formatted = limit.addresses if limit and limit.addresses is not None else '<unknown>'
-
-            else:
-                usage_formatted = getattr(metrics.resources.usage, metric_name)
-                limit_formatted = getattr(metrics.resources.limits, metric_name)
-
-            logger.warning(f'{pool.poolname}.{metric_name}: depleted, {usage_formatted} of {limit_formatted}')
-
         return False
 
-    return Ok(PolicyRuling(
-        allowed_pools=[
-            pool
-            for pool, metrics in pool_metrics
-            if has_enough(pool, metrics)
-        ]
-    ))
+    # Here's the catch - we have to actually call `has_enough()` to get the report we want to log, can't squeeze
+    # this into the final `return`.
+    allowed_pools = [
+        pool
+        for pool, metrics in pool_metrics
+        if has_enough(pool, metrics)
+    ]
+
+    log_table(
+        logger.info,
+        'pool resources',
+        [
+            ['Pool', 'Metric', 'Limit', 'Usage', 'Threshold', 'Enough?']
+        ] + usage_report,
+        headers='firstrow',
+        tablefmt='psql'
+    )
+
+    return Ok(PolicyRuling(allowed_pools=allowed_pools))
 
 
 @policy_boilerplate
