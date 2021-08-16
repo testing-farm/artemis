@@ -4,7 +4,8 @@ global:
       username: "artemis"
       password: "artemis"
   redis:
-    password:  "artemis"
+    auth:
+      enabled: false
 
   psql:
     username: "artemis"
@@ -192,5 +193,14 @@ rabbitmq:
     enabled: false
 
 redis:
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: false
+  replica:
+    replicaCount: 0
+    persistence:
+      enabled: false
   metrics:
     enabled: true

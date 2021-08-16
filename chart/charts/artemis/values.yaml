@@ -62,6 +62,7 @@ db:
   poolMaxOverflow: 10
 
 logging:
+  method: stdout
   level: info
   json: yes
   logsDir: ""
