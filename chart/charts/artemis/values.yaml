@@ -1,0 +1,83 @@
+global:
+  psql:
+    username: ""
+    password: ""
+    host: ""
+    port: ""
+
+image: quay.io/testing-farm/artemis:v0.0.21
+  #registry: quay.io
+  #repository: testing-farm/artemis
+  #tag: "v0.0.21"
+
+psql:
+  username: "a"
+  password: "a"
+  host: "a"
+  port: 6379
+  database: "a"
+
+rabbitmq:
+  username: ""
+  password: ""
+  host: ""
+  port: ""
+
+redis:
+  host: ""
+  port: 6379
+
+configuration: ""
+
+vaultPassword: ""
+
+api:
+  port: 8001
+  processes: 1
+  threads: 1
+
+dispatcher: {}
+
+worker:
+  processes: 1
+  threads: 1
+
+scheduler: {}
+
+actor:
+  route:
+    guestRequestRetries: ""
+    guestRequestMaxBackoff: ""
+  prepare:
+    verifySSHRetries: ""
+    verifySSHMaxBackoff: ""
+  acquire:
+    guestRequestRetries: ""
+    guestRequestMaxBackoff: ""
+
+closeAfterDispatch: "no"
+
+db:
+  poolSize: 20
+  poolMaxOverflow: 10
+
+logging:
+  level: info
+  json: yes
+  logsDir: ""
+  dbPool: no
+  dbSlowQueries: no
+  dbSlowQueryThreshold: ""
+  slowCliCommands: no
+  slowCliCommandPattern: ".*"
+  slowCliCommandThreshold: ""
+
+kerberos:
+  image:
+    registry: quay.io
+    repository: testing-farm/kerberos
+    tag: "latest"
+
+sentry:
+  dns: ""
+  baseUrl: ""

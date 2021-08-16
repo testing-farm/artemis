@@ -1,0 +1,15 @@
+dependencies:
+- name: artemis
+  repository: ""
+  version: '*.*.*'
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 10.9.2
+- name: rabbitmq
+  repository: https://charts.bitnami.com/bitnami
+  version: 8.20.0
+- name: redis
+  repository: https://charts.bitnami.com/bitnami
+  version: 14.8.8
+digest: sha256:421f8f669769876b1ff567be647d43363b9f89cef320c68254f28d4dbbded417
+generated: "2021-08-15T19:46:48.130305642+02:00"

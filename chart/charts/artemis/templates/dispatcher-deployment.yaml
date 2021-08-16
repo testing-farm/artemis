@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "artemis.dispatcher.fullname" . }}
+  labels:
+    app: {{ template "artemis.fullname" . }}
+    component: dispatcher
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ template "artemis.fullname" . }}
+      component: dispatcher
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ template "artemis.fullname" . }}
+        component: dispatcher
+    spec:
+      containers:
+      - name: {{ template "artemis.dispatcher.fullname" . }}
+        image: {{ template "artemis.image" . }}
+        imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
+        envFrom:
+        - configMapRef:
+            name: {{ template "artemis.fullname" . }}-env
+        command:
+        - /entrypoint.sh
+        args:
+        - dispatcher
+      initContainers:
+      - name: wait-for-api
+        image: {{ template "artemis.image" . }}
+        imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
+        command:
+        - /wait-for-api.sh
+        env:
+        - name: API_HOSTNAME
+          value: {{ template "artemis.api.fullname" . }}
+        - name: API_PORT
+          value: {{ include "artemis.api.port" . | quote }}

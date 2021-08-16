@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "artemis.worker.fullname" . }}
+  labels:
+    app.kubernetes.io/app: {{ template "artemis.fullname" . }}
+    app.kubernetes.io/component: worker
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/app: {{ template "artemis.fullname" . }}
+      app.kubernetes.io/component: worker
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/app: {{ template "artemis.fullname" . }}
+        app.kubernetes.io/component: worker
+    spec:
+      containers:
+      - name: {{ template "artemis.worker.fullname" . }}
+        image: {{ template "artemis.image" . }}
+        imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
+        envFrom:
+        - configMapRef:
+            name: {{ template "artemis.fullname" . }}-env
+        command:
+        - /entrypoint.sh
+        args:
+        - worker
+        volumeMounts:
+        - name: kerberos
+          mountPath: {{ template "artemis.kerberos.ccacheDir" . }}
+      {{- if .Values.kerberos.enabled }}
+      - name: kerberos
+        image: {{ template "artemis.kerberos.image" . }}
+        imagePullPolicy: {{ default "" .Values.kerberos.imagePullPolicy | quote }}
+        volumeMounts:
+        - name: kerberos
+          mountPath: {{ template "artemis.kerberos.ccacheDir" . }}
+      {{- end }}
+      initContainers:
+      - name: wait-for-api
+        image: {{ template "artemis.image" . }}
+        imagePullPolicy: Always
+        command:
+        - /wait-for-api.sh
+        env:
+        - name: API_HOSTNAME
+          value: {{ template "artemis.api.fullname" . }}
+        - name: API_PORT
+          value: {{ include "artemis.api.port" . | quote }}
+      volumes:
+      - name: kerberos
+        emptyDir:
+          medium: memory
