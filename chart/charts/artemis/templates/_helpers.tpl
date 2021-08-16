@@ -67,6 +67,10 @@ Define templates for component names
 {{- printf "%s-worker" $fullname | trunc 63 | trimSuffix "-" }}
 {{- end -}}
 
+{{- define "artemis.api.host" -}}
+{{- printf "%s.%s.svc" (include "artemis.api.fullname" .) .Release.Namespace -}}
+{{- end -}}
+
 {{- define "artemis.api.port" -}}
 {{- .Values.api.port | default 8001 -}}
 {{- end -}}

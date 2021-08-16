@@ -39,6 +39,6 @@ spec:
         - /wait-for-api.sh
         env:
         - name: API_HOSTNAME
-          value: {{ template "artemis.api.fullname" . }}
+          value: {{ template "artemis.api.host" . }}
         - name: API_PORT
           value: {{ include "artemis.api.port" . | quote }}

@@ -31,27 +31,14 @@ spec:
         - /entrypoint.sh
         args:
         - scheduler
-        volumeMounts:
-        - name: kerberos
-          mountPath: {{ template "artemis.kerberos.ccacheDir" . }}
-      - name: kerberos
-        image: {{ template "artemis.kerberos.image" . }}
-        imagePullPolicy: {{ default "" .Values.kerberos.imagePullPolicy }}
-        volumeMounts:
-        - name: kerberos
-          mountPath: {{ template "artemis.kerberos.ccacheDir" . }}
       initContainers:
       - name: wait-for-api
         image: {{ template "artemis.image" . }}
-        imagePullPolicy: Always
+        imagePullPolicy: {{ default "" .Values.imagePullPolicy }}
         command:
         - /wait-for-api.sh
         env:
         - name: API_HOSTNAME
-          value: {{ template "artemis.api.fullname" . }}
+          value: {{ template "artemis.api.host" . }}
         - name: API_PORT
           value: {{ include "artemis.api.port" . | quote }}
-      volumes:
-      - name: kerberos
-        emptyDir:
-          medium: memory
