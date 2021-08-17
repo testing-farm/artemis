@@ -46,19 +46,6 @@ spec:
         envFrom:
         - configMapRef:
             name: {{ template "artemis.fullname" . }}-env-postgres
-      - name: initdb
-        image: {{ template "artemis.image" . }}
-        imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
-        args:
-        - initdb
-        command:
-        - /entrypoint.sh
-        envFrom:
-        - configMapRef:
-            name: {{ template "artemis.fullname" . }}-env
-        volumeMounts:
-        - name: artemis-config
-          mountPath: {{ template "artemis.configDirMountPath" . }}
       - name: wait-for-rabbitmq
         image: {{ template "artemis.image" . }}
         imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}

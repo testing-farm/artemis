@@ -23,6 +23,23 @@ artemis:
     enabled: false
 
 postgresql:
+  master:
+    sidecars:
+      - name: postgresql-adminer
+        image:
+          registry: quay.io
+          repository: testing-farm/adminer
+          tag: 4.8.0
+        imagePullPolicy: IfNotPresent
+        env:
+          - name: ADMINER_DEFAULT_SERVER
+            value: 127.0.0.1
+          - name: ADMINER_DESIGN
+            value: pepa-linha
+        ports:
+          - name: postgresql-adminer
+            port: 80
+
   metrics:
     enabled: true
 
