@@ -55,7 +55,7 @@ container:
     # Now it's time to generate docs.
     - cd docs
 
-    # Base URL is set by derived jobs. It's either the public one, when we're generating docs from `master` branch,
+    # Base URL is set by derived jobs. It's either the public one, when we're generating docs from `main` branch,
     # or it is a base URL of URL Gitlab uses when letting us browse artifacts job saved.
     - hugo --baseURL="$BASE_URL"
 
@@ -76,7 +76,7 @@ pages:
   stage: deploy
   extends: .docs
   only:
-    - master
+    - main
 
   variables:
     BASE_URL: "https://${CI_PROJECT_NAMESPACE}.gitlab.io/${CI_PROJECT_NAME}"
@@ -88,13 +88,13 @@ pages:
     url: https://${CI_PROJECT_NAMESPACE}.gitlab.io/${CI_PROJECT_NAME}
 
 # This job's for uploading built docs for a preview: into their own Gitlab environment. Note the `environment.url`
-# value, which is different that the one for `master` branch - it is actually URL Gitlab uses when job saves
+# value, which is different that the one for `main` branch - it is actually URL Gitlab uses when job saves
 # its artifacts, and Gitlab lets us browse them.
 pages:preview:
   stage: deploy
   extends: .docs
   except:
-    - master
+    - main
 
   variables:
     # Note that this URL matches the environment URL below - this lets us easily to get from the environment
@@ -123,7 +123,7 @@ pages:preview:
 pages:preview:stop:
   stage: deploy
   except:
-    - master
+    - main
   when: manual
   allow_failure: true
   environment:
@@ -140,4 +140,4 @@ publish_apiary:
     - gem install apiaryio
     - apiary publish --api-name="artemis6" --path "api/apiary.apib"
   only:
-    - master
+    - main
