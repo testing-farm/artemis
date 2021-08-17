@@ -632,7 +632,7 @@ def cmd_knob_list(cfg: Configuration) -> None:
     knobs = cast(List[Dict[str, str]], artemis_inspect(cfg, 'knobs', '').json())
 
     table = [
-        ['Name', 'Value', 'Editable', 'Help']
+        ['Name', 'Value', 'Type', 'Editable', 'Help']
     ] + [
         [
             knob['name'],
