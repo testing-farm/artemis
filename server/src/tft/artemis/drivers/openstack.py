@@ -1,8 +1,8 @@
 import dataclasses
+import datetime
 import re
 import sys
 import threading
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
@@ -505,9 +505,11 @@ class OpenStackDriver(PoolDriver):
         # NOTE(ivasilev) The following cast is needed to keep quiet the typing check
         data = cast(Dict[str, str], r_output.unwrap())
 
-        return Ok(ConsoleUrlData(url=data['url'],
-                                 type=data['type'],
-                                 expires=datetime.utcnow() + timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)))
+        return Ok(ConsoleUrlData(
+            url=data['url'],
+            type=data['type'],
+            expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
+        ))
 
     def create_snapshot(
         self,
@@ -668,7 +670,7 @@ class OpenStackDriver(PoolDriver):
 
         if status == 'build' and 'created' in output:
             try:
-                created_stamp = datetime.strptime(output['created'], '%Y-%m-%dT%H:%M:%SZ')
+                created_stamp = datetime.datetime.strptime(output['created'], '%Y-%m-%dT%H:%M:%SZ')
 
             except Exception as exc:
                 Failure.from_exc(
@@ -678,7 +680,7 @@ class OpenStackDriver(PoolDriver):
                 ).handle(self.logger)
 
             else:
-                diff = datetime.utcnow() - created_stamp
+                diff = datetime.datetime.utcnow() - created_stamp
 
                 if diff.total_seconds() > KNOB_BUILD_TIMEOUT.value:
                     PoolMetrics.inc_error(self.poolname, 'instance-building-too-long')
@@ -974,7 +976,7 @@ class OpenStackDriver(PoolDriver):
             return Ok(GuestLogUpdateProgress(
                 state=GuestLogState.COMPLETE,
                 url=cast(Dict[str, str], output)['url'],
-                expires=datetime.utcnow() + timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
+                expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
             ))
 
         # We're left with console/blob.

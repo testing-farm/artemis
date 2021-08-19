@@ -1,12 +1,12 @@
 import base64
 import copy
 import dataclasses
+import datetime
 import ipaddress
 import json
 import os
 import re
 import threading
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 
 import gluetool.log
@@ -164,7 +164,7 @@ class AWSPoolResourcesIDs(PoolResourcesIDs):
 
 def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold: int) -> bool:
     try:
-        parsed_timestamp = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
+        parsed_timestamp = datetime.datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
 
     except Exception as exc:
         Failure.from_exc(
@@ -175,7 +175,7 @@ def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold
 
         return False
 
-    diff = datetime.utcnow() - parsed_timestamp
+    diff = datetime.datetime.utcnow() - parsed_timestamp
 
     return diff.total_seconds() >= threshold
 
