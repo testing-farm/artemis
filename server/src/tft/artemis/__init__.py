@@ -115,11 +115,34 @@ class SerializableContainer:
     """
 
     def serialize_to_json(self) -> Dict[str, Any]:
+        """
+        Return content of the container seralized into a JSON-compatible data structure.
+        """
+
         return dataclasses.asdict(self)
 
     @classmethod
     def unserialize_from_json(cls: Type[S], serialized: Dict[str, Any]) -> S:
+        """
+        Return a container restored from a JSON-compatible data structure.
+        """
+
         return cls(**serialized)  # type: ignore
+
+    def serialize_to_str(self) -> str:
+        """
+        Return content of the container seralized into a JSON blob.
+        """
+
+        return json.dumps(self.serialize_to_json())
+
+    @classmethod
+    def unserialize_from_str(cls: Type[S], serialized: str) -> S:
+        """
+        Return a container restored from a JSON blob.
+        """
+
+        return cls.unserialize_from_json(json.loads(serialized))
 
 
 # Two logging helpers, very similar to `format_dict` and `log_dict`, but emitting a YAML-ish output.
