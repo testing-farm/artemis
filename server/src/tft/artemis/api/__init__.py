@@ -2324,7 +2324,6 @@ def run_app() -> molten.app.App:
     ]
 
     mw: List[Middleware] = [
-        # middleware.AuthorizationMiddleware,
         ResponseRendererMiddleware(),
         error_handler_middleware,
         authorization_middleware,
