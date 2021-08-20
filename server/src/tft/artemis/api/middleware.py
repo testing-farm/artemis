@@ -28,17 +28,17 @@ SNAPSHOT_ROUTE_PATTERN = re.compile(
 
 
 NO_AUTH = [
-    re.compile(r'/_docs(?:/.+)?'),
-    re.compile(r'/_schema(?:/.+)?'),
-    re.compile(r'/metrics')
+    re.compile(r'(?:/v\d+\.\d+\.\d+)?/_docs(?:/.+)?'),
+    re.compile(r'(?:/v\d+\.\d+\.\d+)?/_schema(?:/.+)?'),
+    re.compile(r'(?:/v\d+\.\d+\.\d+)?/metrics')
 ]
 
 PROVISIONING_AUTH = [
-    re.compile(r'/guests(?:/.+)?')
+    re.compile(r'(?:/v\d+\.\d+\.\d+)?/guests(?:/.+)?')
 ]
 
 ADMIN_AUTH = [
-    re.compile(r'/users(?:/.+)?')
+    re.compile(r'(?:/v\d+\.\d+\.\d+)?/users(?:/.+)?')
 ]
 
 

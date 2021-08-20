@@ -175,6 +175,11 @@ def test_metrics(api_client: molten.testing.TestClient, db, logger, redis):
         '/guests/foo/snapshots',
         tft.artemis.api.middleware.PROVISIONING_AUTH,
         True
+    ),
+    (
+        '/v0.0.24/guests/foo/snapshots',
+        tft.artemis.api.middleware.PROVISIONING_AUTH,
+        True
     )
 ])
 def test_auth_matches_path(path, patterns, expected):
