@@ -27,7 +27,7 @@ We truncate at 63 chars because some Kubernetes name fields are limited to this 
 Override full names of upstream charts for deterministic host names
 */}}
 {{- define "artemis.fullname" -}}
-{{- include "fullname" . -}}
+{{- printf "%s-%s" .Release.Name "artemis" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "postgresql.fullname" -}}
@@ -40,6 +40,17 @@ Override full names of upstream charts for deterministic host names
 
 {{- define "redis.fullname" -}}
 {{- printf "%s-%s" .Release.Name "redis" | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
+Override Artemis configuration
+*/}}
+{{- define "artemis.useExistingConfigMap" -}}
+{{- true -}}
+{{- end -}}
+
+{{- define "artemis.configMapName" -}}
+{{- printf "%s-config" (include "fullname" .) -}}
 {{- end -}}
 
 {{/*
@@ -109,10 +120,6 @@ Override credentials and hosts of services with ones configured here
 {{- 6379 -}}
 {{- end -}}
 
-{{- define "artemis.useExistingConfigMap" -}}
-{{- true -}}
-{{- end -}}
-
-{{- define "artemis.configMapName" -}}
-{{- printf "%s-config" (include "fullname" .) -}}
+{{- define "adminer.defaultServer" -}}
+{{- printf "%s:%s" (include "artemis.psql.host" .) (include "artemis.psql.port" .) | trimSuffix ":" -}}
 {{- end -}}

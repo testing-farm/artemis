@@ -1,44 +1,75 @@
+## Global options are available from all charts
+##
 global:
+  ## RabbitMQ configuration
+  ##
   rabbitmq:
+    ## RabbitMQ authentication options
     auth:
+      ## Username used to access the RabbitMQ service
+      ##
       username: "artemis"
+      ## Password
+      ##
       password: "artemis"
-  redis:
-    auth:
-      enabled: false
 
+  ## PostgreSQL configuration - used to configure PostgreSQL as well as Artemis to use the service
+  ##
   psql:
+    ## Username and passowrd to access the database
+    ##
     username: "artemis"
     password: "artemis"
+    ## Name of database
+    ##
     database: "artemis"
+    ## Port the service should be available on
+    ##
     port: 6379
 
+## Artemis-specific options
+##
 artemis:
-  configuration: |
-    config_here...
-
+  ## asible-vault password to decrypt enrypted configuration files (ssh keys)
+  ##
   vaultPassword: ""
+  ##
+  api:
+    port: 8001
+  periodic_worker:
+    enabled: true
 
   kerberos:
     enabled: false
 
 postgresql:
-  master:
-    sidecars:
-      - name: postgresql-adminer
-        image:
-          registry: quay.io
-          repository: testing-farm/adminer
-          tag: 4.8.0
-        imagePullPolicy: IfNotPresent
-        env:
-          - name: ADMINER_DEFAULT_SERVER
-            value: 127.0.0.1
-          - name: ADMINER_DESIGN
-            value: pepa-linha
-        ports:
-          - name: postgresql-adminer
-            port: 80
+  install: true
+
+  extraEnv:
+  - name: ARTEMIS_DEPLOYMENT
+    value: \{\{ template "artemis.fullname" . \}\}
+  - name: ARTEMIS_COMPONENT
+    value: db
+      # master:
+      #   sidecars:
+      #   - name: postgresql-adminer
+      #     image:
+      #       registry: quay.io
+      #       repository: testing-farm/adminer
+      #       tag: 4.8.0
+      #     imagePullPolicy: IfNotPresent
+      #     env:
+      #       - name: ARTEMIS_DEPLOYMENT
+      #         value: \{\{ template "artemis.fullname" . \}\}
+      #       - name: ARTEMIS_COMPONENT
+      #         value: db.management
+      #       - name: ADMINER_DEFAULT_SERVER
+      #         value: 127.0.0.1
+      #       - name: ADMINER_DESIGN
+      #         value: pepa-linha
+      #     ports:
+      #       - name: postgresql-adminer
+      #         port: 80
 
   metrics:
     enabled: true
@@ -204,17 +235,21 @@ postgresql:
               usage: "GAUGE"
               description: "Disk space used by the database"
 
+adminer:
+  install: true
+
 rabbitmq:
+  install: true
   auth:
     username: "artemis"
     password: "artemis"
+    erlangCookie: "dCZRkPAjepjsz8VfiWlvOSRahr88OuOi"
   plugins: "rabbitmq_management"
   clustering:
     enabled: false
-  persistence:
-    enabled: false
 
 redis:
+  install: true
   auth:
     enabled: false
   master:

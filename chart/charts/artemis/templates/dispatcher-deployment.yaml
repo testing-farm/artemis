@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ template "artemis.dispatcher.fullname" . }}
+  name: {{ template "artemis.fullname" . }}-dispatcher
   labels:
     app: {{ template "artemis.fullname" . }}
     component: dispatcher
@@ -19,29 +19,14 @@ spec:
       labels:
         app: {{ template "artemis.fullname" . }}
         component: dispatcher
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/config-configmap.yaml") . | sha256sum }}
+        checksum/env: {{ include (print $.Template.BasePath "/env-configmap.yaml") . | sha256sum }}
     spec:
       volumes:
       - name: artemis-config
-        projected:
-          sources:
-          - configMap:
-              name: {{ template "artemis.fullname" . }}-server
-          - configMap:
-              name: {{ template "artemis.configMapName" . }}
-      containers:
-      - name: {{ template "artemis.dispatcher.fullname" . }}
-        image: {{ template "artemis.image" . }}
-        imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
-        volumeMounts:
-        - name: artemis-config
-          mountPath: {{ template "artemis.configDirMountPath" . }}
-        envFrom:
-        - configMapRef:
-            name: {{ template "artemis.fullname" . }}-env
-        command:
-        - /entrypoint.sh
-        args:
-        - dispatcher
+        configMap:
+          name: {{ template "artemis.configMapName" . }}
       initContainers:
       - name: wait-for-api
         image: {{ template "artemis.image" . }}
@@ -49,7 +34,30 @@ spec:
         command:
         - /wait-for-api.sh
         env:
+        - name: ARTEMIS_DEPLOYMENT
+          value: {{ template "artemis.fullname" . }}
+        - name: ARTEMIS_COMPONENT
+          value: dispatcher.wait-for-api
         - name: API_HOSTNAME
           value: {{ template "artemis.api.host" . }}
         - name: API_PORT
           value: {{ include "artemis.api.port" . | quote }}
+      containers:
+      - name: artemis-dispatcher
+        image: {{ template "artemis.image" . }}
+        imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
+        volumeMounts:
+        - name: artemis-config
+          mountPath: {{ template "artemis.configDirMountPath" . }}
+        env:
+        - name: ARTEMIS_DEPLOYMENT
+          value: {{ template "artemis.fullname" . }}
+        - name: ARTEMIS_COMPONENT
+          value: dispatcher
+        envFrom:
+        - configMapRef:
+            name: {{ template "artemis.fullname" . }}-env
+        command:
+        - /entrypoint.sh
+        args:
+        - dispatcher

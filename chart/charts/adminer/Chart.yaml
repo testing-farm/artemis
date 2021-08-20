@@ -1,0 +1,9 @@
+apiVersion: v2
+name: adminer
+description: Database management in a single PHP file
+type: application
+version: 0.0.1
+appVersion: "4.8.0"
+home: https://www.adminer.org/
+sources:
+  - https://github.com/vrana/adminer/

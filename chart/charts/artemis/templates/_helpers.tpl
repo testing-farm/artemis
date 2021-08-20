@@ -37,46 +37,12 @@ Define templates for component names
 {{- printf "%s-api" $fullname | trunc 63 | trimSuffix "-" }}
 {{- end -}}
 
-{{- define "artemis.dispatcher.name" -}}
-{{- $name := (include "artemis.name" .) }}
-{{- printf "%s-dispatcher" $name | trunc 63 | trimSuffix "-" }}
-{{- end -}}
-
-{{- define "artemis.dispatcher.fullname" -}}
-{{- $fullname := (include "artemis.fullname" .) }}
-{{- printf "%s-dispatcher" $fullname | trunc 63 | trimSuffix "-" }}
-{{- end -}}
-
-{{- define "artemis.scheduler.name" -}}
-{{- $name := (include "artemis.name" .) }}
-{{- printf "%s-scheduler" $name | trunc 63 | trimSuffix "-" }}
-{{- end -}}
-
-{{- define "artemis.scheduler.fullname" -}}
-{{- $fullname := (include "artemis.fullname" .) }}
-{{- printf "%s-scheduler" $fullname | trunc 63 | trimSuffix "-" }}
-{{- end -}}
-
-{{- define "artemis.worker.name" -}}
-{{- $name := (include "artemis.name" .) }}
-{{- printf "%s-worker" $name | trunc 63 | trimSuffix "-" }}
-{{- end -}}
-
-{{- define "artemis.worker.fullname" -}}
-{{- $fullname := (include "artemis.fullname" .) }}
-{{- printf "%s-worker" $fullname | trunc 63 | trimSuffix "-" }}
-{{- end -}}
-
 {{- define "artemis.api.host" -}}
 {{- printf "%s.%s.svc" (include "artemis.api.fullname" .) .Release.Namespace -}}
 {{- end -}}
 
 {{- define "artemis.api.port" -}}
 {{- .Values.api.port | default 8001 -}}
-{{- end -}}
-
-{{- define "artemis.image" -}}
-{{- .Values.image -}}
 {{- end -}}
 
 {{- define "artemis.configDirMountPath" -}}
@@ -87,15 +53,8 @@ Define templates for component names
 {{- printf "%s/%s" (include "artemis.configDirMountPath" .) ".vault_pass" -}}
 {{- end -}}
 
-{{/*
-Kerberos
-*/}}
-{{- define "artemis.kerberos.image" -}}
-{{- .Values.kerberos.image -}}
-{{- end -}}
-
-{{- define "artemis.kerberos.ccacheDir" -}}
-{{- printf "/tmp/krb5cc" -}}
+{{- define "artemis.image" -}}
+{{- .Values.image -}}
 {{- end -}}
 
 {{- define "artemis.useExistingConfigMap" -}}
@@ -113,4 +72,19 @@ Kerberos
 {{- else -}}
   {{- printf "%s-config" (include "artemis.fullname" .) -}}
 {{- end -}}
+{{- end -}}
+
+{{- define "artemis.dbSchemaRevision" -}}
+{{- .Values.dbSchemaRevision | default .Chart.appVersion -}}
+{{- end -}}
+
+{{/*
+Kerberos
+*/}}
+{{- define "artemis.kerberos.image" -}}
+{{- .Values.kerberos.image -}}
+{{- end -}}
+
+{{- define "artemis.kerberos.ccacheDir" -}}
+{{- printf "/tmp/krb5cc" -}}
 {{- end -}}

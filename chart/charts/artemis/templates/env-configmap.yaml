@@ -8,9 +8,7 @@ data:
   {{- if .Values.brokerHeartbeatTimeout }}
   ARTEMIS_BROKER_HEARTBEAT_TIMEOUT: {{ .Values.brokerHeartbeatTimeout }}
   {{- end }}
-
   ARTEMIS_CACHE_URL: redis://{{ template "artemis.redis.host" . }}:{{ template "artemis.redis.port" . }}
-
   ARTEMIS_DB_URL: postgresql://{{ template "artemis.psql.username" . }}:{{ template "artemis.psql.password" . }}@{{ template "artemis.psql.host" . }}:{{ template "artemis.psql.port" . }}/{{ template "artemis.psql.database" . }}
   {{- if .Values.db.poolSize }}
   ARTEMIS_DB_POOL_SIZE: {{ .Values.db.poolSize | quote }}
@@ -18,13 +16,16 @@ data:
   {{- if .Values.db.poolMaxOverflow }}
   ARTEMIS_DB_POOL_MAX_OVERFLOW: {{ .Values.db.poolMaxOverflow | quote }}
   {{- end }}
-
   ARTEMIS_CONFIG_DIR: {{ template "artemis.configDirMountPath" . }}
-  {{ if .Values.vaultPass }}
+  {{- if .Values.vaultPass }}
   ARTEMIS_VAULT_PASSWORD:  {{ .Values.vaultPassword }}
-  {{ end }}
+  {{- else }}
+  ARTEMIS_VAULT_PASSWORD_FILE: {{ template "artemis.configDirMountPath" . }}/.vault_pass
+  {{- end }}
 
+  {{- if .Values.logging.logDir }}
   ARTEMIS_LOG_DIR: ""
+  {{- end }}
   {{- if .Values.logging.json }}
   ARTEMIS_LOG_JSON: {{ .Values.logging.json | quote }}
   {{- end }}

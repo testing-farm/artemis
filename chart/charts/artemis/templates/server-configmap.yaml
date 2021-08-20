@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ template "artemis.fullname" . }}-server
-  namespace: {{ .Release.Namespace }}
-data:
-  server.yml: |
-    {{ .Values.configuration | nindent 4 }}
