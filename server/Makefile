@@ -36,7 +36,9 @@ integration-tests:  ## Run tests against real services
 
 	docker-compose down
 
-docs:  ## Generate source code documentation
+docs: docs-autodocs docs-knobs  ## Generate all documentation
+
+docs-autodocs:  ## Generate source code documentation
 	tox -e autodocs
 
 docs-knobs: install  ## Generate up-to-date documentation of knobs
