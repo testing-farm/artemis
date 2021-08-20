@@ -16,10 +16,11 @@ import semver
 import stackprinter
 
 from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT, DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW,
-               Configuration, Logger, artemis_create, artemis_delete, artemis_get_console_url,
+               BasicAuthConfiguration, Configuration, Logger, artemis_create, artemis_delete, artemis_get_console_url,
                artemis_inspect, artemis_restore, artemis_update, confirm,
                fetch_artemis, load_yaml, prettify_json, prettify_yaml,
                print_table, prompt, validate_struct)
+
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000
@@ -127,6 +128,19 @@ def cli_root(ctx: Any, config: str, api_timeout: int, api_retries: int, api_retr
     cfg.artemis_api_url = cfg.raw_config['artemis_api_url']
     cfg.artemis_api_version = semver.VersionInfo.parse(cfg.raw_config['artemis_api_version'])
     assert cfg.artemis_api_url is not None
+
+    if 'authentication' in cfg.raw_config:
+        cfg.authentication_method = cfg.raw_config['authentication']['method']
+
+        if cfg.authentication_method == 'basic':
+            if 'basic' not in cfg.raw_config['authentication']:
+                cfg.logger.error('Authentication method "basic" requires "basic" configuration')
+
+            cfg.basic_auth = BasicAuthConfiguration(
+                username=cfg.raw_config['authentication']['basic']['username'],
+                provisioning_token=cfg.raw_config['authentication']['basic']['tokens']['provisioning'],
+                admin_token=cfg.raw_config['authentication']['basic']['tokens']['admin']
+            )
 
     if 'provisioning_poll_interval' in cfg.raw_config:
         cfg.provisioning_poll_interval = cfg.raw_config['provisioning_poll_interval']

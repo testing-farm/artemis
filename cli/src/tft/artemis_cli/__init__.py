@@ -77,6 +77,13 @@ class TimeoutHTTPAdapter(requests.adapters.HTTPAdapter):
 
 
 @dataclasses.dataclass
+class BasicAuthConfiguration:
+    username: str
+    provisioning_token: str
+    admin_token: str
+
+
+@dataclasses.dataclass
 class Configuration:
     raw_config: Optional[Any] = None
 
@@ -91,6 +98,9 @@ class Configuration:
 
     artemis_api_url: Optional[str] = None
     artemis_api_version: Optional[semver.VersionInfo] = None
+
+    authentication_method: Optional[str] = None
+    basic_auth: Optional[BasicAuthConfiguration] = None
 
     provisioning_poll_interval: float = 10
 
@@ -309,6 +319,20 @@ def fetch_artemis(
         logger.error(
             'Failed to communicate with Artemis API Server, responded with code {}: {}'
             '\nRequest:\n{}\n{}'.format(res.status_code, res.reason, res.request.url, request_kwargs)
+        )
+
+    if cfg.authentication_method == 'basic':
+        from requests.auth import HTTPBasicAuth
+
+        assert cfg.basic_auth is not None
+
+        if request_kwargs is None:
+            request_kwargs = {}
+
+        request_kwargs['auth'] = HTTPBasicAuth(
+            cfg.basic_auth.username,
+            # TODO: pick proper token based on URL
+            cfg.basic_auth.provisioning_token
         )
 
     return fetch_remote(

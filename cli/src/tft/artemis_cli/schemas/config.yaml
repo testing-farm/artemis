@@ -1,5 +1,45 @@
 ---
 
+definitions:
+  basic_authentication:
+    type: object
+
+    properties:
+      username:
+        type: string
+
+      tokens:
+        type: object
+
+        properties:
+          provisioning:
+            type: string
+          admin:
+            type: string
+
+        required:
+          - provisioning
+          - admin
+
+    required:
+      - username
+      - tokens
+
+  authentication:
+    type: object
+
+    properties:
+      method:
+        type: string
+        enum:
+          - basic
+
+      basic:
+        "$ref": "#/definitions/basic_authentication"
+
+    required:
+      - method
+
 properties:
   artemis_api_url:
     type: string
@@ -9,6 +49,9 @@ properties:
 
   provisioning_poll_interval:
     type: number
+
+  authentication:
+    "$ref": "#/definitions/authentication"
 
 required:
   - artemis_api_url
