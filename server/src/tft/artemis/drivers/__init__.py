@@ -393,6 +393,8 @@ class ProvisioningProgress:
     pool_failures: List[Failure] = dataclasses.field(default_factory=list)
 
 
+S = TypeVar('S', bound='PoolResourcesIDs')
+
 SerializedPoolResourcesIDs = str
 
 #: Used to serialize ``datetime`` instances that are part of ``PoolResourcesIDs``.
@@ -400,7 +402,7 @@ RESOURCE_CTIME_FMT: str = '%Y-%m-%dT%H:%M:%S.%f'
 
 
 @dataclasses.dataclass
-class PoolResourcesIDs:
+class PoolResourcesIDs(SerializableContainer):
     """
     Container for various pool resource IDs, used for scheduling their removal.
 
@@ -412,20 +414,29 @@ class PoolResourcesIDs:
     def is_empty(self) -> bool:
         return all([value is None for key, value in dataclasses.asdict(self).items() if key != 'ctime'])
 
-    def serialize(self) -> SerializedPoolResourcesIDs:
-        # Convert datetime object to string first
-        data = dataclasses.asdict(self)
-        data['ctime'] = data['ctime'].strftime(RESOURCE_CTIME_FMT) if data['ctime'] else None
+    def serialize_to_json(self) -> Dict[str, Any]:
+        serialized = super(PoolResourcesIDs, self).serialize_to_json()
 
-        return json.dumps(data)
+        # Convert datetime object to string
+        serialized['ctime'] = serialized['ctime'].strftime(RESOURCE_CTIME_FMT) if serialized['ctime'] else None
+
+        return serialized
 
     @classmethod
-    def unserialize(cls: Type[T], raw_resource_ids: SerializedPoolResourcesIDs) -> T:
+    def unserialize_from_json(cls: Type[S], serialized: Dict[str, Any]) -> S:
         # Convert ctime string to datetime object
-        data = json.loads(raw_resource_ids)
-        data['ctime'] = datetime.datetime.strptime(data['ctime'], RESOURCE_CTIME_FMT) if data['ctime'] else None
+        serialized['ctime'] = datetime.datetime.strptime(serialized['ctime'], RESOURCE_CTIME_FMT) \
+            if serialized['ctime'] else None
 
-        return cls(**data)  # type: ignore
+        return cls(**serialized)
+
+    # Adding (un)serialize methods because we have a dedicated serialized type.
+    def serialize(self) -> SerializedPoolResourcesIDs:
+        return self.serialize_to_str()
+
+    @classmethod
+    def unserialize(cls: Type[S], serialized: SerializedPoolResourcesIDs) -> S:
+        return cls.unserialize_from_str(serialized)
 
 
 def _apply_flavor_specification(
