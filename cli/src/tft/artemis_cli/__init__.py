@@ -12,11 +12,18 @@ import click_spinner
 import jsonschema
 import pkg_resources
 import requests
+import requests.adapters
 import ruamel.yaml
 import ruamel.yaml.compat
 import semver
 import tabulate
 import urlnormalizer
+
+
+DEFAULT_API_TIMEOUT = 10
+DEFAULT_API_RETRIES = 10
+# should lead to delays of 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256 seconds
+DEFAULT_RETRY_BACKOFF_FACTOR = 1
 
 
 class ValidationResult(NamedTuple):
@@ -57,6 +64,18 @@ class Logger:
         click.echo(GREEN('{}{}'.format(self._context_prefix, msg)))
 
 
+class TimeoutHTTPAdapter(requests.adapters.HTTPAdapter):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.timeout = kwargs.pop('timeout', DEFAULT_API_TIMEOUT)
+
+        super().__init__(*args, **kwargs)
+
+    def send(self, request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:    # type: ignore
+        kwargs.setdefault('timeout', self.timeout)
+
+        return super().send(request, **kwargs)
+
+
 @dataclasses.dataclass
 class Configuration:
     raw_config: Optional[Any] = None
@@ -74,6 +93,37 @@ class Configuration:
     artemis_api_version: Optional[semver.VersionInfo] = None
 
     provisioning_poll_interval: float = 10
+
+    http_session: requests.Session = dataclasses.field(default_factory=requests.Session)
+
+    def install_http_retries(
+        self,
+        timeout: int,
+        retries: int,
+        retry_backoff_factor: int
+    ) -> None:
+        retry_strategy = requests.packages.urllib3.util.retry.Retry(
+            total=retries,
+            status_forcelist=[
+                429,  # Too Many Requests
+                500,  # Internal Server Error
+                502,  # Bad Gateway
+                503,  # Service Unavailable
+                504   # Gateway Timeout
+            ],
+            method_whitelist=[
+                'HEAD', 'GET', 'POST', 'DELETE', 'PUT'
+            ],
+            backoff_factor=retry_backoff_factor
+        )
+
+        timeout_adapter = TimeoutHTTPAdapter(
+            timeout=timeout,
+            max_retries=retry_strategy
+        )
+
+        self.http_session.mount('https://', timeout_adapter)
+        self.http_session.mount('http://', timeout_adapter)
 
 
 # Colorization
@@ -199,6 +249,7 @@ STDERR: ---v---v---v---v---v---
 
 
 def fetch_remote(
+    cfg: Configuration,
     url: str,
     logger: Optional[Logger] = None,
     spinner: bool = False,
@@ -217,16 +268,16 @@ def fetch_remote(
 
     with click_spinner.spinner(disable=not spinner):
         if method == 'get':
-            res = requests.get(url, **request_kwargs)
+            res = cfg.http_session.get(url, **request_kwargs)
 
         elif method == 'post':
-            res = requests.post(url, **request_kwargs)
+            res = cfg.http_session.post(url, **request_kwargs)
 
         elif method == 'delete':
-            res = requests.delete(url, **request_kwargs)
+            res = cfg.http_session.delete(url, **request_kwargs)
 
         elif method == 'put':
-            res = requests.put(url, **request_kwargs)
+            res = cfg.http_session.put(url, **request_kwargs)
 
     if res.status_code not in allow_statuses:
         if on_error:
@@ -261,6 +312,7 @@ def fetch_artemis(
         )
 
     return fetch_remote(
+        cfg,
         '{}/{}'.format(cfg.artemis_api_url, endpoint),
         logger,
         method=method,

@@ -12,12 +12,11 @@ from typing import Any, Dict, List, Optional, cast
 import click
 import click_completion
 import click_spinner
-import requests
 import semver
 import stackprinter
 
-from . import (GREEN, NL, RED, WHITE, YELLOW, Configuration, Logger,
-               artemis_create, artemis_delete, artemis_get_console_url,
+from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT, DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW,
+               Configuration, Logger, artemis_create, artemis_delete, artemis_get_console_url,
                artemis_inspect, artemis_restore, artemis_update, confirm,
                fetch_artemis, load_yaml, prettify_json, prettify_yaml,
                print_table, prompt, validate_struct)
@@ -56,7 +55,25 @@ API_FEATURE_VERSIONS = {
     default=click.get_app_dir('artemis-cli'),
     help='Path to the configuration directory'
 )
-def cli_root(ctx: Any, config: str) -> None:
+@click.option(
+    '--api-timeout',
+    type=int,
+    default=DEFAULT_API_TIMEOUT,
+    help='API request timeout (seconds)'
+)
+@click.option(
+    '--api-retries',
+    type=int,
+    default=DEFAULT_API_RETRIES,
+    help='Number of API retries'
+)
+@click.option(
+    '--api-retry-backoff-factor',
+    type=int,
+    default=DEFAULT_RETRY_BACKOFF_FACTOR,
+    help='API retry backoff factor (seconds)'
+)
+def cli_root(ctx: Any, config: str, api_timeout: int, api_retries: int, api_retry_backoff_factor: int) -> None:
     ctx.ensure_object(Configuration)
 
     cfg = cast(
@@ -104,6 +121,8 @@ def cli_root(ctx: Any, config: str) -> None:
 
         ctx.invoke(cmd_init)
         sys.exit(0)
+
+    cfg.install_http_retries(api_timeout, api_retries, api_retry_backoff_factor)
 
     cfg.artemis_api_url = cfg.raw_config['artemis_api_url']
     cfg.artemis_api_version = semver.VersionInfo.parse(cfg.raw_config['artemis_api_version'])
@@ -273,7 +292,7 @@ def cmd_guest_create(
                 post_install = f.read()
         # check that post_install_script is a valid url, if it is - try to download the script
         elif urllib.parse.urlparse(post_install_script).netloc:
-            res = requests.get(post_install_script)
+            res = cfg.http_session.get(post_install_script)
             if res.ok:
                 # NOTE(ivasilev) content is bytes so a decode step is necessary
                 post_install = res.content.decode("utf-8")
