@@ -56,15 +56,29 @@ class ConfigFlavorDiskSpecType(TypedDict):
 
 
 #: pools[].parameters.patch-flavors[]
-class ConfigFlavorSpecType(TypedDict):
-    name: str
-    cpu: ConfigFlavorCPUSpecType
-    disk: ConfigFlavorDiskSpecType
+ConfigPatchFlavorSpecType = TypedDict(
+    'ConfigPatchFlavorSpecType',
+    {
+        'name': str,
+        'name-regex': str,
+        'cpu': ConfigFlavorCPUSpecType,
+        'disk': ConfigFlavorDiskSpecType
+    }
+)
 
 
 #: pools[].parameters.custom-flavors[]
-class ConfigCustomFlavorSpecType(ConfigFlavorSpecType):
-    base: str
+ConfigCustomFlavorSpecType = TypedDict(
+    'ConfigCustomFlavorSpecType',
+    {
+        'name': str,
+        'base': str,
+        'cpu': ConfigFlavorCPUSpecType,
+        'disk': ConfigFlavorDiskSpecType
+    }
+)
+
+ConfigFlavorSpecType = Union[ConfigPatchFlavorSpecType, ConfigCustomFlavorSpecType]
 
 
 IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')  # noqa: FS003
@@ -1249,7 +1263,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param flavors: actual existing flavors that serve as basis for custom flavors.
         """
 
-        patch_flavor_specs = cast(List[ConfigFlavorSpecType], self.pool_config.get('patch-flavors', []))
+        patch_flavor_specs = cast(List[ConfigPatchFlavorSpecType], self.pool_config.get('patch-flavors', []))
 
         if not patch_flavor_specs:
             return Ok(None)
@@ -1257,25 +1271,47 @@ class PoolDriver(gluetool.log.LoggerMixin):
         gluetool.log.log_dict(logger.debug, 'base flavors', flavors)
 
         for patch_flavor_spec in patch_flavor_specs:
-            flavorname = patch_flavor_spec['name']
+            if 'name' in patch_flavor_spec:
+                flavorname = patch_flavor_spec['name']
 
-            if flavorname not in flavors:
+                target_flavors = [flavors[flavorname]] if flavorname in flavors else []
+
+            elif 'name-regex' in patch_flavor_spec:
+                flavorname = patch_flavor_spec['name-regex']
+
+                try:
+                    flavor_name_pattern = re.compile(flavorname)
+
+                except re.error as exc:
+                    return Error(Failure.from_exc(
+                        'failed to compile patched flavor name-regex',
+                        exc,
+                        flavorname=flavorname
+                    ))
+
+                target_flavors = [
+                    flavor
+                    for flavor in flavors.values()
+                    if flavor_name_pattern.match(flavor.name) is not None
+                ]
+
+            else:
+                assert False, 'unreachable'
+
+            if not target_flavors:
                 return Error(Failure(
                     'unknown patched flavor',
                     flavorname=flavorname
                 ))
 
-            flavor = flavors[flavorname]
+            for target_flavor in target_flavors:
+                r_apply_spec = _apply_flavor_specification(target_flavor, patch_flavor_spec)
 
-            r_apply_spec = _apply_flavor_specification(flavor, patch_flavor_spec)
-
-            if r_apply_spec.is_error:
-                failure = r_apply_spec.unwrap_error()
-                failure.update(
-                    flavorname=flavorname
-                )
-
-                return Error(failure)
+                if r_apply_spec.is_error:
+                    return Error(r_apply_spec.unwrap_error().update(
+                        flavorname=flavorname,
+                        target_flavorname=target_flavor.name
+                    ))
 
         return Ok(None)
 

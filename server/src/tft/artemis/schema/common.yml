@@ -58,14 +58,21 @@ definitions:
       name:
         type: string
 
+      name-regex:
+        type: string
+        format: regex
+
       cpu:
         "$ref": "#/definitions/patch_flavor_cpu"
 
       disk:
         "$ref": "#/definitions/patch_flavor_disk"
 
-    required:
-      - name
+    oneOf:
+      - required:
+        - name
+      - required:
+        - name-regex
 
     additionalProperties: false
 
