@@ -18,9 +18,9 @@ from ..db import GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, Operator, Or
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, \
-    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, \
-    test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, \
+    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, \
+    run_cli_tool, test_cli_error
 
 NodeRefType = Any
 
@@ -333,7 +333,8 @@ class BeakerDriver(PoolDriver):
 
         return Ok(PoolImageInfo(
             name=imagename,
-            id=imagename
+            id=imagename,
+            ssh=PoolImageSSHInfo()
         ))
 
     def _environment_to_image(

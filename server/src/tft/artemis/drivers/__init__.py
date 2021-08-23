@@ -191,6 +191,15 @@ class PoolLogger(gluetool.log.ContextAdapter):
 
 
 @dataclasses.dataclass(repr=False)
+class PoolImageSSHInfo(SerializableContainer):
+    username: str = 'root'
+    port: int = 22
+
+    def __repr__(self) -> str:
+        return f'<PoolImageSSHInfo: username={self.username} port={self.port}>'
+
+
+@dataclasses.dataclass(repr=False)
 class PoolImageInfo(SerializableContainer):
     """
     Describes important information about a pool image.
@@ -211,8 +220,36 @@ class PoolImageInfo(SerializableContainer):
     name: str
     id: str
 
+    ssh: PoolImageSSHInfo
+
     def __repr__(self) -> str:
-        return f'<PoolImageInfo: name={self.name} id={self.id}>'
+        return f'<PoolImageInfo: name={self.name} id={self.id} ssh={repr(self.ssh)}>'
+
+    def serialize_to_json(self) -> Dict[str, Any]:
+        """
+        Serialize properties to JSON.
+
+        :returns: serialized form of image properties.
+        """
+
+        serialized = super(PoolImageInfo, self).serialize_to_json()
+        serialized['ssh'] = self.ssh.serialize_to_json()
+
+        return serialized
+
+    @classmethod
+    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'PoolImageInfo':
+        """
+        Unserialize properties from JSON.
+
+        :param serialized: serialized form of image properties.
+        :returns: image info instance.
+        """
+
+        image = cls(**serialized)
+        image.ssh = PoolImageSSHInfo.unserialize_from_json(serialized['ssh'])
+
+        return image
 
     def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
         """

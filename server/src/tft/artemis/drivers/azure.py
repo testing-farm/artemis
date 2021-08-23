@@ -11,8 +11,9 @@ from ..db import GuestRequest, SnapshotRequest
 from ..environment import Environment
 from ..metrics import ResourceType
 from ..script import hook_engine
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs, \
-    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, \
+    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, \
+    run_cli_tool, vm_info_to_ip
 
 AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'Microsoft.Compute/virtualMachines': ResourceType.VIRTUAL_MACHINE,
@@ -83,7 +84,8 @@ class AzureDriver(PoolDriver):
 
         return Ok(PoolImageInfo(
             name=imagename,
-            id=imagename
+            id=imagename,
+            ssh=PoolImageSSHInfo()
         ))
 
     def release_pool_resources(

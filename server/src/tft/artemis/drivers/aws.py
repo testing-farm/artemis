@@ -24,8 +24,8 @@ from ..environment import UNITS, Environment, Flavor, FlavorCpu
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, PoolCapabilities, PoolData, \
-    PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
-    run_cli_tool, test_cli_error
+    PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
+    SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
 
 #
 # Custom typing types
@@ -154,7 +154,7 @@ class AWSPoolImageInfo(PoolImageInfo):
     block_device_mappings: APIBlockDeviceMappingsType
 
     def __repr__(self) -> str:
-        return f'<AWSPoolImageInfo: name={self.name} id={self.id} platform-details={self.platform_details}>'
+        return f'<AWSPoolImageInfo: name={self.name} id={self.id} ssh={repr(self.ssh)} platform-details={self.platform_details}>'  # noqa
 
     def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
         serialized = super(AWSPoolImageInfo, self).serialize_to_json_scrubbed()
@@ -1016,6 +1016,7 @@ class AWSDriver(PoolDriver):
                 AWSPoolImageInfo(
                     name=image['Name'],
                     id=image['ImageId'],
+                    ssh=PoolImageSSHInfo(),
                     platform_details=image['PlatformDetails'],
                     block_device_mappings=image['BlockDeviceMappings']
                 )

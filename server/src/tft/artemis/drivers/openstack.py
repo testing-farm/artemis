@@ -16,8 +16,8 @@ from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, ConsoleUrlData, GuestLogUpdateProgress, PoolCapabilities, PoolData, \
-    PoolDriver, PoolImageInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
-    create_tempfile, run_cli_tool, test_cli_error
+    PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
+    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -860,7 +860,11 @@ class OpenStackDriver(PoolDriver):
 
         try:
             return Ok([
-                PoolImageInfo(name=image['Name'], id=image['ID'])
+                PoolImageInfo(
+                    name=image['Name'],
+                    id=image['ID'],
+                    ssh=PoolImageSSHInfo()
+                )
                 for image in cast(List[Dict[str, str]], r_images.unwrap())
             ])
 
