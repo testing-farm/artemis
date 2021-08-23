@@ -574,6 +574,12 @@ class GuestRequestManager:
             failure_details
         )
 
+        # COMPAT: v0.0.17, v0.0.18: `environment.arch` belongs to `environment.hw.arch`
+        if 'arch' in guest_request.environment:
+            guest_request.environment['hw'] = {
+                'arch': guest_request.environment.pop('arch')
+            }
+
         with self.db.get_session() as session:
             perform_safe_db_change(
                 guest_logger,
