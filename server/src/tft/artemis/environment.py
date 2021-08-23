@@ -160,7 +160,7 @@ class FlavorDisk(SerializableContainer):
         :returns: serialized form of flavor properties.
         """
 
-        serialized = dataclasses.asdict(self)
+        serialized = super(FlavorDisk, self).serialize_to_json()
 
         if self.space is not None:
             serialized['space'] = str(self.space)
@@ -176,7 +176,7 @@ class FlavorDisk(SerializableContainer):
         :returns: disk properties of a flavor.
         """
 
-        disk = cls(**serialized)
+        disk = super(FlavorDisk, cls).unserialize_from_json(serialized)
 
         if disk.space is not None:
             disk.space = UNITS(disk.space)
@@ -238,12 +238,10 @@ class Flavor(SerializableContainer):
         :returns: serialized form of flavor properties.
         """
 
-        serialized = dataclasses.asdict(self)
+        serialized = super(Flavor, self).serialize_to_json()
 
         if self.memory is not None:
             serialized['memory'] = str(self.memory)
-
-        serialized['disk'] = self.disk.serialize_to_json()
 
         return serialized
 
@@ -269,13 +267,10 @@ class Flavor(SerializableContainer):
         :returns: flavor instance.
         """
 
-        flavor = cls(**serialized)
+        flavor = super(Flavor, cls).unserialize_from_json(serialized)
 
         if flavor.memory is not None:
             flavor.memory = UNITS(flavor.memory)
-
-        flavor.cpu = FlavorCpu.unserialize_from_json(serialized['cpu'])
-        flavor.disk = FlavorDisk.unserialize_from_json(serialized['disk'])
 
         return flavor
 

@@ -111,15 +111,40 @@ gluetool_sentry = gluetool.sentry.Sentry()
 
 class SerializableContainer:
     """
-    Mixing class bringing serialize/unserialize methods for dataclass-based containers.
+    Mixin class bringing serialize/unserialize methods for dataclass-based containers.
     """
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super(SerializableContainer, self).__init__(*args, **kwargs)  # type: ignore
+
     def serialize_to_json(self) -> Dict[str, Any]:
-        return dataclasses.asdict(self)
+        serialized = dataclasses.asdict(self)
+
+        for field in dataclasses.fields(self):
+            if not inspect.isclass(field.type):
+                continue
+
+            if not issubclass(field.type, SerializableContainer):
+                continue
+
+            serialized[field.name] = getattr(self, field.name).serialize_to_json()
+
+        return serialized
 
     @classmethod
     def unserialize_from_json(cls: Type[S], serialized: Dict[str, Any]) -> S:
-        return cls(**serialized)  # type: ignore
+        unserialized = cls(**serialized)
+
+        for field in dataclasses.fields(unserialized):
+            if not inspect.isclass(field.type):
+                continue
+
+            if not issubclass(field.type, SerializableContainer):
+                continue
+
+            setattr(unserialized, field.name, field.type.unserialize_from_json(serialized[field.name]))
+
+        return unserialized
 
     def serialize_to_str(self) -> str:
         return json.dumps(self.serialize_to_json())
