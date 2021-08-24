@@ -398,7 +398,8 @@ class OpenStackDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=OpenStackPoolData(instance_id=instance_id),
-            delay_update=r_delay.unwrap()
+            delay_update=r_delay.unwrap(),
+            ssh_info=image.ssh
         ))
 
     def _get_guest_status(

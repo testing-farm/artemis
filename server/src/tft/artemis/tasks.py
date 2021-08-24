@@ -2837,13 +2837,21 @@ def do_update_guest_request(
     for failure in provisioning_progress.pool_failures:
         handle_failure(Error(failure), 'pool encountered failure during update')
 
+    new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
+        'pool_data': provisioning_progress.pool_data.serialize()
+    }
+
+    if provisioning_progress.ssh_info is not None:
+        new_guest_values.update({
+            'ssh_username': provisioning_progress.ssh_info.username,
+            'ssh_port': provisioning_progress.ssh_info.port
+        })
+
     if provisioning_progress.state == ProvisioningState.PENDING:
         workspace.update_guest_state(
             GuestState.PROMISED,
             current_state=GuestState.PROMISED,
-            set_values={
-                'pool_data': provisioning_progress.pool_data.serialize()
-            },
+            set_values=new_guest_values,
             current_pool_data=current_pool_data
         )
 
@@ -2881,13 +2889,12 @@ def do_update_guest_request(
 
     assert provisioning_progress.address
 
+    new_guest_values['address'] = provisioning_progress.address
+
     workspace.update_guest_state(
         GuestState.PREPARING,
         current_state=GuestState.PROMISED,
-        set_values={
-            'address': provisioning_progress.address,
-            'pool_data': provisioning_progress.pool_data.serialize()
-        },
+        set_values=new_guest_values,
         current_pool_data=current_pool_data
     )
 
@@ -2975,13 +2982,22 @@ def do_acquire_guest_request(
     # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
     # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
     # save guest's address. In both cases, we must be sure nobody else did any changes before us.
+
+    new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
+        'pool_data': provisioning_progress.pool_data.serialize()
+    }
+
+    if provisioning_progress.ssh_info is not None:
+        new_guest_values.update({
+            'ssh_username': provisioning_progress.ssh_info.username,
+            'ssh_port': provisioning_progress.ssh_info.port
+        })
+
     if provisioning_progress.state == ProvisioningState.PENDING:
         workspace.update_guest_state(
             GuestState.PROMISED,
             current_state=GuestState.PROVISIONING,
-            set_values={
-                'pool_data': provisioning_progress.pool_data.serialize()
-            }
+            set_values=new_guest_values
         )
 
         workspace.dispatch_task(update_guest_request, guestname, delay=provisioning_progress.delay_update)
@@ -3019,13 +3035,12 @@ def do_acquire_guest_request(
 
     assert provisioning_progress.address
 
+    new_guest_values['address'] = provisioning_progress.address
+
     workspace.update_guest_state(
         GuestState.PREPARING,
         current_state=GuestState.PROVISIONING,
-        set_values={
-            'address': provisioning_progress.address,
-            'pool_data': provisioning_progress.pool_data.serialize()
-        },
+        set_values=new_guest_values,
         address=provisioning_progress.address,
         pool=workspace.gr.poolname,
         pool_data=provisioning_progress.pool_data.serialize()

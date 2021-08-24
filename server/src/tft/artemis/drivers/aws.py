@@ -628,7 +628,8 @@ class AWSDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=AWSPoolData(instance_id=instance_id),
-            delay_update=r_delay.unwrap()
+            delay_update=r_delay.unwrap(),
+            ssh_info=image.ssh
         ))
 
     def _request_spot_instance(
@@ -700,7 +701,8 @@ class AWSDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=AWSPoolData(spot_instance_id=spot_instance_id),
-            delay_update=r_delay.unwrap()
+            delay_update=r_delay.unwrap(),
+            ssh_info=image.ssh
         ))
 
     def _do_update_spot_instance(

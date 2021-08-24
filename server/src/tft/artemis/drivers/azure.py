@@ -519,5 +519,6 @@ class AzureDriver(PoolDriver):
                 instance_name=tags['ArtemisGuestLabel'],
                 resource_group=self.pool_config['resource-group']
             ),
-            delay_update=r_delay.unwrap()
+            delay_update=r_delay.unwrap(),
+            ssh_info=image.ssh
         ))

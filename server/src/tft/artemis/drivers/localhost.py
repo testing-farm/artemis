@@ -8,7 +8,7 @@ from gluetool.result import Ok, Result
 
 from .. import Failure
 from ..db import GuestRequest
-from . import PoolData, PoolDriver, ProvisioningProgress, ProvisioningState
+from . import PoolData, PoolDriver, PoolImageSSHInfo, ProvisioningProgress, ProvisioningState
 
 
 class LocalhostDriver(PoolDriver):
@@ -32,7 +32,8 @@ class LocalhostDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
             pool_data=PoolData(),
-            address='127.0.0.1'
+            address='127.0.0.1',
+            ssh_info=PoolImageSSHInfo()
         ))
 
     def release_guest(
