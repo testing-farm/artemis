@@ -57,11 +57,11 @@ Override Artemis configuration
 Override credentials and hosts of services with ones configured here
 */}}
 {{- define "artemis.psql.username" -}}
-{{- .Values.global.psql.username | default "artemis" -}}
+{{- pluck "username" .Values.global.psql .Values.psql | first | default "artemis" -}}
 {{- end -}}
 
 {{- define "artemis.psql.password" -}}
-{{- .Values.global.psql.password | default "artemis" -}}
+{{- pluck "password" .Values.global.psql .Values.psql | first | default "artemis" -}}
 {{- end -}}
 
 {{- define "artemis.psql.host" -}}
@@ -69,19 +69,19 @@ Override credentials and hosts of services with ones configured here
 {{- end -}}
 
 {{- define "artemis.psql.port" -}}
-{{- .Values.global.psql.port | default 6379 -}}
+{{- pluck "port" .Values.global.psql .Values.psql | first | default 6379 -}}
 {{- end -}}
 
 {{- define "artemis.psql.database" -}}
-{{- .Values.global.psql.database | default "artemis" -}}
+{{- pluck "database" .Values.global.psql .Values.psql | first | default "artemis" -}}
 {{- end -}}
 
 {{- define "postgresql.username" -}}
-{{- include "artemis.psql.username" . -}}
+{{- coalesce .Values.global.psql.username .Values.postgresqlUsername | default "artemis" -}}
 {{- end -}}
 
 {{- define "postgresql.port" -}}
-{{- include "artemis.psql.port" . -}}
+{{- coalesce .Values.global.psql.port .Values.service.port | default 6379 -}}
 {{- end -}}
 
 {{- define "postgresql.secretName" -}}
@@ -93,7 +93,7 @@ Override credentials and hosts of services with ones configured here
 {{- end -}}
 
 {{- define "postgresql.database" -}}
-{{- include "artemis.psql.database" . -}}
+{{- coalesce .Values.global.psql.database .Values.postgresqlDatabase | default "artemis" -}}
 {{- end -}}
 
 {{- define "artemis.rabbitmq.host" -}}
@@ -121,5 +121,7 @@ Override credentials and hosts of services with ones configured here
 {{- end -}}
 
 {{- define "adminer.defaultServer" -}}
-{{- printf "%s:%s" (include "artemis.psql.host" .) (include "artemis.psql.port" .) | trimSuffix ":" -}}
+{{- $host := (include "artemis.psql.host" .) -}}
+{{- $port := (coalesce .Values.global.psql.port .Values.defaultPort | default 6379 | toString) -}}
+{{- printf "%s:%s" $host $port | trimSuffix ":" -}}
 {{- end -}}

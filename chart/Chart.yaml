@@ -3,7 +3,7 @@ description: Chart to configure Artemis and required services - PostgreSQL, Rabb
 name: artemis
 type: application
 version: 0.0.1
-appVersion: 0.0.21
+appVersion: 0.0.23
 home: https://testing-farm.gitlab.io/artemis/
 sources:
   - https://gitlab.com/testing-farm/artemis

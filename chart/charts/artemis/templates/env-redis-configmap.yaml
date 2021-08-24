@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ template "artemis.fullname" . }}-env-redis
-  namespace: {{ .Release.Namespace }}
-data:
-  REDIS_HOSTNAME: {{ template "artemis.redis.host" . }}
-  REDIS_PORT: {{ include "artemis.redis.port" . | quote }}

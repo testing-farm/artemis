@@ -4,11 +4,12 @@ global:
     password: ""
     host: ""
     port: ""
+    database: ""
 
-image: quay.io/testing-farm/artemis:v0.0.22
-  #registry: quay.io
-  #repository: testing-farm/artemis
-  #tag: "v0.0.21"
+image:
+  registry: quay.io
+  repository: testing-farm/artemis
+  tag: "v0.0.23"
 
 psql:
   username: ""
@@ -39,23 +40,32 @@ configuration:
 vaultPassword: ""
 
 api:
+  replicaCount: 1
   port: 8001
   processes: 1
   threads: 1
+  resources: {}
 
-dispatcher: {}
+dispatcher:
+  replicaCount: 1
+  resources: {}
 
-scheduler: {}
+scheduler:
+  replicaCount: 1
+  resources: {}
 
 worker:
+  replicaCount: 1
   processes: 1
   threads: 1
+  resources: {}
 
 periodic_worker:
-  enabled: true
-
+  replicaCount: 1
+  enabled: false
   processes: 1
   threads: 1
+  resources: {}
 
 actor:
   route:
@@ -93,5 +103,5 @@ kerberos:
     tag: "latest"
 
 sentry:
-  dns: ""
+  dsn: ""
   baseUrl: ""

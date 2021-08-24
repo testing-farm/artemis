@@ -1,16 +1,18 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ template "artemis.api.fullname" . }}
+  name: {{ template "artemis.fullname" . }}-api
   labels:
+    {{- include "adminer.labels" . | nindent 4 }}
     app.kubernetes.io/app: {{ template "artemis.fullname" . }}
     app.kubernetes.io/component: api
 spec:
   type: ClusterIP
+  ports:
+  - name: {{ template "artemis.fullname" . }}-api
+    port: {{ .Values.api.port | default 8001 }}
+    targetPort: artemis-api
   selector:
+    {{- include "adminer.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/app: {{ template "artemis.fullname" . }}
     app.kubernetes.io/component: api
-  ports:
-  - name: {{ template "artemis.api.fullname" . }}
-    port: {{ template "artemis.api.port" . }}
-    targetPort: artemis-api

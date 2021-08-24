@@ -1,15 +1,22 @@
 global:
   imagePullSecrets: []
 
-image: quay.io/testing-farm/adminer:4.8.0
+image:
+  registry: docker.io
+  repository: adminer
+  tag: 4.8.0
+  pullPolicy: IfNotPresent
 
-imagePullPolicy: IfNotPresent
 imagePullSecrets: []
 
-servicePort: 80
+servicePort: 8080
 
 ## Default SQL server
 defaultHost: ""
 defaultPort: ""
+
+extraEnv: []
+
+resources: {}
 
 nodeSelector: {}

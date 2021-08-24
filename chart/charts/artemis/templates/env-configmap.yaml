@@ -2,13 +2,17 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ template "artemis.fullname" . }}-env
+  labels:
+    {{- include "adminer.labels" . | nindent 4 }}
   namespace: {{ .Release.Namespace }}
 data:
   ARTEMIS_BROKER_URL: amqp://{{ template "artemis.rabbitmq.username" . }}:{{ template "artemis.rabbitmq.password" . }}@{{ template "artemis.rabbitmq.host" . }}:{{ template "artemis.rabbitmq.port" . }}
   {{- if .Values.brokerHeartbeatTimeout }}
   ARTEMIS_BROKER_HEARTBEAT_TIMEOUT: {{ .Values.brokerHeartbeatTimeout }}
   {{- end }}
+  {{- if (include "artemis.redis.enabled" .) }}
   ARTEMIS_CACHE_URL: redis://{{ template "artemis.redis.host" . }}:{{ template "artemis.redis.port" . }}
+  {{- end }}
   ARTEMIS_DB_URL: postgresql://{{ template "artemis.psql.username" . }}:{{ template "artemis.psql.password" . }}@{{ template "artemis.psql.host" . }}:{{ template "artemis.psql.port" . }}/{{ template "artemis.psql.database" . }}
   {{- if .Values.db.poolSize }}
   ARTEMIS_DB_POOL_SIZE: {{ .Values.db.poolSize | quote }}

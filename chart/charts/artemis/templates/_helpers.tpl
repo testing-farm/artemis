@@ -25,25 +25,31 @@ If release name contains chart name it will be used as a full name.
 {{- end }}
 
 {{/*
-Define templates for component names
+Create chart name and version as used by the chart label.
 */}}
-{{- define "artemis.api.name" -}}
-{{- $name := (include "artemis.name" .) }}
-{{- printf "%s-api" $name | trunc 63 | trimSuffix "-" }}
-{{- end -}}
+{{- define "artemis.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
 
-{{- define "artemis.api.fullname" -}}
-{{- $fullname := (include "artemis.fullname" .) }}
-{{- printf "%s-api" $fullname | trunc 63 | trimSuffix "-" }}
-{{- end -}}
+{{/*
+Common labels
+*/}}
+{{- define "artemis.labels" -}}
+helm.sh/chart: {{ include "artemis.chart" . }}
+{{ include "artemis.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
 
-{{- define "artemis.api.host" -}}
-{{- printf "%s.%s.svc" (include "artemis.api.fullname" .) .Release.Namespace -}}
-{{- end -}}
-
-{{- define "artemis.api.port" -}}
-{{- .Values.api.port | default 8001 -}}
-{{- end -}}
+{{/*
+Selector labels
+*/}}
+{{- define "artemis.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "artemis.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
 
 {{- define "artemis.configDirMountPath" -}}
 {{- printf "/etc/artemis" -}}
@@ -54,23 +60,22 @@ Define templates for component names
 {{- end -}}
 
 {{- define "artemis.image" -}}
-{{- .Values.image -}}
+{{- $global := (pluck "global" .Values | first) -}}
+{{- $registryName := coalesce (pluck "imageRegistry" $global | first) .Values.image.registry -}}
+{{- $repositoryName := .Values.image.repository -}}
+{{- $tag := .Values.image.tag | toString -}}
+{{- printf "%s/%s:%s" $registryName $repositoryName $tag -}}
 {{- end -}}
 
 {{- define "artemis.useExistingConfigMap" -}}
-{{/* Probably can be done more elegantly */}}
-{{- if .Values.existingConfigMap -}}
-  {{- true -}}
-{{- else -}}
-  {{- false -}}
-{{- end -}}
+{{- ternary true false .Values.existingConfigMap -}}
 {{- end -}}
 
 {{- define "artemis.configMapName" -}}
 {{- if .Values.existingConfigMap -}}
-  {{- .Values.existingConfigMap -}}
+{{-   .Values.existingConfigMap -}}
 {{- else -}}
-  {{- printf "%s-config" (include "artemis.fullname" .) -}}
+{{-   printf "%s-config" (include "artemis.fullname" .) -}}
 {{- end -}}
 {{- end -}}
 
@@ -82,9 +87,70 @@ Define templates for component names
 Kerberos
 */}}
 {{- define "artemis.kerberos.image" -}}
-{{- .Values.kerberos.image -}}
+{{- $global := (pluck "global" .Values | first) -}}
+{{- $registryName := coalesce (pluck "imageRegistry" $global | first) .Values.kerberos.image.registry -}}
+{{- $repositoryName := .Values.kerberos.image.repository -}}
+{{- $tag := .Values.kerberos.image.tag | toString -}}
+{{- printf "%s/%s:%s" $registryName $repositoryName $tag -}}
 {{- end -}}
 
 {{- define "artemis.kerberos.ccacheDir" -}}
 {{- printf "/tmp/krb5cc" -}}
+{{- end -}}
+
+{{/*
+PostgreSQL config
+*/}}
+{{- define "artemis.psql.username" -}}
+{{- .Values.psql.username | default "artemis" -}}
+{{- end -}}
+
+{{- define "artemis.psql.password" -}}
+{{- .Values.psql.password | default "artemis" -}}
+{{- end -}}
+
+{{- define "artemis.psql.database" -}}
+{{- .Values.psql.database | default "artemis" -}}
+{{- end -}}
+
+{{- define "artemis.psql.host" -}}
+{{- .Values.psql.host | default "127.0.0.1" -}}
+{{- end -}}
+
+{{- define "artemis.psql.port" -}}
+{{- .Values.psql.port | default 6379 -}}
+{{- end -}}
+
+{{/*
+RabbitMQ config
+*/}}
+{{- define "artemis.rabbitmq.username" -}}
+{{- .Values.rabbitmq.username | default "artemis" -}}
+{{- end -}}
+
+{{- define "artemis.rabbitmq.password" -}}
+{{- .Values.rabbitmq.password | default "artemis" -}}
+{{- end -}}
+
+{{- define "artemis.rabbitmq.host" -}}
+{{- .Values.rabbitmq.host | default "127.0.0.1" -}}
+{{- end -}}
+
+{{- define "artemis.rabbitmq.port" -}}
+{{- .Values.rabbitmq.port | default 6379 -}}
+{{- end -}}
+
+{{/*
+Redis config
+*/}}
+{{- define "artemis.redis.enabled" -}}
+{{- default false .Values.redis.enabled -}}
+{{- end -}}
+
+{{- define "artemis.redis.host" -}}
+{{- .Values.redis.host | default "127.0.0.1" -}}
+{{- end -}}
+
+{{- define "artemis.redis.port" -}}
+{{- .Values.redis.port | default 6379 -}}
 {{- end -}}

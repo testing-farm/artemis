@@ -62,5 +62,5 @@ Create the name of the service account to use
 {{- end }}
 
 {{- define "adminer.defaultServer" }}
-{{- printf "%s:%s" .Values.defaultHost .Values.defaultPort | trimSuffix ":" -}}
+{{- printf "%s:%s" .Values.defaultHost (.Values.defaultPort | toString) | trimSuffix ":" -}}
 {{- end }}

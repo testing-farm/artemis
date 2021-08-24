@@ -6,4 +6,11 @@ version: 0.0.1
 appVersion: "4.8.0"
 home: https://www.adminer.org/
 sources:
-  - https://github.com/vrana/adminer/
+- https://github.com/vrana/adminer/
+- https://github.com/TimWolla/docker-adminer
+dependencies:
+- name: common
+  repository: https://charts.bitnami.com/bitnami
+  tags:
+  - bitnami-common
+  version: 1.x.x
