@@ -765,7 +765,6 @@ def task_core(
     # Updating context - this function is the entry point into Artemis code, therefore context
     # is probably left empty or with absolutely wrong objects.
 
-    # TODO: once we get nicer method, set context explicitly here
     LOGGER.set(logger)
     DATABASE.set(db)
     CURRENT_MESSAGE.set(dramatiq.middleware.current_message.CurrentMessage.get_current_message())

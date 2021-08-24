@@ -883,7 +883,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        # TODO logs: add a list of supported logs to capabilities
         # cannot provide guest log: functionality not supported for this cloud driver
         return Ok(GuestLogUpdateProgress(
             state=GuestLogState.ERROR

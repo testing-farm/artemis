@@ -2323,7 +2323,6 @@ def run_app() -> molten.app.App:
         MetricsComponent(metrics_tree)
     ]
 
-# TODO: uncomment when registration is done
     mw: List[Middleware] = [
         # middleware.AuthorizationMiddleware,
         ResponseRendererMiddleware(),
