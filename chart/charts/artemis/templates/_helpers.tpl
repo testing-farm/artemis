@@ -51,10 +51,6 @@ app.kubernetes.io/name: {{ include "artemis.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
-{{- define "artemis.configDirMountPath" -}}
-{{- printf "/etc/artemis" -}}
-{{- end -}}
-
 {{- define "artemis.vaultPassPath" -}}
 {{- printf "%s/%s" (include "artemis.configDirMountPath" .) ".vault_pass" -}}
 {{- end -}}
@@ -67,16 +63,24 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s/%s:%s" $registryName $repositoryName $tag -}}
 {{- end -}}
 
-{{- define "artemis.useExistingConfigMap" -}}
+{{- define "artemis.config.useExistingConfigMap" -}}
 {{- ternary true false .Values.existingConfigMap -}}
 {{- end -}}
 
-{{- define "artemis.configMapName" -}}
+{{- define "artemis.config.configMapName" -}}
 {{- if .Values.existingConfigMap -}}
 {{-   .Values.existingConfigMap -}}
 {{- else -}}
 {{-   printf "%s-config" (include "artemis.fullname" .) -}}
 {{- end -}}
+{{- end -}}
+
+{{- define "artemis.config.checksum" -}}
+{{- include (print $.Template.BasePath "/config-configmap.yaml") $ | sha256sum -}}
+{{- end -}}
+
+{{- define "artemis.config.mountPath" -}}
+{{- printf "/etc/artemis" -}}
 {{- end -}}
 
 {{- define "artemis.dbSchemaRevision" -}}
@@ -95,7 +99,7 @@ Kerberos
 {{- end -}}
 
 {{- define "artemis.kerberos.ccacheDir" -}}
-{{- printf "/tmp/krb5cc" -}}
+{{- printf "/dev/shm/ccache" -}}
 {{- end -}}
 
 {{/*

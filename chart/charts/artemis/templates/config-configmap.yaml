@@ -1,4 +1,4 @@
-{{- if not (include "artemis.useExistingConfigMap" .) }}
+{{- if not (include "artemis.config.useExistingConfigMap" .) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

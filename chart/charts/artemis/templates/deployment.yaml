@@ -17,18 +17,17 @@
 {{- $_ := set $scheduler "component" "scheduler" }}
 {{- $_ := set $scheduler "entrypointArgs" (list "scheduler") }}
 {{- $_ := set $scheduler "kerberos" false }}
-{{- $worker := deepCopy .Values.worker }}
-{{- $_ := set $worker "enabled" true }}
-{{- $_ := set $worker "component" "worker" }}
-{{- $_ := set $worker "entrypointArgs" (list "worker") }}
-{{- $_ := set $worker "kerberos" .Values.kerberos.enabled }}
-{{- $periodic_worker := deepCopy .Values.periodic_worker }}
-{{- $_ := set $periodic_worker "component" "periodic-worker" }}
-{{- $_ := set $periodic_worker "entrypointArgs" (list "worker") }}
-{{- $_ := set $periodic_worker "kerberos" false }}
-{{- $_ := set $periodic_worker "kerberos" .Values.kerberos.enabled }}
+{{- $worker_common := dict "enabled" true "component" "worker" "entrypointArgs" (list "worker") "kerberos" .Values.kerberos.enabled }}
+{{- $workers := dict "list" list }}
+{{- range .Values.workers }}
+{{-   $worker := deepCopy . | merge (deepCopy $worker_common) }}
+{{-   if .name }}
+{{-     $_ := set $worker "component" (printf "worker-%s" .name) }}
+{{-   end }}
+{{-   $_ := append $workers.list $worker | set $workers "list" }}
+{{- end }}
 
-{{- range tuple $api $dispatcher $scheduler $worker $periodic_worker }}
+{{- range concat (tuple $api $dispatcher $scheduler) $workers.list }}
 {{- if .enabled }}
 ---
 apiVersion: apps/v1
@@ -56,13 +55,13 @@ spec:
         app.kubernetes.io/app: {{ template "artemis.fullname" $ }}
         app.kubernetes.io/component: {{ .component }}
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/config-configmap.yaml") $ | sha256sum }}
+        checksum/config: {{ template "artemis.config.checksum" $ }}
         checksum/env: {{ include (print $.Template.BasePath "/env-configmap.yaml") $ | sha256sum }}
     spec:
       volumes:
       - name: artemis-config
         configMap:
-          name: {{ template "artemis.configMapName" $ }}
+          name: {{ template "artemis.config.configMapName" $ }}
       {{- if .kerberos }}
       - name: kerberos
         emptyDir:
@@ -101,6 +100,7 @@ spec:
           value: {{ template "artemis.rabbitmq.host" $ }}
         - name: RABBITMQ_PORT
           value: {{ include "artemis.rabbitmq.port" $ | quote }}
+      {{- if (include "artemis.redis.enabled" $) }}
       - name: wait-for-redis
         image: {{ template "artemis.image" $ }}
         imagePullPolicy: {{ default "" $.Values.imagePullPolicy | quote }}
@@ -115,6 +115,7 @@ spec:
           value: {{ template "artemis.redis.host" $ }}
         - name: REDIS_PORT
           value: {{ include "artemis.redis.port" $ | quote }}
+      {{- end }}
       containers:
       - name: {{ template "artemis.fullname" $ }}-{{ .component }}
         image: {{ template "artemis.image" $ }}
@@ -129,12 +130,32 @@ spec:
           value: {{ template "artemis.fullname" $ }}
         - name: ARTEMIS_COMPONENT
           value: {{ .component }}
+        {{- if .processes }}
+        - name: ARTEMIS_API_PROCESSES
+          value: {{ .processes | quote }}
+        - name: ARTEMIS_WORKER_PROCESSES
+          value: {{ .processes | quote }}
+        {{- end }}
+        {{- if .threads }}
+        - name: ARTEMIS_API_THREADS
+          value: {{ .threads | quote }}
+        - name: ARTEMIS_WORKER_THREADS
+          value: {{ .threads | quote }}
+        {{- end }}
+        {{- if .queues }}
+        - name: ARTEMIS_WORKER_QUEUES
+          value: {{ .queues | quote }}
+        {{- end }}
+        {{- if .kerberos }}
+        - name: KRB_CCACHE
+          value: {{ template "artemis.kerberos.ccacheDir" $ }}
+        {{- end }}
         envFrom:
         - configMapRef:
             name: {{ template "artemis.fullname" $ }}-env
         volumeMounts:
         - name: artemis-config
-          mountPath: {{ template "artemis.configDirMountPath" $ }}
+          mountPath: {{ template "artemis.config.mountPath" $ }}
         {{- if .ports }}
         ports:
         {{- range .ports }}

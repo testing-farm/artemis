@@ -21,13 +21,21 @@ artemis:
   api:
     processes: 2
     threads: 4
-  worker:
-    processes: 2
+  workers:
+  - processes: 2
     threads: 4
-  periodic_worker:
-    enabled: true
+  - name: periodic
     processes: 2
     threads: 2
+    queues: "periodic pool-data-refresh"
+
+  logging:
+    method: stdout
+    level: info
+    json: true
+    dbPool: false
+    dbSlowQueries: false
+    dbSlowQueryThreshold: 10
 
   kerberos:
     enabled: false

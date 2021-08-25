@@ -21,7 +21,7 @@ spec:
       volumes:
       - name: artemis-config
         configMap:
-          name: {{ template "artemis.configMapName" . }}
+          name: {{ template "artemis.config.configMapName" . }}
       initContainers:
       - name: wait-for-postgres
         image: {{ template "artemis.image" . }}
@@ -29,6 +29,10 @@ spec:
         command:
         - /wait-for-postgres.sh
         env:
+        - name: ARTEMIS_DEPLOYMENT
+          value: {{ template "artemis.fullname" $ }}
+        - name: ARTEMIS_COMPONENT
+          value: initdb.wait-for-postgres
         - name: POSTGRESQL_USER
           value: {{ template "artemis.psql.username" . }}
         - name: POSTGRESQL_PASSWORD
@@ -45,9 +49,14 @@ spec:
         - initdb
         command:
         - /entrypoint.sh
+        env:
+        - name: ARTEMIS_DEPLOYMENT
+          value: {{ template "artemis.fullname" $ }}
+        - name: ARTEMIS_COMPONENT
+          value: initdb
         envFrom:
         - configMapRef:
-            name: {{ template "artemis.fullname" . }}-env
+            name: {{ template "artemis.fullname" $ }}-env
         volumeMounts:
         - name: artemis-config
-          mountPath: {{ template "artemis.configDirMountPath" . }}
+          mountPath: {{ template "artemis.config.mountPath" . }}

@@ -45,11 +45,11 @@ Override full names of upstream charts for deterministic host names
 {{/*
 Override Artemis configuration
 */}}
-{{- define "artemis.useExistingConfigMap" -}}
+{{- define "artemis.config.useExistingConfigMap" -}}
 {{- true -}}
 {{- end -}}
 
-{{- define "artemis.configMapName" -}}
+{{- define "artemis.config.configMapName" -}}
 {{- printf "%s-config" (include "fullname" .) -}}
 {{- end -}}
 
@@ -65,7 +65,7 @@ Override credentials and hosts of services with ones configured here
 {{- end -}}
 
 {{- define "artemis.psql.host" -}}
-{{- printf "%s.%s.svc" (include "postgresql.fullname" .) .Release.Namespace -}}
+{{- coalesce (pluck "host" .Values.global.psql .Values.psql | first) (printf "%s.%s.svc" (include "postgresql.fullname" .) .Release.Namespace) -}}
 {{- end -}}
 
 {{- define "artemis.psql.port" -}}
@@ -121,7 +121,7 @@ Override credentials and hosts of services with ones configured here
 {{- end -}}
 
 {{- define "adminer.defaultServer" -}}
-{{- $host := (include "artemis.psql.host" .) -}}
-{{- $port := (coalesce .Values.global.psql.port .Values.defaultPort | default 6379 | toString) -}}
+{{- $host := coalesce .Values.global.psql.host .Values.defaultHost (printf "%s.%s.svc" (include "postgresql.fullname" .) .Release.Namespace) -}}
+{{- $port := (coalesce .Values.global.psql.port .Values.defaultPort | toString) -}}
 {{- printf "%s:%s" $host $port | trimSuffix ":" -}}
 {{- end -}}

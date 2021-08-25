@@ -54,17 +54,11 @@ scheduler:
   replicaCount: 1
   resources: {}
 
-worker:
-  replicaCount: 1
+workers:
+- replicaCount: 1
   processes: 1
   threads: 1
-  resources: {}
-
-periodic_worker:
-  replicaCount: 1
-  enabled: false
-  processes: 1
-  threads: 1
+  queues: ""
   resources: {}
 
 actor:
@@ -78,23 +72,25 @@ actor:
     guestRequestRetries: ""
     guestRequestMaxBackoff: ""
 
-closeAfterDispatch: "no"
+connectionCloseAfterDispatch: false
 
 db:
   poolSize: 20
   poolMaxOverflow: 10
 
 logging:
-  method: stdout
-  level: info
-  json: yes
+  method: ""
+  level: ""
+  json: ""
   logDir: ""
-  dbPool: no
-  dbSlowQueries: no
+  dbPool: ""
+  dbSlowQueries: ""
   dbSlowQueryThreshold: ""
-  slowCliCommands: no
+  slowCliCommands: ""
   slowCliCommandPattern: ".*"
   slowCliCommandThreshold: ""
+  promtailOptions: ""
+  promtailUseCustomConfig: false
 
 kerberos:
   image:

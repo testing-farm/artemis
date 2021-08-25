@@ -6,100 +6,80 @@ metadata:
     {{- include "adminer.labels" . | nindent 4 }}
   namespace: {{ .Release.Namespace }}
 data:
-  ARTEMIS_BROKER_URL: amqp://{{ template "artemis.rabbitmq.username" . }}:{{ template "artemis.rabbitmq.password" . }}@{{ template "artemis.rabbitmq.host" . }}:{{ template "artemis.rabbitmq.port" . }}
-  {{- if .Values.brokerHeartbeatTimeout }}
-  ARTEMIS_BROKER_HEARTBEAT_TIMEOUT: {{ .Values.brokerHeartbeatTimeout }}
+  ARTEMIS_BROKER_URL: amqp://{{ template "artemis.rabbitmq.username" $ }}:{{ template "artemis.rabbitmq.password" $ }}@{{ template "artemis.rabbitmq.host" $ }}:{{ template "artemis.rabbitmq.port" $ }}
+  {{- if $.Values.brokerHeartbeatTimeout }}
+  ARTEMIS_BROKER_HEARTBEAT_TIMEOUT: {{ $.Values.brokerHeartbeatTimeout }}
   {{- end }}
-  {{- if (include "artemis.redis.enabled" .) }}
-  ARTEMIS_CACHE_URL: redis://{{ template "artemis.redis.host" . }}:{{ template "artemis.redis.port" . }}
+  {{- if (include "artemis.redis.enabled" $) }}
+  ARTEMIS_CACHE_URL: redis://{{ template "artemis.redis.host" $ }}:{{ template "artemis.redis.port" $ }}
   {{- end }}
-  ARTEMIS_DB_URL: postgresql://{{ template "artemis.psql.username" . }}:{{ template "artemis.psql.password" . }}@{{ template "artemis.psql.host" . }}:{{ template "artemis.psql.port" . }}/{{ template "artemis.psql.database" . }}
-  {{- if .Values.db.poolSize }}
-  ARTEMIS_DB_POOL_SIZE: {{ .Values.db.poolSize | quote }}
-  {{- end }}
-  {{- if .Values.db.poolMaxOverflow }}
-  ARTEMIS_DB_POOL_MAX_OVERFLOW: {{ .Values.db.poolMaxOverflow | quote }}
-  {{- end }}
-  ARTEMIS_CONFIG_DIR: {{ template "artemis.configDirMountPath" . }}
-  {{- if .Values.vaultPass }}
-  ARTEMIS_VAULT_PASSWORD:  {{ .Values.vaultPassword }}
+  ARTEMIS_DB_URL: postgresql://{{ template "artemis.psql.username" $ }}:{{ template "artemis.psql.password" $ }}@{{ template "artemis.psql.host" $ }}:{{ template "artemis.psql.port" $ }}/{{ template "artemis.psql.database" $ }}
+  ARTEMIS_CONFIG_DIR: {{ template "artemis.config.mountPath" . }}
+  {{- if $.Values.vaultPass }}
+  ARTEMIS_VAULT_PASSWORD: {{ $.Values.vaultPassword }}
   {{- else }}
-  ARTEMIS_VAULT_PASSWORD_FILE: {{ template "artemis.configDirMountPath" . }}/.vault_pass
+  ARTEMIS_VAULT_PASSWORD_FILE: {{ template "artemis.config.mountPath" . }}/.vault_pass
   {{- end }}
-
-  {{- if .Values.logging.logDir }}
-  ARTEMIS_LOG_DIR: ""
+  {{- if $.Values.logging.logDir }}
+  ARTEMIS_LOG_DIR: {{ $.Values.logging.logDir }}
   {{- end }}
-  {{- if .Values.logging.json }}
-  ARTEMIS_LOG_JSON: {{ .Values.logging.json | quote }}
+  {{- if $.Values.logging.json }}
+  ARTEMIS_LOG_JSON: {{ $.Values.logging.json  | quote }}
   {{- end }}
-  {{- if .Values.logging.dbPool }}
-  ARTEMIS_LOG_DB_POOL: {{ .Values.logging.dbPool }}
+  {{- if $.Values.logging.dbPool }}
+  ARTEMIS_LOG_DB_POOL: {{ $.Values.logging.dbPool  | quote }}
   {{- end }}
-  {{- if .Values.logging.dbSlowQueries }}
-  ARTEMIS_LOG_DB_SLOW_QUERIES: {{ .Values.logging.dbSlowQueries }}
+  {{- if $.Values.logging.dbSlowQueries }}
+  ARTEMIS_LOG_DB_SLOW_QUERIES: {{ $.Values.logging.dbSlowQueries  | quote }}
   {{- end }}
-  {{- if .Values.logging.dbSlowQueryThreshold }}
-  ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD: {{ .Values.logging.dbSlowQueryThreshold }}
+  {{- if $.Values.logging.dbSlowQueryThreshold }}
+  ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD: {{ $.Values.logging.dbSlowQueryThreshold  | quote }}
   {{- end }}
-  {{- if .Values.logging.slowCliCommands }}
-  ARTEMIS_LOG_SLOW_CLI_COMMANDS: {{ .Values.logging.slowCliCommands }}
+  {{- if $.Values.logging.slowCliCommands }}
+  ARTEMIS_LOG_SLOW_CLI_COMMANDS: {{ $.Values.logging.slowCliCommands }}
   {{- end }}
-  {{- if .Values.logging.slowCliCommandPattern }}
-  ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN: {{ .Values.logging.slowCliCommandPattern }}
+  {{- if $.Values.logging.slowCliCommandPattern }}
+  ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN: {{ $.Values.logging.slowCliCommandPattern }}
   {{- end }}
-  {{- if .Values.logging.slowCliCommandThreshold }}
-  ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD: {{ .Values.logging.slowCliCommandThreshold }}
+  {{- if $.Values.logging.slowCliCommandThreshold }}
+  ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD: {{ $.Values.logging.slowCliCommandThreshold | quote }}
   {{- end }}
-
-  ARTEMIS_API_PROCESSES: {{ .Values.api.processes | quote }}
-  ARTEMIS_API_THREADS: {{ .Values.api.threads | quote }}
-  {{/*
-  ARTEMIS_API_ENABLE_PROFILING: ""
-  ARTEMIS_API_ENGINE_DEBUG: ""
-  ARTEMIS_API_ENGINE_RELOAD_ON_CHANGE: ""
-  ARTEMIS_API_PROFILING_LIMIT: ""
-  ARTEMIS_API_ENABLE_AUTHENTICATION: ""
-  ARTEMIS_API_ENABLE_AUTHORIZATION: ""
-  */}}
-
-  ARTEMIS_WORKER_PROCESSES: {{ .Values.worker.processes | quote }}
-  ARTEMIS_WORKER_THREADS: {{ .Values.worker.threads | quote }}
-
-  {{/*
-  ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_RETRIES: ""
-  ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_MAX_BACKOFF: ""
-  ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_RETRIES: ""
-  ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_MAX_BACKOFF: ""
-  ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_RETRIES: ""
-  ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_MAX_BACKOFF: ""
-  ARTEMIS_CLOSE_AFTER_DISPATCH: ""
-  ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD: ""
-  */}}
-
-  {{/*
-  ARTEMIS_HOOK_ROUTE: ""
-  ARTEMIS_ROUTE_REQUEST_MAX_TIME: ""
-  ARTEMIS_ROUTE_POOL_FORGIVING_TIME: ""
-  ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD: ""
-  */}}
-  {{/* TODO: loop to allow for a list of values to construct the envvars */}}
-  ARTEMIS_ROUTE_POOL_ENABLED_...: ""
-
-  {{/*
-  ARTEMIS_ACTOR_DEFAULT_RETRIES: ""
-  ARTEMIS_ACTOR_DEFAULT_MIN_BACKOFF: ""
-  ARTEMIS_ACTOR_DEFAULT_MAX_BACKOFF: ""
-  ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD: ""
-  ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY: ""
-  */}}
-  {{/* TODO: per pool config of actor values - ARTEMIS_ACTOR_POOLNAME_{RETRIES,MIN_BACKOFF,MAX_BACKOFF} */}}
-  {{/* TODO: ARTEMIS_ACTOR_*_QUEUE */}}
-  {{/* TODO: ARTEMIS_ACTOR_*_PRIORITY */}}
-
-  {{/* TODO: driver options */}}
-
-  ARTEMIS_CONTAINER_LOG_METHOD: {{ .Values.logging.method }}
-
-  SENTRY_DNS: ""
-  SENTRY_BASE_URL: ""
+  {{- if $.Values.logging.method }}
+  ARTEMIS_CONTAINER_LOG_METHOD: {{ $.Values.logging.method }}
+  {{- end }}
+  {{- if $.Values.logging.promtailUseCustomConfig }}
+  ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH: {{ template "artemis.config.mountPath" $ }}/promtail.yaml
+  {{- end }}
+  {{- if $.Values.logging.promtailOptions }}
+  ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS: {{ $.Values.logging.promtailOptions }}
+  {{- end }}
+  ARTEMIS_HOOK_ROUTE: {{ template "artemis.config.mountPath" $ }}/ARTEMIS_HOOK_ROUTE.py
+  ARTEMIS_CLOSE_AFTER_DISPATCH: {{ ternary true false $.Values.connectionCloseAfterDispatch | quote }}
+  {{- if $.Values.actor.route.guestRequestRetries }}
+  ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_RETRIES: {{ $.Values.actor.route.guestRequestRetries }}
+  {{- end }}
+  {{- if $.Values.actor.route.guestRequestMaxBackoff }}
+  ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_MAX_BACKOFF: {{ $.Values.actor.route.guestRequestMaxBackoff }}
+  {{- end }}
+  {{- if $.Values.actor.prepare.verifySSHRetries }}
+  ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_RETRIES: {{ $.Values.actor.prepare.verifySSHRetries }}
+  {{- end }}
+  {{- if $.Values.actor.prepare.verifySSHMaxBackoff }}
+  ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_MAX_BACKOFF: {{ $.Values.actor.prepare.verifySSHMaxBackoff }}
+  {{- end }}
+  {{- if $.Values.actor.acquire.guestRequestRetries }}
+  ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_RETRIES: {{ $.Values.actor.acquire.guestRequestRetries }}
+  {{- end }}
+  {{- if $.Values.actor.acquire.guestRequestMaxBackoff }}
+  ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_MAX_BACKOFF: {{ $.Values.actor.acquire.guestRequestMaxBackoff }}
+  {{- end }}
+  #ARTEMIS_ACTOR_UPDATE_GUEST_REQUEST_TICK_beaker: ""
+  {{- if $.Values.routePoolResourceThreshold }}
+  ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD: {{ $.Values.routePoolResourceThreshold }}
+  {{- end }}
+  {{- if $.Values.sentry.dsn }}
+  SENTRY_DSN: {{ $.Values.sentry.dsn }}
+  {{- end }}
+  {{- if $.Values.sentry.baseUrl }}
+  SENTRY_BASE_URL: {{ $.Values.sentry.baseUrl }}
+  {{- end }}
