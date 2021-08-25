@@ -1,18 +1,24 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import collections
-
 import gluetool
 from gluetool.log import log_dict
 
+
+# Type annotations
+from typing import Any, Callable, Dict, List, Optional, NamedTuple, Tuple  # noqa
 
 #: Represents an event handler, with its arguments
 #:
 #: :ivar callable callback: function to call to handle the event.
 #: :ivar tuple args: additional positional arguments.
 #: :ivar dict kwargs: additional keyword arguments.
-EventHandler = collections.namedtuple('EventHandler', ('callback', 'args', 'kwargs'))
+EventCallback = Callable[..., None]
+EventHandler = NamedTuple('EventHandler', (
+        ('callback', EventCallback),
+        ('args', Tuple[Any, ...]),
+        ('kwargs', Dict[Any, Any])
+    ))
 
 
 class Events(gluetool.Module):
@@ -65,14 +71,16 @@ class Events(gluetool.Module):
         }
     }
 
-    shared_functions = ('trigger_event', 'register_event_handler', 'unregister_event_handler')
+    shared_functions = ['trigger_event', 'register_event_handler', 'unregister_event_handler']
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
         super(Events, self).__init__(*args, **kwargs)
 
-        self._handlers = {}
+        self._handlers = {}  # type: Dict[str, List[EventHandler]]
 
     def register_event_handler(self, event, callback, *args, **kwargs):
+        # type: (str, EventCallback, *Any, **Any) -> None
         """
         Register an event handler.
 
@@ -102,6 +110,7 @@ class Events(gluetool.Module):
         self._handlers[event].append(handler)
 
     def unregister_event_handler(self, event, callback):
+        # type: (str, EventCallback) -> None
         """
         Unregister a previosly registered event handler.
 
@@ -119,6 +128,7 @@ class Events(gluetool.Module):
         ]
 
     def _dispatch_handlers(self, event, *args, **kwargs):
+        # type: (str, *Any, **Any) -> None
         """
         Dispatch all handlers registered for an event.
 
@@ -141,6 +151,7 @@ class Events(gluetool.Module):
             handler.callback(event, *final_args, **final_kwargs)
 
     def trigger_event(self, event, *args, **kwargs):
+        # type: (str, *Any, **Any) -> None
         """
         Trigger the event. Results in dispatching of all handlers registered for an event.
 
@@ -154,6 +165,7 @@ class Events(gluetool.Module):
         self._dispatch_handlers(event, *args, **kwargs)
 
     def execute(self):
+        # type: () -> None
         if not self.option('handler-map'):
             return
 
@@ -167,6 +179,7 @@ class Events(gluetool.Module):
                     # Dummy, one-purpose callback that just passes commands from a map down to the shared
                     # function of execute-command module. Event arguments are passed as an extra context.
                     def _callback(triggered_event, commands=None, **kwargs):
+                        # type: (Any, Optional[List[str]], **Any) -> None
                         self.require_shared('execute_commands')
 
                         self.shared('execute_commands', commands, context_extra=kwargs)
