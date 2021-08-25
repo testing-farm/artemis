@@ -603,6 +603,9 @@ class ArtemisGuest(NetworkedGuest):
 
     def destroy(self):
         # type: () -> None
+        if self._module.option('keep'):
+            self.warn("keeping guest provisioned as requested")
+            return
 
         self.info('destroying guest')
 
@@ -1013,10 +1016,5 @@ class ArtemisProvisioner(gluetool.Module):
 
     def destroy(self, failure=None):
         # type: (Optional[Any]) -> None
-        if self.option('keep'):
-            return
-
         for guest in self.guests[:]:
             guest.destroy()
-
-        self.info('successfully removed all guests')
