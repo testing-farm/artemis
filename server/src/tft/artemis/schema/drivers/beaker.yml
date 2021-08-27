@@ -11,6 +11,9 @@ properties:
   password:
     type: string
 
+  patch-images:
+    type: array
+
   post-install-script:
     type: string
 

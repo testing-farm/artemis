@@ -4,6 +4,9 @@ description: Localhost pool driver schema
 type: object
 
 properties:
+  patch-images:
+    type: array
+
   post-install-script:
     type: string
 

@@ -93,6 +93,43 @@ definitions:
       - log-name
       - content-type
 
+    additionalProperties: false
+
+  patch_image_ssh:
+    type: object
+
+    properties:
+      username:
+        type: string
+
+      port:
+        type: integer
+
+    required: []
+    additionalProperties: false
+
+  patch_image:
+    type: object
+
+    properties:
+      name:
+        type: string
+
+      name-regex:
+        type: string
+        format: regex
+
+      ssh:
+        "$ref": "#/definitions/patch_image_ssh"
+
+    oneOf:
+      - required:
+        - name
+      - required:
+        - name-regex
+
+    additionalProperties: false
+
 properties:
 
   users:
@@ -217,6 +254,11 @@ properties:
               type: array
               items:
                 "$ref": "#/definitions/patch_flavor"
+
+            patch-images:
+              type: array
+              items:
+                "$ref": "#/definitions/patch_image"
 
             cost:
               type: object

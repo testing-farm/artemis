@@ -81,6 +81,21 @@ ConfigCustomFlavorSpecType = TypedDict(
 ConfigFlavorSpecType = Union[ConfigPatchFlavorSpecType, ConfigCustomFlavorSpecType]
 
 
+#: pools[].parameters.patch-images[].ssh
+class ConfigImageSSHSpecType(TypedDict, total=False):
+    username: str
+    port: int
+
+
+ConfigImageSpecType = TypedDict(
+    'ConfigImageSpecType',
+    {
+        'name': str,
+        'name-regex': str,
+        'ssh': ConfigImageSSHSpecType
+    }
+)
+
 ConfigCapabilitiesDisableGuestLog = TypedDict(
     'ConfigCapabilitiesDisableGuestLog',
     {
@@ -492,6 +507,29 @@ def _apply_flavor_specification(
                 ))
 
             flavor.disk.space = r_space.unwrap()
+
+    return Ok(None)
+
+
+def _apply_image_specification(
+    image: PoolImageInfo,
+    image_spec: ConfigImageSpecType
+) -> Result[None, Failure]:
+    """
+    Apply an image specification - originating from the configuration - to a given image.
+
+    This is a helper for building custom and patching existing images. Both kinds use the same configuration
+    fields.
+    """
+
+    if 'ssh' in image_spec:
+        ssh_patch = image_spec['ssh']
+
+        if 'username' in ssh_patch:
+            image.ssh.username = ssh_patch['username']
+
+        if 'port' in ssh_patch:
+            image.ssh.port = ssh_patch['port']
 
     return Ok(None)
 
@@ -1233,6 +1271,97 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok([])
 
+    def _fetch_patched_pool_image_info_from_config(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        images: Dict[str, PoolImageInfo]
+    ) -> Result[None, Failure]:
+        """
+        "Patch" existing images as specified by configuration. Some information may not be available via API,
+        therefore maintainers can use ``patch-images`` to modify images as needed.
+
+        :param images: actual existing images.
+        """
+
+        patch_image_specs = cast(List[ConfigImageSpecType], self.pool_config.get('patch-images', []))
+
+        if not patch_image_specs:
+            return Ok(None)
+
+        gluetool.log.log_dict(logger.debug, 'base images', images)
+
+        for patch_image_spec in patch_image_specs:
+            if 'name' in patch_image_spec:
+                imagename = patch_image_spec['name']
+
+                target_images = [images[imagename]] if imagename in images else []
+
+            elif 'name-regex' in patch_image_spec:
+                imagename = patch_image_spec['name-regex']
+
+                try:
+                    image_name_pattern = re.compile(imagename)
+
+                except re.error as exc:
+                    return Error(Failure.from_exc(
+                        'failed to compile patched image name-regex',
+                        exc,
+                        imagename=imagename
+                    ))
+
+                target_images = [
+                    image
+                    for image in images.values()
+                    if image_name_pattern.match(image.name) is not None
+                ]
+
+            else:
+                assert False, 'unreachable'
+
+            if not target_images:
+                return Error(Failure(
+                    'unknown patched image',
+                    imagename=imagename
+                ))
+
+            for target_image in target_images:
+                r_apply_spec = _apply_image_specification(target_image, patch_image_spec)
+
+                if r_apply_spec.is_error:
+                    return Error(r_apply_spec.unwrap_error().update(
+                        imagename=imagename,
+                        target_imagename=target_image.name
+                    ))
+
+        return Ok(None)
+
+    def _fetch_pool_image_info_from_config(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        images: List[PoolImageInfo]
+    ) -> Result[List[PoolImageInfo], Failure]:
+        """
+        "Fetch" image infos from the driver configuration. This includes both custom image and patch information.
+
+        :param images: actual existing images that serve as basis for custom images.
+        """
+
+        image_map = {
+            image.name: image
+            for image in images
+        }
+
+        if 'patch-images' in self.pool_config:
+            r_patched_images = self._fetch_patched_pool_image_info_from_config(
+                logger,
+                image_map
+            )
+
+            if r_patched_images.is_error:
+                return Error(r_patched_images.unwrap_error())
+
+        return Ok(list(image_map.values()))
+
     def refresh_cached_pool_image_info(self) -> Result[None, Failure]:
         """
         Responsible for updating the cache with the most up-to-date image info. For that purpose, it calls
@@ -1252,12 +1381,19 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
             return Error(r_image_info.unwrap_error())
 
+        real_images = r_image_info.unwrap()
+
+        r_config_images = self._fetch_pool_image_info_from_config(LOGGER.get(), real_images)
+
+        if r_config_images.is_error:
+            return Error(r_config_images.unwrap_error())
+
         r_refresh = refresh_cached_set(
             CACHE.get(),
             self.image_info_cache_key,
             {
                 ii.name: ii
-                for ii in r_image_info.unwrap()
+                for ii in (real_images + r_config_images.unwrap())
                 if ii.name
             }
         )

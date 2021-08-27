@@ -41,6 +41,9 @@ properties:
   patch-flavors:
     type: array
 
+  patch-images:
+    type: array
+
   post-install-script:
     type: string
 
