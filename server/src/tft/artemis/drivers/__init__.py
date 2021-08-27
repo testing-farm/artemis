@@ -1665,7 +1665,8 @@ def run_remote(
                 '-o', 'UserKnownHostsFile=/dev/null',
                 '-o', 'StrictHostKeyChecking=no',
                 '-o', f'ConnectTimeout={ssh_timeout}',
-                '-l', 'root',
+                '-l', guest_request.ssh_username,
+                '-p', str(guest_request.ssh_port),
                 guest_request.address,
                 # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
                 # parameters. Therefore joining it into a single string here, instead of bothering the caller.
@@ -1700,8 +1701,9 @@ def copy_to_remote(
                 '-o', 'UserKnownHostsFile=/dev/null',
                 '-o', 'StrictHostKeyChecking=no',
                 '-o', f'ConnectTimeout={ssh_timeout}',
+                '-P', str(guest_request.ssh_port),
                 src,
-                f'root@{guest_request.address}:{dst}',
+                f'{guest_request.ssh_username}@{guest_request.address}:{dst}',
             ],
             poolname=poolname,
             commandname=commandname
@@ -1732,7 +1734,8 @@ def copy_from_remote(
                 '-o', 'UserKnownHostsFile=/dev/null',
                 '-o', 'StrictHostKeyChecking=no',
                 '-o', f'ConnectTimeout={ssh_timeout}',
-                f'root@{guest_request.address}:{src}',
+                '-P', str(guest_request.ssh_port),
+                f'{guest_request.ssh_username}@{guest_request.address}:{src}',
                 dst
             ],
             poolname=poolname,
