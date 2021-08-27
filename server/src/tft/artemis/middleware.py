@@ -1,7 +1,7 @@
 import datetime
 import inspect
 import traceback
-from typing import TYPE_CHECKING, Dict, Optional, Set, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Union, cast
 
 import dramatiq.broker
 import dramatiq.message
@@ -123,7 +123,8 @@ def _retry_message(
 def _fail_message(
     logger: gluetool.log.ContextAdapter,
     message: dramatiq.message.Message,
-    error_message: str
+    error_message: str,
+    **details: Any
 ) -> None:
     """
     Mark the given message as failed.
@@ -131,7 +132,7 @@ def _fail_message(
 
     from . import Failure
 
-    Failure(error_message).handle(logger)
+    Failure(error_message, **details).handle(logger)
 
     message.fail()
 
@@ -225,7 +226,14 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
 
             # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
             if actor.options.get('tail_handler') is None:
-                return _fail_message(logger, message, f'retries exceeded for message {message.message_id}')
+                return _fail_message(
+                    logger,
+                    message,
+                    f'retries exceeded for message {message.message_id}',
+                    task_name=actor.actor_name,
+                    task_args=actor_arguments,
+                    guestname=guestname
+                )
 
             if _handle_tails(logger, message, actor, actor_arguments) is True:
                 return
