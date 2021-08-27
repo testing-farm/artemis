@@ -15,12 +15,13 @@ import click_spinner
 import semver
 import stackprinter
 
-from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT, DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW,
-               BasicAuthConfiguration, Configuration, Logger, artemis_create, artemis_delete, artemis_get_console_url,
-               artemis_inspect, artemis_restore, artemis_update, confirm,
-               fetch_artemis, load_yaml, prettify_json, prettify_yaml,
-               print_table, prompt, validate_struct)
-
+from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
+               DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW,
+               BasicAuthConfiguration, Configuration, Logger, artemis_create,
+               artemis_delete, artemis_get_console_url, artemis_inspect,
+               artemis_restore, artemis_update, confirm, fetch_artemis,
+               load_yaml, prettify_json, prettify_yaml, print_table, prompt,
+               validate_struct)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000
@@ -231,6 +232,11 @@ def cmd_guest(cfg: Configuration) -> None:
     default=False,
     help='If set, provisioning will skip SSH verification step.'
 )
+@click.option(
+    '--user-data',
+    default=None,
+    help='Optional JSON mapping to attach to the request.'
+)
 @click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
 @click.pass_obj
 def cmd_guest_create(
@@ -245,6 +251,7 @@ def cmd_guest_create(
         priority_group: Optional[str] = None,
         post_install_script: Optional[str] = None,
         skip_prepare_verify_ssh: bool = False,
+        user_data: Optional[str] = None,
         wait: Optional[bool] = None
 ) -> None:
     assert cfg.artemis_api_version is not None
@@ -254,7 +261,8 @@ def cmd_guest_create(
     data: Dict[str, Any] = {
         'environment': environment,
         'keyname': keyname,
-        'priority_group': 'default-priority'
+        'priority_group': 'default-priority',
+        'user_data': {}
     }
 
     if cfg.artemis_api_version < API_FEATURE_VERSIONS['supported-baseline']:
@@ -286,6 +294,13 @@ def cmd_guest_create(
 
     if cfg.artemis_api_version < API_FEATURE_VERSIONS['arch-under-hw']:
         environment['arch'] = arch
+
+    if user_data is not None:
+        try:
+            data['user_data'] = json.loads(user_data)
+
+        except Exception as exc:
+            cfg.logger.error('failed to parse user data: {}'.format(exc))
 
     environment['os'] = {'compose': compose}
 
