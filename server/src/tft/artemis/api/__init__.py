@@ -292,7 +292,7 @@ class GuestRequest:
     keyname: str
     environment: Dict[str, Optional[Any]]
     priority_group: Optional[str]
-    user_data: Optional[Dict[str, Optional[str]]]
+    user_data: Optional[artemis_db.UserDataType]
     post_install_script: Optional[str]
     skip_prepare_verify_ssh: bool = False
 
@@ -323,7 +323,7 @@ class GuestResponse:
     address: Optional[str]
     ssh: GuestSSHInfo
     state: GuestState
-    user_data: Dict[str, Optional[str]]
+    user_data: artemis_db.UserDataType
     skip_prepare_verify_ssh: Optional[bool]
     post_install_script: Optional[str]
     ctime: datetime.datetime
@@ -345,7 +345,7 @@ class GuestResponse:
                 guest.ssh_keyname
             ),
             state=GuestState(guest.state),
-            user_data=json.loads(guest.user_data),
+            user_data=guest.user_data,
             skip_prepare_verify_ssh=guest.skip_prepare_verify_ssh,
             post_install_script=guest.post_install_script,
             ctime=guest.ctime,
@@ -594,7 +594,7 @@ class GuestRequestManager:
                     priorityname=guest_request.priority_group,
                     poolname=None,
                     pool_data=json.dumps({}),
-                    user_data=json.dumps(guest_request.user_data),
+                    _user_data=guest_request.user_data,
                     state=GuestState.ROUTING,
                     skip_prepare_verify_ssh=guest_request.skip_prepare_verify_ssh,
                     post_install_script=guest_request.post_install_script,

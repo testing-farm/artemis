@@ -544,6 +544,9 @@ class Pool(Base):
     guests = relationship('GuestRequest', back_populates='pool')
 
 
+UserDataType = Dict[str, str]
+
+
 class GuestRequest(Base):
     __tablename__ = 'guest_requests'
 
@@ -600,7 +603,11 @@ class GuestRequest(Base):
     pool_data = Column(Text(), nullable=False)
 
     # User specified data
-    user_data = Column(Text(), nullable=False)
+    _user_data = Column(JSON(), nullable=False)
+
+    @property
+    def user_data(self) -> UserDataType:
+        return cast(UserDataType, self._user_data)
 
     #: If set, the provisioning will skip preparation steps and assume the guest is reachable as soon as it becomes
     #: active.
