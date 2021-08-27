@@ -15,12 +15,18 @@ import click_spinner
 import semver
 import stackprinter
 
-from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT, DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW,
-               BasicAuthConfiguration, Configuration, Logger, artemis_create, artemis_delete, artemis_get_console_url,
-               artemis_inspect, artemis_restore, artemis_update, confirm,
-               fetch_artemis, load_yaml, prettify_json, prettify_yaml,
-               print_table, prompt, validate_struct)
-
+from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
+               DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW,
+               BasicAuthConfiguration, Configuration, Logger, confirm,
+               load_yaml, prettify_json, prettify_yaml, print_table, prompt,
+               validate_struct)
+from .api import (api_create_guest, api_create_guest_log, api_create_snapshot,
+                  api_create_user, api_create_user_token, api_delete_guest,
+                  api_delete_knob, api_delete_snapshot, api_delete_user,
+                  api_inspect_console_log, api_inspect_events,
+                  api_inspect_guest, api_inspect_guest_log, api_inspect_knob,
+                  api_inspect_snapshot, api_inspect_user, api_restore_snapshot,
+                  api_update_knob)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000
@@ -165,7 +171,7 @@ def cmd_snapshot_create(
         'start_again': not no_start_again
     }
 
-    response = artemis_create(cfg, 'guests/{}/snapshots'.format(guest), data=data)
+    response = api_create_snapshot(cfg, guest, data)
     cfg.logger.info(prettify_json(True, response.json()))
 
 
@@ -178,7 +184,7 @@ def cmd_snapshot_inspect(
         guest: str,
         snapshot: str,
 ) -> None:
-    response = artemis_inspect(cfg, 'guests/{}/snapshots'.format(guest), snapshot)
+    response = api_inspect_snapshot(cfg, guest, snapshot)
     cfg.logger.info(prettify_json(True, response.json()))
 
 
@@ -191,7 +197,7 @@ def cmd_snapshot_restore(
         guest: str,
         snapshot: str,
 ) -> None:
-    response = artemis_restore(cfg, 'guests/{}/snapshots'.format(guest), snapshot)
+    response = api_restore_snapshot(cfg, guest, snapshot)
     cfg.logger.info(prettify_json(True, response.json()))
 
 
@@ -204,7 +210,7 @@ def cmd_snapshot_cancel(
         guest: str,
         snapshot: str,
 ) -> None:
-    artemis_delete(cfg, 'guests/{}/snapshots'.format(guest), snapshot)
+    api_delete_snapshot(cfg, guest, snapshot)
     # TODO: add 404 handling
     cfg.logger.info('snapshot "{}" has been canceled'.format(snapshot))
 
@@ -319,7 +325,7 @@ def cmd_guest_create(
 
     data['post_install_script'] = post_install
 
-    response = artemis_create(cfg, 'guests/', data)
+    response = api_create_guest(cfg, data)
     print(prettify_json(True, response.json()))
 
     if wait:
@@ -331,7 +337,7 @@ def cmd_guest_create(
         # terminated with a newline and an extra whitespace for the backspace.
         with click_spinner.spinner():
             while True:
-                new_state = artemis_inspect(cfg, 'guests', guestname).json()['state']
+                new_state = api_inspect_guest(cfg, guestname=guestname).json()['state']
 
                 if state == new_state:
                     sleep(cfg.provisioning_poll_interval)
@@ -354,7 +360,7 @@ def cmd_guest_create(
 @click.argument('guestname', metavar='ID', default=None,)
 @click.pass_obj
 def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
-    response = artemis_inspect(cfg, 'guests', guestname)
+    response = api_inspect_guest(cfg, guestname=guestname)
     print(prettify_json(True, response.json()))
 
 
@@ -364,7 +370,8 @@ def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
 def cmd_cancel(cfg: Configuration, guestnames: List[str]) -> None:
     logger = Logger()
     for guestname in guestnames:
-        response = artemis_delete(cfg, 'guests', guestname, logger=logger)
+        response = api_delete_guest(cfg, guestname)
+
         if response.status_code == 404:
             logger.error('guest "{}" has not been found'.format(guestname))
         elif response.status_code == 409:
@@ -376,7 +383,7 @@ def cmd_cancel(cfg: Configuration, guestnames: List[str]) -> None:
 @cmd_guest.command(name='list', short_help='List provisioning requests')
 @click.pass_obj
 def cmd_guest_list(cfg: Configuration) -> None:
-    response = artemis_inspect(cfg, 'guests', '')
+    response = api_inspect_guest(cfg)
     print(prettify_json(True, response.json()))
 
 
@@ -431,23 +438,16 @@ def cmd_guest_events(
         params['page'] = 1
         params['sort_by'] = 'desc'
 
-    if guestname:
-        # get events for given guest
-        rid = '{}/events'.format(guestname)
-    else:
-        # get all events
-        rid = 'events'
-
     if page or first or last:
         # request for specific page
-        response = artemis_inspect(cfg, 'guests', rid, params=params)
+        response = api_inspect_events(cfg, guestname=guestname, params=params)
         results_json = response.json()
     else:
         # get all pages
         results_json = []
         for page in range(1, PAGINATION_MAX_COUNT):
             params['page'] = page
-            response = artemis_inspect(cfg, 'guests', rid, params=params)
+            response = api_inspect_events(cfg, guestname=guestname, params=params)
             results_json = results_json + response.json()
             if len(response.json()) < page_size:
                 # last page, result is complete
@@ -478,49 +478,26 @@ def cmd_guest_log(
         force: bool
 ) -> None:
     if force:
-        response = fetch_artemis(
-            cfg,
-            '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
-            method='post',
-            allow_statuses=[202]
-        )
+        response = api_create_guest_log(cfg, guestname, logname, contenttype)
 
     else:
-        response = fetch_artemis(
-            cfg,
-            '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
-            allow_statuses=[200, 404, 409]
-        )
+        response = api_inspect_guest_log(cfg, guestname, logname, contenttype)
 
         if response.status_code == 404:
             # first time asking for this type of log
-            response = fetch_artemis(
-                cfg,
-                '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
-                method='post',
-                allow_statuses=[202]
-            )
+            response = api_create_guest_log(cfg, guestname, logname, contenttype)
 
         elif response.status_code == 409:
             # exists, but it's expired
             # TODO: yes, it runs virtually the same code as 404 above, and these two will be merged once things
             # settle down.
-            response = fetch_artemis(
-                cfg,
-                '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
-                method='post',
-                allow_statuses=[202]
-            )
+            response = api_create_guest_log(cfg, guestname, logname, contenttype)
 
     if wait:
         res_error = False
         with click_spinner.spinner():
             while True:
-                response = fetch_artemis(
-                    cfg,
-                    '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
-                    allow_statuses=[200, 404, 409]
-                )
+                response = api_inspect_guest_log(cfg, guestname, logname, contenttype)
 
                 # the request may still report conflict, until Artemis actually gets to it.
                 if response.status_code in (404, 409):
@@ -556,7 +533,7 @@ def cmd_console(cfg: Configuration) -> None:
 @click.argument('guestname', metavar='ID', default=None,)
 @click.pass_obj
 def cmd_console_url(cfg: Configuration, guestname: str) -> None:
-    response = artemis_get_console_url(cfg, 'guests', guestname)
+    response = api_inspect_console_log(cfg, guestname)
     cfg.logger.info(prettify_json(True, response.json()))
 
 
@@ -677,7 +654,7 @@ def cmd_knob(cfg: Configuration) -> None:
 @cmd_knob.command(name='list', short_help='List all knobs')
 @click.pass_obj
 def cmd_knob_list(cfg: Configuration) -> None:
-    knobs = cast(List[Dict[str, str]], artemis_inspect(cfg, 'knobs', '').json())
+    knobs = cast(List[Dict[str, str]], api_inspect_knob(cfg).json())
 
     table = [
         ['Name', 'Value', 'Type', 'Editable', 'Help']
@@ -702,7 +679,7 @@ def cmd_knob_get(
         cfg: Configuration,
         knobname: str
 ) -> None:
-    print(prettify_yaml(True, artemis_inspect(cfg, 'knobs', knobname).json()))
+    print(prettify_yaml(True, api_inspect_knob(cfg, knobname=knobname).json()))
 
 
 @cmd_knob.command(name='set', short_help='Set knob value')
@@ -714,7 +691,7 @@ def cmd_knob_set(
         knobname: str,
         value: str
 ) -> None:
-    print(prettify_yaml(True, artemis_update(cfg, 'knobs/{}'.format(knobname), {'value': value}).json()))
+    print(prettify_yaml(True, api_update_knob(cfg, knobname, {'value': value}).json()))
 
 
 @cmd_knob.command(name='delete', short_help='Remove knob')
@@ -726,7 +703,7 @@ def cmd_knob_delete(
 ) -> None:
     logger = Logger()
 
-    response = artemis_delete(cfg, 'knobs', knobname, logger=logger)
+    response = api_delete_knob(cfg, knobname)
 
     if response.status_code == 404:
         logger.error('knob "{}" does not exist'.format(knobname))
@@ -750,7 +727,7 @@ def cmd_token(cfg: Configuration) -> None:
 @cmd_user.command(name='list', short_help='List all users')
 @click.pass_obj
 def cmd_user_list(cfg: Configuration) -> None:
-    print(prettify_yaml(True, artemis_inspect(cfg, 'users', '').json()))
+    print(prettify_yaml(True, api_inspect_user(cfg).json()))
 
 
 @cmd_user.command(name='inspect', short_help='Inspect a user')
@@ -760,7 +737,7 @@ def cmd_user_inspect(
     cfg: Configuration,
     username: str
 ) -> None:
-    print(prettify_yaml(True, artemis_inspect(cfg, 'users', username).json()))
+    print(prettify_yaml(True, api_inspect_user(cfg, username=username).json()))
 
 
 @cmd_user.command(name='create', short_help='Create a user')
@@ -772,9 +749,9 @@ def cmd_user_create(
         username: str,
         role: str
 ) -> None:
-    print(prettify_yaml(True, artemis_create(
+    print(prettify_yaml(True, api_create_user(
         cfg,
-        'users/{}'.format(username),
+        username,
         {
             'role': role
         }
@@ -788,7 +765,7 @@ def cmd_user_delete(
     cfg: Configuration,
     username: str
 ) -> None:
-    response = artemis_delete(cfg, 'users', username, logger=cfg.logger)
+    response = api_delete_user(cfg, username)
 
     if response.status_code == 404:
         cfg.logger.error('user "{}" does not exist'.format(username))
@@ -806,7 +783,7 @@ def cmd_user_token_reset(
     username: str,
     tokentype: str
 ) -> None:
-    response = artemis_create(cfg, 'users/{}/tokens/{}/reset'.format(username, tokentype), {}, logger=cfg.logger)
+    response = api_create_user_token(cfg, username, tokentype)
 
     if response.status_code != 201:
         cfg.logger.error('failed to reset token: {}'.format(response.text))
