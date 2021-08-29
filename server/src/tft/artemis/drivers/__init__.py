@@ -1746,6 +1746,51 @@ def copy_from_remote(
         )
 
 
+def ping_shell_remote(
+    logger: gluetool.log.ContextAdapter,
+    guest_request: GuestRequest,
+    *,
+    key: SSHKey,
+    ssh_timeout: int,
+    # for CLI calls metrics
+    poolname: Optional[str] = None,
+    commandname: Optional[str] = None
+) -> Result[bool, Failure]:
+    """
+    Try to run a simple ``echo`` command on a given guest, and verify its output.
+
+    :param logger: logger to use for logging.
+    :param guest_request: guest requst to connect to.
+    :param key: SSH key to use for authentication.
+    :param ssh_timeout: SSH connection timeout, in seconds.
+    """
+
+    commandname = commandname or 'shell-ping'
+
+    r_ssh = run_remote(
+        logger,
+        guest_request,
+        ['bash', '-c', 'echo ping'],
+        key=key,
+        ssh_timeout=ssh_timeout,
+        poolname=poolname,
+        commandname=commandname
+    )
+
+    if r_ssh.is_error:
+        return Error(r_ssh.unwrap_error())
+
+    ssh_output = r_ssh.unwrap()
+
+    if ssh_output.stdout.strip() != 'ping':
+        return Error(Failure(
+            'did not receive expected response',
+            command_output=ssh_output.process_output
+        ))
+
+    return Ok(True)
+
+
 @contextlib.contextmanager
 def create_tempfile(file_contents: Optional[str] = None, **kwargs: Any) -> Iterator[str]:
     """Returns a path to the temporary file with given contents."""

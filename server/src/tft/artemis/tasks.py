@@ -34,6 +34,7 @@ from .drivers import azure as azure_driver
 from .drivers import beaker as beaker_driver
 from .drivers import localhost as localhost_driver
 from .drivers import openstack as openstack_driver
+from .drivers import ping_shell_remote
 from .guest import GuestLogger, GuestState, SnapshotLogger
 from .profile import Profiler
 from .routing_policies import PolicyRuling
@@ -2383,9 +2384,6 @@ def do_prepare_verify_ssh(
     cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
-    # Avoid circular imports
-    from .drivers import run_remote
-
     handle_success, handle_failure, spice_details = create_event_handlers(
         logger,
         session,
@@ -2420,28 +2418,17 @@ def do_prepare_verify_ssh(
     if r_ssh_timeout.is_error:
         return handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')
 
-    r_ssh = run_remote(
+    r_ping = ping_shell_remote(
         logger,
         workspace.gr,
-        ['bash', '-c', 'echo ping'],
         key=r_master_key.unwrap(),
         ssh_timeout=r_ssh_timeout.unwrap(),
         poolname=workspace.pool.poolname,
         commandname='prepare-verify-ssh.shell-ping'
     )
 
-    if r_ssh.is_error:
-        return handle_failure(r_ssh, 'failed to verify SSH')
-
-    ssh_output = r_ssh.unwrap()
-
-    if ssh_output.stdout.strip() != 'ping':
-        failure = Failure(
-            'did not receive expected response',
-            command_output=ssh_output.process_output
-        )
-
-        return handle_failure(Error(failure), 'failed to verify SSH')
+    if r_ping.is_error:
+        return handle_failure(r_ping, 'failed to verify SSH')
 
     return handle_success('finished-task')
 
