@@ -14,6 +14,11 @@ from gluetool import GlueError
 from gluetool_modules.libs.guest_setup import guest_setup_log_dirpath, GuestSetupOutput, GuestSetupStage
 from gluetool_modules.libs.sut_installation import SUTInstallation
 
+# Type annotations
+from typing import Any, List, Optional, Dict, cast  # noqa
+from gluetool_modules.infrastructure.mbs import MBSTask
+from gluetool_modules.libs.guest import NetworkedGuest
+
 
 DEFAULT_ODCS_OPTIONS_SEPARATOR = '#-#-#-#-#'
 
@@ -31,7 +36,7 @@ class InstallMBSBuild(gluetool.Module):
     name = 'install-mbs-build-execute'
     description = 'Install module on given guest'
 
-    shared_functions = ('setup_guest',)
+    shared_functions = ['setup_guest', ]
 
     options = {
         'profile': {
@@ -71,6 +76,7 @@ class InstallMBSBuild(gluetool.Module):
     }
 
     def _get_repo(self, task, module_nsvc, guest):
+        # type: (MBSTask, str, NetworkedGuest) -> str
         self.info('Generating repo for module via ODCS')
 
         command = [
@@ -87,6 +93,7 @@ class InstallMBSBuild(gluetool.Module):
                 '--sigkey', 'none'
             ]
 
+        assert guest.environment is not None
         # Inner list gather all arches, `set` gets rid of duplicities, and final `list` converts set to a list.
         command += [
             '--arch', guest.environment.arch
@@ -122,24 +129,27 @@ class InstallMBSBuild(gluetool.Module):
                 raise GlueError('ODCS call failed')
 
         # strip 1st line before json data
-        output = output.stdout[output.stdout.index('{'):]
-        output_json = json.loads(output)
+        assert output.stdout is not None
+        output_str = output.stdout[output.stdout.index('{'):]
+        output_json = json.loads(output_str)
         log_dict(self.debug, 'odcs output', output_json)
         state = output_json['state_name']
         if state != 'done':
             raise GlueError('Getting repo from ODCS failed')
-        repo_url = output_json['result_repofile']
+        repo_url = cast(str, output_json['result_repofile'])
         self.info('Module repo from ODCS: {}'.format(repo_url))
         return repo_url
 
     @gluetool.utils.cached_property
     def installation_workarounds(self):
+        # type: () -> Any
         if not self.option('installation-workarounds'):
             return []
 
         return gluetool.utils.load_yaml(self.option('installation-workarounds'), logger=self.logger)
 
     def setup_guest(self, guest, stage=GuestSetupStage.PRE_ARTIFACT_INSTALLATION, log_dirpath=None, **kwargs):
+        # type: (NetworkedGuest, GuestSetupStage, Optional[str], **Any) -> Any
         self.require_shared('primary_task', 'evaluate_instructions')
 
         log_dirpath = guest_setup_log_dirpath(guest, log_dirpath)
@@ -208,10 +218,11 @@ class InstallMBSBuild(gluetool.Module):
             nsvc = '{}/{}'.format(nsvc, profile['profile'])
             name_stream = '{}/{}'.format(name_stream, profile['profile'])
 
-        sut_installation = SUTInstallation(self, installation_log_dirpath, primary_task, logger=guest)
+        sut_installation = SUTInstallation(self, installation_log_dirpath, primary_task, logger=guest.logger)
 
         # callback for 'commands' item in installation_workarounds
         def _add_step_callback(instruction, command, argument, context):
+            # type: (str, str, List[Dict[str, Any]], str) -> None
             for step in argument:
                 sut_installation.add_step(step['label'], step['command'])
 
@@ -225,7 +236,9 @@ class InstallMBSBuild(gluetool.Module):
         )
 
         def _verify_profile(command, output):
+            # type: (str, gluetool.utils.ProcessOutput) -> Optional[str]
             module_info = output.stdout
+            assert module_info is not None
 
             profiles = None
             match = re.search(r'Profiles\s*:\s*(.+)', module_info)
@@ -253,7 +266,7 @@ class InstallMBSBuild(gluetool.Module):
             return None
 
         def _check_enabled(command, output):
-            # type: (str, gluetool.utils.ProcessOutput) -> None
+            # type: (str, gluetool.utils.ProcessOutput) -> Optional[str]
             """
             Process output of `yum module info` command and returns description of issue, when output is not correct.
             """
@@ -270,7 +283,7 @@ class InstallMBSBuild(gluetool.Module):
             return None
 
         def _check_installed(command, output):
-            # type: (str, gluetool.utils.ProcessOutput) -> None
+            # type: (str, gluetool.utils.ProcessOutput) -> Optional[str]
             """
             Process output of `yum module info` command and returns description of issue, when output is not correct.
             """
@@ -286,11 +299,19 @@ class InstallMBSBuild(gluetool.Module):
 
         if not self.option('enable-only'):
             if primary_task.scratch:
-                sut_installation.add_step('Verify profile', 'yum module info {}',
-                                          items=name_stream, callback=_verify_profile)
+                sut_installation.add_step(
+                    'Verify profile',
+                    'yum module info {}',
+                    items=name_stream,
+                    callback=_verify_profile
+                )
             else:
-                sut_installation.add_step('Verify profile', 'yum module info {}',
-                                          items=nsvc, callback=_verify_profile)
+                sut_installation.add_step(
+                    'Verify profile',
+                    'yum module info {}',
+                    items=nsvc,
+                    callback=_verify_profile
+                )
 
         # Extract module name from `nsvc` because we might have modified it in the `setup_guest`
         # function, e.g. for devel modules.
@@ -300,26 +321,46 @@ class InstallMBSBuild(gluetool.Module):
         # If this is a scratch module use "name:stream" instead of whole nsvc, as a workaround. Ref: BZ #1926771
         if primary_task.scratch:
             sut_installation.add_step('Enable module', 'yum module enable -y {}', items=name_stream)
-            sut_installation.add_step('Verify module enabled', 'yum module info {}',
-                                      items=name_stream, callback=_check_enabled)
+            sut_installation.add_step(
+                'Verify module enabled',
+                'yum module info {}',
+                items=name_stream,
+                callback=_check_enabled
+            )
         else:
             sut_installation.add_step('Enable module', 'yum module enable -y {}', items=nsvc)
-            sut_installation.add_step('Verify module enabled', 'yum module info {}',
-                                      items=nsvc, callback=_check_enabled)
+            sut_installation.add_step(
+                'Verify module enabled',
+                'yum module info {}',
+                items=nsvc,
+                callback=_check_enabled
+            )
 
         if not self.option('enable-only'):
 
             # If this is a scratch module use "name:stream" instead of the whole nsvc, as a workaround. Ref: BZ #1926771
             if primary_task.scratch:
-                sut_installation.add_step('Install module', 'yum module install -y {}',
-                                          items=name_stream)
-                sut_installation.add_step('Verify module installed', 'yum module info {}',
-                                          items=name_stream, callback=_check_installed)
+                sut_installation.add_step(
+                    'Install module',
+                    'yum module install -y {}',
+                    items=name_stream
+                    )
+                sut_installation.add_step(
+                    'Verify module installed',
+                    'yum module info {}',
+                    items=name_stream,
+                    callback=_check_installed
+                )
             else:
                 sut_installation.add_step('Install module', 'yum module install -y {}', items=nsvc)
-                sut_installation.add_step('Verify module installed', 'yum module info {}',
-                                          items=nsvc, callback=_check_installed)
+                sut_installation.add_step(
+                    'Verify module installed',
+                    'yum module info {}',
+                    items=nsvc,
+                    callback=_check_installed
+                )
 
+        assert guest.environment is not None
         with Action(
             'installing module',
             parent=Action.current_action(),
