@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: {{ template "artemis.fullname" . }}-env
   labels:
-    {{- include "adminer.labels" . | nindent 4 }}
+    {{- include "artemis.labels" . | nindent 4 }}
   namespace: {{ .Release.Namespace }}
 data:
   ARTEMIS_BROKER_URL: amqp://{{ template "artemis.rabbitmq.username" $ }}:{{ template "artemis.rabbitmq.password" $ }}@{{ template "artemis.rabbitmq.host" $ }}:{{ template "artemis.rabbitmq.port" $ }}
@@ -82,4 +82,7 @@ data:
   {{- end }}
   {{- if $.Values.sentry.baseUrl }}
   SENTRY_BASE_URL: {{ $.Values.sentry.baseUrl }}
+  {{- end }}
+  {{- range $.Values.extraEnv }}
+  {{ .name }}: {{ .value }}
   {{- end }}

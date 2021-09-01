@@ -54,7 +54,7 @@ Override Artemis configuration
 {{- end -}}
 
 {{/*
-Override credentials and hosts of services with ones configured here
+Override credentials and hosts of services with ones configured here. Global values take precedence, then values defined for the specific chart and only then we fall back to default usernames/passwords or generated host names.
 */}}
 {{- define "artemis.psql.username" -}}
 {{- pluck "username" .Values.global.psql .Values.psql | first | default "artemis" -}}
@@ -101,25 +101,20 @@ Override credentials and hosts of services with ones configured here
 {{- end -}}
 
 {{- define "artemis.rabbitmq.username" -}}
-{{- .Values.global.rabbitmq.auth.username -}}
+{{- coalesce .Values.global.rabbitmq.auth.username .Values.rabbitmq.username -}}
 {{- end -}}
 
 {{- define "artemis.rabbitmq.password" -}}
-{{- .Values.global.rabbitmq.auth.password -}}
-{{- end -}}
-
-{{- define "artemis.rabbitmq.port" -}}
-{{- 5672 -}}
+{{- coalesce .Values.global.rabbitmq.auth.password .Values.rabbitmq.password -}}
 {{- end -}}
 
 {{- define "artemis.redis.host" -}}
 {{- printf "%s-master.%s.svc" (include "redis.fullname" .) .Release.Namespace -}}
 {{- end -}}
 
-{{- define "artemis.redis.port" -}}
-{{- 6379 -}}
-{{- end -}}
-
+{{/*
+Set default adminer server. If defined, values from `.Values.global.psql.*` take precedence over `.Values.defaultHost` and `.Values.defaultPort`. If neither one is defined, host falls back to installed PostgreSQL service.
+*/}}
 {{- define "adminer.defaultServer" -}}
 {{- $host := coalesce .Values.global.psql.host .Values.defaultHost (printf "%s.%s.svc" (include "postgresql.fullname" .) .Release.Namespace) -}}
 {{- $port := (coalesce .Values.global.psql.port .Values.defaultPort | toString) -}}

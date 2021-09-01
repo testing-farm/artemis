@@ -51,10 +51,9 @@ app.kubernetes.io/name: {{ include "artemis.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
-{{- define "artemis.vaultPassPath" -}}
-{{- printf "%s/%s" (include "artemis.configDirMountPath" .) ".vault_pass" -}}
-{{- end -}}
-
+{{/*
+Construct image string
+*/}}
 {{- define "artemis.image" -}}
 {{- $global := (pluck "global" .Values | first) -}}
 {{- $registryName := coalesce (pluck "imageRegistry" $global | first) .Values.image.registry -}}
@@ -63,10 +62,25 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s/%s:%s" $registryName $repositoryName $tag -}}
 {{- end -}}
 
+{{/*
+Template for `.vault_pass` path. If `.Values.vaultPassword` is not provided, it is
+assumed, the `.vault_pass` was provided in `conf/` directory.
+*/}}
+{{- define "artemis.vaultPassPath" -}}
+{{- printf "%s/%s" (include "artemis.configDirMountPath" .) ".vault_pass" -}}
+{{- end -}}
+
+{{/*
+Flag to signal whether external configMap with Artemis configuration was provided
+*/}}
 {{- define "artemis.config.useExistingConfigMap" -}}
 {{- ternary true false .Values.existingConfigMap -}}
 {{- end -}}
 
+{{/*
+Define configMap name. If provided, `.Values.existingConfigMap` takes precedence,
+otherwise fallback to generated configMap.
+*/}}
 {{- define "artemis.config.configMapName" -}}
 {{- if .Values.existingConfigMap -}}
 {{-   .Values.existingConfigMap -}}
@@ -75,14 +89,23 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{/*
+Calculate config checksum.
+*/}}
 {{- define "artemis.config.checksum" -}}
 {{- include (print $.Template.BasePath "/config-configmap.yaml") $ | sha256sum -}}
 {{- end -}}
 
+{{/*
+Mount path for artemis configuration
+*/}}
 {{- define "artemis.config.mountPath" -}}
 {{- printf "/etc/artemis" -}}
 {{- end -}}
 
+{{/*
+Database schema revision. If not provided in values, defaults to artemis version
+*/}}
 {{- define "artemis.dbSchemaRevision" -}}
 {{- .Values.dbSchemaRevision | default .Chart.appVersion -}}
 {{- end -}}
@@ -141,7 +164,7 @@ RabbitMQ config
 {{- end -}}
 
 {{- define "artemis.rabbitmq.port" -}}
-{{- .Values.rabbitmq.port | default 6379 -}}
+{{- .Values.rabbitmq.port | default 5672 -}}
 {{- end -}}
 
 {{/*

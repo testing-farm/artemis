@@ -7,6 +7,10 @@
 {{- $_ := set $api_service_port "name" "artemis-api" }}
 {{- $_ := set $api_service_port "port" 8001 }}
 {{- $_ := set $api "ports" (list $api_service_port) }}
+{{- $api_readinessProbe := dict "failureThreshold" 3 "httpGet" (dict "path" "/guests/" "port" "artemis-api" "scheme" "HTTP") "initialDelaySeconds" 10 "periodSeconds" 10 "successThreshold" 1 "timeoutSeconds" 5 }}
+{{- $api_livenessProbe := dict "failureThreshold" 3 "httpGet" (dict "path" "/guests/" "port" "artemis-api" "scheme" "HTTP") "periodSeconds" 10 "successThreshold" 1 "timeoutSeconds" 5 }}
+{{- $_ := set $api "readinessProbe" $api_readinessProbe }}
+{{- $_ := set $api "livenessProbe" $api_livenessProbe }}
 {{- $dispatcher := deepCopy .Values.dispatcher }}
 {{- $_ := set $dispatcher "enabled" true }}
 {{- $_ := set $dispatcher "component" "dispatcher" }}
@@ -163,8 +167,16 @@ spec:
           containerPort: {{ .port }}
         {{- end }}
         {{- end }}
-        {{- if .kerberos }}
-        - name: kerberos
+        {{- if .readinessProbe }}
+        readinessProbe:
+          {{ toYaml .readinessProbe | nindent 10 }}
+        {{- end }}
+        {{- if .livenessProbe }}
+        livenessProbe:
+          {{ toYaml .livenessProbe | nindent 10 }}
+        {{- end }}
+      {{- if .kerberos }}
+      - name: kerberos
         image: {{ template "artemis.kerberos.image" $ }}
         imagePullPolicy: {{ default "" $.Values.kerberos.imagePullPolicy | quote }}
         volumeMounts:

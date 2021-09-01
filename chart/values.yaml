@@ -1,35 +1,55 @@
 ## Global options used to configure multiple charts
 ##
 global:
+  ## RabbitMQ access configuration
+  ##
   rabbitmq:
     auth:
       username: ""
       password: ""
-
+  ## PostgreSQL access configuration
+  ##
   psql:
+    ## PostgreSQL credentials
     username: ""
     password: ""
+    ## Name of database for Artemis
     database: ""
+    ## Hostname of PostgreSQL server (should be used if hosted separately)
     #host: ""
+    ## Port PostgreSQL service should be accessible from
     port: 6379
 
-## Artemis-specific options
+## Artemis-specific configuration
 ##
 artemis:
   ## asible-vault password to decrypt enrypted configuration files (ssh keys)
   ##
   vaultPassword: ""
 
+  ## Artemis components configuration
+  ##
   api: {}
   dispatcher: {}
   scheduler: {}
   #workers: []
 
+  ## kerberos container configuration
+  ## The container should automatically refresh credentials and use `/dev/shm/ccache`
+  ## as the credential cache directory
+  ##
   kerberos:
     enabled: false
+    ## Image to be used for kerberos service (if necessary)
+    #image:
+    #  registry:
+    #  repository:
+    #  tag:
 
 psql: {}
 
+## PostgreSQL service configuration
+##
 postgresql:
   install: true
   extraEnv: []
@@ -39,10 +59,14 @@ postgresql:
     extraEnv: []
     customMetrics: {}
 
+## Adminer configuration
+##
 adminer:
   install: false
   extraEnv: []
 
+## RabbitMQ configuration
+##
 rabbitmq:
   install: true
   auth:
@@ -52,6 +76,8 @@ rabbitmq:
   clustering:
     enabled: false
 
+## Redis configuration
+##
 redis:
   install: true
   auth:

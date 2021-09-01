@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: {{ template "artemis.fullname" . }}-api
   labels:
-    {{- include "adminer.labels" . | nindent 4 }}
+    {{- include "artemis.labels" . | nindent 4 }}
     app.kubernetes.io/app: {{ template "artemis.fullname" . }}
     app.kubernetes.io/component: api
 spec:
@@ -13,6 +13,6 @@ spec:
     port: {{ .Values.api.port | default 8001 }}
     targetPort: artemis-api
   selector:
-    {{- include "adminer.selectorLabels" . | nindent 4 }}
+    {{- include "artemis.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/app: {{ template "artemis.fullname" . }}
     app.kubernetes.io/component: api
