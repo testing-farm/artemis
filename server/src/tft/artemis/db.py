@@ -544,7 +544,7 @@ class Pool(Base):
     guests = relationship('GuestRequest', back_populates='pool')
 
 
-UserDataType = Dict[str, str]
+UserDataType = Dict[str, Optional[str]]
 
 
 class GuestRequest(Base):

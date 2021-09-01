@@ -1072,7 +1072,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
         }
 
         if guest_request.user_data:
-            tags.update(guest_request.user_data or {})
+            tags.update({
+                key: value if value is not None else 'null'
+                for key, value in (guest_request.user_data or {}).items()
+            })
 
         tags['ArtemisGuestName'] = guest_request.guestname
         # TODO: drivers could accept a template for the name, to allow custom naming schemes
