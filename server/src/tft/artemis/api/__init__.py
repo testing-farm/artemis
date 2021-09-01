@@ -2,6 +2,7 @@ import dataclasses
 import datetime
 import enum
 import functools
+import inspect
 import json
 import os
 import shutil
@@ -14,8 +15,10 @@ from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple, Type, U
 import gluetool.log
 import gluetool.utils
 import molten
+import molten.components
 import molten.dependency_injection
 import molten.openapi
+import molten.typing
 import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.orm.exc
@@ -170,6 +173,30 @@ class JSONRenderer(molten.JSONRenderer):
             return obj.value
 
         return super(JSONRenderer, self).default(obj)
+
+
+class SchemaComponent(molten.components.SchemaComponent):
+    """
+    A component that validates request data according to a schema.
+
+    Derived from Molten's class, so we could raise our custom exception with our custom logging.
+    """
+
+    def resolve(
+        self,
+        parameter: inspect.Parameter,
+        data: molten.typing.RequestData
+    ) -> Any:
+        try:
+            return super(SchemaComponent, self).resolve(parameter, data)
+
+        except molten.errors.HTTPError as exc:
+            raise errors.BadRequestError(
+                response={
+                    'message': 'Bad request',
+                    'errors': exc.response
+                }
+            )
 
 
 class LoggerComponent:
@@ -2317,6 +2344,7 @@ def run_app() -> molten.app.App:
                 'logger': logger
             })
         ),
+        SchemaComponent(),
         LoggerComponent(logger),
         DBComponent(db),
         GuestRequestManagerComponent(),
