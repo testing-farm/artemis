@@ -998,13 +998,23 @@ class PoolDriver(gluetool.log.LoggerMixin):
             state=GuestLogState.ERROR
         ))
 
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+        """
+        Allows pool drivers to modify pool capabilities extracted from configuration.
+
+        This method is for drivers to override, to provide driver-specific and update known capabilities
+        to match what the driver can actually deliver.
+        """
+
+        return Ok(capabilities)
+
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         capabilities = PoolCapabilities()
 
         capabilities_config = self.pool_config.get('capabilities')
 
         if not capabilities_config:
-            return Ok(capabilities)
+            return self.adjust_capabilities(capabilities)
 
         if 'supported-architectures' in capabilities_config:
             supported_architectures = capabilities_config['supported-architectures']
@@ -1036,7 +1046,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 cast(str, capabilities_config['supports-spot-instances'])
             )
 
-        return Result.Ok(capabilities)
+        return self.adjust_capabilities(capabilities)
 
     def get_guest_tags(
         self,

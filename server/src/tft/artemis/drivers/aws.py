@@ -207,19 +207,13 @@ class AWSDriver(PoolDriver):
             "AWS_DEFAULT_OUTPUT": 'json'
         }
 
-    def capabilities(self) -> Result[PoolCapabilities, Failure]:
-        r_capabilities = super(AWSDriver, self).capabilities()
-
-        if r_capabilities.is_error:
-            return r_capabilities
-
-        capabilities = r_capabilities.unwrap()
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_native_post_install_script = True
         capabilities.supported_guest_logs = [
             ('console', GuestLogContentType.BLOB)
         ]
 
-        return r_capabilities
+        return Ok(capabilities)
 
     def sanity(self) -> Result[bool, Failure]:
         required_variables = [

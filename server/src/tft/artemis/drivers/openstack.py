@@ -93,14 +93,7 @@ class OpenStackDriver(PoolDriver):
                 '--os-project-domain-id', self.pool_config['project-domain-id']
             ]
 
-    def capabilities(self) -> Result[PoolCapabilities, Failure]:
-        r_capabilities = super(OpenStackDriver, self).capabilities()
-
-        if r_capabilities.is_error:
-            return r_capabilities
-
-        capabilities = r_capabilities.unwrap()
-
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_native_post_install_script = True
         capabilities.supports_console_url = True
         capabilities.supports_snapshots = True
@@ -109,7 +102,7 @@ class OpenStackDriver(PoolDriver):
             ('console', GuestLogContentType.URL)
         ]
 
-        return r_capabilities
+        return Ok(capabilities)
 
     def _run_os(
         self,

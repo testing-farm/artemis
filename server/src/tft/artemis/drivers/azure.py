@@ -46,14 +46,10 @@ class AzureDriver(PoolDriver):
     ) -> None:
         super(AzureDriver, self).__init__(logger, poolname, pool_config)
 
-    def capabilities(self) -> Result[PoolCapabilities, Failure]:
-        r_capabilities = super(AzureDriver, self).capabilities()
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+        capabilities.supports_native_post_install_script = True
 
-        if r_capabilities.is_error:
-            return r_capabilities
-
-        r_capabilities.unwrap().supports_native_post_install_script = True
-        return r_capabilities
+        return Ok(capabilities)
 
     def _dispatch_resource_cleanup(
         self,
