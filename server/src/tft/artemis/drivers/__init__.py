@@ -81,6 +81,15 @@ ConfigCustomFlavorSpecType = TypedDict(
 ConfigFlavorSpecType = Union[ConfigPatchFlavorSpecType, ConfigCustomFlavorSpecType]
 
 
+ConfigCapabilitiesDisableGuestLog = TypedDict(
+    'ConfigCapabilitiesDisableGuestLog',
+    {
+        'log-name': str,
+        'content-type': str
+    }
+)
+
+
 IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')  # noqa: FS003
 
 
@@ -1046,7 +1055,24 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 cast(str, capabilities_config['supports-spot-instances'])
             )
 
-        return self.adjust_capabilities(capabilities)
+        r_adjusted_capabilities = self.adjust_capabilities(capabilities)
+
+        if r_adjusted_capabilities.is_error:
+            return r_adjusted_capabilities
+
+        capabilities = r_adjusted_capabilities.unwrap()
+
+        if 'disable-guest-logs' in capabilities_config:
+            for log_spec in cast(List[ConfigCapabilitiesDisableGuestLog], capabilities_config['disable-guest-logs']):
+                disabled_log = (log_spec['log-name'], GuestLogContentType(log_spec['content-type']))
+
+                capabilities.supported_guest_logs = [
+                    guest_log
+                    for guest_log in capabilities.supported_guest_logs
+                    if guest_log != disabled_log
+                ]
+
+        return Result.Ok(capabilities)
 
     def get_guest_tags(
         self,

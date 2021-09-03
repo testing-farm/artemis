@@ -76,6 +76,23 @@ definitions:
 
     additionalProperties: false
 
+  pool_capabilities_disable_guest_log_item:
+    type: object
+
+    properties:
+      log-name:
+        type: string
+
+      content-type:
+        type: string
+        enum:
+          - blob
+          - url
+
+    required:
+      - log-name
+      - content-type
+
 properties:
 
   users:
@@ -182,6 +199,11 @@ properties:
                     - type: string
                       enum:
                         - "any"
+
+                disable-guest-logs:
+                  type: array
+                  items:
+                    "$ref": "#/definitions/pool_capabilities_disable_guest_log_item"
 
               required:
                 - supported-architectures
