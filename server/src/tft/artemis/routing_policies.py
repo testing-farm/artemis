@@ -370,6 +370,38 @@ def policy_supports_snapshots(
 
 
 @policy_boilerplate
+def policy_supports_guest_logs(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    If guest request requires specific log_types to be available, disallow all pools that lack this capability.
+    """
+
+    if not guest_request.log_types:
+        return Ok(PolicyRuling(
+            allowed_pools=pools
+        ))
+
+    r_capabilities = collect_pool_capabilities(pools)
+
+    if r_capabilities.is_error:
+        return Error(r_capabilities.unwrap_error())
+
+    pool_capabilities = r_capabilities.unwrap()
+
+    return Ok(PolicyRuling(
+        allowed_pools=[
+            pool
+            for pool, capabilities in pool_capabilities
+            if all(capabilities.supports_guest_log(log[0], log[1]) for log in guest_request.log_types)
+        ]
+    ))
+
+
+@policy_boilerplate
 def policy_supports_spot_instances(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
