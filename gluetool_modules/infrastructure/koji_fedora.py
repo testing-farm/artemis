@@ -22,6 +22,8 @@ from gluetool.utils import IncompatibleOptionsError
 
 DEFAULT_COMMIT_FETCH_TIMEOUT = 300
 DEFAULT_COMMIT_FETCH_TICKS = 30
+DEFAULT_API_VERSION_RETRY_TIMEOUT = 300
+DEFAULT_API_VERSION_RETRY_TICK = 30
 
 
 class NotBuildTaskError(SoftGlueError):
@@ -1737,6 +1739,21 @@ class Koji(gluetool.Module):
                 'metavar': 'SECONDS',
                 'type': int,
                 'default': DEFAULT_COMMIT_FETCH_TICKS
+            }
+        }),
+        ('Retry_Options', {
+            'api-version-retry-timeout': {
+                'help': """
+                    The number of seconds until a new retry is initiated. (default: %(default)s).
+                    """,
+                'default': DEFAULT_API_VERSION_RETRY_TIMEOUT
+            },
+            'api-version-retry-tick': {
+                'help': """
+                    Number of retries for getting API version (default: %(default)s).
+                    """,
+                'type': int,
+                'default': DEFAULT_API_VERSION_RETRY_TICK
             },
         })
     )
@@ -2002,8 +2019,24 @@ class Koji(gluetool.Module):
         url = self.option('url')
         wait_timeout = self.option('wait')
 
+        def _api_version():
+            # type: () -> Result[bool, bool]
+
+            try:
+                version = self._call_api('getAPIVersion')
+            except koji.ServerOffline as error:
+                self.warn('Retrying getAPIVersion due to exception: {}'.format(error))
+                return Result.Error(False)
+
+            return Result.Ok(version)
+
         self._session = koji.ClientSession(url)
-        version = self._call_api('getAPIVersion')
+        version = gluetool.utils.wait(
+            "getting api version",
+            _api_version,
+            timeout=self.option('api-version-retry-timeout'),
+            tick=self.option('api-version-retry-tick')
+        )
         self.info('connected to {} instance \'{}\' API version {}'.format(self.unique_name, url, version))
 
         task_initializers = self._find_task_initializers(

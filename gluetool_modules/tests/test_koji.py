@@ -80,7 +80,9 @@ def fixture_koji_module(monkeypatch, rules_engine):
         'url': 'https://koji.fedoraproject.org/kojihub',
         'pkgs-url': 'https://kojipkgs.fedoraproject.org',
         'web-url': 'https://koji.fedoraproject.org/koji',
-        'baseline-tag-map': testing_asset('koji', 'baseline-tag-map.yaml')
+        'baseline-tag-map': testing_asset('koji', 'baseline-tag-map.yaml'),
+        'api-version-retry-tick': 1,
+        'api-version-retry-timeout': 2
     }
 
     patch_shared(monkeypatch, mod, {}, callables={
@@ -391,3 +393,20 @@ def test_baseline(koji_session, koji_module, log):
 
     assert koji_module._tasks[0].baseline_task.nvr == nvr
     assert koji_module._tasks[0].baseline == nvr
+
+
+@pytest.mark.parametrize('koji_session', [
+    15869828,
+], indirect=True)
+def test_server_offline(koji_session, koji_module, monkeypatch):
+    """
+    Tests if api version call is retried on server offline
+    """
+
+    api_mock = MagicMock(side_effect=koji.ServerOffline)
+    monkeypatch.setattr(koji_module, '_call_api', api_mock)
+
+    with pytest.raises(gluetool.GlueError, match=r"Condition 'getting api version' failed to pass within given time"):
+        koji_module.execute()
+
+    assert len(api_mock.mock_calls) > 1
