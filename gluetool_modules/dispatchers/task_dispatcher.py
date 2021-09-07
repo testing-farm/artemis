@@ -7,6 +7,9 @@ import gluetool
 from gluetool.log import log_dict
 from gluetool.utils import cached_property
 
+# Type annotations
+from typing import List, Dict, Any, Optional  # noqa
+
 
 class TaskDispatcher(gluetool.Module):
     """
@@ -43,9 +46,9 @@ class TaskDispatcher(gluetool.Module):
     }
 
     def __init__(self, *args, **kwargs):
-        super(TaskDispatcher, self).__init__(*args, **kwargs)
+        # type: (*Any, **Any) -> None
 
-        self.build = {}
+        super(TaskDispatcher, self).__init__(*args, **kwargs)
 
         self._thread_id = None
         self._subthread_counter = 0
@@ -53,6 +56,8 @@ class TaskDispatcher(gluetool.Module):
 
     @cached_property
     def pipeline_test_categories(self):
+        # type: () -> Optional[gluetool.utils.SimplePatternMap]
+
         if not self.option('pipeline-test-categories'):
             return None
 
@@ -60,12 +65,15 @@ class TaskDispatcher(gluetool.Module):
 
     @cached_property
     def pipeline_test_types(self):
+        # type: () -> Optional[gluetool.utils.SimplePatternMap]
+
         if not self.option('pipeline-test-types'):
             return None
 
         return gluetool.utils.SimplePatternMap(self.option('pipeline-test-types'), logger=self.logger)
 
     def execute(self):
+        # type: () -> None
         """
         Dispatch tests for a component. Ask for what modules should be called, and their options,
         and run them.
@@ -80,6 +88,8 @@ class TaskDispatcher(gluetool.Module):
             self._thread_id = self.shared('thread_id')
 
         def _find_test_property(module, args, test_property, mapping):
+            # type: (str, List[str], str, gluetool.utils.SimplePatternMap) -> str
+
             joined_args = ' '.join(args)
 
             log_dict(self.debug, "find test property '{}' for job".format(test_property), args)
