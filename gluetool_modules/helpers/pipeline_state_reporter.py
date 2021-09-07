@@ -464,14 +464,14 @@ class PipelineStateReporter(gluetool.Module):
         # an exception may have been raised and by always reporting the properties we can be
         # sure even the 'complete' report would be connected with the original issue, and
         # therefore open to investigation.
-        body['reason'] = self._get_error_reason(error_message)
-
+        body['error'] = {
+            'reason': self._get_error_reason(error_message),
+            'issue_url': error_url
+        }
         # If the note wasn't been set by the module option, add error reason there.
         # CI dashboard will show the note as a reason to failed or skipped test.
         if not body['note']:
             body['note'] = self._get_error_reason(error_message)
-
-        body['issue_url'] = error_url
 
         render_context = gluetool.utils.dict_update(self.shared('eval_context'), {
             'HEADERS': headers,

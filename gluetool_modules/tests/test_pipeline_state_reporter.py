@@ -301,9 +301,11 @@ def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish
         'artifact': ARTIFACT,
         'contact': CI,
         'run': RUN,
-        'issue_url': None,
+        'error': {
+            'reason': 'some-reason',
+            'issue_url': None,
+        },
         'note': 'some-note',
-        'reason': 'some-reason',
         'version': '1.1.6',
         'test': {
             'category': 'some-category',
@@ -343,12 +345,14 @@ def test_execute_reason_in_note(ci_info, evaluate, monkeypatch, module, mock_nam
         'artifact': ARTIFACT,
         'contact': CI,
         'run': RUN,
-        'issue_url': None,
+        'error': {
+            'reason': 'some-reason',
+            'issue_url': None,
+        },
         'note': 'some-reason',
         'pipeline': {
             'name': 'BaseOS CI',
         },
-        'reason': 'some-reason',
         'test': {
             'category': 'some-category',
             'docs': 'some-docs',
@@ -373,7 +377,7 @@ def test_destroy(module, evaluate, publish_messages, mock_namespace):
     # test with failure and publish_bus_messages
     module.destroy(failure=MagicMock(sentry_event_url='sentry-url'))
     assert publish_messages['message'].body['test']['result'] == 'unknown'
-    assert publish_messages['message'].body['issue_url'] == 'sentry-url'
+    assert publish_messages['message'].body['error']['issue_url'] == 'sentry-url'
 
 
 def test_destroy_with_results_and_recipients(module, evaluate, mock_namespace, publish_messages):
