@@ -4,7 +4,6 @@
 import pytest
 import gluetool
 from mock import MagicMock
-import gluetool_modules.dispatchers.task_dispatcher
 from gluetool_modules.dispatchers.task_dispatcher import TaskDispatcher
 from . import create_module, patch_shared, check_loadable
 

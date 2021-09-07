@@ -3,6 +3,7 @@
 
 import re
 import shlex
+import six
 
 import gluetool
 from gluetool import GlueError, SoftGlueError
@@ -10,7 +11,64 @@ from gluetool.log import format_dict, log_dict
 from gluetool.utils import cached_property, load_yaml, PatternMap
 
 # Type annotations
-from typing import List, Tuple  # Ignore PyUnusedCodeBear
+from typing import cast, List, Tuple, Dict, Any, Optional, Callable, Union  # Ignore PyUnusedCodeBear
+from typing_extensions import TypedDict  # Ignore PyUnusedCodeBear
+
+# Type for rules mapping file, i.e. ignore_methods_map, etc.
+RulesMapType = List[Dict[str, Union[str, List[str]]]]
+
+# Types for static configuration
+#
+# - name:
+#   rule: xyz
+#   all:
+#     - command1
+#     - command2
+#   default:
+#     - command1
+#     - command2
+#   packages:
+#     foo:
+#       - flag1: foo
+#         flag2: bar
+#       - command1
+#       - command2
+#
+#     bar:
+#       flags:
+#         foo: bar
+#       extra-testing:
+#         - rules
+#         - command1
+#         - command2
+#       extra-special-testing:
+#         - rules
+#         - flag1: foo
+#           flag2: bar
+#         - command3
+#         - command4
+#       default:
+#         - command5
+
+CommandType = str
+RuleType = str
+
+PackageDictType = Dict[str, Any]
+DefaultAllType = List[CommandType]
+SubSectionType = Union[PackageDictType, DefaultAllType]
+
+SectionType = TypedDict(
+    'SectionType',
+    {
+        'rule': RuleType,
+        'all': List[CommandType],
+        'default': List[CommandType],
+        'packages': Optional[Dict[str, PackageDictType]]
+    }
+)
+
+SectionDictType = Dict[str, SectionType]
+PlannerCallbackType = Callable[[], List[Tuple[Any, Any]]]
 
 
 class CommandsError(SoftGlueError):
@@ -23,6 +81,7 @@ class CommandsError(SoftGlueError):
     """
 
     def __init__(self, message, commands):
+        # type: (str, SubSectionType) -> None
         super(CommandsError, self).__init__(message)
 
         self.commands = commands
@@ -30,6 +89,8 @@ class CommandsError(SoftGlueError):
 
 class NoFilteringRulesError(CommandsError):
     def __init__(self, name, commands):
+        # type: (str, SubSectionType) -> None
+
         super(NoFilteringRulesError, self).__init__(
             "Command set '{}' does not contain any filtering rules".format(name),
             commands)
@@ -37,6 +98,8 @@ class NoFilteringRulesError(CommandsError):
 
 class UnexpectedConfigDataError(CommandsError):
     def __init__(self, commands):
+        # type: (SubSectionType) -> None
+
         super(UnexpectedConfigDataError, self).__init__(
             'Unexpected command or structures found in config file',
             commands)
@@ -76,7 +139,7 @@ class TestBatchPlanner(gluetool.Module):
 
     It is possible to tweak *priority* of each scheduled test, via ``--job-priority-map``:
 
-    .. code-block:: yaml
+    .. code-block: yaml
 
        ---
 
@@ -148,10 +211,11 @@ class TestBatchPlanner(gluetool.Module):
 
     required_options = ('methods',)
 
-    shared_functions = ('plan_test_batch',)
+    shared_functions = ['plan_test_batch']
 
     @cached_property
     def job_result_types(self):
+        # type: () -> Dict[str, str]
         # we accept multiple --job-result-type options, and when set in config
         # file, one can have multiple pairs...
 
@@ -182,19 +246,29 @@ class TestBatchPlanner(gluetool.Module):
 
     @cached_property
     def _ignore_methods_map(self):
+        # type: () -> RulesMapType
+
         if not self.option('ignore-methods-map'):
             return []
 
-        return load_yaml(self.option('ignore-methods-map'), logger=self.logger)
+        return cast(RulesMapType, load_yaml(self.option('ignore-methods-map'), logger=self.logger))
 
     @cached_property
     def _job_priority_map(self):
+        # type: () -> RulesMapType
+
         if not self.option('job-priority-map'):
             return []
 
-        return load_yaml(self.option('job-priority-map'), logger=self.logger)
+        return cast(RulesMapType, load_yaml(self.option('job-priority-map'), logger=self.logger))
 
-    def _reduce_section(self, commands, is_component=True, default_commands=None, all_commands=None):
+    def _reduce_section(self,
+                        commands,  # type: Optional[SubSectionType]
+                        is_component=True,  # type: bool
+                        default_commands=None,  # type: Optional[List[CommandType]]
+                        all_commands=None  # type: Optional[List[CommandType]]
+                        ):  # noqa
+        # type: (...) -> Dict[str, List[CommandType]]
         """
         Reduce commands to a minimal set - apply filtering rules, apply global sections,
         and return set of command sets.
@@ -208,6 +282,8 @@ class TestBatchPlanner(gluetool.Module):
         reduced = {}
 
         def _default_flags():
+            # type: () -> Dict[str, None]
+
             return {
                 'apply-all': None,
                 'recipients': None,
@@ -217,6 +293,8 @@ class TestBatchPlanner(gluetool.Module):
         section_flags = _default_flags()
 
         def _add_command_set(name, set_commands):
+            # type: (str, Any) -> None
+
             self.debug("    adding command set '{}', with commands:\n{}".format(name, format_dict(set_commands)))
 
             if not set_commands:
@@ -224,6 +302,7 @@ class TestBatchPlanner(gluetool.Module):
                     # there is nothing in this command set, not even flag telling us
                     # to avoid "all" commands, therefore add just them
                     self.debug('      empty command set, using only "all" commands')
+                    assert all_commands is not None
                     reduced[name] = all_commands[:]
 
                 else:
@@ -362,7 +441,7 @@ class TestBatchPlanner(gluetool.Module):
 
             log_dict(self.debug, 'section flags', section_flags)
 
-            for set_name, set_commands in commands.iteritems():
+            for set_name, set_commands in six.iteritems(commands):
                 self.debug('  checking command set {}'.format(set_name))
 
                 if set_name == 'default':
@@ -391,6 +470,7 @@ class TestBatchPlanner(gluetool.Module):
         raise UnexpectedConfigDataError(commands)
 
     def _construct_command_sets(self, config, component):
+        # type: (PackageDictType, str) -> Dict[str, List[CommandType]]
         """
         Preprocess configuration for given component, and create a pile of
         "command sets". Each set has a name and list of commands, and can carry
@@ -418,6 +498,8 @@ class TestBatchPlanner(gluetool.Module):
         self.debug("construct command sets for component '{}'".format(component))
 
         def _reduce_global_section(name):
+            # type: (str) -> List[CommandType]
+
             self.debug('reducing "{}" section'.format(name))
 
             commands = self._reduce_section(config.get(name, []), is_component=False)
@@ -444,7 +526,7 @@ class TestBatchPlanner(gluetool.Module):
             # either there's no key "packages", or it's empty
             packages_config = {}
 
-        component_commands = None
+        component_commands = None  # type: Optional[SubSectionType]
 
         for pattern, commands in packages_config.iteritems():
             self.debug("component: '{}', pattern: '{}'".format(component, pattern))
@@ -473,6 +555,8 @@ class TestBatchPlanner(gluetool.Module):
                                     default_commands=global_default_commands)
 
     def _plan_by_sidetag(self):
+        # type: () ->  List[Any]
+
         self.require_shared('trigger_message')
 
         message = self.shared('trigger_message')
@@ -506,6 +590,8 @@ class TestBatchPlanner(gluetool.Module):
         return final_commands
 
     def _plan_by_static_config(self, companion_nvrs=None):
+        # type: (Optional[List[str]]) -> List[Tuple[Any, Any]]
+
         self.require_shared('evaluate_rules', 'eval_context')
 
         if not self.configs:
@@ -518,11 +604,13 @@ class TestBatchPlanner(gluetool.Module):
         context = self.shared('eval_context')
 
         def _modify_build_dependecies(args):
+            # type: (List[str]) -> List[str]
             # modify existing --build-dependecies-options
             if not any(['--build-dependencies-options' in arg for arg in args]):
 
                 self.debug('added new build dependencies')
 
+                assert companion_nvrs is not None
                 nvrs = ','.join(companion_nvrs)
 
                 args.append(
@@ -536,9 +624,12 @@ class TestBatchPlanner(gluetool.Module):
             return args
 
         def _alter_companions_nvr(arg):
+            # type: (str) -> str
             # not an option we are interested in, just return it
             if '--build-dependencies-options' not in arg:
                 return arg
+
+            assert companion_nvrs is not None
 
             # create companion-nvrs option
             nvrs = '--companions-nvr={}'.format(','.join(companion_nvrs))
@@ -554,8 +645,7 @@ class TestBatchPlanner(gluetool.Module):
             return '{} {}'.format(arg, nvrs)
 
         for config_filepath in self.configs:
-            config = load_yaml(config_filepath, logger=self.logger)
-
+            config = cast(List[SectionDictType], load_yaml(config_filepath, logger=self.logger))
             self.debug('find out which config section we should use')
 
             matching_section = None
@@ -581,7 +671,7 @@ class TestBatchPlanner(gluetool.Module):
             commands = self._construct_command_sets(matching_section, task.component_id)
             log_dict(self.debug, 'commands', commands)
 
-            for set_name, set_commands in commands.iteritems():
+            for set_name, set_commands in six.iteritems(commands):
                 commands_desc = '\n'.join(['  {}'.format(command) for command in set_commands])
                 self.info("Set '{}':\n{}".format(set_name, commands_desc))
 
@@ -611,6 +701,8 @@ class TestBatchPlanner(gluetool.Module):
         return final_commands
 
     def _plan_by_basic_static_config(self):
+        # type: () -> List[Tuple[Any, Any]]
+
         self.require_shared('evaluate_filter')
 
         task = self.shared('primary_task')
@@ -646,13 +738,19 @@ class TestBatchPlanner(gluetool.Module):
 
     @cached_property
     def sti_job_map(self):
+        # type: () -> gluetool.utils.PatternMap
+
         return PatternMap(self.option('sti-job-map'), logger=self.logger)
 
     @cached_property
     def tmt_job_map(self):
+        # type: () -> gluetool.utils.PatternMap
+
         return PatternMap(self.option('tmt-job-map'), logger=self.logger)
 
     def _plan_by_sti(self):
+        # type: () -> List[Tuple[str, List[str]]]
+
         self.require_shared('dist_git_repository')
 
         task = self.shared('primary_task')
@@ -695,9 +793,13 @@ class TestBatchPlanner(gluetool.Module):
         )]
 
     def _get_ignored_methods(self):
+        # type: () -> List[Any]
+
         ignored_methods = []
 
         def _add_ignore_methods(instruction, command, argument, context):
+            # type: (Any, Any, Any, Any) -> None
+
             if not isinstance(argument, list):
                 raise GlueError('ignore-methods MUST be a list.')
 
@@ -711,6 +813,7 @@ class TestBatchPlanner(gluetool.Module):
         return ignored_methods
 
     def plan_test_batch(self):
+        # type: () -> List[Tuple[Any, Any]]
         """
         Returns list of modules and their options. These modules implement testing process
         of given artifact.
@@ -730,7 +833,7 @@ class TestBatchPlanner(gluetool.Module):
 
         self.require_shared('primary_task')
 
-        test_batch = []
+        test_batch = []  # type: List[Tuple[Any, Any]]
 
         ignored_methods = self._get_ignored_methods()
 
@@ -752,6 +855,8 @@ class TestBatchPlanner(gluetool.Module):
         # Apply priorities where necessary
         for i, batch_command in enumerate(test_batch):
             def _set_priority(instruction, command, argument, context):
+                # type: (Any, Any, int, Any) -> None
+
                 try:
                     priority = int(argument)
 
@@ -776,20 +881,21 @@ class TestBatchPlanner(gluetool.Module):
         return test_batch
 
     def sanity(self):
+        # type: () -> None
+
         self._planners = {
             'basic-static-config': self._plan_by_basic_static_config,
             'tmt': self._plan_by_tmt,
             'sidetag': self._plan_by_sidetag,
             'static-config': self._plan_by_static_config,
             'sti': self._plan_by_sti
-        }
+        }  # type: Dict[str, PlannerCallbackType]
 
         self._methods = gluetool.utils.normalize_multistring_option(self.option('methods'))
         self._sidetag_jobs = gluetool.utils.normalize_multistring_option(self.option('sidetag-jobs'))
 
         if 'static-config' in self._methods and 'basic-static-config' in self._methods:
             raise gluetool.utils.IncompatibleOptionsError(
-                self,
                 "methods 'basic-static-config' and 'static-config' cannot be used together"
             )
 
