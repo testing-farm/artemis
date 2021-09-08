@@ -18,6 +18,8 @@ from gluetool.log import log_dict
 from gluetool.utils import render_template, normalize_bool_option
 import gluetool_modules.libs
 
+from typing import Any, List, Optional, Dict, Tuple, Union, cast  # noqa
+
 
 STATE_QUEUED = 'queued'
 STATE_RUNNING = 'running'
@@ -225,10 +227,11 @@ class PipelineStateReporter(gluetool.Module):
         'bus-topic',
         'test-namespace')
 
-    shared_functions = ('report_pipeline_state',)
+    shared_functions = ['report_pipeline_state']
 
     @property
     def eval_context(self):
+        # type: () -> Dict[str, Optional[str]]
         __content__ = {  # noqa
             'PIPELINE_TEST_TYPE': """
                                   Type of tests provided in this pipeline, e.g. ``tier1``, ``rpmdiff-analysis``,
@@ -271,6 +274,7 @@ class PipelineStateReporter(gluetool.Module):
 
     @gluetool.utils.cached_property
     def artifact_map(self):
+        # type: () -> Any
         if not self.option('artifact-map'):
             return []
 
@@ -278,6 +282,7 @@ class PipelineStateReporter(gluetool.Module):
 
     @gluetool.utils.cached_property
     def error_reason_map(self):
+        # type: () -> Any
         if not self.option('error-reason-map'):
             return []
 
@@ -285,6 +290,7 @@ class PipelineStateReporter(gluetool.Module):
 
     @gluetool.utils.cached_property
     def test_docs_map(self):
+        # type: () -> Any
         if not self.option('test-docs-map'):
             return []
 
@@ -292,6 +298,7 @@ class PipelineStateReporter(gluetool.Module):
 
     @gluetool.utils.cached_property
     def run_map(self):
+        # type: () -> Any
         if not self.option('run-map'):
             return []
 
@@ -299,6 +306,7 @@ class PipelineStateReporter(gluetool.Module):
 
     @gluetool.utils.cached_property
     def final_overall_result_map(self):
+        # type: () -> Any
         if not self.option('final-overall-result-map'):
             return []
 
@@ -306,18 +314,21 @@ class PipelineStateReporter(gluetool.Module):
 
     @gluetool.utils.cached_property
     def final_state_map(self):
+        # type: () -> Any
         if not self.option('final-state-map'):
             return []
 
         return gluetool.utils.load_yaml(self.option('final-state-map'), logger=self.logger)
 
     def _subject_info(self, subject_name, instructions):
+        # type: (str, str) -> Dict[str, Any]
         self.require_shared('evaluate_instructions', 'evaluate_rules')
 
         subject_info = {}
 
         # Callback for 'details' command, applies changes to `subject_info`
         def _details_callback(instruction, command, argument, context):
+            # type: (Dict[str, Any], str, Dict[str, Any], Dict[Any, Any]) -> None
             if instruction.get('eval-as-rule', False):
                 subject_info.update({
                     detail: self.shared('evaluate_rules', value, context=context)
@@ -334,6 +345,7 @@ class PipelineStateReporter(gluetool.Module):
         # Callback for 'eval-as-rule' command - it does nothing, it is handled by 'details' callback,
         # but we must provide it anyway to make ``rules-engine`` happy (unhandled command).
         def _eval_as_rule_callback(instruction, command, argument, context):
+            # type: (Dict[str, Any], str, str, str) -> None
             pass
 
         self.shared('evaluate_instructions', instructions, {
@@ -344,6 +356,7 @@ class PipelineStateReporter(gluetool.Module):
         return subject_info
 
     def _artifact_info(self):
+        # type: () -> Dict[str, Union[str, int]]
         artifact = self._subject_info('artifact', self.artifact_map,)
         if 'id' in artifact:
             try:
@@ -354,6 +367,7 @@ class PipelineStateReporter(gluetool.Module):
         return artifact
 
     def _contact_info(self):
+        # type: () -> Dict[str, str]
         return {
             'name': self.option('contact-name'),
             'team': self.option('contact-team'),
@@ -364,11 +378,13 @@ class PipelineStateReporter(gluetool.Module):
         }
 
     def _run_info(self):
+        # type: () -> Dict[str, Any]
         return self._subject_info('run', self.run_map)
 
     def _init_message(self, thread_id):
-        headers = {}
-        body = {}
+        # type: (Optional[str]) -> Tuple[Dict[str, Any], Dict[str, Any]]
+        headers = {}  # type: Dict[str, Any]
+        body = {}  # type: Dict[str, Any]
 
         artifact = self._artifact_info()
         contact = self._contact_info()
@@ -397,11 +413,22 @@ class PipelineStateReporter(gluetool.Module):
 
         return headers, body
 
-    def report_pipeline_state(self, state, thread_id=None, topic=None,
-                              test_category=None, test_docs=None, test_namespace=None, test_type=None,
-                              test_overall_result=None, test_results=None,
-                              distros=None,
-                              error_message=None, error_url=None):
+    def report_pipeline_state(
+        self,
+        state,  # type: str
+        thread_id=None,  # type: Optional[str]
+        topic=None,  # type: Optional[str]
+        test_category=None,  # type: Optional[str]
+        test_docs=None,  # type: Optional[str]
+        test_namespace=None,  # type: Optional[str]
+        test_type=None,  # type: Optional[str]
+        test_overall_result=None,  # type: Optional[str]
+        test_results=None,  # type: Optional[str]
+        distros=None,  # type: Optional[List[Tuple[str, str, str]]]
+        error_message=None,  # type: Optional[str]
+        error_url=None  # type: Optional[str]
+    ):
+        # type: (...) -> None
         """
         Send out the message reporting the pipeline state.
 
@@ -430,7 +457,7 @@ class PipelineStateReporter(gluetool.Module):
             link to an automatically created Sentry issue, or link to a Jira issue discissing the error.
         """
 
-        distros = distros or []
+        distros = distros or cast(List[Tuple[str, str, str]], ())
         topic = topic or self.option('bus-topic')
 
         headers, body = self._init_message(thread_id)
@@ -493,6 +520,7 @@ class PipelineStateReporter(gluetool.Module):
         self.shared('publish_bus_messages', message, topic=topic)
 
     def _set_pr_status(self, status, description):
+        # type: (str, str) -> None
         self.require_shared('set_pr_status')
 
         # The PR_TESTING_ARTIFACTS_URL represents an URL where testing artifacts will be stored
@@ -505,6 +533,7 @@ class PipelineStateReporter(gluetool.Module):
                     target_url=pr_status_url)
 
     def execute(self):
+        # type: () -> None
         if normalize_bool_option(self.option('dont-report-running')):
             self.info('not reporting the beginning of the pipeline')
             return
@@ -517,6 +546,7 @@ class PipelineStateReporter(gluetool.Module):
         self.report_pipeline_state(STATE_RUNNING)
 
     def _get_test_namespace(self):
+        # type: () -> str
         """
         Return a rendered test namespace.
 
@@ -530,15 +560,17 @@ class PipelineStateReporter(gluetool.Module):
         )
 
     def _get_overall_result_xunit(self, test_results):
+        # type: (bs4.element.Tag) -> str
         """
         Decide what the overall result should be, based on xUnit representation of test results.
 
         It is quite simple - xUnit representation already carries necessary value.
         """
 
-        return test_results['overall-result']
+        return cast(str, test_results['overall-result'])
 
     def _get_overall_result_legacy(self, results):
+        # type: (bs4.element.Tag) -> str
         """
         Decide what the overall result should be, based on internal representation of test results.
         """
@@ -555,6 +587,7 @@ class PipelineStateReporter(gluetool.Module):
         return 'failed'
 
     def _get_final_overall_result(self, results, failure):
+        # type: (str, Optional[gluetool.Failure]) -> str
         """
         Read instructions from a file, and find out what the final overall result of the current pipeline
         should be. If the instructions yield no decision, use default simple scheme to decide.
@@ -571,6 +604,7 @@ class PipelineStateReporter(gluetool.Module):
 
         # Callback for 'result' command
         def _result_callback(instruction, command, argument, context):
+            # type: (str, str, str, str) -> None
             overall_result.result = argument.strip()
 
             self.debug("final overall result set to '{}'".format(overall_result.result))
@@ -580,7 +614,7 @@ class PipelineStateReporter(gluetool.Module):
         }, context=context, default_rule='False')
 
         if overall_result.result is not None:
-            return overall_result.result
+            return cast(str, overall_result.result)
 
         # No instruction applied, therefore fall back to default behavior.
         if isinstance(results, bs4.element.Tag):
@@ -589,6 +623,7 @@ class PipelineStateReporter(gluetool.Module):
         return self._get_overall_result_legacy(results)
 
     def _get_final_state(self, failure):
+        # type: (Any) -> str
         """
         Read instructions from a file, and find out what the final state of the current pipeline
         should be.
@@ -611,18 +646,19 @@ class PipelineStateReporter(gluetool.Module):
 
             self.debug("final state set to '{}'".format(instr['state']))
 
-            return instr['state']
+            return cast(str, instr['state'])
 
         return STATE_ERROR if failure else STATE_COMPLETE
 
     def _get_test_docs(self):
+        # type: () -> Optional[str]
         """
         Read instructions from a file and find the documentation by evaluating the given rules.
         """
 
         # force test docs if specified
         if self.option('test-docs'):
-            return self.option('test-docs')
+            return cast(str, self.option('test-docs'))
 
         context = self.shared('eval_context')
 
@@ -639,11 +675,12 @@ class PipelineStateReporter(gluetool.Module):
 
             self.debug("test docs set to '{}'".format(instr['docs']))
 
-            return instr['docs']
+            return cast(str, instr['docs'])
 
         return None
 
     def _get_error_reason(self, error_message):
+        # type: (Optional[str]) -> Optional[str]
         """
         Read instructions from a file to determine the error reason. By default return the error message.
         """
@@ -671,6 +708,7 @@ class PipelineStateReporter(gluetool.Module):
         return error_message
 
     def destroy(self, failure=None):
+        # type: (Optional[gluetool.Failure]) -> None
         if failure is not None and isinstance(failure.exc_info[1], SystemExit):
             return
 
@@ -688,7 +726,7 @@ class PipelineStateReporter(gluetool.Module):
         kwargs = {
             'test_results': None,
             'test_overall_result': overall_result
-        }
+        }  # type: Dict[str, Any]
 
         # If the result is already an XML tree, therefore serialized, do nothing.
         if isinstance(test_results, bs4.element.Tag):
@@ -702,6 +740,7 @@ class PipelineStateReporter(gluetool.Module):
             })
 
         if failure:
+            assert failure.exc_info[1] is not None
             kwargs.update({
                 'error_message': str(failure.exc_info[1].message),
                 'error_url': failure.sentry_event_url
