@@ -21,11 +21,12 @@ from gluetool.result import Error, Ok, Result
 from pint import Quantity
 from typing_extensions import Protocol, TypedDict
 
-from .. import Failure, JSONType, Knob, SerializableContainer, get_cached_item, get_cached_items_as_list, \
-    log_dict_yaml, process_output_to_str, refresh_cached_set, safe_call
+from .. import Failure, JSONType, SerializableContainer, get_cached_item, get_cached_items_as_list, log_dict_yaml, \
+    process_output_to_str, refresh_cached_set, safe_call
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
 from ..environment import UNITS, Environment, Flavor
+from ..knobs import Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 
 T = TypeVar('T')

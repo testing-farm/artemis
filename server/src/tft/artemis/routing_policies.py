@@ -10,10 +10,11 @@ from gluetool.log import log_dict, log_table
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import Failure, JSONType, Knob, partition
+from . import Failure, JSONType, partition
 from .db import GuestRequest
 from .drivers import PoolCapabilities, PoolDriver
 from .environment import Environment
+from .knobs import Knob
 from .metrics import PoolMetrics
 
 

@@ -18,9 +18,10 @@ from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 from typing_extensions import TypedDict
 
-from .. import Failure, JSONType, Knob, log_dict_yaml
+from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, Environment, Flavor, FlavorCpu
+from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, PoolCapabilities, PoolData, \

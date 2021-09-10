@@ -23,7 +23,7 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import KNOB_POOL_ENABLED, Failure, Knob, get_broker, get_db, get_logger, metrics, safe_call
+from . import Failure, get_broker, get_db, get_logger, metrics, safe_call
 from .context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
     SnapshotRequest, SSHKey, safe_db_change, upsert
@@ -35,6 +35,7 @@ from .drivers import localhost as localhost_driver
 from .drivers import openstack as openstack_driver
 from .drivers import ping_shell_remote
 from .guest import GuestLogger, GuestState, SnapshotLogger
+from .knobs import KNOB_POOL_ENABLED, Knob
 from .profile import Profiler
 from .routing_policies import PolicyRuling
 from .script import hook_engine

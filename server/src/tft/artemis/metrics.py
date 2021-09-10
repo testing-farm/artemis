@@ -30,11 +30,12 @@ import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
 
-from . import __VERSION__, KNOB_POOL_ENABLED, Failure
+from . import __VERSION__, Failure
 from . import db as artemis_db
 from . import safe_call
 from .context import DATABASE, SESSION, with_context
 from .guest import GuestState
+from .knobs import KNOB_POOL_ENABLED
 
 T = TypeVar('T')
 

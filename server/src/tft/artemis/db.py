@@ -1042,7 +1042,7 @@ def after_cursor_execute(
     context: Any,
     executemany: Any
 ) -> None:
-    from . import KNOB_LOGGING_DB_SLOW_QUERIES, KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD
+    from .knobs import KNOB_LOGGING_DB_SLOW_QUERIES, KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD
 
     if KNOB_LOGGING_DB_SLOW_QUERIES.value is not True:
         return
@@ -1072,7 +1072,7 @@ class DB:
         url: str,
         application_name: Optional[str] = None
     ) -> None:
-        from . import KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE, KNOB_LOGGING_DB_POOL, KNOB_LOGGING_DB_QUERIES
+        from .knobs import KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE, KNOB_LOGGING_DB_POOL, KNOB_LOGGING_DB_QUERIES
 
         self.logger = logger
 
@@ -1507,7 +1507,8 @@ def convert_column_json_to_str(op: Any, tablename: str, columnname: str, rename_
 
 def init_postgres() -> None:
     # `artemis` imports `artemis.db`, therefore `artemis.db` cannot import artemis on module-level.
-    from . import KNOB_DB_URL, get_config, get_db, get_logger
+    from . import get_config, get_db, get_logger
+    from .knobs import KNOB_DB_URL
 
     logger = get_logger()
     server_config = get_config()
@@ -1521,7 +1522,8 @@ def init_postgres() -> None:
 
 def init_sqlite() -> None:
     # `artemis` imports `artemis.db`, therefore `artemis.db` cannot import artemis on module-level.
-    from . import KNOB_DB_URL, get_config, get_db, get_logger
+    from . import get_config, get_db, get_logger
+    from .knobs import KNOB_DB_URL
 
     logger = get_logger()
     server_config = get_config()

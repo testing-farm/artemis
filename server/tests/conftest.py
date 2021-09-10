@@ -14,6 +14,7 @@ import alembic
 import alembic.config
 import tft.artemis
 import tft.artemis.context
+import tft.artemis.knobs
 import tft.artemis.tasks
 
 # The default list of database URLs we test against. Serves as a safe parameter when
@@ -56,12 +57,12 @@ def pytest_generate_tests(metafunc):
 def logger(caplog) -> gluetool.log.ContextAdapter:
     # Set the most detailed log level possible. It may help when debugging test failures, and we don't
     # keep it for the future, it gets thrown away when tests did not fail.
-    tft.artemis.KNOB_LOGGING_LEVEL.value = 'DEBUG'
+    tft.artemis.knobs.KNOB_LOGGING_LEVEL.value = 'DEBUG'
 
     # It might be better to avoid JSON when logging, but it might be also easier to test
     # logged messages as they would be JSON, and therefore easier to parse and verify.
     #
-    # tft.artemis.KNOB_LOGGING_JSON.value = False
+    # tft.artemis.knobs.KNOB_LOGGING_JSON.value = False
 
     logger = tft.artemis.get_logger()
 

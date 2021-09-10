@@ -32,12 +32,13 @@ from molten.typing import Middleware
 from prometheus_client import CollectorRegistry
 from typing_extensions import Protocol
 
-from .. import __VERSION__, KNOB_LOGGING_JSON, Failure, FailureDetailsType, JSONSchemaType, Knob
+from .. import __VERSION__, Failure, FailureDetailsType, JSONSchemaType
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, metrics, validate_data
 from ..context import DATABASE, LOGGER
 from ..environment import Environment
 from ..guest import GuestState
+from ..knobs import KNOB_LOGGING_JSON, Knob
 from ..script import hook_engine
 from ..tasks import get_snapshot_logger
 from . import errors

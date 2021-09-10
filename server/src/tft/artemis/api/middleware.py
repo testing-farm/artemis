@@ -14,8 +14,9 @@ from molten import Request, Response
 from molten.errors import HTTPError
 from molten.http.status_codes import HTTP_200
 
-from .. import Failure, Knob
+from .. import Failure
 from ..db import DB, SafeQuery, User, UserRoles
+from ..knobs import Knob
 from ..metrics import APIMetrics
 from . import errors
 

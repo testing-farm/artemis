@@ -10,8 +10,9 @@ import gluetool.log
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
 
-from .. import KNOB_CONFIG_DIRPATH, Failure, Knob, log_dict_yaml
+from .. import Failure, log_dict_yaml
 from ..environment import Environment
+from ..knobs import KNOB_CONFIG_DIRPATH, Knob
 from . import PoolDriver, PoolImageInfo
 
 KNOB_CACHE_PATTERN_MAPS: Knob[bool] = Knob(

@@ -13,9 +13,10 @@ import sqlalchemy.orm.session
 from gluetool.log import log_xml
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, Knob, log_dict_yaml
+from .. import Failure, log_dict_yaml
 from ..db import GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, Operator, Or
+from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, \
