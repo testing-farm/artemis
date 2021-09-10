@@ -127,6 +127,15 @@ KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
     default=30
 )
 
+KNOB_CONSOLE_EC2_URL: Knob[str] = Knob(
+    'aws.console.ec2.url',
+    'Templated URL of serial console of an AWS EC2 instance.',
+    has_db=False,
+    envvar='ARTEMIS_AWS_CONSOLE_EC2_URL',
+    cast_from_str=str,
+    default="https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0"  # noqa: FS003,E501
+)
+
 
 class FailedSpotRequest(Failure):
     def __init__(
@@ -210,6 +219,7 @@ class AWSDriver(PoolDriver):
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_native_post_install_script = True
         capabilities.supported_guest_logs = [
+            ('console', GuestLogContentType.URL),
             ('console', GuestLogContentType.BLOB)
         ]
 
@@ -1130,27 +1140,12 @@ class AWSDriver(PoolDriver):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        if guest_log.logname != 'console' or guest_log.contenttype != GuestLogContentType.BLOB:
-            # anything but "console/blob" is unsupported so far
+        if guest_log.logname != 'console' or guest_log.contenttype not in [GuestLogContentType.URL, GuestLogContentType.BLOB]:  # noqa: E501
             return Ok(GuestLogUpdateProgress(
                 state=GuestLogState.ERROR
             ))
 
-        # We're left with console/blob.
-
-        # According to [1], there are two options:
-        #
-        # * cached, buffered blob stored after the most recent transition state of the instance (start, stop, ...)
-        # * the "latest output" - which is available only for instances powered by Nitro.
-        #
-        # Since we're not yet familiar with Nitro instances, and the driver can't really track this bit of information
-        # and tell the difference, let's start with fetching the cached blob, and possibly merging them if the change,
-        # to capture logs across reboots.
-        #
-        # [1] https://docs.aws.amazon.com/cli/latest/reference/ec2/get-console-output.html
-
         pool_data = AWSPoolData.unserialize(guest_request)
-
         # This can actually happen, spot instances may take some time to get the instance ID.
         if pool_data.instance_id is None:
             return Ok(GuestLogUpdateProgress(
@@ -1158,23 +1153,47 @@ class AWSDriver(PoolDriver):
                 delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
             ))
 
-        r_output = self._aws_command([
-            'ec2',
-            'get-console-output',
-            '--instance-id', pool_data.instance_id
-        ], commandname='aws.ec2-get-console-output')
+        if guest_log.contenttype == GuestLogContentType.BLOB:
+            # We're left with console/blob.
 
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            # According to [1], there are two options:
+            #
+            # * cached, buffered blob stored after the most recent transition state of the instance (start, stop, ...)
+            # * the "latest output" - which is available only for instances powered by Nitro.
+            #
+            # Since we're not yet familiar with Nitro instances, and the driver can't really track this bit of
+            # information and tell the difference, let's start with fetching the cached blob,
+            # and possibly merging them if they change, to capture logs across reboots.
+            #
+            # [1] https://docs.aws.amazon.com/cli/latest/reference/ec2/get-console-output.html
 
-        output = cast(str, JQ_QUERY_CONSOLE_OUTPUT.input(r_output.unwrap()).first())
+            r_output = self._aws_command([
+                'ec2',
+                'get-console-output',
+                '--instance-id', pool_data.instance_id
+            ], commandname='aws.ec2-get-console-output')
 
-        # TODO logs: do some sort of magic to find out whether the blob we just got is already in DB.
-        # Maybe use difflib, or use delimiters and timestamps. We do not want to overide what we already have.
+            if r_output.is_error:
+                return Error(r_output.unwrap_error())
 
-        return Ok(GuestLogUpdateProgress(
-            state=GuestLogState.IN_PROGRESS,
-            # TODO logs: well, this *is* overwriting what we already downloaded... Do something.
-            blob=output,
-            delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
-        ))
+            output = cast(str, JQ_QUERY_CONSOLE_OUTPUT.input(r_output.unwrap()).first())
+
+            # TODO logs: do some sort of magic to find out whether the blob we just got is already in DB.
+            # Maybe use difflib, or use delimiters and timestamps. We do not want to overide what we already have.
+
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.IN_PROGRESS,
+                # TODO logs: well, this *is* overwriting what we already downloaded... Do something.
+                blob=output,
+                delay_update=KNOB_CONSOLE_BLOB_UPDATE_TICK.value
+            ))
+
+        else:
+            # Dealing with a console url. In AWS case only logged in users can access the console (1 session a time).
+            # The url has fixed format depending on instance_id only, let's just generate it for every instance.
+            output = KNOB_CONSOLE_EC2_URL.value.format(instance_id=pool_data.instance_id)  # noqa: FS002
+
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.COMPLETE,
+                url=output
+            ))
