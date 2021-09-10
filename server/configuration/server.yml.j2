@@ -9,7 +9,12 @@ users:
 ssh-keys:
   - name: master-key
     owner: artemis
-    file: {{ env("PWD") }}/master-key.yaml
+    private: |
+      {{ keys.master.private | indent(6) }}
+    public: |
+      {{ keys.master.public | indent(6) }}
+    fingerprint: |
+      {{ keys.master.fingerprint }}
 
 priority-groups:
   - name: default-priority

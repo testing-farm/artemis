@@ -253,10 +253,20 @@ def config_to_db(
                 insert_data={
                     SSHKey.enabled: True,
                     SSHKey.ownername: key_config['owner'],
-                    SSHKey.file: key_config['file'],
+                    SSHKey.private: key_config['private'].strip(),
+                    SSHKey.public: key_config['public'].strip(),
+                    # When adding new key, leave `file` column empty - it will be dropped in the future,
+                    # and we do not have any usable value for it.
+                    SSHKey.file: ''
+
                 },
                 update_data={
-                    'file': key_config['file']
+                    # But, when *updating* the key, do not touch the `file` column - we do not want to overwrite.
+                    # With `file` preserved, a downgrade to older Artemis should work, because those versions
+                    # worked with keys in extra files, and we keep that information safe. We just don't have it
+                    # for any *new* keys...
+                    'private': key_config['private'].strip(),
+                    'public': key_config['public'].strip()
                 }
             )
 

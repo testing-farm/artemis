@@ -172,13 +172,20 @@ properties:
         owner:
           type: string
 
-        file:
+        private:
+          type: string
+
+        public:
+          type: string
+
+        fingerprint:
           type: string
 
       required:
         - name
         - owner
-        - file
+        - private
+        - public
 
     minItems: 1
 

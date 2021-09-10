@@ -20,8 +20,11 @@ from gluetool.result import Error, Ok, Result
 from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
+from sqlalchemy_utils import EncryptedType
+from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 
 from .guest import GuestState
+from .knobs import get_vault_password
 
 if TYPE_CHECKING:  # noqa
     from mypy_extensions import VarArg
@@ -494,30 +497,15 @@ class SSHKey(Base):
     keyname = Column(String(250), primary_key=True, nullable=False)
     enabled = Column(Boolean())
     ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
+
+    # DEPRECATED: but kept for easier schema rollback. Once we're sure things work, we will drop the column.
     file = Column(String(250), nullable=False)
+
+    private = Column(EncryptedType(String, get_vault_password(), AesEngine, 'pkcs5'), nullable=False)
+    public = Column(EncryptedType(String, get_vault_password(), AesEngine, 'pkcs5'), nullable=False)
 
     owner = relationship('User', back_populates='sshkeys')
     guests = relationship('GuestRequest', back_populates='ssh_key')
-
-    @property
-    def _data(self) -> Dict[str, str]:
-
-        assert self.file
-
-        from . import get_vault
-
-        return cast(
-            Dict[str, str],
-            get_vault().load(self.file)
-        )
-
-    @property
-    def private(self) -> str:
-        return self._data['private']
-
-    @property
-    def public(self) -> str:
-        return self._data['public']
 
 
 class PriorityGroup(Base):
