@@ -48,7 +48,6 @@ jinja2.defaults.DEFAULT_FILTERS.update(
 # Now we can import our stuff without any fear we'd miss DEFAULT_FILTERS update
 from . import db as artemis_db  # noqa: E402
 from . import middleware as artemis_middleware  # noqa: E402
-from . import vault as artemis_vault  # noqa: E402
 
 if TYPE_CHECKING:
     from .environment import Environment
@@ -758,12 +757,6 @@ def get_db(logger: gluetool.log.ContextAdapter, application_name: Optional[str] 
         KNOB_DB_URL.value,
         application_name=application_name
     )
-
-
-def get_vault() -> artemis_vault.Vault:
-    from .knobs import get_vault_password
-
-    return artemis_vault.Vault(get_vault_password())
 
 
 def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Failure]:
