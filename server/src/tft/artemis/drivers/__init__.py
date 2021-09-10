@@ -162,6 +162,26 @@ KNOB_UPDATE_GUEST_REQUEST_TICK: Knob[int] = Knob(
     default=30
 )
 
+KNOB_LOGGING_CLI_OUTPUT: Knob[bool] = Knob(
+    'logging.cli.commands',
+    """
+    When enabled, Artemis would log CLI commands.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_LOG_CLI_COMMANDS',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+KNOB_LOGGING_CLI_COMMAND_PATTERN: Knob[str] = Knob(
+    'logging.cli.command-pattern',
+    'Log only commands matching the pattern.',
+    has_db=False,
+    envvar='ARTEMIS_LOG_CLI_COMMAND_PATTERN',
+    cast_from_str=str,
+    default=r'.*'
+)
+
 
 # Precompile the slow command pattern
 try:
@@ -172,6 +192,20 @@ except Exception as exc:
         'failed to compile ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN pattern',
         exc,
         pattern=KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN.value
+    ).handle(LOGGER.get())
+
+    sys.exit(1)
+
+
+# Precompile the command pattern
+try:
+    CLI_COMMAND_PATTERN = re.compile(KNOB_LOGGING_CLI_COMMAND_PATTERN.value)
+
+except Exception as exc:
+    Failure.from_exc(
+        'failed to compile ARTEMIS_LOG_CLI_COMMAND_PATTERN pattern',
+        exc,
+        pattern=KNOB_LOGGING_CLI_COMMAND_PATTERN.value
     ).handle(LOGGER.get())
 
     sys.exit(1)
@@ -1724,23 +1758,33 @@ def run_cli_tool(
                 command_time
             )
 
-        if KNOB_LOGGING_SLOW_CLI_COMMANDS.value is not True:
+        joined_command = command_join(command)
+
+        # We are expected to log the command when either one of these conditions is true:
+        #
+        # * CLI logging is enabled, and command matches given pattern, or
+        # * logging of *slow* commands is enabled, and the command matches given pattern *and* it took long enough.
+
+        def _log() -> None:
+            assert command_scrubber is not None
+
+            Failure(
+                'detected a slow CLI command',
+                command_output=output,
+                scrubbed_command=command_scrubber(command),
+                time=command_time
+            ).handle(logger, label='CLI output')
+
+        if KNOB_LOGGING_CLI_OUTPUT.value \
+           and CLI_COMMAND_PATTERN.match(joined_command):
+            _log()
             return
 
-        if SLOW_CLI_COMMAND_PATTERN.match(command_join(command)) is None:
+        if KNOB_LOGGING_SLOW_CLI_COMMANDS.value \
+           and SLOW_CLI_COMMAND_PATTERN.match(joined_command) \
+           and command_time < KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD.value:
+            _log()
             return
-
-        if command_time < KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD.value:
-            return
-
-        assert command_scrubber is not None
-
-        Failure(
-            'detected a slow CLI command',
-            command_output=output,
-            scrubbed_command=command_scrubber(command),
-            time=command_time
-        ).handle(logger)
 
     try:
         output = gluetool.utils.Command(command, logger=logger).run(env=env)
