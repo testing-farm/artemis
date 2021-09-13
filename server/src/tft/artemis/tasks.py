@@ -25,8 +25,8 @@ from typing_extensions import Protocol
 
 from . import Failure, get_broker, get_db, get_logger, metrics, safe_call
 from .context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
-from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
-    SnapshotRequest, SSHKey, safe_db_change, upsert
+from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, PoolDataType, \
+    SafeQuery, SnapshotRequest, SSHKey, safe_db_change, stringify_query, upsert
 from .drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
 from .drivers import aws as aws_driver
 from .drivers import azure as azure_driver
@@ -1057,8 +1057,8 @@ def _update_guest_state(
     guestname: str,
     new_state: GuestState,
     current_state: Optional[GuestState] = None,
-    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
-    current_pool_data: Optional[str] = None,
+    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState, PoolDataType]]] = None,
+    current_pool_data: Optional[PoolDataType] = None,
     **details: Any
 ) -> Result[bool, Failure]:
     handle_success, handle_failure, _ = create_event_handlers(
@@ -1093,7 +1093,9 @@ def _update_guest_state(
         query = query.where(GuestRequest.state == current_state)
 
     if current_pool_data:
-        query = query.where(GuestRequest.pool_data == current_pool_data)
+        query = query.where(
+            sqlalchemy.cast(GuestRequest._pool_data, sqlalchemy.Text) == json.dumps(current_pool_data)
+        )
 
     query = query.values(**values)
 
@@ -1604,8 +1606,8 @@ class Workspace:
         self,
         new_state: GuestState,
         current_state: Optional[GuestState] = None,
-        set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
-        current_pool_data: Optional[str] = None,
+        set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState, PoolDataType]]] = None,
+        current_pool_data: Optional[PoolDataType] = None,
         **details: Any
     ) -> None:
         """
@@ -2035,7 +2037,7 @@ class ProvisioningTailHandler(TailHandler):
             current_state=self.current_state,
             set_values={
                 'poolname': None,
-                'pool_data': json.dumps({}),
+                '_pool_data': {},
                 'address': None
             },
             current_pool_data=workspace.gr.pool_data
@@ -2824,8 +2826,8 @@ def do_update_guest_request(
     for failure in provisioning_progress.pool_failures:
         handle_failure(Error(failure), 'pool encountered failure during update')
 
-    new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
-        'pool_data': provisioning_progress.pool_data.serialize()
+    new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState, PoolDataType]] = {
+        '_pool_data': provisioning_progress.pool_data.serialize_to_json()
     }
 
     if provisioning_progress.ssh_info is not None:
@@ -2970,8 +2972,8 @@ def do_acquire_guest_request(
     # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
     # save guest's address. In both cases, we must be sure nobody else did any changes before us.
 
-    new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
-        'pool_data': provisioning_progress.pool_data.serialize()
+    new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState, PoolDataType]] = {
+        '_pool_data': provisioning_progress.pool_data.serialize_to_json()
     }
 
     if provisioning_progress.ssh_info is not None:
@@ -3030,7 +3032,7 @@ def do_acquire_guest_request(
         set_values=new_guest_values,
         address=provisioning_progress.address,
         pool=workspace.gr.poolname,
-        pool_data=provisioning_progress.pool_data.serialize()
+        _pool_data=provisioning_progress.pool_data.serialize_to_json()
     )
 
     if workspace.result:

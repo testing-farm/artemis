@@ -542,6 +542,7 @@ class Pool(Base):
     guests = relationship('GuestRequest', back_populates='pool')
 
 
+PoolDataType = Dict[str, Any]
 UserDataType = Dict[str, Optional[str]]
 
 
@@ -598,10 +599,14 @@ class GuestRequest(Base):
     ssh_username = Column(String(250), nullable=False)
 
     # Pool-specific data.
-    pool_data = Column(Text(), nullable=False)
+    _pool_data = Column(JSON(), nullable=False)
 
     # User specified data
     _user_data = Column(JSON(), nullable=False)
+
+    @property
+    def pool_data(self) -> PoolDataType:
+        return cast(PoolDataType, self._pool_data)
 
     @property
     def user_data(self) -> UserDataType:

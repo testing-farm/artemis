@@ -640,7 +640,7 @@ class GuestRequestManager:
                     ssh_username=DEFAULT_SSH_USERNAME,
                     priorityname=guest_request.priority_group,
                     poolname=None,
-                    pool_data=json.dumps({}),
+                    _pool_data={},
                     _user_data=guest_request.user_data,
                     state=GuestState.ROUTING,
                     skip_prepare_verify_ssh=guest_request.skip_prepare_verify_ssh,

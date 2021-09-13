@@ -30,6 +30,8 @@ from ..knobs import Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 
 T = TypeVar('T')
+S = TypeVar('S', bound='PoolResourcesIDs')
+U = TypeVar('U', bound='PoolData')
 
 
 GuestTagsType = Dict[str, str]
@@ -392,7 +394,7 @@ class ConsoleUrlData:
 
 
 @dataclasses.dataclass
-class PoolData:
+class PoolData(SerializableContainer):
     """
     Base class for containers of pool-specific data stored in guests requests. It is up to each driver
     to declare its own fields.
@@ -400,14 +402,11 @@ class PoolData:
 
     @classmethod
     def is_empty(cls, guest_request: GuestRequest) -> bool:
-        return guest_request.pool_data == json.dumps({})
-
-    def serialize(self) -> str:
-        return json.dumps(dataclasses.asdict(self))
+        return guest_request.pool_data == {}
 
     @classmethod
-    def unserialize(cls: Type[T], guest_request: GuestRequest) -> T:
-        return cls(**json.loads(guest_request.pool_data))  # type: ignore
+    def unserialize(cls: Type[U], guest_request: GuestRequest) -> U:
+        return cls.unserialize_from_json(guest_request.pool_data)
 
 
 class ProvisioningState(enum.Enum):
@@ -455,8 +454,6 @@ class ProvisioningProgress:
     #: be stored in this list.
     pool_failures: List[Failure] = dataclasses.field(default_factory=list)
 
-
-S = TypeVar('S', bound='PoolResourcesIDs')
 
 SerializedPoolResourcesIDs = str
 
