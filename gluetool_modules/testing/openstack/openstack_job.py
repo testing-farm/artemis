@@ -111,6 +111,14 @@ class OpenStackJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, g
             'help': 'Yum method to use for installation (default: %(default)s).',
             'type': str,
             'default': 'multi'
+        },
+        'install-brew-build-options': {
+            'help': 'Additional options for install-koji-build',
+            'type': str,
+        },
+        'brew-options': {
+            'help': 'Additional options for brew module.',
+            'type': str,
         }
     })
 
@@ -139,6 +147,8 @@ class OpenStackJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, g
             'guess_environment_options': self.option('guess-environment-options'),
             'wow_options': wow_options,
             'openstack_options': self.option('openstack-options'),
+            'brew_options': self.option('brew-options'),
+            'install_brew_build_options': self.option('install-brew-build-options'),
             'brew_build_task_params_options': brew_build_task_params_options,
             'test_scheduler_options': self.option('test-scheduler-options'),
             'test_scheduler_sti_options': self.option('test-scheduler-sti-options'),
