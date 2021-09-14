@@ -6,6 +6,11 @@ import gluetool_modules.libs.dispatch_job
 
 from gluetool.utils import render_template, from_yaml, cached_property
 
+# Type annotations
+from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Union, NamedTuple, Set  # noqa
+
+PlatformType = List[Dict[str, Any]]
+
 
 class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, gluetool.Module):
     """
@@ -91,6 +96,7 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
     })
 
     def system_roles_ansibles(self):
+        # type: () -> Dict[str, str]
         mapping = {}
 
         for pair in self.option('system-roles-ansibles').split(',\n'):
@@ -100,6 +106,7 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
         return mapping
 
     def compose_sub_to_artemis_options(self):
+        # type: () -> Dict[str, str]
         mapping = {}
 
         if self.option('compose-sub-to-artemis-options'):
@@ -108,13 +115,14 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
                     splitted_pair = pair.split(':')
                     mapping[splitted_pair[0]] = splitted_pair[1]
                 except Exception as exc:
-                    self.error(exc)
+                    self.error(cast(str, exc))
                     self.warning('Pair {} has the invalid format, skipping this one'.format(pair))
                     continue
 
         return mapping
 
     def access_control(self):
+        # type: () -> bool
         primary_task = self.shared('primary_task')
 
         # Check if 'citest' comment exists and author is collaborator
@@ -131,15 +139,17 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
 
     @cached_property
     def parse_platforms_from_meta(self):
+        # type: () -> Optional[PlatformType]
 
         meta_file = from_yaml(
             self.shared('primary_task').get_file(self.option('metadata-path'))
         )
 
-        return meta_file['galaxy_info'].get('platforms', None)
+        return cast(Optional[PlatformType], meta_file['galaxy_info'].get('platforms', None))
 
     @cached_property
     def get_transformed_platforms(self):
+        # type: () -> Optional[PlatformType]
         """
         In Ansible the 'EL' platform means both RHEL and CentOS.
         It is needed to be transformed to simplify compose check.
@@ -159,6 +169,7 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
         return transformed_platforms
 
     def is_compose_supported(self, compose):
+        # type: (str) -> bool
         """
         Check if compose is supported. The method tries to find
         `name-version` substring in compose name where name is a distribution name
@@ -180,6 +191,7 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
         return False
 
     def execute(self):
+        # type: () -> None
 
         common_build_params = {
             'ansible_options': self.option('ansible-options'),
