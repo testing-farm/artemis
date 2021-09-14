@@ -826,6 +826,9 @@ class BeakerDriver(PoolDriver):
         :rtype: result.Result[bool, str]
         """
 
+        if BeakerPoolData.is_empty(guest_request):
+            return Ok(True)
+
         r_job_cancel = self._dispatch_resource_cleanup(
             logger,
             job_id=BeakerPoolData.unserialize(guest_request).job_id,

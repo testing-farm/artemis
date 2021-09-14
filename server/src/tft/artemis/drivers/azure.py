@@ -192,6 +192,9 @@ class AzureDriver(PoolDriver):
         :rtype: result.Result[bool, Failure]
         """
 
+        if AzurePoolData.is_empty(guest_request):
+            return Ok(True)
+
         pool_data = AzurePoolData.unserialize(guest_request)
 
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion

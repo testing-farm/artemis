@@ -990,6 +990,9 @@ class AWSDriver(PoolDriver):
         :rtype: result.Result[bool, str]
         """
 
+        if AWSPoolData.is_empty(guest_request):
+            return Ok(True)
+
         pool_data = AWSPoolData.unserialize(guest_request)
 
         if pool_data.instance_id is None and pool_data.spot_instance_id is None:

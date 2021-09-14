@@ -714,6 +714,9 @@ class OpenStackDriver(PoolDriver):
         :rtype: result.Result[bool, str]
         """
 
+        if OpenStackPoolData.is_empty(guest_request):
+            return Ok(True)
+
         if guest_request.poolname != self.poolname:
             return Error(Failure('guest is not owned by this pool'))
 
