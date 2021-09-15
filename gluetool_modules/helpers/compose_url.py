@@ -9,6 +9,8 @@ from six.moves.urllib.parse import urlsplit
 from gluetool.utils import cached_property, render_template
 from gluetool.log import log_dict
 
+from typing import Union, List, Optional, Any, Tuple, cast # noqa
+
 
 class ComposeUrl(gluetool.Module):
     """
@@ -44,6 +46,7 @@ class ComposeUrl(gluetool.Module):
 
     @cached_property
     def directory_path(self):
+        # type: () -> Optional[str]
         directory_path_template = self.option('directory-path-template')
 
         if directory_path_template is None:
@@ -53,6 +56,7 @@ class ComposeUrl(gluetool.Module):
 
     @cached_property
     def name_regex(self):
+        # type: () -> Optional[str]
         name_regex_template = self.option('name-regex-template')
 
         if name_regex_template is None:
@@ -62,6 +66,7 @@ class ComposeUrl(gluetool.Module):
 
     @cached_property
     def osci_compose_url(self):
+        # type: () -> str
         """
         Generates compose url from primary_task object.
 
@@ -88,7 +93,7 @@ class ComposeUrl(gluetool.Module):
                 ftp.login()
                 composes_dirs = ftp.nlst(self.directory_path)
                 ftp.close()
-            except ftplib.all_errors as ftperror:
+            except ftplib.all_errors as ftperror:  # type: ignore  # Exceptions are not derived from BaseException
                 raise gluetool.GlueError("ftplib returned an error: {}".format(ftperror))
 
         # Apply pattern to all composes_dirs.
@@ -122,6 +127,7 @@ class ComposeUrl(gluetool.Module):
         return compose_url
 
     def sanity(self):
+        # type: () -> None
         hostname = self.option('hostname')
         static_compose_url = self.option('static-compose-url')
 
@@ -132,10 +138,11 @@ class ComposeUrl(gluetool.Module):
             self.warn('Both --hostname and --static-compose-url specified, --static-compose-url will be used.')
 
     def get_compose_url(self):
-        static_compose_url = self.option('static-compose-url')
+        # type: () -> str
+        static_compose_url = cast(Optional[str], self.option('static-compose-url'))
 
         if static_compose_url:
             self.info('Using static compose url: {}'.format(static_compose_url))
             return static_compose_url
 
-        return self.osci_compose_url
+        return cast(str, self.osci_compose_url)
