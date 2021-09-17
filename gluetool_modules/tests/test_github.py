@@ -45,11 +45,12 @@ def test_depends_on(module, monkeypatch):
             self.source = source
             self.content = str(self.source)
             self.status_code = 200
+            self.links = {}
 
         def json(self):
             return self.source
 
-    def mocked_get(url):
+    def mocked_get(url, params=None):
         if re.match(r'.*/pulls/\d+$', url):
             return dummy_request(_load_assets("fetch_pull_request"))
         elif re.match(r'.*/repos/oamg/leapp-repository/commits/.*', url):
