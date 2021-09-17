@@ -22,6 +22,7 @@ from gluetool.utils import cached_property
 #: :ivar list(str) arches: List of architectures.
 TaskArches = collections.namedtuple('TaskArches', ['complete', 'arches'])
 VALID_STATUSES = ('error', 'failure', 'pending', 'success')
+MAX_PER_PAGE = 100
 
 
 def is_json_response(response):
@@ -59,8 +60,8 @@ class GitHubAPI(object):
                     msg = 'Git API returned an error: {}\nURL: {}'.format(response.status_code, response.url)
                 raise gluetool.GlueError(msg)
 
-    def _get(self, url, allow_statuses=None):
-        # type: (str, Optional[List[int]]) -> requests.models.Response
+    def _get(self, url, allow_statuses=None, params=None):
+        # type: (str, Optional[List[int]], Optional[Dict[str, Any]]) -> requests.models.Response
         # The user can specify a list of additional http status codes
         # to allow.  This method will raise a GlueError if the http status
         # code is not in the 2xx range and not in the allow_statuses list
@@ -69,9 +70,9 @@ class GitHubAPI(object):
 
         try:
             if self.username and self.token:
-                response = requests.get(url, auth=(self.username, self.token))
+                response = requests.get(url, auth=(self.username, self.token), params=params)
             else:
-                response = requests.get(url)
+                response = requests.get(url, params=params)
         except Exception:
             raise gluetool.GlueError('Unable to GET: {}'.format(url))
         self._check_status(response, allow_statuses)
@@ -82,6 +83,31 @@ class GitHubAPI(object):
             log_dict(self.module.debug, '[GitHub API] output', response.status_code)
 
         return response
+
+    def _get_paginated_json(self, url, allow_statuses=None, pages_limit=None, params=None):
+        # type: (str, Optional[List[int]], Optional[int], Optional[Dict[str, Any]]) -> List[Dict[Any, Any]]
+        """
+        Return list of response pages.
+        """
+        page_count = 0
+        data = []
+        params = params or {}
+        params['per_page'] = MAX_PER_PAGE
+
+        while url:
+            response = self._get(url, allow_statuses=allow_statuses, params=params)
+            content = response.json()
+            if isinstance(content, list):
+                data.extend(content)
+            else:
+                data.append(content)
+            url = response.links.get('next', {}).get('url')
+            page_count += 1
+            if page_count == pages_limit:
+                break
+
+        log_dict(self.module.debug, '[GitHub API] all paginated output with {} pages'.format(page_count), data)
+        return data
 
     def _post(self, url, data):
         # type: (str, Dict[str, str]) -> requests.models.Response
@@ -135,7 +161,13 @@ class GitHubAPI(object):
             owner=owner, repo=repo, commit_sha=commit_sha
         )
         statuses_url = self._compose_url(statuses_path)
-        statuses_data = self._get(statuses_url).json()
+        paginated_statuses_data = self._get_paginated_json(statuses_url)
+
+        statuses_data = paginated_statuses_data[0]
+        paginated_statuses_data = paginated_statuses_data[1:]
+        for data_entry in paginated_statuses_data:
+            statuses_data['statuses'].extend(data_entry['statuses'])
+
         return statuses_data
 
     def get_comment(self, owner, repo, comment_id):
