@@ -44,7 +44,7 @@ fi
 
 if [ "$SKIP_DB_INIT" = "" ]; then
     poetry run alembic upgrade head || { echo "failed to upgrade DB Schema"; exit 1; }
-    poetry run artemis-init-postgres-schema || { echo "failed to initialize DB content"; exit 1; }
+    poetry run artemis-db-init-content write-config || { echo "failed to initialize DB content"; exit 1; }
 
     if [ "$ONLY_DB_INIT" != "" ]; then
         exit 0
