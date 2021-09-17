@@ -266,6 +266,16 @@ for the requested action.
 
 5+|How long, in seconds, to take between updating guest console log.
 
+|`aws.console.ec2.url`
+|`str`
+|`ARTEMIS_AWS_CONSOLE_EC2_URL`
+|`https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0`
+|no
+
+
+
+5+|Templated URL of serial console of an AWS EC2 instance.
+
 |`aws.pending-timeout`
 |`int`
 |`ARTEMIS_AWS_PENDING_TIMEOUT`
@@ -307,6 +317,47 @@ until cancelled and reprovisioned.
 
 5+|When enabled, broker connection will be forcefully closed after every message dispatch.
 
+|`broker.confirm-delivery`
+|`bool`
+|`ARTEMIS_BROKER_CONFIRM_DELIVERY`
+|`yes`
+|no
+
+
+
+5+|If set, every attempt to enqueue a messages will require a confirmation from the broker.
+
+|`broker.heartbeat-timeout`
+|`int`
+|`ARTEMIS_BROKER_HEARTBEAT_TIMEOUT`
+|`60`
+|no
+
+
+
+5+|An interval, in seconds, after which a broker client should ping the server over the established connection to
+keep both parties aware the connection should be kept alive.
+
+|`broker.url`
+|`str`
+|`ARTEMIS_BROKER_URL`
+|`amqp://guest:guest@127.0.0.1:5672`
+|no
+
+
+
+5+|Broker URL.
+
+|`cache.url`
+|`str`
+|`ARTEMIS_CACHE_URL`
+|`redis://127.0.0.1:6379`
+|no
+
+
+
+5+|Cache URL.
+
 |`config.dirpath`
 |`<lambda>`
 |`ARTEMIS_CONFIG_DIR`
@@ -316,6 +367,36 @@ until cancelled and reprovisioned.
 
 
 5+|Path to a directory with configuration.
+
+|`db.pool.max-overflow`
+|`int`
+|`ARTEMIS_DB_POOL_MAX_OVERFLOW`
+|`10`
+|no
+
+
+
+5+|Maximum size of connection pool overflow.
+
+|`db.pool.size`
+|`int`
+|`ARTEMIS_DB_POOL_SIZE`
+|`20`
+|no
+
+
+
+5+|Size of the DB connection pool.
+
+|`db.url`
+|`str`
+|`ARTEMIS_DB_URL`
+|`sqlite:///test.db`
+|no
+
+
+
+5+|Database URL.
 
 |`gc.events.schedule`
 |`str`
@@ -336,6 +417,26 @@ until cancelled and reprovisioned.
 
 
 5+|How old must the guest events be to be removed, in seconds.
+
+|`logging.cli.command-pattern`
+|`str`
+|`ARTEMIS_LOG_CLI_COMMAND_PATTERN`
+|`.*`
+|no
+
+
+
+5+|Log only commands matching the pattern.
+
+|`logging.cli.commands`
+|`bool`
+|`ARTEMIS_LOG_CLI_COMMANDS`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would log CLI commands.
 
 |`logging.cli.slow-command-pattern`
 |`str`
@@ -368,6 +469,47 @@ until cancelled and reprovisioned.
 5+|When enabled, Artemis would log "slow" CLI commands - commands whose execution took longer than
 ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD seconds.
 
+|`logging.db.pool`
+|`str`
+|`ARTEMIS_LOG_DB_POOL`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would log events related to database connection pool.
+
+|`logging.db.queries`
+|`bool`
+|`ARTEMIS_LOG_DB_QUERIES`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would log SQL queries.
+
+|`logging.db.slow-queries`
+|`bool`
+|`ARTEMIS_LOG_DB_SLOW_QUERIES`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would log "slow" queries - queries whose execution took longer than
+ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD seconds.
+
+|`logging.db.slow-query-threshold`
+|`float`
+|`ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD`
+|`10.0`
+|no
+
+
+
+5+|Minimal time, in seconds, spent executing a query for it to be reported as "slow".
+
 |`logging.json`
 |`bool`
 |`ARTEMIS_LOG_JSON`
@@ -377,6 +519,17 @@ ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD seconds.
 
 
 5+|If enabled, Artemis would emit log messages as JSON mappings.
+
+|`logging.level`
+|`<lambda>`
+|`ARTEMIS_LOG_LEVEL`
+|`20`
+|no
+
+
+
+5+|Level of logging. Accepted values are Python logging levels as defined by Python's
+https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 
 |`openstack.build-timeout`
 |`int`
@@ -525,6 +678,26 @@ for said guest request again.
 
 
 5+|A time, in seconds, after which a guest request is cancelled if provisioning haven't succeeded.
+
+|`vault.password`
+|`str`
+|`ARTEMIS_VAULT_PASSWORD`
+|``
+|no
+
+
+
+5+|A password for decrypting files protected by Ansible Vault. Takes precedence over ARTEMIS_VAULT_PASSWORD_FILE.
+
+|`vault.password.filepath`
+|`<lambda>`
+|`ARTEMIS_VAULT_PASSWORD_FILE`
+|`/home/mprchlik/.vault_password`
+|no
+
+
+
+5+|Path to a file with a password for decrypting files protected by Ansible Vault.
 
 
 |===

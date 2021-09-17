@@ -20,7 +20,7 @@ def _knob_envvar(knob) -> Optional[str]:
     """
     """
 
-    from tft.artemis import KnobSourceEnv
+    from tft.artemis.knobs import KnobSourceEnv
 
     for source in knob._sources:
         if not isinstance(source, KnobSourceEnv):
@@ -32,7 +32,7 @@ def _knob_envvar(knob) -> Optional[str]:
 
 
 def _knob_editable(knob) -> bool:
-    from tft.artemis import KnobSourceDB
+    from tft.artemis.knobs import KnobSourceDB
 
     for source in knob._sources:
         if not isinstance(source, KnobSourceDB):
@@ -44,7 +44,7 @@ def _knob_editable(knob) -> bool:
 
 
 def _knob_default(knob) -> Optional[str]:
-    from tft.artemis import KnobSourceDefault
+    from tft.artemis.knobs import KnobSourceDefault
 
     for source in knob._sources:
         if not isinstance(source, KnobSourceDefault):
@@ -70,7 +70,7 @@ jinja2.defaults.DEFAULT_FILTERS.update(
 )
 
 
-from tft.artemis import Knob  # noqa
+from tft.artemis.knobs import Knob  # noqa
 
 
 def extract_knobs(options: argparse.Namespace) -> List[Knob]:
