@@ -54,6 +54,7 @@ class APIImageType(TypedDict):
     ImageId: str
     PlatformDetails: str
     BlockDeviceMappings: APIBlockDeviceMappingsType
+    EnaSupport: Optional[bool]
 
 
 MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist')
@@ -163,8 +164,19 @@ class AWSPoolImageInfo(PoolImageInfo):
     #: Carries ``BlockDeviceMappings`` field as provided by AWS image description.
     block_device_mappings: APIBlockDeviceMappingsType
 
+    #: Carries `EnaSupport` field as provided by AWS image description.
+    supports_ena: bool
+
     def __repr__(self) -> str:
-        return f'<AWSPoolImageInfo: name={self.name} id={self.id} ssh={repr(self.ssh)} platform-details={self.platform_details}>'  # noqa
+        return (
+            '<AWSPoolImageInfo:'
+            f' name={self.name}'
+            f' id={self.id}'
+            f' ssh={repr(self.ssh)}'
+            f' platform-details={self.platform_details}'
+            f' supports_ena={self.supports_ena}'
+            '>'
+        )
 
     def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
         serialized = super(AWSPoolImageInfo, self).serialize_to_json_scrubbed()
@@ -1028,7 +1040,9 @@ class AWSDriver(PoolDriver):
                     id=image['ImageId'],
                     ssh=PoolImageSSHInfo(),
                     platform_details=image['PlatformDetails'],
-                    block_device_mappings=image['BlockDeviceMappings']
+                    block_device_mappings=image['BlockDeviceMappings'],
+                    # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or `None`
+                    supports_ena=image.get('EnaSupport', False) or False
                 )
                 for image in cast(List[APIImageType], r_images.unwrap())
             ])
