@@ -20,7 +20,7 @@ from typing_extensions import TypedDict
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Environment, Flavor, FlavorCpu
+from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorVirtualization
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
@@ -55,6 +55,9 @@ class APIImageType(TypedDict):
     PlatformDetails: str
     BlockDeviceMappings: APIBlockDeviceMappingsType
     EnaSupport: Optional[bool]
+
+
+AWS_VM_HYPERVISORS = ('nitro', 'xen')
 
 
 MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist')
@@ -1081,7 +1084,11 @@ class AWSDriver(PoolDriver):
                         cores=int(flavor['VCpuInfo']['DefaultVCpus'])
                     ),
                     # memory is reported in MB
-                    memory=int(flavor['MemoryInfo']['SizeInMiB']) * UNITS.mebibytes
+                    memory=int(flavor['MemoryInfo']['SizeInMiB']) * UNITS.mebibytes,
+                    virtualization=FlavorVirtualization(
+                        hypervisor=flavor.get('Hypervisor', None),
+                        is_virtualized=True if flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS else False
+                    )
                 )
                 for flavor in cast(List[Dict[str, Any]], r_flavors.unwrap())
                 if flavor_name_pattern is None or flavor_name_pattern.match(flavor['InstanceType'])

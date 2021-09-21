@@ -185,6 +185,43 @@ class FlavorDisk(SerializableContainer):
 
 
 @dataclasses.dataclass(repr=False)
+class FlavorVirtualization(SerializableContainer):
+    """
+    Represents HW properties related to virtualization properties of a flavor.
+    """
+
+    #: If set, the flavor allows running VMs in a nested manner.
+    is_supported: Optional[bool] = None
+
+    #: If set, the flavors itself represents a virtual machine rather than a baremetal machine.
+    is_virtualized: Optional[bool] = None
+
+    #: When flavors represents a virtual machine, this field carries a hypervisor name.
+    hypervisor: Optional[str] = None
+
+    def format_fields(self) -> List[str]:
+        """
+        Return formatted representation of flavor properties.
+
+        :returns: list of formatted properties.
+        """
+
+        return [
+            f'virtualization.{field.name}={getattr(self, field.name)}'
+            for field in dataclasses.fields(self)
+        ]
+
+    def __repr__(self) -> str:
+        """
+        Return text representation of flavor properties.
+
+        :returns: human-readable rendering of flavor properties.
+        """
+
+        return f'<FlavorVirtualization: {" ".join(self.format_fields())}>'
+
+
+@dataclasses.dataclass(repr=False)
 class Flavor(SerializableContainer):
     """
     Represents various properties of a flavor.
@@ -208,6 +245,9 @@ class Flavor(SerializableContainer):
     #: RAM size, in bytes.
     memory: Optional[Quantity] = None
 
+    #: Virtualization properties.
+    virtualization: FlavorVirtualization = dataclasses.field(default_factory=FlavorVirtualization)
+
     def format_fields(self) -> List[str]:
         """
         Return formatted representation of flavor properties.
@@ -218,7 +258,7 @@ class Flavor(SerializableContainer):
         return self.cpu.format_fields() + self.disk.format_fields() + [
             f'{field.name}={getattr(self, field.name)}'
             for field in dataclasses.fields(self)
-            if field.name not in ('cpu', 'disk')
+            if field.name not in ('cpu', 'disk', 'virtualization')
         ]
 
     def __repr__(self) -> str:
