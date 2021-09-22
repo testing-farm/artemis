@@ -55,6 +55,10 @@ RUN    microdnf -y install bash \
                            python3.7 \
                            # required by `openstack`
                            which \
+                           # for debugging
+                           lsof \
+                           procps-ng \
+                           net-tools \
     && microdnf clean all \
     && rm -rf /var/cache/dnf \
     && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
