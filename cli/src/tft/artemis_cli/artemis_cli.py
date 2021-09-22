@@ -41,12 +41,16 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('log-types', '0.0.26'),
         ('skip-prepare-verify-ssh', '0.0.24'),
         ('hw-constraints', '0.0.19'),
         ('arch-under-hw', '0.0.19'),
         ('supported-baseline', '0.0.17')
     )
 }
+
+# FIXME Actual values from artemis_db.GuestLogContentType?
+ALLOWED_LOG_TYPES = ["console:blob", "console:url"]
 
 
 @click.group()
@@ -238,6 +242,8 @@ def cmd_guest(cfg: Configuration) -> None:
     help='Optional JSON mapping to attach to the request.'
 )
 @click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
+@click.option('--log-types', '-l', default=None, metavar='logname:contenttype',
+              help='Types of logs that guest should support', type=click.Choice(ALLOWED_LOG_TYPES), multiple=True)
 @click.pass_obj
 def cmd_guest_create(
         cfg: Configuration,
@@ -252,7 +258,8 @@ def cmd_guest_create(
         post_install_script: Optional[str] = None,
         skip_prepare_verify_ssh: bool = False,
         user_data: Optional[str] = None,
-        wait: Optional[bool] = None
+        wait: Optional[bool] = None,
+        log_types: Optional[List[str]] = None
 ) -> None:
     assert cfg.artemis_api_version is not None
 
@@ -333,6 +340,12 @@ def cmd_guest_create(
                 post_install_script))
 
     data['post_install_script'] = post_install
+
+    if cfg.artemis_api_version >= API_FEATURE_VERSIONS['log-types']:
+        log_types = log_types if log_types else []
+        data['log_types'] = list(set(tuple(log.split(':', 1)) for log in log_types))
+    elif log_types:
+        cfg.logger.error('--log-types is supported with API v0.0.26 and newer')
 
     response = artemis_create(cfg, 'guests/', data)
     print(prettify_json(True, response.json()))
@@ -547,7 +560,7 @@ def cmd_guest_log(
                     contenttype = response.json()['contenttype']
                     blob = response.json()['blob']
                     is_blob_ready = (state == 'in-progress' and contenttype == 'blob' and blob)
-                    if state == 'complete' or is_blob_ready or res_error:
+                    if state in ['complete', 'unsupported'] or is_blob_ready or res_error:
                         break
 
                 else:

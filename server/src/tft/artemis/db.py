@@ -620,6 +620,9 @@ class GuestRequest(Base):
     console_url = Column(String(250), nullable=True)
     console_url_expires = Column(DateTime(), nullable=True)
 
+    # Log types specifically to be supported as requested by the user (colon-separated string of logtype:contenttype)
+    _log_types = Column(JSON(), nullable=True)
+
     owner = relationship('User', back_populates='guests')
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
@@ -849,6 +852,15 @@ class GuestRequest(Base):
             since=since,
             until=until
         )
+
+    @property
+    def log_types(self) -> List[Tuple[str, GuestLogContentType]]:
+        if not self._log_types:
+            return []
+        self._log_types = cast(List[Dict[str, str]], self._log_types)
+        return [
+            (log_type["logtype"], GuestLogContentType(log_type["contenttype"])) for log_type in self._log_types
+        ]
 
 
 class GuestLog(Base):
