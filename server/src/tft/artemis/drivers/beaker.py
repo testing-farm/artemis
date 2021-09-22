@@ -143,11 +143,12 @@ def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.Beauti
 
         return Ok(cpu)
 
-    if constraint.name.startswith('disk.'):
+    # TODO: support more than one disk - but this is a stand-alone feature spanning more than this driver.
+    if constraint.name.startswith('disk[0].'):
         disk = _new_tag('disk')
 
-        if constraint.name == 'disk.space':
-            # `disk.space` is represented as quantity, for Beaker XML we need to convert to bytes, integer.
+        if constraint.name == 'disk[0].size':
+            # `disk.size` is represented as quantity, for Beaker XML we need to convert to bytes, integer.
             op, value = operator_to_beaker_op(
                 constraint.operator,
                 str(int(cast(pint.Quantity, constraint.value).to('B').magnitude))

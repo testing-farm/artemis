@@ -18,14 +18,13 @@ import gluetool.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
-from pint import Quantity
 from typing_extensions import Protocol, TypedDict
 
 from .. import Failure, JSONType, SerializableContainer, get_cached_item, get_cached_items_as_list, log_dict_yaml, \
     process_output_to_str, refresh_cached_set, safe_call
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
-from ..environment import UNITS, Environment, Flavor
+from ..environment import UNITS, Environment, Flavor, FlavorDisk, FlavorDisks, MeasurableConstraintValueType
 from ..knobs import Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 
@@ -53,7 +52,7 @@ ConfigFlavorCPUSpecType = TypedDict(
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].disk
 class ConfigFlavorDiskSpecType(TypedDict):
-    space: Optional[Union[int, str]]
+    size: Optional[Union[int, str]]
 
 
 #: pools[].parameters.patch-flavors[]
@@ -63,7 +62,7 @@ ConfigPatchFlavorSpecType = TypedDict(
         'name': str,
         'name-regex': str,
         'cpu': ConfigFlavorCPUSpecType,
-        'disk': ConfigFlavorDiskSpecType
+        'disk': List[ConfigFlavorDiskSpecType]
     }
 )
 
@@ -75,7 +74,7 @@ ConfigCustomFlavorSpecType = TypedDict(
         'name': str,
         'base': str,
         'cpu': ConfigFlavorCPUSpecType,
-        'disk': ConfigFlavorDiskSpecType
+        'disk': List[ConfigFlavorDiskSpecType]
     }
 )
 
@@ -328,19 +327,22 @@ class FlavorKeyGetterType(Protocol):
     def __call__(
         self,
         flavor: Flavor
-    ) -> Tuple[int, Union[int, Quantity], Union[int, Quantity]]:
+    ) -> Tuple[int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
         pass
 
 
 def flavor_to_key(
     flavor: Flavor
-) -> Tuple[int, Union[int, Quantity], Union[int, Quantity]]:
+) -> Tuple[int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
     # All are optional, meaning "don't care", and in this sorting it doesn't matter (possible?)
     # TODO: better algorithm would be better, one aware of optional values (first? last?)
     return (
         flavor.cpu.cores or 0,
         flavor.memory or 0,
-        flavor.disk.space or 0
+        tuple(
+            disk.size or 0
+            for disk in flavor.disk
+        )
     )
 
 
@@ -529,19 +531,25 @@ def _apply_flavor_specification(
             flavor.cpu.model_name = cpu_patch['model-name']
 
     if 'disk' in flavor_spec:
-        disk_patch = flavor_spec['disk']
+        # TODO: introduce way how to actually patch the list of disks, instead of recreating it. It's easier,
+        # but hardly future-proof.
+        flavor.disk = FlavorDisks([])
 
-        if 'space' in disk_patch:
-            r_space = safe_call(UNITS, disk_patch['space'])
+        for disk_patch in flavor_spec['disk']:
+            disk = FlavorDisk()
+            flavor.disk.append(disk)
 
-            if r_space.is_error:
-                return Error(Failure.from_failure(
-                    'failed to parse flavor disk.space',
-                    r_space.unwrap_error(),
-                    space=disk_patch['space']
-                ))
+            if 'size' in disk_patch:
+                r_space = safe_call(UNITS, disk_patch['size'])
 
-            flavor.disk.space = r_space.unwrap()
+                if r_space.is_error:
+                    return Error(Failure.from_failure(
+                        'failed to parse flavor disk.size',
+                        r_space.unwrap_error(),
+                        space=disk_patch['size']
+                    ))
+
+                disk.size = r_space.unwrap()
 
     return Ok(None)
 

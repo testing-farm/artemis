@@ -95,7 +95,7 @@ def test_example_disk(logger):
         ---
 
         disk:
-            space: 500 GiB
+          - size: 500 GiB
         """
     )
 
@@ -106,9 +106,9 @@ def test_example_disk(logger):
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
-            disk=tft.artemis.environment.FlavorDisk(
-                space=UNITS('500 GiB')
-            )
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('500 GiB'))
+            ])
         )
     ) is True
 
@@ -117,9 +117,44 @@ def test_example_disk(logger):
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
-            disk=tft.artemis.environment.FlavorDisk(
-                space=UNITS('600 GiB')
-            )
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('600 GiB'))
+            ])
+        )
+    ) is False
+
+
+def test_example_disk_oldstyle_space(logger):
+    constraint = parse_hw(
+        """
+        ---
+
+        disk:
+          space: 500 GiB
+        """
+    )
+
+    print(constraint.format())
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('500 GiB'))
+            ])
+        )
+    ) is True
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('600 GiB'))
+            ])
         )
     ) is False
 
@@ -535,7 +570,7 @@ def test_schema_logic_v0_0_19(schema_v0_0_19, logger):
         arch: "x86_64"
         constraints:
             disk:
-              space: ">= 60 GiB"
+              - size: ">= 60 GiB"
         """,
         '<and><system><arch op="==" value="x86_64"/></system><disk><size op="&gt;=" value="64424509440"/></disk></and>'
     )

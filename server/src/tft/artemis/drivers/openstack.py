@@ -12,7 +12,7 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
-from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk
+from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk, FlavorDisks
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
@@ -909,10 +909,12 @@ class OpenStackDriver(PoolDriver):
                     ),
                     # memory is reported in MiB
                     memory=int(flavor['RAM']) * UNITS.mebibytes,
-                    disk=FlavorDisk(
-                        # diskspace is reported in GiB
-                        space=int(flavor['Disk']) * UNITS.gibibytes
-                    )
+                    disk=FlavorDisks([
+                        FlavorDisk(
+                            # diskspace is reported in GiB
+                            size=int(flavor['Disk']) * UNITS.gibibytes
+                        )
+                    ])
                 )
                 for flavor in cast(List[Dict[str, str]], r_flavors.unwrap())
                 if flavor_name_pattern is None or flavor_name_pattern.match(flavor['Name'])

@@ -14,7 +14,7 @@ definitions:
         type: string
 
       disk:
-        "$ref": "#/definitions/patch_flavor_disk"
+        "$ref": "#/definitions/patch_flavor_disks"
 
     required:
       - name
@@ -45,11 +45,16 @@ definitions:
     type: object
 
     properties:
-      space:
+      size:
         type: string
 
     required: []
     additionalProperties: false
+
+  patch_flavor_disks:
+    type: array
+    items:
+      "$ref": "#/definitions/patch_flavor_disk"
 
   patch_flavor:
     type: object
@@ -66,7 +71,7 @@ definitions:
         "$ref": "#/definitions/patch_flavor_cpu"
 
       disk:
-        "$ref": "#/definitions/patch_flavor_disk"
+        "$ref": "#/definitions/patch_flavor_disks"
 
     oneOf:
       - required:

@@ -591,8 +591,8 @@ class AWSDriver(PoolDriver):
         :param flavor: flavor providing the disk space information.
         """
 
-        if flavor.disk.space is not None:
-            return self._set_root_disk_size(image, int(flavor.disk.space.to('GiB').magnitude))
+        if flavor.disk and flavor.disk[0].size is not None:
+            return self._set_root_disk_size(image, int(flavor.disk[0].size.to('GiB').magnitude))
 
         if 'default-root-disk-size' in self.pool_config:
             return self._set_root_disk_size(image, self.pool_config['default-root-disk-size'])

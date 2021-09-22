@@ -11,7 +11,7 @@ import enum
 import json
 import operator
 import re
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type, TypeVar, Union, cast
 
 import gluetool.log
 import pint
@@ -45,6 +45,8 @@ S = TypeVar('S')
 #: operator, the actual value of the constraint, and units.
 VALUE_PATTERN = re.compile(r'^(?P<operator>==|!=|=~|=|>=|>|<=|<)?\s*(?P<value>.+?)\s*$')
 
+PROPERTY_PATTERN = re.compile(r'(?P<property_name>[a-z_]+)(?:\[(?P<index>\d+)\])?')
+
 #: Type of the operator callable. The operators accept two arguments, and returns result of their comparison.
 OperatorHandlerType = Callable[[Any, Any], bool]
 
@@ -58,6 +60,8 @@ OperatorHandlerType = Callable[[Any, Any], bool]
 SpecType = Any
 
 ConstraintValueType = Union[int, Quantity, str]
+# Almost like the ConstraintValueType, but this one can be measured and may have units.
+MeasurableConstraintValueType = Union[int, Quantity]
 
 
 #
@@ -67,6 +71,30 @@ ConstraintValueType = Union[int, Quantity, str]
 # Note: some cloud services do use the term "flavor", to describe the very same concept. We hijack it for our use,
 # because we use the same concept, and other terms - e.g. "instance type" - are not as good looking.
 #
+# Flavor implementation closely follow the TMT specification for HW requirements. Until we find a solid reason,
+# this arrangement allows trivial matching between requirements and available flavors.
+#
+# See https://tmt.readthedocs.io/en/stable/spec/plans.html#hardware for the specification.
+#
+# A flavor container example:
+#
+#  name: t2.small-with-big-disk
+#  id: t2.small
+#  arch: x86_64
+#  memory: 4 GiB
+#
+#  cpu:
+#      processors: 1
+#      cores: 2
+#      family: 6
+#      family_name: Haswell
+#      model: E
+#      model_name: i5-8400
+#
+#  disk:
+#      - size: 40 GiB
+#      - size: 120 GiB
+
 @dataclasses.dataclass(repr=False)
 class FlavorCpu(SerializableContainer):
     """
@@ -121,7 +149,13 @@ class FlavorCpu(SerializableContainer):
 @dataclasses.dataclass(repr=True)
 class FlavorDisk(SerializableContainer):
     """
-    Represents a HW properties related to persistent storage a flavor.
+    Represents a HW properties related to persistent storage a flavor, one disk in particular.
+
+    .. note::
+
+       We stay clear from any rigid definition of "disk", because we deal with different environments.
+       Let's say, at this moment, a disk is a block storage device under `/dev` and it can hold raw data
+       as well as file systems.
 
     .. note::
 
@@ -130,7 +164,7 @@ class FlavorDisk(SerializableContainer):
     """
 
     #: Total size of the disk storage, in bytes.
-    space: Optional[Quantity] = None
+    size: Optional[Quantity] = None
 
     def format_fields(self) -> List[str]:
         """
@@ -162,8 +196,8 @@ class FlavorDisk(SerializableContainer):
 
         serialized = super(FlavorDisk, self).serialize_to_json()
 
-        if self.space is not None:
-            serialized['space'] = str(self.space)
+        if self.size is not None:
+            serialized['size'] = str(self.size)
 
         return serialized
 
@@ -178,10 +212,111 @@ class FlavorDisk(SerializableContainer):
 
         disk = super(FlavorDisk, cls).unserialize_from_json(serialized)
 
-        if disk.space is not None:
-            disk.space = UNITS(disk.space)
+        if disk.size is not None:
+            disk.size = UNITS(disk.size)
 
         return disk
+
+
+# Note: the HW requirement is called `disk`, and holds a list of mappings. We have a `FlavorDisk` to track
+# each of those mappings, but we need a class for their container, with methods for (un)serialization. Therefore
+# the container class is called `FlavorDisks`, but in the flavor dataclass it's a type of `disk` property because
+# that's how the HW requirement is called.
+class FlavorDisks(Sequence[FlavorDisk]):
+    """
+    Represents a HW properties related to persistent storage a flavor.
+
+    .. note::
+
+       As of now, only the very basic topology is supported, tracking only the total "disk" size. More complex
+       setups will be supported in the future.
+    """
+
+    def __init__(self, disks: Optional[List[FlavorDisk]] = None) -> None:
+        """
+        Create a container representing HW properties related to persistent storage of a flavor.
+
+        :param disks: list of disks available.
+        """
+
+        self.data: List[FlavorDisk] = disks or []
+
+    def __getitem__(self, index: int) -> FlavorDisk:  # type: ignore  # does not match the superclass but that's fine
+        """
+        Return disk on the requested position.
+
+        :param index: index in the container.
+        :returns: disk description.
+        """
+
+        return self.data[index]
+
+    def __len__(self) -> int:
+        """
+        Return number of disk tracked in this container.
+
+        :returns: number of disks.
+        """
+
+        return len(self.data)
+
+    def append(self, disk: FlavorDisk) -> None:
+        """
+        Append a disk description.
+
+        :param disk: disk to add.
+        """
+
+        self.data.append(disk)
+
+    def format_fields(self) -> List[str]:
+        """
+        Return formatted representation of flavor properties.
+
+        :returns: list of formatted properties.
+        """
+
+        return sum([
+            [
+                f'disk[{i}].{field.name}={getattr(disk, field.name)}'
+                for field in dataclasses.fields(disk)
+            ]
+            for i, disk in enumerate(self)
+        ], [])
+
+    def __repr__(self) -> str:
+        """
+        Return text representation of flavor properties.
+
+        :returns: human-readable rendering of flavor properties.
+        """
+
+        return f'<FlavorDisks: {" ".join(self.format_fields())}>'
+
+    def serialize_to_json(self) -> List[Dict[str, Any]]:
+        """
+        Serialize properties to JSON.
+
+        :returns: serialized form of flavor properties.
+        """
+
+        return [
+            disk.serialize_to_json() for disk in self
+        ]
+
+    @classmethod
+    def unserialize_from_json(cls, serialized: List[Dict[str, Any]]) -> 'FlavorDisks':
+        """
+        Unserialize properties from JSON.
+
+        :param serialized: serialized form of flavor properties.
+        :returns: disk properties of a flavor.
+        """
+
+        return FlavorDisks([
+            FlavorDisk.unserialize_from_json(serialized_disk)
+            for serialized_disk in serialized
+        ])
 
 
 @dataclasses.dataclass(repr=False)
@@ -239,8 +374,8 @@ class Flavor(SerializableContainer):
     #: CPU properties.
     cpu: FlavorCpu = dataclasses.field(default_factory=FlavorCpu)
 
-    #: Disk/storage proeprties.
-    disk: FlavorDisk = dataclasses.field(default_factory=FlavorDisk)
+    #: Disk/storage properties.
+    disk: FlavorDisks = dataclasses.field(default_factory=lambda: FlavorDisks([]))
 
     #: RAM size, in bytes.
     memory: Optional[Quantity] = None
@@ -268,7 +403,7 @@ class Flavor(SerializableContainer):
         :returns: human-readable rendering of flavor properties.
         """
 
-        return f'<PoolFlavorInfo: {" ".join(self.format_fields())}>'
+        return f'<Flavor: {" ".join(self.format_fields())}>'
 
     # TODO: because of a circular dependency, we can't derive this class from SerializableContainer :/
     def serialize_to_json(self) -> Dict[str, Any]:
@@ -279,6 +414,8 @@ class Flavor(SerializableContainer):
         """
 
         serialized = super(Flavor, self).serialize_to_json()
+
+        serialized['disk'] = self.disk.serialize_to_json()
 
         if self.memory is not None:
             serialized['memory'] = str(self.memory)
@@ -309,6 +446,8 @@ class Flavor(SerializableContainer):
 
         flavor = super(Flavor, cls).unserialize_from_json(serialized)
 
+        flavor.disk = FlavorDisks.unserialize_from_json(serialized['disk'])
+
         if flavor.memory is not None:
             flavor.memory = UNITS(flavor.memory)
 
@@ -324,7 +463,10 @@ class Flavor(SerializableContainer):
         # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone even cpu and disk info.
         clone = dataclasses.replace(self)
         clone.cpu = dataclasses.replace(self.cpu)
-        clone.disk = dataclasses.replace(self.disk)
+
+        clone.disk = FlavorDisks([
+            dataclasses.replace(disk) for disk in self.disk
+        ])
 
         return clone
 
@@ -606,7 +748,28 @@ class Constraint(ConstraintBase):
         property_path = self.name.split('.')
 
         while property_path:
-            flavor_property = getattr(flavor_property, property_path.pop(0))
+            property_path_step = PROPERTY_PATTERN.match(property_path.pop(0))
+
+            # It should never be None - if that happens, our code creates property names that don't match the pattern,
+            # and those should be fixed. We don't match user input here.
+            assert property_path_step is not None
+
+            groups = property_path_step.groupdict()
+
+            flavor_property = getattr(flavor_property, groups['property_name'])
+
+            if groups.get('index') is not None:
+                flavor_property_index = int(groups['index'])
+
+                if len(flavor_property) <= flavor_property_index:
+                    # There is no such index available for us to match.
+                    # TODO: this will have to be refactored to handle some *optional* constraints, like flavors
+                    # that don't have a third large disk, but can gain one when driver supports such an addition.
+                    flavor_property = None
+                    break
+
+                else:
+                    flavor_property = flavor_property[flavor_property_index]
 
         if flavor_property is None:
             # Hard to compare `None` with a constraint. Flavor can't provide - or doesn't feel like providing - more
@@ -705,20 +868,52 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_disk(spec: SpecType) -> ConstraintBase:
+def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
     """
     Parse a disk-related constraints.
 
     :param spec: raw constraint block specification.
+    :param disk_index: index of this disk among its peers in specification.
     :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
     """
 
     group = And()
 
     group.constraints += [
-        Constraint.from_specification(f'disk.{constraint_name}', str(spec[constraint_name]))
-        for constraint_name in ('space',)
+        Constraint.from_specification(f'disk[{disk_index}].{constraint_name}', str(spec[constraint_name]))
+        for constraint_name in ('size',)
         if constraint_name in spec
+    ]
+
+    # The old-style constraint when `space` existed. Remove once v0.0.26 is gone.
+    if 'space' in spec:
+        group.constraints += [
+            Constraint.from_specification(f'disk[{disk_index}].size', str(spec['space']))
+        ]
+
+    if len(group.constraints) == 1:
+        return group.constraints[0]
+
+    return group
+
+
+def _parse_disks(spec: SpecType) -> ConstraintBase:
+    """
+    Parse a storage-related constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    # The old-style constraint when `disk` was a mapping. Remove once v0.0.26 is gone.
+    if isinstance(spec, dict):
+        return _parse_disk(spec, 0)
+
+    group = And()
+
+    group.constraints += [
+        _parse_disk(disk_spec, disk_index)
+        for disk_index, disk_spec in enumerate(spec)
     ]
 
     if len(group.constraints) == 1:
@@ -747,7 +942,7 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
         group.constraints += [Constraint.from_specification('memory', str(spec['memory']))]
 
     if 'disk' in spec:
-        group.constraints += [_parse_disk(spec['disk'])]
+        group.constraints += [_parse_disks(spec['disk'])]
 
     if len(group.constraints) == 1:
         return group.constraints[0]
