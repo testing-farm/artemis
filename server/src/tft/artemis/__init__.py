@@ -761,15 +761,9 @@ def get_db(logger: gluetool.log.ContextAdapter, application_name: Optional[str] 
 
 
 def get_vault() -> artemis_vault.Vault:
-    from .knobs import KNOB_VAULT_PASSWORD, KNOB_VAULT_PASSWORD_FILEPATH
+    from .knobs import get_vault_password
 
-    password = KNOB_VAULT_PASSWORD.value
-
-    if not password:
-        with open(KNOB_VAULT_PASSWORD_FILEPATH.value, 'r') as f:
-            password = f.read()
-
-    return artemis_vault.Vault(password)
+    return artemis_vault.Vault(get_vault_password())
 
 
 def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Failure]:

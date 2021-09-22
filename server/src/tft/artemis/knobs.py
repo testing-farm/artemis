@@ -746,3 +746,13 @@ KNOB_POOL_ENABLED: Knob[bool] = Knob(
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=True
 )
+
+
+def get_vault_password() -> str:
+    password = KNOB_VAULT_PASSWORD.value
+
+    if password:
+        return password
+
+    with open(KNOB_VAULT_PASSWORD_FILEPATH.value, 'r') as f:
+        return f.read()
