@@ -109,6 +109,24 @@ KNOB_API_ENGINE_DEBUG: Knob[bool] = Knob(
     default=False
 )
 
+KNOB_API_ENGINE_WORKER_RESTART_REQUESTS: Knob[int] = Knob(
+    'api.engine.reload.request-limit',
+    'Reload a worker process after serving this number of requests.',
+    has_db=False,
+    envvar='ARTEMIS_API_ENGINE_RELOAD_REQUESTS_LIMIT',
+    cast_from_str=int,
+    default=0
+)
+
+KNOB_API_ENGINE_WORKER_RESTART_REQUESTS_SPREAD: Knob[int] = Knob(
+    'api.engine.reload.request-limit.spread',
+    'A range by which is number of requests randomized.',
+    has_db=False,
+    envvar='ARTEMIS_API_ENGINE_RELOAD_REQUESTS_LIMIT_SPREAD',
+    cast_from_str=int,
+    default=0
+)
+
 #: Protects our metrics tree when updating & rendering to user.
 METRICS_LOCK = threading.Lock()
 
@@ -2605,6 +2623,12 @@ def main() -> NoReturn:
                 'response_length': '%(B)s',
                 'duration': '%(D)s'
             })
+        ]
+
+    if KNOB_API_ENGINE_WORKER_RESTART_REQUESTS.value != 0:
+        gunicorn_options += [
+            '--max-requests', str(KNOB_API_ENGINE_WORKER_RESTART_REQUESTS.value),
+            '--max-requests-jitter', str(KNOB_API_ENGINE_WORKER_RESTART_REQUESTS_SPREAD.value)
         ]
 
     os.execve(
