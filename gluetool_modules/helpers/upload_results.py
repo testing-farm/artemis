@@ -7,7 +7,7 @@ from gluetool import GlueCommandError
 from gluetool import GlueError
 from gluetool.utils import Command
 
-from typing import AnyStr, List, Optional # noqa
+from typing import AnyStr, List, Optional, Dict, Any, cast # noqa
 
 
 class UploadResults(gluetool.Module):
@@ -79,8 +79,9 @@ class UploadResults(gluetool.Module):
     }
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
         super(UploadResults, self).__init__(*args, **kwargs)
-        self.full_target_url = None
+        self.full_target_url = None  # type: Optional[str]
 
     def _get_pull_request_info(self):
         # type: () -> str
@@ -105,10 +106,10 @@ class UploadResults(gluetool.Module):
             self._get_pull_request_info(),
             datetime.now().strftime('%Y%m%d-%H%M%S')
         )
-        return artifact_folder_name
+        return cast(str, artifact_folder_name)
 
     def _create_subdir_for_artifacts(self, destination_sub_path, user_and_domain):
-        # type: (str, str) -> str
+        # type: (str, str) -> Optional[str]
         """
         This will create a folder for the results on the target file hosting.
 
@@ -131,8 +132,10 @@ class UploadResults(gluetool.Module):
                 assert exc.output.stderr is not None
                 raise GlueError('Creating remote folder failed: {} cmd: {}'.format(exc, cmd_init_remote_dir))
 
+        return None
+
     def _get_files_to_upload(self):
-        # type: () -> List(dict(str, str), dict(str, str))
+        # type: () -> List[Dict[str, str]]
         """
         Get the results to be uploaded to the server.
 
@@ -159,7 +162,7 @@ class UploadResults(gluetool.Module):
         return files
 
     def _upload_results(self, destination_path, user_and_domain, results_files):
-        # type: (str, str, List(dict(str, str), dict(str, str))) -> None
+        # type: (str, str, List[Dict[str, str]]) -> None
         """
         It uploads the artifacts to the server.
 
@@ -168,7 +171,8 @@ class UploadResults(gluetool.Module):
         :param dict results_files: Full paths to the source artifacts and destination filenames.
         """
         for results_file in results_files:
-            cmd_upload = ['scp', '-i', self.option('key-path')]
+            cmd_upload = ['scp', '-i', cast(str, self.option('key-path'))]  # type: Optional[List[str]]
+            assert cmd_upload is not None
 
             cmd_upload.append(results_file['src-file-path'])
 
@@ -186,12 +190,12 @@ class UploadResults(gluetool.Module):
 
     @property
     def _full_target_url(self):
-        # type: () -> str
+        # type: () -> Optional[str]
         return self.full_target_url
 
     @property
     def eval_context(self):
-        # type: () -> str
+        # type: () -> Dict[str, Optional[str]]
         __content__ = { # noqa
             'PR_TESTING_ARTIFACTS_URL': """
                           The URL with results of testing
@@ -223,7 +227,9 @@ class UploadResults(gluetool.Module):
 
         destination_sub_path = self._get_artifact_dir_name()
 
-        destination_sub_path = self._create_subdir_for_artifacts(destination_sub_path, user_and_domain)
+        subdir = self._create_subdir_for_artifacts(destination_sub_path, user_and_domain)
+        assert subdir is not None
+        destination_sub_path = subdir
 
         target_url = self.option('target-url')
         self.destination_url = os.path.join(target_url, destination_sub_path)
