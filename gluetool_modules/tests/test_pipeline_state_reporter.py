@@ -13,7 +13,15 @@ from gluetool_modules.libs import strptime
 
 from . import create_module, patch_shared
 
-CI = {
+OLD_CI = {
+    'name': 'Fake CI',
+    'team': 'Fake Team',
+    'url': 'Fake URL',
+    'email': 'Fake Email',
+    'irc': 'Fake IRC'
+}
+
+NEW_CI = {
     'name': 'Fake CI',
     'team': 'Fake Team',
     'url': 'Fake URL',
@@ -43,7 +51,17 @@ ARTIFACT_MAP = [
     }
 ]
 
-ARTIFACT = {
+OLD_ARTIFACT = {
+    'branch': 'fixing-bz17',
+    'component': 'dummy-package',
+    'id': '123456',
+    'issuer': 'bar',
+    'nvr': 'dummy-package-1.2.3-79.el7',
+    'scratch': 'False',
+    'source': 'http://example.com/component.git'
+}
+
+NEW_ARTIFACT = {
     'branch': 'fixing-bz17',
     'component': 'dummy-package',
     'id': 123456,
@@ -212,8 +230,34 @@ def fixture_mock_namespace(module, monkeypatch):
     )
 
 
-@pytest.fixture(name='publish_messages')
-def fixture_publish_messages(module):
+@pytest.fixture(name='publish_old_messages')
+def fixture_publish_old_messages(module):
+    published = {}
+
+    module._config.update({
+        'label':  'some-label',
+        'note': 'some-note',
+        'test-category': 'some-category',
+        'test-type': 'some-type',
+        'thread-id': 'some-thread-id',
+        'version': '0.1.0',
+    })
+
+    def mock_publish_bus_messages(message, topic):
+        published.update({
+            'message': message,
+            'topic': topic
+        })
+
+    # add a fake publish_bus_messages shared function
+    module.publish_bus_messages = mock_publish_bus_messages
+    module.glue.add_shared('publish_bus_messages', module)
+
+    return published
+
+
+@pytest.fixture(name='publish_new_messages')
+def fixture_publish_new_messages(module):
     published = {}
 
     module._config.update({
@@ -264,12 +308,18 @@ def test_eval_context(module, namespace, global_eval_context):
 
 
 def test_init_message_thread_id(module, evaluate):
+    module._config.update({
+        'version': '1.1.6',
+    })
     _, body = module._init_message('thread_id')
 
     assert body['pipeline']['id'] == 'thread_id'
 
 
 def test_init_message_shared_thread_id(ci_info, evaluate, monkeypatch, module):
+    module._config.update({
+        'version': '1.1.6',
+    })
     patch_shared(monkeypatch, module, {
         'thread_id': 'shared-thread-id',
         'evaluate_instructions': 'something',
@@ -281,9 +331,46 @@ def test_init_message_shared_thread_id(ci_info, evaluate, monkeypatch, module):
     assert body['pipeline']['id'] == 'shared-thread-id'
 
 
-def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish_messages):
+def test_execute_old_message(ci_info, evaluate, monkeypatch, module, mock_namespace, publish_old_messages):
     module._config.update({
-        'label':  'some-label',
+        'label': 'some-label',
+        'note': 'some-note',
+        'test-category': 'some-category',
+        'test-type': 'some-type',
+        'thread-id': 'some-thread-id',
+        'version': '0.1.0',
+    })
+
+    module.execute()
+
+    assert publish_old_messages['message'].headers == OLD_ARTIFACT
+
+    generated_at = publish_old_messages['message'].body.pop('generated_at')
+
+    assert publish_old_messages['message'].body == {
+        'artifact': OLD_ARTIFACT,
+        'ci': OLD_CI,
+        'run': RUN,
+        'error': {
+            'reason': 'some-reason',
+            'issue_url': None,
+        },
+        'category': 'some-category',
+        'label': 'some-label',
+        'namespace': 'namespace',
+        'docs': 'some-docs',
+        'note': 'some-note',
+        'type': 'some-type',
+        'version': '0.1.0'
+    }
+
+    # check if generated_at has expected format, will traceback if not
+    strptime(generated_at, "%Y-%m-%d %H:%M:%S.%f")
+
+
+def test_execute_new_message(ci_info, evaluate, monkeypatch, module, mock_namespace, publish_new_messages):
+    module._config.update({
+        'label': 'some-label',
         'note': 'some-note',
         'test-category': 'some-category',
         'test-type': 'some-type',
@@ -293,13 +380,13 @@ def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish
 
     module.execute()
 
-    assert publish_messages['message'].headers == ARTIFACT
+    assert publish_new_messages['message'].headers == NEW_ARTIFACT
 
-    generated_at = publish_messages['message'].body.pop('generated_at')
+    generated_at = publish_new_messages['message'].body.pop('generated_at')
 
-    assert publish_messages['message'].body == {
-        'artifact': ARTIFACT,
-        'contact': CI,
+    assert publish_new_messages['message'].body == {
+        'artifact': NEW_ARTIFACT,
+        'contact': NEW_CI,
         'run': RUN,
         'error': {
             'reason': 'some-reason',
@@ -322,7 +409,58 @@ def test_execute(ci_info, evaluate, monkeypatch, module, mock_namespace, publish
     strptime(generated_at, "%Y-%m-%d %H:%M:%S.%f")
 
 
-def test_execute_reason_in_note(ci_info, evaluate, monkeypatch, module, mock_namespace, publish_messages):
+def test_execute_reason_in_note_old_message(
+    ci_info,
+    evaluate,
+    monkeypatch,
+    module,
+    mock_namespace,
+    publish_old_messages
+):
+    module._config.update({
+        'label': 'some-label',
+        'note': None,
+        'test-category': 'some-category',
+        'test-type': 'some-type',
+        'thread-id': 'some-thread-id',
+        'version': '0.1.0',
+    })
+
+    module.execute()
+
+    assert publish_old_messages['message'].headers == OLD_ARTIFACT
+
+    generated_at = publish_old_messages['message'].body.pop('generated_at')
+
+    assert publish_old_messages['message'].body == {
+        'artifact': OLD_ARTIFACT,
+        'ci': OLD_CI,
+        'run': RUN,
+        'error': {
+            'reason': 'some-reason',
+            'issue_url': None,
+        },
+        'category': 'some-category',
+        'label': 'some-label',
+        'namespace': 'namespace',
+        'docs': 'some-docs',
+        'note': 'some-reason',
+        'type': 'some-type',
+        'version': '0.1.0'
+    }
+
+    # check if generated_at has expected format, will traceback if not
+    strptime(generated_at, "%Y-%m-%d %H:%M:%S.%f")
+
+
+def test_execute_reason_in_note_new_message(
+    ci_info,
+    evaluate,
+    monkeypatch,
+    module,
+    mock_namespace,
+    publish_new_messages
+):
     module._config.update({
         'note': None,
         'pipeline': {
@@ -337,13 +475,13 @@ def test_execute_reason_in_note(ci_info, evaluate, monkeypatch, module, mock_nam
 
     module.execute()
 
-    assert publish_messages['message'].headers == ARTIFACT
+    assert publish_new_messages['message'].headers == NEW_ARTIFACT
 
-    generated_at = publish_messages['message'].body.pop('generated_at')
+    generated_at = publish_new_messages['message'].body.pop('generated_at')
 
-    assert publish_messages['message'].body == {
-        'artifact': ARTIFACT,
-        'contact': CI,
+    assert publish_new_messages['message'].body == {
+        'artifact': NEW_ARTIFACT,
+        'contact': NEW_CI,
         'run': RUN,
         'error': {
             'reason': 'some-reason',
@@ -370,17 +508,27 @@ def test_destroy_sysexit(module):
     assert module.destroy(failure=MagicMock(exc_info=[None, SystemExit()])) == None
 
 
-def test_destroy(module, evaluate, publish_messages, mock_namespace):
+def test_destroy_old_messages(module, evaluate, publish_old_messages, mock_namespace):
     # test with failure
     module.destroy(failure=MagicMock(sentry_event_url='sentry-url'))
 
     # test with failure and publish_bus_messages
     module.destroy(failure=MagicMock(sentry_event_url='sentry-url'))
-    assert publish_messages['message'].body['test']['result'] == 'unknown'
-    assert publish_messages['message'].body['error']['issue_url'] == 'sentry-url'
+    assert publish_old_messages['message'].body['status'] == 'unknown'
+    assert publish_old_messages['message'].body['error']['issue_url'] == 'sentry-url'
 
 
-def test_destroy_with_results_and_recipients(module, evaluate, mock_namespace, publish_messages):
+def test_destroy_new_messages(module, evaluate, publish_new_messages, mock_namespace):
+    # test with failure
+    module.destroy(failure=MagicMock(sentry_event_url='sentry-url'))
+
+    # test with failure and publish_bus_messages
+    module.destroy(failure=MagicMock(sentry_event_url='sentry-url'))
+    assert publish_new_messages['message'].body['test']['result'] == 'unknown'
+    assert publish_new_messages['message'].body['error']['issue_url'] == 'sentry-url'
+
+
+def test_destroy_with_results_and_recipients_old_messages(module, evaluate, mock_namespace, publish_old_messages):
     module.results = lambda: [MagicMock(overall_result='passed')]
     module.glue.add_shared('results', module)
 
@@ -390,8 +538,22 @@ def test_destroy_with_results_and_recipients(module, evaluate, mock_namespace, p
     # test without failure
     module.destroy()
 
-    assert publish_messages['message'].body['test']['result'] == 'passed'
-    assert publish_messages['message'].body['recipients'] == 'batman'
+    assert publish_old_messages['message'].body['status'] == 'passed'
+    assert publish_old_messages['message'].body['recipients'] == 'batman'
+
+
+def test_destroy_with_results_and_recipients_new_messages(module, evaluate, mock_namespace, publish_new_messages):
+    module.results = lambda: [MagicMock(overall_result='passed')]
+    module.glue.add_shared('results', module)
+
+    module.notification_recipients = lambda: 'batman'
+    module.glue.add_shared('notification_recipients', module)
+
+    # test without failure
+    module.destroy()
+
+    assert publish_new_messages['message'].body['test']['result'] == 'passed'
+    assert publish_new_messages['message'].body['notification']['recipients'] == 'batman'
 
 
 @pytest.mark.parametrize('expected,results', [

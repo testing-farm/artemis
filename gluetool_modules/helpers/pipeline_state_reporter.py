@@ -10,6 +10,7 @@ https://docs.google.com/document/d/16L5odC-B4L6iwb9dp8Ry0Xk5Sc49h9KvTHrG86fdfQM/
 import argparse
 import base64
 import datetime
+import re
 import zlib
 
 import bs4
@@ -30,6 +31,8 @@ STATE_ERROR = 'error'
 class PipelineStateReporter(gluetool.Module):
     """
     Sends messages reporting the pipeline state.
+    The module supports both 0.Y.Z and 1.Y.Z major versions of the
+    message specifications described in https://pagure.io/fedora-ci/messages.
 
     The module sends two messages:
 
@@ -320,6 +323,14 @@ class PipelineStateReporter(gluetool.Module):
 
         return gluetool.utils.load_yaml(self.option('final-state-map'), logger=self.logger)
 
+    @gluetool.utils.cached_property
+    def new_version(self):
+        # type: () -> bool
+        """
+        Return True if 1.x.y version of UMB is used
+        """
+        return bool(re.search(r'^1\.\d+\.\d+', self.option('version')))
+
     def _subject_info(self, subject_name, instructions):
         # type: (str, str) -> Dict[str, Any]
         self.require_shared('evaluate_instructions', 'evaluate_rules')
@@ -358,11 +369,12 @@ class PipelineStateReporter(gluetool.Module):
     def _artifact_info(self):
         # type: () -> Dict[str, Union[str, int]]
         artifact = self._subject_info('artifact', self.artifact_map,)
-        if 'id' in artifact:
-            try:
-                artifact['id'] = int(artifact['id'])
-            except ValueError:
-                self.warn('Could not convert artifact id to integer, leaving as string')
+        if self.new_version:
+            if 'id' in artifact:
+                try:
+                    artifact['id'] = int(artifact['id'])
+                except ValueError:
+                    self.warn('Could not convert artifact id to integer, leaving as string')
 
         return artifact
 
@@ -375,6 +387,16 @@ class PipelineStateReporter(gluetool.Module):
             'email': self.option('contact-email'),
             'irc': self.option('contact-irc'),
             'docs': self.option('contact-docs')
+        }
+
+    def _ci_info(self):
+        # type: () -> Dict[str, str]
+        return {
+            'email': self.option('contact-email'),
+            'irc': self.option('contact-irc'),
+            'name': self.option('contact-name'),
+            'team': self.option('contact-team'),
+            'url': self.option('contact-url'),
         }
 
     def _run_info(self):
@@ -392,7 +414,28 @@ class PipelineStateReporter(gluetool.Module):
 
         headers.update(artifact)
 
-        body['contact'] = contact
+        if self.new_version:
+            body['contact'] = contact
+
+            body['pipeline'] = {
+                'name': self.shared('eval_context').get('JENKINS_BUILD_URL') or self.option('pipeline-name')
+            }
+
+            if thread_id is not None:
+                body['pipeline']['id'] = thread_id
+
+            elif self.has_shared('thread_id'):
+                body['pipeline']['id'] = self.shared('thread_id')
+
+        else:
+            body['ci'] = self._ci_info()
+
+            if thread_id is not None:
+                body['thread_id'] = thread_id
+
+            elif self.has_shared('thread_id'):
+                body['thread_id'] = self.shared('thread_id')
+
         body['run'] = run
         body['artifact'] = artifact
 
@@ -400,16 +443,6 @@ class PipelineStateReporter(gluetool.Module):
 
         body['generated_at'] = datetime.datetime.utcnow().isoformat(' ')
         body['version'] = self.option('version')
-
-        body['pipeline'] = {
-            'name': self.shared('eval_context').get('JENKINS_BUILD_URL') or self.option('pipeline-name')
-        }
-
-        if thread_id is not None:
-            body['pipeline']['id'] = thread_id
-
-        elif self.has_shared('thread_id'):
-            body['pipeline']['id'] = self.shared('thread_id')
 
         return headers, body
 
@@ -462,12 +495,25 @@ class PipelineStateReporter(gluetool.Module):
 
         headers, body = self._init_message(thread_id)
 
-        body['test'] = {
-            'category': test_category or self.option('test-category'),
-            'docs': test_docs or self._get_test_docs(),
-            'namespace': test_namespace or self._get_test_namespace(),
-            'type': test_type or self.option('test-type'),
-        }
+        test_category = test_category or self.option('test-category')
+        test_docs = test_docs or self._get_test_docs()
+        test_namespace = test_namespace or self._get_test_namespace()
+        test_type = test_type or self.option('test-type')
+
+        if self.new_version:
+            body['test'] = {
+                'category': test_category,
+                'docs': test_docs,
+                'namespace': test_namespace,
+                'type': test_type,
+            }
+
+        else:
+            body['category'] = test_category
+            body['docs'] = test_docs
+            body['namespace'] = test_namespace
+            body['type'] = test_type
+            body['label'] = self.option('label')
 
         if state == STATE_COMPLETE:
             body['system'] = [
@@ -478,14 +524,25 @@ class PipelineStateReporter(gluetool.Module):
                 } for label, distro, provider in distros
             ]
 
-            body['test']['result'] = test_overall_result
+            if self.new_version:
+                body['test']['result'] = test_overall_result
+            else:
+                body['status'] = test_overall_result
 
             if test_results is not None:
                 compressed = zlib.compress(str(test_results))
-                body['test']['xunit'] = base64.b64encode(compressed)
+                if self.new_version:
+                    body['test']['xunit'] = base64.b64encode(compressed)
+                else:
+                    body['xunit'] = base64.b64encode(compressed)
 
-            if self.has_shared('notification_recipients'):
-                body['recipients'] = self.shared('notification_recipients')
+            if self.has_shared('notification_recipients') and self.shared('notification_recipients'):
+                if self.new_version:
+                    body['notification'] = {
+                        'recipients': self.shared('notification_recipients')
+                    }
+                else:
+                    body['recipients'] = self.shared('notification_recipients')
 
         # Send error properties in any case - despite the final state being e.g. 'complete',
         # an exception may have been raised and by always reporting the properties we can be
