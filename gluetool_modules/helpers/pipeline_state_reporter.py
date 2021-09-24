@@ -11,6 +11,7 @@ import argparse
 import base64
 import datetime
 import re
+import six
 import zlib
 
 import bs4
@@ -43,7 +44,6 @@ class PipelineStateReporter(gluetool.Module):
 
         * the second message is sent when the pipeline is being destroyed. it can contain information
           about the error causing pipeline to crash, or export testing results.
-
 
     **Artifact details**
 
@@ -226,9 +226,10 @@ class PipelineStateReporter(gluetool.Module):
     ]
 
     required_options = (
-        'contact-name', 'contact-team', 'contact-url', 'contact-email', 'contact-irc', 'contact-docs',
+        'contact-name', 'contact-team', 'contact-email', 'contact-docs',
         'bus-topic',
-        'test-namespace')
+        'test-namespace',
+    )
 
     shared_functions = ['report_pipeline_state']
 
@@ -274,6 +275,15 @@ class PipelineStateReporter(gluetool.Module):
             })
 
         return context
+
+    @staticmethod
+    def _dict_filter_no_value(original):
+        # type: (Dict[str, Optional[str]]) -> Dict[str, str]
+        return {
+            key: value
+            for key, value in six.iteritems(original)
+            if value is not None
+        }
 
     @gluetool.utils.cached_property
     def artifact_map(self):
@@ -380,24 +390,24 @@ class PipelineStateReporter(gluetool.Module):
 
     def _contact_info(self):
         # type: () -> Dict[str, str]
-        return {
-            'name': self.option('contact-name'),
-            'team': self.option('contact-team'),
-            'url': self.option('contact-url'),
+        return self._dict_filter_no_value({
+            'docs': self.option('contact-docs'),
             'email': self.option('contact-email'),
             'irc': self.option('contact-irc'),
-            'docs': self.option('contact-docs')
-        }
+            'name': self.option('contact-name'),
+            'team': self.option('contact-team'),
+            'url': self.option('contact-url')
+        })
 
     def _ci_info(self):
         # type: () -> Dict[str, str]
-        return {
+        return self._dict_filter_no_value({
             'email': self.option('contact-email'),
             'irc': self.option('contact-irc'),
             'name': self.option('contact-name'),
             'team': self.option('contact-team'),
             'url': self.option('contact-url'),
-        }
+        })
 
     def _run_info(self):
         # type: () -> Dict[str, Any]
@@ -457,7 +467,7 @@ class PipelineStateReporter(gluetool.Module):
         test_type=None,  # type: Optional[str]
         test_overall_result=None,  # type: Optional[str]
         test_results=None,  # type: Optional[str]
-        distros=None,  # type: Optional[List[Tuple[str, str, str]]]
+        distros=None,  # type: Optional[List[Tuple[str, str, str, str]]]
         error_message=None,  # type: Optional[str]
         error_url=None  # type: Optional[str]
     ):
@@ -476,9 +486,10 @@ class PipelineStateReporter(gluetool.Module):
         :param str test_type: Pipeline type - ``tier1``, ``rpmdiff-analysis``, etc.
         :param str thread_id: The thread ID of the pipeline. If not set, shared function ``thread_id``
             is used to provide the ID.
-        :param list(tuple(str, str, str)) distros: List of distros used by the systems in the testing
+        :param list(tuple(str, str, str, str)) distros: List of distros used by the systems in the testing
             process. Each item is a tuple of three strings:
 
+            * ``architecture`` - system architecture
             * ``label`` - arbitrary label of the system, e.g. ``master`` or ``client``.
             * ``os`` - identification of used distro, e.g. beaker distro name or OpenStack image name.
             * ``provider`` - what service provided the system, e.g. ``beaker`` or ``openstack``.
@@ -490,7 +501,7 @@ class PipelineStateReporter(gluetool.Module):
             link to an automatically created Sentry issue, or link to a Jira issue discissing the error.
         """
 
-        distros = distros or cast(List[Tuple[str, str, str]], ())
+        distros = distros or cast(List[Tuple[str, str, str, str]], ())
         topic = topic or self.option('bus-topic')
 
         headers, body = self._init_message(thread_id)
@@ -501,12 +512,12 @@ class PipelineStateReporter(gluetool.Module):
         test_type = test_type or self.option('test-type')
 
         if self.new_version:
-            body['test'] = {
+            body['test'] = self._dict_filter_no_value({
                 'category': test_category,
                 'docs': test_docs,
                 'namespace': test_namespace,
                 'type': test_type,
-            }
+            })
 
         else:
             body['category'] = test_category
@@ -516,13 +527,24 @@ class PipelineStateReporter(gluetool.Module):
             body['label'] = self.option('label')
 
         if state == STATE_COMPLETE:
-            body['system'] = [
-                {
-                    'label': label,
-                    'os': distro,
-                    'provider': provider
-                } for label, distro, provider in distros
-            ]
+            if self.new_version:
+                body['system'] = [
+                    self._dict_filter_no_value({
+                        'architecture': architecture,
+                        'label': label,
+                        'os': distro,
+                        'provider': provider
+                    }) for architecture, label, distro, provider in distros
+                ]
+            else:
+                body['system'] = [
+                    {
+                        'architecture': architecture,
+                        'label': label,
+                        'os': distro,
+                        'provider': provider
+                    } for architecture, label, distro, provider in distros
+                ]
 
             if self.new_version:
                 body['test']['result'] = test_overall_result
@@ -548,13 +570,19 @@ class PipelineStateReporter(gluetool.Module):
         # an exception may have been raised and by always reporting the properties we can be
         # sure even the 'complete' report would be connected with the original issue, and
         # therefore open to investigation.
-        body['error'] = {
-            'reason': self._get_error_reason(error_message),
-            'issue_url': error_url
-        }
+        if self.new_version:
+            body['error'] = self._dict_filter_no_value({
+                'reason': self._get_error_reason(error_message),
+                'issue_url': error_url
+            })
+        else:
+            body['error'] = {
+                'reason': self._get_error_reason(error_message),
+                'issue_url': error_url
+            }
         # If the note wasn't been set by the module option, add error reason there.
         # CI dashboard will show the note as a reason to failed or skipped test.
-        if not body['note']:
+        if not body.get('note'):
             body['note'] = self._get_error_reason(error_message)
 
         render_context = gluetool.utils.dict_update(self.shared('eval_context'), {
