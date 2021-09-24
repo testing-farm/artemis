@@ -13,7 +13,7 @@ from gluetool_modules.libs import strptime
 
 from . import create_module, patch_shared
 
-OLD_CI = {
+VERSION_0_CI = {
     'name': 'Fake CI',
     'team': 'Fake Team',
     'url': 'Fake URL',
@@ -21,7 +21,7 @@ OLD_CI = {
     'irc': 'Fake IRC'
 }
 
-NEW_CI = {
+VERSION_1_CONTACT = {
     'name': 'Fake CI',
     'team': 'Fake Team',
     'url': 'Fake URL',
@@ -51,7 +51,7 @@ ARTIFACT_MAP = [
     }
 ]
 
-OLD_ARTIFACT = {
+VERSION_0_ARTIFACT = {
     'branch': 'fixing-bz17',
     'component': 'dummy-package',
     'id': '123456',
@@ -61,7 +61,7 @@ OLD_ARTIFACT = {
     'source': 'http://example.com/component.git'
 }
 
-NEW_ARTIFACT = {
+VERSION_1_ARTIFACT = {
     'branch': 'fixing-bz17',
     'component': 'dummy-package',
     'id': 123456,
@@ -343,17 +343,17 @@ def test_execute_old_message(ci_info, evaluate, monkeypatch, module, mock_namesp
 
     module.execute()
 
-    assert publish_old_messages['message'].headers == OLD_ARTIFACT
+    assert publish_old_messages['message'].headers == VERSION_0_ARTIFACT
 
     generated_at = publish_old_messages['message'].body.pop('generated_at')
 
     assert publish_old_messages['message'].body == {
-        'artifact': OLD_ARTIFACT,
-        'ci': OLD_CI,
+        'artifact': VERSION_0_ARTIFACT,
+        'ci': VERSION_0_CI,
         'run': RUN,
         'error': {
             'reason': 'some-reason',
-            'issue_url': None,
+            'issue_url': None
         },
         'category': 'some-category',
         'label': 'some-label',
@@ -380,17 +380,16 @@ def test_execute_new_message(ci_info, evaluate, monkeypatch, module, mock_namesp
 
     module.execute()
 
-    assert publish_new_messages['message'].headers == NEW_ARTIFACT
+    assert publish_new_messages['message'].headers == VERSION_1_ARTIFACT
 
     generated_at = publish_new_messages['message'].body.pop('generated_at')
 
     assert publish_new_messages['message'].body == {
-        'artifact': NEW_ARTIFACT,
-        'contact': NEW_CI,
+        'artifact': VERSION_1_ARTIFACT,
+        'contact': VERSION_1_CONTACT,
         'run': RUN,
         'error': {
             'reason': 'some-reason',
-            'issue_url': None,
         },
         'note': 'some-note',
         'version': '1.1.6',
@@ -428,13 +427,13 @@ def test_execute_reason_in_note_old_message(
 
     module.execute()
 
-    assert publish_old_messages['message'].headers == OLD_ARTIFACT
+    assert publish_old_messages['message'].headers == VERSION_0_ARTIFACT
 
     generated_at = publish_old_messages['message'].body.pop('generated_at')
 
     assert publish_old_messages['message'].body == {
-        'artifact': OLD_ARTIFACT,
-        'ci': OLD_CI,
+        'artifact': VERSION_0_ARTIFACT,
+        'ci': VERSION_0_CI,
         'run': RUN,
         'error': {
             'reason': 'some-reason',
@@ -462,7 +461,6 @@ def test_execute_reason_in_note_new_message(
     publish_new_messages
 ):
     module._config.update({
-        'note': None,
         'pipeline': {
             'id': 'some-id'
         },
@@ -473,19 +471,20 @@ def test_execute_reason_in_note_new_message(
         'version': '1.1.6',
     })
 
+    module._config.pop('note')
+
     module.execute()
 
-    assert publish_new_messages['message'].headers == NEW_ARTIFACT
+    assert publish_new_messages['message'].headers == VERSION_1_ARTIFACT
 
     generated_at = publish_new_messages['message'].body.pop('generated_at')
 
     assert publish_new_messages['message'].body == {
-        'artifact': NEW_ARTIFACT,
-        'contact': NEW_CI,
+        'artifact': VERSION_1_ARTIFACT,
+        'contact': VERSION_1_CONTACT,
         'run': RUN,
         'error': {
             'reason': 'some-reason',
-            'issue_url': None,
         },
         'note': 'some-reason',
         'pipeline': {
