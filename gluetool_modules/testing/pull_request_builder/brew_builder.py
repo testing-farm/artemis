@@ -12,9 +12,12 @@ from gluetool_modules.libs.brew_build_fail import BrewBuildFailedError, run_comm
 from gluetool_modules.libs.results import TestResult, publish_result
 from gluetool_modules.libs.artifacts import artifacts_location
 
+from typing import Dict, Any, Optional, List, cast # noqa
+
 
 class BrewBuildTestResult(TestResult):
     def __init__(self, glue, overall_result, build_url, comment, process_output, **kwargs):
+        # type: (gluetool.Glue, str, str, str, str, **Any) -> None
         super(BrewBuildTestResult, self).__init__(glue, 'brew-build', overall_result, **kwargs)
 
         self.build_url = build_url
@@ -40,6 +43,7 @@ class BrewBuilder(gluetool.Module):
     }
 
     def report_result(self, result, build_url=None, exception=None):
+        # type: (str, Optional[str], Optional[BrewBuildFailedError]) -> None
         self.info('Result of testing: {}'.format(result))
 
         comment = exception.message if exception else None
@@ -48,6 +52,7 @@ class BrewBuilder(gluetool.Module):
         publish_result(self, BrewBuildTestResult, result, build_url, comment, process_output)
 
     def _make_brew_build(self):
+        # type: () -> str
         self.require_shared('src_rpm')
 
         src_rpm_name, path_to_src_rpm = self.shared('src_rpm')
@@ -55,6 +60,7 @@ class BrewBuilder(gluetool.Module):
         self.info('Initializing brew scratch build')
 
         def _executor(command):
+            # type: (List[str]) -> gluetool.utils.ProcessOutput
             return Command(command).run(cwd=path_to_src_rpm)
 
         command = [
@@ -72,36 +78,42 @@ class BrewBuilder(gluetool.Module):
         if arches:
             command += ['--arches', ' '.join(arches)]
 
-        command_failed, err_msg, output = run_and_log(command,
-                                                      log_path,
-                                                      _executor)
+        command_failed, err_msg, output = run_and_log(
+            command,
+            log_path,
+            _executor
+        )
         if command_failed:
             six.reraise(*sys.exc_info())
 
         # detect brew task id
-        match = re.search(r'^Created task: (\d+)$', output.stdout, re.M)
+        match = re.search(r'^Created task: (\d+)$', cast(str, output.stdout), re.M)
         if not match:
             raise gluetool.GlueError('Unable to find `task-id` in `rhpkg` output')
         task_id = match.group(1)
+        assert task_id is not None
 
         # detect brew task URL and log it
-        match = re.search(r'^Task info: (.+)$', output.stdout, re.M)
+        match = re.search(r'^Task info: (.+)$', cast(str, output.stdout), re.M)
         if not match:
             raise gluetool.GlueError('Unable to find `task-url` in `rhpkg` output')
         task_url = match.group(1)
+        assert task_url is not None
         self.info('Waiting for brew to finish task: {0}'.format(task_url))
 
         # wait until brew task finish
         brew_watch_cmd = ['brew', 'watch-task', task_id]
 
-        run_command(brew_watch_cmd,
-                    log_path,
-                    'Wait for brew build finish'
-                    )
+        run_command(
+            brew_watch_cmd,
+            log_path,
+            'Wait for brew build finish'
+        )
 
         return task_url
 
     def execute(self):
+        # type: () -> None
         try:
             brew_task_url = self._make_brew_build()
         except BrewBuildFailedError as exc:

@@ -6,6 +6,8 @@ from gluetool.utils import cached_property, dict_update
 
 import gluetool_modules.libs.dispatch_job
 
+from typing import Dict, Any # noqa
+
 
 class CoprBuildJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, gluetool.Module):
     """
@@ -35,6 +37,7 @@ class CoprBuildJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, g
 
     @cached_property
     def build_params(self):
+        # type: () -> Dict[str, str]
         return dict_update(super(CoprBuildJob, self).build_params, {
             'copr_builder_options': self.option('copr-builder-options'),
             'github_options': self.option('github-options'),

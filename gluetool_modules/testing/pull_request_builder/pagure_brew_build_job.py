@@ -5,6 +5,8 @@ import gluetool
 import gluetool_modules.libs.dispatch_job
 from gluetool.utils import cached_property, dict_update
 
+from typing import Dict, Any # noqa
+
 
 class BrewBuildJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, gluetool.Module):
     """
@@ -31,6 +33,7 @@ class BrewBuildJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, g
 
     @cached_property
     def build_params(self):
+        # type: () -> Dict[str, Any]
         return dict_update(super(BrewBuildJob, self).build_params, {
             'brew_builder_options': self.option('brew-builder-options')
         })
