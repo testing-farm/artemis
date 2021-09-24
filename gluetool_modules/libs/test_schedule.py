@@ -255,8 +255,17 @@ class TestSchedule(List[TestScheduleEntry]):
         self.result = TestScheduleResult.UNDEFINED
         self.action = None  # type: Optional[gluetool.action.Action]
 
-    def log(self, log_fn, label=None, include_errors=False, include_logs=False, module=None):
-        # type: (LoggingFunctionType, Optional[str], bool, bool, Optional[gluetool.Module]) -> None
+    def log(
+        self,
+        log_fn,
+        label=None,
+        include_errors=False,
+        include_logs=False,
+        include_connection_info=False,
+        connection_info_docs_link=None,
+        module=None
+    ):
+        # type: (LoggingFunctionType, Optional[str], bool, bool, bool, Optional[str], Optional[gluetool.Module]) -> None
         """
         Log a table giving a nice, user-readable overview of the test schedule.
 
@@ -331,6 +340,54 @@ class TestSchedule(List[TestScheduleEntry]):
             log_table(
                 log_fn,
                 'schedule logs',
+                table,
+                headers='firstrow', tablefmt='psql'
+            )
+
+        if include_connection_info:
+            table = [
+                ['SE', 'State', 'Result', 'Environment', 'SSH Command']
+            ]
+
+            for se in self:
+                if se.guest is None:
+                    ssh_command = 'not available'
+
+                else:
+                    ssh_command_stack = [
+                        'ssh'
+                    ]
+
+                    if se.guest.username:
+                        ssh_command_stack += [
+                            '-l', se.guest.username
+                        ]
+
+                    if se.guest.port:
+                        ssh_command_stack += [
+                            '-p', str(se.guest.port)
+                        ]
+
+                    ssh_command_stack += [se.guest.hostname]
+
+                    ssh_command = ' '.join(ssh_command_stack)
+
+                table.append([
+                    se.id,
+                    se.state.name,
+                    se.result.name,
+                    _env_to_str(se.testing_environment),
+                    ssh_command
+                ])
+
+            log_fn('NOTE: SSH is available only when machines were not returned by pipeline')
+
+            if connection_info_docs_link is not None:
+                log_fn('NOTE: see {} for documentation on machine reservation'.format(connection_info_docs_link))
+
+            log_table(
+                log_fn,
+                'SSH instructions',
                 table,
                 headers='firstrow', tablefmt='psql'
             )
