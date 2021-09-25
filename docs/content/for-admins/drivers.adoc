@@ -59,3 +59,110 @@ Capabilities are features whose support is built-in into the driver. The support
 console/URL
 
 |===
+
+
+=== HW requirements
+
+A guest request can specify various HW constraints the provisioned machines must satisfy. For example, a desired number of CPU cores or a minimal root disk size. These constraints are eventually used by drivers to find - or create - suitable guests. Unfortnatelly, not all drivers are capable of handling all possible HW requirements, limitations may apply.
+
+[NOTE]
+====
+The table below describe the built-in support for various features. However, to actually support a given feature, a maintainer may need to provide additional configuration. Such requirements are marked with an asterisk (`*`).
+====
+
+[%header,cols="1,1,1,1,1,1"]
+|===
+|HW constraint
+|`aws`
+|`azure`
+|`beaker`
+|`localhost`
+|`openstack`
+
+|`arch`
+|[green]#yes#
+|[green]#yes#
+|[green]#yes#
+|[green]#yes#
+|[green]#yes#
+
+|`cpu.cores`
+|[green]#yes#
+|[red]#no#
+|[green]#yes#
+|[red]#no#
+|[green]#yes#
+
+|`cpu.family`
+|[green]#yes# *
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[green]#yes# *
+
+|`cpu.family_name`
+|[green]#yes# *
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[green]#yes# *
+
+|`cpu.model`
+|[green]#yes# *
+|[red]#no#
+|[green]#yes# *
+|[red]#no#
+|[green]#yes# *
+
+|`cpu.model_name`
+|[green]#yes# *
+|[red]#no#
+|[green]#yes# *
+|[red]#no#
+|[green]#yes# *
+
+|`cpu.processors`
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+
+|`disk[].space`
+|[yellow]#partial# See <<hw-notes-only-one-disk, #1>>. *
+|[red]#no#
+|[yellow]#partial# See <<hw-notes-only-one-disk, #1>>.
+|[red]#no#
+|[yellow]#partial# See <<hw-notes-only-one-disk, #1>>.
+
+|`memory`
+|[green]#yes#
+|[red]#no#
+|[green]#yes#
+|[red]#no#
+|[green]#yes#
+
+|`virtualization.hypervisor`
+|[green]#yes#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+
+|`virtualization.is_supported`
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+
+|`virtualization.is_virtualized`
+|[green]#yes#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+
+|===
+
+1. [[hw-notes-only-one-disk]]`disk[]` supports only 1 item.
