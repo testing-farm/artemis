@@ -3,6 +3,12 @@
 
 import gluetool
 from gluetool.utils import normalize_path
+from gluetool_modules.libs.testing_environment import TestingEnvironment
+from gluetool_modules.libs.test_schedule import TestSchedule
+from gluetool_modules.testing.test_schedule_runner_sti import TestScheduleEntry
+
+# Type annotations
+from typing import Optional, List, cast  # noqa
 
 
 class TestSchedulerSystemRoles(gluetool.Module):
@@ -25,6 +31,7 @@ class TestSchedulerSystemRoles(gluetool.Module):
     shared_functions = ['create_test_schedule']
 
     def create_test_schedule(self, testing_environment_constraints=None):
+        # type: (Optional[List[TestingEnvironment]]) -> TestSchedule
         """
         This module modifies STI test schedule provided by other module. It adds provided ansible playbook filepath
         to schedule entries.
@@ -32,7 +39,7 @@ class TestSchedulerSystemRoles(gluetool.Module):
 
         schedule = self.overloaded_shared(
             'create_test_schedule', testing_environment_constraints=testing_environment_constraints
-        )
+        )  # type: TestSchedule
 
         if self.option('ansible-playbook-filepath'):
             for entry in schedule:
@@ -40,6 +47,7 @@ class TestSchedulerSystemRoles(gluetool.Module):
                 if entry.runner_capability != 'sti':
                     continue
 
+                assert isinstance(entry, TestScheduleEntry)
                 entry.ansible_playbook_filepath = normalize_path(self.option('ansible-playbook-filepath'))
 
         return schedule
