@@ -576,10 +576,9 @@ class PipelineStateReporter(gluetool.Module):
                 'issue_url': error_url
             })
         else:
-            body['error'] = {
-                'reason': self._get_error_reason(error_message),
-                'issue_url': error_url
-            }
+            body['reason'] = self._get_error_reason(error_message)
+            body['issue_url'] = error_url
+
         # If the note wasn't been set by the module option, add error reason there.
         # CI dashboard will show the note as a reason to failed or skipped test.
         if not body.get('note'):

@@ -351,10 +351,8 @@ def test_execute_old_message(ci_info, evaluate, monkeypatch, module, mock_namesp
         'artifact': VERSION_0_ARTIFACT,
         'ci': VERSION_0_CI,
         'run': RUN,
-        'error': {
-            'reason': 'some-reason',
-            'issue_url': None
-        },
+        'reason': 'some-reason',
+        'issue_url': None,
         'category': 'some-category',
         'label': 'some-label',
         'namespace': 'namespace',
@@ -435,10 +433,8 @@ def test_execute_reason_in_note_old_message(
         'artifact': VERSION_0_ARTIFACT,
         'ci': VERSION_0_CI,
         'run': RUN,
-        'error': {
-            'reason': 'some-reason',
-            'issue_url': None,
-        },
+        'reason': 'some-reason',
+        'issue_url': None,
         'category': 'some-category',
         'label': 'some-label',
         'namespace': 'namespace',
@@ -514,7 +510,7 @@ def test_destroy_old_messages(module, evaluate, publish_old_messages, mock_names
     # test with failure and publish_bus_messages
     module.destroy(failure=MagicMock(sentry_event_url='sentry-url'))
     assert publish_old_messages['message'].body['status'] == 'unknown'
-    assert publish_old_messages['message'].body['error']['issue_url'] == 'sentry-url'
+    assert publish_old_messages['message'].body['issue_url'] == 'sentry-url'
 
 
 def test_destroy_new_messages(module, evaluate, publish_new_messages, mock_namespace):
