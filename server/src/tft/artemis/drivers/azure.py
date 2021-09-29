@@ -122,14 +122,14 @@ class AzureDriver(PoolDriver):
     def can_acquire(
         self,
         logger: gluetool.log.ContextAdapter,
-        environment: Environment
+        guest_request: GuestRequest
     ) -> Result[bool, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
         """
 
-        r_answer = super(AzureDriver, self).can_acquire(logger, environment)
+        r_answer = super(AzureDriver, self).can_acquire(logger, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -137,7 +137,7 @@ class AzureDriver(PoolDriver):
         if r_answer.unwrap() is False:
             return r_answer
 
-        return Ok(environment.has_hw_constraints is not True)
+        return Ok(guest_request.environment.has_hw_constraints is not True)
 
     def update_guest(
         self,

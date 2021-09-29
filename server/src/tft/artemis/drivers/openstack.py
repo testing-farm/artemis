@@ -461,8 +461,8 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(True)
 
-    def can_acquire(self, logger: gluetool.log.ContextAdapter, environment: Environment) -> Result[bool, Failure]:
-        r_answer = super(OpenStackDriver, self).can_acquire(logger, environment)
+    def can_acquire(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+        r_answer = super(OpenStackDriver, self).can_acquire(logger, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -470,11 +470,11 @@ class OpenStackDriver(PoolDriver):
         if r_answer.unwrap() is False:
             return r_answer
 
-        r_image = self._env_to_image(logger, environment)
+        r_image = self._env_to_image(logger, guest_request.environment)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
-        r_flavor = self._env_to_flavor(logger, environment)
+        r_flavor = self._env_to_flavor(logger, guest_request.environment)
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
 

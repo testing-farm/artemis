@@ -725,7 +725,7 @@ class BeakerDriver(PoolDriver):
             job_results=job_results.prettify()
         ))
 
-    def can_acquire(self, logger: gluetool.log.ContextAdapter, environment: Environment) -> Result[bool, Failure]:
+    def can_acquire(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
@@ -736,7 +736,7 @@ class BeakerDriver(PoolDriver):
         """
 
         # First, check the parent class, maybe its tests already have the answer.
-        r_answer = super(BeakerDriver, self).can_acquire(logger, environment)
+        r_answer = super(BeakerDriver, self).can_acquire(logger, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -748,10 +748,10 @@ class BeakerDriver(PoolDriver):
         # far from being complete and fully tested, therefore we should check whether we are able to
         # convert the constraints - if there are any - to a Beaker XML filter.
 
-        if not environment.has_hw_constraints:
+        if not guest_request.environment.has_hw_constraints:
             return Ok(True)
 
-        r_constraints = environment.get_hw_constraints()
+        r_constraints = guest_request.environment.get_hw_constraints()
 
         if r_constraints.is_error:
             return Error(r_constraints.unwrap_error())

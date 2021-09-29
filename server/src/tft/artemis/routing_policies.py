@@ -13,7 +13,6 @@ from typing_extensions import Protocol
 from . import Failure, JSONType, partition
 from .db import GuestRequest
 from .drivers import PoolCapabilities, PoolDriver
-from .environment import Environment
 from .knobs import Knob
 from .metrics import PoolMetrics
 
@@ -192,10 +191,10 @@ def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[Pool
 def collect_pool_can_acquire(
     logger: gluetool.log.ContextAdapter,
     pools: List[PoolDriver],
-    environment: Environment
+    guest_request: GuestRequest
 ) -> Result[List[Tuple[PoolDriver, bool]], Failure]:
     r_answers = [
-        (pool, pool.can_acquire(logger, environment))
+        (pool, pool.can_acquire(logger, guest_request))
         for pool in pools
     ]
 
@@ -682,7 +681,7 @@ def policy_can_acquire(
     Disallow pools that are already know they cannot acquire the given environment.
     """
 
-    r_answers = collect_pool_can_acquire(logger, pools, guest_request.environment)
+    r_answers = collect_pool_can_acquire(logger, pools, guest_request)
 
     if r_answers.is_error:
         return Error(r_answers.unwrap_error())

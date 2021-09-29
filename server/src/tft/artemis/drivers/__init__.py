@@ -676,7 +676,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def can_acquire(
         self,
         logger: gluetool.log.ContextAdapter,
-        environment: Environment
+        guest_request: GuestRequest
     ) -> Result[bool, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy the given environment.
@@ -685,7 +685,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         * make sure the requested architecture is supported by the driver.
 
-        :param Environment environment: environment to check
+        :param guest_request: guest_request to check.
         :rtype: result.Result[bool, Failure]
         :returns: :py:class:`result.result` with either `bool`
             or specification of error.
@@ -698,7 +698,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         capabilities = r_capabilities.unwrap()
 
-        if not capabilities.supports_arch(environment.hw.arch):
+        if not capabilities.supports_arch(guest_request.environment.hw.arch):
             return Ok(False)
 
         return Ok(True)
