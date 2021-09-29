@@ -208,7 +208,7 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
         }
 
         # Do nothing if branch or comment author is not a collaborator
-        if not self.access_control:
+        if not self.access_control():
             return
 
         primary_task = self.shared('primary_task')
