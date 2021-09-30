@@ -2420,7 +2420,11 @@ def do_prepare_verify_ssh(
     )
 
     if r_ping.is_error:
-        return workspace.handle_error(r_ping, 'failed to verify SSH')
+        # We do not want the generic "failed CLI" error here, to make SSH verification issues stand out more.
+        return workspace.handle_failure(
+            Failure.from_failure('failed to verify SSH', r_ping.unwrap_error()),
+            'failed to verify SSH'
+        )
 
     return workspace.handle_success('finished-task')
 
