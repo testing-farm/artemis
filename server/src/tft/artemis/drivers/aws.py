@@ -16,9 +16,10 @@ from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
-from typing_extensions import TypedDict
+from typing_extensions import Literal, TypedDict
 
-from .. import Failure, JSONType, log_dict_yaml
+from .. import Failure, JSONType, get_cached_item, get_cached_items_as_list, log_dict_yaml
+from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorVirtualization
 from ..knobs import Knob
@@ -168,7 +169,7 @@ class AWSPoolImageInfo(PoolImageInfo):
     block_device_mappings: APIBlockDeviceMappingsType
 
     #: Carries `EnaSupport` field as provided by AWS image description.
-    supports_ena: bool
+    ena_support: bool
 
     def __repr__(self) -> str:
         return (
@@ -177,7 +178,7 @@ class AWSPoolImageInfo(PoolImageInfo):
             f' id={self.id}'
             f' ssh={repr(self.ssh)}'
             f' platform-details={self.platform_details}'
-            f' supports_ena={self.supports_ena}'
+            f' ena_support={self.ena_support}'
             '>'
         )
 
@@ -188,6 +189,12 @@ class AWSPoolImageInfo(PoolImageInfo):
             del bd_mapping['Ebs']['SnapshotId']
 
         return serialized
+
+
+@dataclasses.dataclass(repr=False)
+class AWSFlavor(Flavor):
+    # TODO: when Flavor gains `network` object, move this there.
+    ena_support: Literal['required', 'supported', 'unsupported'] = 'unsupported'
 
 
 @dataclasses.dataclass
@@ -1045,7 +1052,7 @@ class AWSDriver(PoolDriver):
                     platform_details=image['PlatformDetails'],
                     block_device_mappings=image['BlockDeviceMappings'],
                     # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or `None`
-                    supports_ena=image.get('EnaSupport', False) or False
+                    ena_support=image.get('EnaSupport', False) or False
                 )
                 for image in cast(List[APIImageType], r_images.unwrap())
             ])
@@ -1077,7 +1084,7 @@ class AWSDriver(PoolDriver):
 
         try:
             return Ok([
-                Flavor(
+                AWSFlavor(
                     name=flavor['InstanceType'],
                     id=flavor['InstanceType'],
                     cpu=FlavorCpu(
@@ -1088,7 +1095,8 @@ class AWSDriver(PoolDriver):
                     virtualization=FlavorVirtualization(
                         hypervisor=flavor.get('Hypervisor', None),
                         is_virtualized=True if flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS else False
-                    )
+                    ),
+                    ena_support=flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported')
                 )
                 for flavor in cast(List[Dict[str, Any]], r_flavors.unwrap())
                 if flavor_name_pattern is None or flavor_name_pattern.match(flavor['InstanceType'])
@@ -1100,6 +1108,16 @@ class AWSDriver(PoolDriver):
                 exc,
                 flavor_info=r_flavors.unwrap()
             ))
+
+    def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
+        return get_cached_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
+
+    def get_cached_pool_flavor_infos(self) -> Result[List[Flavor], Failure]:
+        """
+        Retrieve all flavor info known to the pool.
+        """
+
+        return get_cached_items_as_list(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
 
     def fetch_pool_resources_metrics(
         self,
