@@ -449,70 +449,6 @@ class TaskLogger(gluetool.log.ContextAdapter):
         self.error('failed:\n{}'.format(stackprinter.format(failure.exception)))
 
 
-def create_event_handlers(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    guestname: Optional[str] = None,
-    task: Optional[str] = None,
-    **default_details: Any
-) -> Tuple[SuccessHandlerType, FailureHandlerType, Dict[str, Any]]:
-    """
-    Return helper functions that take care of handling success and failure situations in tasks. These handlers take
-    care of reporting the event:
-
-    * create a guest event,
-    * in case of failures, log the failure and submit it to Sentry.
-
-    Third returned value is a "spice" mapping - all key: value entries added to this mapping will be added
-    as extra details to all logs and failures.
-    """
-
-    spice_details: Dict[str, Any] = {**default_details}
-
-    if task:
-        spice_details['task'] = task
-
-    def handle_success(
-        eventname: str,
-        return_value: DoerReturnType = SUCCESS
-    ) -> DoerReturnType:
-        if guestname:
-            GuestRequest.log_event_by_guestname(
-                logger,
-                session,
-                guestname,
-                eventname,
-                **spice_details
-            )
-
-        return return_value
-
-    def handle_failure(
-        result: Result[Any, Failure],
-        label: str,
-        sentry: bool = True
-    ) -> DoerReturnType:
-        failure = result.unwrap_error()
-
-        failure.handle(logger, label=label, sentry=sentry, guestname=guestname, **spice_details)
-
-        if guestname:
-            GuestRequest.log_error_event_by_guestname(
-                logger,
-                session,
-                guestname,
-                label,
-                failure
-            )
-
-        if failure.recoverable is True:
-            return Error(failure)
-
-        return IGNORE(result)
-
-    return handle_success, handle_failure, spice_details
-
-
 def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:
     var_value = os.getenv(
         'ARTEMIS_ACTOR_{}_{}'.format(actor_name.upper(), var_name),
@@ -1061,9 +997,10 @@ def _update_guest_state(
     current_pool_data: Optional[str] = None,
     **details: Any
 ) -> Result[bool, Failure]:
-    handle_success, handle_failure, _ = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        threading.Event(),
         guestname=guestname,
         current_state=current_state.value if current_state is not None else None,
         new_state=new_state.value,
@@ -1118,7 +1055,7 @@ def _update_guest_state(
 
     logger.warning('state switch: {} => {}: succeeded'.format(current_state_label, new_state.value))
 
-    handle_success('state-changed')
+    workspace.handle_success('state-changed')
 
     return Ok(True)
 
@@ -1133,9 +1070,10 @@ def _update_snapshot_state(
     set_values: Optional[Dict[str, Any]] = None,
     **details: Any
 ) -> Result[bool, Failure]:
-    handle_success, handle_failure, _ = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        threading.Event(),
         guestname=guestname,
         snapshotname=snapshotname,
         current_state=current_state.value,
@@ -1183,7 +1121,7 @@ def _update_snapshot_state(
 
     logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
 
-    handle_success('snapshot-state-changed')
+    workspace.handle_success('snapshot-state-changed')
 
     return Ok(True)
 
@@ -1352,16 +1290,17 @@ class Workspace:
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
-        handle_failure: FailureHandlerType
+        guestname: Optional[str] = None,
+        task: Optional[str] = None,
+        **default_details: Any
     ) -> None:
         self.logger = logger
         self.session = session
         self.cancel = cancel
-        self.handle_failure = handle_failure
 
         self.result: Optional[DoerReturnType] = None
 
-        self.guestname: Optional[str] = None
+        self.guestname: Optional[str] = guestname
         self.snapshotname: Optional[str] = None
 
         self.gr: Optional[GuestRequest] = None
@@ -1369,6 +1308,51 @@ class Workspace:
         self.ssh_key: Optional[SSHKey] = None
         self.pool: Optional[PoolDriver] = None
         self.guest_events: Optional[List[GuestEvent]] = None
+
+        self.spice_details: Dict[str, Any] = {**default_details}
+
+        if task:
+            self.spice_details['task'] = task
+
+    def handle_failure(
+        self,
+        result: Result[Any, Failure],
+        label: str,
+        sentry: bool = True
+    ) -> DoerReturnType:
+        failure = result.unwrap_error()
+
+        failure.handle(self.logger, label=label, sentry=sentry, guestname=self.guestname, **self.spice_details)
+
+        if self.guestname:
+            GuestRequest.log_error_event_by_guestname(
+                self.logger,
+                self.session,
+                self.guestname,
+                label,
+                failure
+            )
+
+        if failure.recoverable is True:
+            return Error(failure)
+
+        return IGNORE(result)
+
+    def handle_success(
+        self,
+        eventname: str,
+        return_value: DoerReturnType = SUCCESS
+    ) -> DoerReturnType:
+        if self.guestname:
+            GuestRequest.log_event_by_guestname(
+                self.logger,
+                self.session,
+                self.guestname,
+                eventname,
+                **self.spice_details
+            )
+
+        return return_value
 
     def load_guest_request(self, guestname: str, state: Optional[GuestState] = None) -> None:
         """
@@ -1980,9 +1964,10 @@ class ProvisioningTailHandler(TailHandler):
         actor_arguments: Dict[str, Optional[str]],
         failure_details: Dict[str, str]
     ) -> DoerReturnType:
-        handle_success, handle_failure, spice_details = create_event_handlers(
+        workspace = Workspace(
             logger,
             session,
+            cancel,
             task='provisioning-tail',
             **failure_details
         )
@@ -1996,7 +1981,7 @@ class ProvisioningTailHandler(TailHandler):
                 actor_arguments=actor_arguments
             ))
 
-            handle_failure(r, 'failed to extract actor arguments')
+            workspace.handle_failure(r, 'failed to extract actor arguments')
 
             return IGNORE(r)
 
@@ -2005,7 +1990,6 @@ class ProvisioningTailHandler(TailHandler):
         # guestname can never be None
         assert guestname is not None
 
-        workspace = Workspace(logger, session, cancel, handle_failure)
         workspace.load_guest_request(guestname, state=self.current_state)
 
         if workspace.result:
@@ -2014,7 +1998,7 @@ class ProvisioningTailHandler(TailHandler):
         assert workspace.gr
 
         if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
-            spice_details['poolname'] = workspace.gr.poolname
+            workspace.spice_details['poolname'] = workspace.gr.poolname
 
             workspace.load_gr_pool()
 
@@ -2026,7 +2010,7 @@ class ProvisioningTailHandler(TailHandler):
             r_release = workspace.pool.release_guest(logger, workspace.gr)
 
             if r_release.is_error:
-                handle_failure(r_release, 'failed to release guest resources')
+                workspace.handle_failure(r_release, 'failed to release guest resources')
 
                 return RESCHEDULE
 
@@ -2049,7 +2033,7 @@ class ProvisioningTailHandler(TailHandler):
 
         logger.info('reverted to {}'.format(self.new_state.value))
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
 
 class LoggingTailHandler(TailHandler):
@@ -2092,9 +2076,10 @@ class LoggingTailHandler(TailHandler):
         actor_arguments: Dict[str, Optional[str]],
         failure_details: Dict[str, str]
     ) -> DoerReturnType:
-        handle_success, handle_failure, spice_details = create_event_handlers(
+        workspace = Workspace(
             logger,
             session,
+            cancel,
             task='logging-tail',
             **failure_details
         )
@@ -2105,7 +2090,7 @@ class LoggingTailHandler(TailHandler):
                 actor_arguments=actor_arguments
             ))
 
-            handle_failure(r, 'failed to extract actor arguments')
+            workspace.handle_failure(r, 'failed to extract actor arguments')
 
             return IGNORE(r)
 
@@ -2129,12 +2114,12 @@ class LoggingTailHandler(TailHandler):
         r_store = safe_db_change(logger, session, query)
 
         if r_store.is_error:
-            return handle_failure(r_store, 'failed to update the log')
+            return workspace.handle_failure(r_store, 'failed to update the log')
 
         if r_store.unwrap() is not True:
-            return handle_success('finished-task', return_value=RESCHEDULE)
+            return workspace.handle_success('finished-task', return_value=RESCHEDULE)
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
 
 def do_release_pool_resources(
@@ -2146,28 +2131,29 @@ def do_release_pool_resources(
     serialized_resource_ids: str,
     guestname: Optional[str]
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='release-pool-resources'
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
     r_pool = _get_pool(logger, session, poolname)
 
     if r_pool.is_error:
-        return handle_failure(r_pool, 'pool sanity failed')
+        return workspace.handle_failure(r_pool, 'pool sanity failed')
 
     pool = r_pool.unwrap()
 
     r_release = pool.release_pool_resources(logger, serialized_resource_ids)
 
     if r_release.is_error:
-        return handle_failure(r_release, 'failed to release pool resources')
+        return workspace.handle_failure(r_release, 'failed to release pool resources')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -2194,16 +2180,16 @@ def do_update_guest_log(
     logname: str,
     contenttype: GuestLogContentType
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='update-guest-log'
     )
 
-    handle_success('enter-task')
+    workspace.handle_success('enter-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname)
 
     if workspace.result:
@@ -2218,7 +2204,7 @@ def do_update_guest_log(
         .one_or_none()
 
     if r_guest_log.is_error:
-        return handle_failure(r_guest_log, 'failed to fetch the log')
+        return workspace.handle_failure(r_guest_log, 'failed to fetch the log')
 
     guest_log = r_guest_log.unwrap()
 
@@ -2241,9 +2227,9 @@ def do_update_guest_log(
         )
 
         if r_upsert.is_error:
-            return handle_failure(r_upsert, 'failed to create log record')
+            return workspace.handle_failure(r_upsert, 'failed to create log record')
 
-        return handle_success('finished-task', return_value=RESCHEDULE)
+        return workspace.handle_success('finished-task', return_value=RESCHEDULE)
 
     logger.warning(f'logname={logname} contenttype={contenttype} state={guest_log.state}')
 
@@ -2251,18 +2237,18 @@ def do_update_guest_log(
         # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
         # to different pool, and here the could succeed - but it's never going to be tried again since it's
         # in ERROR state and there's no way to "reset" the state - possibly do that in API via POST.
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     # TODO logs: it'd be nice to change logs' state to something final
     if workspace.gr.state in (GuestState.CONDEMNED, GuestState.ERROR):
         logger.warning('guest can no longer provide any useful logs')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     if workspace.gr.pool is None:
         logger.warning('guest request has no pool at this moment, reschedule')
 
-        return handle_success('finished-task', return_value=RESCHEDULE)
+        return workspace.handle_success('finished-task', return_value=RESCHEDULE)
 
     workspace.load_gr_pool()
 
@@ -2274,7 +2260,7 @@ def do_update_guest_log(
     r_capabilities = workspace.pool.capabilities()
 
     if r_capabilities.is_error:
-        return handle_failure(r_capabilities, 'failed to fetch pool capabilities')
+        return workspace.handle_failure(r_capabilities, 'failed to fetch pool capabilities')
 
     capabilities = r_capabilities.unwrap()
 
@@ -2282,7 +2268,7 @@ def do_update_guest_log(
         # If the guest request reached its final states, there's no chance for a pool change in the future,
         # therefore UNSUPPORTED becomes final state as well.
         if workspace.gr.state in (GuestState.READY.value, GuestState.CONDEMNED.value):
-            return handle_success('finished-task')
+            return workspace.handle_success('finished-task')
 
         r_update: Result[GuestLogUpdateProgress, Failure] = Ok(GuestLogUpdateProgress(
             state=GuestLogState.UNSUPPORTED
@@ -2296,7 +2282,7 @@ def do_update_guest_log(
 
     elif guest_log.state == GuestLogState.COMPLETE:
         if not guest_log.is_expired:
-            return handle_success('finished-task')
+            return workspace.handle_success('finished-task')
 
         r_update = workspace.pool.update_guest_log(
             workspace.gr,
@@ -2316,7 +2302,7 @@ def do_update_guest_log(
         )
 
     if r_update.is_error:
-        return handle_failure(r_update, 'failed to update the log')
+        return workspace.handle_failure(r_update, 'failed to update the log')
 
     update_progress = r_update.unwrap()
 
@@ -2342,16 +2328,16 @@ def do_update_guest_log(
     r_store = safe_db_change(logger, session, query)
 
     if r_store.is_error:
-        return handle_failure(r_store, 'failed to update the log')
+        return workspace.handle_failure(r_store, 'failed to update the log')
 
     if r_store.unwrap() is not True:
-        return handle_success('finished-task', return_value=RESCHEDULE)
+        return workspace.handle_success('finished-task', return_value=RESCHEDULE)
 
     if update_progress.state == GuestLogState.COMPLETE:
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     if update_progress.state == GuestLogState.ERROR:
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     # PENDING, IN_PROGRESS and UNSUPPORTED proceed the same way
     workspace.dispatch_task(
@@ -2365,7 +2351,7 @@ def do_update_guest_log(
     if workspace.result:
         return workspace.result
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(tail_handler=LoggingTailHandler())
@@ -2384,16 +2370,16 @@ def do_prepare_verify_ssh(
     cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='prepare-verify-ssh'
     )
 
-    handle_success('enter-task')
+    workspace.handle_success('enter-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
     workspace.load_gr_pool()
 
@@ -2411,12 +2397,12 @@ def do_prepare_verify_ssh(
     r_master_key = _get_master_key()
 
     if r_master_key.is_error:
-        return handle_failure(r_master_key, 'failed to fetch master key')
+        return workspace.handle_failure(r_master_key, 'failed to fetch master key')
 
     r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=session, pool=workspace.pool)
 
     if r_ssh_timeout.is_error:
-        return handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')
+        return workspace.handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')
 
     r_ping = ping_shell_remote(
         logger,
@@ -2428,9 +2414,9 @@ def do_prepare_verify_ssh(
     )
 
     if r_ping.is_error:
-        return handle_failure(r_ping, 'failed to verify SSH')
+        return workspace.handle_failure(r_ping, 'failed to verify SSH')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
@@ -2452,16 +2438,16 @@ def do_prepare_post_install_script(
     # Avoid circular imports
     from .drivers import copy_to_remote, create_tempfile, run_remote
 
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='prepare-post-install-script'
     )
 
-    handle_success('enter-task')
+    workspace.handle_success('enter-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
     workspace.load_gr_pool()
 
@@ -2479,12 +2465,12 @@ def do_prepare_post_install_script(
     r_master_key = _get_master_key()
 
     if r_master_key.is_error:
-        return handle_failure(r_master_key, 'failed to fetch master key')
+        return workspace.handle_failure(r_master_key, 'failed to fetch master key')
 
     r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=session, pool=workspace.pool)
 
     if r_ssh_timeout.is_error:
-        return handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')
+        return workspace.handle_failure(r_ssh_timeout, 'failed to obtain ssh timeout value')
 
     with create_tempfile(file_contents=workspace.gr.post_install_script) as post_install_filepath:
         r_upload = copy_to_remote(
@@ -2499,7 +2485,7 @@ def do_prepare_post_install_script(
         )
 
     if r_upload.is_error:
-        return handle_failure(r_upload, 'failed to upload post-install script')
+        return workspace.handle_failure(r_upload, 'failed to upload post-install script')
 
     r_ssh = run_remote(
         logger,
@@ -2512,9 +2498,9 @@ def do_prepare_post_install_script(
     )
 
     if r_ssh.is_error:
-        return handle_failure(r_ssh, 'failed to execute post-install script successfully')
+        return workspace.handle_failure(r_ssh, 'failed to execute post-install script successfully')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
@@ -2533,18 +2519,18 @@ def do_guest_request_prepare_finalize_pre_connect(
     cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='prepare-finalize-pre-connect'
     )
 
-    handle_success('enter-task')
+    workspace.handle_success('enter-task')
 
     logger.info('pre-connect preparation steps complete')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
 
     if workspace.result:
@@ -2570,7 +2556,7 @@ def do_guest_request_prepare_finalize_pre_connect(
         r_capabilities = workspace.pool.capabilities()
 
         if r_capabilities.is_error:
-            return handle_failure(r_capabilities, 'failed to fetch pool capabilities')
+            return workspace.handle_failure(r_capabilities, 'failed to fetch pool capabilities')
 
         if r_capabilities.unwrap().supports_native_post_install_script is False:
             tasks += [prepare_post_install_script]
@@ -2588,7 +2574,7 @@ def do_guest_request_prepare_finalize_pre_connect(
     if workspace.result:
         return workspace.result
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
@@ -2607,18 +2593,12 @@ def do_guest_request_prepare_finalize_post_connect(
     cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
-        guestname=guestname,
-        task='prepare-finalize-post-connect'
-    )
+    workspace = Workspace(logger, session, cancel, guestname=guestname, task='prepare-finalize-post-connect')
 
-    handle_success('enter-task')
+    workspace.handle_success('enter-task')
 
     logger.info('post-connect preparation steps complete')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
 
     if workspace.result:
@@ -2653,7 +2633,7 @@ def do_guest_request_prepare_finalize_post_connect(
     # update metrics counter for successfully provisioned guest requests
     metrics.ProvisioningMetrics.inc_success(workspace.gr.poolname)
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
@@ -2702,16 +2682,10 @@ def do_release_guest_request(
     cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
-        guestname=guestname,
-        task='release-guest-request'
-    )
+    workspace = Workspace(logger, session, cancel, guestname=guestname, task='release-guest-request')
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.CONDEMNED)
 
     if workspace.result:
@@ -2723,7 +2697,7 @@ def do_release_guest_request(
         from .middleware import NOTE_POOLNAME, set_message_note
         set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
-        spice_details['poolname'] = workspace.gr.poolname
+        workspace.spice_details['poolname'] = workspace.gr.poolname
 
         workspace.load_gr_pool()
         workspace.load_ssh_key()
@@ -2736,7 +2710,7 @@ def do_release_guest_request(
         r_release = workspace.pool.release_guest(logger, workspace.gr)
 
         if r_release.is_error:
-            return handle_failure(r_release, 'failed to release guest')
+            return workspace.handle_failure(r_release, 'failed to release guest')
 
     query = sqlalchemy \
         .delete(GuestRequest.__table__) \
@@ -2746,14 +2720,14 @@ def do_release_guest_request(
     r_delete = safe_db_change(logger, session, query)
 
     if r_delete.is_error:
-        return handle_failure(r_delete, 'failed to remove guest request record')
+        return workspace.handle_failure(r_delete, 'failed to remove guest request record')
 
     # We ignore the actual return value: the query was executed, but we either removed exactly one record,
     # which is good, or we removed 0 records, which is also acceptable, as somebody already did that for us.
     # We did schedule the release of resources successfully, which means we left no loose ends.
-    handle_success('released')
+    workspace.handle_success('released')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -2772,16 +2746,16 @@ def do_update_guest_request(
     cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='update-guest-request'
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PROMISED)
     workspace.load_gr_pool()
 
@@ -2795,7 +2769,7 @@ def do_update_guest_request(
     from .middleware import NOTE_POOLNAME, set_message_note
     set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
-    spice_details['poolname'] = workspace.gr.poolname
+    workspace.spice_details['poolname'] = workspace.gr.poolname
     current_pool_data = workspace.gr.pool_data
 
     def _undo_guest_update() -> None:
@@ -2807,7 +2781,7 @@ def do_update_guest_request(
         if r.is_ok:
             return
 
-        handle_failure(r, 'failed to undo guest update')
+        workspace.handle_failure(r, 'failed to undo guest update')
 
     r_update = workspace.pool.update_guest(
         logger,
@@ -2816,13 +2790,13 @@ def do_update_guest_request(
     )
 
     if r_update.is_error:
-        return handle_failure(r_update, 'failed to update guest')
+        return workspace.handle_failure(r_update, 'failed to update guest')
 
     provisioning_progress = r_update.unwrap()
 
     # not returning here - pool was able to recover and proceed
     for failure in provisioning_progress.pool_failures:
-        handle_failure(Error(failure), 'pool encountered failure during update')
+        workspace.handle_failure(Error(failure), 'pool encountered failure during update')
 
     new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
         'pool_data': provisioning_progress.pool_data.serialize()
@@ -2851,7 +2825,7 @@ def do_update_guest_request(
 
         logger.info('scheduled update')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     elif provisioning_progress.state == ProvisioningState.CANCEL:
         logger.info('provisioning cancelled')
@@ -2870,7 +2844,7 @@ def do_update_guest_request(
                 'guestname': workspace.gr.guestname
             }
         ):
-            return handle_success('finished-task')
+            return workspace.handle_success('finished-task')
 
         return RESCHEDULE
 
@@ -2899,7 +2873,7 @@ def do_update_guest_request(
 
         return workspace.result
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PROMISED, GuestState.ROUTING))
@@ -2919,17 +2893,17 @@ def do_acquire_guest_request(
     guestname: str,
     poolname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='acquire-guest-request',
         poolname=poolname
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname, state=GuestState.PROVISIONING)
     workspace.load_gr_pool()
 
@@ -2947,13 +2921,13 @@ def do_acquire_guest_request(
     )
 
     if result.is_error:
-        return handle_failure(result, 'failed to provision')
+        return workspace.handle_failure(result, 'failed to provision')
 
     provisioning_progress = result.unwrap()
 
     # not returning here - pool was able to recover and proceed
     for failure in provisioning_progress.pool_failures:
-        handle_failure(Error(failure), 'pool encountered failure during acquisition')
+        workspace.handle_failure(Error(failure), 'pool encountered failure during acquisition')
 
     def _undo_guest_acquire() -> None:
         assert workspace.gr
@@ -2996,7 +2970,7 @@ def do_acquire_guest_request(
 
         logger.info('scheduled update')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     elif provisioning_progress.state == ProvisioningState.CANCEL:
         logger.info('provisioning cancelled')
@@ -3016,7 +2990,7 @@ def do_acquire_guest_request(
                 'poolname': workspace.pool.poolname
             }
         ):
-            return handle_success('finished-task')
+            return workspace.handle_success('finished-task')
 
         return RESCHEDULE
 
@@ -3047,7 +3021,7 @@ def do_acquire_guest_request(
 
         return workspace.result
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.ROUTING))
@@ -3066,16 +3040,9 @@ def do_route_guest_request(
     cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
-        guestname=guestname,
-        task='route-guest-request'
-    )
+    workspace = Workspace(logger, session, cancel, guestname=guestname, task='route-guest-request')
 
-    handle_success('entered-task')
-
-    workspace = Workspace(logger, session, cancel, handle_failure)
+    workspace.handle_success('entered-task')
 
     # First, pick up our assigned guest request. Make sure it hasn't been
     # processed yet.
@@ -3097,7 +3064,7 @@ def do_route_guest_request(
     r_pools = get_pools(logger, session)
 
     if r_pools.is_error:
-        return handle_failure(r_pools, 'failed to fetch pools')
+        return workspace.handle_failure(r_pools, 'failed to fetch pools')
 
     ruling = cast(
         PolicyRuling,
@@ -3114,7 +3081,7 @@ def do_route_guest_request(
         return workspace.result
 
     if ruling.cancel:
-        handle_success('routing-cancelled')
+        workspace.handle_success('routing-cancelled')
 
         workspace.update_guest_state(
             GuestState.ERROR,
@@ -3124,7 +3091,7 @@ def do_route_guest_request(
         if workspace.result:
             return workspace.result
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     # If no suitable pools found
     if not ruling.allowed_pools:
@@ -3154,7 +3121,7 @@ def do_route_guest_request(
         # We failed to move guest to PROVISIONING state which means some other instance of this task changed
         # guest's state instead of us, which means we should throw everything away because our decisions no
         # longer matter.
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
     # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
@@ -3173,7 +3140,7 @@ def do_route_guest_request(
         logger.warning('failover - trying {} pool instead of {}'.format(new_pool, current_pool))
         metrics.ProvisioningMetrics.inc_failover(current_pool, new_pool)
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.ROUTING, GuestState.ERROR))
@@ -3193,17 +3160,17 @@ def do_release_snapshot_request(
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='release-snapshot',
         snapshotname=snapshotname
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname)
     workspace.load_snapshot_request(snapshotname, GuestState.CONDEMNED)
     workspace.grab_snapshot_request(GuestState.CONDEMNED, GuestState.RELEASING)
@@ -3217,7 +3184,7 @@ def do_release_snapshot_request(
     assert workspace.sr
 
     if workspace.sr.poolname:
-        spice_details['poolname'] = workspace.sr.poolname
+        workspace.spice_details['poolname'] = workspace.sr.poolname
 
         workspace.load_sr_pool()
 
@@ -3234,20 +3201,20 @@ def do_release_snapshot_request(
     r_delete = safe_db_change(logger, session, query)
 
     if r_delete.is_ok:
-        handle_success('snapshot-released')
+        workspace.handle_success('snapshot-released')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     failure = r_delete.unwrap_error()
 
     if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
         logger.warning('not in RELEASING state anymore')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     _undo_grab()
 
-    return handle_failure(r_delete, 'failed to release snapshot')
+    return workspace.handle_failure(r_delete, 'failed to release snapshot')
 
 
 @task()
@@ -3267,17 +3234,17 @@ def do_create_snapshot_start_guest(
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='create-snapshot-stop-guest',
         snapshotname=snapshotname
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.READY)
     workspace.load_guest_request(guestname, state=GuestState.STARTING)
 
@@ -3299,7 +3266,7 @@ def do_create_snapshot_start_guest(
     r_started = workspace.pool.is_guest_running(workspace.gr)
 
     if r_started.is_error:
-        return handle_failure(r_started, 'failed to check if guest is started')
+        return workspace.handle_failure(r_started, 'failed to check if guest is started')
 
     started = r_started.unwrap()
 
@@ -3309,7 +3276,7 @@ def do_create_snapshot_start_guest(
         if workspace.result:
             return workspace.result
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     workspace.update_guest_state(
         GuestState.READY,
@@ -3321,7 +3288,7 @@ def do_create_snapshot_start_guest(
 
     logger.info('successfully started')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -3341,17 +3308,17 @@ def do_update_snapshot(
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='update-snapshot',
         snapshotname=snapshotname
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.PROMISED)
     workspace.load_guest_request(guestname, state=GuestState.STOPPED)
     workspace.load_sr_pool()
@@ -3371,7 +3338,7 @@ def do_update_snapshot(
     )
 
     if r_update.is_error:
-        return handle_failure(r_update, 'failed to update snapshot')
+        return workspace.handle_failure(r_update, 'failed to update snapshot')
 
     provisioning_progress = r_update.unwrap()
 
@@ -3384,7 +3351,7 @@ def do_update_snapshot(
         if r.is_ok:
             return
 
-        handle_failure(r, 'failed to undo guest update')
+        workspace.handle_failure(r, 'failed to undo guest update')
 
     if provisioning_progress.state == ProvisioningState.PENDING:
         workspace.update_snapshot_state(
@@ -3401,7 +3368,7 @@ def do_update_snapshot(
 
         logger.info('scheduled update')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     workspace.update_snapshot_state(
         GuestState.PROMISED,
@@ -3412,12 +3379,12 @@ def do_update_snapshot(
         return workspace.result
 
     if not workspace.sr.start_again:
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     r_start = workspace.pool.start_guest(logger, workspace.gr)
 
     if r_start.is_error:
-        return handle_failure(r_start, 'failed to start guest')
+        return workspace.handle_failure(r_start, 'failed to start guest')
 
     workspace.update_guest_state(
         GuestState.STARTING,
@@ -3436,7 +3403,7 @@ def do_update_snapshot(
 
         return workspace.result
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -3456,17 +3423,17 @@ def do_create_snapshot_create(
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='create-snapshot-create',
         snapshotname=snapshotname
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
     workspace.load_guest_request(guestname, state=GuestState.STOPPED)
 
@@ -3488,7 +3455,7 @@ def do_create_snapshot_create(
     r_create = workspace.pool.create_snapshot(workspace.gr, workspace.sr)
 
     if r_create.is_error:
-        return handle_failure(r_create, 'failed to create snapshot')
+        return workspace.handle_failure(r_create, 'failed to create snapshot')
 
     provisioning_progress = r_create.unwrap()
 
@@ -3501,7 +3468,7 @@ def do_create_snapshot_create(
         if r.is_ok:
             return
 
-        handle_failure(r, 'failed to undo snapshot create')
+        workspace.handle_failure(r, 'failed to undo snapshot create')
 
     if provisioning_progress.state == ProvisioningState.PENDING:
         workspace.update_snapshot_state(
@@ -3518,7 +3485,7 @@ def do_create_snapshot_create(
 
         logger.info('scheduled update')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     workspace.update_snapshot_state(
         GuestState.CREATING,
@@ -3529,12 +3496,12 @@ def do_create_snapshot_create(
         return workspace.result
 
     if not workspace.sr.start_again:
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     r_start = workspace.pool.start_guest(logger, workspace.gr)
 
     if r_start.is_error:
-        return handle_failure(r_start, 'failed to start guest')
+        return workspace.handle_failure(r_start, 'failed to start guest')
 
     workspace.update_guest_state(
         GuestState.STARTING,
@@ -3555,7 +3522,7 @@ def do_create_snapshot_create(
 
     logger.info('successfully created')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -3575,17 +3542,17 @@ def do_create_snapshot_stop_guest(
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='create-snapshot-stop-guest',
         snapshotname=snapshotname
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
     workspace.load_guest_request(guestname, state=GuestState.STOPPING)
 
@@ -3607,7 +3574,7 @@ def do_create_snapshot_stop_guest(
     r_stopped = workspace.pool.is_guest_stopped(workspace.gr)
 
     if r_stopped.is_error:
-        return handle_failure(r_stopped, 'failed to check if guest is stopped')
+        return workspace.handle_failure(r_stopped, 'failed to check if guest is stopped')
 
     stopped = r_stopped.unwrap()
 
@@ -3619,7 +3586,7 @@ def do_create_snapshot_stop_guest(
 
         logger.info('scheduled create-snapshot-stop-guest')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     workspace.update_guest_state(
         GuestState.STOPPED,
@@ -3636,7 +3603,7 @@ def do_create_snapshot_stop_guest(
 
     logger.info('scheduled create-snapshot-create-snapshot')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -3656,17 +3623,17 @@ def do_create_snapshot(
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='create-snapshot',
         snapshotname=snapshotname
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.CREATING)
     workspace.load_guest_request(guestname, state=GuestState.READY)
 
@@ -3688,7 +3655,7 @@ def do_create_snapshot(
     r_stop = workspace.pool.stop_guest(logger, workspace.gr)
 
     if r_stop.is_error:
-        return handle_failure(r_stop, 'failed to stop guest')
+        return workspace.handle_failure(r_stop, 'failed to stop guest')
 
     def _undo_snapshot_create() -> None:
         assert workspace.pool
@@ -3706,7 +3673,7 @@ def do_create_snapshot(
 
         workspace.dispatch_task(create_snapshot_start_guest, guestname, snapshotname)
 
-        handle_failure(r, 'failed to undo snapshot create')
+        workspace.handle_failure(r, 'failed to undo snapshot create')
 
     workspace.update_guest_state(
         GuestState.STOPPING,
@@ -3725,7 +3692,7 @@ def do_create_snapshot(
 
     logger.info('scheduled create-snapshot-stop-guest')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -3745,17 +3712,17 @@ def do_route_snapshot_request(
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='route-snapshot',
         snapshotname=snapshotname
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.ROUTING)
     workspace.load_guest_request(guestname, state=GuestState.READY)
 
@@ -3784,7 +3751,7 @@ def do_route_snapshot_request(
 
     logger.info('scheduled creation')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -3804,17 +3771,17 @@ def do_restore_snapshot_request(
     guestname: str,
     snapshotname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
+    workspace = Workspace(
         logger,
         session,
+        cancel,
         guestname=guestname,
         task='restore-snapshot',
         snapshotname=snapshotname
     )
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_snapshot_request(snapshotname, GuestState.RESTORING)
     workspace.load_guest_request(guestname, state=GuestState.READY)
     workspace.grab_snapshot_request(GuestState.RESTORING, GuestState.PROCESSING)
@@ -3853,7 +3820,7 @@ def do_restore_snapshot_request(
 
     logger.info('restored sucessfully')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -3872,13 +3839,9 @@ def do_refresh_pool_resources_metrics(
     cancel: threading.Event,
     poolname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
-        task='refresh-pool-metrics'
-    )
+    workspace = Workspace(logger, session, cancel, task='refresh-pool-metrics')
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
     # Handling errors is slightly different in this task. While we fully use `handle_failure()`,
     # we do not return `RESCHEDULE` or `Error()` from this doer. This particular task is being
@@ -3891,7 +3854,7 @@ def do_refresh_pool_resources_metrics(
     r_pool = _get_pool(logger, session, poolname)
 
     if r_pool.is_error:
-        handle_failure(r_pool, 'failed to load pool')
+        workspace.handle_failure(r_pool, 'failed to load pool')
 
     else:
         pool = r_pool.unwrap()
@@ -3899,9 +3862,9 @@ def do_refresh_pool_resources_metrics(
         r_refresh = pool.refresh_pool_resources_metrics(logger, session)
 
         if r_refresh.is_error:
-            handle_failure(r_refresh, 'failed to refresh pool resources metrics')
+            workspace.handle_failure(r_refresh, 'failed to refresh pool resources metrics')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 def do_acquire_guest_console_url(
@@ -3911,17 +3874,10 @@ def do_acquire_guest_console_url(
     cancel: threading.Event,
     guestname: str
 ) -> DoerReturnType:
+    workspace = Workspace(logger, session, cancel, guestname=guestname, task='acquire-guest-console-url')
 
-    handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
-        guestname=guestname,
-        task='acquire-guest-console-url'
-    )
+    workspace.handle_success('enter-task')
 
-    handle_success('enter-task')
-
-    workspace = Workspace(logger, session, cancel, handle_failure)
     workspace.load_guest_request(guestname)
     workspace.load_gr_pool()
     assert workspace.pool
@@ -3933,7 +3889,7 @@ def do_acquire_guest_console_url(
 
     r_console = workspace.pool.acquire_console_url(logger, workspace.gr)
     if r_console.is_error:
-        handle_failure(r_console, 'failed to get guest console')
+        workspace.handle_failure(r_console, 'failed to get guest console')
         return RESCHEDULE
 
     console_url_data = r_console.unwrap()
@@ -3949,7 +3905,7 @@ def do_acquire_guest_console_url(
     if workspace.result:
         return workspace.result
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task()
@@ -3979,22 +3935,18 @@ def do_refresh_pool_resources_metrics_dispatcher(
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event
 ) -> DoerReturnType:
-    handle_success, handle_failure, _ = create_event_handlers(
-        logger,
-        session,
-        task='refresh-pool-metrics-dispatcher'
-    )
+    workspace = Workspace(logger, session, cancel, task='refresh-pool-metrics-dispatcher')
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
     logger.info('scheduling pool metrics refresh')
 
     r_pools = get_pools(_ROOT_LOGGER, session)
 
     if r_pools.is_error:
-        handle_failure(r_pools, 'failed to fetch pools')
+        workspace.handle_failure(r_pools, 'failed to fetch pools')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     for pool in r_pools.unwrap():
         dispatch_task(
@@ -4003,7 +3955,7 @@ def do_refresh_pool_resources_metrics_dispatcher(
             pool.poolname
         )
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(
@@ -4038,13 +3990,9 @@ def do_refresh_pool_image_info(
     cancel: threading.Event,
     poolname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
-        task='refresh-pool-image-info'
-    )
+    workspace = Workspace(logger, session, cancel, task='refresh-pool-image-info')
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
     # Handling errors is slightly different in this task. While we fully use `handle_failure()`,
     # we do not return `RESCHEDULE` or `Error()` from this doer. This particular task is being
@@ -4057,7 +4005,7 @@ def do_refresh_pool_image_info(
     r_pool = _get_pool(logger, session, poolname)
 
     if r_pool.is_error:
-        handle_failure(r_pool, 'failed to load pool')
+        workspace.handle_failure(r_pool, 'failed to load pool')
 
     else:
         pool = r_pool.unwrap()
@@ -4065,9 +4013,9 @@ def do_refresh_pool_image_info(
         r_refresh = pool.refresh_cached_pool_image_info()
 
         if r_refresh.is_error:
-            handle_failure(r_refresh, 'failed to refresh pool image info')
+            workspace.handle_failure(r_refresh, 'failed to refresh pool image info')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(
@@ -4088,22 +4036,18 @@ def do_refresh_pool_image_info_dispatcher(
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event
 ) -> DoerReturnType:
-    handle_success, handle_failure, _ = create_event_handlers(
-        logger,
-        session,
-        task='refresh-pool-image-info-dispatcher'
-    )
+    workspace = Workspace(logger, session, cancel, task='refresh-pool-image-info-dispatcher')
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
     logger.info('scheduling pool image info refresh')
 
     r_pools = get_pools(_ROOT_LOGGER, session)
 
     if r_pools.is_error:
-        handle_failure(r_pools, 'failed to fetch pools')
+        workspace.handle_failure(r_pools, 'failed to fetch pools')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     for pool in r_pools.unwrap():
         dispatch_task(
@@ -4112,7 +4056,7 @@ def do_refresh_pool_image_info_dispatcher(
             pool.poolname
         )
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(
@@ -4147,13 +4091,9 @@ def do_refresh_pool_flavor_info(
     cancel: threading.Event,
     poolname: str
 ) -> DoerReturnType:
-    handle_success, handle_failure, spice_details = create_event_handlers(
-        logger,
-        session,
-        task='refresh-pool-flavor-info'
-    )
+    workspace = Workspace(logger, session, cancel, task='refresh-pool-flavor-info')
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
     # Handling errors is slightly different in this task. While we fully use `handle_failure()`,
     # we do not return `RESCHEDULE` or `Error()` from this doer. This particular task is being
@@ -4166,7 +4106,7 @@ def do_refresh_pool_flavor_info(
     r_pool = _get_pool(logger, session, poolname)
 
     if r_pool.is_error:
-        handle_failure(r_pool, 'failed to load pool')
+        workspace.handle_failure(r_pool, 'failed to load pool')
 
     else:
         pool = r_pool.unwrap()
@@ -4174,9 +4114,9 @@ def do_refresh_pool_flavor_info(
         r_refresh = pool.refresh_cached_pool_flavor_info()
 
         if r_refresh.is_error:
-            handle_failure(r_refresh, 'failed to refresh pool flavor info')
+            workspace.handle_failure(r_refresh, 'failed to refresh pool flavor info')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(priority=TaskPriority.HIGH, queue_name=TaskQueue.POOL_DATA_REFRESH)
@@ -4194,22 +4134,18 @@ def do_refresh_pool_flavor_info_dispatcher(
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event
 ) -> DoerReturnType:
-    handle_success, handle_failure, _ = create_event_handlers(
-        logger,
-        session,
-        task='refresh-pool-flavor-info-dispatcher'
-    )
+    workspace = Workspace(logger, session, cancel, task='refresh-pool-flavor-info-dispatcher')
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
     logger.info('scheduling pool flavor info refresh')
 
     r_pools = get_pools(logger, session)
 
     if r_pools.is_error:
-        handle_failure(r_pools, 'failed to fetch pools')
+        workspace.handle_failure(r_pools, 'failed to fetch pools')
 
-        return handle_success('finished-task')
+        return workspace.handle_success('finished-task')
 
     for pool in r_pools.unwrap():
         dispatch_task(
@@ -4218,7 +4154,7 @@ def do_refresh_pool_flavor_info_dispatcher(
             pool.poolname
         )
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(
@@ -4252,13 +4188,9 @@ def do_gc_events(
     session: sqlalchemy.orm.session.Session,
     cancel: threading.Event
 ) -> DoerReturnType:
-    handle_success, handle_failure, _ = create_event_handlers(
-        logger,
-        session,
-        task='gc-events'
-    )
+    workspace = Workspace(logger, session, cancel, task='gc-events')
 
-    handle_success('entered-task')
+    workspace.handle_success('entered-task')
 
     deadline = datetime.datetime.utcnow() - datetime.timedelta(seconds=KNOB_GC_EVENTS_THRESHOLD.value)
 
@@ -4283,7 +4215,7 @@ def do_gc_events(
     r_execute = safe_call(session.execute, query)
 
     if r_execute.is_error:
-        return handle_failure(r_execute, 'failed to select')
+        return workspace.handle_failure(r_execute, 'failed to select')
 
     query_result = cast(
         sqlalchemy.engine.ResultProxy,
@@ -4292,7 +4224,7 @@ def do_gc_events(
 
     logger.info(f'removed {query_result.rowcount} events')
 
-    return handle_success('finished-task')
+    return workspace.handle_success('finished-task')
 
 
 @task(
