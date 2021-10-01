@@ -278,7 +278,7 @@ class PipelineStateReporter(gluetool.Module):
 
     @staticmethod
     def _dict_filter_no_value(original):
-        # type: (Dict[str, Optional[str]]) -> Dict[str, str]
+        # type: (Dict[str, Any]) -> Dict[str, Any]
         return {
             key: value
             for key, value in six.iteritems(original)
@@ -377,7 +377,7 @@ class PipelineStateReporter(gluetool.Module):
         return subject_info
 
     def _artifact_info(self):
-        # type: () -> Dict[str, Union[str, int]]
+        # type: () -> Dict[str, Any]
         artifact = self._subject_info('artifact', self.artifact_map,)
         if self.new_version:
             if 'id' in artifact:
@@ -389,7 +389,7 @@ class PipelineStateReporter(gluetool.Module):
         return artifact
 
     def _contact_info(self):
-        # type: () -> Dict[str, str]
+        # type: () -> Dict[str, Any]
         return self._dict_filter_no_value({
             'docs': self.option('contact-docs'),
             'email': self.option('contact-email'),
@@ -400,7 +400,7 @@ class PipelineStateReporter(gluetool.Module):
         })
 
     def _ci_info(self):
-        # type: () -> Dict[str, str]
+        # type: () -> Dict[str, Any]
         return self._dict_filter_no_value({
             'email': self.option('contact-email'),
             'irc': self.option('contact-irc'),
@@ -419,6 +419,9 @@ class PipelineStateReporter(gluetool.Module):
         body = {}  # type: Dict[str, Any]
 
         artifact = self._artifact_info()
+        if self.new_version:
+            artifact = self._dict_filter_no_value(artifact)
+
         contact = self._contact_info()
         run = self._run_info()
 
@@ -449,7 +452,8 @@ class PipelineStateReporter(gluetool.Module):
         body['run'] = run
         body['artifact'] = artifact
 
-        body['note'] = self.option('note')
+        if self.option('note'):
+            body['note'] = self.option('note')
 
         body['generated_at'] = datetime.datetime.utcnow().isoformat(' ')
         body['version'] = self.option('version')
@@ -570,19 +574,24 @@ class PipelineStateReporter(gluetool.Module):
         # an exception may have been raised and by always reporting the properties we can be
         # sure even the 'complete' report would be connected with the original issue, and
         # therefore open to investigation.
+        error_message = self._get_error_reason(error_message)
+
         if self.new_version:
             body['error'] = self._dict_filter_no_value({
-                'reason': self._get_error_reason(error_message),
+                'reason': error_message,
                 'issue_url': error_url
             })
+            # do not expose empty error dict
+            if not body['error']:
+                del body['error']
         else:
-            body['reason'] = self._get_error_reason(error_message)
+            body['reason'] = error_message
             body['issue_url'] = error_url
 
         # If the note wasn't been set by the module option, add error reason there.
         # CI dashboard will show the note as a reason to failed or skipped test.
-        if not body.get('note'):
-            body['note'] = self._get_error_reason(error_message)
+        if not body.get('note') and error_message:
+            body['note'] = error_message
 
         render_context = gluetool.utils.dict_update(self.shared('eval_context'), {
             'HEADERS': headers,
