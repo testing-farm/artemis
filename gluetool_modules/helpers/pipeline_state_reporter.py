@@ -276,15 +276,6 @@ class PipelineStateReporter(gluetool.Module):
 
         return context
 
-    @staticmethod
-    def _dict_filter_no_value(original):
-        # type: (Dict[str, Any]) -> Dict[str, Any]
-        return {
-            key: value
-            for key, value in six.iteritems(original)
-            if value is not None
-        }
-
     @gluetool.utils.cached_property
     def artifact_map(self):
         # type: () -> Any
@@ -333,14 +324,6 @@ class PipelineStateReporter(gluetool.Module):
 
         return gluetool.utils.load_yaml(self.option('final-state-map'), logger=self.logger)
 
-    @gluetool.utils.cached_property
-    def new_version(self):
-        # type: () -> bool
-        """
-        Return True if 1.x.y version of UMB is used
-        """
-        return bool(re.search(r'^1\.\d+\.\d+', self.option('version')))
-
     def _subject_info(self, subject_name, instructions):
         # type: (str, str) -> Dict[str, Any]
         self.require_shared('evaluate_instructions', 'evaluate_rules')
@@ -378,87 +361,11 @@ class PipelineStateReporter(gluetool.Module):
 
     def _artifact_info(self):
         # type: () -> Dict[str, Any]
-        artifact = self._subject_info('artifact', self.artifact_map,)
-        if self.new_version:
-            if 'id' in artifact:
-                try:
-                    artifact['id'] = int(artifact['id'])
-                except ValueError:
-                    self.warn('Could not convert artifact id to integer, leaving as string')
-
-        return artifact
-
-    def _contact_info(self):
-        # type: () -> Dict[str, Any]
-        return self._dict_filter_no_value({
-            'docs': self.option('contact-docs'),
-            'email': self.option('contact-email'),
-            'irc': self.option('contact-irc'),
-            'name': self.option('contact-name'),
-            'team': self.option('contact-team'),
-            'url': self.option('contact-url')
-        })
-
-    def _ci_info(self):
-        # type: () -> Dict[str, Any]
-        return self._dict_filter_no_value({
-            'email': self.option('contact-email'),
-            'irc': self.option('contact-irc'),
-            'name': self.option('contact-name'),
-            'team': self.option('contact-team'),
-            'url': self.option('contact-url'),
-        })
+        return self._subject_info('artifact', self.artifact_map,)
 
     def _run_info(self):
         # type: () -> Dict[str, Any]
         return self._subject_info('run', self.run_map)
-
-    def _init_message(self, thread_id):
-        # type: (Optional[str]) -> Tuple[Dict[str, Any], Dict[str, Any]]
-        headers = {}  # type: Dict[str, Any]
-        body = {}  # type: Dict[str, Any]
-
-        artifact = self._artifact_info()
-        if self.new_version:
-            artifact = self._dict_filter_no_value(artifact)
-
-        contact = self._contact_info()
-        run = self._run_info()
-
-        headers.update(artifact)
-
-        if self.new_version:
-            body['contact'] = contact
-
-            body['pipeline'] = {
-                'name': self.shared('eval_context').get('JENKINS_BUILD_URL') or self.option('pipeline-name')
-            }
-
-            if thread_id is not None:
-                body['pipeline']['id'] = thread_id
-
-            elif self.has_shared('thread_id'):
-                body['pipeline']['id'] = self.shared('thread_id')
-
-        else:
-            body['ci'] = self._ci_info()
-
-            if thread_id is not None:
-                body['thread_id'] = thread_id
-
-            elif self.has_shared('thread_id'):
-                body['thread_id'] = self.shared('thread_id')
-
-        body['run'] = run
-        body['artifact'] = artifact
-
-        if self.option('note'):
-            body['note'] = self.option('note')
-
-        body['generated_at'] = datetime.datetime.utcnow().isoformat(' ')
-        body['version'] = self.option('version')
-
-        return headers, body
 
     def report_pipeline_state(
         self,
@@ -508,40 +415,36 @@ class PipelineStateReporter(gluetool.Module):
         distros = distros or cast(List[Tuple[str, str, str, str]], ())
         topic = topic or self.option('bus-topic')
 
-        headers, body = self._init_message(thread_id)
+        umb_message = UMBMessage(self)
 
-        test_category = test_category or self.option('test-category')
-        test_docs = test_docs or self._get_test_docs()
-        test_namespace = test_namespace or self._get_test_namespace()
-        test_type = test_type or self.option('test-type')
+        umb_message.test_category = test_category or self.option('test-category')
+        umb_message.test_docs = test_docs or self._get_test_docs()
+        umb_message.test_namespace = test_namespace or self._get_test_namespace()
+        umb_message.test_type = test_type or self.option('test-type')
+        umb_message.label = self.option('label')  # Used in UMB v0 only
 
-        if self.new_version:
-            body['test'] = self._dict_filter_no_value({
-                'category': test_category,
-                'docs': test_docs,
-                'namespace': test_namespace,
-                'type': test_type,
-            })
+        umb_message.artifact = self._artifact_info()
 
-        else:
-            body['category'] = test_category
-            body['docs'] = test_docs
-            body['namespace'] = test_namespace
-            body['type'] = test_type
-            body['label'] = self.option('label')
+        umb_message.run = self._run_info()
+        umb_message.pipeline_name = self.shared('eval_context').get('JENKINS_BUILD_URL') or self.option('pipeline-name')
+        if thread_id is not None:
+            umb_message.pipeline_id = thread_id
+        elif self.has_shared('thread_id'):
+            umb_message.pipeline_id = self.shared('thread_id')
+
+        umb_message.note = self.option('note')
+        umb_message.generated_at = datetime.datetime.utcnow().isoformat(' ')
+        umb_message.version = self.option('version')
+
+        umb_message.contact_docs = self.option('contact-docs')
+        umb_message.contact_email = self.option('contact-email')
+        umb_message.contact_irc = self.option('contact-irc')
+        umb_message.contact_name = self.option('contact-name')
+        umb_message.contact_team = self.option('contact-team')
+        umb_message.contact_url = self.option('contact-url')
 
         if state == STATE_COMPLETE:
-            if self.new_version:
-                body['system'] = [
-                    self._dict_filter_no_value({
-                        'architecture': architecture,
-                        'label': label,
-                        'os': distro,
-                        'provider': provider
-                    }) for architecture, label, distro, provider in distros
-                ]
-            else:
-                body['system'] = [
+            umb_message.system = [
                     {
                         'architecture': architecture,
                         'label': label,
@@ -549,66 +452,43 @@ class PipelineStateReporter(gluetool.Module):
                         'provider': provider
                     } for architecture, label, distro, provider in distros
                 ]
-
-            if self.new_version:
-                body['test']['result'] = test_overall_result
-            else:
-                body['status'] = test_overall_result
+            umb_message.test_result = test_overall_result
 
             if test_results is not None:
                 compressed = zlib.compress(str(test_results))
-                if self.new_version:
-                    body['test']['xunit'] = base64.b64encode(compressed)
-                else:
-                    body['xunit'] = base64.b64encode(compressed)
+                umb_message.test_xunit = base64.b64encode(compressed)
 
             if self.has_shared('notification_recipients') and self.shared('notification_recipients'):
-                if self.new_version:
-                    body['notification'] = {
-                        'recipients': self.shared('notification_recipients')
-                    }
-                else:
-                    body['recipients'] = self.shared('notification_recipients')
+                umb_message.recipients = self.shared('notification_recipients')
 
         # Send error properties in any case - despite the final state being e.g. 'complete',
         # an exception may have been raised and by always reporting the properties we can be
         # sure even the 'complete' report would be connected with the original issue, and
         # therefore open to investigation.
-        error_message = self._get_error_reason(error_message)
-
-        if self.new_version:
-            body['error'] = self._dict_filter_no_value({
-                'reason': error_message,
-                'issue_url': error_url
-            })
-            # do not expose empty error dict
-            if not body['error']:
-                del body['error']
-        else:
-            body['reason'] = error_message
-            body['issue_url'] = error_url
+        umb_message.error_reason = self._get_error_reason(error_message)
+        umb_message.error_issue_url = error_url
 
         # If the note wasn't been set by the module option, add error reason there.
         # CI dashboard will show the note as a reason to failed or skipped test.
-        if not body.get('note') and error_message:
-            body['note'] = error_message
+        if not umb_message.note:
+            umb_message.note = self._get_error_reason(error_message)
 
         render_context = gluetool.utils.dict_update(self.shared('eval_context'), {
-            'HEADERS': headers,
-            'BODY': body,
+            'HEADERS': umb_message.headers,
+            'BODY': umb_message.body,
             'STATE': state
         })
 
         topic = gluetool.utils.render_template(topic, logger=self.logger, **render_context)
 
         self.debug("topic: '{}'".format(topic))
-        log_dict(self.debug, 'pipeline state headers', headers)
-        log_dict(self.debug, 'pipeline state body', body)
+        log_dict(self.debug, 'pipeline state headers', umb_message.headers)
+        log_dict(self.debug, 'pipeline state body', umb_message.body)
 
         if not self.has_shared('publish_bus_messages'):
             return
 
-        message = gluetool.utils.Bunch(headers=headers, body=body)
+        message = gluetool.utils.Bunch(headers=umb_message.headers, body=umb_message.body)
 
         self.shared('publish_bus_messages', message, topic=topic)
 
@@ -843,3 +723,148 @@ class PipelineStateReporter(gluetool.Module):
             self._set_pr_status(overall_result, 'Test finished')
 
         self.report_pipeline_state(self._get_final_state(failure), **kwargs)
+
+
+class UMBMessage():
+    """
+    Contains properties of a UMB message and methods to render a message in various UMB version formats.
+    """
+
+    def __init__(self, module):
+        # type: (gluetool.Module) -> None
+        self.module = module
+        self.artifact = None  # type: Optional[Dict[str, Any]]
+        self.contact_docs = None  # type: Optional[str]
+        self.contact_email = None  # type: Optional[str]
+        self.contact_irc = None  # type: Optional[str]
+        self.contact_name = None  # type: Optional[str]
+        self.contact_team = None  # type: Optional[str]
+        self.contact_url = None  # type: Optional[str]
+        self.error_reason = None  # type: Optional[str]
+        self.error_issue_url = None  # type: Optional[str]
+        self.generated_at = None  # type: Optional[str]
+        self.label = None  # type: Optional[str]
+        self.note = None  # type: Optional[str]
+        self.recipients = None  # type: Optional[str]
+        self.pipeline_id = None  # type: Optional[str]
+        self.pipeline_name = None  # type: Optional[str]
+        self.run = None  # type: Optional[Dict[str, Optional[str]]]
+        self.system = None  # type: Optional[List[Dict[str, str]]]
+        self.test_category = None  # type: Optional[str]
+        self.test_docs = None  # type: Optional[str]
+        self.test_namespace = None  # type: Optional[str]
+        self.test_result = None  # type: Optional[str]
+        self.test_type = None  # type: Optional[str]
+        self.test_xunit = None  # type: Optional[str]
+        self.version = None  # type: Optional[str]
+
+    @staticmethod
+    def _dict_filter_no_value(original):
+        # type: (Dict[str, Any]) -> Dict[str, Any]
+        return {
+            key: value
+            for key, value in six.iteritems(original)
+            if value is not None
+        }
+
+    @gluetool.utils.cached_property
+    def new_version(self):
+        # type: () -> bool
+        """
+        Return True if 1.x.y version of UMB is used
+        """
+        assert self.version is not None
+        return bool(re.search(r'^1\.\d+\.\d+', self.version))
+
+    @property
+    def _artifact(self):
+        # type: () -> Optional[Dict[str, Union[str, int]]]
+
+        if self.new_version and self.artifact is not None:
+            try:
+                self.artifact['id'] = int(self.artifact['id'])
+            except (ValueError, KeyError):
+                self.module.warn('Could not convert artifact id to integer, leaving as string')
+            self.artifact = self._dict_filter_no_value(self.artifact)
+        return self.artifact
+
+    @property
+    def headers(self):
+        # type: () -> Optional[Dict[str, Any]]
+        return self._artifact
+
+    @property
+    def body(self):
+        # type: () -> Dict[str, Any]
+
+        # Version 1.x.y
+        if self.new_version:
+            return self._dict_filter_no_value({
+                'artifact': self._artifact,
+                'contact': self._dict_filter_no_value({
+                    'docs': self.contact_docs,
+                    'email': self.contact_email,
+                    'irc': self.contact_irc,
+                    'name': self.contact_name,
+                    'team': self.contact_team,
+                    'url': self.contact_url,
+                }) or None,
+                'error': self._dict_filter_no_value({
+                    'issue_url': self.error_issue_url,
+                    'reason': self.error_reason,
+                }) or None,
+                'generated_at': self.generated_at,
+                'note': self.note,
+                'notification': self._dict_filter_no_value({
+                    'recipients': self.recipients,
+                }) or None,
+                'pipeline': self._dict_filter_no_value({
+                    'id': self.pipeline_id,
+                    'name': self.pipeline_name,
+                }) or None,
+                'run': self.run,
+                'system': self.system,
+                'test': self._dict_filter_no_value({
+                    'category': self.test_category,
+                    'docs': self.test_docs,
+                    'namespace': self.test_namespace,
+                    'result': self.test_result,
+                    'type': self.test_type,
+                    'xunit': self.test_xunit,
+                }) or None,
+                'version': self.version,
+            })
+
+        # Version 0.x.y
+        else:
+            body = {
+                'artifact': self._artifact,
+                'category': self.test_category,
+                'ci': {
+                    'email': self.contact_email,
+                    'irc': self.contact_irc,
+                    'name': self.contact_name,
+                    'team': self.contact_team,
+                    'url': self.contact_url,
+                },
+                'docs': self.test_docs,
+                'generated_at': self.generated_at,
+                'issue_url': self.error_issue_url,
+                'label': self.label,
+                'namespace': self.test_namespace,
+                'reason': self.error_reason,
+                'run': self.run,
+                'type': self.test_type,
+                'version': self.version,
+            }
+            body.update(
+                self._dict_filter_no_value({
+                    'note': self.note,
+                    'recipients': self.recipients,
+                    'status': self.test_result,
+                    'system': self.system,
+                    'thread_id': self.pipeline_id,
+                    'xunit': self.test_xunit,
+                })
+            )
+            return body
