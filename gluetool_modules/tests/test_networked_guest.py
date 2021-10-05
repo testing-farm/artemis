@@ -5,7 +5,9 @@ import logging
 import socket
 import pytest
 
-from mock import MagicMock, call
+from functools import partial
+from mock import MagicMock
+from mock import call
 
 import gluetool
 import gluetool_modules.libs.guest as guest_module
@@ -160,7 +162,7 @@ def test_connectivity_check(guest, sock):
     sock.connect = MagicMock()
 
     # pylint: disable=protected-access
-    ret = guest._check_connectivity()
+    ret = guest._check_connectivity(10)
     assert isinstance(ret, gluetool.result.Result)
     assert ret.is_ok
     assert sock.connect.called is True
@@ -170,7 +172,7 @@ def test_connectivity_check_error(guest, sock):
     sock.connect = MagicMock(side_effect=IOError)
 
     # pylint: disable=protected-access
-    ret = guest._check_connectivity()
+    ret = guest._check_connectivity(10)
     assert isinstance(ret, gluetool.result.Result)
     assert ret.is_error
 
@@ -385,13 +387,16 @@ def test_wait_alive_waits(guest, monkeypatch, rc_support, boot_check):
     # pylint: disable=protected-access
     guest._supports_systemctl, guest._supports_initctl = rc_support
 
-    guest.wait_alive(connect_timeout=19, connect_tick=13,
+    guest.wait_alive(connect_socket_timeout=10,
+                     connect_timeout=19, connect_tick=13,
                      echo_timeout=23, echo_tick=57,
                      boot_timeout=27, boot_tick=17)
 
     call_args = guest.wait.call_args_list
 
-    assert call_args[0] == call('connectivity', guest._check_connectivity, tick=13, timeout=19)
+    # do not check the function as it is called as partial ...
+    assert call_args[0][0][0] == 'connectivity'
+    assert call_args[0][1] == {'tick': 13, 'timeout': 19}
 
     # calls #2 and #3 use partial objects because of ssh options, therefore simple list comparison would not work
     args, kwargs = call_args[1]

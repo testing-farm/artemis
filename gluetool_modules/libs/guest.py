@@ -378,8 +378,8 @@ class NetworkedGuest(Guest):
             self._supports_initctl = True
             return
 
-    def _check_connectivity(self):
-        # type: () -> Result[bool, str]
+    def _check_connectivity(self, connect_socket_timeout):
+        # type: (int) -> Result[bool, str]
         """
         Check whether guest is reachable over network by inspecting its ssh port.
         """
@@ -388,7 +388,7 @@ class NetworkedGuest(Guest):
         (family, socktype, proto, _, sockaddr) = addrinfo[0]
 
         sock = socket.socket(family, socktype, proto)
-        sock.settimeout(1)
+        sock.settimeout(connect_socket_timeout)
 
         # pylint: disable=bare-except
         try:
@@ -504,6 +504,7 @@ class NetworkedGuest(Guest):
         return Result.Error('initctl reports not ready')
 
     def wait_alive(self,
+                   connect_socket_timeout=10,  # type: int
                    connect_timeout=None,  # type: Optional[int]
                    connect_tick=10,  # type: int
                    echo_timeout=None,  # type: Optional[int]
@@ -516,7 +517,7 @@ class NetworkedGuest(Guest):
         self.debug('waiting for guest to become alive')
 
         # Step #1: check connectivity first - let's see whether ssh port is connectable
-        self.wait('connectivity', self._check_connectivity,
+        self.wait('connectivity', partial(self._check_connectivity, connect_socket_timeout),
                   timeout=connect_timeout, tick=connect_tick)
 
         # Step #2: connect to ssh and see whether shell works by printing something
