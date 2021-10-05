@@ -75,6 +75,7 @@ DEFAULT_ECHO_TIMEOUT = 240
 DEFAULT_ECHO_TICK = 10
 DEFAULT_BOOT_TIMEOUT = 240
 DEFAULT_BOOT_TICK = 10
+DEFAULT_CONNECT_TIMEOUT = 10
 
 DEFAULT_EXTENDTESTTIME_CHECK_TIMEOUT = 3600
 DEFAULT_EXTENDTESTTIME_CHECK_TICK = 30
@@ -209,6 +210,7 @@ class BeakerGuest(NetworkedGuest):
 
         try:
             return self.wait_alive(
+                connect_socket_timeout=self._module.option('connect-timeout'),
                 connect_timeout=self._module.option('activation-timeout'),
                 connect_tick=self._module.option('activation-tick'),
                 echo_timeout=self._module.option('echo-timeout'), echo_tick=self._module.option('echo-tick'),
@@ -485,6 +487,12 @@ class BeakerProvisioner(gluetool.Module):
                 'type': int,
                 'default': DEFAULT_ACTIVATION_TIMEOUT,
                 'metavar': 'SECONDS'
+            },
+            'connect-timeout': {
+                'help': 'Socket connection timeout for testing guest connection (default: %(default)s)',
+                'metavar': 'CONNECT_TIMEOUT',
+                'type': int,
+                'default': DEFAULT_CONNECT_TIMEOUT
             },
             'echo-tick': {
                 'help': """

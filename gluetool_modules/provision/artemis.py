@@ -37,6 +37,7 @@ DEFAULT_BOOT_TICK = 10
 DEFAULT_SSH_OPTIONS = ['UserKnownHostsFile=/dev/null', 'StrictHostKeyChecking=no']
 DEFAULT_SNAPSHOT_READY_TIMEOUT = 600
 DEFAULT_SNAPSHOT_READY_TICK = 10
+DEFAULT_CONNECT_TIMEOUT = 10
 
 #: Artemis provisioner capabilities.
 #: Follows :doc:`Provisioner Capabilities Protocol </protocols/provisioner-capabilities>`.
@@ -495,14 +496,21 @@ class ArtemisGuest(NetworkedGuest):
         except GlueError as exc:
             raise GlueError("Guest couldn't be provisioned: {}".format(exc))
 
-    def _wait_alive(self, connect_timeout, connect_tick, echo_timeout, echo_tick, boot_timeout, boot_tick):
-        # type: (int, int, int, int, int, int) -> None
+    def _wait_alive(
+        self,
+        connect_socket_timeout,
+        connect_timeout, connect_tick,
+        echo_timeout, echo_tick,
+        boot_timeout, boot_tick
+    ):
+        # type: (int, int, int, int, int, int, int) -> None
         '''
         Wait till the guest is alive. That covers several checks.
         '''
 
         try:
-            self.wait_alive(connect_timeout=connect_timeout, connect_tick=connect_tick,
+            self.wait_alive(connect_socket_timeout=connect_socket_timeout,
+                            connect_timeout=connect_timeout, connect_tick=connect_tick,
                             echo_timeout=echo_timeout, echo_tick=echo_tick,
                             boot_timeout=boot_timeout, boot_tick=boot_tick)
 
@@ -717,6 +725,12 @@ class ArtemisProvisioner(gluetool.Module):
             }
         }),
         ('Timeout options', {
+            'connect-timeout': {
+                'help': 'Socket connection timeout for testing guest connection (default: %(default)s)',
+                'metavar': 'CONNECT_TIMEOUT',
+                'type': int,
+                'default': DEFAULT_CONNECT_TIMEOUT
+            },
             'ready-timeout': {
                 'help': 'Timeout for guest to become ready (default: %(default)s)',
                 'metavar': 'READY_TIMEOUT',
@@ -922,7 +936,8 @@ class ArtemisProvisioner(gluetool.Module):
             guest.hostname = response['address']
             guest.info("Guest is ready: {}".format(guest))
 
-            guest._wait_alive(self.option('activation-timeout'), self.option('activation-tick'),
+            guest._wait_alive(self.option('connect-timeout'),
+                              self.option('activation-timeout'), self.option('activation-tick'),
                               self.option('echo-timeout'), self.option('echo-tick'),
                               self.option('boot-timeout'), self.option('boot-tick'))
             guest.info('Guest has become alive')
