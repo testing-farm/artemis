@@ -10,9 +10,10 @@ from gluetool_modules.libs.artifacts import artifacts_location
 from gluetool_modules.libs import GlueEnum
 
 # Type annotations
-from typing import TYPE_CHECKING, cast, Any, Dict, List, Optional  # noqa
+from typing import TYPE_CHECKING, cast, Any, Dict, List, Optional, NamedTuple  # noqa
 
 if TYPE_CHECKING:
+    import bs4  # noqa
     from gluetool.log import LoggingFunctionType  # noqa
     import gluetool_modules.libs.guest  # noqa
     import gluetool_modules.libs.guest_setup  # noqa
@@ -115,6 +116,19 @@ class TestScheduleEntryStage(GlueEnum):
     COMPLETE = 'complete'
 
 
+STAGES_ORDERED = [
+    TestScheduleEntryStage.CREATED,
+    TestScheduleEntryStage.READY,
+    TestScheduleEntryStage.GUEST_PROVISIONING,
+    TestScheduleEntryStage.GUEST_PROVISIONED,
+    TestScheduleEntryStage.GUEST_SETUP,
+    TestScheduleEntryStage.PREPARED,
+    TestScheduleEntryStage.RUNNING,
+    TestScheduleEntryStage.CLEANUP,
+    TestScheduleEntryStage.COMPLETE
+]
+
+
 class TestScheduleEntryState(GlueEnum):
     """
     Enumerates different possible (final) states of a test schedule entry.
@@ -145,6 +159,16 @@ class TestScheduleResult(GlueEnum):
     FAILED = 'failed'
     INFO = 'info'
     NOT_APPLICABLE = 'not_applicable'
+
+
+# TODO: incorporate guest-setup output, it's very similar but guest-setup output carries one extra field,
+# the guest-setup stage.
+TestScheduleEntryOutput = NamedTuple('TestScheduleEntryOutput', (
+    ('stage', TestScheduleEntryStage),
+    ('label', str),
+    ('log_path', str),
+    ('additional_data', Any)
+))
 
 
 class TestScheduleEntryAdapter(gluetool.log.ContextAdapter):
@@ -196,6 +220,9 @@ class TestScheduleEntry(LoggerMixin, object):
 
         # List of outputs produced by different guest setup actions
         self.guest_setup_outputs = {}  # type: GuestSetupOutputsContainerType
+
+        # List of test logs produced by tests.
+        self.outputs = []  # type: List[TestScheduleEntryOutput]
 
         self.action = None  # type: Optional[gluetool.action.Action]
 
@@ -316,17 +343,29 @@ class TestSchedule(List[TestScheduleEntry]):
                 ['SE', 'Stage', 'Log', 'Location']
             ]
 
+            # Collect all logs - guest-setup logs are in their own container, because those have their own substages.
             for se in self:
-                for stage in gluetool_modules.libs.guest_setup.STAGES_ORDERED:
-                    outputs = se.guest_setup_outputs.get(stage, [])
-
-                    for output in outputs:
+                for stage in STAGES_ORDERED:
+                    for output in [_output for _output in se.outputs if _output.stage == stage]:
                         table.append([
                             se.id,
                             stage.value,
                             output.label,
                             artifacts_location(module, output.log_path, logger=module.logger)
                         ])
+
+                    if stage == TestScheduleEntryStage.GUEST_SETUP:
+                        for guest_setup_stage in gluetool_modules.libs.guest_setup.STAGES_ORDERED:
+                            outputs = se.guest_setup_outputs.get(guest_setup_stage, [])
+
+                            for guest_setup_output in outputs:
+                                table.append([
+                                    se.id,
+                                    # pseudo-stage, to display both schedule stage and guest setup stage
+                                    '{}.{}'.format(stage.value, guest_setup_stage.value),
+                                    guest_setup_output.label,
+                                    artifacts_location(module, guest_setup_output.log_path, logger=module.logger)
+                                ])
 
             log_table(
                 log_fn,
