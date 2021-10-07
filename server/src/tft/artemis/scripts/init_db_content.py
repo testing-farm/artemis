@@ -292,5 +292,34 @@ def cmd_config_to_db(ctx: Any) -> None:
     config_to_db(logger, db, server_config)
 
 
+@cmd_root.command(
+    name='validate-config',
+    help='Validate the given configuration, without changing the DB. Obeys all environment variables.'
+)
+@click.pass_context
+def cmd_validate_config(ctx: Any) -> None:
+    logger = get_logger()
+    server_config = get_config()
+
+    r_validation = validate_config(logger, server_config)
+
+    if r_validation.is_error:
+        r_validation.unwrap_error().handle(logger)
+
+        sys.exit(1)
+
+    validation_errors = r_validation.unwrap()
+
+    if validation_errors:
+        logger.error('Validation failed!')
+
+        for error in validation_errors:
+            logger.error(f'* {error}')
+
+        sys.exit(1)
+
+    logger.info('Configuration is safe!')
+
+
 if __name__ == '__main__':
     cmd_root()
