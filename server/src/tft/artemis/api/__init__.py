@@ -41,7 +41,7 @@ from ..environment import Environment
 from ..guest import GuestState
 from ..knobs import KNOB_LOGGING_JSON, Knob
 from ..script import hook_engine
-from ..tasks import get_snapshot_logger
+from ..tasks import Actor, get_snapshot_logger
 from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
@@ -1310,6 +1310,29 @@ class CacheManager:
     def __init__(self, db: artemis_db.DB) -> None:
         self.db = db
 
+    def refresh_pool_object_infos(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        poolname: str,
+        actor: Actor
+    ) -> Tuple[str, None]:
+        # We don't really need the pool object, but we'd like to avoid triggering tasks for pools that don't exist.
+        # The race condition still exists though, because we don't try too hard :) The pool may be gone after our
+        # check and before the dispatch, but we don't aim for consistency here, rather the user experience. The task
+        # is safe: if the pool is gone in that sensitive period of time, task will report an error and won't ask for
+        # reschedule. If we can avoid some of the errors with a trivial DB query, let's do so.
+        with self.db.get_session() as session:
+            _ = self._get_pool(logger, session, poolname)
+
+        from ..tasks import dispatch_task
+
+        r_dispatch = dispatch_task(logger, actor, poolname)
+
+        if r_dispatch.is_error:
+            raise errors.InternalServerError(caused_by=r_dispatch.unwrap_error(), logger=logger)
+
+        return HTTP_202, None
+
     #
     # Entry points hooked to routes
     #
@@ -1328,6 +1351,26 @@ class CacheManager:
         poolname: str
     ) -> Response:
         return manager.get_pool_flavor_info(logger, poolname)
+
+    @staticmethod
+    def entry_refresh_pool_image_info(
+        manager: 'CacheManager',
+        logger: gluetool.log.ContextAdapter,
+        poolname: str
+    ) -> Tuple[str, None]:
+        from ..tasks import refresh_pool_image_info
+
+        return manager.refresh_pool_object_infos(logger, poolname, refresh_pool_image_info)
+
+    @staticmethod
+    def entry_refresh_pool_flavor_info(
+        manager: 'CacheManager',
+        logger: gluetool.log.ContextAdapter,
+        poolname: str
+    ) -> Tuple[str, None]:
+        from ..tasks import refresh_pool_flavor_info
+
+        return manager.refresh_pool_object_infos(logger, poolname, refresh_pool_flavor_info)
 
     def _get_pool(
         self,
@@ -1607,6 +1650,26 @@ class UserManagerComponent:
 #
 def get_guest_requests(manager: GuestRequestManager, request: Request) -> Tuple[str, List[GuestResponse]]:
     return HTTP_200, manager.get_guest_requests()
+
+
+def create_guest_request_v0_0_28(
+    guest_request: GuestRequest,
+    manager: GuestRequestManager,
+    request: Request,
+    auth: AuthContext,
+    logger: gluetool.log.ContextAdapter
+) -> Tuple[str, GuestResponse]:
+    # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
+    # and we got so far means user must be authenticated.
+    if auth.is_authentication_enabled and auth.is_authenticated:
+        assert auth.username
+
+        ownername = auth.username
+
+    else:
+        ownername = DEFAULT_GUEST_REQUEST_OWNER
+
+    return HTTP_201, manager.create(guest_request, ownername, logger, ENVIRONMENT_SCHEMAS['v0.0.28'])
 
 
 def create_guest_request_v0_0_27(
@@ -2142,6 +2205,56 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
     return wrapper
 
 
+# NEW: trigger pool info refresh
+@route_generator
+def generate_routes_v0_0_28(
+    create_route: CreateRouteCallbackType,
+    name_prefix: str,
+    metadata: Any
+) -> List[Union[Route, Include]]:
+    return [
+        Include('/guests', [
+            create_route('/', get_guest_requests, method='GET'),
+            create_route('/', create_guest_request_v0_0_28, method='POST'),
+            create_route('/{guestname}', get_guest_request),  # noqa: FS003
+            create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
+            create_route('/events', get_events),
+            create_route('/{guestname}/events', get_guest_events),  # noqa: FS003
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')  # noqa: FS003,E501
+        ]),
+        Include('/knobs', [
+            create_route('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')  # noqa: FS003
+        ]),
+        Include('/users', [
+            create_route('/', UserManager.entry_get_users, method='GET'),
+            create_route('/{username}', UserManager.entry_get_user, method='GET'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_create_user, method='POST'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_delete_user, method='DELETE'),  # noqa: FS003
+            create_route('/{username}/tokens/{tokentype}/reset', UserManager.entry_reset_token, method='POST')  # noqa: FS003,E501
+        ]),
+        create_route('/metrics', get_metrics),
+        create_route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [  # noqa: FS003
+                create_route('/image-info', CacheManager.entry_pool_image_info),
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info),
+                create_route('/image-info', CacheManager.entry_refresh_pool_image_info, method='POST'),
+                create_route('/flavor-info', CacheManager.entry_refresh_pool_flavor_info, method='POST')
+            ])
+        ]),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
+        create_route('/_schema', OpenAPIHandler(metadata=metadata))
+    ]
+
+
 # NEW: HW requirement changes - refactored `disk`
 @route_generator
 def generate_routes_v0_0_27(
@@ -2182,7 +2295,9 @@ def generate_routes_v0_0_27(
         Include('/_cache', [
             Include('/pools/{poolname}', [  # noqa: FS003
                 create_route('/image-info', CacheManager.entry_pool_image_info),
-                create_route('/flavor-info', CacheManager.entry_pool_flavor_info)
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info),
+                create_route('/image-info', CacheManager.entry_refresh_pool_image_info, method='POST'),
+                create_route('/flavor-info', CacheManager.entry_refresh_pool_flavor_info, method='POST')
             ])
         ]),
         create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
@@ -2497,8 +2612,8 @@ def generate_routes_v0_0_17(
 #: API versions. Based on this list, routes are created with proper endpoints, and possibly redirected
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
-    # NEW: HW requirement changes - refactored `disk`
-    ('v0.0.27', generate_routes_v0_0_27, [
+    # NEW: trigger pool info refresh
+    ('v0.0.28', generate_routes_v0_0_28, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
         'current',
@@ -2507,6 +2622,9 @@ API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
         # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
         'toplevel'
     ]),
+
+    # NEW: HW requirement changes - refactored `disk`
+    ('v0.0.27', generate_routes_v0_0_27, []),
     # NEW: allow log-types to be specified in guest request
     ('v0.0.26', generate_routes_v0_0_26, []),
     # NEW: allow skipping verify-ssh steps
