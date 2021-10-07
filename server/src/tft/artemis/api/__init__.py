@@ -36,6 +36,7 @@ from .. import __VERSION__, Failure, FailureDetailsType, JSONSchemaType
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, metrics, validate_data
 from ..context import DATABASE, LOGGER
+from ..drivers import PoolDriver
 from ..environment import Environment
 from ..guest import GuestState
 from ..knobs import KNOB_LOGGING_JSON, Knob
@@ -1328,22 +1329,40 @@ class CacheManager:
     ) -> Response:
         return manager.get_pool_flavor_info(logger, poolname)
 
+    def _get_pool(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        poolname: str
+    ) -> PoolDriver:
+        from ..tasks import _get_pool_or_none
+
+        r_pool = _get_pool_or_none(logger, session, poolname)
+
+        if r_pool.is_error:
+            raise errors.InternalServerError(
+                logger=logger,
+                caused_by=r_pool.unwrap_error(),
+                failure_details={
+                    'poolname': poolname
+                }
+            )
+
+        pool = r_pool.unwrap()
+
+        if pool is None:
+            raise errors.NoSuchEntityError(
+                logger=logger,
+                failure_details={
+                    'poolname': poolname
+                }
+            )
+
+        return pool
+
     def _get_pool_object_infos(self, logger: gluetool.log.ContextAdapter, poolname: str, method_name: str) -> Response:
-        from ..tasks import _get_pool
-
         with self.db.get_session() as session:
-            r_pool = _get_pool(logger, session, poolname)
-
-            if r_pool.is_error:
-                raise errors.InternalServerError(
-                    logger=logger,
-                    caused_by=r_pool.unwrap_error(),
-                    failure_details={
-                        'poolname': poolname
-                    }
-                )
-
-            pool = r_pool.unwrap()
+            pool = self._get_pool(logger, session, poolname)
 
             method = getattr(pool, method_name, None)
 

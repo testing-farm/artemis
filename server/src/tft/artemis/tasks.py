@@ -1126,11 +1126,12 @@ def _update_snapshot_state(
     return Ok(True)
 
 
-def _get_pool(
+# Because sometimes we just don't know whether the given pool actually exists or not...
+def _get_pool_or_none(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     poolname: str
-) -> Result[PoolDriver, Failure]:
+) -> Result[Optional[PoolDriver], Failure]:
     r_pool = SafeQuery.from_session(session, Pool) \
         .filter(Pool.poolname == poolname) \
         .one_or_none()
@@ -1141,10 +1142,7 @@ def _get_pool(
     pool_record = r_pool.unwrap()
 
     if pool_record is None:
-        return Error(Failure(
-            'no such pool',
-            poolname=poolname
-        ))
+        return Ok(None)
 
     pool_driver_class = POOL_DRIVERS[pool_record.driver]
     driver = pool_driver_class(logger, poolname, pool_record.parameters)
@@ -1155,6 +1153,28 @@ def _get_pool(
         return Error(r_sanity.unwrap_error())
 
     return Ok(driver)
+
+
+# ... and sometimes, we are pretty sure the pool does exist, and it's a hard error if we can't find it.
+def _get_pool(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    poolname: str
+) -> Result[PoolDriver, Failure]:
+    r_pool = _get_pool_or_none(logger, session, poolname)
+
+    if r_pool.is_error:
+        return Error(r_pool.unwrap_error())
+
+    pool = r_pool.unwrap()
+
+    if pool is None:
+        return Error(Failure(
+            'no such pool',
+            poolname=poolname
+        ))
+
+    return Ok(pool)
 
 
 def get_pools(
