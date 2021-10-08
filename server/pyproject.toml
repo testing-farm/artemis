@@ -37,6 +37,7 @@ psycopg2 = "^2.9.1"
 python-openstackclient = "^5.0.0"
 # See https://github.com/python-poetry/poetry/issues/4402
 sqlalchemy = ">=1.4,<1.4.23"
+sqlalchemy-utils = "^0.37.8"
 stackprinter = "^0.2.4"
 typing-extensions = "^3.7.4"
 periodiq = "^0.12.1"
@@ -63,7 +64,6 @@ pytest-icdiff = "*"
 pytest-mock = "*"
 redislite = "*"
 sqlalchemy-stubs = "*"
-sqlalchemy-utils = "*"
 
 # mypy-extensions must match gluetool requiremens.
 mypy-extensions = "0.4.1"

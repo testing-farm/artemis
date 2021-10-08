@@ -1634,7 +1634,7 @@ typing-extensions = ">=3.7.4"
 name = "sqlalchemy-utils"
 version = "0.37.8"
 description = "Various utility functions for SQLAlchemy."
-category = "dev"
+category = "main"
 optional = false
 python-versions = "~=3.4"
 
@@ -1807,7 +1807,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytes
 [metadata]
 lock-version = "1.1"
 python-versions = "~3.7"
-content-hash = "65b192c2d01bf09f3d31fa5563ce455b967debd81ab1de29fe14da61cd7adcc3"
+content-hash = "815b0c0eda8c640561d831aef74ba66870565a6aa5ec64b3d9ff7ff9696ae986"
 
 [metadata.files]
 alabaster = [
