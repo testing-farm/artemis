@@ -533,11 +533,11 @@ def _apply_flavor_specification(
     if 'disk' in flavor_spec:
         # TODO: introduce way how to actually patch the list of disks, instead of recreating it. It's easier,
         # but hardly future-proof.
-        flavor.disk = FlavorDisks([])
+        patched_disks: List[FlavorDisk] = []
 
         for disk_patch in flavor_spec['disk']:
             disk = FlavorDisk()
-            flavor.disk.append(disk)
+            patched_disks.append(disk)
 
             if 'size' in disk_patch:
                 r_space = safe_call(UNITS, disk_patch['size'])
@@ -550,6 +550,8 @@ def _apply_flavor_specification(
                     ))
 
                 disk.size = r_space.unwrap()
+
+        flavor.disk = FlavorDisks(patched_disks)
 
     return Ok(None)
 

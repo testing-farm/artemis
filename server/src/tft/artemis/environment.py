@@ -11,7 +11,7 @@ import enum
 import json
 import operator
 import re
-from typing import Any, Callable, Dict, List, Optional, Sequence, Type, TypeVar, Union, cast
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Sequence, Type, TypeVar, Union, cast
 
 import gluetool.log
 import pint
@@ -64,6 +64,175 @@ ConstraintValueType = Union[int, Quantity, str]
 MeasurableConstraintValueType = Union[int, Quantity]
 
 
+# A type variable representing types based on our common container of flavor properties.
+U = TypeVar('U', bound='_FlavorSubsystemContainer')
+
+# A type variable representing types based on our container of item sequences.
+# TODO: now this one is actually bounded to a generic type, and mypy/typing do not support TypeVar bound to
+# a generic type. See https://github.com/python/typing/issues/548. We'd need to declare item type of items
+# inside _FlavorSequenceContainer, e.g. with the following code:
+#
+# V = TypeVar('V', bound='_FlavorSequenceContainer[U]')
+V = TypeVar('V', bound='_FlavorSequenceContainer')  # type: ignore  # Missing type parameters for generic type
+
+
+class _FlavorSubsystemContainer(SerializableContainer):
+    """
+    A base class for all containers used in flavor description.
+
+    The class is based on serializable container class, to enable serialization of containers from the beginning.
+    Some child classes may need to provide their own implementation, but by default, the base functionality is
+    perfectly fine.
+    """
+
+    # Nice trick: when a member is of `ClassVar` type, it is not treated as a dataclass field but rather a class
+    # variable. See https://docs.python.org/3.7/library/dataclasses.html#class-variables. And we want this member
+    # to be a class variables, child classes wouldn't need custom `__init__()` to set it.
+
+    #: A prefix to add before all field names when formatting fields. If unset, no prefix is added.
+    CONTAINER_PREFIX: ClassVar[Optional[str]] = None
+
+    def format_fields(self) -> List[str]:
+        """
+        Return formatted representation of subsystem properties.
+
+        :returns: list of formatted properties.
+        """
+
+        formatted_fields: List[str] = []
+
+        # The actual prefix: if specified, add `.` joining the prefix and field name, otherwise use an empty string.
+        prefix = f'{self.CONTAINER_PREFIX}.' if self.CONTAINER_PREFIX is not None else ''
+
+        for field_spec in dataclasses.fields(self):
+            field = getattr(self, field_spec.name)
+
+            if isinstance(field, _FlavorSubsystemContainer):
+                formatted_fields += field.format_fields()
+
+            else:
+                formatted_fields.append(f'{prefix}{field_spec.name}={field}')
+
+        return formatted_fields
+
+    def __repr__(self) -> str:
+        """
+        Return text representation of subsystem properties.
+
+        :returns: human-readable rendering of subsystem properties.
+        """
+
+        return f'<{self.__class__.__name__}: {" ".join(self.format_fields())}>'
+
+    # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone some complex fields.
+    def clone(self: U) -> U:
+        clone = dataclasses.replace(self)
+
+        for field_spec in dataclasses.fields(self):
+            field = getattr(self, field_spec.name)
+
+            if isinstance(field, _FlavorSubsystemContainer):
+                setattr(clone, field_spec.name, field.clone())
+
+        return clone
+
+
+class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
+    """
+    A base class for all containers used in flavor description that represent a sequence of items.
+
+    The class merges together a flavor subsystem container base class, to include common functionality like
+    serialization and formatting, and a generic sequence where the actual class is supplied by child clases.
+    Items are expected to be based on our flavor subsystem container base class, therefore the generic item
+    type is bound to this class.
+
+    .. note::
+
+       This container is supposed to be immutable. Methods allowing changes are not implemented. But, items
+       are still mutable, as long as their classes are not frozen
+       (https://docs.python.org/3.7/library/dataclasses.html#frozen-instances).
+    """
+
+    #: A class of one of the items.
+    ITEM_CLASS: Type[U]
+
+    #: A label to use when rendering item fields.
+    ITEM_LABEL: str
+
+    def __init__(self, items: Optional[List[U]] = None) -> None:
+        """
+        Create a container with a given items.
+
+        :param items: initial set of items.
+        """
+
+        self.items: List[U] = items or []
+
+    def __getitem__(self, index: int) -> U:  # type: ignore  # does not match the superclass but that's fine
+        """
+        Return item on the requested position.
+
+        :param index: index in the container.
+        :returns: item.
+        """
+
+        return self.items[index]
+
+    def __len__(self) -> int:
+        """
+        Return number of items tracked in this container.
+
+        :returns: number of items.
+        """
+
+        return len(self.items)
+
+    def format_fields(self) -> List[str]:
+        """
+        Return formatted representation of items.
+
+        :returns: list of formatted items.
+        """
+
+        return sum([
+            [
+                f'{self.ITEM_LABEL}[{i}].{field.name}={getattr(item, field.name)}'
+                for field in dataclasses.fields(item)
+            ]
+            for i, item in enumerate(self.items)
+        ], [])
+
+    def clone(self: V) -> V:
+        return self.__class__([
+            item.clone() for item in self.items
+        ])
+
+    def serialize_to_json(self) -> List[Dict[str, Any]]:  # type: ignore  # expected
+        """
+        Serialize container to JSON.
+
+        :returns: serialized form of container items.
+        """
+
+        return [
+            item.serialize_to_json() for item in self.items
+        ]
+
+    @classmethod
+    def unserialize_from_json(cls: Type[V], serialized: List[Dict[str, Any]]) -> V:  # type: ignore  # expected
+        """
+        Unserialize items from JSON.
+
+        :param serialized: serialized form of container items.
+        :returns: unserialized container.
+        """
+
+        return cls([
+            cls.ITEM_CLASS.unserialize_from_json(serialized_item)
+            for serialized_item in serialized
+        ])
+
+
 #
 # A flavor represents a type of guest a driver is able to deliver. It groups together various HW properties, and
 # the mapping of these flavors to actual objects the driver can provision is in the driver's scope.
@@ -96,7 +265,7 @@ MeasurableConstraintValueType = Union[int, Quantity]
 #      - size: 120 GiB
 
 @dataclasses.dataclass(repr=False)
-class FlavorCpu(SerializableContainer):
+class FlavorCpu(_FlavorSubsystemContainer):
     """
     Represents HW properties related to CPU and CPU cores of a flavor.
 
@@ -105,6 +274,8 @@ class FlavorCpu(SerializableContainer):
        The relation between CPU and CPU cores is now intentionally ignored. We pretend the topology is trivial,
        all processors are the same, all processors have the same number of cores.
     """
+
+    CONTAINER_PREFIX = 'cpu'
 
     #: Total number of CPUs.
     processors: Optional[int] = None
@@ -124,30 +295,9 @@ class FlavorCpu(SerializableContainer):
     #: CPU model name.
     model_name: Optional[str] = None
 
-    def format_fields(self) -> List[str]:
-        """
-        Return formatted representation of flavor properties.
-
-        :returns: list of formatted properties.
-        """
-
-        return [
-            f'cpu.{field.name}={getattr(self, field.name)}'
-            for field in dataclasses.fields(self)
-        ]
-
-    def __repr__(self) -> str:
-        """
-        Return text representation of flavor properties.
-
-        :returns: human-readable rendering of flavor properties.
-        """
-
-        return f'<FlavorCpu: {" ".join(self.format_fields())}>'
-
 
 @dataclasses.dataclass(repr=True)
-class FlavorDisk(SerializableContainer):
+class FlavorDisk(_FlavorSubsystemContainer):
     """
     Represents a HW properties related to persistent storage a flavor, one disk in particular.
 
@@ -163,29 +313,10 @@ class FlavorDisk(SerializableContainer):
        setups will be supported in the future.
     """
 
+    CONTAINER_PREFIX = 'disk'
+
     #: Total size of the disk storage, in bytes.
     size: Optional[Quantity] = None
-
-    def format_fields(self) -> List[str]:
-        """
-        Return formatted representation of flavor properties.
-
-        :returns: list of formatted properties.
-        """
-
-        return [
-            f'disk.{field.name}={getattr(self, field.name)}'
-            for field in dataclasses.fields(self)
-        ]
-
-    def __repr__(self) -> str:
-        """
-        Return text representation of flavor properties.
-
-        :returns: human-readable rendering of flavor properties.
-        """
-
-        return f'<FlavorDisk: {" ".join(self.format_fields())}>'
 
     def serialize_to_json(self) -> Dict[str, Any]:
         """
@@ -222,7 +353,7 @@ class FlavorDisk(SerializableContainer):
 # each of those mappings, but we need a class for their container, with methods for (un)serialization. Therefore
 # the container class is called `FlavorDisks`, but in the flavor dataclass it's a type of `disk` property because
 # that's how the HW requirement is called.
-class FlavorDisks(Sequence[FlavorDisk]):
+class FlavorDisks(_FlavorSequenceContainer[FlavorDisk]):
     """
     Represents a HW properties related to persistent storage a flavor.
 
@@ -232,98 +363,17 @@ class FlavorDisks(Sequence[FlavorDisk]):
        setups will be supported in the future.
     """
 
-    def __init__(self, disks: Optional[List[FlavorDisk]] = None) -> None:
-        """
-        Create a container representing HW properties related to persistent storage of a flavor.
-
-        :param disks: list of disks available.
-        """
-
-        self.data: List[FlavorDisk] = disks or []
-
-    def __getitem__(self, index: int) -> FlavorDisk:  # type: ignore  # does not match the superclass but that's fine
-        """
-        Return disk on the requested position.
-
-        :param index: index in the container.
-        :returns: disk description.
-        """
-
-        return self.data[index]
-
-    def __len__(self) -> int:
-        """
-        Return number of disk tracked in this container.
-
-        :returns: number of disks.
-        """
-
-        return len(self.data)
-
-    def append(self, disk: FlavorDisk) -> None:
-        """
-        Append a disk description.
-
-        :param disk: disk to add.
-        """
-
-        self.data.append(disk)
-
-    def format_fields(self) -> List[str]:
-        """
-        Return formatted representation of flavor properties.
-
-        :returns: list of formatted properties.
-        """
-
-        return sum([
-            [
-                f'disk[{i}].{field.name}={getattr(disk, field.name)}'
-                for field in dataclasses.fields(disk)
-            ]
-            for i, disk in enumerate(self)
-        ], [])
-
-    def __repr__(self) -> str:
-        """
-        Return text representation of flavor properties.
-
-        :returns: human-readable rendering of flavor properties.
-        """
-
-        return f'<FlavorDisks: {" ".join(self.format_fields())}>'
-
-    def serialize_to_json(self) -> List[Dict[str, Any]]:
-        """
-        Serialize properties to JSON.
-
-        :returns: serialized form of flavor properties.
-        """
-
-        return [
-            disk.serialize_to_json() for disk in self
-        ]
-
-    @classmethod
-    def unserialize_from_json(cls, serialized: List[Dict[str, Any]]) -> 'FlavorDisks':
-        """
-        Unserialize properties from JSON.
-
-        :param serialized: serialized form of flavor properties.
-        :returns: disk properties of a flavor.
-        """
-
-        return FlavorDisks([
-            FlavorDisk.unserialize_from_json(serialized_disk)
-            for serialized_disk in serialized
-        ])
+    ITEM_CLASS = FlavorDisk
+    ITEM_LABEL = 'disk'
 
 
 @dataclasses.dataclass(repr=False)
-class FlavorVirtualization(SerializableContainer):
+class FlavorVirtualization(_FlavorSubsystemContainer):
     """
     Represents HW properties related to virtualization properties of a flavor.
     """
+
+    CONTAINER_PREFIX = 'virtualization'
 
     #: If set, the flavor allows running VMs in a nested manner.
     is_supported: Optional[bool] = None
@@ -334,30 +384,9 @@ class FlavorVirtualization(SerializableContainer):
     #: When flavors represents a virtual machine, this field carries a hypervisor name.
     hypervisor: Optional[str] = None
 
-    def format_fields(self) -> List[str]:
-        """
-        Return formatted representation of flavor properties.
-
-        :returns: list of formatted properties.
-        """
-
-        return [
-            f'virtualization.{field.name}={getattr(self, field.name)}'
-            for field in dataclasses.fields(self)
-        ]
-
-    def __repr__(self) -> str:
-        """
-        Return text representation of flavor properties.
-
-        :returns: human-readable rendering of flavor properties.
-        """
-
-        return f'<FlavorVirtualization: {" ".join(self.format_fields())}>'
-
 
 @dataclasses.dataclass(repr=False)
-class Flavor(SerializableContainer):
+class Flavor(_FlavorSubsystemContainer):
     """
     Represents various properties of a flavor.
     """
@@ -375,35 +404,13 @@ class Flavor(SerializableContainer):
     cpu: FlavorCpu = dataclasses.field(default_factory=FlavorCpu)
 
     #: Disk/storage properties.
-    disk: FlavorDisks = dataclasses.field(default_factory=lambda: FlavorDisks([]))
+    disk: FlavorDisks = dataclasses.field(default_factory=FlavorDisks)
 
     #: RAM size, in bytes.
     memory: Optional[Quantity] = None
 
     #: Virtualization properties.
     virtualization: FlavorVirtualization = dataclasses.field(default_factory=FlavorVirtualization)
-
-    def format_fields(self) -> List[str]:
-        """
-        Return formatted representation of flavor properties.
-
-        :returns: list of formatted properties.
-        """
-
-        return self.cpu.format_fields() + self.disk.format_fields() + [
-            f'{field.name}={getattr(self, field.name)}'
-            for field in dataclasses.fields(self)
-            if field.name not in ('cpu', 'disk', 'virtualization')
-        ]
-
-    def __repr__(self) -> str:
-        """
-        Return text representation of flavor properties.
-
-        :returns: human-readable rendering of flavor properties.
-        """
-
-        return f'<Flavor: {" ".join(self.format_fields())}>'
 
     # TODO: because of a circular dependency, we can't derive this class from SerializableContainer :/
     def serialize_to_json(self) -> Dict[str, Any]:
@@ -414,8 +421,6 @@ class Flavor(SerializableContainer):
         """
 
         serialized = super(Flavor, self).serialize_to_json()
-
-        serialized['disk'] = self.disk.serialize_to_json()
 
         if self.memory is not None:
             serialized['memory'] = str(self.memory)
@@ -446,29 +451,10 @@ class Flavor(SerializableContainer):
 
         flavor = super(Flavor, cls).unserialize_from_json(serialized)
 
-        flavor.disk = FlavorDisks.unserialize_from_json(serialized['disk'])
-
         if flavor.memory is not None:
             flavor.memory = UNITS(flavor.memory)
 
         return flavor
-
-    def clone(self) -> 'Flavor':
-        """
-        Create a copy of this flavor.
-
-        :returns: new instance with the very same properties.
-        """
-
-        # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone even cpu and disk info.
-        clone = dataclasses.replace(self)
-        clone.cpu = dataclasses.replace(self.cpu)
-
-        clone.disk = FlavorDisks([
-            dataclasses.replace(disk) for disk in self.disk
-        ])
-
-        return clone
 
 
 class Operator(enum.Enum):
@@ -803,9 +789,7 @@ class Constraint(ConstraintBase):
         :returns: prettified, human-readable rendering of the constraint.
         """
 
-        return f'(FLAVOR.{self.name} {self.operator.value} {self.value})'
-
-        return f'{prefix}{repr(self)}'
+        return f'{prefix}(FLAVOR.{self.name} {self.operator.value} {self.value})'
 
 
 @dataclasses.dataclass

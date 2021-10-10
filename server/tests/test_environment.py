@@ -124,6 +124,56 @@ def test_example_disk(logger):
     ) is False
 
 
+def test_example_multiple_disks(logger):
+    constraint = parse_hw(
+        """
+        ---
+
+        disk:
+          - size: ">= 40 GiB"
+          - size: ">= 1 TiB"
+        """
+    )
+
+    print(constraint.format())
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                tft.artemis.environment.FlavorDisk(size=UNITS('1 TiB'))
+            ])
+        )
+    ) is True
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('20 GiB')),
+                tft.artemis.environment.FlavorDisk(size=UNITS('1 TiB'))
+            ])
+        )
+    ) is False
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                tft.artemis.environment.FlavorDisk(size=UNITS('500 GiB'))
+            ])
+        )
+    ) is False
+
+
 def test_example_disk_oldstyle_space(logger):
     constraint = parse_hw(
         """
