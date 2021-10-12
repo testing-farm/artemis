@@ -5,7 +5,12 @@ import shlex
 import sys
 
 import gluetool
+from gluetool import Failure
 from gluetool.log import log_blob
+from gluetool.utils import ProcessOutput
+
+# Type annotations
+from typing import Any, Dict, List, Optional  # noqa
 
 
 class ExecuteCommand(gluetool.Module):
@@ -38,9 +43,10 @@ class ExecuteCommand(gluetool.Module):
         }
     }
 
-    shared_functions = ('execute_commands',)
+    shared_functions = ['execute_commands', ]
 
     def _execute_command(self, command, printable=None):
+        # type: (List[str], Optional[str]) -> ProcessOutput
         """
         Run a single command.
 
@@ -71,8 +77,8 @@ class ExecuteCommand(gluetool.Module):
             output = exc.output
 
         (self.info if output.exit_code == 0 else self.error)('Exited with code {}'.format(output.exit_code))
-        log_blob(self.info, 'stdout', output.stdout)
-        log_blob(self.error, 'stderr', output.stderr)
+        log_blob(self.info, 'stdout', output.stdout or '')
+        log_blob(self.error, 'stderr', output.stderr or '')
 
         if output.exit_code != 0:
             raise gluetool.GlueError("Command '{}' exited with non-zero exit code".format(printable),
@@ -81,6 +87,7 @@ class ExecuteCommand(gluetool.Module):
         return output
 
     def _execute_command_templates(self, commands, context_extra=None):
+        # type: (List[str], Optional[Dict[str, Any]]) -> None
         """
         Execute sequence of commands, represented as a list of templates. Each template is first rendred
         and the resulting string is treated as a command to execute.
@@ -100,6 +107,7 @@ class ExecuteCommand(gluetool.Module):
             self._execute_command(shlex.split(rendered_command), printable=command)
 
     def execute_commands(self, commands, context_extra=None):
+        # type: (List[str], Optional[Dict[str, Any]]) -> None
         """
         Execute sequence of commands, represented as a list of templates. Each template is first rendred
         and the resulting string is treated as a command to execute.
@@ -112,6 +120,7 @@ class ExecuteCommand(gluetool.Module):
 
     @gluetool.utils.cached_property
     def _external_commands(self):
+        # type: () -> List[str]
         """
         Gather commands specified by module options, and provide them transparently to other parts of the module.
 
@@ -135,12 +144,14 @@ class ExecuteCommand(gluetool.Module):
         return commands
 
     def execute(self):
+        # type: () -> None
         if gluetool.utils.normalize_bool_option(self.option('on-destroy')):
             return
 
         self._execute_command_templates(self._external_commands)
 
     def destroy(self, failure=None):
+        # type: (Optional[Failure]) -> None
         if not gluetool.utils.normalize_bool_option(self.option('on-destroy')):
             return
 
