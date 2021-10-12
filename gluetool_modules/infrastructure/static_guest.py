@@ -4,13 +4,16 @@
 import collections
 import re
 import socket
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor, wait, Future
 
 import gluetool
 from gluetool import GlueError
 from gluetool_modules.libs.guest import NetworkedGuest
 
 from gluetool_modules.libs.testing_environment import TestingEnvironment
+
+# Type annotations
+from typing import Any, List, Optional, Literal, NamedTuple, Set, cast  # noqa
 
 # SSH connection defaults
 DEFAULT_SSH_USER = 'root'
@@ -32,9 +35,11 @@ class StaticGuest(NetworkedGuest):
     """
 
     def _is_allowed_degraded(self, service):
+        # type: (Any) -> Literal[True]
         return True
 
     def __init__(self, module, fqdn, **kwargs):
+        # type: (CIStaticGuest, str, **Any) -> None
         super(StaticGuest, self).__init__(module, fqdn, **kwargs)
 
         try:
@@ -48,7 +53,10 @@ class StaticGuest(NetworkedGuest):
             raise GlueError("Error connecting to guest '{}': {}".format(self, error))
 
         # populate guest architecture from the OS`
-        self.environment = TestingEnvironment(arch=self.execute('arch').stdout.rstrip(), compose=None)
+        arch = self.execute('arch').stdout
+        if not arch:
+            raise GlueError('Error retrieving guest architecture')
+        self.environment = TestingEnvironment(arch=arch.rstrip(), compose=None)
 
 
 class CIStaticGuest(gluetool.Module):
@@ -94,16 +102,18 @@ class CIStaticGuest(gluetool.Module):
         })
     ]
 
-    shared_functions = ('provision', 'provisioner_capabilities')
+    shared_functions = ['provision', 'provisioner_capabilities']
     required_options = ('guest', 'ssh-key')
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
         super(CIStaticGuest, self).__init__(*args, **kwargs)
 
         # All guests connected
-        self._guests = []
+        self._guests = []  # type: List[StaticGuest]
 
     def guest_connect(self, guest):
+        # type: (str) -> StaticGuest
         """
         Connect to a guest and return a StaticGuest instance.
 
@@ -114,20 +124,22 @@ class CIStaticGuest(gluetool.Module):
         if not match:
             raise GlueError("'{}' is not a valid hostname".format(guest))
 
+        port = None  # type: Optional[str]
         (user, hostname, port) = match.groups()
 
         user = user or DEFAULT_SSH_USER
         port = port or None  # default is 22 from NetworkedGuest
 
         self.info("adding guest '{}' and checking for its connection".format(guest))
-        guest = StaticGuest(
+        static_guest = StaticGuest(
             self, hostname,
             name=hostname, username=user, port=port, key=self.option('ssh-key'),
             options=DEFAULT_SSH_OPTIONS)
 
-        return guest
+        return static_guest
 
     def provisioner_capabilities(self):
+        # type: () -> ProvisionerCapabilities
         """
         Return description of Static Guest provisioner capabilities.
 
@@ -137,11 +149,12 @@ class CIStaticGuest(gluetool.Module):
         return ProvisionerCapabilities(
             available_arches=[
                 # note that arch returns with newline, we need to strip it
-                guest.environment.arch for guest in self._guests
+                guest.environment.arch for guest in self._guests if guest.environment is not None
             ]
         )
 
     def provision(self, environment, count=1, **kwargs):
+        # type: (TestingEnvironment, int, **Any) -> List[StaticGuest]
         """
         Returns a list of N static guests, where N is specified by the parameter ``count``.
 
@@ -153,7 +166,9 @@ class CIStaticGuest(gluetool.Module):
 
         # Return requested number of guests. If the do not exist, blow up
         # NOTE: distro is currently ignored
-        returned_guests = [guest for guest in self._guests if guest.environment.arch == environment.arch][0:count]
+        returned_guests = [
+            guest for guest in self._guests if guest.environment and guest.environment.arch == environment.arch
+        ][0:count]
 
         if len(returned_guests) != count:
             raise GlueError("Did not find {} guest(s) with architecture '{}'.".format(count, environment.arch))
@@ -161,10 +176,14 @@ class CIStaticGuest(gluetool.Module):
         return returned_guests
 
     def execute(self):
+        # type: () -> None
         with ThreadPoolExecutor(thread_name_prefix="connect-thread") as executor:
             futures = {executor.submit(self.guest_connect, guest) for guest in self.option('guest')}
 
-            for future in wait(futures).done:
+            Wait = NamedTuple('Wait', (('done', Set[Future[Any]]), ('not_done', Set[Future[Any]])))
+            wait_result = cast(Wait, wait(futures))
+
+            for future in wait_result.done:
                 guest = future.result()
                 self.info("added guest '{}' with architecture '{}'".format(guest, guest.environment.arch))
 
