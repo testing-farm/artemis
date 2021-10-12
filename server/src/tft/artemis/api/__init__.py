@@ -2206,6 +2206,7 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
 
 
 # NEW: trigger pool info refresh
+# NEW: HW requirement changes - added `network`
 @route_generator
 def generate_routes_v0_0_28(
     create_route: CreateRouteCallbackType,
@@ -2613,6 +2614,7 @@ def generate_routes_v0_0_17(
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
     # NEW: trigger pool info refresh
+    # NEW: HW requirement changes - added `network`
     ('v0.0.28', generate_routes_v0_0_28, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
@@ -2622,7 +2624,6 @@ API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
         # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
         'toplevel'
     ]),
-
     # NEW: HW requirement changes - refactored `disk`
     ('v0.0.27', generate_routes_v0_0_27, []),
     # NEW: allow log-types to be specified in guest request

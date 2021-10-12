@@ -142,6 +142,13 @@ The table below describe the built-in support for various features. However, to 
 |[red]#no#
 |[green]#yes#
 
+|`network[].type`
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+
 |`virtualization.hypervisor`
 |[green]#yes#
 |[red]#no#

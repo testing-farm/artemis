@@ -136,6 +136,9 @@ class SerializableContainer:
             if not issubclass(field.type, SerializableContainer):
                 continue
 
+            if field.name not in serialized:
+                continue
+
             setattr(unserialized, field.name, field.type.unserialize_from_json(serialized[field.name]))
 
         return unserialized

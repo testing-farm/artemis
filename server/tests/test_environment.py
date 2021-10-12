@@ -5,7 +5,7 @@ import pytest
 
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS, Environment
+from tft.artemis.environment import UNITS, Environment, FlavorNetwork, FlavorNetworks
 
 
 @pytest.fixture(name='schema_v0_0_19')
@@ -204,6 +204,126 @@ def test_example_disk_oldstyle_space(logger):
             id='dummy-flavor',
             disk=tft.artemis.environment.FlavorDisks([
                 tft.artemis.environment.FlavorDisk(size=UNITS('600 GiB'))
+            ])
+        )
+    ) is False
+
+
+def test_example_network(logger):
+    constraint = parse_hw(
+        """
+        ---
+
+        network:
+          - type: eth
+        """
+    )
+
+    print(constraint.format())
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            network=FlavorNetworks([
+                FlavorNetwork(type='eth'),
+                FlavorNetwork(type='wifi')
+            ])
+        )
+    ) is True
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            network=FlavorNetworks([
+                FlavorNetwork(type='wifi'),
+                FlavorNetwork(type='eth')
+            ])
+        )
+    ) is False
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            network=FlavorNetworks([
+                FlavorNetwork(type='eth')
+            ])
+        )
+    ) is True
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            network=FlavorNetworks([
+                FlavorNetwork(type='wifi')
+            ])
+        )
+    ) is False
+
+
+def test_example_multiple_networks(logger):
+    constraint = parse_hw(
+        """
+        ---
+
+        network:
+          - type: eth
+          - type: wifi
+        """
+    )
+
+    print(constraint.format())
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            network=FlavorNetworks([
+                FlavorNetwork(type='eth'),
+                FlavorNetwork(type='wifi')
+            ])
+        )
+    ) is True
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            network=FlavorNetworks([
+                FlavorNetwork(type='wifi'),
+                FlavorNetwork(type='eth')
+            ])
+        )
+    ) is False
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            network=FlavorNetworks([
+                FlavorNetwork(type='eth'),
+                FlavorNetwork(type='eth')
+            ])
+        )
+    ) is False
+
+    assert constraint.eval_flavor(
+        logger,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            network=FlavorNetworks([
+                FlavorNetwork(type='eth')
             ])
         )
     ) is False

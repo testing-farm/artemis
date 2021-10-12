@@ -263,6 +263,10 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #  disk:
 #      - size: 40 GiB
 #      - size: 120 GiB
+#
+# network:
+#      - type: eth
+#      - type: eth
 
 @dataclasses.dataclass(repr=False)
 class FlavorCpu(_FlavorSubsystemContainer):
@@ -367,6 +371,42 @@ class FlavorDisks(_FlavorSequenceContainer[FlavorDisk]):
     ITEM_LABEL = 'disk'
 
 
+@dataclasses.dataclass(repr=True)
+class FlavorNetwork(_FlavorSubsystemContainer):
+    """
+    Represents a HW properties related to a network interface of a flavor, one interface in particular.
+
+    .. note::
+
+       As of now, only the very basic topology is supported, tracking only the type of the device. More complex
+       setups will be supported in the future.
+    """
+
+    CONTAINER_PREFIX = 'network'
+
+    # TODO: do we want an enum here?
+    #: Type of the device.
+    type: Optional[str] = None
+
+
+# Note: the HW requirement is called `network`, and holds a list of mappings. We have a `FlavorNetwork` to track
+# each of those mappings, but we need a class for their container, with methods for (un)serialization. Therefore
+# the container class is called `FlavorNetworks`, but in the flavor dataclass it's a type of `network` property because
+# that's how the HW requirement is called.
+class FlavorNetworks(_FlavorSequenceContainer[FlavorNetwork]):
+    """
+    Represents a HW properties related to network interfaces of a flavor.
+
+    .. note::
+
+       As of now, only the very basic topology is supported, tracking only the type of the device. More complex
+       setups will be supported in the future.
+    """
+
+    ITEM_CLASS = FlavorNetwork
+    ITEM_LABEL = 'network'
+
+
 @dataclasses.dataclass(repr=False)
 class FlavorVirtualization(_FlavorSubsystemContainer):
     """
@@ -408,6 +448,9 @@ class Flavor(_FlavorSubsystemContainer):
 
     #: RAM size, in bytes.
     memory: Optional[Quantity] = None
+
+    #: Network interfaces.
+    network: FlavorNetworks = dataclasses.field(default_factory=FlavorNetworks)
 
     #: Virtualization properties.
     virtualization: FlavorVirtualization = dataclasses.field(default_factory=FlavorVirtualization)
@@ -906,6 +949,54 @@ def _parse_disks(spec: SpecType) -> ConstraintBase:
     return group
 
 
+def _parse_network(spec: SpecType, network_index: int) -> ConstraintBase:
+    """
+    Parse a network-related constraints.
+
+    :param spec: raw constraint block specification.
+    :param network_index: index of this network among its peers in specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    group.constraints += [
+        Constraint.from_specification(
+            f'network[{network_index}].{constraint_name}',
+            str(spec[constraint_name]),
+            as_quantity=False
+        )
+        for constraint_name in ('type',)
+        if constraint_name in spec
+    ]
+
+    if len(group.constraints) == 1:
+        return group.constraints[0]
+
+    return group
+
+
+def _parse_networks(spec: SpecType) -> ConstraintBase:
+    """
+    Parse a network-related constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    group.constraints += [
+        _parse_network(network_spec, network_index)
+        for network_index, network_spec in enumerate(spec)
+    ]
+
+    if len(group.constraints) == 1:
+        return group.constraints[0]
+
+    return group
+
+
 def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
     """
     Parse actual constraints.
@@ -927,6 +1018,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
     if 'disk' in spec:
         group.constraints += [_parse_disks(spec['disk'])]
+
+    if 'network' in spec:
+        group.constraints += [_parse_networks(spec['network'])]
 
     if len(group.constraints) == 1:
         return group.constraints[0]
