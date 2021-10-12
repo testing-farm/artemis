@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     import gluetool_modules.libs.guest # noqa
 
 #: Step callback type
-StepCallbackType = Callable[[str, gluetool.utils.ProcessOutput], None]
+StepCallbackType = Callable[[str, gluetool.utils.ProcessOutput], Optional[str]]
 
 #: Describes one command used to SUT installtion
 #:

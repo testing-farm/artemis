@@ -8,6 +8,10 @@ from gluetool.utils import Command
 from gluetool import GlueError
 from gluetool_modules.libs.sut_installation import check_ansible_sut_installation
 
+# Type annotations
+from typing import Any, List, Optional, Dict, cast  # noqa
+from gluetool_modules.libs.guest import Guest, NetworkedGuest
+
 
 class InstallMBSBuild(gluetool.Module):
     """
@@ -26,11 +30,13 @@ class InstallMBSBuild(gluetool.Module):
         }
     }
 
-    shared_functions = ('setup_guest',)
+    shared_functions = ['setup_guest', ]
 
     def _get_repo(self, module_nsvc, guest):
+        # type: (str, Guest) -> str
         self.info('Generating repo for module via ODCS')
 
+        assert guest.environment is not None
         command = [
             'odcs',
             '--redhat', 'create',
@@ -42,17 +48,19 @@ class InstallMBSBuild(gluetool.Module):
         # TO improve: raise OdcsError if command fails
         output = Command(command).run()
         # strip 1st line before json data
-        output = output.stdout[output.stdout.index('{'):]
-        output_json = json.loads(output)
+        assert output.stdout is not None
+        output_str = output.stdout[output.stdout.index('{'):]
+        output_json = json.loads(output_str)
         log_dict(self.debug, 'odcs output', output_json)
         state = output_json['state_name']
         if state != 'done':
             raise GlueError('Getting repo from ODCS failed')
-        repo_url = output_json['result_repofile']
+        repo_url = cast(str, output_json['result_repofile'])
         self.info('Module repo from ODCS: {}'.format(repo_url))
         return repo_url
 
     def setup_guest(self, guest, **kwargs):
+        # type: (NetworkedGuest, **Any) -> None
 
         self.require_shared('run_playbook', 'primary_task')
 
