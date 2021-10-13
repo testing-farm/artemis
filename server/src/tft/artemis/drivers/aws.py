@@ -21,13 +21,12 @@ from typing_extensions import Literal, TypedDict
 from .. import Failure, JSONType, get_cached_item, get_cached_items_as_list, log_dict_yaml
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorVirtualization
+from ..environment import UNITS, Flavor, FlavorCpu, FlavorVirtualization
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
-from ..script import hook_engine
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, PoolCapabilities, PoolData, \
-    PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, HookImageInfoMapper, \
+    PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
+    ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
 
 #
 # Custom typing types
@@ -240,6 +239,11 @@ class AWSDriver(PoolDriver):
             "AWS_DEFAULT_OUTPUT": 'json'
         }
 
+    # TODO: return value does not match supertype - it should, it does, but mypy ain't happy: why?
+    @property
+    def image_info_mapper(self) -> HookImageInfoMapper[AWSPoolImageInfo]:  # type: ignore  # does not match supertype
+        return HookImageInfoMapper(self, 'AWS_ENVIRONMENT_TO_IMAGE')
+
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_native_post_install_script = True
         capabilities.supported_guest_logs = [
@@ -324,11 +328,15 @@ class AWSDriver(PoolDriver):
         if r_answer.unwrap() is False:
             return r_answer
 
-        r_image = self._env_to_image(logger, guest_request.environment)
+        r_image = self.image_info_mapper.map_or_none(logger, guest_request)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
+        if r_image.unwrap() is None:
+            return Ok(False)
+
         r_type = self._env_to_instance_type(logger, session, guest_request)
+
         if r_type.is_error:
             return Error(r_type.unwrap_error())
 
@@ -379,33 +387,6 @@ class AWSDriver(PoolDriver):
             ][0])
 
         return Ok(suitable_flavors[0])
-
-    def _env_to_image(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        environment: Environment
-    ) -> Result[AWSPoolImageInfo, Failure]:
-        r_engine = hook_engine('AWS_ENVIRONMENT_TO_IMAGE')
-
-        if r_engine.is_error:
-            return Error(r_engine.unwrap_error())
-
-        engine = r_engine.unwrap()
-
-        r_image: Result[AWSPoolImageInfo, Failure] = engine.run_hook(
-            'AWS_ENVIRONMENT_TO_IMAGE',
-            logger=logger,
-            pool=self,
-            environment=environment
-        )
-
-        if r_image.is_error:
-            failure = r_image.unwrap_error()
-            failure.update(environment=environment)
-
-            return Error(failure)
-
-        return r_image
 
     def _describe_instance(
         self,
@@ -989,7 +970,7 @@ class AWSDriver(PoolDriver):
         instance_type = r_instance_type.unwrap()
 
         # find out image from enviroment
-        r_image = self._env_to_image(logger, guest_request.environment)
+        r_image = self.image_info_mapper.map(logger, guest_request)
 
         if r_image.is_error:
             return Error(r_image.unwrap_error())

@@ -15,10 +15,9 @@ from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Sna
 from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk, FlavorDisks
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
-from ..script import hook_engine
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, ConsoleUrlData, GuestLogUpdateProgress, PoolCapabilities, PoolData, \
-    PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, ConsoleUrlData, GuestLogUpdateProgress, HookImageInfoMapper, \
+    PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
+    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -93,6 +92,10 @@ class OpenStackDriver(PoolDriver):
             self._os_cmd_base += [
                 '--os-project-domain-id', self.pool_config['project-domain-id']
             ]
+
+    @property
+    def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
+        return HookImageInfoMapper(self, 'OPENSTACK_ENVIRONMENT_TO_IMAGE')
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_native_post_install_script = True
@@ -209,33 +212,6 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(suitable_flavors[0])
 
-    def _env_to_image(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        environment: Environment
-    ) -> Result[PoolImageInfo, Failure]:
-        r_engine = hook_engine('OPENSTACK_ENVIRONMENT_TO_IMAGE')
-
-        if r_engine.is_error:
-            return Error(r_engine.unwrap_error())
-
-        engine = r_engine.unwrap()
-
-        r_image: Result[PoolImageInfo, Failure] = engine.run_hook(
-            'OPENSTACK_ENVIRONMENT_TO_IMAGE',
-            logger=logger,
-            pool=self,
-            environment=environment
-        )
-
-        if r_image.is_error:
-            failure = r_image.unwrap_error()
-            failure.update(environment=environment)
-
-            return Error(failure)
-
-        return r_image
-
     def _env_to_network(self, environment: Environment) -> Result[Any, Failure]:
         metrics = PoolResourcesMetrics(self.poolname)
         metrics.sync()
@@ -323,7 +299,7 @@ class OpenStackDriver(PoolDriver):
 
         flavor = r_flavor.unwrap()
 
-        r_image = self._env_to_image(logger, guest_request.environment)
+        r_image = self.image_info_mapper.map(logger, guest_request)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
@@ -482,11 +458,15 @@ class OpenStackDriver(PoolDriver):
         if r_answer.unwrap() is False:
             return r_answer
 
-        r_image = self._env_to_image(logger, guest_request.environment)
+        r_image = self.image_info_mapper.map_or_none(logger, guest_request)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
+        if r_image.unwrap() is None:
+            return Ok(False)
+
         r_flavor = self._env_to_flavor(logger, session, guest_request)
+
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
 

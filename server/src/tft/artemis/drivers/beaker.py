@@ -18,10 +18,9 @@ from ..db import GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, Operator, Or
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
-from ..script import hook_engine
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, \
-    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, \
-    run_cli_tool, test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, HookImageInfoMapper, PoolData, PoolDriver, PoolImageInfo, \
+    PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
+    create_tempfile, run_cli_tool, test_cli_error
 
 NodeRefType = Any
 
@@ -244,6 +243,10 @@ class BeakerDriver(PoolDriver):
                 '--password', self.pool_config['password']
             ]
 
+    @property
+    def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
+        return HookImageInfoMapper(self, 'BEAKER_ENVIRONMENT_TO_IMAGE')
+
     def _run_bkr(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -339,33 +342,6 @@ class BeakerDriver(PoolDriver):
             ssh=PoolImageSSHInfo()
         ))
 
-    def _environment_to_image(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        environment: Environment
-    ) -> Result[PoolImageInfo, Failure]:
-        r_engine = hook_engine('BEAKER_ENVIRONMENT_TO_IMAGE')
-
-        if r_engine.is_error:
-            return Error(r_engine.unwrap_error())
-
-        engine = r_engine.unwrap()
-
-        r_image: Result[PoolImageInfo, Failure] = engine.run_hook(
-            'BEAKER_ENVIRONMENT_TO_IMAGE',
-            logger=logger,
-            pool=self,
-            environment=environment
-        )
-
-        if r_image.is_error:
-            failure = r_image.unwrap_error()
-            failure.update(environment=environment)
-
-            return Error(failure)
-
-        return r_image
-
     def _create_job_xml(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -391,7 +367,7 @@ class BeakerDriver(PoolDriver):
 
             beaker_filter = r_beaker_filter.unwrap()
 
-        r_distro = self._environment_to_image(logger, guest_request.environment)
+        r_distro = self.image_info_mapper.map(logger, guest_request)
 
         if r_distro.is_error:
             return Error(r_distro.unwrap_error())

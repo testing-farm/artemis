@@ -10,7 +10,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Callable, Dict, Iterator, List, Optional, Pattern, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Generic, Iterator, List, Optional, Pattern, Tuple, Type, TypeVar, Union, cast
 
 import gluetool
 import gluetool.log
@@ -27,6 +27,7 @@ from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Gue
 from ..environment import UNITS, Environment, Flavor, FlavorDisk, FlavorDisks, MeasurableConstraintValueType
 from ..knobs import Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
+from ..script import hook_engine
 
 T = TypeVar('T')
 
@@ -745,6 +746,101 @@ class GuestLogUpdateProgress:
     delay_update: Optional[int] = None
 
 
+#
+# Mapping guest requests to images
+#
+_PoolImageInfoTypeVar = TypeVar('_PoolImageInfoTypeVar', bound='PoolImageInfo')
+ImageInfoMapperOptionalResultType = Result[Optional[T], Failure]
+ImageInfoMapperResultType = Result[T, Failure]
+
+
+class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
+    """
+    Base class for mappings between a guest request and image info.
+    """
+
+    def __init__(self, pool: 'PoolDriver') -> None:
+        self.pool = pool
+
+    def map_or_none(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> ImageInfoMapperOptionalResultType[_PoolImageInfoTypeVar]:
+        """
+        Map given guest request to an image.
+
+        :returns: image info best fitting the given request. If no such image can be found, ``None`` is returned.
+        """
+
+        raise NotImplementedError()
+
+    def map(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
+        """
+        Map given guest request to an image.
+
+        :returns: image info best fitting the given request.
+        """
+
+        r_image = self.map_or_none(logger, guest_request)
+
+        if r_image.is_error:
+            return Error(r_image.unwrap_error())
+
+        image = cast(_PoolImageInfoTypeVar, r_image.unwrap())
+
+        if image is None:
+            return Error(Failure(
+                'cannot map guest request to image',
+                environment=guest_request.environment,
+                recoverable=False
+            ))
+
+        return Ok(image)
+
+
+class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
+    """
+    Mapper between a guest request and image info with the use of pool-specific hook script.
+    """
+
+    def __init__(self, pool: 'PoolDriver', hook_name: str) -> None:
+        super(HookImageInfoMapper, self).__init__(pool)
+
+        self.hook_name = hook_name
+
+    def map_or_none(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> ImageInfoMapperOptionalResultType[_PoolImageInfoTypeVar]:
+        r_engine = hook_engine(self.hook_name)
+
+        if r_engine.is_error:
+            return Error(r_engine.unwrap_error())
+
+        engine = r_engine.unwrap()
+
+        r_image = cast(
+            Result[Optional[_PoolImageInfoTypeVar], Failure],
+            engine.run_hook(
+                self.hook_name,
+                logger=logger,
+                pool=self.pool,
+                environment=guest_request.environment
+            )
+        )
+
+        if r_image.is_error:
+            r_image.unwrap_error().update(environment=guest_request.environment)
+
+        return r_image
+
+
 class PoolDriver(gluetool.log.LoggerMixin):
     image_info_class: Type[PoolImageInfo] = PoolImageInfo
     flavor_info_class: Type[Flavor] = Flavor
@@ -774,6 +870,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__}: {self.poolname}>'
+
+    @property
+    def image_info_mapper(self) -> ImageInfoMapper[PoolImageInfo]:
+        """
+        Returns a guest request to image info mapper for this pool.
+        """
+
+        raise NotImplementedError()
 
     def sanity(self) -> Result[bool, Failure]:
         """

@@ -8,12 +8,10 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
-from ..environment import Environment
 from ..metrics import ResourceType
-from ..script import hook_engine
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, \
-    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, \
-    run_cli_tool, vm_info_to_ip
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, \
+    PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
+    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
 
 AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'Microsoft.Compute/virtualMachines': ResourceType.VIRTUAL_MACHINE,
@@ -45,6 +43,10 @@ class AzureDriver(PoolDriver):
         pool_config: Dict[str, Any],
     ) -> None:
         super(AzureDriver, self).__init__(logger, poolname, pool_config)
+
+    @property
+    def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
+        return HookImageInfoMapper(self, 'AZURE_ENVIRONMENT_TO_IMAGE')
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_native_post_install_script = True
@@ -389,35 +391,6 @@ class AzureDriver(PoolDriver):
             return Error(r_output.unwrap_error())
         return Ok(r_output.unwrap())
 
-    # NOTE(ivasilev) Borrowed as is with cosmetic changes from openstack driver.
-    # Should land into the hooks library one day.
-    def _env_to_image(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        environment: Environment
-    ) -> Result[PoolImageInfo, Failure]:
-        r_engine = hook_engine('AZURE_ENVIRONMENT_TO_IMAGE')
-
-        if r_engine.is_error:
-            return Error(r_engine.unwrap_error())
-
-        engine = r_engine.unwrap()
-
-        r_image: Result[PoolImageInfo, Failure] = engine.run_hook(
-            'AZURE_ENVIRONMENT_TO_IMAGE',
-            logger=logger,
-            pool=self,
-            environment=environment
-        )
-
-        if r_image.is_error:
-            failure = r_image.unwrap_error()
-            failure.update(environment=environment)
-
-            return Error(failure)
-
-        return r_image
-
     def _do_acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -430,7 +403,7 @@ class AzureDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_image = self._env_to_image(logger, guest_request.environment)
+        r_image = self.image_info_mapper.map(logger, guest_request)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 

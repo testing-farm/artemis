@@ -13,7 +13,7 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, log_dict_yaml
 from ..environment import Environment
 from ..knobs import KNOB_CONFIG_DIRPATH, Knob
-from . import PoolDriver, PoolImageInfo
+from . import ImageInfoMapperOptionalResultType, PoolDriver, PoolImageInfo
 
 KNOB_CACHE_PATTERN_MAPS: Knob[bool] = Knob(
     'pool.cache-pattern-maps',
@@ -81,7 +81,7 @@ def map_compose_to_imagename_by_pattern_map(
     compose_id: str,
     mapping_filename: Optional[str] = None,
     mapping_filepath: Optional[str] = None
-) -> Result[str, Failure]:
+) -> Result[Optional[str], Failure]:
     """
     Using a given pattern mapping file, try to map a compose to its corresponding image name.
 
@@ -121,11 +121,7 @@ def map_compose_to_imagename_by_pattern_map(
         imagename = pattern_map.match(compose_id)
 
     except gluetool.glue.GlueError:
-        return Error(Failure(
-            'cannot map compose to image',
-            compose=compose_id,
-            recoverable=False
-        ))
+        return Ok(None)
 
     return Ok(imagename[0] if isinstance(imagename, list) else imagename)
 
@@ -136,7 +132,7 @@ def map_environment_to_image_info(
     environment: Environment,
     mapping_filename: Optional[str] = None,
     mapping_filepath: Optional[str] = None
-) -> Result[PoolImageInfo, Failure]:
+) -> ImageInfoMapperOptionalResultType[PoolImageInfo]:
     """
     Using a given pattern mapping file, try to map a compose, as specified by a given environment, to the corresponding
     cloud-specific image info.
@@ -168,6 +164,14 @@ def map_environment_to_image_info(
 
         imagename = r_image_name.unwrap()
 
+        if imagename is None:
+            log_dict_yaml(logger.info, 'compose not mapped to image name', {
+                'environment': environment.serialize_to_json(),
+                'image-name': imagename
+            })
+
+            return Ok(None)
+
         log_dict_yaml(logger.info, 'compose mapped to image name', {
             'environment': environment.serialize_to_json(),
             'image-name': imagename
@@ -175,13 +179,15 @@ def map_environment_to_image_info(
 
         r_image = pool.map_image_name_to_image_info(logger, imagename)
 
-        if r_image.is_ok:
-            log_dict_yaml(logger.info, 'compose mapped to image', {
-                'environment': environment.serialize_to_json(),
-                'image': r_image.unwrap().serialize_to_json()
-            })
+        if r_image.is_error:
+            return Error(r_image.unwrap_error())
 
-        return r_image
+        log_dict_yaml(logger.info, 'compose mapped to image', {
+            'environment': environment.serialize_to_json(),
+            'image': r_image.unwrap().serialize_to_json()
+        })
+
+        return Ok(r_image.unwrap())
 
     except Exception as exc:
         return Error(Failure.from_exc(
