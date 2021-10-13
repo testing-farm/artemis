@@ -9,8 +9,10 @@ import gluetool
 from gluetool import utils
 
 # Type annotations
-from typing import List
-import gluetool_modules.libs.mail
+from typing import TYPE_CHECKING, List # noqa
+
+if TYPE_CHECKING:
+    import gluetool_modules.libs.mail # noqa
 
 
 class SMTP(gluetool.Module):
@@ -22,8 +24,7 @@ class SMTP(gluetool.Module):
     description = 'Send e-mails over SMTP'
 
     supported_dryrun_level = gluetool.glue.DryRunLevels.DRY
-
-    options = (
+    options = [
         ('SMTP options', {
             'smtp-server': {
                 'help': 'Outgoing SMTP server (default: %(default)s).',
@@ -57,9 +58,9 @@ class SMTP(gluetool.Module):
                 'metavar': 'EMAIL'
             }
         })
-    )
+    ]
 
-    shared_functions = ('send_email',)
+    shared_functions = ['send_email', ]
 
     @utils.cached_property
     def archive_bcc(self):
@@ -116,7 +117,7 @@ class SMTP(gluetool.Module):
         return msg
 
     def _send_email(self, message, lowered_message):
-        # type: (MIMEText) -> None
+        # type: (gluetool_modules.libs.mail.Message, MIMEText) -> None
         """
         Send a single "lowered" message.
 
@@ -139,9 +140,10 @@ class SMTP(gluetool.Module):
 
         try:
             smtp = smtplib.SMTP(self.option('smtp-server'), self.option('smtp-port'))
-
-            smtp.sendmail(message.sender, recipients, lowered_message.as_string())
-            smtp.quit()
+            # smtplib python2 stubs lack enough annotations. So ignoring type WRT disallow_untyped_calls
+            # TODO rm "type: ignore" when python 2 support is removed
+            smtp.sendmail(message.sender, recipients, lowered_message.as_string())  # type: ignore
+            smtp.quit()  # type: ignore
 
         except (socket.error, smtplib.SMTPException) as exc:
             self.warn('Cannot send e-mail, SMTP raised an exception: {}'.format(exc), sentry=True)
