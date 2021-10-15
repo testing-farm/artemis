@@ -39,6 +39,8 @@ container:
     GIT_SUBMODULE_STRATEGY: recursive
 
   script:
+    # TODO: make immutable by moving to our own image
+    - apk upgrade
     - apk add asciidoctor
 
     # To get nicer HTML output, we need a bit more work.
