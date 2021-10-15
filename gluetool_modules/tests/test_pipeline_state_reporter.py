@@ -311,9 +311,11 @@ def test_init_message_thread_id(module, evaluate):
     module._config.update({
         'version': '1.1.6',
     })
-    _, body = module._init_message('thread_id')
+    umb_message = gluetool_modules.helpers.pipeline_state_reporter.UMBMessage(module)
+    umb_message.version = module._config.pop('version')
+    umb_message.pipeline_id = 'thread_id'
 
-    assert body['pipeline']['id'] == 'thread_id'
+    assert umb_message.body['pipeline']['id'] == 'thread_id'
 
 
 def test_init_message_shared_thread_id(ci_info, evaluate, monkeypatch, module):
@@ -325,10 +327,43 @@ def test_init_message_shared_thread_id(ci_info, evaluate, monkeypatch, module):
         'evaluate_instructions': 'something',
         'evaluate_rules': 'something'
     })
+    umb_message = gluetool_modules.helpers.pipeline_state_reporter.UMBMessage(module)
+    umb_message.version = module._config.pop('version')
+    umb_message.pipeline_id = module.shared('thread_id')
 
-    _, body = module._init_message(None)
-    print(body)
-    assert body['pipeline']['id'] == 'shared-thread-id'
+    assert umb_message.body['pipeline']['id'] == 'shared-thread-id'
+
+
+def test_init_message_artifact_id_int(ci_info, evaluate, monkeypatch, module):
+    module._config.update({
+        'version': '1.1.6',
+    })
+    patch_shared(monkeypatch, module, {
+        'thread_id': 'shared-thread-id',
+        'evaluate_instructions': 'something',
+        'evaluate_rules': 'something'
+    })
+    umb_message = gluetool_modules.helpers.pipeline_state_reporter.UMBMessage(module)
+    umb_message.version = module._config.pop('version')
+    umb_message.artifact = {'id': '123456', 'something': None}
+
+    assert umb_message.body['artifact'] == {'id': 123456}
+
+
+def test_init_message_artifact_id_str(ci_info, evaluate, monkeypatch, module):
+    module._config.update({
+        'version': '1.1.6',
+    })
+    patch_shared(monkeypatch, module, {
+        'thread_id': 'shared-thread-id',
+        'evaluate_instructions': 'something',
+        'evaluate_rules': 'something'
+    })
+    umb_message = gluetool_modules.helpers.pipeline_state_reporter.UMBMessage(module)
+    umb_message.version = module._config.pop('version')
+    umb_message.artifact = {'id': 'string', 'something': None}
+
+    assert umb_message.body['artifact'] == {'id': 'string'}
 
 
 def test_execute_old_message(ci_info, evaluate, monkeypatch, module, mock_namespace, publish_old_messages):
