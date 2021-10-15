@@ -31,7 +31,7 @@ container:
     - buildah bud -f container/Dockerfile .
 
 .docs:
-  image: registry.gitlab.com/pages/hugo:latest
+  image: quay.io/testing-farm/gitlab-pages-hugo:latest
 
   variables:
     # Theme is linked into docs/themes as a git submodule, and Gitlab is smart enough
@@ -39,19 +39,6 @@ container:
     GIT_SUBMODULE_STRATEGY: recursive
 
   script:
-    - apk add asciidoctor
-
-    # To get nicer HTML output, we need a bit more work.
-    # For motivation, see https://blog.anoff.io/2019-02-17-hugo-render-asciidoc/
-
-    # Install better HTML backend for asciidoctor
-    - gem install asciidoctor-html5s
-
-    # Replace actual asciidoctor script with our wrapper, to call it with options Hugo won't allow us to use.
-    - mv /usr/bin/asciidoctor /usr/bin/asciidoctor.actual
-    - printf '#!/bin/sh\n/usr/bin/asciidoctor.actual -r asciidoctor-html5s -b html5s "$@"\n' > /usr/bin/asciidoctor
-    - chmod +x /usr/bin/asciidoctor
-
     # Now it's time to generate docs.
     - cd docs
 
