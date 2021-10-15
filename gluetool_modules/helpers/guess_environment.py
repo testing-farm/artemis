@@ -14,12 +14,23 @@ from gluetool.log import log_dict
 from gluetool.utils import fetch_url, PatternMap, IncompatibleOptionsError
 
 # Type annotations
-from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Type, Union  # noqa
+from typing import cast, Any, Callable, Dict, List, Optional, Tuple, Type, Union, TypedDict  # noqa
 
 
 DEFAULT_NIGHTLY_LISTING = '<default url>'  # type: str
 DEFAULT_BU_LISTING = '<default url>'  # type: str
 SEPARATOR = ';'
+
+SourceType = TypedDict(
+    'SourceType',
+    {
+        'type': str,
+        'specification': Optional[Union[str, List[str]]],
+        'method': str,
+        'pattern-map': Dict[str, Any],
+        'result': Optional[Union[str, List[str]]]
+    }
+)
 
 
 class GuessEnvironment(gluetool.Module):
@@ -191,10 +202,21 @@ class GuessEnvironment(gluetool.Module):
         # type: (Any, Any) -> None
         super(GuessEnvironment, self).__init__(*args, **kwargs)
 
-        self._distro = {}  # type: Dict[str, Union[str, List[str]]]
-        self._image = {}  # type: Dict[str, Union[str, List[str]]]
-        self._product = {}  # type: Dict[str, Union[str, List[str]]]
-        self._wow_relevancy_distro = {}  # type: Dict[str, Union[str, List[str]]]
+        def _init_source():
+            # type: () -> SourceType
+            return {
+                'type': '',
+                'specification': None,
+                'method': '',
+                'pattern-map': {},
+                'result': None
+            }
+
+        self._compose = _init_source()
+        self._distro = _init_source()
+        self._image = _init_source()
+        self._product = _init_source()
+        self._wow_relevancy_distro = _init_source()
 
     def compose(self):
         # type: () -> Union[str, List[str]]
@@ -205,6 +227,8 @@ class GuessEnvironment(gluetool.Module):
         """
         if self._compose['result'] is None:
             self.execute_method(self._compose)
+
+        assert self._compose['result'] is not None
         return self._compose['result']
 
     def distro(self):
@@ -216,6 +240,8 @@ class GuessEnvironment(gluetool.Module):
         """
         if self._distro['result'] is None:
             self.execute_method(self._distro)
+
+        assert self._distro['result'] is not None
         return self._distro['result']
 
     def image(self):
@@ -227,6 +253,8 @@ class GuessEnvironment(gluetool.Module):
         """
         if self._image['result'] is None:
             self.execute_method(self._image)
+
+        assert self._image['result'] is not None
         return self._image['result']
 
     def product(self):
@@ -238,6 +266,8 @@ class GuessEnvironment(gluetool.Module):
         """
         if self._product['result'] is None:
             self.execute_method(self._product)
+
+        assert self._product['result'] is not None
         return self._product['result']
 
     def wow_relevancy_distro(self, distro):
@@ -253,6 +283,8 @@ class GuessEnvironment(gluetool.Module):
         """
         if self._wow_relevancy_distro['result'] is None:
             self.execute_method(self._wow_relevancy_distro, distro)
+
+        assert self._wow_relevancy_distro['result'] is not None
         return self._wow_relevancy_distro['result']
 
     @gluetool.utils.cached_property
@@ -277,7 +309,7 @@ class GuessEnvironment(gluetool.Module):
         return PatternMap(self.option('arch-completeness-map'), logger=self.logger)
 
     def pattern_map(self, source, test):
-        # type: (Dict[str, Union[str, List[str]]]) -> PatternMap
+        # type: (SourceType, str) -> Optional[PatternMap]
         def _create_buc_repl(hint_repl):
             # type: (Any) -> Any
             def _replace(pattern, target):
@@ -380,7 +412,7 @@ class GuessEnvironment(gluetool.Module):
                 self.warn("Cannot find out ID of '{}'".format(name))
                 continue
 
-            return content.strip()
+            return cast(str, content.strip())
 
         return None
 
@@ -400,7 +432,7 @@ class GuessEnvironment(gluetool.Module):
 
         try:
             _, content = fetch_url(url, logger=self.logger)
-            return content.strip()
+            return cast(str, content.strip())
 
         except GlueError:
             self.warn("Cannot find shortcut '/latest-{}'".format(hint))
@@ -433,7 +465,7 @@ class GuessEnvironment(gluetool.Module):
         return distro
 
     def _guess_recent(self, source):
-        # type: (Dict[str, Union[str, List[str]]]) -> None
+        # type: (SourceType) -> None
         self.require_shared('openstack')
 
         hint = '^{}$'.format(source['specification'])
@@ -467,27 +499,30 @@ class GuessEnvironment(gluetool.Module):
         source['result'] = sorted(possible_images, key=lambda x: x.key)[-1].name
 
     def _guess_nightly(self, source):
-        # type: (Dict[str, Union[str, List[str]]]) -> None
+        # type: (SourceType) -> None
+        assert source['specification'] is not None
         source['result'] = [
             self._find_nightly_for_distro(s.strip()) for s in source['specification']
         ]
 
     def _guess_buc(self, source):
-        # type: (Dict[str, Union[str, List[str]]]) -> None
+        # type: (SourceType) -> None
+        assert source['specification'] is not None
         source['result'] = [
             self._find_buc_for_distro(s.strip()) for s in source['specification']
         ]
 
     def _guess_force(self, source):
-        # type: (Dict[str, Union[str, List[str]]]) -> None
+        # type: (SourceType) -> None
         if source['type'] in ('compose', 'distro'):
+            assert source['specification'] is not None
             source['result'] = gluetool.utils.normalize_multistring_option(source['specification'])
 
         else:
             source['result'] = source['specification']
 
     def _guess_autodetect(self, source, test, tag, *args):
-        # type: (Dict[str, Union[str, List[str]]], str) -> bool
+        # type: (SourceType, str, str, *Any) -> bool
 
         # wow relevancy distro is related not only to tag, but on beaker distro as well
         if source['type'] == 'wow_relevancy_distro':
@@ -512,7 +547,7 @@ class GuessEnvironment(gluetool.Module):
             reraise(*sys.exc_info())
 
     def _guess_target_autodetect(self, source, *args):
-        # type: (Dict[str, Union[str, List[str]]]) -> None
+        # type: (SourceType, *Any) -> None
         self.require_shared('primary_task')
         primary_task = self.shared('primary_task')
 
@@ -540,9 +575,10 @@ class GuessEnvironment(gluetool.Module):
         'recent': _guess_recent,  # Only for images
         'nightly': _guess_nightly,  # Only for distro
         'buc': _guess_buc  # Only for distro
-    }
+    }  # type: Dict[str, Callable[[GuessEnvironment, SourceType], None]]
 
     def _pack_sources(self):
+        # type: () -> None
         """
         Packs necessary for guessing values to dict.
         This solution provides the same parameters for guessing methods
@@ -550,6 +586,7 @@ class GuessEnvironment(gluetool.Module):
         """
 
         def _parse_pattern_map(option):
+            # type: (str) -> Dict[str, Any]
             maps = {}
 
             for pattern_map_spec in gluetool.utils.normalize_multistring_option(self.option(option)):
@@ -626,9 +663,9 @@ class GuessEnvironment(gluetool.Module):
                     "--{} option is ignored with method '{}'".format(source['type'], source['method']))
 
     def execute_method(self, source, *args):
-        # type: (Dict[str, Union[str, List[str]]]) -> None
+        # type: (SourceType, *Any) -> None
 
-        method = self._methods.get(source['method'], None)  # type: ignore
+        method = self._methods.get(source['method'], None)
         if method is None:
             raise IncompatibleOptionsError("Unknown 'guessing' method '{}'".format(source['method']))
 
@@ -637,6 +674,7 @@ class GuessEnvironment(gluetool.Module):
         log_dict(self.info, 'Using {}'.format(source['type']), source['result'])
 
     def execute(self):
+        # type: () -> None
 
         if self.option('test-guessing'):
             log_dict(self.info, 'Guessed environment', {
