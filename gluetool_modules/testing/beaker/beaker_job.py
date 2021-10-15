@@ -5,6 +5,9 @@ import gluetool
 from gluetool.utils import cached_property, dict_update
 import gluetool_modules.libs.dispatch_job
 
+# Type annotations
+from typing import Dict, Optional  # noqa
+
 
 DEFAULT_WOW_OPTIONS_SEPARATOR = '#-#-#-#-#'
 
@@ -86,6 +89,7 @@ class BeakerJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, glue
 
     @cached_property
     def build_params(self):
+        # type: () -> Dict[str, Optional[str]]
         brew_build_task_params_options = self.option('brew-build-task-params-options')
         install_rpms_blacklist = self.option('install-rpms-blacklist')
         install_method = self.option('install-method')

@@ -40,6 +40,7 @@ class TeDuDeJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin, glue
     })
 
     def execute(self):
+        # type: () -> None
         options = []
         if self.option('tedude-instructions'):
             options.append('--instructions={}'.format(self.option('tedude-instructions')))
