@@ -153,3 +153,40 @@ def test_patch_disk():
 
     assert flavor.disk[0].size == Quantity('10 GiB')
     assert flavor.disk[1].size == Quantity('1023 bytes')
+
+
+def test_patch_virtualization():
+    flavor_spec = parse_spec(
+        """
+        ---
+
+        virtualization:
+          is-supported: false
+          is-virtualized: true
+          hypervisor: xen
+        """
+    )
+
+    flavor = tft.artemis.environment.Flavor(
+        name='dummy-flavor',
+        id='dummy-flavor-id'
+    )
+
+    print(flavor)
+
+    assert flavor.virtualization.is_supported is None
+    assert flavor.virtualization.is_virtualized is None
+    assert flavor.virtualization.hypervisor is None
+
+    r_outcome = tft.artemis.drivers._apply_flavor_specification(
+        flavor,
+        flavor_spec
+    )
+
+    print(flavor)
+
+    assert r_outcome.is_ok
+
+    assert flavor.virtualization.is_supported is False
+    assert flavor.virtualization.is_virtualized is True
+    assert flavor.virtualization.hypervisor == 'xen'

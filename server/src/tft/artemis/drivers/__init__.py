@@ -55,6 +55,17 @@ class ConfigFlavorDiskSpecType(TypedDict):
     size: Optional[Union[int, str]]
 
 
+#: pools[].parameters.{custom-flavors,patch-flavors}[].virtualization
+ConfigFlavorVirtualizationSpecType = TypedDict(
+    'ConfigFlavorVirtualizationSpecType',
+    {
+        'is-supported': Optional[bool],
+        'is-virtualized': Optional[bool],
+        'hypervisor': Optional[str]
+    }
+)
+
+
 #: pools[].parameters.patch-flavors[]
 ConfigPatchFlavorSpecType = TypedDict(
     'ConfigPatchFlavorSpecType',
@@ -62,7 +73,8 @@ ConfigPatchFlavorSpecType = TypedDict(
         'name': str,
         'name-regex': str,
         'cpu': ConfigFlavorCPUSpecType,
-        'disk': List[ConfigFlavorDiskSpecType]
+        'disk': List[ConfigFlavorDiskSpecType],
+        'virtualization': ConfigFlavorVirtualizationSpecType
     }
 )
 
@@ -74,7 +86,8 @@ ConfigCustomFlavorSpecType = TypedDict(
         'name': str,
         'base': str,
         'cpu': ConfigFlavorCPUSpecType,
-        'disk': List[ConfigFlavorDiskSpecType]
+        'disk': List[ConfigFlavorDiskSpecType],
+        'virtualization': ConfigFlavorVirtualizationSpecType
     }
 )
 
@@ -558,6 +571,18 @@ def _apply_flavor_specification(
                     disk.size = raw_size
 
         flavor.disk = FlavorDisks(patched_disks)
+
+    if 'virtualization' in flavor_spec:
+        virtualization_patch = flavor_spec['virtualization']
+
+        if 'is-supported' in virtualization_patch:
+            flavor.virtualization.is_supported = virtualization_patch['is-supported']
+
+        if 'is-virtualized' in virtualization_patch:
+            flavor.virtualization.is_virtualized = virtualization_patch['is-virtualized']
+
+        if 'hypervisor' in virtualization_patch:
+            flavor.virtualization.hypervisor = virtualization_patch['hypervisor']
 
     return Ok(None)
 
