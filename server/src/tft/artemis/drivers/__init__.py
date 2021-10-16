@@ -19,6 +19,7 @@ import gluetool.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from pint import Quantity
 from typing_extensions import Protocol, TypedDict
 
 from .. import Failure, JSONType, SerializableContainer, get_cached_item, get_cached_items_as_list, log_dict_yaml, \
@@ -52,10 +53,32 @@ ConfigFlavorCPUSpecType = TypedDict(
 )
 
 
-#: pools[].parameters.{custom-flavors,patch-flavors}[].disk
-class ConfigFlavorDiskSpecType(TypedDict):
-    size: Optional[Union[int, str]]
+#: pools[].parameters.{custom-flavors,patch-flavors}[].disk (static disk)
+ConfigFlavorDiskSpecificSpecType = TypedDict(
+    'ConfigFlavorDiskSpecificSpecType',
+    {
+        'size': Optional[Union[int, str]]
+    }
+)
 
+#: pools[].parameters.{custom-flavors,patch-flavors}[].disk (expansion)
+ConfigFlavorDiskExpansionSpecType = TypedDict(
+    'ConfigFlavorDiskExpansionSpecType',
+    {
+        'max-count': int,
+        'min-size': Optional[Union[int, str]],
+        'max-size': Optional[Union[int, str]],
+    }
+)
+
+ConfigFlavorDiskExpandedSpecType = TypedDict(
+    'ConfigFlavorDiskExpandedSpecType',
+    {
+        'additional-disks': ConfigFlavorDiskExpansionSpecType
+    }
+)
+
+ConfigFlavorDiskSpecType = Union[ConfigFlavorDiskSpecificSpecType, ConfigFlavorDiskExpandedSpecType]
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].virtualization
 ConfigFlavorVirtualizationSpecType = TypedDict(
@@ -524,6 +547,40 @@ class PoolResourcesIDs(SerializableContainer):
         return cls.unserialize_from_str(serialized)
 
 
+def _parse_flavor_disk_size(
+    field_name: str,
+    value: Optional[Union[str, int]],
+    disk: FlavorDisk
+) -> Result[Optional[Quantity], Failure]:
+    if value is None:
+        return Ok(None)
+
+    property_name = field_name.replace('-', '_')
+
+    r_value = safe_call(UNITS, value)
+
+    if r_value.is_error:
+        return Error(Failure.from_failure(
+            f'failed to parse flavor disk.{field_name}',
+            r_value.unwrap_error(),
+            details={
+                property_name: value
+            }
+        ))
+
+    raw_value = r_value.unwrap()
+
+    if isinstance(raw_value, int):
+        real_value = raw_value * UNITS['bytes']
+
+    else:
+        real_value = raw_value
+
+    setattr(disk, property_name, real_value)
+
+    return Ok(real_value)
+
+
 def _apply_flavor_specification(
     flavor: Flavor,
     flavor_spec: ConfigFlavorSpecType
@@ -559,23 +616,41 @@ def _apply_flavor_specification(
             disk = FlavorDisk()
             patched_disks.append(disk)
 
-            if 'size' in disk_patch:
-                r_space = safe_call(UNITS, disk_patch['size'])
+            if 'additional-disks' not in disk_patch:
+                specific_disk_patch = cast(ConfigFlavorDiskSpecificSpecType, disk_patch)
 
-                if r_space.is_error:
-                    return Error(Failure.from_failure(
-                        'failed to parse flavor disk.size',
-                        r_space.unwrap_error(),
-                        space=disk_patch['size']
-                    ))
+                r_size = _parse_flavor_disk_size(
+                    'size',
+                    specific_disk_patch.get('size'),
+                    disk
+                )
 
-                raw_size = r_space.unwrap()
+                if r_size.is_error:
+                    return Error(r_size.unwrap_error())
 
-                if isinstance(raw_size, int):
-                    disk.size = raw_size * UNITS['bytes']
+            else:
+                expansion_disk_patch = cast(ConfigFlavorDiskExpandedSpecType, disk_patch)['additional-disks']
 
-                else:
-                    disk.size = raw_size
+                disk.is_expansion = True
+                disk.max_additional_items = expansion_disk_patch['max-count']
+
+                r_size = _parse_flavor_disk_size(
+                    'min-size',
+                    expansion_disk_patch['min-size'],
+                    disk
+                )
+
+                if r_size.is_error:
+                    return Error(r_size.unwrap_error())
+
+                r_size = _parse_flavor_disk_size(
+                    'max-size',
+                    expansion_disk_patch['max-size'],
+                    disk
+                )
+
+                if r_size.is_error:
+                    return Error(r_size.unwrap_error())
 
         flavor.disk = FlavorDisks(patched_disks)
 

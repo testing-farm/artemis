@@ -41,15 +41,41 @@ definitions:
     required: []
     additionalProperties: false
 
-  patch_flavor_disk:
+  patch_flavor_disk_expansion:
     type: object
 
     properties:
-      size:
+      max-count:
+        type: integer
+        minimum: 1
+
+      min-size:
         type: string
 
-    required: []
-    additionalProperties: false
+      max-size:
+        type: string
+
+    required:
+      - max-count
+      - min-size
+      - max-size
+
+  patch_flavor_disk:
+    type: object
+
+    oneOf:
+      - properties:
+          size:
+            type: string
+
+        required: []
+        additionalProperties: false
+
+      - properties:
+          additional-disks:
+            "$ref": "#/definitions/patch_flavor_disk_expansion"
+
+        additionalProperties: false
 
   patch_flavor_disks:
     type: array

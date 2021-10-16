@@ -223,6 +223,82 @@ def test_example_disk_oldstyle_space(logger: ContextAdapter) -> None:
     ) is False
 
 
+def test_example_disks_expansion(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        disk:
+          - size: ">= 40 GiB"
+          - size: ">= 1 TiB"
+          - size: ">= 40 GiB"
+          - size: ">= 40 GiB"
+        """
+    )
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                tft.artemis.environment.FlavorDisk(
+                    is_expansion=True,
+                    max_additional_items=5,
+                    min_size=UNITS('10 GiB'),
+                    max_size=UNITS('2 TiB')
+                )
+            ])
+        )
+    ) is True
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                tft.artemis.environment.FlavorDisk(
+                    is_expansion=True,
+                    max_additional_items=1,
+                    min_size=UNITS('10 GiB'),
+                    max_size=UNITS('2 TiB')
+                )
+            ])
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('20 GiB')),
+                tft.artemis.environment.FlavorDisk(size=UNITS('1 TiB'))
+            ])
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                tft.artemis.environment.FlavorDisk(size=UNITS('500 GiB'))
+            ])
+        )
+    ) is False
+
+
 def test_example_network(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """

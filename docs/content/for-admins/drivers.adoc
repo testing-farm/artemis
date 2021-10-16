@@ -250,6 +250,13 @@ custom-flavors:
 
    disk:
      - size: <quantity>
+
+     # Or, to signal flavor can allocate additional disks
+     - additional-disks:
+         max-count: <integer>
+         min-size: <quantity>
+         max-size: <quantity>
+
      ...
 
    virtualization:
@@ -276,6 +283,13 @@ custom-flavors:
 
    disk:
      - size: <quantity>
+
+     # Or, to signal flavor can allocate additional disks
+     - additional-disks:
+         max-count: <integer>
+         min-size: <quantity>
+         max-size: <quantity>
+
      ...
 
    virtualization:
@@ -290,15 +304,25 @@ custom-flavors:
 custom-flavors:
   # Let's add two custom flavors, with specific disk sizes. Both are based
   # on the same flavor, t2.small, and inherit all its properties.
+  #
+  # Also, all these flavors can get additional disks with actual size depending on a request.
   - name: t2.small-20
     base: t2.small
     disk:
       - size: 20 GiB
+      - additional-disks:
+          max-count: 5
+          min-size: 10 GiB
+          max-size: 1 TiB
 
   - name: t2.small-40
     base: t2.small
     disk:
       - size: 40 GiB
+      - additional-disks:
+          max-count: 5
+          min-size: 10 GiB
+          max-size: 1 TiB
 
 patch-flavors:
   # Now, patch all flavors, and set fields we can't extract from pool's backend API.

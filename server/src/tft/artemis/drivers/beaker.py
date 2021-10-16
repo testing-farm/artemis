@@ -60,6 +60,11 @@ OPERATOR_SIGN_TO_OPERATOR = {
 }
 
 
+CONSTRAINT_DISK_PATTERN = re.compile(r'disk(?:\[[+-]?\d+\])?\.')
+CONSTRAINT_DISK_EXPANSION_PATTERN = re.compile(r'(?:disk\[[+-]?\d+\].(?:is_expansion|min_size|max_size|expanded_length))|(?:disk\.expanded_length)')  # noqa: E501
+CONSTRAINT_DISK_SIZE = re.compile(r'disk\[\d+\]\.size')
+
+
 def _new_tag(tag_name: str, **attrs: str) -> bs4.BeautifulSoup:
     return bs4.BeautifulSoup('', 'xml').new_tag(tag_name, **attrs)
 
@@ -142,11 +147,13 @@ def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.Beauti
 
         return Ok(cpu)
 
-    # TODO: support more than one disk - but this is a stand-alone feature spanning more than this driver.
-    if constraint.name.startswith('disk[0].'):
+    if CONSTRAINT_DISK_PATTERN.match(constraint.name):
+        if CONSTRAINT_DISK_EXPANSION_PATTERN.match(constraint.name):
+            return Ok(_new_tag('or'))
+
         disk = _new_tag('disk')
 
-        if constraint.name == 'disk[0].size':
+        if CONSTRAINT_DISK_SIZE.match(constraint.name):
             # `disk.size` is represented as quantity, for Beaker XML we need to convert to bytes, integer.
             op, value = operator_to_beaker_op(
                 constraint.operator,
@@ -157,10 +164,15 @@ def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.Beauti
 
             disk.append(size)
 
+        elif CONSTRAINT_DISK_EXPANSION_PATTERN.match(constraint.name):
+            # ignored
+            pass
+
         else:
             return Error(Failure(
                 'contraint not supported by driver',
-                constraint=constraint.format()  # noqa: FS002
+                constraint=constraint.format(),  # noqa: FS002
+                constraint_name=constraint.name
             ))
 
         return Ok(disk)
@@ -191,8 +203,32 @@ def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.Beauti
 
     return Error(Failure(
         'contraint not supported by driver',
-        constraint=constraint.format()  # noqa: FS002
+        constraint=constraint.format(),  # noqa: FS002
+        constraint_name=constraint.name
     ))
+
+
+def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, Failure]:
+    # Conversion process produces empty `and` and `or` tags, thanks to how Beaker deals with disks without flavors.
+    # The following code is a crude attempt to get rid of some of them (there may be some left, empty `or` in `and`
+    # in `or`) would keep the last `or` since we run just two swipes. But that's good enough for now.
+    def _remove_empty(tag_name: str) -> None:
+        for el in tree.find_all(tag_name):
+            if len(el.contents) == 0:
+                el.extract()
+
+    _remove_empty('or')
+    _remove_empty('and')
+
+    def _remove_singles(tag_name: str) -> None:
+        for el in tree.find_all(tag_name):
+            if len(el.contents) == 1:
+                el.replace_with(el.contents[0])
+
+    _remove_singles('or')
+    _remove_singles('and')
+
+    return Ok(tree)
 
 
 def environment_to_beaker_filter(environment: Environment) -> Result[bs4.BeautifulSoup, Failure]:
@@ -215,12 +251,18 @@ def environment_to_beaker_filter(environment: Environment) -> Result[bs4.Beautif
     constraints = r_constraints.unwrap()
 
     if constraints is None:
-        return constraint_to_beaker_filter(Constraint.from_arch(environment.hw.arch))
+        r_beaker_filter = constraint_to_beaker_filter(Constraint.from_arch(environment.hw.arch))
 
-    return constraint_to_beaker_filter(And([
-        Constraint.from_arch(environment.hw.arch),
-        constraints
-    ]))
+    else:
+        r_beaker_filter = constraint_to_beaker_filter(And([
+            Constraint.from_arch(environment.hw.arch),
+            constraints
+        ]))
+
+    if r_beaker_filter.is_error:
+        return r_beaker_filter
+
+    return _prune_beaker_filter(r_beaker_filter.unwrap())
 
 
 class BeakerDriver(PoolDriver):
