@@ -549,7 +549,13 @@ def _apply_flavor_specification(
                         space=disk_patch['size']
                     ))
 
-                disk.size = r_space.unwrap()
+                raw_size = r_space.unwrap()
+
+                if isinstance(raw_size, int):
+                    disk.size = raw_size * UNITS['bytes']
+
+                else:
+                    disk.size = raw_size
 
         flavor.disk = FlavorDisks(patched_disks)
 
