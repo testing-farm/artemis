@@ -190,3 +190,217 @@ def test_patch_virtualization():
     assert flavor.virtualization.is_supported is False
     assert flavor.virtualization.is_virtualized is True
     assert flavor.virtualization.hypervisor == 'xen'
+
+
+def test_patch_flavors(logger):
+    patches = parse_spec(
+        """
+        ---
+
+        - name: foo
+          cpu:
+            family: 6
+
+        - name-regex: ba.
+          cpu:
+            family: 7
+        """
+    )
+
+    flavors = {
+        'foo': tft.artemis.environment.Flavor(
+            name='foo',
+            id='foo'
+        ),
+        'bar': tft.artemis.environment.Flavor(
+            name='bar',
+            id='bar'
+        ),
+        'baz': tft.artemis.environment.Flavor(
+            name='baz',
+            id='baz'
+        )
+    }
+
+    print(flavors)
+
+    assert flavors['foo'].cpu.family is None
+    assert flavors['bar'].cpu.family is None
+    assert flavors['baz'].cpu.family is None
+
+    r_outcome = tft.artemis.drivers._patch_flavors(
+        logger,
+        flavors,
+        patches
+    )
+
+    print(flavors)
+
+    assert r_outcome.is_ok
+
+    assert flavors['foo'].cpu.family == 6
+    assert flavors['bar'].cpu.family == 7
+    assert flavors['baz'].cpu.family == 7
+
+
+def test_patch_flavors_no_such_name(logger):
+    patches = parse_spec(
+        """
+        ---
+
+        - name: foo
+          cpu:
+            family: 6
+        """
+    )
+
+    flavors = {
+        'bar': tft.artemis.environment.Flavor(
+            name='bar',
+            id='bar'
+        )
+    }
+
+    print(flavors)
+
+    assert flavors['bar'].cpu.family is None
+
+    r_outcome = tft.artemis.drivers._patch_flavors(
+        logger,
+        flavors,
+        patches
+    )
+
+    print(flavors)
+
+    assert r_outcome.is_error
+
+    assert r_outcome.unwrap_error().message == 'unknown patched flavor'
+    assert r_outcome.unwrap_error().details['flavorname'] == 'foo'
+
+    assert flavors['bar'].cpu.family is None
+
+
+def test_patch_flavors_no_such_name_regex(logger):
+    patches = parse_spec(
+        """
+        ---
+
+        - name-regex: f.+
+          cpu:
+            family: 6
+        """
+    )
+
+    flavors = {
+        'bar': tft.artemis.environment.Flavor(
+            name='bar',
+            id='bar'
+        )
+    }
+
+    print(flavors)
+
+    assert flavors['bar'].cpu.family is None
+
+    r_outcome = tft.artemis.drivers._patch_flavors(
+        logger,
+        flavors,
+        patches
+    )
+
+    print(flavors)
+
+    assert r_outcome.is_error
+
+    assert r_outcome.unwrap_error().message == 'unknown patched flavor'
+    assert r_outcome.unwrap_error().details['flavorname'] == 'f.+'
+
+    assert flavors['bar'].cpu.family is None
+
+
+def test_custom_flavors(logger):
+    patches = parse_spec(
+        """
+        ---
+
+        - name: foo-with-family
+          base: foo
+          cpu:
+            family: 6
+        """
+    )
+
+    flavors = {
+        'foo': tft.artemis.environment.Flavor(
+            name='foo',
+            id='foo'
+        )
+    }
+
+    print(flavors)
+
+    assert flavors['foo'].cpu.family is None
+    assert 'foo-with-family' not in flavors
+
+    r_outcome = tft.artemis.drivers._custom_flavors(
+        logger,
+        flavors,
+        patches
+    )
+
+    print(flavors)
+
+    assert r_outcome.is_ok
+
+    custom_flavors = r_outcome.unwrap()
+
+    assert flavors['foo'].cpu.family is None
+    assert 'foo-with-family' not in flavors
+
+    assert len(custom_flavors) == 1
+    assert custom_flavors[0].name == 'foo-with-family'
+    assert custom_flavors[0].id == 'foo'
+    assert custom_flavors[0].cpu.family == 6
+
+
+def test_custom_flavors_no_such_base(logger):
+    patches = parse_spec(
+        """
+        ---
+
+        - name: foo-with-family
+          base: bar
+          cpu:
+            family: 6
+        """
+    )
+
+    flavors = {
+        'foo': tft.artemis.environment.Flavor(
+            name='foo',
+            id='foo'
+        )
+    }
+
+    print(flavors)
+
+    assert flavors['foo'].cpu.family is None
+    assert 'foo-with-family' not in flavors
+
+    r_outcome = tft.artemis.drivers._custom_flavors(
+        logger,
+        flavors,
+        patches
+    )
+
+    print(flavors)
+
+    assert r_outcome.is_error
+
+    assert r_outcome.unwrap_error().message == 'unknown base flavor'
+    assert r_outcome.unwrap_error().details['customname'] == 'foo-with-family'
+    assert r_outcome.unwrap_error().details['basename'] == 'bar'
+
+    assert flavors['foo'].cpu.family is None
+    assert 'foo-with-family' not in flavors
