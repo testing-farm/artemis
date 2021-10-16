@@ -44,11 +44,32 @@ definitions:
   patch_flavor_disk:
     type: object
 
-    properties:
-      size:
-        type: string
+    oneOf:
+      - properties:
+          is-expansion:
+            const: false
 
-    required: []
+          size:
+            type: string
+
+        required: []
+
+      - properties:
+          is-expansion:
+            const: true
+
+          max-additional-disks:
+            type: int
+            minimum: 1
+
+          min-size:
+            type: string
+          max-size:
+            type: string
+
+        required:
+          - max-additional-disks
+
     additionalProperties: false
 
   patch_flavor_disks:

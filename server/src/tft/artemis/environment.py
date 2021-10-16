@@ -46,7 +46,7 @@ S = TypeVar('S')
 #: operator, the actual value of the constraint, and units.
 VALUE_PATTERN = re.compile(r'^(?P<operator>==|!=|=~|=|>=|>|<=|<)?\s*(?P<value>.+?)\s*$')
 
-PROPERTY_PATTERN = re.compile(r'(?P<property_name>[a-z_]+)(?:\[(?P<index>\d+)\])?')
+PROPERTY_PATTERN = re.compile(r'(?P<property_name>[a-z_]+)(?:\[(?P<index>[+-]?\d+)\])?')
 
 #: Type of the operator callable. The operators accept two arguments, and returns result of their comparison.
 OperatorHandlerType = Callable[[Any, Any], bool]
@@ -60,7 +60,7 @@ OperatorHandlerType = Callable[[Any, Any], bool]
 #: See https://github.com/python/mypy/issues/731 for details.
 SpecType = Any
 
-ConstraintValueType = Union[int, Quantity, str]
+ConstraintValueType = Union[int, Quantity, str, bool]
 # Almost like the ConstraintValueType, but this one can be measured and may have units.
 MeasurableConstraintValueType = Union[int, Quantity]
 
@@ -75,6 +75,7 @@ U = TypeVar('U', bound='_FlavorSubsystemContainer')
 #
 # V = TypeVar('V', bound='_FlavorSequenceContainer[U]')
 V = TypeVar('V', bound='_FlavorSequenceContainer')  # type: ignore[type-arg]  # Missing type parameters for generic type
+W = TypeVar('W', bound='FlavorDisk')
 
 
 class _FlavorSubsystemContainer(SerializableContainer):
@@ -285,6 +286,15 @@ class FlavorDisk(_FlavorSubsystemContainer):
     #: Total size of the disk storage, in bytes.
     size: Optional[Quantity] = None
 
+    # TODO: move to properties of whole Disks container, or use class inheritance - we can't now because `FlavorDisks`
+    # can load just one type of items.
+    is_expansion: bool = False
+
+    # `items`, not `disks` - we want to generalize this, keep using generic naming.
+    max_additional_items: int = 0
+    min_size: Optional[Quantity] = None
+    max_size: Optional[Quantity] = None
+
     def serialize_to_json(self) -> Dict[str, Any]:
         """
         Serialize properties to JSON.
@@ -297,10 +307,16 @@ class FlavorDisk(_FlavorSubsystemContainer):
         if self.size is not None:
             serialized['size'] = str(self.size)
 
+        if self.min_size is not None:
+            serialized['min_size'] = str(self.min_size)
+
+        if self.max_size is not None:
+            serialized['max_size'] = str(self.max_size)
+
         return serialized
 
     @classmethod
-    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'FlavorDisk':
+    def unserialize_from_json(cls: Type[W], serialized: Dict[str, Any]) -> W:
         """
         Unserialize properties from JSON.
 
@@ -312,6 +328,12 @@ class FlavorDisk(_FlavorSubsystemContainer):
 
         if disk.size is not None:
             disk.size = UNITS(disk.size)
+
+        if disk.min_size is not None:
+            disk.min_size = UNITS(disk.max_size)
+
+        if disk.max_size is not None:
+            disk.max_size = UNITS(disk.max_size)
 
         return disk
 
@@ -332,6 +354,42 @@ class FlavorDisks(_FlavorSequenceContainer[FlavorDisk]):
 
     ITEM_CLASS = FlavorDisk
     ITEM_LABEL = 'disk'
+
+    # Special attributes - we cannot call `len()` in conditions constraits generate, and sequences don't have
+    # any attribute we could inspect. And we also need to take expanion into account. Hence adding our own.
+    #
+    # TODO: and we want to move this into base class!
+    @property
+    def length(self) -> int:
+        """
+        Return "real" length of this container.
+
+        :returns: number of stored items.
+        """
+
+        return len(self.items)
+
+    @property
+    def expanded_length(self) -> int:
+        """
+        Return "expanded" length of this container.
+
+        It is computed as the number of static items plus the amount of additional items allowed by expansion.
+
+        :returns: number of allowed items.
+        """
+
+        if not self.items:
+            return 0
+
+        expansion = self.items[-1]
+
+        if expansion.is_expansion is False:
+            return len(self.items)
+
+        # Dropping 1 item from `len()` result, to compensate for the fact expansion item should not be counter
+        # among the "real" items, it is instead replaced by N additional items.
+        return len(self.items) - 1 + expansion.max_additional_items
 
 
 @dataclasses.dataclass(repr=True)
@@ -522,15 +580,16 @@ class ParseError(Exception):
     Raised when HW constraint parsing fails.
     """
 
-    def __init__(self, constraint_name: str, raw_value: str) -> None:
+    def __init__(self, constraint_name: str, raw_value: str, message: Optional[str] = None) -> None:
         """
         Raise when HW constraint parsing fails.
 
         :param constraint_name: name of the constraint that caused issues.
         :param raw_value: original raw value.
+        :param message: optional error message.
         """
 
-        super(ParseError, self).__init__('failed to parse a constraint')
+        super(ParseError, self).__init__(message or 'failed to parse a constraint')
 
         self.constraint_name = constraint_name
         self.raw_value = raw_value
@@ -745,7 +804,8 @@ class Constraint(ConstraintBase):
         cls: Type[T],
         name: str,
         raw_value: str,
-        as_quantity: bool = True
+        as_quantity: bool = True,
+        as_cast: Optional[Callable[[str], ConstraintValueType]] = None
     ) -> T:
         """
         Parse raw constraint specification into our internal representation.
@@ -754,6 +814,7 @@ class Constraint(ConstraintBase):
         :param raw_value: raw value of the constraint.
         :param as_quantity: if set, value is treated as a quantity containing also unit, and as such the raw value is
             converted to :py:`pint.Quantity` instance.
+        :param as_cast: if specified, this callable is used to convert raw value to its final type.
         :raises ParseError: when parsing fails.
         :returns: a :py:class:`Constraint` representing the given specification.
         """
@@ -775,6 +836,9 @@ class Constraint(ConstraintBase):
 
         if as_quantity:
             value = UNITS(raw_value)
+
+        elif as_cast is not None:
+            value = as_cast(raw_value)
 
         else:
             value = raw_value
@@ -1010,12 +1074,19 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
 
     :param spec: raw constraint block specification.
     :param disk_index: index of this disk among its peers in specification.
+    :raises ParseError: when specification is not valid.
     :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
     """
 
-    group = And()
+    # Constructing a tree of conditions:
+    #
+    # (size is enough) || (last disk is expansion && has enough spare disks && min/max size is enough)
 
-    group.constraints += [
+    direct_group = And()
+    expansion_group = And()
+    root_group = Or()
+
+    direct_group.constraints += [
         Constraint.from_specification(f'disk[{disk_index}].{constraint_name}', str(spec[constraint_name]))
         for constraint_name in ('size',)
         if constraint_name in spec
@@ -1023,14 +1094,52 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
 
     # The old-style constraint when `space` existed. Remove once v0.0.26 is gone.
     if 'space' in spec:
-        group.constraints += [
+        direct_group.constraints += [
             Constraint.from_specification(f'disk[{disk_index}].size', str(spec['space']))
         ]
 
-    if len(group.constraints) == 1:
-        return group.constraints[0]
+    if len(direct_group.constraints) == 1:
+        root_group.constraints += [direct_group.constraints[0]]
 
-    return group
+    else:
+        root_group.constraints += [direct_group]
+
+    if 'size' in spec:
+        # Our "expansion" branch consists of several conditions that must be satisfied: we need to check
+        # expansion is allowed first, then make sure the disk we're trying to match with the flavor fits
+        # into what this expansion can handle, and then we can deal with min/max sizes supported by the
+        # expansion.
+        constraint_name = f'disk[{disk_index}].size'
+
+        expansion_group.constraints += [
+            Constraint.from_specification('disk[-1].is_expansion', 'True', as_quantity=False, as_cast=bool),
+            Constraint.from_specification('disk.expanded_length', f'> {disk_index}', as_quantity=False, as_cast=int)
+        ]
+
+        size_constraint = Constraint.from_specification(constraint_name, str(spec['size']))
+
+        if size_constraint.operator in (Operator.EQ, Operator.GTE, Operator.LTE, Operator.GT, Operator.LT):
+            expansion_group.constraints += [
+                Constraint.from_specification(
+                    'disk[-1].min_size',
+                    f'<= {size_constraint.raw_value}'
+                ),
+                Constraint.from_specification(
+                    'disk[-1].max_size',
+                    f'>= {size_constraint.raw_value}'
+                )
+            ]
+
+        else:
+            raise ParseError(
+                message='operator not supported',
+                constraint_name=constraint_name,
+                raw_value=str(spec['size'])
+            )
+
+        root_group.constraints += [expansion_group]
+
+    return root_group
 
 
 def _parse_disks(spec: SpecType) -> ConstraintBase:

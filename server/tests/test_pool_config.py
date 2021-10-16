@@ -169,6 +169,48 @@ def test_patch_virtualization() -> None:
     assert flavor.virtualization.hypervisor == 'xen'
 
 
+def test_patch_disk_expansion() -> None:
+    flavor_spec = parse_spec(
+        """
+        ---
+
+        disk:
+          - size: 10 GiB
+          - is-expansion: true
+            max-additional-disks: 9
+            min-size: 10 GiB
+            max-size: 100 GiB
+        """
+    )
+
+    flavor = tft.artemis.environment.Flavor(
+        name='dummy-flavor',
+        id='dummy-flavor-id',
+        disk=tft.artemis.environment.FlavorDisks([
+            tft.artemis.environment.FlavorDisk(),
+            tft.artemis.environment.FlavorDisk(),
+            tft.artemis.environment.FlavorDisk()
+        ])
+    )
+
+    assert flavor.disk[0].size is None
+    assert flavor.disk[1].size is None
+    assert flavor.disk[2].size is None
+
+    r_outcome = tft.artemis.drivers._apply_flavor_specification(
+        flavor,
+        flavor_spec
+    )
+
+    assert r_outcome.is_ok
+
+    assert len(flavor.disk) == 2
+    assert flavor.disk[0].size == UNITS('10 GiB')
+    assert flavor.disk[1].is_expansion is True
+    assert flavor.disk[1].min_size == UNITS('10 GiB')
+    assert flavor.disk[1].max_size == UNITS('100 GiB')
+
+
 def test_patch_flavors(logger: ContextAdapter) -> None:
     patches = parse_spec(
         """
