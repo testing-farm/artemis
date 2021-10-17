@@ -726,7 +726,12 @@ class BeakerDriver(PoolDriver):
             job_results=job_results.prettify()
         ))
 
-    def can_acquire(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+    def can_acquire(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[bool, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
@@ -737,7 +742,7 @@ class BeakerDriver(PoolDriver):
         """
 
         # First, check the parent class, maybe its tests already have the answer.
-        r_answer = super(BeakerDriver, self).can_acquire(logger, guest_request)
+        r_answer = super(BeakerDriver, self).can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())

@@ -190,11 +190,12 @@ def collect_pool_capabilities(pools: List[PoolDriver]) -> Result[List[Tuple[Pool
 
 def collect_pool_can_acquire(
     logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
     pools: List[PoolDriver],
     guest_request: GuestRequest
 ) -> Result[List[Tuple[PoolDriver, bool]], Failure]:
     r_answers = [
-        (pool, pool.can_acquire(logger, guest_request))
+        (pool, pool.can_acquire(logger, session, guest_request))
         for pool in pools
     ]
 
@@ -681,7 +682,7 @@ def policy_can_acquire(
     Disallow pools that are already know they cannot acquire the given environment.
     """
 
-    r_answers = collect_pool_can_acquire(logger, pools, guest_request)
+    r_answers = collect_pool_can_acquire(logger, session, pools, guest_request)
 
     if r_answers.is_error:
         return Error(r_answers.unwrap_error())

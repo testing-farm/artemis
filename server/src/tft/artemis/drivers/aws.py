@@ -309,8 +309,13 @@ class AWSDriver(PoolDriver):
 
         return Ok(None)
 
-    def can_acquire(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
-        r_answer = super(AWSDriver, self).can_acquire(logger, guest_request)
+    def can_acquire(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[bool, Failure]:
+        r_answer = super(AWSDriver, self).can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())

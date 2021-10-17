@@ -838,6 +838,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def can_acquire(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
     ) -> Result[bool, Failure]:
         """
