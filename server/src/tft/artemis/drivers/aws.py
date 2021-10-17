@@ -327,7 +327,7 @@ class AWSDriver(PoolDriver):
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
-        r_type = self._env_to_instance_type(logger, guest_request.environment)
+        r_type = self._env_to_instance_type(logger, session, guest_request)
         if r_type.is_error:
             return Error(r_type.unwrap_error())
 
@@ -343,9 +343,13 @@ class AWSDriver(PoolDriver):
     def _env_to_instance_type(
         self,
         logger: gluetool.log.ContextAdapter,
-        environment: Environment
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
     ) -> Result[Flavor, Failure]:
-        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(logger, environment)
+        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
+            logger,
+            guest_request.environment
+        )
 
         if r_suitable_flavors.is_error:
             return Error(r_suitable_flavors.unwrap_error())
@@ -353,8 +357,11 @@ class AWSDriver(PoolDriver):
         suitable_flavors = r_suitable_flavors.unwrap()
 
         if not suitable_flavors:
-            # TODO: somehow notify user that we were not able to find fitting flavor
-            logger.warning('no sutiable flavors, using default')
+            guest_request.log_warning_event(
+                logger,
+                session,
+                'no suitable flavors, using default'
+            )
 
             return self._map_environment_to_flavor_info_by_cache_by_name(
                 logger,
@@ -974,7 +981,7 @@ class AWSDriver(PoolDriver):
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
         # get instance type from environment
-        r_instance_type = self._env_to_instance_type(logger, guest_request.environment)
+        r_instance_type = self._env_to_instance_type(logger, session, guest_request)
         if r_instance_type.is_error:
             return Error(r_instance_type.unwrap_error())
 

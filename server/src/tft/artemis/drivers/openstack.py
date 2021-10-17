@@ -176,9 +176,13 @@ class OpenStackDriver(PoolDriver):
     def _env_to_flavor(
         self,
         logger: gluetool.log.ContextAdapter,
-        environment: Environment
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
     ) -> Result[Flavor, Failure]:
-        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(logger, environment)
+        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
+            logger,
+            guest_request.environment
+        )
 
         if r_suitable_flavors.is_error:
             return Error(r_suitable_flavors.unwrap_error())
@@ -186,8 +190,11 @@ class OpenStackDriver(PoolDriver):
         suitable_flavors = r_suitable_flavors.unwrap()
 
         if not suitable_flavors:
-            # TODO: somehow notify user that we were not able to find fitting flavor
-            logger.warning('no sutiable flavors, using default')
+            guest_request.log_warning_event(
+                logger,
+                session,
+                'no suitable flavors, using default'
+            )
 
             return self._map_environment_to_flavor_info_by_cache_by_name(logger, self.pool_config['default-flavor'])
 
@@ -310,7 +317,7 @@ class OpenStackDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_flavor = self._env_to_flavor(logger, guest_request.environment)
+        r_flavor = self._env_to_flavor(logger, session, guest_request)
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
 
@@ -479,7 +486,7 @@ class OpenStackDriver(PoolDriver):
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
-        r_flavor = self._env_to_flavor(logger, guest_request.environment)
+        r_flavor = self._env_to_flavor(logger, session, guest_request)
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
 
