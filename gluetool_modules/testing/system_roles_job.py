@@ -121,19 +121,18 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
 
         return mapping
 
-    def access_control(self):
+    def test_pull_request(self):
         # type: () -> bool
         primary_task = self.shared('primary_task')
 
         # Check if 'citest' comment exists and author is collaborator
         if primary_task.comment:
-            comment_author_collaborator = '[citest' in primary_task.comment \
+            return '[citest' in primary_task.comment \
                 and primary_task.comment_author_is_collaborator
-        else:
-            comment_author_collaborator = False
 
-        if primary_task.pull_head_branch_owner_is_collaborator or comment_author_collaborator:
-            return True
+        # Check if '[citest skip]' is not present and author is collaborator
+        if primary_task.pull_head_branch_owner_is_collaborator:
+            return '[citest skip]' not in primary_task.title
 
         return False
 
@@ -207,8 +206,8 @@ class SystemRolesJob(gluetool_modules.libs.dispatch_job.DispatchJenkinsJobMixin,
             'test_schedule_runner_sti_options': self.option('test-schedule-runner-sti-options'),
         }
 
-        # Do nothing if branch or comment author is not a collaborator
-        if not self.access_control():
+        # Do nothing if branch or comment author is not a collaborator or [citest skip]
+        if not self.test_pull_request():
             return
 
         primary_task = self.shared('primary_task')
