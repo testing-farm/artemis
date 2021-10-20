@@ -747,6 +747,7 @@ class GuestLogUpdateProgress:
 
 class PoolDriver(gluetool.log.LoggerMixin):
     image_info_class: Type[PoolImageInfo] = PoolImageInfo
+    flavor_info_class: Type[Flavor] = Flavor
 
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
@@ -916,7 +917,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             CACHE.get(),
             self.flavor_info_cache_key,
             flavorname,
-            Flavor
+            self.flavor_info_class
         )
 
         if r_flavor.is_error:
@@ -1752,7 +1753,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
            is unknown.
         """
 
-        return get_cached_item(CACHE.get(), self.flavor_info_cache_key, flavorname, Flavor)
+        return get_cached_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
 
     def get_cached_pool_image_infos(self) -> Result[List[PoolImageInfo], Failure]:
         """
@@ -1766,7 +1767,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Retrieve all flavor info known to the pool.
         """
 
-        return get_cached_items_as_list(CACHE.get(), self.flavor_info_cache_key, Flavor)
+        return get_cached_items_as_list(CACHE.get(), self.flavor_info_cache_key, self.flavor_info_class)
 
 
 def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -> Result[Optional[str], Failure]:

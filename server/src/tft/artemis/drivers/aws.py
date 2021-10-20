@@ -223,6 +223,7 @@ def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold
 
 class AWSDriver(PoolDriver):
     image_info_class = AWSPoolImageInfo
+    flavor_info_class = AWSFlavor
 
     def __init__(
         self,
