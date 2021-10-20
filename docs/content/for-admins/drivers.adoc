@@ -199,6 +199,17 @@ The automated, periodical refresh has its own pros and cons of which the followi
 To shorten the delay, maintainers can trigger an immediate refresh, see <<_runtime_overview,"Runtime overview">> section.
 ====
 
+[NOTE]
+====
+Despite having full access to their backends, some information may be unavailable to drivers, and therefore some properties of images and flavors may remain unknown to them. For example, AWS does list what CPU models are used for each instance type, but this information is not accessible via AWS API.
+
+In general, this lack of information is not important as long as requests don't depend on the missing information. Given the AWS example above: as long as requests Artemis is supposed to handle do not request particular CPU model, things will work out nicely.
+
+Similar situation applies to images as well. For example, it's not possible for Artemis to extract username to use when connecting to guests via SSH. As long as image configuration matches the default username Artemis is using, `root`, then, again, things will work out nicely.
+
+To handle more intricate requests and pool setup, maintainers might need to update configuration, see "<<_image_info_tweaks,Image info tweaks>>" and "<<_flavor_info_tweaks,Flavor info tweaks>>" sections.
+====
+
 ==== Flavor info tweaks
 
 Information pool tracks for all available flavors can be modified through configuration, using the `patch-flavors` and `custom-flavors` directives. Each _patch_ is applied to flavor or flavors matching given name (or regular expression), and overrides whatever the pool driver was able to collect from sources available to it in runtime.
@@ -385,7 +396,7 @@ Supported by: `aws` [line-through]#`azure`# [line-through]#`beaker`# [line-throu
 
 Besides the operational logs related to guest provisioning, drivers often expose additional logs, usually related to the provisioning service actions or guest VM operations (terminal or console, output of `dmesg`, etc.).
 
-The actual list of logs supported logs by a pool depends on its driver - this is a hard limit, logs that driver does not support cannot be "enabled" - and pool configuration where supported logs can be disabled on purpose.
+The actual list of logs supported by a pool depends on the driver - this is a hard limit, logs that driver does not support cannot be "enabled" - and pool configuration, where maintainers can disable particular logs on purpose.
 
 [%header,cols="1,1"]
 |===
