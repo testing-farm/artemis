@@ -20,6 +20,7 @@ def fixture_module():
     module._config['upload-to-public'] = True
     module._config['user'] = 'user'
     module._config['domain'] = 'myGlueResults.com'
+    module._config['download-domain'] = 'myGlueResults-download.com'
     module._config['target-url'] = 'artifacts/results'
     module._config['target-dir'] = 'data/artifacts/results'
     return module
@@ -143,7 +144,7 @@ def test_destroy(module, monkeypatch):
             'user@myGlueResults.com:data/artifacts/results/pull_request3_fs45da5/artifacts/test_bar-PASSED.log'])
     ])
 
-    assert module.full_target_url == 'https://myGlueResults.com/artifacts/results/pull_request3_fs45da5/artifacts'
+    assert module.full_target_url == 'https://myGlueResults-download.com/artifacts/results/pull_request3_fs45da5/artifacts'
 
 
 def test_destroy_empty_schedule(module, monkeypatch):
@@ -168,7 +169,7 @@ def test_destroy_empty_schedule(module, monkeypatch):
         'test_schedule': mock_test_schedule
     })
 
-    with pytest.raises(gluetool.GlueError, match=r"^test_shedule is empty.$"):
+    with pytest.raises(gluetool.GlueError, match=r"^test_schedule is empty.$"):
         module.destroy()
 
     mock_command.assert_not_called()

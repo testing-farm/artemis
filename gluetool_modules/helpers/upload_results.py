@@ -66,6 +66,11 @@ class UploadResults(gluetool.Module):
             'metavar': 'URL',
             'type': str
         },
+        'download-domain': {
+            'help': 'The domain from which results will be downloaded',
+            'metavar': 'DOWNLOADURL',
+            'type': str,
+        },
         'target-url': {
             'help': 'The URL to which results will be uploaded',
             'metavar': 'URL',
@@ -216,7 +221,7 @@ class UploadResults(gluetool.Module):
           on provided information, e.g. send different notifications.
         """
         if not self.shared('test_schedule'):
-            raise gluetool.GlueError('test_shedule is empty.')
+            raise gluetool.GlueError('test_schedule is empty.')
 
         if not self.option('upload-to-public'):
             return
@@ -238,7 +243,8 @@ class UploadResults(gluetool.Module):
         self.destination_dir = os.path.join(target_dir, destination_sub_path)
 
         # Return artifacts URL
-        self.full_target_url = "https://{}/{}".format(domain, self.destination_url)
+        download_domain = self.option('download-domain') or domain
+        self.full_target_url = "https://{}/{}".format(download_domain, self.destination_url)
 
         files = self._get_files_to_upload()
         self._upload_results(self.destination_dir, user_and_domain, files)
