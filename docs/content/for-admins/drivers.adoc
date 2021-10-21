@@ -17,57 +17,49 @@ Capabilities are features whose support is built-in into the driver. The support
 * `supports-snapshots`: the driver can handle snapshots of some kind.
 * `supports-spot-instances`: the driver can handle spot instance requests.
 * `supports-native-post-install-script`: the driver can handle the post-installation script on its own. Artemis core will execute the script in the preparation stage for drivers that do no have this capability.
-* `supported-guest-logs`: list of log name/log content type pairs describing what logs are supported by the driver.
 
-[%header,cols="1,1,1,1,1"]
+[%header,cols="1,1,1,1"]
 |===
 |Driver
 |supports-snapshots
 |supports-spot-instances
 |supports-native-post-install-script
-|supported-guest-logs
 
 |`aws`
 |[red]#no#
 |[green]#yes#
 |[green]#yes#
-|console/blob
 
 |`azure`
 |[red]#no#
 |[red]#no#
 |[green]#yes#
-|-
 
 |`beaker`
 |[red]#no#
 |[red]#no#
 |[red]#no#
-|-
 
 |`localhost`
 |[red]#no#
 |[red]#no#
 |[red]#no#
-|-
 
 |`openstack`
 |[green]#yes#
 |[red]#no#
 |[green]#yes#
-|console/blob
-console/URL
 
 |===
 
 
 === HW requirements
 
-A guest request can specify various HW constraints the provisioned machines must satisfy. For example, a desired number of CPU cores or a minimal root disk size. These constraints are eventually used by drivers to find - or create - suitable guests. Unfortnatelly, not all drivers are capable of handling all possible HW requirements, limitations may apply.
+A guest request can specify various HW constraints the provisioned machines must satisfy. For example, a desired number of CPU cores or a minimal root disk size. These constraints are eventually used by drivers to find - or create - suitable guests. Unfortunately, not all drivers are capable of handling all possible HW requirements, limitations may apply.
 
 [NOTE]
 ====
-The table below describe the built-in support for various features. However, to actually support a given feature, a maintainer may need to provide additional configuration. Such requirements are marked with an asterisk (`*`).
+The table below describe the built-in support for various features. However, to actually support a given feature, a maintainer may need to provide additional configuration - see <<_flavors_and_images,"Flavors and images">> section. Such requirements are marked with an asterisk (`*`).
 ====
 
 [%header,cols="1,1,1,1,1,1"]
@@ -173,3 +165,292 @@ The table below describe the built-in support for various features. However, to 
 |===
 
 1. [[hw-notes-only-one-disk]]`disk[]` supports only 1 item.
+
+=== Flavors and images
+
+Supported by: `aws` [line-through]#`azure`# [line-through]#`beaker`# [line-through]#`localhost`# `openstack`
+
+Term "flavor" represents one half of a template for a future guest. Flavors track various attributes that affect the virtual "hardware" of the final machine backing the guest. For example, number of processors, RAM size, or CPU family.
+
+Term "image" represents the second half of a template for a future guest. Images holds the content of the future virtual machine, file system with installed software, kernel, configuration and so on. There are also less visible attributes tracked by pools, e.g. whether an image supports UEFI or not.
+
+Together, flavors and images play crucial role in provisioning process, because the set of flavors and and the set of images represent various guest configurations a pool can deliver, and based on this information pools allocate actual cloud resources for a given request. It is up to maintainers to setup pools and pools' flavors and images to provide the tiers of service most suited for their workflow.
+
+[NOTE]
+====
+While all of the above is true, there are some pool drivers that do not rely on the concept of flavors or do not track available images. The most prominent driver would be `beaker` driver.
+
+Beaker as a service approaches problem from a different angle, and instead of prepared set of flavors, Beaker comes with powerful filtering capabilities. It would be extremely impractical to collect all known "flavors", such a mapping between flavor and a Beaker machine would be almost identical, on top of that machines can be already in use which is not tracked by flavors at all.
+
+However, this does not mean `beaker` driver is not able to pick proper machine for a given request or handle HW requirements: rather than collecting flavors and images, `beaker` driver transcripts the given guest request to Beaker's filter XML language, leaving the actual selection process to Beaker. It is still possible to create custom flavors and images in `beaker` configuration, but at its current state, such a configuration is ignored by the driver.
+====
+
+==== Collection of information
+
+Pool drivers that work with flavors and images must keep track of known objects and their properties, This data must be kept up-to-date and reflect any kind of changes made by provisioning services backing their respective pools. For that purpose, drivers query their backend's APIs periodically, to download the current state of objects available to them. This process is automated, controlled by Artemis core, and the gathered information is cached.
+
+[NOTE]
+====
+The automated, periodical refresh has its own pros and cons of which the following should be maintainers be aware of.
+
+* given the caching, images and flavors information can be lacking slightly behind the changes in their backend, e.g. when new image is added. This delay should not exceed more than a few minutes, and changes should be picked up next time refresh occurs.
+* after a cold start, Artemis' cache is probably going to be empty. This will affect any guest request submitted before the first refresh, pool driver would see no images to use for provisioning. But, thanks to inbuilt retries, cache refresh should happen soon enough for the guest request to proceed successfully after a delay.
++
+To shorten the delay, maintainers can trigger an immediate refresh, see <<_runtime_overview,"Runtime overview">> section.
+====
+
+[NOTE]
+====
+Despite having full access to their backends, some information may be unavailable to drivers, and therefore some properties of images and flavors may remain unknown to them. For example, AWS does list what CPU models are used for each instance type, but this information is not accessible via AWS API.
+
+In general, this lack of information is not important as long as requests don't depend on the missing information. Given the AWS example above: as long as requests Artemis is supposed to handle do not request particular CPU model, things will work out nicely.
+
+Similar situation applies to images as well. For example, it's not possible for Artemis to extract username to use when connecting to guests via SSH. As long as image configuration matches the default username Artemis is using, `root`, then, again, things will work out nicely.
+
+To handle more intricate requests and pool setup, maintainers might need to update configuration, see "<<_image_info_tweaks,Image info tweaks>>" and "<<_flavor_info_tweaks,Flavor info tweaks>>" sections.
+====
+
+==== Flavor info tweaks
+
+Information pool tracks for all available flavors can be modified through configuration, using the `patch-flavors` and `custom-flavors` directives. Each _patch_ is applied to flavor or flavors matching given name (or regular expression), and overrides whatever the pool driver was able to collect from sources available to it in runtime.
+
+Both directives share the same syntax, but their scope is slightly different:
+
+* `custom-flavors` *adds new* flavors that do not exist as far as pool knows. For example, OpenStack driver can fetch list of existing flavors, `custom-flavors` then allows maintainer to create additional flavors on top of this basic list.
+* `patch-flavors` *modifies existing* information known to pool, and does apply to flavors both real and created by `custom-flavors` directive.
+
+[NOTE]
+====
+Entries under `patch-flavors` and `custom-flavors` are applied in order, it is therefore possible to modify multiple flavors at once, with `name-regex`, then tweak individual images using `name` for precise targeting.
+
+Entries under `custom-flavors` are processed before `patch-flavors`, it is therefore possible to add flavors and then modify them. This might not seem like an advantage, but consider adding custom flavors while listing only the attributes they do not share, e.g. `cpu.family`. With `patch-flavors` applied later, it is possible to set attributes they share, e.g. `disk[0].size`, as long as their names can be matched by a regular expression in `name-regex`.
+====
+
+[NOTE]
+====
+All fields except `name`, `name-regex`, and `base` are optional, and fields not specified do not affect the value known to pool. It is therefore possible to change just a single attribute (e.g. `cpu.family`) without changing others (like `cpu.cores`).
+====
+
+.Specification
+[source,yaml]
+....
+custom-flavors:
+  - name: <string>
+    # Name of already existing flavor that would serve as a template.
+    # The flavor MUST exist, but it can be a custom flavor created before this patch.
+    base: <string>
+
+   cpu:
+     processors: <integer>
+     cores: <integer>
+     family: <family>
+     family_name: <string>
+     model: <integer>
+     model_name: <string>
+
+   disk:
+     - size: <quantity>
+     ...
+
+   virtualization:
+     is-supported: <boolean>
+     is-virtualized: <boolean>
+     hypervisor: <string>
+....
+
+.Specification
+[source,yaml]
+....
+custom-flavors:
+  - name: <string>
+    # Or, to patch multiple flavors at once:
+    name-regex: <pattern>
+
+   cpu:
+     processors: <integer>
+     cores: <integer>
+     family: <family>
+     family_name: <string>
+     model: <integer>
+     model_name: <string>
+
+   disk:
+     - size: <quantity>
+     ...
+
+   virtualization:
+     is-supported: <boolean>
+     is-virtualized: <boolean>
+     hypervisor: <string>
+....
+
+.Example
+[source,yaml]
+....
+custom-flavors:
+  # Let's add two custom flavors, with specific disk sizes. Both are based
+  # on the same flavor, t2.small, and inherit all its properties.
+  - name: t2.small-20
+    base: t2.small
+    disk:
+      - size: 20 GiB
+
+  - name: t2.small-40
+    base: t2.small
+    disk:
+      - size: 40 GiB
+
+patch-flavors:
+  # Now, patch all flavors, and set fields we can't extract from pool's backend API.
+  - name-regex: "t2\.small-\d+"
+    cpu:
+        family: 6
+        family_name: Haswell
+        model: 6
+        model_name: i7-something
+
+    # Oh, yes, all these flavors are VMs, not bare metal machines, and we support nested virtualization.
+    virtualization:
+        is-supported: true
+        is-virtualized: true
+        hypervisor: kvm
+
+  # While technically possible, let's not use our smallest flavor for nested virtualization - not enough disk space.
+  - name: t2.small-20
+    virtualization:
+        is-supported: false
+....
+
+==== Image info tweaks
+
+Information pool tracks for all available images can be modified through configuration, using the `patch-images` directive. Each _patch_ is applied to image or images matching given name (or regular expression), and overrides whatever the pool driver was able to collect from sources available to it in runtime.
+
+[NOTE]
+====
+Entries under `patch-images` are applied in order, it is therefore possible to modify multiple images at once, with `name-regex`, then tweak individual images using `name` for precise targeting.
+====
+
+[NOTE]
+====
+All fields except `name` and `name-regex` are optional, and fields not specified do not affect the value known to pool. It is therefore possible to change just a single attribute (e.g. `ssh.username`) without changing others (like `ssh.port`).
+====
+
+.Specification
+[source,yaml]
+....
+patch-image:
+  - name: <string>
+    # Or, to patch multiple images at once:
+    name-regex: <pattern>
+
+    ssh:
+      # Username to use when accessing guest based on this image via SSH
+      username: <string>
+
+      # Username to use when accessing guest based on this image via SSH
+      port: <integer>
+....
+
+.Example
+[source,yaml]
+....
+patch-image:
+  # Reset the playing field: all images run SSH on port 22, and use `root` to log in.
+  - name-regex: ".*"
+    ssh:
+      username: root
+      port: 22
+
+  # For Fedora ones, we need different username.
+  - name-regex: "Fedora-.+"
+    ssh:
+      username: cloud-user
+
+  # And one single image is just weird and runs its SSH on a high port.
+  - name: Fedora-35
+    ssh:
+      port: 2222
+....
+
+==== Runtime overview
+
+The most up-to-date information on known flavors and images can be displayed by querying API:
+
+[source,shell]
+....
+$ http https://$hostname/_cache/pools/$poolname/image-info
+$ http https://$hostname/_cache/pools/$poolname/flavor-info
+....
+
+It is also possible to trigger refresh of stored data with `POST` method, with no data:
+
+[source,shell]
+....
+$ http POST https://$hostname/_cache/pools/$poolname/image-info
+$ http POST https://$hostname/_cache/pools/$poolname/flavor-info
+....
+
+=== Guest logs
+
+Supported by: `aws` [line-through]#`azure`# [line-through]#`beaker`# [line-through]#`localhost`# `openstack`
+
+Besides the operational logs related to guest provisioning, drivers often expose additional logs, usually related to the provisioning service actions or guest VM operations (terminal or console, output of `dmesg`, etc.).
+
+The actual list of logs supported by a pool depends on the driver - this is a hard limit, logs that driver does not support cannot be "enabled" - and pool configuration, where maintainers can disable particular logs on purpose.
+
+[%header,cols="1,1"]
+|===
+|Driver
+|Supported logs
+
+|`aws`
+|console/blob
+console/URL
+
+|`azure`
+|-
+
+|`beaker`
+|-
+
+|`localhost`
+|-
+
+|`openstack`
+|console/blob
+console/URL
+
+|===
+
+[NOTE]
+====
+Disabling unsupported logs has no effect.
+====
+
+==== Gust log tweaks
+
+Each pool can tune down the supported set of guest logs: while it is not possible to enable logs that are not already supported by pool's driver, it is still possible to disable supported logs, preventing users from accessing them.
+
+.Specification
+[source,yaml]
+....
+capabilities:
+  disable-guest-logs:
+    - log-name: <string>
+      content-type: [blob|url]
+....
+
+.Example
+[source,yaml]
+....
+capabilities:
+  disable-guest-logs:
+    # It's supported by driver, but maintainers do not wish to let users access live console of any guest from this pool.
+    - log-name: console
+      content-type: url
+
+    # Also, don't expose /var/log/messages - driver calls this log `messages`, and
+    # it's available only as a saved blob of text.
+    - log-name: messages
+      content-type: blob
+....
