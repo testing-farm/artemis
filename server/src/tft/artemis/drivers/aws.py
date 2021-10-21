@@ -25,8 +25,9 @@ from ..environment import UNITS, Flavor, FlavorCpu, FlavorVirtualization
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, HookImageInfoMapper, \
-    PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, test_cli_error
+    ImageInfoMapperOptionalResultType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, \
+    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, run_cli_tool, \
+    test_cli_error
 
 #
 # Custom typing types
@@ -202,6 +203,29 @@ class AWSPoolResourcesIDs(PoolResourcesIDs):
     spot_instance_id: Optional[str] = None
 
 
+class AWSHookImageInfoMapper(HookImageInfoMapper[AWSPoolImageInfo]):
+    def map_or_none(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> ImageInfoMapperOptionalResultType[AWSPoolImageInfo]:
+        r_image = super(AWSHookImageInfoMapper, self).map_or_none(logger, guest_request)
+
+        if r_image.is_error:
+            return r_image
+
+        image = r_image.unwrap()
+
+        if image is None:
+            return r_image
+
+        # console/URL logs require ENA support
+        if guest_request.requests_guest_log('console', GuestLogContentType.URL) and not image.ena_support:
+            return Ok(None)
+
+        return r_image
+
+
 def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold: int) -> bool:
     try:
         parsed_timestamp = datetime.datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
@@ -241,8 +265,8 @@ class AWSDriver(PoolDriver):
 
     # TODO: return value does not match supertype - it should, it does, but mypy ain't happy: why?
     @property
-    def image_info_mapper(self) -> HookImageInfoMapper[AWSPoolImageInfo]:  # type: ignore  # does not match supertype
-        return HookImageInfoMapper(self, 'AWS_ENVIRONMENT_TO_IMAGE')
+    def image_info_mapper(self) -> AWSHookImageInfoMapper:  # type: ignore  # does not match supertype
+        return AWSHookImageInfoMapper(self, 'AWS_ENVIRONMENT_TO_IMAGE')
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_native_post_install_script = True
@@ -363,7 +387,15 @@ class AWSDriver(PoolDriver):
         if r_suitable_flavors.is_error:
             return Error(r_suitable_flavors.unwrap_error())
 
-        suitable_flavors = r_suitable_flavors.unwrap()
+        suitable_flavors = cast(List[AWSFlavor], r_suitable_flavors.unwrap())
+
+        # console/URL logs require ENA support
+        if guest_request.requests_guest_log('console', GuestLogContentType.URL):
+            suitable_flavors = [
+                flavor
+                for flavor in suitable_flavors
+                if flavor.ena_support in ('required', 'supported')
+            ]
 
         if not suitable_flavors:
             guest_request.log_warning_event(

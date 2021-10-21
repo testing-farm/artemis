@@ -848,6 +848,9 @@ class GuestRequest(Base):
             (log_type["logtype"], GuestLogContentType(log_type["contenttype"])) for log_type in self._log_types
         ]
 
+    def requests_guest_log(self, logname: str, contenttype: GuestLogContentType) -> bool:
+        return (logname, contenttype) in self.log_types
+
 
 class GuestLog(Base):
     __tablename__ = 'guest_logs'
