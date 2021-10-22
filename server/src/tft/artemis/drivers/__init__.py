@@ -1076,7 +1076,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 assert isinstance(capabilities.supported_architectures, list)
 
                 for arch in capabilities.supported_architectures:
-                    arch_flavor = dataclasses.replace(flavor, arch=arch)
+                    arch_flavor = flavor.clone()
+                    arch_flavor.arch = arch
 
                     flavors.append(arch_flavor)
 
