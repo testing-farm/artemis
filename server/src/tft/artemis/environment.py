@@ -18,7 +18,7 @@ import pint
 from gluetool.result import Ok, Result
 from pint import Quantity
 
-from . import Failure, SerializableContainer
+from . import Failure, SerializableContainer, format_dict_yaml
 
 #: Unit registry, used and shared by all code.
 UNITS = pint.UnitRegistry()
@@ -92,29 +92,6 @@ class _FlavorSubsystemContainer(SerializableContainer):
     #: A prefix to add before all field names when formatting fields. If unset, no prefix is added.
     CONTAINER_PREFIX: ClassVar[Optional[str]] = None
 
-    def format_fields(self) -> List[str]:
-        """
-        Return formatted representation of subsystem properties.
-
-        :returns: list of formatted properties.
-        """
-
-        formatted_fields: List[str] = []
-
-        # The actual prefix: if specified, add `.` joining the prefix and field name, otherwise use an empty string.
-        prefix = f'{self.CONTAINER_PREFIX}.' if self.CONTAINER_PREFIX is not None else ''
-
-        for field_spec in dataclasses.fields(self):
-            field = getattr(self, field_spec.name)
-
-            if isinstance(field, _FlavorSubsystemContainer):
-                formatted_fields += field.format_fields()
-
-            else:
-                formatted_fields.append(f'{prefix}{field_spec.name}={field}')
-
-        return formatted_fields
-
     def __repr__(self) -> str:
         """
         Return text representation of subsystem properties.
@@ -122,7 +99,7 @@ class _FlavorSubsystemContainer(SerializableContainer):
         :returns: human-readable rendering of subsystem properties.
         """
 
-        return f'<{self.__class__.__name__}: {" ".join(self.format_fields())}>'
+        return format_dict_yaml(self.serialize_to_json())
 
     # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone some complex fields.
     def clone(self: U) -> U:
@@ -186,21 +163,6 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
         """
 
         return len(self.items)
-
-    def format_fields(self) -> List[str]:
-        """
-        Return formatted representation of items.
-
-        :returns: list of formatted items.
-        """
-
-        return sum([
-            [
-                f'{self.ITEM_LABEL}[{i}].{field.name}={getattr(item, field.name)}'
-                for field in dataclasses.fields(item)
-            ]
-            for i, item in enumerate(self.items)
-        ], [])
 
     def clone(self: V) -> V:
         return self.__class__([
