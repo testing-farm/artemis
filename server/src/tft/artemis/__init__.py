@@ -1,3 +1,4 @@
+import contextvars
 import dataclasses
 import datetime
 import inspect
@@ -8,8 +9,8 @@ import sys
 import traceback as _traceback
 import urllib.parse
 from types import FrameType, TracebackType
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Iterable, List, NoReturn, Optional, Tuple, Type, \
-    TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Iterable, List, MutableSet, NoReturn, Optional, \
+    Tuple, Type, TypeVar, Union, cast
 
 import dramatiq
 import dramatiq.brokers.rabbitmq
@@ -99,6 +100,31 @@ FailureDetailsType = Dict[str, Any]
 JSONType = Union[str, int, float, List[Any], Dict[Any, Any], None]
 
 
+# Special context variable for YAML processor. `ruamel.YAML` instances keep internal state, and as such they cannot
+# be shared between threads without some kind of serialization. Rather than introducing a lock, we can use context
+# and keep a `YAML` instance for each thread. With a wrapper function, we can initialize missing instances when
+# accessed for the first time (`contextvars` package does not support default factory).
+_YAML: contextvars.ContextVar[Optional[ruamel.yaml.main.YAML]] = contextvars.ContextVar('_YAML', default=None)
+_YAML_DUMPABLE_CLASSES: MutableSet[Type[object]] = set()
+
+
+def get_yaml() -> ruamel.yaml.main.YAML:
+    """
+    Return a fully initialized instance of YAML processor.
+    """
+
+    YAML = _YAML.get()
+
+    if YAML is None:
+        YAML = gluetool.utils.YAML()
+        _YAML.set(YAML)
+
+        for cls in _YAML_DUMPABLE_CLASSES:
+            YAML.register_class(cls)
+
+    return YAML
+
+
 # Gluetool Sentry instance
 gluetool_sentry = gluetool.sentry.Sentry()
 
@@ -110,6 +136,21 @@ class SerializableContainer:
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super(SerializableContainer, self).__init__(*args, **kwargs)  # type: ignore
+
+    # All classes derived from SerializableContainer can be represented as YAML, because they
+    # inherit the `to_yaml()` method, which then depends on `serialize_to_json()` - and what
+    # we can represent as JSON, we can for sure represent as YAML as well.
+    #
+    # Instead of using decorator to mark classes derived from this one, we let interpreter call
+    # this magic method every tim a subclass has been created.
+    def __init_subclass__(cls: Type['SerializableContainer']) -> None:
+        """
+        Register given subclass as capable of being represented as YAML.
+        """
+
+        super(SerializableContainer, cls).__init_subclass__()
+
+        _YAML_DUMPABLE_CLASSES.add(cls)
 
     def serialize_to_json(self) -> Dict[str, Any]:
         serialized = dataclasses.asdict(self)
@@ -150,6 +191,10 @@ class SerializableContainer:
     def unserialize_from_str(cls: Type[S], serialized: str) -> S:
         return cls.unserialize_from_json(json.loads(serialized))
 
+    @classmethod
+    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, container: S) -> Any:
+        return representer.represent_dict(container.serialize_to_json())
+
 
 # Two logging helpers, very similar to `format_dict` and `log_dict`, but emitting a YAML-ish output.
 # YAML is often more readable for humans, and, sometimes, we might use these on purpose, to provide
@@ -159,7 +204,7 @@ class SerializableContainer:
 def format_dict_yaml(data: Any) -> str:
     stream = ruamel.yaml.compat.StringIO()
 
-    YAML = gluetool.utils.YAML()
+    YAML = get_yaml()
 
     ruamel.yaml.scalarstring.walk_tree(data)
 
