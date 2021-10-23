@@ -1,21 +1,16 @@
 import textwrap
 
 import gluetool.utils
-from pint import Quantity
 
+import tft.artemis
 import tft.artemis.drivers
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
+from tft.artemis.environment import UNITS
 
 
 def parse_spec(text):
-    spec = gluetool.utils.from_yaml(textwrap.dedent(text))
-    print(text)
-    print(spec)
-
-    print('patch:', gluetool.log.format_dict(spec))
-
-    return spec
+    return gluetool.utils.from_yaml(textwrap.dedent(text))
 
 
 def test_patch_nop():
@@ -35,14 +30,10 @@ def test_patch_nop():
         id='dummy-flavor-id'
     )
 
-    print(flavor)
-
     r_outcome = tft.artemis.drivers._apply_flavor_specification(
         flavor,
         flavor_spec
     )
-
-    print(flavor)
 
     assert r_outcome.is_ok
 
@@ -62,8 +53,6 @@ def test_patch_unsupported():
         id='dummy-flavor-id'
     )
 
-    print(flavor)
-
     assert flavor.arch is None
     assert flavor.memory is None
 
@@ -71,8 +60,6 @@ def test_patch_unsupported():
         flavor,
         flavor_spec
     )
-
-    print(flavor)
 
     assert r_outcome.is_ok
     assert flavor.arch is None
@@ -97,8 +84,6 @@ def test_patch_cpu():
         id='dummy-flavor-id'
     )
 
-    print(flavor)
-
     assert flavor.cpu.family is None
     assert flavor.cpu.family_name is None
     assert flavor.cpu.model is None
@@ -108,8 +93,6 @@ def test_patch_cpu():
         flavor,
         flavor_spec
     )
-
-    print(flavor)
 
     assert r_outcome.is_ok
 
@@ -138,8 +121,6 @@ def test_patch_disk():
         ])
     )
 
-    print(flavor)
-
     assert flavor.disk[0].size is None
 
     r_outcome = tft.artemis.drivers._apply_flavor_specification(
@@ -147,12 +128,10 @@ def test_patch_disk():
         flavor_spec
     )
 
-    print(flavor)
-
     assert r_outcome.is_ok
 
-    assert flavor.disk[0].size == Quantity('10 GiB')
-    assert flavor.disk[1].size == Quantity('1023 bytes')
+    assert flavor.disk[0].size == UNITS('10 GiB')
+    assert flavor.disk[1].size == UNITS('1023 bytes')
 
 
 def test_patch_virtualization():
@@ -172,8 +151,6 @@ def test_patch_virtualization():
         id='dummy-flavor-id'
     )
 
-    print(flavor)
-
     assert flavor.virtualization.is_supported is None
     assert flavor.virtualization.is_virtualized is None
     assert flavor.virtualization.hypervisor is None
@@ -182,8 +159,6 @@ def test_patch_virtualization():
         flavor,
         flavor_spec
     )
-
-    print(flavor)
 
     assert r_outcome.is_ok
 
@@ -222,8 +197,6 @@ def test_patch_flavors(logger):
         )
     }
 
-    print(flavors)
-
     assert flavors['foo'].cpu.family is None
     assert flavors['bar'].cpu.family is None
     assert flavors['baz'].cpu.family is None
@@ -233,8 +206,6 @@ def test_patch_flavors(logger):
         flavors,
         patches
     )
-
-    print(flavors)
 
     assert r_outcome.is_ok
 
@@ -261,8 +232,6 @@ def test_patch_flavors_no_such_name(logger):
         )
     }
 
-    print(flavors)
-
     assert flavors['bar'].cpu.family is None
 
     r_outcome = tft.artemis.drivers._patch_flavors(
@@ -270,8 +239,6 @@ def test_patch_flavors_no_such_name(logger):
         flavors,
         patches
     )
-
-    print(flavors)
 
     assert r_outcome.is_error
 
@@ -299,8 +266,6 @@ def test_patch_flavors_no_such_name_regex(logger):
         )
     }
 
-    print(flavors)
-
     assert flavors['bar'].cpu.family is None
 
     r_outcome = tft.artemis.drivers._patch_flavors(
@@ -308,8 +273,6 @@ def test_patch_flavors_no_such_name_regex(logger):
         flavors,
         patches
     )
-
-    print(flavors)
 
     assert r_outcome.is_error
 
@@ -338,8 +301,6 @@ def test_custom_flavors(logger):
         )
     }
 
-    print(flavors)
-
     assert flavors['foo'].cpu.family is None
     assert 'foo-with-family' not in flavors
 
@@ -348,8 +309,6 @@ def test_custom_flavors(logger):
         flavors,
         patches
     )
-
-    print(flavors)
 
     assert r_outcome.is_ok
 
@@ -383,8 +342,6 @@ def test_custom_flavors_no_such_base(logger):
         )
     }
 
-    print(flavors)
-
     assert flavors['foo'].cpu.family is None
     assert 'foo-with-family' not in flavors
 
@@ -393,8 +350,6 @@ def test_custom_flavors_no_such_base(logger):
         flavors,
         patches
     )
-
-    print(flavors)
 
     assert r_outcome.is_error
 

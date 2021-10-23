@@ -604,7 +604,7 @@ def _patch_flavors(
     if not patches:
         return Ok(None)
 
-    gluetool.log.log_dict(logger.debug, 'base flavors', flavors)
+    log_dict_yaml(logger.debug, 'base flavors', flavors)
 
     for patch_spec in patches:
         if 'name' in patch_spec:
@@ -673,7 +673,7 @@ def _custom_flavors(
 
     custom_flavors = []
 
-    gluetool.log.log_dict(logger.debug, 'base flavors', flavors)
+    log_dict_yaml(logger.debug, 'base flavors', flavors)
 
     for custom_flavor_spec in patches:
         customname = custom_flavor_spec['name']
@@ -704,7 +704,7 @@ def _custom_flavors(
 
             return Error(failure)
 
-    gluetool.log.log_dict(logger.debug, 'custom flavors', custom_flavors)
+    log_dict_yaml(logger.debug, 'custom flavors', custom_flavors)
 
     return Ok(custom_flavors)
 

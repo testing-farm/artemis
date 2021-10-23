@@ -33,8 +33,8 @@ def parse_spec(text):
 
 
 def eval_flavor(logger, constraint, flavor):
-    log_blob(logger.info, 'constraint', constraint.format())
-    log_blob(logger.info, 'flavor', repr(flavor))
+    log_blob(logger.debug, 'constraint', constraint.format())
+    log_blob(logger.debug, 'flavor', repr(flavor))
 
     return constraint.eval_flavor(logger, flavor)
 
@@ -48,9 +48,9 @@ def test_example_simple(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -58,7 +58,9 @@ def test_example_simple(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -79,9 +81,9 @@ def test_example_cpu(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -104,9 +106,9 @@ def test_example_disk(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -116,7 +118,9 @@ def test_example_disk(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -138,9 +142,9 @@ def test_example_multiple_disks(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -151,7 +155,9 @@ def test_example_multiple_disks(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -162,7 +168,9 @@ def test_example_multiple_disks(logger):
         )
     ) is False
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -184,9 +192,9 @@ def test_example_disk_oldstyle_space(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -196,7 +204,9 @@ def test_example_disk_oldstyle_space(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -217,9 +227,9 @@ def test_example_network(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -230,7 +240,9 @@ def test_example_network(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -241,7 +253,9 @@ def test_example_network(logger):
         )
     ) is False
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -251,7 +265,9 @@ def test_example_network(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -273,9 +289,9 @@ def test_example_multiple_networks(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -286,7 +302,9 @@ def test_example_multiple_networks(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -297,7 +315,9 @@ def test_example_multiple_networks(logger):
         )
     ) is False
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -308,7 +328,9 @@ def test_example_multiple_networks(logger):
         )
     ) is False
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -346,8 +368,6 @@ def test_example_operators(logger):
         """
     )
 
-    print(constraint.format())
-
     assert eval_flavor(logger, constraint, flavor_big) is True
     assert eval_flavor(logger, constraint, flavor_right) is False
     assert eval_flavor(logger, constraint, flavor_small) is False
@@ -359,8 +379,6 @@ def test_example_operators(logger):
         memory: '>= 8 GiB'
         """
     )
-
-    print(constraint.format())
 
     assert eval_flavor(logger, constraint, flavor_big) is True
     assert eval_flavor(logger, constraint, flavor_right) is True
@@ -374,8 +392,6 @@ def test_example_operators(logger):
         """
     )
 
-    print(constraint.format())
-
     assert eval_flavor(logger, constraint, flavor_big) is False
     assert eval_flavor(logger, constraint, flavor_right) is False
     assert eval_flavor(logger, constraint, flavor_small) is True
@@ -388,14 +404,12 @@ def test_example_operators(logger):
         """
     )
 
-    print(constraint.format())
-
     assert eval_flavor(logger, constraint, flavor_big) is False
     assert eval_flavor(logger, constraint, flavor_right) is True
     assert eval_flavor(logger, constraint, flavor_small) is True
 
 
-def test_example_exact_value():
+def test_example_exact_value(logger):
     constraint1 = parse_hw(
         """
         ---
@@ -404,8 +418,6 @@ def test_example_exact_value():
         """
     )
 
-    print(constraint1.format())
-
     constraint2 = parse_hw(
         """
         ---
@@ -413,8 +425,6 @@ def test_example_exact_value():
         memory: '= 8 GiB'
         """
     )
-
-    print(constraint2.format())
 
     assert constraint1.format() == constraint2.format()
 
@@ -428,8 +438,6 @@ def test_example_unit_with_space():
         """
     )
 
-    print(constraint1.format())
-
     constraint2 = parse_hw(
         """
         ---
@@ -437,8 +445,6 @@ def test_example_unit_with_space():
         memory: '8 GiB'
         """
     )
-
-    print(constraint2.format())
 
     assert constraint1.format() == constraint2.format()
 
@@ -452,9 +458,9 @@ def test_example_units_conversion(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -473,9 +479,9 @@ def test_example_regex(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -485,7 +491,9 @@ def test_example_regex(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -514,9 +522,9 @@ def test_example_logic(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -527,7 +535,9 @@ def test_example_logic(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -538,7 +548,9 @@ def test_example_logic(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -549,7 +561,9 @@ def test_example_logic(logger):
         )
     ) is True
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -560,7 +574,9 @@ def test_example_logic(logger):
         )
     ) is False
 
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -583,9 +599,9 @@ def test_clueless_flavor(logger):
         """
     )
 
-    print(constraint.format())
-
-    assert eval_flavor(logger, constraint,
+    assert eval_flavor(
+        logger,
+        constraint,
         tft.artemis.environment.Flavor(
             name='dummy-flavor',
             id='dummy-flavor',
@@ -616,9 +632,6 @@ def test_schema_no_constraints_v0_0_19(schema_v0_0_19, logger):
 
     errors = r_validation.unwrap()
 
-    for error in errors:
-        print(error)
-
     assert errors == []
 
 
@@ -644,9 +657,6 @@ def test_schema_simple_v0_0_19(schema_v0_0_19, logger):
     assert r_validation.is_ok
 
     errors = r_validation.unwrap()
-
-    for error in errors:
-        print(error)
 
     assert errors == []
 
@@ -681,9 +691,6 @@ def test_schema_logic_v0_0_19(schema_v0_0_19, logger):
     assert r_validation.is_ok
 
     errors = r_validation.unwrap()
-
-    for error in errors:
-        print(error)
 
     assert errors == []
 
@@ -744,16 +751,16 @@ def test_beaker_preset(logger, hw, expected):
 
     spec['hw'] = parse_spec(hw)
 
-    print(spec)
-
     environment = Environment.unserialize_from_json(spec)
+
+    r_constraints = environment.get_hw_constraints()
+
+    assert r_constraints.is_ok
 
     r_host_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment)
 
     assert r_host_filter.is_ok
 
     host_filter = r_host_filter.unwrap()
-
-    print(host_filter)
 
     assert str(host_filter) == expected

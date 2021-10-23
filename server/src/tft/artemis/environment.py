@@ -563,6 +563,24 @@ class ConstraintBase:
 
         return '<not implemented>'
 
+    def __repr__(self) -> str:
+        """
+        Return text representation of the constraint suitable for logging.
+
+        :returns: human-readable rendering of the constraint.
+        """
+
+        return self.format()
+
+    def __str__(self) -> str:
+        """
+        Return text representation of the constraint suitable for logging.
+
+        :returns: human-readable rendering of the constraint.
+        """
+
+        return self.format()
+
 
 class CompoundConstraint(ConstraintBase):
     """
@@ -774,13 +792,7 @@ class Constraint(ConstraintBase):
                 self.value
             )
 
-        logger.debug('eval-flavor: {} {} {} {} => {}'.format(
-            self.name,
-            flavor_property,
-            self.operator.value,
-            self.value,
-            result
-        ))
+        logger.debug(f'eval-flavor: {flavor.name}.{self.name}: {type(flavor_property).__name__}({flavor_property}) {self.operator.value} {type(self.value).__name__}({self.value}): {result}')  # noqa: E501
 
         return result
 
