@@ -1,5 +1,13 @@
 .DEFAULT_GOAL := help
-.PHONY: help install install-no-dev coverage test gen-db-revision publish clean
+.PHONY: help install install-no-dev coverage test gen-db-revision publish clean _env-info
+
+_env-info:
+	@echo "## Poetry: $$(which poetry) $$(poetry --version)"
+	@echo "## Global Poetry configuration:"
+	@poetry config --list
+	@echo "## Local Poetry configuration:"
+	@poetry config --list --local
+	@echo "## Tox: $$(which tox) $$(tox --version)"
 
 install:  ## Install Artemis and development tools
 	poetry install -v
@@ -7,13 +15,13 @@ install:  ## Install Artemis and development tools
 install-no-dev:  ## Install Artemis alone, no development tools
 	poetry install -v --no-dev
 
-coverage:  ## Run tests with coverage
+coverage: _env-info  ## Run tests with coverage
 	tox -e py37-coverage
 
-test:  ## Run all tests
+test: _env-info  ## Run all tests
 	tox
 
-integration-tests:  ## Run tests against real services
+integration-tests: _env-info  ## Run tests against real services
 	# Spawn the real processes, and we have a bunch of them handy
 	docker-compose up -d postgres
 
