@@ -1,5 +1,5 @@
 import textwrap
-from typing import Any
+from typing import Any, List
 
 import gluetool.utils
 import pytest
@@ -8,7 +8,7 @@ from gluetool.log import ContextAdapter, log_blob
 import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS, ConstraintBase, Environment, Flavor, FlavorNetwork, FlavorNetworks
+from tft.artemis.environment import UNITS, ConstraintBase, Environment, Flavor, FlavorCpu, FlavorNetwork, FlavorNetworks
 
 
 @pytest.fixture(name='schema_v0_0_19')
@@ -770,3 +770,162 @@ def test_beaker_preset(logger: ContextAdapter, hw: str, expected: str) -> None:
     host_filter = r_host_filter.unwrap()
 
     assert str(host_filter) == expected
+
+
+@pytest.mark.parametrize(('hw', 'flavor', 'expected_spans'), [
+    (
+        """
+        ---
+
+        and:
+            - cpu:
+                family: 15
+            - or:
+                - cpu:
+                        model: 65
+                - cpu:
+                        model: 67
+                - cpu:
+                        model: 69
+        """,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            cpu=tft.artemis.environment.FlavorCpu(
+                family=15,
+                model=65
+            )
+        ),
+        [
+            ['(FLAVOR.cpu.model == 65)', '(FLAVOR.cpu.family == 15)']
+        ]
+    ),
+    (
+        """
+        ---
+
+        and:
+            - or:
+              - disk:
+                  - size: ">= 11 GiB"
+
+              - disk:
+                  - size: ">= 13 GiB"
+
+            - or:
+              - disk:
+                  - size: ">= 40 GiB"
+                  - size: ">= 1 TiB"
+
+              - disk:
+                  - size: ">= 40 GiB"
+                  - size: "< 2 TiB"
+
+              - or:
+                - cpu:
+                    processors: ">=4"
+
+                - memory: "= 8 GiB"
+
+                - disk:
+                    - size: ">= 40 GiB"
+
+                - and:
+                    - disk:
+                        - size: ">= 40 GiB"
+
+                    - memory: "= 16 GiB"
+
+                - and:
+                    - disk:
+                        - size: ">= 10 GiB"
+
+                    - disk:
+                        - size: ">= 20 GiB"
+
+                - or:
+                    - cpu:
+                        processors: ">= 2"
+
+                    - cpu:
+                        processors: ">= 3"
+        """,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            cpu=FlavorCpu(
+                processors=8
+            ),
+            disk=tft.artemis.environment.FlavorDisks([
+                tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                tft.artemis.environment.FlavorDisk(size=UNITS('1 TiB'))
+            ])
+        ),
+        [
+            [
+                '(FLAVOR.disk[0].size >= 11 gibibyte)',
+                '(FLAVOR.disk[0].size >= 40 gibibyte)',
+                '(FLAVOR.disk[1].size >= 1 tebibyte)'
+            ],
+            [
+                '(FLAVOR.disk[0].size >= 11 gibibyte)',
+                '(FLAVOR.disk[0].size >= 40 gibibyte)',
+                '(FLAVOR.disk[1].size < 2 tebibyte)'
+            ],
+            ['(FLAVOR.disk[0].size >= 11 gibibyte)', '(FLAVOR.cpu.processors >= 4)'],
+            ['(FLAVOR.disk[0].size >= 11 gibibyte)', '(FLAVOR.disk[0].size >= 40 gibibyte)'],
+            [
+                '(FLAVOR.disk[0].size >= 11 gibibyte)',
+                '(FLAVOR.disk[0].size >= 10 gibibyte)',
+                '(FLAVOR.disk[0].size >= 20 gibibyte)'
+            ],
+            ['(FLAVOR.disk[0].size >= 11 gibibyte)', '(FLAVOR.cpu.processors >= 2)'],
+            ['(FLAVOR.disk[0].size >= 11 gibibyte)', '(FLAVOR.cpu.processors >= 3)'],
+            [
+                '(FLAVOR.disk[0].size >= 13 gibibyte)',
+                '(FLAVOR.disk[0].size >= 40 gibibyte)',
+                '(FLAVOR.disk[1].size >= 1 tebibyte)'
+            ],
+            [
+                '(FLAVOR.disk[0].size >= 13 gibibyte)',
+                '(FLAVOR.disk[0].size >= 40 gibibyte)',
+                '(FLAVOR.disk[1].size < 2 tebibyte)'
+            ],
+            ['(FLAVOR.disk[0].size >= 13 gibibyte)', '(FLAVOR.cpu.processors >= 4)'],
+            ['(FLAVOR.disk[0].size >= 13 gibibyte)', '(FLAVOR.disk[0].size >= 40 gibibyte)'],
+            [
+                '(FLAVOR.disk[0].size >= 13 gibibyte)',
+                '(FLAVOR.disk[0].size >= 10 gibibyte)',
+                '(FLAVOR.disk[0].size >= 20 gibibyte)'
+            ],
+            ['(FLAVOR.disk[0].size >= 13 gibibyte)', '(FLAVOR.cpu.processors >= 2)'],
+            ['(FLAVOR.disk[0].size >= 13 gibibyte)', '(FLAVOR.cpu.processors >= 3)']
+        ]
+    )
+], ids=[
+    'SPANS1',
+    'SPANS2'
+])
+def test_spans(
+    logger: ContextAdapter,
+    hw: str,
+    flavor: tft.artemis.environment.Flavor,
+    expected_spans: List[List[str]]
+) -> None:
+    constraint = parse_hw(hw)
+
+    assert eval_flavor(logger, constraint, flavor) is True
+
+    pruned_constraint = constraint.prune_on_flavor(logger, flavor)
+
+    assert pruned_constraint is not None
+
+    spans = [
+        [
+            str(constraint)
+            for constraint in span
+        ]
+        for span in pruned_constraint.spans(logger)
+    ]
+
+    assert spans == expected_spans
