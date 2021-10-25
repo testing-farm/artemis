@@ -17,11 +17,11 @@ draft: false
 Artemis server and its CLI tool, `artemis-cli`, exist as separate projects in this repository. Each has its own requirements, and you have to install them as such. We are using https://python-poetry.org/[Poetry] to manage installations.
 ====
 
-* Artemis CLI lives in `client` directory:
+* Artemis CLI lives in `cli` directory:
 +
 [source,shell]
 ....
-$ cd client/
+$ cd cli/
 ....
 +
 * create a local installation of Artemis CLI:
