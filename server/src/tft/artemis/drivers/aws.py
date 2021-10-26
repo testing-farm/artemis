@@ -1,5 +1,4 @@
 import base64
-import copy
 import dataclasses
 import datetime
 import ipaddress
@@ -7,10 +6,11 @@ import json
 import os
 import re
 import threading
-from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
+from typing import Any, Dict, List, MutableSequence, Optional, Pattern, Tuple, cast
 
 import gluetool.log
 import jq
+import pint
 import sqlalchemy.orm.session
 from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
@@ -18,7 +18,7 @@ from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 from typing_extensions import Literal, TypedDict
 
-from .. import Failure, JSONType, get_cached_item, get_cached_items_as_list, log_dict_yaml
+from .. import Failure, JSONType, SerializableContainer, get_cached_item, get_cached_items_as_list, log_dict_yaml
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, Flavor, FlavorCpu, FlavorVirtualization
@@ -34,19 +34,49 @@ from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsT
 #
 InstanceOwnerType = Tuple[Dict[str, Any], str]
 
-
-# Represent various parts of JSON blobs returned by API queries
+# EBS volume types.
 #
-# NOTE: not *all* fields and keys are listed, only those our code uses.
-class APIBlockDeviceMappingEbsType(TypedDict):
-    SnapshotId: str
-    VolumeSize: int
+# https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-volume-types.html
+#
+# Note: not using enum which would wrap the values with a Python class - these are being passed directly
+# in and out of AWS EC2 API, therefore sticking with plain strings.
+EBSVolumeTypeType = Literal['gp2', 'gp3', 'io1', 'io2', 'sc1', 'st1', 'standard']
 
 
-class APIBlockDeviceMappingType(TypedDict):
-    Ebs: APIBlockDeviceMappingEbsType
+# Type of container holding EBS properties of a block device mapping.
+#
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-blockdev-template.html
+APIBlockDeviceMappingEbsType = TypedDict(
+    'APIBlockDeviceMappingEbsType',
+    {
+        'DeleteOnTermination': bool,
+        'Encrypted': bool,
+        'Iops': int,
+        'KmsKeyId': str,
+        'SnapshotId': str,
+        'VolumeSize': int,
+        'VolumeType': EBSVolumeTypeType
+    },
+    total=False
+)
 
 
+# Type of container holding block device mapping.
+#
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-blockdev-mapping.html
+APIBlockDeviceMappingType = TypedDict(
+    'APIBlockDeviceMappingType',
+    {
+        'DeviceName': str,
+        'Ebs': APIBlockDeviceMappingEbsType
+    },
+    total=True
+)
+
+
+# Type of container holding block device mappings.
+#
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-instance.html
 APIBlockDeviceMappingsType = List[APIBlockDeviceMappingType]
 
 
@@ -242,6 +272,181 @@ def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold
     diff = datetime.datetime.utcnow() - parsed_timestamp
 
     return diff.total_seconds() >= threshold
+
+
+class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceMappingType]):
+    """
+    This wrapper over AWS EC2 API block device mappings. Its main purpose is to
+    host helper methods we use for modifications of mappings.
+    """
+
+    def __init__(self, mappings: Optional[List[APIBlockDeviceMappingType]] = None):
+        super(BlockDeviceMappings, self).__init__()
+
+        self.data = mappings[:] if mappings else []
+
+    # Abstract methods we need to define to keep types happy, since MutableSequence leaves them to us.
+    def __delitem__(self, index: int) -> None:  # type: ignore  # does not match supertype, but it's correct
+        del self.data[index]
+
+    def __getitem__(  # type: ignore  # does not match supertype, but it's correct
+        self,
+        index: int
+    ) -> APIBlockDeviceMappingType:
+        return self.data[index]
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __setitem__(  # type: ignore  # does not match supertype, but it's correct
+        self,
+        index: int,
+        value: APIBlockDeviceMappingType
+    ) -> None:
+        self.data[index] = value
+
+    def insert(self, index: int, value: APIBlockDeviceMappingType) -> None:
+        self[index] = value
+
+    # Override serialization - we're fine with quite a trivial approach.
+    def serialize_to_json(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], self.data)
+
+    @classmethod
+    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'BlockDeviceMappings':
+        cast_serialized = cast(APIBlockDeviceMappingsType, serialized)
+
+        return BlockDeviceMappings(cast_serialized)
+
+    # These two methods would deserve their own class, representing a single block device mapping, but, because
+    # such mapping isn't plain str/str dictionary, we would have to write so many checks and types to deal with
+    # the variants. It's more readable to have them here, namespaced, rather than top-level functions.
+    @staticmethod
+    def create_mapping(
+        device_name: str,
+        delete_on_termination: Optional[bool] = None,
+        encrypted: Optional[bool] = None,
+        size: Optional[pint.Quantity] = None,
+        volume_type: Optional[EBSVolumeTypeType] = None
+    ) -> Result[APIBlockDeviceMappingType, Failure]:
+        """
+        Create block device mapping.
+
+        All parameters except ``device_name`` are optional, and when not specified, their value in the device mapping
+        will remain unset.
+
+        :returns: newly created mapping.
+        """
+
+        mapping: APIBlockDeviceMappingType = {
+            'DeviceName': device_name,
+            'Ebs': {}
+        }
+
+        return BlockDeviceMappings.update_mapping(
+            mapping,
+            delete_on_termination=delete_on_termination,
+            encrypted=encrypted,
+            size=size,
+            volume_type=volume_type
+        )
+
+    @staticmethod
+    def update_mapping(
+        mapping: APIBlockDeviceMappingType,
+        device_name: Optional[str] = None,
+        delete_on_termination: Optional[bool] = None,
+        encrypted: Optional[bool] = None,
+        size: Optional[pint.Quantity] = None,
+        volume_type: Optional[EBSVolumeTypeType] = None
+    ) -> Result[APIBlockDeviceMappingType, Failure]:
+        """
+        Update given block device mapping.
+
+        All parameters are optional, and when not specified, the value currently set in the block device mapping
+        will remain unchanged.
+
+        :returns: updated mapping.
+        """
+
+        if device_name is not None:
+            mapping['DeviceName'] = device_name
+
+        if delete_on_termination is not None:
+            mapping['Ebs']['DeleteOnTermination'] = delete_on_termination
+
+        if encrypted is not None:
+            mapping['Ebs']['Encrypted'] = encrypted
+
+        if size is not None:
+            mapping['Ebs']['VolumeSize'] = int(size.to('GiB').magnitude)
+
+        if volume_type is not None:
+            mapping['Ebs']['VolumeType'] = volume_type
+
+        return Ok(mapping)
+
+    def _get_mapping(
+        self,
+        index: int
+    ) -> Optional[APIBlockDeviceMappingType]:
+        """
+        Return block device mapping with a given index if it exists.
+
+        :returns: block device mapping on the given index in the list of block device mappings,
+            or ``None`` if the position is undefined.
+        """
+
+        try:
+            return self.data[index]
+
+        except IndexError:
+            return None
+
+    def append_mapping(
+        self,
+        device_name: str,
+        delete_on_termination: Optional[bool] = None,
+        encrypted: Optional[bool] = None,
+        size: Optional[pint.Quantity] = None,
+        volume_type: Optional[EBSVolumeTypeType] = None
+    ) -> Result[APIBlockDeviceMappingType, Failure]:
+        """
+        Append new block device mapping.
+
+        All parameters except ``device_name`` are optional, and when not specified, their value in the device mapping
+        will remain unset.
+
+        :returns: newly created mapping.
+        """
+
+        r_create = BlockDeviceMappings.create_mapping(
+            device_name,
+            delete_on_termination=delete_on_termination,
+            encrypted=encrypted,
+            size=size,
+            volume_type=volume_type
+        )
+
+        if r_create.is_ok:
+            self.data.append(r_create.unwrap())
+
+        return r_create
+
+    def set_root_disk_size(
+        self,
+        size: Optional[pint.Quantity] = None
+    ) -> Result[APIBlockDeviceMappingType, Failure]:
+        mapping = self._get_mapping(0)
+
+        if mapping is None:
+            return Error(Failure(
+                'block device mapping does not exist',
+                block_device_mappings=self.data,
+                block_device_mapping_index=0
+            ))
+
+        return self.update_mapping(mapping, size=size)
 
 
 class AWSDriver(PoolDriver):
@@ -575,35 +780,11 @@ class AWSDriver(PoolDriver):
 
         return Ok(price)
 
-    def _set_root_disk_size(
-        self,
-        image: AWSPoolImageInfo,
-        root_disk_size: int
-    ) -> Result[Optional[APIBlockDeviceMappingsType], Failure]:
-        # TODO: this copy might be pointless since image info containers are created when being fetched from cache,
-        # TODO: and changing it here should not affect any other guest request since every provisioning entry point
-        # TODO: fetches its own container. But, for the sake of safety, let's create a copy until we can prove or
-        # TODO: assure this statement is correct.
-        block_device_mappings = copy.deepcopy(image.block_device_mappings)
-
-        try:
-            block_device_mappings[0]['Ebs']['VolumeSize'] = root_disk_size
-        except (KeyError, IndexError) as error:
-            return Error(
-                Failure.from_exc(
-                    'Failed to set root disk size',
-                    error,
-                    block_device_mappings=block_device_mappings
-                )
-            )
-
-        return Ok(block_device_mappings)
-
     def _create_block_device_mappings(
         self,
         image: AWSPoolImageInfo,
         flavor: Flavor
-    ) -> Result[Optional[APIBlockDeviceMappingsType], Failure]:
+    ) -> Result[BlockDeviceMappings, Failure]:
         """
         Prepare block device mapping according to given flavor.
 
@@ -617,13 +798,34 @@ class AWSDriver(PoolDriver):
         :param flavor: flavor providing the disk space information.
         """
 
+        mappings = BlockDeviceMappings(image.block_device_mappings)
+
         if flavor.disk and flavor.disk[0].size is not None:
-            return self._set_root_disk_size(image, int(flavor.disk[0].size.to('GiB').magnitude))
+            r_bdms = mappings.set_root_disk_size(flavor.disk[0].size)
 
-        if 'default-root-disk-size' in self.pool_config:
-            return self._set_root_disk_size(image, self.pool_config['default-root-disk-size'])
+            if r_bdms.is_error:
+                return Error(r_bdms.unwrap_error())
 
-        return Ok(None)
+        elif 'default-root-disk-size' in self.pool_config:
+            r_bdms = mappings.set_root_disk_size(UNITS[f'{self.pool_config["default-root-disk-size"]} GiB'])
+
+            if r_bdms.is_error:
+                return Error(r_bdms.unwrap_error())
+
+# TODO: once we merge all the pieces, we should be able to request additional storage, e.g.:
+#
+#        r_mapping = mappings.append_mapping(
+#            '/dev/sdd',
+#            delete_on_termination=True,
+#            encrypted=False,
+#            size=UNITS('120 GiB'),
+#            volume_type='gp3'
+#        )
+#
+#        if r_mapping.is_error:
+#            return Error(r_mapping.unwrap_error())
+
+        return Ok(mappings)
 
     def _request_instance(
         self,
@@ -655,8 +857,7 @@ class AWSDriver(PoolDriver):
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
 
-        if r_block_device_mappings.unwrap() is not None:
-            command.append(f'--block-device-mappings={json.dumps(r_block_device_mappings.unwrap())}')
+        command.append(f'--block-device-mappings={r_block_device_mappings.unwrap().serialize_to_json()}')
 
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
@@ -732,7 +933,7 @@ class AWSDriver(PoolDriver):
             subnet_id=self.pool_config['subnet-id'],
             security_group=self.pool_config['security-group'],
             user_data=user_data,
-            block_device_mappings=r_block_device_mappings.unwrap()
+            block_device_mappings=r_block_device_mappings.unwrap().serialize_to_json()
         )
 
         log_dict_yaml(logger.info, 'spot request launch specification', json.loads(specification))
