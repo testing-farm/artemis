@@ -35,13 +35,13 @@ from typing_extensions import Protocol
 from .. import __VERSION__, Failure, FailureDetailsType, JSONSchemaType
 from .. import db as artemis_db
 from .. import get_db, get_logger, load_validation_schema, metrics, validate_data
-from ..context import DATABASE, LOGGER
+from ..context import DATABASE, LOGGER, SESSION
 from ..drivers import PoolDriver
 from ..environment import Environment
 from ..guest import GuestState
 from ..knobs import KNOB_LOGGING_JSON, Knob
 from ..script import hook_engine
-from ..tasks import Actor, get_snapshot_logger
+from ..tasks import Actor, _get_ssh_key, get_snapshot_logger
 from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
@@ -613,7 +613,8 @@ class GuestRequestManager:
         guestname = str(uuid.uuid4())
 
         failure_details = {
-            'guestname': guestname
+            'guestname': guestname,
+            'keyname': guest_request.keyname
         }
 
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
@@ -647,6 +648,27 @@ class GuestRequestManager:
                 )
 
         with self.db.get_session() as session:
+            SESSION.set(session)
+
+            # Check whether key exists - still open to race condition, but the window is quite short,
+            # and don't rely on this test when we actually create request. All we need here is a better
+            # error message for user when they enter invalid key name.
+            r_key = _get_ssh_key(ownername, guest_request.keyname)
+
+            if r_key.is_error:
+                raise errors.InternalServerError(
+                    logger=guest_logger,
+                    caused_by=r_key.unwrap_error(),
+                    failure_details=failure_details
+                )
+
+            if r_key.unwrap() is None:
+                raise errors.BadRequestError(
+                    message='No such SSH key exists',
+                    logger=guest_logger,
+                    failure_details=failure_details
+                )
+
             perform_safe_db_change(
                 guest_logger,
                 session,
