@@ -11,7 +11,7 @@ from gluetool_modules.libs.sut_installation import SUTInstallation
 
 # Type annotations
 from typing import Any, List, Optional  # noqa
-from gluetool_modules.libs.guest import Guest
+from gluetool_modules.libs.guest import NetworkedGuest
 
 
 class InstallCoprBuild(gluetool.Module):
@@ -30,10 +30,10 @@ class InstallCoprBuild(gluetool.Module):
         }
     }
 
-    shared_functions = ('setup_guest',)
+    shared_functions = ['setup_guest']
 
     def setup_guest(self, guest, stage=GuestSetupStage.PRE_ARTIFACT_INSTALLATION, log_dirpath=None, **kwargs):
-        # type: (Guest, Optional[str], **Any) -> SetupGuestReturnType
+        # type: (NetworkedGuest, GuestSetupStage, Optional[str], **Any) -> SetupGuestReturnType
 
         self.require_shared('primary_task')
 
@@ -45,7 +45,7 @@ class InstallCoprBuild(gluetool.Module):
             stage=stage,
             log_dirpath=log_dirpath,
             **kwargs
-        )
+        )  # type: SetupGuestReturnType
 
         if r_overloaded_guest_setup_output is None:
             r_overloaded_guest_setup_output = Ok([])

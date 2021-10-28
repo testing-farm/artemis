@@ -7,7 +7,7 @@ import logging
 import gluetool
 
 # Type annotations
-from typing import Any
+from typing import Any, List, Dict  # noqa
 
 
 #: A note.
@@ -35,14 +35,14 @@ class Notes(gluetool.Module):
 
     supported_dryrun_level = gluetool.glue.DryRunLevels.ISOLATED
 
-    shared_functions = ('add_note',)
+    shared_functions = ['add_note']
 
     def __init__(self, *args, **kwargs):
         # type: (*Any, **Any) -> None
 
         super(Notes, self).__init__(*args, **kwargs)
 
-        self._notes = []
+        self._notes = []  # type: List[Note]
 
     def add_note(self, text, level=logging.INFO):
         # type: (str, int) -> None
@@ -75,6 +75,7 @@ class Notes(gluetool.Module):
 
     @property
     def eval_context(self):
+        # type: () -> Dict[str, List[Note]]
         __content__ = {  # noqa
             'NOTES': """
                      List of all gathered notes, sorted by their levels from the more important levels

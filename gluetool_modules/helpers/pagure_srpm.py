@@ -8,6 +8,9 @@ from gluetool.utils import normalize_path, Command
 from gluetool_modules.libs.brew_build_fail import run_command
 from gluetool_modules.libs.artifacts import artifacts_location
 
+# Type annotations
+from typing import Any, List, Optional, Tuple  # noqa
+
 
 class PagureSRPM(gluetool.Module):
 
@@ -36,7 +39,9 @@ class PagureSRPM(gluetool.Module):
     shared_functions = ['src_rpm']
 
     def _run_command(self, cmd, log_path, comment, cwd=None):
+        # type: (List[str], str, str, Optional[str]) -> gluetool.utils.ProcessOutput
         def _executor(command):
+            # type: (List[str]) -> gluetool.utils.ProcessOutput
             return Command(command).run(cwd=cwd) if cwd else Command(command).run()
 
         return run_command(
@@ -47,6 +52,7 @@ class PagureSRPM(gluetool.Module):
                 )
 
     def src_rpm(self):
+        # type: () -> Tuple[str, str]
         self.require_shared('primary_task')
 
         pull_request = self.shared('primary_task')
@@ -119,6 +125,7 @@ class PagureSRPM(gluetool.Module):
             pull_request.project.name
         )
 
+        assert output.stdout is not None
         src_rpm_name = output.stdout.split('/')[-1].strip()
 
         return src_rpm_name, pull_request.project.name

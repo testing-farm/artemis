@@ -11,7 +11,7 @@ class JenkinsBuildName(gluetool.Module):
     Use Jenkins REST API to change build name.
     """
 
-    name = ['jenkins-build-name', 'brew-build-name', 'copr-build-name']
+    name = 'jenkins-build-name'
     description = 'Set Jenkins build name.'
     supported_dryrun_level = gluetool.glue.DryRunLevels.DRY
 
@@ -25,6 +25,7 @@ class JenkinsBuildName(gluetool.Module):
     required_options = ['name']
 
     def execute(self):
+        # type: () -> None
         if not self.require_shared('jenkins'):
             return
 
