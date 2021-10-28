@@ -794,6 +794,9 @@ class OpenStackDriver(PoolDriver):
             elif name == 'totalSnapshotsUsed':
                 resources.usage.snapshots = int(value)
 
+            elif name == 'totalGigabytesUsed':
+                resources.usage.diskspace = int(value) * 1073741824
+
             # When updating limits, make sure to not overwrite those already specified by pool configuration.
             elif name == 'maxTotalCores' and resources.limits.cores is None:
                 resources.limits.cores = int(value)
@@ -807,6 +810,9 @@ class OpenStackDriver(PoolDriver):
 
             elif name == 'maxTotalSnapshots' and resources.limits.snapshots is None:
                 resources.limits.snapshots = int(value)
+
+            elif name == 'maxTotalVolumeGigabytes' and resources.limits.diskspace is None:
+                resources.limits.diskspace = int(value) * 1073741824
 
         r_networks = self._run_os([
             'ip',
