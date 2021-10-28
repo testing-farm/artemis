@@ -7,7 +7,7 @@ Allow modules to inject enviroment variables via EnvInject module
 
 import gluetool
 from gluetool.log import format_dict
-
+from typing import TYPE_CHECKING, List, Dict, Optional # noqa
 
 DEFAULT_PROPS_FILE = 'envinject-citool.props'
 
@@ -30,11 +30,13 @@ class EnvInject(gluetool.Module):
 
     shared_functions = ['env']
 
-    def __init__(self, *args, **kwargs):
-        super(EnvInject, self).__init__(*args, **kwargs)
-        self._variables = {}
+    def __init__(self, glue, name):
+        # type: (gluetool.Glue, str) -> None
+        super(EnvInject, self).__init__(glue, name)
+        self._variables = {}  # type: Dict[str, str]
 
     def env(self):
+        # type: () -> Dict[str, str]
         """
         Returns a dictionary whose content will be passed to EnvInject plugin.
         """
@@ -42,6 +44,7 @@ class EnvInject(gluetool.Module):
         return self._variables
 
     def destroy(self, failure=None):
+        # type: (Optional[gluetool.Failure]) -> None
         if not self.option('file'):
             self.debug('Do not save exported variables for EnvInject plugin: no file provided')
             return
