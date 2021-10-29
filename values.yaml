@@ -1,0 +1,101 @@
+## Global options used to configure multiple charts
+##
+global:
+  ## RabbitMQ access configuration
+  ##
+  rabbitmq:
+    auth:
+      username: "artemis"
+    port: 5672
+  ## PostgreSQL access configuration
+  ##
+  psql:
+    ## PostgreSQL credentials
+    username: "artemis"
+    ## If not specified here, password is generated automatically
+    #password: ""
+    ## Name of database for Artemis
+    database: "artemis"
+    ## Hostname of PostgreSQL server (should be used if hosted separately)
+    #host: ""
+    ## Port PostgreSQL service should be accessible from
+    port: 5432
+
+## Artemis-specific configuration
+##
+artemis:
+  ## Artemis-specific PostgreSQL configuration
+  ##
+  psql:
+    secretKey: "postgresql-password"
+
+  ## RabbitMQ
+  ##
+  rabbitmq:
+    secretKey: "rabbitmq-password"
+
+  ## asible-vault password to decrypt enrypted configuration files (ssh keys)
+  ##
+  vaultPassword: ""
+
+  ## Configuration directory
+  ##
+  configDir: "config"
+
+  ## Artemis components configuration
+  ##
+  api: {}
+  dispatcher: {}
+  scheduler: {}
+  #workers: []
+
+psql: {}
+
+## PostgreSQL service configuration
+##
+postgresql:
+  install: true
+  extraEnv: []
+
+  metrics:
+    enabled: false
+    extraEnv: []
+    customMetrics: {}
+
+## Adminer configuration
+##
+adminer:
+  install: false
+  extraEnv: []
+
+## RabbitMQ configuration
+##
+rabbitmq:
+  install: true
+  auth:
+    username: "artemis"
+    ## These just need to be set, the values are overridden
+    existingPasswordSecret: "dummy"
+    existingErlangSecret: "dummy"
+  clustering:
+    enabled: false
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+
+## Redis configuration
+##
+redis:
+  install: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: false
+  replica:
+    replicaCount: 0
+    persistence:
+      enabled: false
+  metrics:
+    enabled: true

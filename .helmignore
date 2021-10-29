@@ -1,0 +1,8 @@
+.git
+.gitignore
+*.swp
+*.swo
+*.bak
+*.tmp
+Chart.lock
+README.adoc

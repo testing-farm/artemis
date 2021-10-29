@@ -1,0 +1,324 @@
+{
+  "$schema": "https://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "psql": {
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "title": "PostgreSQL user",
+          "form": true
+        },
+        "password": {
+          "type": "string",
+          "title": "PostgreSQL password",
+          "form": true
+        },
+        "database": {
+          "type": "string",
+          "title": "PostgreSQL database name",
+          "form": true
+        },
+        "host": {
+          "type": "string",
+          "title": "PostgreSQL service hostname",
+          "form": true
+        },
+        "port": {
+          "type": "integer",
+          "title": "PostgreSQL service port",
+          "form": true
+        }
+      }
+    },
+    "rabbitmq": {
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "title": "RabbitMQ user",
+          "form": true
+        },
+        "password": {
+          "type": "string",
+          "title": "RabbitMQ password",
+          "form": true
+        },
+        "host": {
+          "type": "string",
+          "title": "RabbitMQ service hostname",
+          "form": true
+        },
+        "port": {
+          "type": "integer",
+          "title": "RabbitMQ service port",
+          "form": true
+        }
+      }
+    },
+    "redis": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "User Redis",
+          "form": true
+        },
+        "host": {
+          "type": "string",
+          "title": "Redis service hostname",
+          "form": true
+        },
+        "port": {
+          "type": "integer",
+          "title": "Redis service port",
+          "form": true
+        }
+      }
+    },
+    "dbSchemaRevision": {
+      "type": "string",
+      "title": "Database schema revision override",
+      "form": true
+    },
+    "vaultPassword": {
+      "type": "string",
+      "title": "Ansible Vault password to decrypt SSH keys",
+      "form": true
+    },
+    "api": {
+      "allOf": [
+        { "$ref": "#/$defs/component" },
+        { "$ref": "#/$defs/component_pt" },
+        {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "form": true
+            }
+          }
+        }
+      ]
+    },
+    "dispatcher": {
+      "$ref": "#/$defs/component"
+    },
+    "scheduler": {
+      "$ref": "#/$defs/component"
+    },
+    "workers": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          { "$ref": "#/$defs/component" },
+          { "$ref": "#/$defs/component_pt" },
+          {
+            "type": "object",
+            "properties": {
+              "queues": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "title": "Name of queue the worker should process",
+                  "form": true
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "actor": {
+      "type": "object",
+      "patternProperties": {
+        ".*": {
+          "type": "object",
+          "properties": {
+            "retries": {
+              "type": "integer",
+              "title": "Number of retries",
+              "form": true
+            }
+          },
+          "maxBackoff": {
+            "type": "object",
+            "properties": {
+              "type": "integer",
+              "title": "Maximum number of seconds before retrying a failed task",
+              "form": true
+            }
+          },
+          "minBackoff": {
+            "type": "object",
+            "properties": {
+              "type": "integer",
+              "title": "Minimum number of seconds before retrying a failed task",
+              "form": true
+            }
+          }
+        }
+      }
+    },
+    "connectionCloseAfterDispatch": {
+      "type": "boolean",
+      "title": "Forcefully close connection with the broker after every message dispatch",
+      "form": true
+    },
+    "dbPool": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "type": "integer",
+          "title": "Size of the DB connection pool",
+          "form": true
+        },
+        "maxOverflow": {
+          "type": "integer",
+          "title": "Maximum size of connection pool overflow",
+          "form": true
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["stdout", "file", "promtail-pipe"],
+          "title": "Logging method",
+          "form": true
+        },
+        "level": {
+          "type": "string",
+          "title": "Logging level",
+          "form": true
+        },
+        "json": {
+          "type": "boolean",
+          "title": "Output log in JSON format",
+          "form": true
+        },
+        "logDir": {
+          "type": "string",
+          "title": "Directory to contain logs if logging to file",
+          "form": true
+        },
+        "dbPool": {
+          "type": "boolean",
+          "form": true
+        },
+        "dbQueries": {
+          "type": "boolean",
+          "form": true
+        },
+        "dbQueryThreshold": {
+          "type": "number",
+          "form": true
+        },
+        "slowCliCommands": {
+          "type": "boolean",
+          "form": true
+        },
+        "slowCliCommandPattern": {
+          "type": "string",
+          "form": true
+        },
+        "slowCliCommandThreshold": {
+          "type": "number",
+          "form": true
+        },
+        "promtailOptions": {
+          "type": "string",
+          "form": true
+        },
+        "promtailUseCustomConfig": {
+          "type": "boolean",
+          "form": true
+        }
+      }
+    },
+    "sentry": {
+      "type": "object",
+      "properties": {
+        "dsn": {
+          "type": "string",
+          "form": true
+        },
+        "baseUrl": {
+          "type": "string",
+          "form": true
+        }
+      },
+      "anyOf": [
+        {"required": ["dsn", "baseUrl"]},
+        {
+          "anyOf": [
+            {"not": {"required": ["dsn"]}},
+            {"not": {"required": ["baseUrl"]}}
+	  ]
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "resources_def": {
+      "type": "object",
+      "properties": {
+        "memory": {
+          "type": "string",
+          "title": "Memory size requirement",
+          "form": true
+        },
+        "cpu": {
+          "type": "string",
+          "title": "CPU cores requirement",
+          "form": true
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "requests": {
+          "$ref": "#/$defs/resources_def"
+        },
+        "limits": {
+          "$ref": "#/$defs/resources_def"
+        }
+      }
+    },
+    "component": {
+      "type": "object",
+      "properties": {
+        "replicaCount": {
+          "type": "integer",
+          "title": "Number of instances to run",
+          "form": true
+        },
+        "resources": {
+          "$ref": "#/$defs/resources"
+        }
+      }
+    },
+    "component_pt": {
+      "type": "object",
+      "properties": {
+        "processes": {
+          "type": "integer",
+          "title": "Number of processes to be run",
+          "minimum": 1,
+          "form": true
+        },
+        "threads": {
+          "type": "integer",
+          "title": "Number of threads to be run",
+          "minimum": 1,
+          "form": true
+        }
+      }
+    }
+  }
+}

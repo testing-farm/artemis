@@ -1,0 +1,210 @@
+## Global configuration values
+##
+global:
+  psql: {}
+    #username: ""
+    #password: ""
+    #database: ""
+    #host: ""
+    #port: ""
+  rabbitmq:
+    auth: {}
+
+## Artemis image
+##
+image:
+  registry: quay.io
+  repository: testing-farm/artemis
+  tag: "latest"
+
+## PostgreSQL database access
+##
+psql:
+  #username: ""
+  #password: ""
+  #existingSecret: ""
+  secretKey: "postgresql-password"
+  #database: ""
+  #host: ""
+  port: 5432
+
+## RabbitMQ service
+##
+rabbitmq:
+  #username: ""
+  #password: ""
+  #existingSecret: ""
+  secretKey: "rabbitmq-password"
+  #host: ""
+  port: 5672
+
+redis:
+  enabled: false
+  #existingSecret: ""
+  host: ""
+  port: 6379
+
+## Labels to add to the pods
+
+## Database schema revision override used during database initialization
+dbSchemaRevision: "head"
+
+## initdb script config
+initdb:
+  image:
+    registry: quay.io
+    repository: testing-farm/artemis
+    tag: "latest"
+
+## Artemis configuration
+##
+#configuration:
+#  ## Artemis users
+#  ## Users can be configured using its name and optionally role (user or
+#  ## admin). If role is omitted, defaults to `user`. Example:
+#  ##   - name: admin
+#  ##     role: admin
+#  ##
+#  users: []
+#  ## SSH keys artemis can use to configure and access guests
+#  ## Keys can be configured as follows:
+#  ##   - name: <key_name>
+#  ##     owner: <artemis_user>
+#  ##     private: <private_key>
+#  ##     public: <public_key>
+#  ##
+#  ##
+#  ssh_keys: []
+#  ## Priority groups
+#  ## Priority group can be added with following syntax:
+#  ##   - name: <priority_group_name>
+#  ##
+#  priority_groups: []
+#  ## Default guest tags. These are applied to all guests.
+#  ## Guest tag can be added using the following syntax:
+#  ##   <tag_name>: <tag_value>
+#  ##
+#  guest_tags: {}
+#  ## Resource pools
+#  ## Resource pool can be added using following syntax:
+#  ##   - name: <pool_name>
+#  ##     driver: <pool_driver>
+#  ##     parametes:
+#  ##       <pool_driver_specific_parameters>
+#  ##       capabilities:
+#  ##         <pool_capabilities>
+#  ##
+#  pools: []
+
+## Ansible vault password used to decrypt ssh keys
+##
+vaultPassword: ""
+
+## Configuration directory containing server.yml, ssh-keys, and hooks
+##
+configDir: "config"
+
+## Artemis API service deployment configuration
+##
+api:
+  ## Number of instances to run
+  replicaCount: 1
+  ## Port the service should be exposed on
+  port: 8001
+  ## Number of processes each instance should run
+  processes: 1
+  ## Number of threads
+  threads: 1
+  ## Container resources
+  ## See: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+  resources: {}
+
+## Artemis dispatcher deployment configuration
+dispatcher:
+  replicaCount: 1
+  resources: {}
+
+## Artemis scheduler deployment configuration
+scheduler:
+  replicaCount: 1
+  resources: {}
+
+## Artemis workers configuration
+## It is possible to define arbitrarily many worker configurations to, for
+## example, define different workers to handle different types of tasks. Worker
+## is defined as follows:
+##  - name: <worker_name>
+##    replicaCount: <number_of_instances>
+##    processes: <number_of_worker_processes>
+##    thread: <number_of_worker_threads>
+##    queues: [<list_of_worker_queues>]
+##    resources:
+##      <worker_resources>
+##
+workers:
+  - replicaCount: 1
+    ## Number of worker processes
+    processes: 1
+    ## Number of worker threads
+    threads: 1
+    ## Queues the worker should process
+    queues: []
+    resources: {}
+
+actor:
+  routeGuestRequest: {}
+    #priority: ""
+    #queueName: ""
+    #retries: ""
+    #maxBackoff: ""
+    #minBackoff: ""
+  prepareVerifySSH: {}
+    #priority: ""
+    #queueName: ""
+    #retries: ""
+    #maxBackoff: ""
+    #minBackoff: ""
+  acquireGuestRequest: {}
+    #priority: ""
+    #queueName: ""
+    #retries: ""
+    #maxBackoff: ""
+    #minBackoff: ""
+
+## Forcefully close connection with the broker after every message dispatch
+##
+connectionCloseAfterDispatch: false
+
+## Database connection pool
+##
+dbPool: {}
+  ## Size of the DB connection pool
+  #size: 20
+  ## Maximum size of connection pool overflow
+  #maxOverflow: 10
+
+## Logging options
+##
+logging: {}
+  #method: "stdout"
+  #level: "info"
+  #json: false
+  #logDir: "/tmp/logs"
+  #dbPool: false
+  #dbSlowQueries: false
+  #dbSlowQueryThreshold: 10.0
+  #slowCliCommands: false
+  #slowCliCommandPattern: ".*"
+  #slowCliCommandThreshold: 10.0
+  #promtailOptions: ""
+  #promtailUseCustomConfig: false
+
+## Extra environmental variables to be passed to artemis containers
+##
+extraEnv: []
+
+## Sentry logging configuration
+##
+sentry: {}
+  #dsn: ""
+  #baseUrl: ""

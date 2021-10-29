@@ -1,7 +1,11 @@
 *.swp
 *.swo
 
-charts/*.tar.gz
-charts/postgresql
-charts/rabbitmq
-charts/redis
+charts/*.tgz
+charts/postgresql/
+charts/rabbitmq/
+charts/redis/
+
+Chart.lock
+
+config/

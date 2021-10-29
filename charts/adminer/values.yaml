@@ -1,0 +1,22 @@
+global:
+  imagePullSecrets: []
+
+image:
+  registry: docker.io
+  repository: adminer
+  tag: 4.8.0
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+servicePort: 8080
+
+## Default SQL server
+defaultHost: ""
+defaultPort: ""
+
+extraEnv: []
+
+resources: {}
+
+nodeSelector: {}

@@ -1,0 +1,202 @@
+{{/*
+Artemis component deployments are quite similar, and require only minor
+changes. Define these differences as attributes in dicts for each component.
+*/}}
+
+{{/*
+Construct dict for API - always enabled, port 8001 with readiness and liveness
+probes.
+*/}}
+{{- $api := deepCopy .Values.api }}
+{{- $_ := set $api "component" "api" }}
+{{- $_ := set $api "entrypointArgs" (list "api") }}
+{{- $api_service_port := dict }}
+{{- $_ := set $api_service_port "name" "artemis-api" }}
+{{- $_ := set $api_service_port "port" 8001 }}
+{{- $_ := set $api "ports" (list $api_service_port) }}
+{{- $api_readinessProbe := dict "failureThreshold" 3 "httpGet" (dict "path" "/guests/" "port" "artemis-api" "scheme" "HTTP") "initialDelaySeconds" 10 "periodSeconds" 10 "successThreshold" 1 "timeoutSeconds" 5 }}
+{{- $api_livenessProbe := dict "failureThreshold" 3 "httpGet" (dict "path" "/guests/" "port" "artemis-api" "scheme" "HTTP") "periodSeconds" 10 "successThreshold" 1 "timeoutSeconds" 5 }}
+{{- $_ := set $api "readinessProbe" $api_readinessProbe }}
+{{- $_ := set $api "livenessProbe" $api_livenessProbe }}
+{{/*
+Dispatcher properties
+*/}}
+{{- $dispatcher := deepCopy .Values.dispatcher }}
+{{- $_ := set $dispatcher "component" "dispatcher" }}
+{{- $_ := set $dispatcher "entrypointArgs" (list "dispatcher") }}
+{{/*
+Scheduler properties
+*/}}
+{{- $scheduler := deepCopy .Values.scheduler }}
+{{- $_ := set $scheduler "component" "scheduler" }}
+{{- $_ := set $scheduler "entrypointArgs" (list "scheduler") }}
+{{/*
+Construct properties for all workers. It is not possible to assign variables
+from outside the scope. This is worked around by assigning list to a mutable
+dictonary.
+*/}}
+{{- $worker_common := dict "component" "worker" "entrypointArgs" (list "worker") }}
+{{- $workers := dict "list" list }}
+{{- range .Values.workers }}
+  {{- $worker := deepCopy . | merge (deepCopy $worker_common) }}
+  {{- if .name }}
+    {{- $_ := set $worker "component" (printf "worker-%s" .name) }}
+  {{- end }}
+  {{- if $worker.queues }}
+    {{- $_ := (include "artemis.concatList" (dict "separator" " " "list" $worker.queues)) | set $worker "queues" }}
+  {{- end }}
+  {{- $_ := append $workers.list $worker | set $workers "list" }}
+{{- end }}
+
+{{- range concat (tuple $api $dispatcher $scheduler) $workers.list }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "artemis.fullname" $ }}-{{ .component }}
+  labels:
+    {{ include "artemis.labels" $ | nindent 4 }}
+    app.kubernetes.io/app: {{ template "artemis.fullname" $ }}
+    app.kubernetes.io/component: {{ .component }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  replicas: {{ default 1 .replicaCount }}
+  selector:
+    matchLabels:
+      {{ include "artemis.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/app: {{ template "artemis.fullname" $ }}
+      app.kubernetes.io/component: {{ .component }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{ include "artemis.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/app: {{ template "artemis.fullname" $ }}
+        app.kubernetes.io/component: {{ .component }}
+      annotations:
+        checksum/config: {{ template "artemis.config.checksum" $ }}
+        checksum/env: >-
+          {{
+            include (print $.Template.BasePath "/env-configmap.yaml") $ |
+            sha256sum
+          }}
+    spec:
+      volumes:
+        - name: artemis-config
+          configMap:
+            name: {{ template "artemis.config.configMapName" $ }}
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ template "artemis.image" $ }}
+          imagePullPolicy: {{ default "" $.Values.imagePullPolicy | quote }}
+          command:
+            - /wait-for-postgres.sh
+          env:
+            - name: ARTEMIS_DEPLOYMENT
+              value: {{ template "artemis.fullname" $ }}
+            - name: ARTEMIS_COMPONENT
+              value: {{ .component }}.wait-for-postgres
+            - name: POSTGRESQL_USER
+              value: {{ template "artemis.psql.username" $ }}
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "artemis.psql.secretName" $ }}
+                  key: {{ $.Values.psql.secretKey }}
+            - name: POSTGRESQL_HOSTNAME
+              value: {{ template "artemis.psql.host" $ }}
+            - name: POSTGRESQL_PORT
+              value: {{ include "artemis.psql.port" $ | quote }}
+        - name: wait-for-rabbitmq
+          image: {{ template "artemis.image" $ }}
+          imagePullPolicy: {{ default "" $.Values.imagePullPolicy | quote }}
+          command:
+            - /wait-for-rabbitmq.sh
+          env:
+            - name: ARTEMIS_DEPLOYMENT
+              value: {{ template "artemis.fullname" $ }}
+            - name: ARTEMIS_COMPONENT
+              value: {{ .component }}.wait-for-rabbitmq
+            - name: RABBITMQ_HOSTNAME
+              value: {{ template "artemis.rabbitmq.host" $ }}
+            - name: RABBITMQ_PORT
+              value: {{ include "artemis.rabbitmq.port" $ | quote }}
+        {{- if (include "artemis.redis.enabled" $) }}
+        - name: wait-for-redis
+          image: {{ template "artemis.image" $ }}
+          imagePullPolicy: {{ default "" $.Values.imagePullPolicy | quote }}
+          command:
+            - /wait-for-redis.sh
+          env:
+            - name: ARTEMIS_DEPLOYMENT
+              value: {{ template "artemis.fullname" $ }}
+            - name: ARTEMIS_COMPONENT
+              value: {{ .component }}.wait-for-rabbitmq
+            - name: REDIS_HOSTNAME
+              value: {{ template "artemis.redis.host" $ }}
+            - name: REDIS_PORT
+              value: {{ include "artemis.redis.port" $ | quote }}
+        {{- end }}
+      containers:
+        - name: artemis-{{ .component }}
+          image: {{ template "artemis.image" $ }}
+          imagePullPolicy: {{ default "" $.Values.imagePullPolicy | quote }}
+          {{- if .resources }}
+          resources: {{ toYaml .resources | nindent 10 }}
+          {{- end }}
+          command: ["/entrypoint.sh"]
+          args: {{ .entrypointArgs }}
+          env:
+            - name: ARTEMIS_DEPLOYMENT
+              value: {{ template "artemis.fullname" $ }}
+            - name: ARTEMIS_COMPONENT
+              value: {{ .component }}
+            {{- if .processes }}
+            - name: ARTEMIS_API_PROCESSES
+              value: {{ .processes | quote }}
+            - name: ARTEMIS_WORKER_PROCESSES
+              value: {{ .processes | quote }}
+            {{- end }}
+            {{- if .threads }}
+            - name: ARTEMIS_API_THREADS
+              value: {{ .threads | quote }}
+            - name: ARTEMIS_WORKER_THREADS
+              value: {{ .threads | quote }}
+            {{- end }}
+            {{- if .queues }}
+            - name: ARTEMIS_WORKER_QUEUES
+              value: {{ .queues | quote }}
+            {{- end }}
+            - name: ARTEMIS_BROKER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "artemis.rabbitmq.secretName" $ }}
+                  key: {{ $.Values.rabbitmq.secretKey }}
+            - name: ARTEMIS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "artemis.psql.secretName" $ }}
+                  key: {{ $.Values.psql.secretKey }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "artemis.fullname" $ }}-env
+          volumeMounts:
+            - name: artemis-config
+              mountPath: {{ template "artemis.config.mountPath" $ }}
+          {{- if .ports }}
+          ports:
+          {{- range .ports }}
+            - name: {{ .name }}
+              containerPort: {{ .port }}
+          {{- end }}
+          {{- end }}
+          {{- if .readinessProbe }}
+          readinessProbe:
+            {{ toYaml .readinessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .livenessProbe }}
+          livenessProbe:
+            {{ toYaml .livenessProbe | nindent 12 }}
+          {{- end }}
+{{- end }}

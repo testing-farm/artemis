@@ -1,0 +1,11 @@
+{{- if not (include "artemis.config.useExistingConfigMap" .) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "artemis.fullname" . }}-config
+  labels:
+    {{- include "adminer.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace }}
+data:
+  {{ (.Files.Glob (printf "%s/*" .Values.configDir)).AsConfig | indent 2 }}
+{{- end }}

@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ template "artemis.fullname" . }}-test-api-response
+  labels:
+    app.kubernetes.io/app: {{ template "artemis.fullname" . }}
+    app.kubernetes.io/component: api-test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded,hook-failed
+spec:
+  template:
+    metadata:
+      name: {{ template "artemis.fullname" . }}-test-api-response
+      labels:
+        app.kubernetes.io/app: {{ template "artemis.fullname" . }}
+        app.kubernetes.io/component: initdb-hook
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: test-api-response
+          image: {{ template "artemis.image" . }}
+          imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
+          command:
+            - bash
+          args: ["-c", {{ printf "curl -s -L %s-api.%s.svc:8001/about | python3 -c \"import sys, json; r = json.load(sys.stdin); assert ('package_version' in r and 'artemis_deployment' in r), 'Invalid response'\"" (include "artemis.fullname" .) .Release.Namespace | quote }}]

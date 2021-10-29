@@ -1,0 +1,29 @@
+apiVersion: v2
+description: >-
+  Chart to configure Artemis and required services - PostgreSQL, RabbitMQ and
+  Redis.
+name: artemis-core
+type: application
+version: 0.0.1
+appVersion: 0.0.28
+home: https://testing-farm.gitlab.io/artemis/
+sources:
+  - https://gitlab.com/testing-farm/artemis
+dependencies:
+  - name: artemis
+    version: '*.*.*'
+  - name: adminer
+    version: '*.*.*'
+    condition: adminer.install
+  - name: postgresql
+    version: 10.9.2
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.install
+  - name: rabbitmq
+    version: 8.20.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: rabbitmq.install
+  - name: redis
+    version: 14.8.8
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.install

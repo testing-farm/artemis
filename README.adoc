@@ -1,0 +1,47 @@
+= Artemis Helm Chart
+
+This repository contains https://helm.sh/[Helm] chart that can be used to configure and deploy https://gitlab.com/testing-farm/artemis[Artemis] instance to a Kubernetes cluster.
+
+== Services
+
+If not configured otherwise, this chart deploys PostgreSQL and RabbitMQ as database and broker backends, Redis as cache, and configures Artemis to use these.
+
+== Deployment configuration
+
+The chart is configured using values.yaml file. See `values.yaml` in chart root.
+
+=== Custom values
+
+Defaults from `values.yaml` can be overriden by creating sperate yaml containing keys to override from default configuration. Custom values are then applied using helm:
+
+ $ helm install/upgrade <deployment name> <chart path> --values=<path to custom values yaml>
+
+=== Artemis configuration
+
+To successfully deploy Artemis using this chart, it is necessary to provide configuration. A directory needs to be created withing the charts subdirectories and should contain everything usual artemis deployment contains in its configuration folder (`server.yml` and routing hooks for artemis to use).
+
+Example configuration folder tree:
+
+....
+config/
+├── ARTEMIS_HOOK_AWS_ENVIRONMENT_TO_IMAGE.py
+├── ARTEMIS_HOOK_AZURE_ENVIRONMENT_TO_IMAGE.py
+├── ARTEMIS_HOOK_BEAKER_ENVIRONMENT_TO_IMAGE.py
+├── ARTEMIS_HOOK_OPENSTACK_ENVIRONMENT_TO_IMAGE.py
+├── ARTEMIS_HOOK_ROUTE.py
+├── artemis-image-map-azure.yaml
+├── artemis-image-map-openstack.yaml
+├── server.yml
+└── userdata_allow_root
+....
+
+To use the configuration folder, its path (relative to the chart's root) needs to be specified either in the values config. Note that it is currently not possible for helm to access files outside the chart's root, therefore the configuration folder must be a subdirectory of the root chart.
+
+....
+artemis:
+    configDir: "config/"
+....
+
+or can be specified on command line when deploying the chart:
+
+ $ helm install <artemis-deployment> . --set="artemis.configDir=config/"

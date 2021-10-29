@@ -1,0 +1,19 @@
+Successfully deployed Artemis.
+
+Deployment name: {{ .Release.Name }}
+
+Artemis API service is exposed on: {{ template "artemis.fullname" . }}-api.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.artemis.api.port }}
+
+Additional services installed:
+{{- if .Values.postgresql.install }}
+  * PostgreSQL on: {{ template "postgresql.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ template "artemis.psql.port" . }}
+{{- end }}
+{{- if .Values.rabbitmq.install }}
+  * RabbitMQ on: {{ template "rabbitmq.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ template "artemis.rabbitmq.port" . }}
+{{- end }}
+{{- if .Values.redis.install }}
+  * Redis on: {{ template "redis.fullname" . }}-master.{{ .Release.Namespace }}.svc.cluster.local:{{ template "artemis.redis.port" . }}
+{{- end }}
+{{- if .Values.adminer.install }}
+  * Adminer on: {{ template "adminer.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.adminer.servicePort | default 8080 }}
+{{- end }}

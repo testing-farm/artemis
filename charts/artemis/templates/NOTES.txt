@@ -1,0 +1,3 @@
+{{- if or (and (empty .Values.sentry.dsn) (not (empty .Values.sentry.baseUrl))) (and (not (empty .Values.sentry.dsn)) (empty .Values.sentry.baseUrl)) -}}
+  {{- fail "To use sentry, both dsn and baseUrl parameters need to be set." -}}
+{{- end -}}

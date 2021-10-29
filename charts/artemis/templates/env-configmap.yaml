@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "artemis.fullname" . }}-env
+  labels:
+    {{ include "artemis.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace }}
+data:
+  ARTEMIS_BROKER_PROTOCOL: "amqp"
+  ARTEMIS_BROKER_USERNAME: >-
+    {{
+      pluck "username" $.Values.rabbitmq $.Values.global.rabbitmq.auth |
+      first
+    }}
+  ARTEMIS_BROKER_HOST: >-
+    {{ template "artemis.rabbitmq.host" $ }}:{{ template "artemis.rabbitmq.port" $ }}
+  {{- if $.Values.brokerHeartbeatTimeout }}
+  ARTEMIS_BROKER_HEARTBEAT_TIMEOUT: >-
+    {{ $.Values.brokerHeartbeatTimeout }}
+  {{- end }}
+  {{- if (include "artemis.redis.enabled" $) }}
+  ARTEMIS_CACHE_URL: >-
+    redis://{{ template "artemis.redis.host" $ }}:{{ template "artemis.redis.port" $ }}
+  {{- end }}
+  ARTEMIS_DB_PROTOCOL: "postgresql"
+  ARTEMIS_DB_USERNAME: >-
+    {{ pluck "username" $.Values.psql $.Values.global.psql | first }}
+  ARTEMIS_DB_HOST: >-
+    {{ template "artemis.psql.host" $ }}:{{ template "artemis.psql.port" $ }}
+  ARTEMIS_DB_DATABASE: >-
+    {{ pluck "database" $.Values.psql $.Values.global.psql | first }}
+  {{- if $.Values.dbPool.size }}
+  ARTEMIS_DB_POOL_SIZE: {{ $.Values.dbPool.size | quote }}
+  {{- end }}
+  {{- if $.Values.dbPool.maxOverflow }}
+  ARTEMIS_DB_POOL_MAX_OVERFLOW: {{ $.Values.dbPool.maxOverflow | quote }}
+  {{- end }}
+  ARTEMIS_CONFIG_DIR: {{ template "artemis.config.mountPath" . }}
+  {{- if $.Values.vaultPass }}
+  ARTEMIS_VAULT_PASSWORD: {{ $.Values.vaultPassword | quote }}
+  {{- else }}
+  ARTEMIS_VAULT_PASSWORD_FILE: >-
+    {{ template "artemis.config.mountPath" . }}/.vault_pass
+  {{- end }}
+  {{- if $.Values.logging.logDir }}
+  ARTEMIS_LOG_DIR: {{ $.Values.logging.logDir }}
+  {{- end }}
+  {{- if $.Values.logging.json }}
+  ARTEMIS_LOG_JSON: {{ $.Values.logging.json | quote }}
+  {{- end }}
+  {{- if $.Values.logging.dbPool }}
+  ARTEMIS_LOG_DB_POOL: {{ $.Values.logging.dbPool | quote }}
+  {{- end }}
+  {{- if $.Values.logging.dbSlowQueries }}
+  ARTEMIS_LOG_DB_SLOW_QUERIES: {{ $.Values.logging.dbSlowQueries | quote }}
+  {{- end }}
+  {{- if $.Values.logging.dbSlowQueryThreshold }}
+  ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD: >-
+    {{ $.Values.logging.dbSlowQueryThreshold }}
+  {{- end }}
+  {{- if $.Values.logging.slowCliCommands }}
+  ARTEMIS_LOG_SLOW_CLI_COMMANDS: {{ $.Values.logging.slowCliCommands }}
+  {{- end }}
+  {{- if $.Values.logging.slowCliCommandPattern }}
+  ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN: >-
+    {{ $.Values.logging.slowCliCommandPattern }}
+  {{- end }}
+  {{- if $.Values.logging.slowCliCommandThreshold }}
+  ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD: >-
+    {{ $.Values.logging.slowCliCommandThreshold }}
+  {{- end }}
+  {{- if $.Values.logging.method }}
+  ARTEMIS_CONTAINER_LOG_METHOD: {{ $.Values.logging.method }}
+  {{- end }}
+  {{- if $.Values.logging.promtailUseCustomConfig }}
+  ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH: >-
+    {{ template "artemis.config.mountPath" $ }}/promtail.yaml
+  {{- end }}
+  {{- if $.Values.logging.promtailOptions }}
+  ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS: {{ $.Values.logging.promtailOptions }}
+  {{- end }}
+  ARTEMIS_HOOK_ROUTE: >-
+    {{ template "artemis.config.mountPath" $ }}/ARTEMIS_HOOK_ROUTE.py
+  ARTEMIS_CLOSE_AFTER_DISPATCH: >-
+    {{ ternary true false $.Values.connectionCloseAfterDispatch }}
+  {{- if $.Values.actor.routeGuestRequest.retries }}
+  ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_RETRIES: >-
+    {{ $.Values.actor.routeGuestRequest.retries }}
+  {{- end }}
+  {{- if $.Values.actor.routeGuestRequest.maxBackoff }}
+  ARTEMIS_ACTOR_ROUTE_GUEST_REQUEST_MAX_BACKOFF: >-
+    {{ $.Values.actor.routeGuestRequest.maxBackoff }}
+  {{- end }}
+  {{- if $.Values.actor.prepareVerifySSH.retries }}
+  ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_RETRIES: >-
+    {{ $.Values.actor.prepareVerifySSH.retries }}
+  {{- end }}
+  {{- if $.Values.actor.prepareVerifySSH.maxBackoff }}
+  ARTEMIS_ACTOR_PREPARE_VERIFY_SSH_MAX_BACKOFF: >-
+    {{ $.Values.actor.prepareVerifySSH.maxBackoff }}
+  {{- end }}
+  {{- if $.Values.actor.acquireGuestRequest.retries }}
+  ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_RETRIES: >-
+    {{ $.Values.actor.acquireGuestRequest.retries }}
+  {{- end }}
+  {{- if $.Values.actor.acquireGuestRequest.maxBackoff }}
+  ARTEMIS_ACTOR_ACQUIRE_GUEST_REQUEST_MAX_BACKOFF: >-
+    {{ $.Values.actor.acquireGuestRequest.maxBackoff }}
+  {{- end }}
+  #ARTEMIS_ACTOR_UPDATE_GUEST_REQUEST_TICK_beaker: ""
+  {{- if $.Values.routePoolResourceThreshold }}
+  ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD: >-
+    {{ $.Values.routePoolResourceThreshold }}
+  {{- end }}
+  {{- if $.Values.sentry.dsn }}
+  SENTRY_DSN: {{ $.Values.sentry.dsn }}
+  {{- end }}
+  {{- if $.Values.sentry.baseUrl }}
+  SENTRY_BASE_URL: {{ $.Values.sentry.baseUrl }}
+  {{- end }}
+  {{- range $.Values.extraEnv }}
+  {{ .name }}: {{ .value }}
+  {{- end }}
