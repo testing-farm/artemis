@@ -722,7 +722,10 @@ def get_config() -> Dict[str, Any]:
     )
 
 
-def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
+def get_broker(
+    logger: gluetool.log.ContextAdapter,
+    application_name: Optional[str] = None
+) -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
     if os.getenv('IN_TEST', None):
         broker = dramatiq.brokers.stub.StubBroker(middleware=[
             dramatiq.middleware.age_limit.AgeLimit(),
@@ -742,6 +745,37 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
         # TODO: for actual limiter, we would need to throw in either Redis or Memcached.
         # Using stub and a dummy key for now, but it's just not going to do its job properly.
 
+        broker_url = KNOB_BROKER_URL.value
+
+        # Client properties must be encoded into URL, Pika does not allow `url` + `client_properties` at the same time.
+        client_properties: Dict[str, str] = {}
+
+        if application_name is not None:
+            client_properties['connection_name'] = application_name
+
+        if client_properties:
+            import urllib.parse
+
+            parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
+
+            parsed_query: Dict[str, Union[str, Dict[str, str]]] = {
+                k: v
+                for k, v in urllib.parse.parse_qsl(parsed_url.query)
+            }
+
+            parsed_query['client_properties'] = client_properties
+
+            broker_url = urllib.parse.ParseResult(
+                scheme=parsed_url.scheme,
+                netloc=parsed_url.netloc,
+                path=parsed_url.path,
+                params=parsed_url.params,
+                query=urllib.parse.urlencode(parsed_query),
+                fragment=parsed_url.fragment
+            ).geturl()
+
+        logger.debug(f'final broker URL is {broker_url}')
+
         broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
             confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value,
             middleware=[
@@ -755,7 +789,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
                 artemis_middleware.Retries(),
                 periodiq.PeriodiqMiddleware()
             ],
-            url=KNOB_BROKER_URL.value
+            url=broker_url
         )
 
     dramatiq.set_broker(broker)
