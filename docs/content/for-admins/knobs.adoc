@@ -347,17 +347,6 @@ until cancelled and reprovisioned.
 
 5+|If set, every attempt to enqueue a messages will require a confirmation from the broker.
 
-|`broker.heartbeat-timeout`
-|`int`
-|`ARTEMIS_BROKER_HEARTBEAT_TIMEOUT`
-|`60`
-|no
-
-
-
-5+|An interval, in seconds, after which a broker client should ping the server over the established connection to
-keep both parties aware the connection should be kept alive.
-
 |`broker.url`
 |`str`
 |`ARTEMIS_BROKER_URL`
@@ -366,7 +355,8 @@ keep both parties aware the connection should be kept alive.
 
 
 
-5+|Broker URL.
+5+|Broker URL. See https://pika.readthedocs.io/en/1.2.0/modules/parameters.html#pika.connection.URLParameters
+for full list of connection parameters that can be specified via URL.
 
 |`cache.url`
 |`str`

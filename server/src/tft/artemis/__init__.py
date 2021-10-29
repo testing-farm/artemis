@@ -7,7 +7,6 @@ import json
 import os
 import sys
 import traceback as _traceback
-import urllib.parse
 from types import FrameType, TracebackType
 from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Iterable, List, MutableSet, NoReturn, Optional, \
     Tuple, Type, TypeVar, Union, cast
@@ -738,19 +737,10 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
         ])
 
     else:
-        # We need a better control over some aspects of our broker connection, e.g. heartbeat
-        # and timeouts. This is possible, but we cannt use broker URL as a argument, this is
-        # not supported with Dramatiq and Pika. Therefore, we need to parse the URL and construct
-        # connection parameters, with expected content, and add more details when needed.
-
-        import pika
-
-        from .knobs import KNOB_BROKER_CONFIRM_DELIVERY, KNOB_BROKER_HEARTBEAT_TIMEOUT, KNOB_BROKER_URL
+        from .knobs import KNOB_BROKER_CONFIRM_DELIVERY, KNOB_BROKER_URL
 
         # TODO: for actual limiter, we would need to throw in either Redis or Memcached.
         # Using stub and a dummy key for now, but it's just not going to do its job properly.
-
-        parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
 
         broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
             confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value,
@@ -765,13 +755,7 @@ def get_broker() -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
                 artemis_middleware.Retries(),
                 periodiq.PeriodiqMiddleware()
             ],
-            parameters=[{
-                'host': parsed_url.hostname,
-                'port': int(parsed_url.port or DEFAULT_RABBITMQ_PORT),
-                'credentials': pika.PlainCredentials(parsed_url.username, parsed_url.password),
-                'heartbeat': KNOB_BROKER_HEARTBEAT_TIMEOUT.value,
-                'blocked_connection_timeout': KNOB_BROKER_HEARTBEAT_TIMEOUT.value
-            }]
+            url=KNOB_BROKER_URL.value
         )
 
     dramatiq.set_broker(broker)

@@ -611,7 +611,10 @@ KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
 
 KNOB_BROKER_URL: Knob[str] = Knob(
     'broker.url',
-    'Broker URL.',
+    """
+    Broker URL. See https://pika.readthedocs.io/en/1.2.0/modules/parameters.html#pika.connection.URLParameters
+    for full list of connection parameters that can be specified via URL.
+    """,
     has_db=False,
     envvar='ARTEMIS_BROKER_URL',
     cast_from_str=str,
@@ -636,18 +639,6 @@ KNOB_BROKER_CONFIRM_DELIVERY: Knob[bool] = Knob(
     envvar='ARTEMIS_BROKER_CONFIRM_DELIVERY',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=True
-)
-
-KNOB_BROKER_HEARTBEAT_TIMEOUT: Knob[int] = Knob(
-    'broker.heartbeat-timeout',
-    """
-    An interval, in seconds, after which a broker client should ping the server over the established connection to
-    keep both parties aware the connection should be kept alive.
-    """,
-    has_db=False,
-    envvar='ARTEMIS_BROKER_HEARTBEAT_TIMEOUT',
-    cast_from_str=int,
-    default=60
 )
 
 KNOB_DB_URL: Knob[str] = Knob(
