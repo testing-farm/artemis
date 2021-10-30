@@ -1,16 +1,16 @@
 import dataclasses
 import datetime
 import functools
-from typing import Callable, List, Tuple, Type, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, cast
 
 import gluetool.log
 import gluetool.utils
 import sqlalchemy
 from gluetool.log import log_dict, log_table
 from gluetool.result import Error, Ok, Result
-from typing_extensions import Protocol
+from typing_extensions import Protocol, TypedDict
 
-from . import Failure, JSONType, partition
+from . import Failure, SerializableContainer, partition
 from .db import GuestRequest
 from .drivers import PoolCapabilities, PoolDriver
 from .knobs import Knob
@@ -43,6 +43,49 @@ PolicyType = Callable[
     ],
     PolicyReturnType
 ]
+
+
+SerializedRulingHistoryItemType = TypedDict(
+    'SerializedRulingHistoryItemType',
+    {
+        'policyname': str,
+        'allowed-pools': List[str],
+        'cancel': bool,
+        'failure': Optional[Dict[str, Any]]
+    }
+)
+
+
+@dataclasses.dataclass
+class RulingHistoryItem(SerializableContainer):
+    policyname: str
+    ruling: Optional[PolicyRuling] = None
+    failure: Optional[Failure] = None
+
+    def serialize_to_json(self) -> SerializedRulingHistoryItemType:  # type: ignore  # stricter return type
+        serialized: SerializedRulingHistoryItemType = {
+            'policyname': self.policyname,
+            'allowed-pools': [],
+            'cancel': False,
+            'failure': None
+        }
+
+        if self.ruling is not None:
+            serialized['allowed-pools'] = [
+                pool.poolname
+                for pool in self.ruling.allowed_pools
+            ]
+
+            serialized['cancel'] = self.ruling.cancel
+
+        if self.failure is not None:
+            serialized['failure'] = self.failure.get_event_details()
+
+        return serialized
+
+    @classmethod
+    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'RulingHistoryItem':
+        raise NotImplementedError()
 
 
 class PolicyWrapperType(Protocol):
@@ -723,18 +766,12 @@ def run_routing_policies(
     from .metrics import RoutingMetrics
 
     # Collecting all policy rulings along the way.
-    history: List[Tuple[str, PolicyRuling]] = []
+    history: List[RulingHistoryItem] = []
 
-    def _serialize_history() -> List[JSONType]:
-        # `dataclasses.asdict()`` not usable here, because `PolicyRuling.allowed_pools` contains `PoolDriver` instances
-        # which are not data classes.
+    def _serialize_history() -> List[SerializedRulingHistoryItemType]:
         return [
-            {
-                'policy': policy_name,
-                'allowed-pools': [pool.poolname for pool in policy_ruling.allowed_pools],
-                'cancel': policy_ruling.cancel
-            }
-            for policy_name, policy_ruling in history
+            history_item.serialize_to_json()
+            for history_item in history
         ]
 
     # Just a tiny helper, to avoid repeating the parameters...
@@ -757,6 +794,8 @@ def run_routing_policies(
         RoutingMetrics.inc_policy_called(policy_name)
 
         if r.is_error:
+            history.append(RulingHistoryItem(policyname=policy_name, failure=r.unwrap_error()))
+
             return Error(Failure.from_failure(
                 'failed to route guest request',
                 r.unwrap_error(),
@@ -765,7 +804,7 @@ def run_routing_policies(
 
         policy_ruling = r.unwrap()
 
-        history.append((policy_name, policy_ruling))
+        history.append(RulingHistoryItem(policyname=policy_name, ruling=policy_ruling))
 
         if policy_ruling.cancel:
             # Mark all input pools are excluded
