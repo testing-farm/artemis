@@ -608,7 +608,7 @@ class GuestRequestManager:
         logger: gluetool.log.ContextAdapter,
         environment_schema: JSONSchemaType
     ) -> GuestResponse:
-        from ..tasks import dispatch_task, get_guest_logger, route_guest_request
+        from ..tasks import _get_pool_or_none, dispatch_task, get_guest_logger, route_guest_request
 
         guestname = str(uuid.uuid4())
 
@@ -668,6 +668,26 @@ class GuestRequestManager:
                     logger=guest_logger,
                     failure_details=failure_details
                 )
+
+            # Check whether pool exists - still open to race condition, but the window is quite short,
+            # and we don't rely on this test when we actually create request. All we need here is a better
+            # error message for user when they enter invalid pool name.
+            if environment.pool is not None:
+                r_pool = _get_pool_or_none(guest_logger, session, environment.pool)
+
+                if r_pool.is_error:
+                    raise errors.InternalServerError(
+                        logger=guest_logger,
+                        caused_by=r_key.unwrap_error(),
+                        failure_details=failure_details
+                    )
+
+                if r_pool.unwrap() is None:
+                    raise errors.BadRequestError(
+                        message='No such pool exists',
+                        logger=guest_logger,
+                        failure_details=failure_details
+                    )
 
             perform_safe_db_change(
                 guest_logger,
