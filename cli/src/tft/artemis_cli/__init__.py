@@ -1,6 +1,7 @@
 import concurrent.futures
 import dataclasses
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -13,11 +14,16 @@ import jsonschema
 import pkg_resources
 import requests
 import requests.adapters
+import rich
+import rich.console
+import rich.markup
+import rich.table
 import ruamel.yaml
 import ruamel.yaml.compat
 import semver
-import tabulate
 import urlnormalizer
+
+REGEX_URL = re.compile(r'(?i)http(s)?:\/\/(www\.)?[^\s()\[\]<>]+')
 
 
 DEFAULT_API_TIMEOUT = 10
@@ -474,39 +480,72 @@ def prompt(cfg: Configuration, msg: str, type: Any = None, default: Optional[str
     )
 
 
-def print_table(
-    table: List[List[str]],
-    format: str = 'text'
-) -> None:
+def rich_escape_json_list(string: str) -> str:
+    """
+    This function replaces square brackets representing JSON lists of `json.dumps()` output.
+    Rich markup tags (e.g [red]text[/red]) stored in JSON strings will be preserved.
+    """
+
+    # Split the string at every '"' into list, every odd index of this list is outside JSON string,
+    # every square bracket in these places every square bracket will be doubled (escaped).
+    string_list = string.split('"')
+    for i in range(0, len(string_list), 2):
+        string_list[i] = rich.markup.escape(string_list[i])
+
+    return '"'.join(string_list)
+
+
+def print_table(cfg: Configuration, table: List[List[str]], format: Optional[str] = None) -> None:
+    console = rich.get_console()
+
+    if not format:
+        format = 'json' if cfg.output_format != 'human' else 'text'
+
     def _to_items() -> List[Dict[str, str]]:
         as_list = []
 
         headers = table[0]
 
         for row in table[1:]:
-            as_list.append({
-                header: cell for header, cell in zip(headers, row)
-            })
+            as_list.append({header.lower().replace(' ', '_'): cell for header, cell in zip(headers, row)})
 
         return as_list
 
-    if format == 'text':
-        printable = tabulate.tabulate(
-            table,
-            headers='firstrow',
-            tablefmt='psql'
-        )
+    def _replace_link(link: Any) -> str:
+        return '[link={}]LINK[/link]'.format(link.group())
 
+    if format == 'text':
+        if len(table) > 1:
+            rich_table = rich.table.Table(box=rich.box.HEAVY_HEAD)
+
+            for header in table[0]:
+                rich_table.add_column(header)
+
+            for row in table[1:]:
+                rich_row = []
+                for cell in row:
+                    rich_cell = cell if isinstance(cell, str) else rich_escape_json_list(prettify_json(True, cell))
+
+                    # Add clickable 'LINK' button next to every url in case the link gets broken into multiple lines
+                    rich_cell = REGEX_URL.sub(_replace_link, rich_cell)
+                    rich_row.append(rich_cell)
+                rich_table.add_row(*rich_row)
+
+            console.print(rich_table)
+
+    # Before printing in JSON or YAML format, we need to get rid of every markup tag inside strings. This is done
+    # using Console.render_str creates a Text object which correctly parses the tags, .plain property returns the
+    # original string without any formatting.
     elif format == 'json':
-        printable = prettify_json(True, _to_items())
+        printable = rich_escape_json_list(prettify_json(True, _to_items()))
+        click.echo(console.render_str(printable).plain)
 
     elif format == 'yaml':
         printable = prettify_yaml(True, _to_items())
+        click.echo(console.render_str(printable).plain)
 
     else:
         assert False, 'Table format {} is not supported'
-
-    click.echo(printable)
 
 
 JobReturnType = TypeVar('JobReturnType')

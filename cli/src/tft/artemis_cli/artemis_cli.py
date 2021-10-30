@@ -490,7 +490,69 @@ def cmd_guest_events(
         # for --last, sorting has opposit order, need to reverse here
         results_json.reverse()
 
-    print(prettify_json(True, results_json))
+    def _green(s: str) -> str:
+        return f'[green]{s}[/green]'
+
+    def _red(s: str) -> str:
+        return f'[red]{s}[/red]'
+
+    def _yellow(s: str) -> str:
+        return f'[yellow]{s}[/yellow]'
+
+    table = [
+        ['Time', 'Task', 'Event', 'Details']
+    ]
+
+    for event in results_json:
+        details = event['details']
+
+        eventname = event['eventname']
+
+        # containers for fields, for better readability of the code
+        row_task: List[str] = []
+        row_event: List[str] = []
+
+        if 'task' in details:
+            taskname = details.pop('task')
+
+            if eventname == 'enter-task' or eventname == 'entered-task':
+                taskname = _green(f'-> {taskname}')
+
+            elif eventname == 'finished-task':
+                taskname = _yellow(f'<- {taskname}')
+
+            else:
+                taskname = f'   {taskname}'
+
+            row_task.append(taskname)
+
+        if 'current_state' in details and 'new_state' in details:
+            cs = details.pop("current_state")
+            ns = details.pop("new_state")
+
+            csc = _yellow if cs != 'error' else _red
+            nsc = _yellow if ns != 'error' else _red
+
+            row_event.append(f'{csc(cs)} => {nsc(ns)}')
+
+        if eventname == 'warning':
+            row_event.append(f'{_yellow(details.pop("error"))}')
+
+        elif eventname in ('enter-task', 'entered-task', 'finished-task'):
+            pass
+
+        else:
+            row_event.append(eventname)
+
+        table.append([
+            event['updated'],
+            '\n'.join(row_task),
+            '\n'.join(row_event),
+            details or ''
+        ])
+
+    print_table(cfg, table)
+    # print(prettify_json(True, results_json))
 
 
 @cmd_guest.command(name='logs', short_help='Get specific logs from the guest')
@@ -723,7 +785,7 @@ def cmd_knob_list(cfg: Configuration) -> None:
         for knob in sorted(knobs, key=lambda x: x['name'])
     ]
 
-    print_table(table)
+    print_table(cfg, table)
 
 
 @cmd_knob.command(name='get', short_help='Get knob value')
