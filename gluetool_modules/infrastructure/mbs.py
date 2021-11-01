@@ -24,14 +24,18 @@ from typing import cast, Any, Dict, List, Optional, Tuple, Union, NamedTuple, Se
 #: Information about task architectures.
 #:
 #: :ivar list(str) arches: List of architectures.
-TaskArches = collections.namedtuple('TaskArches', ['arches'])
+TaskArches = NamedTuple('TaskArches', [('arches', List[str])])
 
 #: Information about MBS.
 #:
 #: :ivar str api_version: MBS API version.
 #: :ivar str auth_method: MBS authentication method.
 #: :ivar str version: MBS version.
-MBSAbout = collections.namedtuple('MBSAbout', 'api_version, auth_method, version')
+MBSAbout = NamedTuple('MBSAbout', [
+    ('api_version', str),
+    ('auth_method', str),
+    ('version', str)
+])
 
 # regular expressions for nvr and nsvc of a module
 NSVC_REGEX = re.compile(r'^([^:]*):([^:]*):([^:]*):([^:]*)$')
@@ -337,6 +341,10 @@ class MBSTask(LoggerMixin, object):
             | .[]
         """
 
+        # Empty modules do not have components
+        if 'components' not in self._modulemd['data']:
+            return cast(TaskArches, self.module._default_task_arches)
+
         all_arches = jq(query).transform(self._modulemd, multiple_output=True)
 
         log_dict(self.debug, 'gathered module arches', all_arches)
@@ -599,6 +607,12 @@ class MBS(gluetool.Module):
                 'default': [],
             },
         }),
+        ('Default options', {
+            'default-task-arches': {
+                'help': 'Default task arches to use in case of empty modules.',
+                'action': 'append'
+            }
+        }),
         ('Baseline options', {
             'baseline-method': {
                 'help': 'Method for choosing the baseline package.',
@@ -614,7 +628,7 @@ class MBS(gluetool.Module):
         })
     ]
 
-    required_options = ('mbs-api-url',)
+    required_options = ('mbs-api-url', 'default-task-arches')
 
     shared_functions = ['primary_task', 'tasks', 'mbs_api']
 
@@ -622,6 +636,11 @@ class MBS(gluetool.Module):
         # type: (*Any, **Any) -> None
         super(MBS, self).__init__(*args, **kwargs)
         self._tasks = []  # type: List[MBSTask]
+
+    @cached_property
+    def _default_task_arches(self):
+        # type: () -> TaskArches
+        return TaskArches(gluetool.utils.normalize_multistring_option(self.option('default-task-arches')))
 
     def primary_task(self):
         # type: () -> Optional[MBSTask]
