@@ -3,12 +3,13 @@ import textwrap
 from typing import List
 
 import pytest
+import ruamel.yaml.main
 
 import tft.artemis
 
 
 @pytest.fixture(name='YAML')
-def fixture_yaml():
+def fixture_yaml() -> ruamel.yaml.main.YAML:
     return tft.artemis.get_yaml()
 
 
@@ -36,7 +37,7 @@ class NestingContainer(tft.artemis.SerializableContainer):
     child: NestedContainer
 
 
-def test_json():
+def test_json() -> None:
     foo = Container()
 
     serialized = foo.serialize_to_json()
@@ -49,12 +50,12 @@ def test_json():
     assert type(foo) is type(bar)
 
 
-def test_str():
+def test_str() -> None:
     foo = Container()
 
     serialized = foo.serialize_to_str()
 
-    assert serialized == '{"bar": 79, "baz": []}'
+    assert serialized == '{"bar": 79, "baz": []}'  # noqa: FS003  # not an f-string
 
     bar = Container.unserialize_from_str(serialized)
 
@@ -62,14 +63,14 @@ def test_str():
     assert type(foo) is type(bar)
 
 
-def test_yaml_dumpable_registry():
+def test_yaml_dumpable_registry() -> None:
     assert Container in tft.artemis._YAML_DUMPABLE_CLASSES
     assert NestedContainer in tft.artemis._YAML_DUMPABLE_CLASSES
     assert NestingContainer in tft.artemis._YAML_DUMPABLE_CLASSES
     assert UnusedContainer in tft.artemis._YAML_DUMPABLE_CLASSES
 
 
-def test_nesting():
+def test_nesting() -> None:
     foo = NestingContainer(
         foo='some foo value',
         child=NestedContainer(
@@ -87,7 +88,7 @@ def test_nesting():
     assert type(foo) is type(bar)
 
 
-def test_to_yaml(YAML):
+def test_to_yaml(YAML: ruamel.yaml.main.YAML) -> None:
     foo = NestingContainer(
         foo='some foo value',
         child=NestedContainer(

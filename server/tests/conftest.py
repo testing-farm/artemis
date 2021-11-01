@@ -1,12 +1,20 @@
 import contextvars
 import logging
 import os
+from typing import Callable, Generator, cast
 
+import _pytest.config.argparsing
+import _pytest.fixtures
+import _pytest.logging
+import _pytest.monkeypatch
+import _pytest.python
 import gluetool.log
 import gluetool.utils
+import py.path
 import pytest
 import redis
 import redislite
+import sqlalchemy.engine.interfaces
 import sqlalchemy.engine.url
 import sqlalchemy_utils.functions
 
@@ -24,7 +32,7 @@ DEFAULT_DB_URLS = [
 ]
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser: _pytest.config.argparsing.Parser) -> None:
     # --against-db-url=sqlite://some.db --against-db-url=postgresql://some:user...
     parser.addoption(
         '--against-db-url',
@@ -46,7 +54,7 @@ def pytest_addoption(parser):
 # via command-line.
 #
 # https://docs.pytest.org/en/2.8.7/parametrize.html#pytest-generate-tests
-def pytest_generate_tests(metafunc):
+def pytest_generate_tests(metafunc: _pytest.python.Metafunc) -> None:
     if 'db_url' not in metafunc.fixturenames:
         return
 
@@ -54,10 +62,10 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture
-def logger(caplog) -> gluetool.log.ContextAdapter:
+def logger(caplog: _pytest.logging.LogCaptureFixture) -> gluetool.log.ContextAdapter:
     # Set the most detailed log level possible. It may help when debugging test failures, and we don't
     # keep it for the future, it gets thrown away when tests did not fail.
-    tft.artemis.knobs.KNOB_LOGGING_LEVEL.value = 'DEBUG'
+    tft.artemis.knobs.KNOB_LOGGING_LEVEL.value = logging.DEBUG
 
     # It might be better to avoid JSON when logging, but it might be also easier to test
     # logged messages as they would be JSON, and therefore easier to parse and verify.
@@ -75,10 +83,15 @@ def logger(caplog) -> gluetool.log.ContextAdapter:
 
 
 @pytest.fixture
-def db(logger, db_url):
+def db(logger: gluetool.log.ContextAdapter, db_url: str) -> Generator[tft.artemis.db.DB, None, None]:
     parsed_url = sqlalchemy.engine.url.make_url(db_url)
 
-    if parsed_url.get_dialect() != 'sqlalchemy':
+    dialect_name = cast(
+        Callable[[], sqlalchemy.engine.interfaces.Dialect],
+        parsed_url.get_dialect
+    )().name
+
+    if dialect_name != 'sqlalchemy':
         if sqlalchemy_utils.functions.database_exists(db_url):
             sqlalchemy_utils.functions.drop_database(db_url)
 
@@ -91,30 +104,34 @@ def db(logger, db_url):
         yield tft.artemis.db.DB(logger, db_url)
 
     finally:
-        if parsed_url.get_dialect() != 'sqlalchemy':
+        if dialect_name != 'sqlalchemy':
             sqlalchemy_utils.functions.drop_database(db_url)
 
 
 @pytest.fixture
-def session(db):
+def session(db: tft.artemis.db.DB) -> Generator[sqlalchemy.orm.session.Session, None, None]:
     with db.get_session() as session:
         yield session
 
 
 @pytest.fixture
-def skip_sqlite(session):
+def skip_sqlite(session: sqlalchemy.orm.session.Session) -> None:
     if session.bind.dialect.name == 'sqlite':
         pytest.skip('Not supported with SQLite')
 
 
 @pytest.fixture
-def skip_postgresql(session):
+def skip_postgresql(session: sqlalchemy.orm.session.Session) -> None:
     if session.bind.dialect.name == 'postgresql':
         pytest.skip('Not supported with PostgreSQL')
 
 
 @pytest.fixture(name='_schema_actual')
-def fixture_schema_actual(request, logger, db):
+def fixture_schema_actual(
+    request: _pytest.fixtures.FixtureRequest,
+    logger: gluetool.log.ContextAdapter,
+    db: tft.artemis.db.DB
+) -> None:
     alembic_config = alembic.config.Config()
     alembic_config.set_main_option('script_location', os.path.join(request.config.rootpath, 'alembic'))
     alembic_config.attributes['connectable'] = db.engine
@@ -123,12 +140,16 @@ def fixture_schema_actual(request, logger, db):
 
 
 @pytest.fixture(name='redis')
-def fixture_redis(monkeypatch, tmpdir, logger):
+def fixture_redis(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    tmpdir: py.path.local,
+    logger: gluetool.log.ContextAdapter
+) -> Generator[None, None, None]:
     redislite.client.logger.setLevel(logging.DEBUG)
 
     redis_db_file = tmpdir.join('redis.db')
 
-    def get_cache(logger):
+    def get_cache(logger: gluetool.log.ContextAdapter) -> redislite.Redis:
         return redislite.Redis(dbfilename=str(redis_db_file))
 
     mock_contextvar = contextvars.ContextVar('CACHE', default=get_cache(logger))

@@ -1,7 +1,9 @@
 import logging
 import operator
 import re
+from typing import Any, Callable, Iterable, List, Optional, Tuple
 
+import _pytest.logging
 import jinja2
 
 # Since this is our entry point when running tests, we must take care of injecting additional filters
@@ -21,13 +23,13 @@ Cannot find log record with these properties:
 
 
 class PatternMatching:
-    def __init__(self, pattern, method):
+    def __init__(self, pattern: str, method: str) -> None:
         self.pattern = pattern
         self._compiled_pattern = re.compile(pattern)
         self.method = getattr(self._compiled_pattern, method)
 
-    def __repr__(self):
-        return '<{}: "{}">'.format(self.__class__.__name__, self.pattern)
+    def __repr__(self) -> str:
+        return f'<{self.__class__.__name__}: "{self.pattern}">'
 
 
 class MATCH(PatternMatching):
@@ -42,7 +44,7 @@ class MATCH(PatternMatching):
        assert_log(message=MATCH('an exception .+ was raised'))
     """
 
-    def __init__(self, pattern):
+    def __init__(self, pattern: str) -> None:
         super(MATCH, self).__init__(pattern, 'match')
 
 
@@ -58,11 +60,15 @@ class SEARCH(PatternMatching):
        assert_log(message=SEARCH('an exception .+ was raised'))
     """
 
-    def __init__(self, pattern):
+    def __init__(self, pattern: str) -> None:
         super(SEARCH, self).__init__(pattern, 'search')
 
 
-def assert_log(caplog, evaluator=any, **tests):
+def assert_log(
+    caplog: _pytest.logging.LogCaptureFixture,
+    evaluator: Callable[[Iterable[Any]], bool] = any,
+    **tests: Any
+) -> None:
     """
     Assert log contains a record - logged message - with given properties. Those are specified as keyword
     parameters: :py:class:`logging.LogRecords` properties are allowed names, parameter values are the
@@ -86,7 +92,7 @@ def assert_log(caplog, evaluator=any, **tests):
     # two parameters, and the given (expected) value. With these, we can reduce the matching into functions
     # calls without worrying what functions we work with.
 
-    operators = []
+    operators: List[Tuple[str, Callable[[Any, Any], bool], Any]] = []
 
     for field_name, expected_value in tests.items():
         # Special case: if the expected value is a pattern matching instance, it represents a regular expression.
@@ -113,7 +119,7 @@ def assert_log(caplog, evaluator=any, **tests):
 
     # Given a logging record, apply all field/operator/value triplets, and make sure all match the actual
     # record properties.
-    def _cmp(record):
+    def _cmp(record: logging.LogRecord) -> bool:
         return all([
             op(expected_value, getattr(record, field_name))
             for field_name, op, expected_value in operators
@@ -128,7 +134,12 @@ def assert_log(caplog, evaluator=any, **tests):
     ]), LOG_ASSERT_MESAGE.render(fields=tests)
 
 
-def assert_failure_log(caplog, failure_message, exception_label=None, **tests):
+def assert_failure_log(
+    caplog: _pytest.logging.LogCaptureFixture,
+    failure_message: str,
+    exception_label: Optional[str] = None,
+    **tests: Any
+) -> None:
     """
     A failure log is just a special log record, with a nicely formatted message describing the aspects
     of the failure. As of now, only the failure message is tested, but in the future we want to verify
@@ -140,10 +151,10 @@ def assert_failure_log(caplog, failure_message, exception_label=None, **tests):
        assert_failure_log(caplog, 'failed to unserialize resource IDs', exception_label='JSONDecodeError:')
     """
 
-    message = r'(?m){}\n'.format(failure_message)
+    message = rf'(?m){failure_message}\n'
 
     if exception_label:
-        message = '{}(?:.*\n)+    {}'.format(message, exception_label)
+        message = f'{message}(?:.*\n)+    {exception_label}'
 
     assert_log(
         caplog,

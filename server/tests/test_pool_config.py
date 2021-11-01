@@ -1,6 +1,8 @@
 import textwrap
+from typing import Any
 
 import gluetool.utils
+from gluetool.log import ContextAdapter
 
 import tft.artemis
 import tft.artemis.drivers
@@ -9,11 +11,11 @@ import tft.artemis.environment
 from tft.artemis.environment import UNITS
 
 
-def parse_spec(text):
+def parse_spec(text: str) -> Any:
     return gluetool.utils.from_yaml(textwrap.dedent(text))
 
 
-def test_patch_nop():
+def test_patch_nop() -> None:
     flavor_spec = parse_spec(
         """
         ---
@@ -38,7 +40,7 @@ def test_patch_nop():
     assert r_outcome.is_ok
 
 
-def test_patch_unsupported():
+def test_patch_unsupported() -> None:
     flavor_spec = parse_spec(
         """
         ---
@@ -66,7 +68,7 @@ def test_patch_unsupported():
     assert flavor.memory is None
 
 
-def test_patch_cpu():
+def test_patch_cpu() -> None:
     flavor_spec = parse_spec(
         """
         ---
@@ -102,7 +104,7 @@ def test_patch_cpu():
     assert flavor.cpu.model_name == 'i7-4850HQ'
 
 
-def test_patch_disk():
+def test_patch_disk() -> None:
     flavor_spec = parse_spec(
         """
         ---
@@ -134,7 +136,7 @@ def test_patch_disk():
     assert flavor.disk[1].size == UNITS('1023 bytes')
 
 
-def test_patch_virtualization():
+def test_patch_virtualization() -> None:
     flavor_spec = parse_spec(
         """
         ---
@@ -167,7 +169,7 @@ def test_patch_virtualization():
     assert flavor.virtualization.hypervisor == 'xen'
 
 
-def test_patch_flavors(logger):
+def test_patch_flavors(logger: ContextAdapter) -> None:
     patches = parse_spec(
         """
         ---
@@ -214,7 +216,7 @@ def test_patch_flavors(logger):
     assert flavors['baz'].cpu.family == 7
 
 
-def test_patch_flavors_no_such_name(logger):
+def test_patch_flavors_no_such_name(logger: ContextAdapter) -> None:
     patches = parse_spec(
         """
         ---
@@ -248,7 +250,7 @@ def test_patch_flavors_no_such_name(logger):
     assert flavors['bar'].cpu.family is None
 
 
-def test_patch_flavors_no_such_name_regex(logger):
+def test_patch_flavors_no_such_name_regex(logger: ContextAdapter) -> None:
     patches = parse_spec(
         """
         ---
@@ -282,7 +284,7 @@ def test_patch_flavors_no_such_name_regex(logger):
     assert flavors['bar'].cpu.family is None
 
 
-def test_custom_flavors(logger):
+def test_custom_flavors(logger: ContextAdapter) -> None:
     patches = parse_spec(
         """
         ---
@@ -323,7 +325,7 @@ def test_custom_flavors(logger):
     assert custom_flavors[0].cpu.family == 6
 
 
-def test_custom_flavors_no_such_base(logger):
+def test_custom_flavors_no_such_base(logger: ContextAdapter) -> None:
     patches = parse_spec(
         """
         ---

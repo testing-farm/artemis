@@ -7,7 +7,7 @@ from tft.artemis import db, get_db, get_logger
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
-config = context.config  # type: ignore # `context` *does have* `config` attribute
+config = context.config
 
 assert config is not None
 
@@ -65,6 +65,8 @@ def run_migrations_online() -> None:
 
     # This trick should result in not generating a revision if there are no changes to schema.
     def process_revision_directives(context: str, revision: str, directives: List[Any]) -> None:
+        assert config.cmd_opts
+
         if config.cmd_opts.autogenerate:
             script = directives[0]
             if script.upgrade_ops.is_empty():

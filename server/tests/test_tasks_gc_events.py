@@ -2,8 +2,10 @@ import datetime
 import logging
 import threading
 
+import _pytest.logging
 import pytest
 import sqlalchemy
+from gluetool.log import ContextAdapter
 
 import tft.artemis.db
 import tft.artemis.guest
@@ -17,7 +19,7 @@ KNOB_GC_EVENTS_THRESHOLD.value = 86400
 
 
 @pytest.fixture
-def _schema_empty(session, _schema_actual):
+def _schema_empty(session: sqlalchemy.orm.session.Session, _schema_actual: None) -> None:
     session.add(tft.artemis.db.User(
         username='dummy-user',
         role=tft.artemis.db.UserRoles.USER.value,
@@ -49,20 +51,20 @@ def _schema_empty(session, _schema_actual):
         priorityname='dummy-priority-group',
         poolname='dummy-pool',
         ctime=datetime.datetime.utcnow(),
-        state=tft.artemis.guest.GuestState.READY,
+        state='ready',
         address=None,
         ssh_keyname='dummy-key',
         ssh_port=22,
         ssh_username='root',
         pool_data='{}',
-        user_data='{}'
+        _user_data={}
     ))
 
-    session.commit()
+    session.commit()  # type: ignore  # TODO: untyped commit()??
 
 
 @pytest.fixture
-def _schema_with_events(session, _schema_empty):
+def _schema_with_events(session: sqlalchemy.orm.session.Session, _schema_empty: None) -> None:
     # This one is owned by existing guest, but it's too young
     session.add((
         tft.artemis.db.GuestEvent(
@@ -99,11 +101,16 @@ def _schema_with_events(session, _schema_empty):
         )
     ))
 
-    session.commit()
+    session.commit()  # type: ignore  # TODO: untyped commit()??
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_empty')
-def test_gc_events_empty(logger, db, session, caplog):
+def test_gc_events_empty(
+    logger: ContextAdapter,
+    db: tft.artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
+    caplog: _pytest.logging.LogCaptureFixture
+) -> None:
     """
     Test the success path.
     """
@@ -115,12 +122,21 @@ def test_gc_events_empty(logger, db, session, caplog):
     assert r.is_ok
     assert r is tft.artemis.tasks.SUCCESS
 
-    assert_log(caplog, levelno=logging.INFO, message=MATCH(r'removing events older than \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+'))
+    assert_log(
+        caplog,
+        levelno=logging.INFO,
+        message=MATCH(r'removing events older than \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+')  # noqa: FS003
+    )
     assert_log(caplog, levelno=logging.INFO, message=MATCH(r'removed 0 events'))
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_with_events')
-def test_gc_events(logger, db, session, caplog):
+def test_gc_events(
+    logger: ContextAdapter,
+    db: tft.artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
+    caplog: _pytest.logging.LogCaptureFixture
+) -> None:
     """
     Test the success path.
     """
@@ -132,7 +148,11 @@ def test_gc_events(logger, db, session, caplog):
     assert r.is_ok
     assert r is tft.artemis.tasks.SUCCESS
 
-    assert_log(caplog, levelno=logging.INFO, message=MATCH(r'removing events older than \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+'))
+    assert_log(
+        caplog,
+        levelno=logging.INFO,
+        message=MATCH(r'removing events older than \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+')  # noqa: FS003
+    )
     assert_log(caplog, levelno=logging.INFO, message=MATCH(r'removed 1 events'))
 
     query = sqlalchemy.select([

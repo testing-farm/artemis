@@ -1,14 +1,18 @@
+import _pytest.logging
+import _pytest.monkeypatch
+import gluetool.log
 import pytest
 import sqlalchemy
 import sqlalchemy.ext.declarative
+import sqlalchemy.orm.session
 from mock import MagicMock
 from sqlalchemy import Column, Integer, Text
 
-from tft.artemis.db import GuestRequest, SafeQuery, safe_db_change, upsert
+from tft.artemis.db import DB, Base, GuestRequest, SafeQuery, safe_db_change, upsert
 
 from . import assert_failure_log
 
-Base = sqlalchemy.ext.declarative.declarative_base()
+# Base = sqlalchemy.ext.declarative.declarative_base()
 
 
 class Counters(Base):
@@ -27,29 +31,29 @@ class Counters(Base):
 
 
 @pytest.fixture
-def _schema_test_db_Counters(db, session):
+def _schema_test_db_Counters(db: DB, session: sqlalchemy.orm.session.Session) -> None:
     """
     Initialize database: create Counters table.
     """
 
     Counters.__table__.create(db.engine)
 
-    session.commit()
+    session.commit()  # type: ignore  # TODO: untyped commit()??
 
 
 @pytest.fixture
-def _schema_test_db_Counters_1record(session, _schema_test_db_Counters):
+def _schema_test_db_Counters_1record(session: sqlalchemy.orm.session.Session, _schema_test_db_Counters: None) -> None:
     """
     Initialize database: add one record to Counters table.
     """
 
     session.add(Counters(name='foo', count=0))
 
-    session.commit()
+    session.commit()  # type: ignore  # TODO: untyped commit()??
 
 
 @pytest.fixture
-def _schema_test_db_Counters_2records(session, _schema_test_db_Counters):
+def _schema_test_db_Counters_2records(session: sqlalchemy.orm.session.Session, _schema_test_db_Counters: None) -> None:
     """
     Initialize database: add two records to Counters table.
     """
@@ -57,11 +61,11 @@ def _schema_test_db_Counters_2records(session, _schema_test_db_Counters):
     session.add(Counters(name='foo', count=0))
     session.add(Counters(name='bar', count=0))
 
-    session.commit()
+    session.commit()  # type: ignore  # TODO: untyped commit()??
 
 
 @pytest.fixture(name='mock_session')
-def fixture_mock_session(db, monkeypatch):
+def fixture_mock_session(db: DB, monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> MagicMock:
     mock_session = MagicMock(
         name='Session<mock>',
         transaction=MagicMock(
@@ -80,12 +84,12 @@ def fixture_mock_session(db, monkeypatch):
     return mock_session
 
 
-def test_session(db):
+def test_session(db: DB) -> None:
     with db.get_session() as session:
         assert hasattr(session, 'commit')
 
 
-def test_session_autocommit(db, mock_session):
+def test_session_autocommit(db: DB, mock_session: MagicMock) -> None:
     with db.get_session() as session:
         assert session is mock_session
 
@@ -93,7 +97,7 @@ def test_session_autocommit(db, mock_session):
     mock_session.close.assert_called_once()
 
 
-def test_session_autocommit_active_only(db, mock_session):
+def test_session_autocommit_active_only(db: DB, mock_session: MagicMock) -> None:
     mock_session.transaction.is_active = False
 
     with db.get_session():
@@ -103,7 +107,7 @@ def test_session_autocommit_active_only(db, mock_session):
     mock_session.close.assert_called_once()
 
 
-def test_session_autorollback(db, mock_session):
+def test_session_autorollback(db: DB, mock_session: MagicMock) -> None:
     mock_exception = ValueError('Exception<mock>')
 
     try:
@@ -118,7 +122,12 @@ def test_session_autorollback(db, mock_session):
     mock_session.close.assert_called_once()
 
 
-def assert_upsert_counter(session, count, subname='', subcount=0):
+def assert_upsert_counter(
+    session: sqlalchemy.orm.session.Session,
+    count: int,
+    subname: str = '',
+    subcount: int = 0
+) -> Counters:
     records = SafeQuery.from_session(session, Counters).all().unwrap()
 
     assert len(records) == 1
@@ -134,7 +143,7 @@ def assert_upsert_counter(session, count, subname='', subcount=0):
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert(logger, session):
+def test_upsert(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     r = upsert(
         logger,
         session,
@@ -157,7 +166,7 @@ def test_upsert(logger, session):
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_no_update(logger, session):
+def test_upsert_no_update(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     r = upsert(
         logger,
         session,
@@ -177,7 +186,7 @@ def test_upsert_no_update(logger, session):
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_compound_key(logger, session):
+def test_upsert_compound_key(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     r = upsert(
         logger,
         session,
@@ -201,7 +210,7 @@ def test_upsert_compound_key(logger, session):
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_multiple_values(logger, session):
+def test_upsert_multiple_values(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     r = upsert(
         logger,
         session,
@@ -226,8 +235,8 @@ def test_upsert_multiple_values(logger, session):
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_multiple_upserts(logger, session):
-    def do_upsert():
+def test_upsert_multiple_upserts(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+    def do_upsert() -> None:
         r = upsert(
             logger,
             session,
@@ -254,8 +263,8 @@ def test_upsert_multiple_upserts(logger, session):
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_test_db_Counters')
-def test_upsert_multiple_commits(logger, session):
-    def do_upsert():
+def test_upsert_multiple_commits(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+    def do_upsert() -> None:
         r = upsert(
             logger,
             session,
@@ -285,7 +294,7 @@ def test_upsert_multiple_commits(logger, session):
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters')
-def test_safe_db_change_missed(logger, session):
+def test_safe_db_change_missed(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     r = safe_db_change(
         logger,
         session,
@@ -297,7 +306,7 @@ def test_safe_db_change_missed(logger, session):
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters_1record')
-def test_safe_db_change(logger, session):
+def test_safe_db_change(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     r = safe_db_change(
         logger,
         session,
@@ -314,7 +323,7 @@ def test_safe_db_change(logger, session):
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters_2records')
-def test_safe_db_change_multiple(logger, session):
+def test_safe_db_change_multiple(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     r = safe_db_change(
         logger,
         session,
@@ -332,7 +341,10 @@ def test_safe_db_change_multiple(logger, session):
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters_2records')
-def test_safe_db_change_single_delete(logger, session):
+def test_safe_db_change_single_delete(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session
+) -> None:
     r = safe_db_change(
         logger,
         session,
@@ -351,7 +363,7 @@ def test_safe_db_change_single_delete(logger, session):
 
 
 @pytest.mark.usefixtures('_schema_actual')
-def test_schema_actual_load(session):
+def test_schema_actual_load(session: sqlalchemy.orm.session.Session) -> None:
     """
     Metatest of sorts: doesn't test any unit nor scenario, but a fixture. If everything went well, ``_schema_actual``
     was successfull and created the full DB schema in our current DB fixture. We are not interested in testing
@@ -363,7 +375,7 @@ def test_schema_actual_load(session):
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters_1record')
-def test_safe_query_query(logger, session):
+def test_safe_query_query(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     """
     Test regular workflow: construct query, fetch records.
     """
@@ -380,7 +392,7 @@ def test_safe_query_query(logger, session):
 
 
 @pytest.mark.usefixtures('_schema_test_db_Counters_2records')
-def test_safe_query_query_filter(logger, session):
+def test_safe_query_query_filter(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     """
     Test regular workflow: construct query, apply filter and sorting, fetch records.
     """
@@ -396,7 +408,12 @@ def test_safe_query_query_filter(logger, session):
     assert records[0].count == 0
 
 
-def test_safe_query_no_change_on_error(caplog, logger, session, monkeypatch):
+def test_safe_query_no_change_on_error(
+    caplog: _pytest.logging.LogCaptureFixture,
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
     """
     If query already encoutered an error, it should not apply any additional methods nor return any valid records.
     """
@@ -419,7 +436,11 @@ def test_safe_query_no_change_on_error(caplog, logger, session, monkeypatch):
 
 
 @pytest.mark.usefixtures('skip_postgresql')
-def test_safe_query_get_error(caplog, logger, session):
+def test_safe_query_get_error(
+    caplog: _pytest.logging.LogCaptureFixture,
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session
+) -> None:
     """
     Test handling of genuine SQLAlchemy error: without any schema or records, fetch a record.
     """

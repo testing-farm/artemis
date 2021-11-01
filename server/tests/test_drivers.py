@@ -1,8 +1,10 @@
+from typing import Optional, Pattern
+
 import pytest
-from gluetool.result import Error, Ok
+from gluetool.result import Error, Ok, Result
 
 import tft.artemis
-from tft.artemis.drivers import IP_ADDRESS_PATTERN, vm_info_to_ip
+from tft.artemis.drivers import vm_info_to_ip
 
 
 @pytest.mark.parametrize(
@@ -14,7 +16,12 @@ from tft.artemis.drivers import IP_ADDRESS_PATTERN, vm_info_to_ip
         ({'address': '127.0.0'}, 'address', None, Error(tft.artemis.Failure('failed to parse an IP address'))),
     ]
 )
-def test_vm_info_to_ip(output, key, regex, expected):
+def test_vm_info_to_ip(
+    output: tft.artemis.JSONType,
+    key: str,
+    regex: Optional[Pattern[str]],
+    expected: Result[str, tft.artemis.Failure]
+) -> None:
     r_ip = vm_info_to_ip(output, key, regex=regex)
 
     if expected.is_ok:

@@ -13,11 +13,14 @@ This can be often reduced to using a helper function with the core of the test, 
 just a couple of parameters - together with fixtures, this makes the actual tests much simpler.
 """
 
-import collections
 import datetime
+from typing import List, NamedTuple, Optional, Type, cast
 
+import _pytest.monkeypatch
+import gluetool.log
 import pytest
 import sqlalchemy
+import sqlalchemy.orm.session
 from gluetool.result import Error, Ok
 from mock import MagicMock
 
@@ -25,13 +28,14 @@ import tft.artemis
 import tft.artemis.context
 import tft.artemis.db
 import tft.artemis.routing_policies
+from tft.artemis.drivers import PoolDriver
 from tft.artemis.metrics import PoolMetrics
 
 
 # Routing knobs do have a DB source, therefore we cannot acquire their value right away
 # but we have to rather query them when needed.
 def TIMEOUT_REACHED_AGE_TOO_YOUNG(session: sqlalchemy.orm.session.Session) -> int:
-    return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session=session).unwrap() / 2
+    return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session=session).unwrap() // 2
 
 
 def TIMEOUT_REACHED_AGE_TOO_OLD(session: sqlalchemy.orm.session.Session) -> int:
@@ -39,7 +43,7 @@ def TIMEOUT_REACHED_AGE_TOO_OLD(session: sqlalchemy.orm.session.Session) -> int:
 
 
 def ONE_ATTEMPT_FORGIVING_TOO_YOUNG(session: sqlalchemy.orm.session.Session) -> int:
-    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session=session).unwrap() / 2
+    return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session=session).unwrap() // 2
 
 
 def ONE_ATTEMPT_FORGIVING_TOO_OLD(session: sqlalchemy.orm.session.Session) -> int:
@@ -50,13 +54,19 @@ def ENOUGH_RESOURCES_EXCESS_MULTIPLIER(session: sqlalchemy.orm.session.Session) 
     return tft.artemis.routing_policies.KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session=session).unwrap() + 10
 
 
-MockInputs = collections.namedtuple(
-    'MockInputs', ['logger', 'session', 'pools', 'guest_request']
+MockInputs = NamedTuple(
+    'MockInputs',
+    [
+        ('logger', gluetool.log.ContextAdapter),
+        ('session', sqlalchemy.orm.session.Session),
+        ('pools', List[PoolDriver]),
+        ('guest_request', MagicMock)
+    ]
 )
 
 
 @pytest.fixture
-def mock_inputs():
+def mock_inputs() -> MockInputs:
     inputs = MockInputs(
         logger=MagicMock(name='logger<mock>'),
         session=MagicMock(
@@ -92,7 +102,7 @@ def mock_inputs():
 
 
 @pytest.fixture
-def mock_policies(mock_inputs):
+def mock_policies(mock_inputs: MockInputs) -> List[tft.artemis.routing_policies.PolicyType]:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     return [
@@ -108,18 +118,23 @@ def mock_policies(mock_inputs):
             policy_name='policy-bar',
             return_value=Ok(tft.artemis.routing_policies.PolicyRuling(
                 allowed_pools=[mock_pools[0]]
-            )
-        ))
+            ))
+        )
     ]
 
 
-def test_boilerplate(mock_inputs):
-    mock_return_value = Ok(MagicMock(name='policy_ruling<mock>'))
+def test_boilerplate(mock_inputs: MockInputs) -> None:
+    mock_return_value: tft.artemis.routing_policies.PolicyReturnType = Ok(MagicMock(name='policy_ruling<mock>'))
 
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     @tft.artemis.routing_policies.policy_boilerplate
-    def policy_dummy_whatever(logger, session, pools, guest_request):
+    def policy_dummy_whatever(
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        pools: List[PoolDriver],
+        guest_request: tft.artemis.db.GuestRequest
+    ) -> tft.artemis.routing_policies.PolicyReturnType:
         assert isinstance(logger, tft.artemis.routing_policies.PolicyLogger)
         assert logger._contexts == {'policy_name': (50, 'dummy-whatever')}
 
@@ -137,13 +152,18 @@ def test_boilerplate(mock_inputs):
     # TODO: test logging, it is important for keeping track of decisions
 
 
-def test_boilerplate_error(mock_inputs):
-    mock_return_value = Error(MagicMock(name='policy_ruling<mock>'))
+def test_boilerplate_error(mock_inputs: MockInputs) -> None:
+    mock_return_value: tft.artemis.routing_policies.PolicyReturnType = Error(MagicMock(name='policy_ruling<mock>'))
 
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     @tft.artemis.routing_policies.policy_boilerplate
-    def policy_dummy_whatever(logger, session, pools, guest_request):
+    def policy_dummy_whatever(
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        pools: List[PoolDriver],
+        guest_request: tft.artemis.db.GuestRequest
+    ) -> tft.artemis.routing_policies.PolicyReturnType:
         return mock_return_value
 
     r_ruling = policy_dummy_whatever(mock_logger, mock_session, mock_pools, mock_guest_request)
@@ -152,13 +172,18 @@ def test_boilerplate_error(mock_inputs):
     assert r_ruling.unwrap_error() is mock_return_value.unwrap_error()
 
 
-def test_boilerplate_crash(mock_inputs):
+def test_boilerplate_crash(mock_inputs: MockInputs) -> None:
     mock_exception = ValueError('dummy error')
 
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     @tft.artemis.routing_policies.policy_boilerplate
-    def policy_dummy_whatever(logger, session, pools, guest_request):
+    def policy_dummy_whatever(
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        pools: List[PoolDriver],
+        guest_request: tft.artemis.db.GuestRequest
+    ) -> tft.artemis.routing_policies.PolicyReturnType:
         raise mock_exception
 
     r_ruling = policy_dummy_whatever(mock_logger, mock_session, mock_pools, mock_guest_request)
@@ -171,15 +196,18 @@ def test_boilerplate_crash(mock_inputs):
     assert failure.exception is mock_exception
 
 
-def test_collect_pool_capabilities(mock_inputs):
+def test_collect_pool_capabilities(
+    mock_inputs: MockInputs,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     mock_capabilities = [
-        MagicMock(name='{}.capabilities<mock>'.format(pool.poolname)) for pool in mock_pools
+        MagicMock(name=f'{pool.poolname}.capabilities<mock>') for pool in mock_pools
     ]
 
     for pool, capabilities in zip(mock_pools, mock_capabilities):
-        pool.capabilities = MagicMock(return_value=Ok(capabilities))
+        monkeypatch.setattr(pool, 'capabilities', MagicMock(return_value=Ok(capabilities)))
 
     r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
 
@@ -197,12 +225,27 @@ def test_collect_pool_capabilities(mock_inputs):
         assert actual_capabilities is expected_capabilities
 
 
-def test_collect_pool_capabilities_error(mock_inputs):
+def test_collect_pool_capabilities_error(
+    mock_inputs: MockInputs,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
-    mock_pools[0].capabilities = MagicMock(return_value=Ok(MagicMock(name='{}.capabilities<mock>'.format(mock_pools[0].poolname))))
-    mock_pools[1].capabilities = MagicMock(return_value=Error(MagicMock(name='failure<mock>')))
-    mock_pools[2].capabilities = MagicMock(return_value=Ok(MagicMock(name='{}.capabilities<mock>'.format(mock_pools[2].poolname))))
+    monkeypatch.setattr(
+        mock_pools[0],
+        'capabilities',
+        MagicMock(return_value=Ok(MagicMock(name=f'{mock_pools[0].poolname}.capabilities<mock>')))
+    )
+    monkeypatch.setattr(
+        mock_pools[1],
+        'capabilities',
+        MagicMock(return_value=Error(MagicMock(name='failure<mock>')))
+    )
+    monkeypatch.setattr(
+        mock_pools[2],
+        'capabilities',
+        MagicMock(return_value=Ok(MagicMock(name=f'{mock_pools[2].poolname}.capabilities<mock>')))
+    )
 
     r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
 
@@ -211,10 +254,13 @@ def test_collect_pool_capabilities_error(mock_inputs):
     failure = r.unwrap_error()
 
     assert isinstance(failure, tft.artemis.Failure)
-    assert failure.caused_by == mock_pools[1].capabilities.return_value.unwrap_error()
+    assert failure.caused_by == cast(MagicMock, mock_pools[1]).capabilities.return_value.unwrap_error()
 
 
-def test_run_routing_policies(mock_inputs, mock_policies):
+def test_run_routing_policies(
+    mock_inputs: MockInputs,
+    mock_policies: List[tft.artemis.routing_policies.PolicyType]
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     r_ruling = tft.artemis.routing_policies.run_routing_policies(
@@ -232,21 +278,26 @@ def test_run_routing_policies(mock_inputs, mock_policies):
     assert ruling.cancel is False
     assert ruling.allowed_pools == [mock_pools[0]]
 
-    mock_policies[0].assert_called_once_with(mock_logger, mock_session, mock_pools, mock_guest_request)
-    mock_policies[1].assert_called_once_with(mock_logger, mock_session, [mock_pools[0], mock_pools[1]], mock_guest_request)
+    cast(MagicMock, mock_policies[0]).assert_called_once_with(mock_logger, mock_session, mock_pools, mock_guest_request)
+    cast(MagicMock, mock_policies[1]).assert_called_once_with(
+        mock_logger,
+        mock_session,
+        [mock_pools[0], mock_pools[1]],
+        mock_guest_request
+    )
 
 
-def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs):
+def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs: MockInputs) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
         'dummy-custom-policy',
-        dict
+        cast(Type[PoolDriver], dict)
     )
 
-    assert policy.policy_name == 'dummy-custom-policy'
+    assert cast(tft.artemis.routing_policies.PolicyWrapperType, policy).policy_name == 'dummy-custom-policy'
 
-    mock_pools = [list(), list(), list()]
+    mock_pools = cast(List[PoolDriver], [list(), list(), list()])
 
     r_ruling = policy(mock_logger, mock_session, mock_pools, mock_guest_request)
 
@@ -258,17 +309,17 @@ def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs):
     assert ruling.allowed_pools == mock_pools
 
 
-def test_create_preferrence_filter_by_driver_class(mock_inputs):
+def test_create_preferrence_filter_by_driver_class(mock_inputs: MockInputs) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
         'dummy-custom-policy',
-        list
+        cast(Type[PoolDriver], list)
     )
 
-    assert policy.policy_name == 'dummy-custom-policy'
+    assert cast(tft.artemis.routing_policies.PolicyWrapperType, policy).policy_name == 'dummy-custom-policy'
 
-    mock_pools = [list(), list(), dict(), list()]
+    mock_pools = cast(List[PoolDriver], [list(), list(), dict(), list()])
 
     r_ruling = policy(mock_logger, mock_session, mock_pools, mock_guest_request)
 
@@ -280,10 +331,13 @@ def test_create_preferrence_filter_by_driver_class(mock_inputs):
     assert ruling.allowed_pools == [mock_pools[0], mock_pools[1], mock_pools[3]]
 
 
-def test_run_routing_policies_cancel(mock_inputs, mock_policies):
+def test_run_routing_policies_cancel(
+    mock_inputs: MockInputs,
+    mock_policies: List[tft.artemis.routing_policies.PolicyType]
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
-    mock_policies[0].return_value = Ok(tft.artemis.routing_policies.PolicyRuling(cancel=True))
+    cast(MagicMock, mock_policies[0]).return_value = Ok(tft.artemis.routing_policies.PolicyRuling(cancel=True))
 
     r_ruling = tft.artemis.routing_policies.run_routing_policies(
         mock_logger,
@@ -299,16 +353,19 @@ def test_run_routing_policies_cancel(mock_inputs, mock_policies):
 
     assert ruling.cancel is True
 
-    mock_policies[0].assert_called_once_with(mock_logger, mock_session, mock_pools, mock_guest_request)
-    mock_policies[1].assert_not_called()
+    cast(MagicMock, mock_policies[0]).assert_called_once_with(mock_logger, mock_session, mock_pools, mock_guest_request)
+    cast(MagicMock, mock_policies[1]).assert_not_called()
 
 
-def test_run_routing_policies_error(mock_inputs, mock_policies):
+def test_run_routing_policies_error(
+    mock_inputs: MockInputs,
+    mock_policies: List[tft.artemis.routing_policies.PolicyType]
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     mock_failure = MagicMock(name='failure<mock>')
 
-    mock_policies[0].return_value = Error(mock_failure)
+    cast(MagicMock, mock_policies[0]).return_value = Error(mock_failure)
 
     r_ruling = tft.artemis.routing_policies.run_routing_policies(
         mock_logger,
@@ -326,11 +383,15 @@ def test_run_routing_policies_error(mock_inputs, mock_policies):
     assert failure.message == 'failed to route guest request'
     assert failure.caused_by is mock_failure
 
-    mock_policies[0].assert_called_once_with(mock_logger, mock_session, mock_pools, mock_guest_request)
-    mock_policies[1].assert_not_called()
+    cast(MagicMock, mock_policies[0]).assert_called_once_with(mock_logger, mock_session, mock_pools, mock_guest_request)
+    cast(MagicMock, mock_policies[1]).assert_not_called()
 
 
-def do_test_policy_match_pool_name(mock_inputs, pool_name, expected_pools):
+def do_test_policy_match_pool_name(
+    mock_inputs: MockInputs,
+    pool_name: Optional[str],
+    expected_pools: Optional[List[PoolDriver]]
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     mock_guest_request.environment = tft.artemis.environment.Environment(
@@ -339,7 +400,12 @@ def do_test_policy_match_pool_name(mock_inputs, pool_name, expected_pools):
         pool=pool_name
     )
 
-    r_ruling = tft.artemis.routing_policies.policy_match_pool_name(mock_logger, mock_session, mock_pools, mock_guest_request)
+    r_ruling = tft.artemis.routing_policies.policy_match_pool_name(
+        mock_logger,
+        mock_session,
+        mock_pools,
+        mock_guest_request
+    )
 
     assert r_ruling.is_ok
 
@@ -355,26 +421,38 @@ def do_test_policy_match_pool_name(mock_inputs, pool_name, expected_pools):
         assert ruling.allowed_pools == (mock_pools if expected_pools is None else expected_pools)
 
 
-def test_policy_match_pool_name(mock_inputs):
+def test_policy_match_pool_name(mock_inputs: MockInputs) -> None:
     do_test_policy_match_pool_name(mock_inputs, 'dummy-pool', None)
 
 
-def test_policy_match_pool_name_no_match(mock_inputs):
+def test_policy_match_pool_name_no_match(mock_inputs: MockInputs) -> None:
     do_test_policy_match_pool_name(mock_inputs, 'pool-that-does-not-exist', [])
 
 
-def test_policy_match_pool_name_no_trigger(mock_inputs):
+def test_policy_match_pool_name_no_trigger(mock_inputs: MockInputs) -> None:
     do_test_policy_match_pool_name(mock_inputs, None, None)
 
 
-def do_test_policy_supports_architecture(mock_inputs, provide_arch):
+def do_test_policy_supports_architecture(
+    mock_inputs: MockInputs,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    provide_arch: bool
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     for mock_pool in mock_pools:
-        mock_pool.capabilities = lambda: Ok(tft.artemis.drivers.PoolCapabilities(supported_architectures=['foo', 'bar']))
+        monkeypatch.setattr(
+            mock_pool,
+            'capabilities',
+            lambda: Ok(tft.artemis.drivers.PoolCapabilities(supported_architectures=['foo', 'bar']))
+        )
 
     if provide_arch:
-        mock_pools[1].capabilities = lambda: Ok(tft.artemis.drivers.PoolCapabilities(supported_architectures=['foo', 'bar', 'x86_64']))
+        monkeypatch.setattr(
+            mock_pools[1],
+            'capabilities',
+            lambda: Ok(tft.artemis.drivers.PoolCapabilities(supported_architectures=['foo', 'bar', 'x86_64']))
+        )
 
     mock_guest_request.environment = tft.artemis.environment.Environment(
         hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
@@ -382,7 +460,12 @@ def do_test_policy_supports_architecture(mock_inputs, provide_arch):
         snapshots=False
     )
 
-    r_ruling = tft.artemis.routing_policies.policy_supports_architecture(mock_logger, mock_session, mock_pools, mock_guest_request)
+    r_ruling = tft.artemis.routing_policies.policy_supports_architecture(
+        mock_logger,
+        mock_session,
+        mock_pools,
+        mock_guest_request
+    )
 
     assert r_ruling.is_ok
 
@@ -401,22 +484,41 @@ def do_test_policy_supports_architecture(mock_inputs, provide_arch):
         assert False, 'unreachable'
 
 
-def test_policy_supports_architecture(mock_inputs):
-    do_test_policy_supports_architecture(mock_inputs, True)
+def test_policy_supports_architecture(
+    mock_inputs: MockInputs,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+) -> None:
+    do_test_policy_supports_architecture(mock_inputs, monkeypatch, True)
 
 
-def test_policy_supports_architecture_no_match(mock_inputs):
-    do_test_policy_supports_architecture(mock_inputs, False)
+def test_policy_supports_architecture_no_match(
+    mock_inputs: MockInputs,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+) -> None:
+    do_test_policy_supports_architecture(mock_inputs, monkeypatch, False)
 
 
-def do_test_policy_supports_snapshots(mock_inputs, require_snapshots, provide_snapshots):
+def do_test_policy_supports_snapshots(
+    mock_inputs: MockInputs,
+    require_snapshots: bool,
+    provide_snapshots: bool,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     for mock_pool in mock_pools:
-        mock_pool.capabilities = lambda: Ok(tft.artemis.drivers.PoolCapabilities(supports_snapshots=False))
+        monkeypatch.setattr(
+            mock_pool,
+            'capabilities',
+            lambda: Ok(tft.artemis.drivers.PoolCapabilities(supports_snapshots=False))
+        )
 
     if provide_snapshots:
-        mock_pools[0].capabilities = lambda: Ok(tft.artemis.drivers.PoolCapabilities(supports_snapshots=True))
+        monkeypatch.setattr(
+            mock_pools[0],
+            'capabilities',
+            lambda: Ok(tft.artemis.drivers.PoolCapabilities(supports_snapshots=True))
+        )
 
     mock_guest_request.environment = tft.artemis.environment.Environment(
         hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
@@ -424,7 +526,12 @@ def do_test_policy_supports_snapshots(mock_inputs, require_snapshots, provide_sn
         snapshots=require_snapshots
     )
 
-    r_ruling = tft.artemis.routing_policies.policy_supports_snapshots(mock_logger, mock_session, mock_pools, mock_guest_request)
+    r_ruling = tft.artemis.routing_policies.policy_supports_snapshots(
+        mock_logger,
+        mock_session,
+        mock_pools,
+        mock_guest_request
+    )
 
     assert r_ruling.is_ok
 
@@ -446,20 +553,34 @@ def do_test_policy_supports_snapshots(mock_inputs, require_snapshots, provide_sn
         assert False, 'unreachable'
 
 
-def test_policy_supports_snapshots(mock_inputs):
-    do_test_policy_supports_snapshots(mock_inputs, True, True)
+def test_policy_supports_snapshots(
+    mock_inputs: MockInputs,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
+    do_test_policy_supports_snapshots(mock_inputs, True, True, monkeypatch)
 
 
-def test_policy_supports_snapshots_no_match(mock_inputs):
-    do_test_policy_supports_snapshots(mock_inputs, True, False)
+def test_policy_supports_snapshots_no_match(
+    mock_inputs: MockInputs,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
+    do_test_policy_supports_snapshots(mock_inputs, True, False, monkeypatch)
 
 
-def test_policy_supports_snapshots_no_trigger(mock_inputs):
-    do_test_policy_supports_snapshots(mock_inputs, False, True)
-    do_test_policy_supports_snapshots(mock_inputs, False, False)
+def test_policy_supports_snapshots_no_trigger(
+    mock_inputs: MockInputs,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
+    do_test_policy_supports_snapshots(mock_inputs, False, True, monkeypatch)
+    do_test_policy_supports_snapshots(mock_inputs, False, False, monkeypatch)
 
 
-def do_test_policy_least_crowded(monkeypatch, mock_inputs, pool_count=None, one_crowded=True):
+def do_test_policy_least_crowded(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mock_inputs: MockInputs,
+    pool_count: Optional[int] = None,
+    one_crowded: bool = True
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     mock_metrics = []
@@ -508,20 +629,33 @@ def do_test_policy_least_crowded(monkeypatch, mock_inputs, pool_count=None, one_
         assert ruling.allowed_pools == mock_pools
 
 
-def test_policy_least_crowded(monkeypatch, mock_inputs):
+def test_policy_least_crowded(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mock_inputs: MockInputs
+) -> None:
     do_test_policy_least_crowded(monkeypatch, mock_inputs)
 
 
-def test_policy_least_crowded_one_pool(monkeypatch, mock_inputs):
+def test_policy_least_crowded_one_pool(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mock_inputs: MockInputs
+) -> None:
     do_test_policy_least_crowded(monkeypatch, mock_inputs, pool_count=0)
     do_test_policy_least_crowded(monkeypatch, mock_inputs, pool_count=1)
 
 
-def test_policy_least_crowded_one_pool_all_worthy(monkeypatch, mock_inputs):
+def test_policy_least_crowded_one_pool_all_worthy(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mock_inputs: MockInputs
+) -> None:
     do_test_policy_least_crowded(monkeypatch, mock_inputs, one_crowded=False)
 
 
-def do_test_policy_timeout_reached(mock_inputs, empty_events=False, age=None):
+def do_test_policy_timeout_reached(
+    mock_inputs: MockInputs,
+    empty_events: bool = False,
+    age: Optional[int] = None
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     if empty_events:
@@ -529,7 +663,7 @@ def do_test_policy_timeout_reached(mock_inputs, empty_events=False, age=None):
 
     else:
         event = tft.artemis.db.GuestEvent('created', 'dummy-guest')
-        event.updated = datetime.datetime.utcnow() - datetime.timedelta(seconds=age)
+        event.updated = datetime.datetime.utcnow() - datetime.timedelta(seconds=(age or 0))
 
         mock_guest_request.fetch_events = lambda session, eventname: Ok([event])
 
@@ -559,28 +693,32 @@ def do_test_policy_timeout_reached(mock_inputs, empty_events=False, age=None):
         assert ruling.allowed_pools == mock_pools
 
 
-def test_policy_timeout_reached(logger, mock_inputs):
+def test_policy_timeout_reached(logger: gluetool.log.ContextAdapter, mock_inputs: MockInputs) -> None:
     do_test_policy_timeout_reached(
         mock_inputs,
         age=TIMEOUT_REACHED_AGE_TOO_OLD(mock_inputs.session)
     )
 
 
-def test_policy_timeout_reached_no_trigger(mock_inputs):
+def test_policy_timeout_reached_no_trigger(mock_inputs: MockInputs) -> None:
     do_test_policy_timeout_reached(
         mock_inputs,
         age=TIMEOUT_REACHED_AGE_TOO_YOUNG(mock_inputs.session)
     )
 
 
-def test_policy_timeout_reached_no_events(mock_inputs):
+def test_policy_timeout_reached_no_events(mock_inputs: MockInputs) -> None:
     do_test_policy_timeout_reached(
         mock_inputs,
         empty_events=True
     )
 
 
-def do_policy_one_attempt_forgiving(mock_inputs, empty_events=False, age=None):
+def do_policy_one_attempt_forgiving(
+    mock_inputs: MockInputs,
+    empty_events: bool = False,
+    age: Optional[int] = None
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     if empty_events:
@@ -588,7 +726,7 @@ def do_policy_one_attempt_forgiving(mock_inputs, empty_events=False, age=None):
 
     else:
         event = tft.artemis.db.GuestEvent('error', 'dummy-guest', failure={'poolname': 'dummy-pool'})
-        event.updated = datetime.datetime.utcnow() - datetime.timedelta(seconds=age)
+        event.updated = datetime.datetime.utcnow() - datetime.timedelta(seconds=(age or 0))
 
         mock_guest_request.fetch_events = lambda session, eventname: Ok([event])
 
@@ -606,38 +744,43 @@ def do_policy_one_attempt_forgiving(mock_inputs, empty_events=False, age=None):
     assert isinstance(ruling, tft.artemis.routing_policies.PolicyRuling)
     assert ruling.cancel is False
 
-    if age == ONE_ATTEMPT_FORGIVING_TOO_OLD:
+    if age == ONE_ATTEMPT_FORGIVING_TOO_OLD(mock_session):
         assert ruling.allowed_pools == mock_pools
 
-    elif age == ONE_ATTEMPT_FORGIVING_TOO_YOUNG:
+    elif age == ONE_ATTEMPT_FORGIVING_TOO_YOUNG(mock_session):
         assert ruling.allowed_pools == [mock_pools[1], mock_pools[2]]
 
     elif empty_events:
         assert ruling.allowed_pools == mock_pools
 
 
-def test_policy_one_attempt_forgiving(mock_inputs):
+def test_policy_one_attempt_forgiving(mock_inputs: MockInputs) -> None:
     do_policy_one_attempt_forgiving(
         mock_inputs,
         age=ONE_ATTEMPT_FORGIVING_TOO_YOUNG(mock_inputs.session)
     )
 
 
-def test_policy_one_attempt_forgiving_no_trigger(mock_inputs):
+def test_policy_one_attempt_forgiving_no_trigger(mock_inputs: MockInputs) -> None:
     do_policy_one_attempt_forgiving(
         mock_inputs,
         age=ONE_ATTEMPT_FORGIVING_TOO_OLD(mock_inputs.session)
     )
 
 
-def test_policy_one_attempt_forgiving_no_events(mock_inputs):
+def test_policy_one_attempt_forgiving_no_events(mock_inputs: MockInputs) -> None:
     do_policy_one_attempt_forgiving(
         mock_inputs,
         empty_events=True
     )
 
 
-def do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=None, one_crowded=True):
+def do_test_policy_enough_resources(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mock_inputs: MockInputs,
+    pool_count: Optional[int] = None,
+    one_crowded: bool = True
+) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
     # TODO: use proper fixture once it lands
@@ -662,7 +805,7 @@ def do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=None, o
         mock_metrics.append(mock_pool_metrics)
 
     if one_crowded is True:
-        mock_metrics[1].resources.usage.cores = 100 * ENOUGH_RESOURCES_EXCESS_MULTIPLIER(mock_session)
+        mock_metrics[1].resources.usage.cores = int(100 * ENOUGH_RESOURCES_EXCESS_MULTIPLIER(mock_session))
 
     if pool_count is not None:
         mock_pools = mock_pools[:pool_count]
@@ -699,14 +842,23 @@ def do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=None, o
         assert ruling.allowed_pools == mock_pools
 
 
-def test_policy_enough_resources(monkeypatch, mock_inputs):
+def test_policy_enough_resources(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mock_inputs: MockInputs
+) -> None:
     do_test_policy_enough_resources(monkeypatch, mock_inputs)
 
 
-def test_policy_enough_resources_one_pool(monkeypatch, mock_inputs):
+def test_policy_enough_resources_one_pool(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mock_inputs: MockInputs
+) -> None:
     do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=0)
     do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=1)
 
 
-def test_policy_enough_resources_all_worthy(monkeypatch, mock_inputs):
+def test_policy_enough_resources_all_worthy(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mock_inputs: MockInputs
+) -> None:
     do_test_policy_enough_resources(monkeypatch, mock_inputs, one_crowded=False)

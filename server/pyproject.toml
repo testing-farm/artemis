@@ -19,7 +19,8 @@ include = ["artemis/schema"]
 
 [tool.poetry.dependencies]
 python = "~3.7"
-alembic = "^1.4.2"
+# New mypy vs. new Alembic: https://github.com/python/mypy/issues/11038 - Alembic 1.7.4 adds a workaround
+alembic = "^1.7.4"
 awscli = "^1.20.30"
 beaker-client = "^28.2"
 # BeautifulSoup could be updated but it's pinned by gluetool to an older version...
@@ -64,6 +65,7 @@ pytest-icdiff = "*"
 pytest-mock = "*"
 redislite = "*"
 sqlalchemy-stubs = "*"
+types-mock = "*"
 
 # mypy-extensions must match gluetool requiremens.
 mypy-extensions = "0.4.1"

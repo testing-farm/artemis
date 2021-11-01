@@ -1,16 +1,18 @@
 import textwrap
+from typing import Any
 
 import gluetool.utils
 import pytest
-from gluetool.log import log_blob
+from gluetool.log import ContextAdapter, log_blob
 
+import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS, Environment, FlavorNetwork, FlavorNetworks
+from tft.artemis.environment import UNITS, ConstraintBase, Environment, Flavor, FlavorNetwork, FlavorNetworks
 
 
 @pytest.fixture(name='schema_v0_0_19')
-def fixture_schema_v0_0_19():
+def fixture_schema_v0_0_19() -> tft.artemis.JSONSchemaType:
     r_schema = tft.artemis.load_validation_schema('environment-v0.0.19.yml')
 
     assert r_schema.is_ok
@@ -18,7 +20,7 @@ def fixture_schema_v0_0_19():
     return r_schema.unwrap()
 
 
-def parse_hw(text):
+def parse_hw(text: str) -> ConstraintBase:
     r_constraint = tft.artemis.environment.constraints_from_environment_requirements(
         gluetool.utils.from_yaml(textwrap.dedent(text))
     )
@@ -28,18 +30,22 @@ def parse_hw(text):
     return r_constraint.unwrap()
 
 
-def parse_spec(text):
+def parse_spec(text: str) -> Any:
     return gluetool.utils.from_yaml(textwrap.dedent(text))
 
 
-def eval_flavor(logger, constraint, flavor):
-    log_blob(logger.debug, 'constraint', constraint.format())
+def eval_flavor(
+    logger: ContextAdapter,
+    constraint: ConstraintBase,
+    flavor: Flavor
+) -> bool:
+    log_blob(logger.debug, 'constraint', constraint.format())  # noqa: FS002  # intended format()
     log_blob(logger.debug, 'flavor', repr(flavor))
 
     return constraint.eval_flavor(logger, flavor)
 
 
-def test_example_simple(logger):
+def test_example_simple(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -69,7 +75,7 @@ def test_example_simple(logger):
     ) is False
 
 
-def test_example_cpu(logger):
+def test_example_cpu(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -96,7 +102,7 @@ def test_example_cpu(logger):
     ) is True
 
 
-def test_example_disk(logger):
+def test_example_disk(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -131,7 +137,7 @@ def test_example_disk(logger):
     ) is False
 
 
-def test_example_multiple_disks(logger):
+def test_example_multiple_disks(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -182,7 +188,7 @@ def test_example_multiple_disks(logger):
     ) is False
 
 
-def test_example_disk_oldstyle_space(logger):
+def test_example_disk_oldstyle_space(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -217,7 +223,7 @@ def test_example_disk_oldstyle_space(logger):
     ) is False
 
 
-def test_example_network(logger):
+def test_example_network(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -278,7 +284,7 @@ def test_example_network(logger):
     ) is False
 
 
-def test_example_multiple_networks(logger):
+def test_example_multiple_networks(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -341,7 +347,7 @@ def test_example_multiple_networks(logger):
     ) is False
 
 
-def test_example_operators(logger):
+def test_example_operators(logger: ContextAdapter) -> None:
     flavor_big = tft.artemis.environment.Flavor(
         name='dummy-flavor',
         id='dummy-flavor',
@@ -409,7 +415,7 @@ def test_example_operators(logger):
     assert eval_flavor(logger, constraint, flavor_small) is True
 
 
-def test_example_exact_value(logger):
+def test_example_exact_value(logger: ContextAdapter) -> None:
     constraint1 = parse_hw(
         """
         ---
@@ -426,10 +432,10 @@ def test_example_exact_value(logger):
         """
     )
 
-    assert constraint1.format() == constraint2.format()
+    assert constraint1.format() == constraint2.format()  # noqa: FS002  # intended format()
 
 
-def test_example_unit_with_space():
+def test_example_unit_with_space() -> None:
     constraint1 = parse_hw(
         """
         ---
@@ -446,10 +452,10 @@ def test_example_unit_with_space():
         """
     )
 
-    assert constraint1.format() == constraint2.format()
+    assert constraint1.format() == constraint2.format()  # noqa: FS002  # intended format()
 
 
-def test_example_units_conversion(logger):
+def test_example_units_conversion(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -469,7 +475,7 @@ def test_example_units_conversion(logger):
     ) is True
 
 
-def test_example_regex(logger):
+def test_example_regex(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -504,7 +510,7 @@ def test_example_regex(logger):
     ) is False
 
 
-def test_example_logic(logger):
+def test_example_logic(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -588,7 +594,7 @@ def test_example_logic(logger):
     ) is False
 
 
-def test_clueless_flavor(logger):
+def test_clueless_flavor(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
         ---
@@ -613,7 +619,7 @@ def test_clueless_flavor(logger):
     ) is False
 
 
-def test_schema_no_constraints_v0_0_19(schema_v0_0_19, logger):
+def test_schema_no_constraints_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
     spec = parse_spec(
         """
         ---
@@ -635,7 +641,7 @@ def test_schema_no_constraints_v0_0_19(schema_v0_0_19, logger):
     assert errors == []
 
 
-def test_schema_simple_v0_0_19(schema_v0_0_19, logger):
+def test_schema_simple_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
     spec = parse_spec(
         """
         ---
@@ -661,7 +667,7 @@ def test_schema_simple_v0_0_19(schema_v0_0_19, logger):
     assert errors == []
 
 
-def test_schema_logic_v0_0_19(schema_v0_0_19, logger):
+def test_schema_logic_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
     spec = parse_spec(
         """
         ---
@@ -708,7 +714,7 @@ def test_schema_logic_v0_0_19(schema_v0_0_19, logger):
               - cpu:
                   model: "<= 5177343"
         """,
-        '<and><system><arch op="==" value="ppc64"/></system><and><cpu><model op="&gt;=" value="5111808"/></cpu><cpu><model op="&lt;=" value="5177343"/></cpu></and></and>'
+        '<and><system><arch op="==" value="ppc64"/></system><and><cpu><model op="&gt;=" value="5111808"/></cpu><cpu><model op="&lt;=" value="5177343"/></cpu></and></and>'  # noqa: E501
     ),
     (
         """
@@ -737,7 +743,7 @@ def test_schema_logic_v0_0_19(schema_v0_0_19, logger):
     'IBM__POWER_PPC970',
     'DISK__SIZE_MIN_60G'
 ])
-def test_beaker_preset(logger, hw, expected):
+def test_beaker_preset(logger: ContextAdapter, hw: str, expected: str) -> None:
     spec = parse_spec(
         """
         ---
