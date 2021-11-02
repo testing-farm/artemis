@@ -20,6 +20,10 @@ properties:
   default-flavor:
     type: string
 
+  use-default-flavor-when-no-suitable:
+    type: boolean
+    default: true
+
   flavor-regex:
     type: string
 

@@ -176,12 +176,12 @@ class OpenStackDriver(PoolDriver):
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
-    def _env_to_flavor(
+    def _env_to_flavor_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[Flavor, Failure]:
+    ) -> Result[Optional[Flavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger,
             guest_request.environment
@@ -193,13 +193,27 @@ class OpenStackDriver(PoolDriver):
         suitable_flavors = r_suitable_flavors.unwrap()
 
         if not suitable_flavors:
+            if self.pool_config.get('use-default-flavor-when-no-suitable', True):
+                guest_request.log_warning_event(
+                    logger,
+                    session,
+                    'no suitable flavors, using default',
+                    poolname=self.poolname
+                )
+
+                return self._map_environment_to_flavor_info_by_cache_by_name_or_none(
+                    logger,
+                    self.pool_config['default-flavor']
+                )
+
             guest_request.log_warning_event(
                 logger,
                 session,
-                'no suitable flavors, using default'
+                'no suitable flavors',
+                poolname=self.poolname
             )
 
-            return self._map_environment_to_flavor_info_by_cache_by_name(logger, self.pool_config['default-flavor'])
+            return Ok(None)
 
         if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
             logger.info('default flavor among suitable ones, using it')
@@ -211,6 +225,24 @@ class OpenStackDriver(PoolDriver):
             ][0])
 
         return Ok(suitable_flavors[0])
+
+    def _env_to_flavor(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[Flavor, Failure]:
+        r_flavor = self._env_to_flavor_or_none(logger, session, guest_request)
+
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
+
+        flavor = r_flavor.unwrap()
+
+        if flavor is None:
+            return Error(Failure('no suitable flavor'))
+
+        return Ok(flavor)
 
     def _env_to_network(self, environment: Environment) -> Result[Any, Failure]:
         metrics = PoolResourcesMetrics(self.poolname)
@@ -469,6 +501,9 @@ class OpenStackDriver(PoolDriver):
 
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
+
+        if r_flavor.unwrap() is None:
+            return Ok(False)
 
         return Ok(True)
 

@@ -1006,6 +1006,30 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError()
 
+    # TODO: I dislike the naming scheme here very much...
+    def _map_environment_to_flavor_info_by_cache_by_name_or_none(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        flavorname: str
+    ) -> Result[Optional[Flavor], Failure]:
+        """
+        Find a flavor matching the given name.
+
+        :returns: a flavor info or ``None`` if such a name does not exist.
+        """
+
+        r_flavor = get_cached_item(
+            CACHE.get(),
+            self.flavor_info_cache_key,
+            flavorname,
+            self.flavor_info_class
+        )
+
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
+
+        return r_flavor
+
     def _map_environment_to_flavor_info_by_cache_by_name(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1017,12 +1041,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :returns: a flavor info.
         """
 
-        r_flavor = get_cached_item(
-            CACHE.get(),
-            self.flavor_info_cache_key,
-            flavorname,
-            self.flavor_info_class
-        )
+        r_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(logger, flavorname)
 
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())

@@ -26,6 +26,10 @@ properties:
   default-instance-type:
     type: string
 
+  use-default-flavor-when-no-suitable:
+    type: boolean
+    default: true
+
   default-root-disk-size:
     type: integer
 

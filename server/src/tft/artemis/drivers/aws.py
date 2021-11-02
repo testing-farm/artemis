@@ -564,10 +564,13 @@ class AWSDriver(PoolDriver):
         if r_image.unwrap() is None:
             return Ok(False)
 
-        r_type = self._env_to_instance_type(logger, session, guest_request)
+        r_type = self._env_to_instance_type_or_none(logger, session, guest_request)
 
         if r_type.is_error:
             return Error(r_type.unwrap_error())
+
+        if r_type.unwrap() is None:
+            return Ok(False)
 
         return Ok(True)
 
@@ -578,12 +581,12 @@ class AWSDriver(PoolDriver):
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
-    def _env_to_instance_type(
+    def _env_to_instance_type_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[Flavor, Failure]:
+    ) -> Result[Optional[Flavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger,
             guest_request.environment
@@ -603,16 +606,27 @@ class AWSDriver(PoolDriver):
             ]
 
         if not suitable_flavors:
+            if self.pool_config.get('use-default-flavor-when-no-suitable', True):
+                guest_request.log_warning_event(
+                    logger,
+                    session,
+                    'no suitable flavors, using default',
+                    poolname=self.poolname
+                )
+
+                return self._map_environment_to_flavor_info_by_cache_by_name_or_none(
+                    logger,
+                    self.pool_config['default-instance-type']
+                )
+
             guest_request.log_warning_event(
                 logger,
                 session,
-                'no suitable flavors, using default'
+                'no suitable flavors',
+                poolname=self.poolname
             )
 
-            return self._map_environment_to_flavor_info_by_cache_by_name(
-                logger,
-                self.pool_config['default-instance-type']
-            )
+            return Ok(None)
 
         if self.pool_config['default-instance-type'] in [flavor.name for flavor in suitable_flavors]:
             logger.info('default flavor among suitable ones, using it')
@@ -624,6 +638,24 @@ class AWSDriver(PoolDriver):
             ][0])
 
         return Ok(suitable_flavors[0])
+
+    def _env_to_instance_type(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[Flavor, Failure]:
+        r_flavor = self._env_to_instance_type_or_none(logger, session, guest_request)
+
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
+
+        flavor = r_flavor.unwrap()
+
+        if flavor is None:
+            return Error(Failure('no suitable flavor'))
+
+        return Ok(flavor)
 
     def _describe_instance(
         self,
