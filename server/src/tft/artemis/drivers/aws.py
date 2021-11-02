@@ -561,10 +561,12 @@ class AWSDriver(PoolDriver):
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
-        if r_image.unwrap() is None:
+        image = r_image.unwrap()
+
+        if image is None:
             return Ok(False)
 
-        r_type = self._env_to_instance_type_or_none(logger, session, guest_request)
+        r_type = self._env_to_instance_type_or_none(logger, session, guest_request, image)
 
         if r_type.is_error:
             return Error(r_type.unwrap_error())
@@ -585,7 +587,8 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        image: AWSPoolImageInfo
     ) -> Result[Optional[Flavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger,
@@ -604,6 +607,13 @@ class AWSDriver(PoolDriver):
                 for flavor in suitable_flavors
                 if flavor.ena_support in ('required', 'supported')
             ]
+
+        # Make sure that, if image does not support ENA, we drop all flavors that require the support
+        suitable_flavors = [
+            flavor
+            for flavor in suitable_flavors
+            if not (flavor.ena_support == 'required' and image.ena_support is not True)
+        ]
 
         if not suitable_flavors:
             if self.pool_config.get('use-default-flavor-when-no-suitable', True):
@@ -643,9 +653,10 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        image: AWSPoolImageInfo
     ) -> Result[Flavor, Failure]:
-        r_flavor = self._env_to_instance_type_or_none(logger, session, guest_request)
+        r_flavor = self._env_to_instance_type_or_none(logger, session, guest_request, image)
 
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
@@ -1227,13 +1238,6 @@ class AWSDriver(PoolDriver):
     ) -> Result[ProvisioningProgress, Failure]:
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
-        # get instance type from environment
-        r_instance_type = self._env_to_instance_type(logger, session, guest_request)
-        if r_instance_type.is_error:
-            return Error(r_instance_type.unwrap_error())
-
-        instance_type = r_instance_type.unwrap()
-
         # find out image from enviroment
         r_image = self.image_info_mapper.map(logger, guest_request)
 
@@ -1241,6 +1245,13 @@ class AWSDriver(PoolDriver):
             return Error(r_image.unwrap_error())
 
         image = r_image.unwrap()
+
+        # get instance type from environment
+        r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
+        if r_instance_type.is_error:
+            return Error(r_instance_type.unwrap_error())
+
+        instance_type = r_instance_type.unwrap()
 
         # If this pool provides spot instances, we start the provisioning by submitting a spot instance request.
         # After that, we request an update to be scheduled, to check progress of this spot request. If successfull,
