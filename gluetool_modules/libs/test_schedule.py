@@ -191,10 +191,19 @@ class TestScheduleEntry(LoggerMixin, object):
         self.testing_environment = None  # type: Optional[gluetool_modules.libs.testing_environment.TestingEnvironment]
         self.guest = None  # type: Optional[gluetool_modules.libs.guest.NetworkedGuest]
 
+        # List of exceptions encountered while processing the entry
+        self.exceptions = []  # type: List[gluetool.log.ExceptionInfoType]
+
         # List of outputs produced by different guest setup actions
         self.guest_setup_outputs = {}  # type: GuestSetupOutputsContainerType
 
         self.action = None  # type: Optional[gluetool.action.Action]
+
+    @property
+    def has_exceptions(self):
+        # type: () -> bool
+
+        return bool(self.exceptions)
 
     def log_entry(self, log_fn=None):
         # type: (Optional[LoggingFunctionType]) -> None
@@ -246,8 +255,8 @@ class TestSchedule(List[TestScheduleEntry]):
         self.result = TestScheduleResult.UNDEFINED
         self.action = None  # type: Optional[gluetool.action.Action]
 
-    def log(self, log_fn, label=None):
-        # type: (LoggingFunctionType, Optional[str]) -> None
+    def log(self, log_fn, label=None, include_errors=False, include_logs=False, module=None):
+        # type: (LoggingFunctionType, Optional[str], bool, bool, Optional[gluetool.Module]) -> None
         """
         Log a table giving a nice, user-readable overview of the test schedule.
 
@@ -259,6 +268,10 @@ class TestSchedule(List[TestScheduleEntry]):
         :param callable log_fn: function to use for logging.
         :param str label: if set, it is used as a label of the logged table.
         """
+
+        if include_logs and module is None:
+            # We do not have access to `warning` logger :/
+            log_fn('cannot log schedule logs with no access to coldstore helpers', sentry=True)
 
         label = label or 'test schedule'
 
@@ -278,3 +291,46 @@ class TestSchedule(List[TestScheduleEntry]):
 
         log_table(log_fn, label, [headers] + rows,
                   tablefmt='psql', headers='firstrow')
+
+        if include_errors:
+            table = [
+                ['SE', 'Error']
+            ]
+
+            for se in self:
+                for _, exc, _ in se.exceptions:
+                    table.append([
+                        se.id,
+                        exc.message if hasattr(exc, 'message') else str(exc)  # type: ignore  # handles even `None`
+                    ])
+
+            log_table(
+                log_fn,
+                'schedule errors',
+                table,
+                headers='firstrow', tablefmt='psql'
+            )
+
+        if include_logs and module is not None:
+            table = [
+                ['SE', 'Stage', 'Log', 'Location']
+            ]
+
+            for se in self:
+                for stage in gluetool_modules.libs.guest_setup.STAGES_ORDERED:
+                    outputs = se.guest_setup_outputs.get(stage, [])
+
+                    for output in outputs:
+                        table.append([
+                            se.id,
+                            stage.value,
+                            output.label,
+                            artifacts_location(module, output.log_path, logger=module.logger)
+                        ])
+
+            log_table(
+                log_fn,
+                'schedule logs',
+                table,
+                headers='firstrow', tablefmt='psql'
+            )

@@ -294,7 +294,13 @@ class TestScheduleReport(gluetool.Module):
         # type: () -> None
         self.require_shared('test_schedule')
 
-        self._schedule.log(self.info, label='finished schedule')
+        self._schedule.log(
+            self.info,
+            label='finished schedule',
+            include_errors=True,
+            include_logs=True,
+            module=self
+        )
 
         self._serialize_results(self._schedule)
         self._report_final_result(self._schedule)

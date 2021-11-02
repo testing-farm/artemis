@@ -90,6 +90,27 @@ class TestScheduleRunner(gluetool.Module):
         }
     }
 
+    def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
+        super(TestScheduleRunner, self).__init__(*args, **kwargs)
+
+        self._test_schedule = TestSchedule()  # type: TestSchedule
+
+    @property
+    def eval_context(self):
+        # type: () -> Any
+
+        __content__ = {  # noqa
+            'TEST_SCHEDULE': """
+                             Current test schedule, or an empty list if no entries are available.
+                             """
+        }
+
+        return {
+            'TEST_SCHEDULE': self._test_schedule
+        }
+
     @gluetool.utils.cached_property
     def parallelize(self):
         # type: () -> bool
@@ -422,6 +443,8 @@ class TestScheduleRunner(gluetool.Module):
         def _on_job_error(exc_info, schedule_entry):
             # type: (Any, TestScheduleEntry) -> None
 
+            schedule_entry.exceptions.append(exc_info)
+
             exc = exc_info[1]
 
             if schedule_entry.stage == TestScheduleEntryStage.GUEST_PROVISIONING:
@@ -519,6 +542,14 @@ class TestScheduleRunner(gluetool.Module):
 
         engine.run()
 
+        self._test_schedule.log(
+            self.info,
+            label='finished schedule',
+            include_errors=True,
+            include_logs=True,
+            module=self
+        )
+
         if engine.errors:
             self.shared('trigger_event', 'test-schedule.error',
                         schedule=schedule, errors=engine.errors)
@@ -533,10 +564,14 @@ class TestScheduleRunner(gluetool.Module):
 
         schedule = cast(
             TestSchedule,
-            self.shared('test_schedule') or []
+            self.shared('test_schedule') or TestSchedule()
         )
+
+        self._test_schedule = schedule
 
         with Action('executing test schedule', parent=Action.current_action(), logger=self.logger) as schedule.action:
             self._run_schedule(schedule)
 
             schedule.action.set_tag('result', schedule.result.name)
+
+        self._test_schedule = TestSchedule()
