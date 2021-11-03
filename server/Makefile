@@ -9,10 +9,10 @@ _env-info:
 	@poetry config --list --local
 	@echo "# Tox: $$(which tox) $$(tox --version)"
 
-install:  ## Install Artemis and development tools
+install: _env-info  ## Install Artemis and development tools
 	poetry install -v
 
-install-no-dev:  ## Install Artemis alone, no development tools
+install-no-dev: _env-info  ## Install Artemis alone, no development tools
 	poetry install -v --no-dev
 
 coverage: _env-info  ## Run tests with coverage
@@ -20,6 +20,9 @@ coverage: _env-info  ## Run tests with coverage
 
 test: _env-info  ## Run all tests
 	tox
+
+test-pre-commit: install  ## Run pre-commit checks
+	git ls-files -- . | xargs -n200 poetry run pre-commit run --files
 
 integration-tests: _env-info  ## Run tests against real services
 	# Spawn the real processes, and we have a bunch of them handy
