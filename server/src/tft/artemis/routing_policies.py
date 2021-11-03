@@ -12,7 +12,7 @@ from typing_extensions import Protocol, TypedDict
 
 from . import Failure, SerializableContainer, partition
 from .db import GuestRequest
-from .drivers import PoolCapabilities, PoolDriver
+from .drivers import PoolCapabilities, PoolDriver, PoolLogger
 from .knobs import Knob
 from .metrics import PoolMetrics
 
@@ -238,7 +238,10 @@ def collect_pool_can_acquire(
     guest_request: GuestRequest
 ) -> Result[List[Tuple[PoolDriver, bool]], Failure]:
     r_answers = [
-        (pool, pool.can_acquire(logger, session, guest_request))
+        (
+            pool,
+            pool.can_acquire(PoolLogger(logger, pool.poolname), session, guest_request)
+        )
         for pool in pools
     ]
 
