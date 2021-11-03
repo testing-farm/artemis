@@ -2,12 +2,12 @@
 .PHONY: help install install-no-dev coverage test gen-db-revision publish clean _env-info
 
 _env-info:
-	@echo "## Poetry: $$(which poetry) $$(poetry --version)"
-	@echo "## Global Poetry configuration:"
+	@echo "# Poetry: $$(which poetry) $$(poetry --version)"
+	@echo "# Global Poetry configuration:"
 	@poetry config --list
-	@echo "## Local Poetry configuration:"
+	@echo "# Local Poetry configuration:"
 	@poetry config --list --local
-	@echo "## Tox: $$(which tox) $$(tox --version)"
+	@echo "# Tox: $$(which tox) $$(tox --version)"
 
 install:  ## Install Artemis and development tools
 	poetry install -v
