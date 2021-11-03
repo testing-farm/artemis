@@ -1,0 +1,33 @@
+---
+
+# To onboard:
+#
+# 1. install pre-commit app. This can be done either once, globally on your workstation,
+#    or locally in your virtual environment (if you have such):
+#
+#    $ pip install pre-commit
+#
+# 2. install pre-commit hook in your working copy of a git repository:
+#
+#    $ pre-commit install
+#
+# From now on, git will run pre-commit hook before every `git commit`.
+#
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks.git
+    rev: v4.0.1
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: no-commit-to-branch
+        args:
+          - "--branch"
+          - "main"
+      - id: trailing-whitespace

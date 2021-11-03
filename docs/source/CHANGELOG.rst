@@ -203,7 +203,7 @@ Added
 
 - [pagure] support dry run level ``DRY``
 - [rules-engine] ANY & ALL helper functions
-- [wow] add WowCommand to the context 
+- [wow] add WowCommand to the context
 
 Changed
 ~~~~~~~
