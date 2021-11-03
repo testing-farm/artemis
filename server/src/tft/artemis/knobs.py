@@ -665,7 +665,8 @@ KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_VAULT_PASSWORD_FILE',
     cast_from_str=lambda s: os.path.expanduser(s.strip()),
-    default=os.path.expanduser('~/.vault_password')
+    default=os.path.expanduser('~/.vault_password'),
+    default_label='$HOME/.vault_password'
 )
 
 KNOB_LOGGING_DB_QUERIES: Knob[bool] = Knob(

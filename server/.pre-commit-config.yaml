@@ -26,3 +26,12 @@ repos:
           - "--branch"
           - "master"
       - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      # Regenerate docs files if their sources changed.
+      - id: regen-docs-knobs
+        name: regen-docs-knobs
+        entry: make -C server/ docs-knobs
+        language: system
+        pass_filenames: false

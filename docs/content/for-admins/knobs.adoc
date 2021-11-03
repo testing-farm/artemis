@@ -702,7 +702,7 @@ for said guest request again.
 |`vault.password.filepath`
 |`<lambda>`
 |`ARTEMIS_VAULT_PASSWORD_FILE`
-|`/home/mprchlik/.vault_password`
+|`$HOME/.vault_password`
 |no
 
 
