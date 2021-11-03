@@ -2,18 +2,18 @@
 .PHONY: help install install-no-dev coverage test gen-db-revision publish clean _env-info
 
 _env-info:
-	@echo "# Poetry: $$(which poetry) $$(poetry --version)"
+	@echo "# Poetry: $$(type poetry) $$(poetry --version $$POETRY_ADDOPTS)"
 	@echo "# Global Poetry configuration:"
-	@poetry config --list
+	@poetry config --list $$POETRY_ADDOPTS
 	@echo "# Local Poetry configuration:"
-	@poetry config --list --local
-	@echo "# Tox: $$(which tox) $$(tox --version)"
+	@poetry config --list --local $$POETRY_ADDOPTS
+	@echo "# Tox: $$(type tox) $$(tox --version)"
 
 install: _env-info  ## Install Artemis and development tools
-	poetry install -v
+	poetry install -v --remove-untracked $$POETRY_ADDOPTS
 
 install-no-dev: _env-info  ## Install Artemis alone, no development tools
-	poetry install -v --no-dev
+	poetry install -v --no-dev --remove-untracked $$POETRY_ADDOPTS
 
 coverage: _env-info  ## Run tests with coverage
 	tox -e py37-coverage
@@ -61,7 +61,7 @@ gen-db-revision:  ## Generate new DB revision
 	poetry run alembic revision --autogenerate -m "$(NAME)"
 
 publish:  ## Publish server package to PyPI
-	@poetry publish --username $(PYPI_USERNAME) --password $(PYPI_PASSWORD) --build
+	@poetry publish --username $(PYPI_USERNAME) --password $(PYPI_PASSWORD) --build $$POETRY_ADDOPTS
 
 clean:  ## Remove installed virtual environment
 	rm -rf .tox
