@@ -216,6 +216,26 @@ for the requested action.
 
 5+|Reload API server when its code changes.
 
+|`api.engine.reload.request-limit`
+|`int`
+|`ARTEMIS_API_ENGINE_RELOAD_REQUESTS_LIMIT`
+|`0`
+|no
+
+
+
+5+|Reload a worker process after serving this number of requests.
+
+|`api.engine.reload.request-limit.spread`
+|`int`
+|`ARTEMIS_API_ENGINE_RELOAD_REQUESTS_LIMIT_SPREAD`
+|`0`
+|no
+
+
+
+5+|A range by which is number of requests randomized.
+
 |`api.processes`
 |`int`
 |`ARTEMIS_API_PROCESSES`
