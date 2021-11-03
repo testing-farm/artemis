@@ -79,6 +79,14 @@ type-check:
   script:
     - tox -v -e type-check
 
+# Static analysis - pre-commit
+pre-commit:
+  extends: .merge-request
+  stage: test
+  script:
+    - dnf -y install pre-commit
+    - pre-commit run --all-files
+
 # Installation Fedora
 installation-fedora:
   extends: .merge-request
