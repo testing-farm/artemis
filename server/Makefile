@@ -50,7 +50,7 @@ docs-autodocs:  ## Generate source code documentation
 	tox -e autodocs
 
 docs-knobs: install  ## Generate up-to-date documentation of knobs
-	poetry run ./extract-knobs --template-file ../docs/content/for-admins/knobs.adoc.j2 > ../docs/content/for-admins/knobs.adoc
+	ARTEMIS_VAULT_PASSWORD=dummy-password poetry run ./extract-knobs --template-file ../docs/content/for-admins/knobs.adoc.j2 > ../docs/content/for-admins/knobs.adoc
 
 gen-db-revision:  ## Generate new DB revision
 	rm -rf test.db
