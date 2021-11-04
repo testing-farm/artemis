@@ -5,6 +5,21 @@ stages:
   - test_stage
   - deploy
 
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  key:
+    files:
+      - server/poetry.lock
+      - .gitlab-ci.yml
+    prefix: ${CI_JOB_NAME}
+  paths:
+    - server/.venv
+    - server/.tox
+    - cli/.tox
+    - .cache/pip
+
 tests:
   stage: test_stage
   variables:
