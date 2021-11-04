@@ -535,13 +535,17 @@ class KojiTask(LoggerMixin, object):
         if self.scratch:
             build = builds[0]
 
-        # for non scratch we return the latest released package, in case it is the same, the previously
-        # released package
+        # for non scratch we return the latest released package
+        # in case it is the same, return the previously released package,
+        # in case it has no previous package, return the same package
         else:
-            if self.nvr != builds[0]['nvr']:
+            if self.nvr != builds[0]['nvr'] or len(builds) == 1:
                 build = builds[0]
             else:
-                build = builds[1] if len(builds) > 1 else None
+                build = builds[1]
+
+        if build is None:
+            raise GlueError("Could not find the baseline build.")
 
         if 'task_id' not in build:
             raise GlueError("No 'task_id' found for the build.")
