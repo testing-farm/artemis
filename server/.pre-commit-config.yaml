@@ -27,6 +27,19 @@ repos:
           - "master"
       - id: trailing-whitespace
 
+  # Yet another static analysis, but these hooks "understand" Python syntax and semantics, and tend to check
+  # changes one makes to calm flake8 & mypy down, making sure all those "noqa" and "ignore" comments are helpful.
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.9.0
+    hooks:
+      - id: python-check-blanket-noqa
+      - id: python-check-blanket-type-ignore
+      - id: python-check-mock-methods
+      - id: python-no-eval
+      - id: python-no-log-warn
+      - id: python-use-type-annotations
+      - id: text-unicode-replacement-char
+
   - repo: local
     hooks:
       # Regenerate docs files if their sources changed.

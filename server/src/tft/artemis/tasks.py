@@ -4228,13 +4228,13 @@ def do_gc_events(
 
     # TODO: INTERVAL is PostgreSQL-specific. We don't plan to use another DB, but, if we chose to, this would have
     # to be rewritten.
-    guest_count_subquery = session.query(  # type: ignore # untyped function "query"
+    guest_count_subquery = session.query(  # type: ignore[no-untyped-call] # untyped function "query"
         GuestRequest.guestname
     ).subquery('t')
 
     query = sqlalchemy \
         .delete(
-            GuestEvent.__table__    # type: ignore  # GuestRequest *has* __table__
+            GuestEvent.__table__    # type: ignore[attr-defined]  # GuestRequest *has* __table__
         ) \
         .where(GuestEvent.guestname.notin_(guest_count_subquery)) \
         .where(sqlalchemy.func.age(GuestEvent.updated) >= sqlalchemy.func.cast(

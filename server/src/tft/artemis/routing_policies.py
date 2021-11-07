@@ -62,7 +62,7 @@ class RulingHistoryItem(SerializableContainer):
     ruling: Optional[PolicyRuling] = None
     failure: Optional[Failure] = None
 
-    def serialize_to_json(self) -> SerializedRulingHistoryItemType:  # type: ignore  # stricter return type
+    def serialize_to_json(self) -> SerializedRulingHistoryItemType:  # type: ignore[override]  # stricter return type
         serialized: SerializedRulingHistoryItemType = {
             'policyname': self.policyname,
             'allowed-pools': [],

@@ -26,7 +26,7 @@ from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 from .guest import GuestState
 from .knobs import get_vault_password
 
-if TYPE_CHECKING:  # noqa
+if TYPE_CHECKING:
     from mypy_extensions import VarArg
 
     from . import Failure
@@ -73,13 +73,13 @@ Base = sqlalchemy.ext.declarative.declarative_base()
 # value type.
 #
 # Note: unfortunately, I wasn't able to cover "update" methods - filter(), limit(), ... - with a single
-# type/decorator and preserve the signature enough to keep type checking. I always foud out that methods
+# decorator and preserve the signature enough to keep type checking. I always found out that methods
 # accepting 1 integer parameter (limit/offset) collide with signature of filter() which accepts variable
 # number of arguments: `[argument: int]` does not fit under [*args: Any]`. Therefore we have a decorator
 # for methods accepting anything, and another decorator for methods accepting an integer. On the plus
 # side, type checking works, and mypy does see SafeQuery.limit() as accepting one integer and nothing else.
-SafeQueryRawUpdateVAType = Callable[['SafeQuery[T]', 'VarArg(Any)'], _Query]  # type: ignore
-SafeQueryUpdateVAType = Callable[['SafeQuery[T]', 'VarArg(Any)'], 'SafeQuery[T]']  # type: ignore
+SafeQueryRawUpdateVAType = Callable[['SafeQuery[T]', 'VarArg(Any)'], _Query]  # type: ignore[valid-type]
+SafeQueryUpdateVAType = Callable[['SafeQuery[T]', 'VarArg(Any)'], 'SafeQuery[T]']  # type: ignore[valid-type]
 
 SafeQueryRawUpdateIType = Callable[['SafeQuery[T]', int], _Query]
 SafeQueryUpdateIType = Callable[['SafeQuery[T]', int], 'SafeQuery[T]']
@@ -389,7 +389,7 @@ def upsert(
 
     if update_data is None:
         statement = statement.on_conflict_do_nothing(
-            constraint=model.__table__.primary_key  # type: ignore
+            constraint=model.__table__.primary_key  # type: ignore[attr-defined]
         )
 
         # INSERT part of the query is still valid, but there's no ON CONFLICT UPDATE... Unfortunatelly,
@@ -398,7 +398,7 @@ def upsert(
 
     else:
         statement = statement.on_conflict_do_update(
-            constraint=model.__table__.primary_key,  # type: ignore
+            constraint=model.__table__.primary_key,  # type: ignore[attr-defined]
             set_=update_data,
             where=where
         )
@@ -636,7 +636,7 @@ class GuestRequest(Base):
         r = safe_db_change(
             logger,
             session,
-            sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore  # GuestEvent *has* __table__
+            sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
                 guestname=guestname,
                 eventname=eventname,
                 _details=details
@@ -883,8 +883,8 @@ class GuestEvent(Base):
     guestname = Column(String(250), nullable=False, index=True)
     eventname = Column(String(250), nullable=False)
 
-    # Details are stored as JSON blob, in a "hidden" column - when accessing event details, we'd like them to be
-    # typed correctly, and there will never ever be an event having a list or an integer as a detail, it will always
+    # Details are stored as JSON blob, in a "hidden" column - when accessing event details, we'd like to cast them to
+    # proper type, and there will never ever be an event having a list or an integer as a detail, it will always
     # be a mapping. Therefore `_details` column and `details` property to apply proper cast call.
     _details = Column(JSON(), nullable=False, server_default='{}')
 
@@ -1022,7 +1022,7 @@ class Knob(Base):
 # TODO: shuffle a bit with files to avoid local imports and to set this up conditionaly. It's probably not
 # critical, but it would also help a bit with DB class, and it would be really nice to not install the event
 # hooks when not asked to log slow queries.
-@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'before_cursor_execute')  # type: ignore  # untyped decorator
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'before_cursor_execute')  # type: ignore[no-untyped-call,misc]
 def before_cursor_execute(
     conn: sqlalchemy.engine.Connection,
     cursor: Any,
@@ -1034,7 +1034,7 @@ def before_cursor_execute(
     conn.info.setdefault('query_start_time', []).append(time.time())
 
 
-@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'after_cursor_execute')  # type: ignore  # untyped decorator
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'after_cursor_execute')  # type: ignore[no-untyped-call,misc]
 def after_cursor_execute(
     conn: sqlalchemy.engine.Connection,
     cursor: Any,
@@ -1142,7 +1142,7 @@ class DB:
             gluetool.log.log_dict(
                 self.logger.info,
                 'pool metrics',
-                DBPoolMetrics.load(self.logger, self, session)  # type: ignore
+                DBPoolMetrics.load(self.logger, self, session)  # type: ignore[attr-defined]
             )
 
         try:

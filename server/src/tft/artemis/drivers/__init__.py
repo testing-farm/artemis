@@ -226,7 +226,7 @@ except Exception as exc:
 
 
 if hasattr(shlex, 'join'):
-    command_join = shlex.join  # type: ignore
+    command_join = shlex.join  # type: ignore[attr-defined]
 
 else:
     def command_join(command: List[str]) -> str:
@@ -423,7 +423,7 @@ class PoolData:
 
     @classmethod
     def unserialize(cls: Type[T], guest_request: GuestRequest) -> T:
-        return cls(**json.loads(guest_request.pool_data))  # type: ignore
+        return cls(**json.loads(guest_request.pool_data))  # type: ignore[call-arg]
 
 
 class ProvisioningState(enum.Enum):

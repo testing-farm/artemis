@@ -917,7 +917,7 @@ class PoolMetrics(MetricsBase):
 
         self.current_guest_request_count = cast(
             Tuple[int],
-            session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
+            session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore[no-untyped-call]
             .filter(artemis_db.GuestRequest.poolname == self.poolname)
             .one()
         )[0]
@@ -931,7 +931,7 @@ class PoolMetrics(MetricsBase):
             GuestState(record[0]): record[1]
             for record in cast(
                 List[Tuple[str, int]],
-                session.query(  # type: ignore
+                session.query(  # type: ignore[no-untyped-call]
                     artemis_db.GuestRequest.state,
                     sqlalchemy.func.count(artemis_db.GuestRequest.state)
                 )
@@ -1059,8 +1059,8 @@ class UndefinedPoolMetrics(MetricsBase):
 
         self.current_guest_request_count = cast(
             Tuple[int],
-            session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
-            .filter(artemis_db.GuestRequest.poolname == None)  # noqa
+            session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore[no-untyped-call]
+            .filter(artemis_db.GuestRequest.poolname == None)  # noqa: E711
             .one()
         )[0]
 
@@ -1073,11 +1073,11 @@ class UndefinedPoolMetrics(MetricsBase):
             GuestState(record[0]): record[1]
             for record in cast(
                 List[Tuple[str, int]],
-                session.query(  # type: ignore
+                session.query(  # type: ignore[no-untyped-call]
                     artemis_db.GuestRequest.state,
                     sqlalchemy.func.count(artemis_db.GuestRequest.state)
                 )
-                .filter(artemis_db.GuestRequest.poolname == None)  # noqa
+                .filter(artemis_db.GuestRequest.poolname == None)  # noqa: E711
                 .group_by(artemis_db.GuestRequest.state)
                 .all()
             )
@@ -1476,7 +1476,9 @@ class ProvisioningMetrics(MetricsBase):
 
         NOW = datetime.datetime.utcnow()
 
-        current_record = session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))  # type: ignore
+        current_record = session.query(  # type: ignore[no-untyped-call]
+            sqlalchemy.func.count(artemis_db.GuestRequest.guestname)
+        )
 
         self.current = current_record.scalar()
         self.requested = get_metric(logger, cache, self._KEY_PROVISIONING_REQUESTED) or 0
@@ -1500,7 +1502,7 @@ class ProvisioningMetrics(MetricsBase):
             (record[0], record[1], NOW - record[2])
             for record in cast(
                 List[Tuple[GuestState, Optional[str], datetime.datetime]],
-                session.query(  # type: ignore
+                session.query(  # type: ignore[no-untyped-call]
                     artemis_db.GuestRequest.state,
                     artemis_db.GuestRequest.poolname,
                     artemis_db.GuestRequest.ctime

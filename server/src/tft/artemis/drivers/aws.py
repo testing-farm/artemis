@@ -286,10 +286,10 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         self.data = mappings[:] if mappings else []
 
     # Abstract methods we need to define to keep types happy, since MutableSequence leaves them to us.
-    def __delitem__(self, index: int) -> None:  # type: ignore  # does not match supertype, but it's correct
+    def __delitem__(self, index: int) -> None:  # type: ignore[override]  # does not match supertype, but it's correct
         del self.data[index]
 
-    def __getitem__(  # type: ignore  # does not match supertype, but it's correct
+    def __getitem__(  # type: ignore[override]  # does not match supertype, but it's correct
         self,
         index: int
     ) -> APIBlockDeviceMappingType:
@@ -298,7 +298,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     def __len__(self) -> int:
         return len(self.data)
 
-    def __setitem__(  # type: ignore  # does not match supertype, but it's correct
+    def __setitem__(  # type: ignore[override]  # does not match supertype, but it's correct
         self,
         index: int,
         value: APIBlockDeviceMappingType
@@ -470,7 +470,7 @@ class AWSDriver(PoolDriver):
 
     # TODO: return value does not match supertype - it should, it does, but mypy ain't happy: why?
     @property
-    def image_info_mapper(self) -> AWSHookImageInfoMapper:  # type: ignore  # does not match supertype
+    def image_info_mapper(self) -> AWSHookImageInfoMapper:  # type: ignore[override]  # does not match supertype
         return AWSHookImageInfoMapper(self, 'AWS_ENVIRONMENT_TO_IMAGE')
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:

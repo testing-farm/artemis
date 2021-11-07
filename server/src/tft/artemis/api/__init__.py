@@ -382,9 +382,7 @@ class GuestResponse:
     log_types: List[Tuple[str, artemis_db.GuestLogContentType]]
 
     @classmethod
-    def from_db(cls, guest: artemis_db.GuestRequest):
-        # type: (...) -> GuestResponse
-
+    def from_db(cls, guest: artemis_db.GuestRequest) -> 'GuestResponse':
         return cls(
             guestname=guest.guestname,
             owner=guest.ownername,
@@ -426,9 +424,7 @@ class GuestEvent:
         self.updated = updated
 
     @classmethod
-    def from_db(cls, event: artemis_db.GuestEvent):
-        # type: (...) -> GuestEvent
-
+    def from_db(cls, event: artemis_db.GuestEvent) -> 'GuestEvent':
         return cls(
             eventname=event.eventname,
             guestname=event.guestname,
@@ -456,9 +452,7 @@ class SnapshotResponse:
     state: GuestState
 
     @classmethod
-    def from_db(cls, snapshot_request: artemis_db.SnapshotRequest):
-        # type: (...) -> SnapshotResponse
-
+    def from_db(cls, snapshot_request: artemis_db.SnapshotRequest) -> 'SnapshotResponse':
         return cls(
             snapshotname=snapshot_request.snapshotname,
             guestname=snapshot_request.guestname,
@@ -823,7 +817,7 @@ class GuestRequestManager:
                 )
 
             if guest_request.state != GuestState.CONDEMNED:
-                snapshot_count_subquery = session.query(  # type: ignore # untyped function "query"
+                snapshot_count_subquery = session.query(  # type: ignore[no-untyped-call] # untyped function "query"
                     sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
                 ).filter(
                     artemis_db.SnapshotRequest.guestname == guestname
@@ -2100,7 +2094,7 @@ class OpenAPIHandler(_OpenAPIHandler):
     to work with :py:class:`molten.Response` and just stay consistent in general.
     """
 
-    def __call__(self, app: BaseApp) -> Response:  # type: ignore # return type incomaptible with supertype
+    def __call__(self, app: BaseApp) -> Response:  # type: ignore[override] # return type incompatible with supertype
         super(OpenAPIHandler, self).__call__(app)
 
         return Response(
@@ -2735,7 +2729,7 @@ def run_app() -> molten.app.App:
 
     # Type checking this call is hard, mypy complains about unexpected keyword arguments, and refactoring
     # didn't help at all, just yielded another kind of errors.
-    metadata = molten.openapi.documents.Metadata(  # type: ignore
+    metadata = molten.openapi.documents.Metadata(  # type: ignore[call-arg]
         title='Artemis API',
         description='Artemis provisioning system API.',
         version=__VERSION__

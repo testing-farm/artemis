@@ -74,7 +74,7 @@ U = TypeVar('U', bound='_FlavorSubsystemContainer')
 # inside _FlavorSequenceContainer, e.g. with the following code:
 #
 # V = TypeVar('V', bound='_FlavorSequenceContainer[U]')
-V = TypeVar('V', bound='_FlavorSequenceContainer')  # type: ignore  # Missing type parameters for generic type
+V = TypeVar('V', bound='_FlavorSequenceContainer')  # type: ignore[type-arg]  # Missing type parameters for generic type
 
 
 class _FlavorSubsystemContainer(SerializableContainer):
@@ -146,7 +146,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 
         self.items: List[U] = items or []
 
-    def __getitem__(self, index: int) -> U:  # type: ignore  # does not match the superclass but that's fine
+    def __getitem__(self, index: int) -> U:  # type: ignore[override]  # does not match the superclass but that's fine
         """
         Return item on the requested position.
 
@@ -170,7 +170,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
             item.clone() for item in self.items
         ])
 
-    def serialize_to_json(self) -> List[Dict[str, Any]]:  # type: ignore  # expected
+    def serialize_to_json(self) -> List[Dict[str, Any]]:  # type: ignore[override]  # expected
         """
         Serialize container to JSON.
 
@@ -182,7 +182,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
         ]
 
     @classmethod
-    def unserialize_from_json(cls: Type[V], serialized: List[Dict[str, Any]]) -> V:  # type: ignore  # expected
+    def unserialize_from_json(cls: Type[V], serialized: List[Dict[str, Any]]) -> V:  # type: ignore[override]
         """
         Unserialize items from JSON.
 
@@ -860,7 +860,7 @@ class Constraint(ConstraintBase):
             result = False
 
         else:
-            result = self.operator_handler(  # type: ignore  # Too many arguments - mypy issue #5485
+            result = self.operator_handler(  # type: ignore[call-arg]  # Too many arguments - mypy issue #5485
                 flavor_property,
                 self.value
             )

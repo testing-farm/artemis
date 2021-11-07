@@ -70,7 +70,7 @@ jinja2.defaults.DEFAULT_FILTERS.update(
 )
 
 
-from tft.artemis.knobs import Knob  # noqa
+from tft.artemis.knobs import Knob  # noqa: E402
 
 
 def extract_knobs(options: argparse.Namespace) -> List[Knob]:

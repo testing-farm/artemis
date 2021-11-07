@@ -174,7 +174,7 @@ def _handle_tails(
     return False
 
 
-class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class cannot subclass 'Retries
+class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # cannot subclass 'Retries'
     @property
     def actor_options(self) -> Set[str]:
         return {
@@ -219,7 +219,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore  # Class can
         if guestname:
             logger = GuestLogger(logger, guestname)
 
-        logger.info(f'retries: message={message.message_id} actor={actor.actor_name} current-retries={retries} max-retries={max_retries}')  # noqa
+        logger.info(f'retries: message={message.message_id} actor={actor.actor_name} current-retries={retries} max-retries={max_retries}')  # noqa: E501
 
         if retry_when is not None and not retry_when(retries, exception) or \
            retry_when is None and max_retries is not None and retries >= max_retries:
@@ -274,7 +274,7 @@ def get_metric_note(note: str) -> Optional[str]:
     return options.get(MESSAGE_NOTE_OPTION_KEY, {}).get(note)
 
 
-class Prometheus(dramatiq.middleware.Middleware):  # type: ignore  # Class cannot subclass 'Middleware'
+class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
     def __init__(self) -> None:
         super(Prometheus, self).__init__()
 

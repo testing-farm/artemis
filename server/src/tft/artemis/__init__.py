@@ -134,7 +134,7 @@ class SerializableContainer:
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super(SerializableContainer, self).__init__(*args, **kwargs)  # type: ignore
+        super(SerializableContainer, self).__init__(*args, **kwargs)  # type: ignore[call-arg]
 
     # All classes derived from SerializableContainer can be represented as YAML, because they
     # inherit the `to_yaml()` method, which then depends on `serialize_to_json()` - and what
@@ -348,9 +348,7 @@ class Failure:
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         **details: Any
-    ):
-        # type: (...) -> Failure
-
+    ) -> 'Failure':
         return Failure(
             message,
             exc_info=(
@@ -609,7 +607,7 @@ class Failure:
             details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))
 
         if self.exc_info:
-            details['traceback'] = stackprinter.format(self.exc_info)  # noqa
+            details['traceback'] = stackprinter.format(self.exc_info)  # noqa: FS002
 
         if 'scrubbed_command' in details:
             details['scrubbed_command'] = gluetool.utils.format_command_line([details['scrubbed_command']])

@@ -300,7 +300,7 @@ def _schema_test_db_Users(db: tft.artemis.db.DB, session: sqlalchemy.orm.session
 
     User.__table__.create(db.engine)
 
-    session.commit()  # type: ignore  # TODO: untyped commit()??
+    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
 
 
 @pytest.fixture
@@ -314,7 +314,7 @@ def _schema_test_db_Users_user(session: sqlalchemy.orm.session.Session, _schema_
         admin_token=User.hash_token('dummy-user-admin-token')
     ))
 
-    session.commit()  # type: ignore  # TODO: untyped commit()??
+    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
 
 
 @pytest.fixture
@@ -328,7 +328,7 @@ def _schema_test_db_Users_admin(session: sqlalchemy.orm.session.Session, _schema
         admin_token=User.hash_token('dummy-admin-admin-token')
     ))
 
-    session.commit()  # type: ignore  # TODO: untyped commit()??
+    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
 
 
 def test_auth_context_verify_auth_basic_empty(
@@ -655,8 +655,8 @@ def test_auth_middleware_disabled_authentication(
     assert auth_context.token is None
     assert auth_context.user is None
 
-    auth_context.inject.assert_called_once_with()  # type: ignore  # callable is a MagicMock instance
-    auth_context.verify_auth.assert_not_called()  # type: ignore  # callable is a MagicMock instance
+    auth_context.inject.assert_called_once_with()  # type: ignore[attr-defined]  # callable is a MagicMock instance
+    auth_context.verify_auth.assert_not_called()  # type: ignore[attr-defined]  # callable is a MagicMock instance
 
 
 def test_auth_middleware_disabled_authorization(

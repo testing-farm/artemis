@@ -202,7 +202,7 @@ class KnobSourceDBGlobal(KnobSourceDB[T]):
     Read knob value from a database.
     """
 
-    def get_value(  # type: ignore  # match parent
+    def get_value(  # type: ignore[override]  # match parent
         self,
         *,
         session: Session,
@@ -222,7 +222,7 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
     * ``${original knob name}``
     """
 
-    def get_value(  # type: ignore  # match parent
+    def get_value(  # type: ignore[override]  # match parent
         self,
         *,
         session: Session,
