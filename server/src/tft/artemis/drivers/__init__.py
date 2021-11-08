@@ -913,7 +913,29 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
         return r_image
 
 
+class GuestLogUpdaterType(Protocol):
+    __name__: str
+
+    def __call__(self, guest_request: GuestRequest, guest_log: GuestLog) -> Result[GuestLogUpdateProgress, Failure]:
+        pass
+
+
+def guest_log_updater(
+    drivername: str,
+    logname: str,
+    contenttype: GuestLogContentType
+) -> Callable[[GuestLogUpdaterType], GuestLogUpdaterType]:
+    def wrapper(func: GuestLogUpdaterType) -> GuestLogUpdaterType:
+        PoolDriver.guest_log_updaters[(drivername, logname, contenttype)] = func.__name__
+
+        return func
+
+    return wrapper
+
+
 class PoolDriver(gluetool.log.LoggerMixin):
+    drivername: str
+
     image_info_class: Type[PoolImageInfo] = PoolImageInfo
     flavor_info_class: Type[Flavor] = Flavor
     pool_data_class: Type[PoolData] = PoolData
@@ -923,6 +945,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     #: Template for a cache key holding flavor image info.
     POOL_FLAVOR_INFO_CACHE_KEY = 'pool.{}.flavor-info'
+
+    #: Hold all known guest log updaters, with key being driver name, log name and its content type.
+    guest_log_updaters: Dict[Tuple[str, str, GuestLogContentType], str] = {}
 
     def __init__(
         self,
@@ -1567,15 +1592,48 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
         raise NotImplementedError()
 
+    def get_guest_log_updater(self, guest_log: GuestLog) -> Optional[GuestLogUpdaterType]:
+        updater_name = self.guest_log_updaters.get((
+            self.drivername,
+            guest_log.logname,
+            GuestLogContentType(guest_log.contenttype)
+        ))
+
+        if updater_name is None:
+            return None
+
+        return cast(GuestLogUpdaterType, getattr(self, updater_name, None))
+
     def update_guest_log(
         self,
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        # cannot provide guest log: functionality not supported for this cloud driver
-        return Ok(GuestLogUpdateProgress(
-            state=GuestLogState.ERROR
-        ))
+        """
+        Call driver-specific code to update a given guest log.
+
+        Guest log updater can be any method accepting guest request and log objcts and decorated
+        with :py:attr:`PoolDriver.guest_log_updater`:
+
+        .. code-block:: python
+
+           @PoolDriver.guest_log_updater('driver name', 'console', GuestLogContentType.BLOB)
+           def _update_guest_log_console_blob(
+               self,
+               guest_request: GuestRequest,
+               guest_log: GuestLog
+           ) -> Result[GuestLogUpdateProgress, Failure]:
+               ...
+        """
+
+        updater = self.get_guest_log_updater(guest_log)
+
+        if updater is None:
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.ERROR
+            ))
+
+        return updater(guest_request, guest_log)
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         """

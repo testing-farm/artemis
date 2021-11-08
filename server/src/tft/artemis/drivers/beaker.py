@@ -492,6 +492,8 @@ def _create_wow_options(
 
 
 class BeakerDriver(PoolDriver):
+    drivername = 'beaker'
+
     pool_data_class = BeakerPoolData
 
     #: Template for a cache key holding avoid groups hostnames.

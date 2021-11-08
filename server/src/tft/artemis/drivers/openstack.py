@@ -21,7 +21,7 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, ConsoleUrlData, GuestLogUpdateProgress, HookImageInfoMapper, \
     PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, test_cli_error
+    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, run_cli_tool, test_cli_error
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -69,6 +69,8 @@ class OpenStackPoolResourcesIDs(PoolResourcesIDs):
 
 
 class OpenStackDriver(PoolDriver):
+    drivername = 'openstack'
+
     pool_data_class = OpenStackPoolData
 
     def __init__(
@@ -970,17 +972,34 @@ class OpenStackDriver(PoolDriver):
                 flavor_info=r_flavors.unwrap()
             ))
 
-    def update_guest_log(
+    def _do_fetch_console(
+        self,
+        guest_request: GuestRequest,
+        resource: str,
+        json_format: bool = True
+    ) -> Result[Optional[JSONType], Failure]:
+        r_output = self._run_os([
+            'console',
+            resource,
+            'show',
+            OpenStackPoolData.unserialize(guest_request).instance_id
+        ], json_format=json_format, commandname=f'console-{resource}-show')
+
+        if r_output.is_error:
+            failure = r_output.unwrap_error()
+
+            # Detect "instance not ready".
+            if test_cli_error(failure, INSTANCE_NOT_READY_ERROR_PATTERN):
+                return Ok(None)
+
+        return r_output
+
+    @guest_log_updater('openstack', 'console', GuestLogContentType.URL)  # type: ignore[arg-type]
+    def _update_guest_log_console_url(
         self,
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        if guest_log.logname != 'console':
-            # anything but "console" is unsupported so far
-            return Ok(GuestLogUpdateProgress(
-                state=GuestLogState.ERROR
-            ))
-
         r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(poolname=self.poolname)
 
         if r_delay_update.is_error:
@@ -988,51 +1007,42 @@ class OpenStackDriver(PoolDriver):
 
         delay_update = r_delay_update.unwrap()
 
-        def _do_fetch(resource: str, json_format: bool = True) -> Result[Optional[JSONType], Failure]:
-            r_output = self._run_os([
-                'console',
-                resource,
-                'show',
-                OpenStackPoolData.unserialize(guest_request).instance_id
-            ], json_format=json_format, commandname=f'console-{resource}-show')
-
-            if r_output.is_error:
-                failure = r_output.unwrap_error()
-
-                # Detect "instance not ready".
-                if test_cli_error(failure, INSTANCE_NOT_READY_ERROR_PATTERN):
-                    return Ok(None)
-
-            return r_output
-
-        if guest_log.contenttype == GuestLogContentType.URL:
-            r_output = _do_fetch('url')
-
-            if r_output.is_error:
-                return Error(r_output.unwrap_error())
-
-            output = r_output.unwrap()
-
-            if output is None:
-                return Ok(GuestLogUpdateProgress(
-                    state=GuestLogState.IN_PROGRESS,
-                    delay_update=delay_update
-                ))
-
-            return Ok(GuestLogUpdateProgress(
-                state=GuestLogState.COMPLETE,
-                url=cast(Dict[str, str], output)['url'],
-                expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
-            ))
-
-        # We're left with console/blob.
-        r_output = _do_fetch('log', json_format=False)
+        r_output = self._do_fetch_console(guest_request, 'url')
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        # TODO logs: do some sort of magic to find out whether the blob we just got is already in DB.
-        # Maybe use difflib, or use delimiters and timestamps. We do not want to overide what we already have.
+        output = r_output.unwrap()
+
+        if output is None:
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.IN_PROGRESS,
+                delay_update=delay_update
+            ))
+
+        return Ok(GuestLogUpdateProgress(
+            state=GuestLogState.COMPLETE,
+            url=cast(Dict[str, str], output)['url'],
+            expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
+        ))
+
+    @guest_log_updater('openstack', 'console', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_console_blob(
+        self,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(poolname=self.poolname)
+
+        if r_delay_update.is_error:
+            return Error(r_delay_update.unwrap_error())
+
+        delay_update = r_delay_update.unwrap()
+
+        r_output = self._do_fetch_console(guest_request, 'log', json_format=False)
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
 
         output = r_output.unwrap()
 
