@@ -14,7 +14,7 @@ tests:
     PYTEST_ADDOPTS: "--color=yes"
   script:
     - make -C server/ test-pre-commit
-    - make -C server/ test
+    - make -C server/ test-units
 
     - cd cli/
     - IN_TEST=yes tox -v
