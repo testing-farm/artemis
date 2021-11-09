@@ -12,7 +12,7 @@ import gluetool.log
 import jq
 import pint
 import sqlalchemy.orm.session
-from gluetool.log import log_dict
+from gluetool.log import ContextAdapter, log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
@@ -21,7 +21,7 @@ from typing_extensions import Literal, TypedDict
 from .. import Failure, JSONType, SerializableContainer, get_cached_item, get_cached_items_as_list, log_dict_yaml
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Flavor, FlavorCpu, FlavorVirtualization
+from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorCpu, FlavorVirtualization
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, HookImageInfoMapper, \
@@ -386,7 +386,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
 
         return Ok(mapping)
 
-    def _get_mapping(
+    def get_mapping(
         self,
         index: int
     ) -> Optional[APIBlockDeviceMappingType]:
@@ -437,7 +437,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         self,
         size: Optional[pint.Quantity] = None
     ) -> Result[APIBlockDeviceMappingType, Failure]:
-        mapping = self._get_mapping(0)
+        mapping = self.get_mapping(0)
 
         if mapping is None:
             return Error(Failure(
@@ -825,6 +825,8 @@ class AWSDriver(PoolDriver):
 
     def _create_block_device_mappings(
         self,
+        logger: ContextAdapter,
+        guest_request: GuestRequest,
         image: AWSPoolImageInfo,
         flavor: Flavor
     ) -> Result[BlockDeviceMappings, Failure]:
@@ -855,6 +857,63 @@ class AWSDriver(PoolDriver):
             if r_bdms.is_error:
                 return Error(r_bdms.unwrap_error())
 
+        r_constraints = guest_request.environment.get_hw_constraints()
+
+        if r_constraints.is_error:
+            return Error(r_constraints.unwrap_error())
+
+        constraints = r_constraints.unwrap()
+
+        if constraints is None:
+            return Ok(mappings)
+
+        pruned_constraints = constraints.prune_on_flavor(logger, flavor)
+
+        if pruned_constraints is None:
+            # TODO: what's happening??
+            logger.warning('pruned constraints boil down to empty constraint')
+
+            return Ok(mappings)
+
+        picked_span: List[ConstraintBase] = []
+
+        for i, span in enumerate(pruned_constraints.spans(logger)):
+            log_dict_yaml(logger.warning, f'span #{i}', span)
+
+            if not picked_span:
+                picked_span = span
+
+        if not picked_span:
+            # TODO: what's happening??
+            logger.warning('pruned constraints returned no span')
+
+            return Ok(mappings)
+
+        log_dict_yaml(logger.warning, 'picked span', picked_span)
+
+        # TODO: there is a small issue with spans() - it returns List[ConstraintBase] but, given the compound
+        # constraints are untangled, a span can actually be only List[Constraint].
+        for _constraint in picked_span:
+            constraint = cast(Constraint, _constraint)
+
+            log_dict_yaml(logger.warning, 'picked span step', constraint)
+
+            if constraint.index == -1:
+                # TODO: ignore for now
+                pass
+
+            elif constraint.index is None:
+                # TODO: ignore for now
+                pass
+
+            elif constraint.name == f'disk[{constraint.index}].size':
+                # TODO: ignore for now
+                pass
+
+            elif constraint.name == f'network[{constraint.index}].type':
+                # TODO: ignore for now
+                pass
+
 # TODO: once we merge all the pieces, we should be able to request additional storage, e.g.:
 #
 #        r_mapping = mappings.append_mapping(
@@ -875,7 +934,7 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         instance_type: Flavor,
         image: AWSPoolImageInfo,
-        guestname: str
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
 
@@ -895,7 +954,7 @@ class AWSDriver(PoolDriver):
         if 'security-group' in self.pool_config:
             command.extend(['--security-group-ids', self.pool_config['security-group']])
 
-        r_block_device_mappings = self._create_block_device_mappings(image, instance_type)
+        r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
 
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
@@ -963,7 +1022,7 @@ class AWSDriver(PoolDriver):
             else:
                 user_data = ""
 
-        r_block_device_mappings = self._create_block_device_mappings(image, instance_type)
+        r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
 
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
@@ -1273,7 +1332,7 @@ class AWSDriver(PoolDriver):
         if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
             return self._request_spot_instance(logger, session, guest_request, instance_type, image)
 
-        return self._request_instance(logger, instance_type, image, guest_request.guestname)
+        return self._request_instance(logger, instance_type, image, guest_request)
 
     def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """

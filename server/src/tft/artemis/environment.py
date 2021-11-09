@@ -793,6 +793,9 @@ class Constraint(ConstraintBase):
     #: Constraint value.
     value: ConstraintValueType
 
+    #: Optional index of the constrained object among its peers.
+    index: Optional[int]
+
     # Stored for possible inspection by more advanced processing.
     raw_value: str
 
@@ -804,6 +807,7 @@ class Constraint(ConstraintBase):
         cls: Type[T],
         name: str,
         raw_value: str,
+        index: Optional[int] = None,
         as_quantity: bool = True,
         as_cast: Optional[Callable[[str], ConstraintValueType]] = None
     ) -> T:
@@ -812,6 +816,8 @@ class Constraint(ConstraintBase):
 
         :param name: name of the constraint.
         :param raw_value: raw value of the constraint.
+        :param index: if set, it carries the index of this constraint in its parent container. Useful for constraints
+            that apply to subsystem containers like ``disk`` or ``network``.
         :param as_quantity: if set, value is treated as a quantity containing also unit, and as such the raw value is
             converted to :py:`pint.Quantity` instance.
         :param as_cast: if specified, this callable is used to convert raw value to its final type.
@@ -848,6 +854,7 @@ class Constraint(ConstraintBase):
             operator=operator,
             operator_handler=OPERATOR_TO_HANDLER[operator],
             value=value,
+            index=index,
             raw_value=raw_value
         )
 
@@ -869,6 +876,7 @@ class Constraint(ConstraintBase):
             operator=Operator.EQ,
             operator_handler=OPERATOR_TO_HANDLER[Operator.EQ],
             value=value,
+            index=None,
             raw_value=value
         )
 
@@ -1087,7 +1095,11 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
     root_group = Or()
 
     direct_group.constraints += [
-        Constraint.from_specification(f'disk[{disk_index}].{constraint_name}', str(spec[constraint_name]))
+        Constraint.from_specification(
+            f'disk[{disk_index}].{constraint_name}',
+            str(spec[constraint_name]),
+            index=disk_index
+        )
         for constraint_name in ('size',)
         if constraint_name in spec
     ]
@@ -1095,7 +1107,7 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
     # The old-style constraint when `space` existed. Remove once v0.0.26 is gone.
     if 'space' in spec:
         direct_group.constraints += [
-            Constraint.from_specification(f'disk[{disk_index}].size', str(spec['space']))
+            Constraint.from_specification(f'disk[{disk_index}].size', str(spec['space']), index=disk_index)
         ]
 
     if len(direct_group.constraints) == 1:
@@ -1112,21 +1124,23 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
         constraint_name = f'disk[{disk_index}].size'
 
         expansion_group.constraints += [
-            Constraint.from_specification('disk[-1].is_expansion', 'True', as_quantity=False, as_cast=bool),
+            Constraint.from_specification('disk[-1].is_expansion', 'True', as_quantity=False, as_cast=bool, index=-1),
             Constraint.from_specification('disk.expanded_length', f'> {disk_index}', as_quantity=False, as_cast=int)
         ]
 
-        size_constraint = Constraint.from_specification(constraint_name, str(spec['size']))
+        size_constraint = Constraint.from_specification(constraint_name, str(spec['size']), index=disk_index)
 
         if size_constraint.operator in (Operator.EQ, Operator.GTE, Operator.LTE, Operator.GT, Operator.LT):
             expansion_group.constraints += [
                 Constraint.from_specification(
                     'disk[-1].min_size',
-                    f'<= {size_constraint.raw_value}'
+                    f'<= {size_constraint.raw_value}',
+                    index=-1
                 ),
                 Constraint.from_specification(
                     'disk[-1].max_size',
-                    f'>= {size_constraint.raw_value}'
+                    f'>= {size_constraint.raw_value}',
+                    index=-1
                 )
             ]
 
@@ -1182,7 +1196,8 @@ def _parse_network(spec: SpecType, network_index: int) -> ConstraintBase:
         Constraint.from_specification(
             f'network[{network_index}].{constraint_name}',
             str(spec[constraint_name]),
-            as_quantity=False
+            as_quantity=False,
+            index=network_index
         )
         for constraint_name in ('type',)
         if constraint_name in spec
