@@ -14,11 +14,28 @@ from rpm import labelCompare
 import gluetool
 from gluetool import GlueError, SoftGlueError
 from gluetool.action import Action
-from gluetool.log import Logging, LoggerMixin, log_dict
+from gluetool.log import ContextAdapter
+from gluetool.log import Logging
+from gluetool.log import LoggerMixin
+from gluetool.log import log_dict
 from gluetool.result import Result
 from gluetool.utils import cached_property, dict_update, wait, normalize_multistring_option, render_template
 from gluetool.utils import IncompatibleOptionsError
 
+from typing import Any, Dict, List, NamedTuple, Optional, Union, Tuple, Callable, Type, cast, overload, Literal  # noqa
+from typing_extensions import TypedDict
+from gluetool_modules.helpers.rules_engine import ContextType
+
+InitDetailsType = TypedDict(
+    'InitDetailsType',
+    {
+        'url': str,
+        'web_url': str,
+        'pkgs_url': str,
+        'session': Any,
+        'automation_user_ids': str
+    }
+)
 
 DEFAULT_COMMIT_FETCH_TIMEOUT = 300
 DEFAULT_COMMIT_FETCH_TICKS = 30
@@ -28,6 +45,7 @@ DEFAULT_API_VERSION_RETRY_TICK = 30
 
 class NotBuildTaskError(SoftGlueError):
     def __init__(self, task_id):
+        # type: (int) -> None
         super(NotBuildTaskError, self).__init__('Task is not a build task')
 
         self.task_id = task_id
@@ -38,14 +56,20 @@ class NotBuildTaskError(SoftGlueError):
 #: :ivar bool complete: If ``True``, the task was not limited by its issuer to any particular set of architectures.
 #:     ``False`` signals the issuer requested task to build its artifact for specific list of architectures.
 #: :ivar list(str) arches: List of architectures.
-TaskArches = collections.namedtuple('TaskArches', ['complete', 'arches'])
+TaskArches = NamedTuple('TaskArches', [('complete', bool), ('arches', List[str])])
 
 #: Represents ``request`` field of API response on ``getTaskInfo`` query for common build task.
 #:
 #: :ivar str source: source used for the building process.
 #: :ivar str target: target the task built for.
 #: :ivar dict options: additional task options.
-BuildTaskRequest = collections.namedtuple('BuildTaskRequest', ['source', 'target', 'options'])
+BuildTaskRequest = NamedTuple(
+    'BuildTaskRequest', [
+        ('source', str),
+        ('target', str),
+        ('options', Dict[str, str])
+    ]
+)
 
 #: Represents ``request`` field of API response on ``getTaskInfo`` query for ``buildArch`` task.
 #:
@@ -54,8 +78,15 @@ BuildTaskRequest = collections.namedtuple('BuildTaskRequest', ['source', 'target
 #: :ivar str arch: build architecture.
 #: :ivar bool keep_srpm: whether the SRPM was stored among artifacts.
 #: :ivar dict options: additional task options.
-BuildArchTaskRequest = collections.namedtuple('BuildArchTaskRequest',
-                                              ['source', 'something', 'arch', 'keep_srpm', 'options'])
+BuildArchTaskRequest = NamedTuple(
+    'BuildArchTaskRequest', [
+        ('source', str),
+        ('something', str),
+        ('arch', str),
+        ('keep_srpm', bool),
+        ('options', Dict[str, str])
+    ]
+)
 
 #: Represents an image repository
 #:
@@ -63,7 +94,15 @@ BuildArchTaskRequest = collections.namedtuple('BuildArchTaskRequest',
 #: :ivar str url: Repository URL.
 #: :ivar list(str) alternatives: Other URLs leading to the same image as ``url``.
 #: :ivar dict manifest: Manifest describing the image in the repository.
-ImageRepository = collections.namedtuple('ImageRepository', ['arch', 'url', 'alternatives', 'manifest'])
+ImageRepository = NamedTuple(
+    'ImageRepository',
+    [
+        ('arch', str),
+        ('url', str),
+        ('alternatives', List[str]),
+        ('manifest', Dict[str, str])
+    ]
+)
 
 
 #: Represents data we need to initialize a Koji task. A task ID would be enough, but, for some tasks,
@@ -88,10 +127,28 @@ ImageRepository = collections.namedtuple('ImageRepository', ['arch', 'url', 'alt
 #: :ivar int task_id: task ID.
 #: :ivar int build_id: if set, it as build we should assign to the task. Otherwise we query API
 #:     to find out which - if any - build belongs to the task.
-TaskInitializer = collections.namedtuple('TaskInitializer', ['task_id', 'build_id'])
+TaskInitializer = NamedTuple(
+    'TaskInitializer',
+    [
+        ('task_id', int),
+        ('build_id', Optional[int])
+    ]
+)
+
+TaskInfoType = TypedDict(
+    'TaskInfoType',
+    {
+        'request': Union[BuildTaskRequest, BuildArchTaskRequest],
+        'id': str,
+        'method': str,
+        'owner_id': str,
+        'state': str
+    }
+)
 
 
 def _call_api(session, logger, method, *args, **kwargs):
+    # type: (Any, ContextAdapter, str, *Any, **Any) -> Any
     with Action('query Koji API', parent=Action.current_action(), logger=logger, tags={
         'method': method,
         'positional-arguments': args,
@@ -124,6 +181,7 @@ class KojiTask(LoggerMixin, object):
 
     @staticmethod
     def _check_required_instance_keys(details):
+        # type: (InitDetailsType) -> None
         """
         Checks for required instance details for Koji.
         :raises: GlueError if instance is missing some of the required keys
@@ -133,10 +191,48 @@ class KojiTask(LoggerMixin, object):
         if not all(key in details for key in required_instance_keys):
             raise GlueError('instance details do not contain all required keys')
 
+    @overload  # noqa F811  # flake8 thinks the method is being redefined but only the types are being overloaded
     def _call_api(self, method, *args, **kwargs):
+        # type: (Literal['listBuilds'], *Any, **Any) -> Optional[List[Dict[str, str]]]
+        pass
+
+    @overload  # noqa F811
+    def _call_api(self, method, *args, **kwargs):
+        # type: (Literal['getFullInheritance', 'getTaskChildren', 'listBuildRPMs'], *Any, **Any) -> List[Dict[str, str]]
+        pass
+
+    @overload  # noqa F811
+    def _call_api(self, method, *args, **kwargs):
+        # type: (Literal['listArchives', 'listTagged'], *Any, **Any) -> List[Dict[str, Any]]
+        pass
+
+    @overload  # noqa F811
+    def _call_api(self, method, *args, **kwargs):
+        # type: (Literal['getBuild', 'getUser', 'getTaskResult', 'getBuildTarget'], *Any, **Any) -> Dict[str, Any]
+        pass
+
+    @overload  # noqa F811
+    def _call_api(self, method, *args, **kwargs):
+        # type: (Literal['getTaskInfo'], *Any, **Any) -> TaskInfoType
+        pass
+
+    @overload  # noqa F811
+    def _call_api(self, method, *args, **kwargs):
+        # type: (Literal['listTaskOutput'], *Any, **Any) -> List[str]
+        pass
+
+    @overload  # noqa F811
+    def _call_api(self, method, *args, **kwargs):
+        # type: (Literal['getAPIVersion'], *Any, **Any) -> str
+        pass
+
+    def _call_api(self, method, *args, **kwargs):  # noqa F811
+        # type: (str, *Any, **Any) -> Any
         return _call_api(self.session, self.logger, method, *args, **kwargs)
 
     def _assign_build(self, build_id):
+        # type: (Optional[int]) -> None
+
         # Helper method - if build_id is specified, don't give API a chance, use the given
         # build, and emit a warning.
 
@@ -152,13 +248,14 @@ class KojiTask(LoggerMixin, object):
         ))
 
     def __init__(self, details, task_id, module, logger=None, wait_timeout=None, build_id=None):
+        # type: (InitDetailsType, int, Koji, Optional[ContextAdapter], Optional[int], Optional[int]) -> None
         super(KojiTask, self).__init__(logger or Logging.get_logger())
 
         self._check_required_instance_keys(details)
 
         self._module = module
 
-        self.id = self.dispatch_id = int(task_id)
+        self.id = self.dispatch_id = int(task_id)  # type: Union[str, int]
         self.api_url = details['url']
         self.web_url = details['web_url']
         self.pkgs_url = details['pkgs_url']
@@ -192,10 +289,12 @@ class KojiTask(LoggerMixin, object):
         self._assign_build(build_id)
 
     def __repr__(self):
+        # type: () -> str
         return '{}({})'.format(self.__class__.__name__, self.id)
 
     @cached_property
     def _is_valid(self):
+        # type: () -> bool
         """
         Verify the task is valid by checking its ``method`` attribute. List of values that are considered
         `valid` is provided by the user via ``--valid-methods`` option of the module, and generaly limits
@@ -205,13 +304,16 @@ class KojiTask(LoggerMixin, object):
 
         :rtype: bool
         """
+        try:
+            if not self._module._valid_methods:
+                return True
 
-        if not self._module._valid_methods:
-            return True
-
-        return self._task_info['method'] in self._module._valid_methods
+            return self._task_info['method'] in self._module._valid_methods
+        except AttributeError:
+            raise GlueError("Module '{}' has no attribute _valid_methods".format(self._module))
 
     def _flush_task_info(self):
+        # type: () -> None
         """
         Remove cached task info we got from API. Handle the case when such info does not yet exist.
         """
@@ -223,6 +325,7 @@ class KojiTask(LoggerMixin, object):
             pass
 
     def _check_finished_task(self):
+        # type: () -> Result[str, str]
         """
         Verify that the task is finished (closed, canceled or failed).
 
@@ -243,6 +346,7 @@ class KojiTask(LoggerMixin, object):
         return Result.Error('task is not closed')
 
     def _check_nonwaiting_task(self):
+        # type: () -> Result[bool, str]
         """
         Check if task is non-waiting, i.e. 'waiting: false' in task info.
         :returns: True if task is non-waiting, False otherwise
@@ -254,6 +358,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def _subtasks(self):
+        # type: () -> List[Dict[str, str]]
         """
         A list of children tasks in raw form, as JSON data returned by Koji API.
 
@@ -267,6 +372,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def _build_arch_subtasks(self):
+        # type: () -> List[Dict[str, str]]
         """
         A list of children task of ``buildArch`` type, as JSON data returned by Koji API.
 
@@ -284,6 +390,7 @@ class KojiTask(LoggerMixin, object):
 
     @staticmethod
     def swap_request_info(task_info, klass, nr_fields):
+        # type: (TaskInfoType, Union[Type[BuildArchTaskRequest], Type[BuildTaskRequest]], int) -> None
         """
         Replace ``request`` key of task info - a JSON structure, returned by API - with
         an object with properties, representing the content of ``request`` key.
@@ -297,10 +404,11 @@ class KojiTask(LoggerMixin, object):
         if len(request_info) < nr_fields:
             raise GlueError("Task {} has unexpected number of items in request field".format(task_info['id']))
 
-        task_info['request'] = klass(*[request_info[i] for i in range(0, nr_fields)])
+        task_info['request'] = klass(*[request_info[i] for i in range(0, nr_fields)])  # type: ignore
 
     @cached_property
     def _task_info(self):
+        # type: () -> TaskInfoType
         """
         Task info as returned by API.
 
@@ -320,6 +428,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def _build(self):
+        # type: () -> Optional[Dict[str, str]]
         """
         Build info as returned by API, or ``None`` for scratch builds.
 
@@ -339,6 +448,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def _result(self):
+        # type: () -> Dict[str, Any]
         """
         Task result info as returned by API.
 
@@ -353,10 +463,12 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def _task_request(self):
-        return self._task_info['request']
+        # type: () -> Union[BuildTaskRequest, BuildArchTaskRequest]
+        return cast(Union[BuildTaskRequest, BuildArchTaskRequest], self._task_info['request'])
 
     @cached_property
     def has_build(self):
+        # type: () -> bool
         """
         Whether there is a build for this task.
 
@@ -369,14 +481,16 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def is_build_task(self):
+        # type: () -> bool
         """
         Whether this task is a "build" task, i.e. building common RPMs.
         """
 
-        return self._task_info['method'] == 'build'
+        return cast(bool, self._task_info['method'] == 'build')
 
     @cached_property
     def build_id(self):
+        # type: () -> Optional[int]
         """
         Build ID for standard tasks, or ``None`` for scratch builds.
 
@@ -386,10 +500,11 @@ class KojiTask(LoggerMixin, object):
         if not self._build:
             return None
 
-        return self._build['build_id']
+        return cast(int, self._build['build_id'])
 
     @cached_property
     def owner(self):
+        # type: () -> str
         """
         Name of the owner of the task.
 
@@ -397,20 +512,22 @@ class KojiTask(LoggerMixin, object):
         """
 
         owner_id = self._task_info["owner"]
-        return self._call_api('getUser', owner_id)["name"]
+        return cast(str, self._call_api('getUser', owner_id)["name"])
 
     @cached_property
     def issuer(self):
+        # type: () -> str
         """
         Name of the issuer of the task. The same as :py:attr:`owner`.
 
         :rtype: str
         """
 
-        return self.owner
+        return cast(str, self.owner)
 
     @cached_property
     def target(self):
+        # type: () -> str
         """
         Build target name
 
@@ -418,7 +535,7 @@ class KojiTask(LoggerMixin, object):
         """
 
         if self._task_request.target:
-            return self._task_request.target
+            return cast(str, self._task_request.target)
 
         # inform admins about this weird build
         self.warn("task '{}' build '{}' has no build target".format(self.id, self.nvr), sentry=True)
@@ -426,6 +543,7 @@ class KojiTask(LoggerMixin, object):
         return '<no build target available>'
 
     def previous_tags(self, tags):
+        # type: (List[str]) -> List[str]
         """
         Return previous tags according to the inheritance tag hierarchy to the given tags.
 
@@ -450,6 +568,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def source(self):
+        # type: () -> str
         """
         Task's source, e.g. git+https://src.fedoraproject.org/rpms/rust-tokio-proto.git?#b59219
 
@@ -459,25 +578,27 @@ class KojiTask(LoggerMixin, object):
         """
 
         if self.has_build and self._build.get('source', None):
-            return self._build['source']
+            return cast(str, self._build['source'])
 
         if self._task_request.source:
-            return self._task_request.source
+            return cast(str, self._task_request.source)
 
         raise GlueError("task '{}' has no source defined in the request field".format(self.id))
 
     @cached_property
     def scratch(self):
+        # type: () -> bool
         """
         Whether the task is a scratch build.
 
         :rtype: bool
         """
 
-        return self._task_request.options.get('scratch', False)
+        return cast(bool, self._task_request.options.get('scratch', False))
 
     @cached_property
     def task_arches(self):
+        # type: () -> TaskArches
         """
         Return information about arches the task was building for.
 
@@ -493,6 +614,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def url(self):
+        # type: () -> str
         """
         URL of the task info web page.
 
@@ -502,6 +624,7 @@ class KojiTask(LoggerMixin, object):
         return "{}/taskinfo?taskID={}".format(self.web_url, self.id)
 
     def latest_released(self, tags=None):
+        # type: (Optional[List[str]]) -> Optional[Union[KojiTask, BrewTask]]
         """
         Returns task of the latest builds tagged with the same destination tag or build target.
 
@@ -533,7 +656,7 @@ class KojiTask(LoggerMixin, object):
 
         # for scratch builds the latest released package is the latest tagged
         if self.scratch:
-            build = builds[0]
+            build = builds[0]  # type: Optional[Dict[str, Any]]
 
         # for non scratch we return the latest released package
         # in case it is the same, return the previously released package,
@@ -547,6 +670,8 @@ class KojiTask(LoggerMixin, object):
         if build is None:
             raise GlueError("Could not find the baseline build.")
 
+        assert build is not None
+
         if 'task_id' not in build:
             raise GlueError("No 'task_id' found for the build.")
 
@@ -557,6 +682,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def latest(self):
+        # type: (Union[KojiTask, BrewTask]) -> Optional[str]
         """
         NVR of the latest released package with the same build target, or ``None`` if none found.
 
@@ -571,6 +697,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def _tags_from_map(self):
+        # type: () -> List[str]
         """
         Unfortunately tags used for looking up baseline builds need to be resolved
         from a rules file due to contradicting use cases.
@@ -590,9 +717,10 @@ class KojiTask(LoggerMixin, object):
         # use dictionary which can be altered in _tags_callback
         map = {
             'tags': []
-        }
+        }  # type: Dict[str, Any]
 
         def _tags_callback(instruction, command, argument, context):
+            # type: (Any, Any, List[str], Optional[ContextType]) -> None
             map['tags'] = []
 
             for arg in argument:
@@ -613,10 +741,11 @@ class KojiTask(LoggerMixin, object):
 
         log_dict(self.debug, 'Tags from baseline tag map', map['tags'])
 
-        return map['tags']
+        return cast(List[str], map['tags'])
 
     @cached_property
     def baseline(self):
+        # type: () -> Optional[str]
         """
         Return baseline task NVR if `baseline-method` specified, otherwise return None.
 
@@ -625,10 +754,11 @@ class KojiTask(LoggerMixin, object):
         if not self._module.option('baseline-method'):
             return None
 
-        return self.baseline_task.nvr
+        return cast(str, self.baseline_task.nvr)
 
     @cached_property
     def baseline_task(self):
+        # type: () -> Optional[Union[KojiTask, BrewTask]]
         """
         Return baseline task. For documentation of the baseline methods see the module's help.
 
@@ -668,10 +798,12 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def branch(self):
+        # type: () -> Optional[str]
         return None
 
     @cached_property
     def task_artifacts(self):
+        # type: () -> Dict[int, List[str]]
         """
         Artifacts of ``buildArch`` subtasks, in a mapping where subtask IDs are the keys
         and lists of artifact names are the values.
@@ -699,6 +831,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def build_artifacts(self):
+        # type: () -> Dict[str, List[Dict[str, str]]]
         """
         Artifacts of the build, in a mapping where architectures are the keys
         and lists of artifact names are the values.
@@ -706,7 +839,7 @@ class KojiTask(LoggerMixin, object):
         Usualy, the set consists of RPMs only, and makes sense for builds only, since it is
         not possible to get task RPMs this way.
 
-        :rtype: dict(str, list(str))
+        :rtype: dict(str, list(dict(str, str)))
         """
 
         if not self.has_build:
@@ -727,6 +860,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def build_archives(self):
+        # type: () -> List[Dict[str, Any]]
         """
         A list of archives of the build.
 
@@ -743,6 +877,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def has_artifacts(self):
+        # type: () -> bool
         """
         Whether there are any artifacts on for the task.
 
@@ -757,6 +892,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def _srcrpm_subtask(self):
+        # type: () -> Tuple[Optional[int], Optional[str]]
         """
         Search for SRPM-like artifact in ``buildArch`` subtasks, and if there is such artifact,
         provide its name and ID of its subtask. If no such artifact exists, both values are ``None``.
@@ -779,6 +915,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def srpm_names(self):
+        # type: () -> List[str]
         """
         List of source RPM name or empty list if it's impossible to find it.
 
@@ -823,24 +960,26 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def distgit_ref(self):
+        # type: () -> Optional[str]
         """
         Distgit ref id from which package has been built or ``None`` if it's impossible to find it.
 
         :rtype: str
         """
         try:
-            return self._task_request.source.split('#')[1].encode('ascii')
+            return cast(str, self._task_request.source.split('#')[1].encode('ascii'))
         except IndexError:
             self.debug('Distgit ref not found')
         return None
 
     @cached_property
     def _rpm_urls_from_subtasks(self):
+        # type: () -> List[str]
         """
         Resolves RPM urls from subtasks' results. This is the only
         option for scratch rpm builds.
         """
-        rpms = []
+        rpms = []  # type: List[Dict[str, Any]]
 
         for task in self._build_arch_subtasks:
             try:
@@ -848,10 +987,11 @@ class KojiTask(LoggerMixin, object):
             except AttributeError:
                 self.warn("No rpms found for task '{}'".format(task['id']))
 
-        return ['/'.join([self.pkgs_url, 'work', rpm]) for rpm in rpms]
+        return ['/'.join([self.pkgs_url, 'work', str(rpm)]) for rpm in rpms]
 
     @cached_property
     def _rpm_urls_from_build(self):
+        # type: () -> List[str]
         """
         Resolves RPM urls from build rpms.
         """
@@ -862,12 +1002,14 @@ class KojiTask(LoggerMixin, object):
                 self._build['version'],
                 self._build['release'],
                 rpm['arch'],
-                rpm['nvr'])
+                rpm['nvr']
+            )
             for rpm in self._call_api('listBuildRPMs', self.build_id) if rpm['arch'] != 'src'
         ]
 
     @cached_property
     def rpm_urls(self):
+        # type: () -> List[str]
         """
         List of URLs of all RPMs in the build.
         """
@@ -876,14 +1018,15 @@ class KojiTask(LoggerMixin, object):
 
         # If build_id is around, use listRPMs to get all the builds
         if self.build_id:
-            return self._rpm_urls_from_build
+            return cast(List[str], self._rpm_urls_from_build)
 
         # For scratch build tasks, our only option is to resolve RPMs from task.
         # If the task is expired (i.e. has no artifacts), the links will be 404.
-        return self._rpm_urls_from_subtasks
+        return cast(List[str], self._rpm_urls_from_subtasks)
 
     @cached_property
     def srpm_urls(self):
+        # type: () -> List[str]
         """
         List of URL of the SRPM (:py:attr:`srcrpm`) or empty list if SRPM is not known.
         """
@@ -912,6 +1055,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def _split_srcrpm(self):
+        # type: () -> Tuple[str, str, str, str, str]
         """
         SRPM name split into its NVREA pieces.
 
@@ -922,10 +1066,11 @@ class KojiTask(LoggerMixin, object):
         if not self.srpm_names:
             raise GlueError('Cannot find SRPM name')
 
-        return splitFilename(self.srpm_names[0])
+        return cast(Tuple[str, str, str, str, str], splitFilename(self.srpm_names[0]))
 
     @cached_property
     def nvr(self):
+        # type: () -> str
         """
         NVR of the built package.
 
@@ -935,12 +1080,13 @@ class KojiTask(LoggerMixin, object):
         if self.is_build_task:
             name, version, release, _, _ = self._split_srcrpm
 
-            return '-'.join([name, version, release])
+            return cast(str, '-'.join([name, version, release]))
 
         raise GlueError('Cannot deduce NVR for task {}'.format(self.id))
 
     @cached_property
     def component(self):
+        # type: () -> str
         """
         Package name of the built package (``N`` of ``NVR``).
 
@@ -948,12 +1094,13 @@ class KojiTask(LoggerMixin, object):
         """
 
         if self.is_build_task:
-            return self._split_srcrpm[0]
+            return cast(str, self._split_srcrpm[0])
 
         raise GlueError('Cannot find component info for task {}'.format(self.id))
 
     @cached_property
     def dist_git_repository_name(self):
+        # type: () -> str
         """
         Extract dist-git repository name from the source field. This can be different from the package name.
 
@@ -963,19 +1110,20 @@ class KojiTask(LoggerMixin, object):
         :rtype: str
         """
 
-        try:
-            # Examples of possible sources:
-            #   git://pkgs.fedoraproject.org/rpms/bash?#d430777020da4c1e68807f59b0ffd38324adbdb7
-            #   git://pkgs/rpms/mead-cron-scripts#dcdc64da7180ae49361756a373c8a5de3a59e732
-            #   git+https://src.fedoraproject.org/rpms/bash.git#1f2779c9385142e93c875274eba0621e29a49146
-            return re.match(r'.*/([^#\?]*)\??#.*', self.source).group(1)
-        except (AttributeError, re.error) as error:
-            self.debug('Could not extract component name from source field: {}'.format(error))
+        # Examples of possible sources:
+        #   git://pkgs.fedoraproject.org/rpms/bash?#d430777020da4c1e68807f59b0ffd38324adbdb7
+        #   git://pkgs/rpms/mead-cron-scripts#dcdc64da7180ae49361756a373c8a5de3a59e732
+        #   git+https://src.fedoraproject.org/rpms/bash.git#1f2779c9385142e93c875274eba0621e29a49146
+        match = re.match(r'.*/([^#\?]*)\??#.*', self.source)
+        if match is not None:
+            return cast(str, match.group(1))
 
-        return self.component
+        self.debug('Could not extract component name from source field.')
+        return cast(str, self.component)
 
     @cached_property
     def version(self):
+        # type: () -> str
         """
         Version of the built package (``V`` of ``NVR``).
 
@@ -983,12 +1131,13 @@ class KojiTask(LoggerMixin, object):
         """
 
         if self.is_build_task:
-            return self._split_srcrpm[1]
+            return cast(str, self._split_srcrpm[1])
 
         raise GlueError('Cannot find version info for task {}'.format(self.id))
 
     @cached_property
     def release(self):
+        # type: () -> str
         """
         Release of the built package (``R`` of ``NVR``).
 
@@ -996,12 +1145,13 @@ class KojiTask(LoggerMixin, object):
         """
 
         if self.is_build_task:
-            return self._split_srcrpm[2]
+            return cast(str, self._split_srcrpm[2])
 
         raise GlueError('Cannot find release info for task {}'.format(self.id))
 
     @cached_property
     def full_name(self):
+        # type: () -> str
         """
         String with human readable task details. Used for slightly verbose representation e.g. in logs.
 
@@ -1024,6 +1174,7 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def short_name(self):
+        # type: () -> str
         """
         Short version of :py:attr:`full_name``.
 
@@ -1034,26 +1185,29 @@ class KojiTask(LoggerMixin, object):
 
     @cached_property
     def destination_tag(self):
+        # type: () -> Optional[str]
         """
         Build destination tag
         """
 
         try:
-            return self._call_api('getBuildTarget', self.target)["dest_tag_name"]
+            return cast(str, self._call_api('getBuildTarget', self.target)["dest_tag_name"])
         except TypeError:
             return None
 
     @cached_property
     def component_id(self):
+        # type: () -> str
         """
         Used by task dispatcher to search their configurations. Identifies the component the task belongs to.
 
         :rtype: str
         """
 
-        return self.component
+        return cast(str, self.component)
 
     def compare_nvr(self, nvr):
+        # type: (str) -> int
         """
         Do an NVR comparison with given nvr.
 
@@ -1064,20 +1218,21 @@ class KojiTask(LoggerMixin, object):
         if not nvr:
             return 1
 
-        try:
-            (name, version, release) = re.match(r'(.*)-(.*)-(.*)', nvr).groups()
-        except AttributeError:
+        match = re.match(r'(.*)-(.*)-(.*)', nvr)
+        if not match:
             raise GlueError("nvr '{}' seems to be invalid".format(nvr))
+        (name, version, release) = match.groups()
 
         if self.component != name:
             raise GlueError("Compared nvrs belong to different components {} {}".format(self.component, nvr))
 
         # Since `labelCompare` compares EVR (epoch, version, release) and we have only VR
         # we have to add `0` as dummy epoch to both sides
-        return labelCompare(('0', self.version, self.release), ('0', version, release))
+        return cast(int, labelCompare(('0', self.version, self.release), ('0', version, release)))
 
     @cached_property
     def is_newer_than_latest(self):
+        # type: () -> bool
         return self.compare_nvr(self.latest) > 0
 
 
@@ -1102,7 +1257,9 @@ class BrewTask(KojiTask):
 
     ARTIFACT_NAMESPACE = 'brew-build'
 
-    def _check_required_instance_keys(self, details):
+    @staticmethod
+    def _check_required_instance_keys(details):
+        # type: (InitDetailsType) -> None
         """
         Checks for required instance details for Brew.
         :raises: GlueError if instance is missing some of the required keys
@@ -1113,6 +1270,7 @@ class BrewTask(KojiTask):
             raise GlueError('instance details do not contain all required keys')
 
     def __init__(self, details, task_id, module, logger=None, wait_timeout=None, build_id=None):
+        # type: (InitDetailsType, int, Brew, Optional[ContextAdapter], Optional[int], Optional[int]) -> None
         super(BrewTask, self).__init__(details, task_id, module,
                                        logger=logger,
                                        wait_timeout=wait_timeout,
@@ -1137,14 +1295,16 @@ class BrewTask(KojiTask):
             # Container builds need specific dispatch ID - given how broken is the integration
             # between Brew and image building service, build ID nor task ID are not enough.
             if self.build_id:
-                self.dispatch_id = '{}:{}'.format(self.build_id, self.id)
+                self.dispatch_id = '{}:{}'.format(str(self.build_id), str(self.id))
 
     @cached_property
     def is_build_container_task(self):
-        return self._task_info['method'] == 'buildContainer'
+        # type: () -> bool
+        return bool(self._task_info['method'] == 'buildContainer')
 
     @cached_property
     def has_artifacts(self):
+        # type: () -> bool
         """
         Whether there are any artifacts on for the task.
 
@@ -1154,10 +1314,11 @@ class BrewTask(KojiTask):
         if self.is_build_container_task:
             return bool(self.build_archives) or (self.image_repositories)
 
-        return super(BrewTask, self).has_artifacts
+        return bool(super(BrewTask, self).has_artifacts)
 
     @cached_property
     def source_members(self):
+        # type: () -> Tuple[str, str]
         """
         Return :py:attr:`source` attribute split into its pieces, a component and a GIT commit hash.
 
@@ -1167,14 +1328,13 @@ class BrewTask(KojiTask):
         # It might be worth moving this into a config file, it's way too dependant on Brew internals
 
         def _split(namespace):
-            try:
-                git_hash = re.search("#[^']*", self.source).group()[1:]
-                component = re.search("/{}/([^#?]*)".format(namespace), self.source).group(1)
+            # type: (str) -> Union[Tuple[None, None], Tuple[str, str]]
+            match_git_hash = re.search("#[^']*", self.source)
+            match_component = re.search("/{}/([^#?]*)".format(namespace), self.source)
 
-                return component, git_hash
-
-            except AttributeError:
+            if match_git_hash is None or match_component is None:
                 return None, None
+            return match_component.group(1), match_git_hash.group()[1:]
 
         self.debug("source '{}'".format(self.source))
 
@@ -1196,10 +1356,14 @@ class BrewTask(KojiTask):
             component, git_hash
         ])
 
+        assert component is not None
+        assert git_hash is not None
+
         return component, git_hash
 
     @cached_property
     def _parsed_commit_html(self):
+        # type: () -> Optional[Result[Union[BeautifulSoup, bool], str]]
         """
         :returns: BeatifulSoup4 parsed html from cgit for given component and commit hash
         """
@@ -1214,10 +1378,11 @@ class BrewTask(KojiTask):
                 'SOURCE_COMMIT': git_hash
             })
 
-        overall_urls = []
+        overall_urls = []  # type: List[str]
 
         # Callback for 'url' command
         def _url_callback(instruction, command, argument, context):
+            # type: (Any, Any, List[str], ContextType) -> None
             overall_urls[:] = [
                 render_template(arg, **context) for arg in argument
             ]
@@ -1229,7 +1394,7 @@ class BrewTask(KojiTask):
         }
 
         self._module.shared(
-            'evaluate_instructions', self._module.repo_url_map,
+            'evaluate_instructions', cast(Brew, self._module).repo_url_map,
             commands=commands, context=context
         )
 
@@ -1245,6 +1410,7 @@ class BrewTask(KojiTask):
             # is updated by the loop and `_fetch` is called with the most actual value of
             # `url`, but that is correct.
             def _fetch():
+                # type: () -> Result[Union[BeautifulSoup, bool], str]
                 try:
                     with gluetool.utils.requests(logger=self.logger) as req:
                         res = req.get(url, timeout=self._module.option('commit-fetch-timeout'))
@@ -1277,10 +1443,12 @@ class BrewTask(KojiTask):
 
                 return Result.Error('unknown error')
 
-            ret = wait('fetching commit web page', _fetch,
-                       logger=self.logger,
-                       timeout=self._module.option('commit-fetch-timeout'),
-                       tick=self._module.option('commit-fetch-tick'))
+            ret = cast(Union[Result[Union[BeautifulSoup, bool], str], bool], wait(
+                'fetching commit web page', _fetch,
+                logger=self.logger,
+                timeout=self._module.option('commit-fetch-timeout'),
+                tick=self._module.option('commit-fetch-tick')
+            ))
 
             # If our `_fetch` returned `True`, it means it failed to fetch the commit
             # page *in the expected* manner - e.g. the page does not exist. Issues like
@@ -1288,12 +1456,13 @@ class BrewTask(KojiTask):
             if ret is True:
                 continue
 
-            return ret
+            return cast(Result[Union[BeautifulSoup, bool], str], ret)
 
         return None
 
     @cached_property
     def nvr(self):
+        # type: () -> str
         """
         NVR of the built package.
 
@@ -1302,14 +1471,15 @@ class BrewTask(KojiTask):
 
         if self.is_build_container_task:
             if self.has_build:
-                return self._build['nvr']
+                return cast(str, self._build['nvr'])
 
-            return '-'.join([self.component, self.version, self.release])
+            return cast(str, '-'.join([self.component, self.version, self.release]))
 
-        return super(BrewTask, self).nvr
+        return cast(str, super(BrewTask, self).nvr)
 
     @cached_property
     def component(self):
+        # type: () -> str
         """
         Package name of the built package (``N`` of ``NVR``).
 
@@ -1318,7 +1488,7 @@ class BrewTask(KojiTask):
 
         if self.is_build_container_task:
             if self.has_build:
-                return self._build['package_name']
+                return cast(str, self._build['package_name'])
 
             component, _ = self.source_members
 
@@ -1332,10 +1502,11 @@ class BrewTask(KojiTask):
                 # yield the component.
                 return '{}-container'.format(component)
 
-        return super(BrewTask, self).component
+        return cast(str, super(BrewTask, self).component)
 
     @cached_property
     def version(self):
+        # type: () -> str
         """
         Version of the built package (``V`` of ``NVR``).
 
@@ -1345,7 +1516,7 @@ class BrewTask(KojiTask):
         if self.is_build_container_task:
             # if there's a build, the versions should be there
             if self.has_build:
-                return self._build['version']
+                return cast(str, self._build['version'])
 
             # It's not there? Ah, we have to inspect manifests, it might be there. So much work :/
             # It should be the same in all repositories - it's the same image, with the same metadata.
@@ -1359,15 +1530,16 @@ class BrewTask(KojiTask):
                     self.debug("version extracted: '{}'".format(version))
 
                     if version:
-                        return version
+                        return cast(str, version)
 
             # Nope, no idea where else to look for release...
             return 'UNKNOWN-VERSION'
 
-        return super(BrewTask, self).version
+        return cast(str, super(BrewTask, self).version)
 
     @cached_property
     def release(self):
+        # type: () -> str
         """
         Release of the built package (``R`` of ``NVR``).
 
@@ -1377,13 +1549,13 @@ class BrewTask(KojiTask):
         if self.is_build_container_task:
             # if there's a build, the release should be there
             if self.has_build:
-                return self._build['release']
+                return cast(str, self._build['release'])
 
             # ok, it might be in task request!
             release = self._task_request.options.get('release', None)
 
             if release:
-                return release
+                return cast(str, release)
 
             # It's not there? Ah, we have to inspect manifests, it might be there. So much work :/
             # It should be the same in all repositories - it's the same image, with the same metadata.
@@ -1397,15 +1569,16 @@ class BrewTask(KojiTask):
                     self.debug("release extracted: '{}'".format(release))
 
                     if release:
-                        return release
+                        return cast(str, release)
 
             # Nope, no idea where else to look for release...
             return 'UNKNOWN-RELEASE'
 
-        return super(BrewTask, self).release
+        return cast(str, super(BrewTask, self).release)
 
     @cached_property
     def branch(self):
+        # type: () -> Optional[str]
         """
         :returns: git branches of brew task or None if branch could not be found
         """
@@ -1415,50 +1588,53 @@ class BrewTask(KojiTask):
             git_branch = self._task_request.options.get('git_branch', None)
 
             if git_branch:
-                return git_branch
+                return cast(str, git_branch)
 
         if self._parsed_commit_html is None:
             return None
 
         try:
             branches = [branch.string for branch in self._parsed_commit_html.find_all(class_='branch-deco')]
-            return ' '.join(branches)
+            return cast(str, ' '.join(branches))
         except AttributeError:
             raise GlueError("could not find 'branch-deco' class in html output of cgit, please inspect")
 
     @cached_property
     def issuer(self):
+        # type: () -> str
         """
         :returns: issuer of brew task and in case of build from automation, returns issuer of git commit
         """
         owner_id = self._task_info["owner"]
         if owner_id not in self.automation_user_ids:
-            return self.owner
+            return cast(str, self.owner)
 
         if self.source.endswith('.src.rpm'):
             self.info('Build was built from src.rpm, skipping detection from dist-git as commit is unknown')
-            return self.owner
+            return cast(str, self.owner)
 
         self.info("Automation user detected, need to get git commit issuer")
 
         if self._parsed_commit_html is None:
             self.warn('could not find git commit issuer', sentry=True)
-            return self.owner
+            return cast(str, self.owner)
 
         issuer = self._parsed_commit_html.find(class_='commit-info').find('td')
         issuer = re.sub(".*lt;(.*)@.*", "\\1", str(issuer))
 
-        return issuer
+        return cast(str, issuer)
 
     @cached_property
     def rhel(self):
+        # type: () -> str
         """
         :returns: major version of RHEL
         """
-        return re.sub(".*rhel-(\\d+).*", "\\1", self.target)
+        return cast(str, re.sub(".*rhel-(\\d+).*", "\\1", self.target))
 
     @cached_property
     def task_arches(self):
+        # type: () -> TaskArches
         """
         Return information about arches the task was building for.
 
@@ -1485,10 +1661,11 @@ class BrewTask(KojiTask):
 
             return TaskArches(False, arches)
 
-        return super(BrewTask, self).task_arches
+        return cast(TaskArches, super(BrewTask, self).task_arches)
 
     @cached_property
     def build_archives(self):
+        # type: () -> List[Dict[str, Any]]
         """
         A list of archives of the build.
 
@@ -1497,7 +1674,7 @@ class BrewTask(KojiTask):
         :rtype: list(dict)
         """
 
-        archives = super(BrewTask, self).build_archives
+        archives = super(BrewTask, self).build_archives  # type: List[Dict[str, Any]]
 
         if self.is_build_container_task:
             context = dict_update(self._module.shared('eval_context'), {
@@ -1517,6 +1694,7 @@ class BrewTask(KojiTask):
 
     @cached_property
     def image_repositories(self):
+        # type: () -> List[ImageRepository]
         """
         A list of Docker image repositories build by the task.
 
@@ -1538,7 +1716,7 @@ class BrewTask(KojiTask):
         # there is no other place to get this info from for scratch container builds, it's not in Brew task
         # info nor result.
 
-        images = {}
+        images = {}  # type: Dict[Tuple[str, ...], Any]
 
         for repository_url in self._result['repositories']:
             # split repository URL into parts
@@ -1651,7 +1829,7 @@ class Koji(gluetool.Module):
     description = 'Provide Koji task details to other modules'
     supported_dryrun_level = gluetool.glue.DryRunLevels.DRY
 
-    options = (
+    options = [
         ('General options', {
             'url': {
                 'help': 'Koji Hub instance base URL',
@@ -1760,7 +1938,7 @@ class Koji(gluetool.Module):
                 'default': DEFAULT_API_VERSION_RETRY_TICK
             },
         })
-    )
+    ]
 
     options_note = """
     Options ``--task-id``, ``--build-id``, ``--name`` and ``--nvr`` can be used multiple times, and even mixed
@@ -1768,34 +1946,38 @@ class Koji(gluetool.Module):
     """
 
     required_options = ['url', 'pkgs-url', 'web-url']
-    shared_functions = ('tasks', 'primary_task', 'koji_session')
+    shared_functions = ['tasks', 'primary_task', 'koji_session']
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
         super(Koji, self).__init__(*args, **kwargs)
 
         self._session = None
-        self._tasks = []
+        self._tasks = []  # type: List[KojiTask]
 
     @cached_property
     def _valid_methods(self):
+        # type: () -> List[str]
         return gluetool.utils.normalize_multistring_option(self.option('valid-methods'))
 
     @cached_property
     def baseline_tag_map(self):
+        # type: () -> Union[List[Any], Dict[str, Any]]
         if not self.option('baseline-tag-map'):
             return []
 
-        return gluetool.utils.load_yaml(self.option('baseline-tag-map'))
+        return cast(Union[List[Any], Dict[str, Any]], gluetool.utils.load_yaml(self.option('baseline-tag-map')))
 
     def task_factory(self, task_initializer, wait_timeout=None, details=None, task_class=None):
+        # type: (TaskInitializer, Optional[int], Optional[InitDetailsType], Optional[Type[KojiTask]]) -> KojiTask
         task_class = task_class or KojiTask
 
-        details = dict_update({
+        details = cast(InitDetailsType, dict_update({
             'session': self._session,
             'url': self.option('url'),
             'pkgs_url': self.option('pkgs-url'),
             'web_url': self.option('web-url'),
-        }, details or {})
+        }, cast(Optional[Dict[Any, Any]], details) or {}))
 
         task = task_class(details, task_initializer.task_id, self,
                           logger=self.logger,
@@ -1805,15 +1987,23 @@ class Koji(gluetool.Module):
         return task
 
     def _call_api(self, method, *args, **kwargs):
+        # type: (str, *Any, **Any) -> Any
         return _call_api(self._session, self.logger, method, *args, **kwargs)
 
-    def _objects_to_builds(self, name, object_ids, finder):
+    def _objects_to_builds(
+        self,
+        name,  # type: str
+        object_ids,  # type: Optional[Union[List[int], List[str]]]
+        finder  # type: Callable[..., List[Dict[str, Any]]]
+    ):
+        # type: (...) -> List[Dict[str, Any]]
+
         if not object_ids:
             return []
 
         log_dict(self.debug, 'finding builds for {} ids'.format(name), object_ids)
 
-        builds = []
+        builds = []  # type: List[Dict[str, Any]]
 
         for object_id in object_ids:
             build = finder(object_id)
@@ -1830,12 +2020,15 @@ class Koji(gluetool.Module):
 
         return builds
 
-    def _find_task_initializers(self,
-                                task_initializers=None,
-                                task_ids=None,
-                                build_ids=None,
-                                nvrs=None,
-                                names=None):
+    def _find_task_initializers(
+            self,
+            task_initializers=None,  # type: Optional[List[TaskInitializer]]
+            task_ids=None,  # type: Optional[List[int]]
+            build_ids=None,  # type: Optional[List[int]]
+            nvrs=None,  # type: Optional[List[str]]
+            names=None  # type: Optional[List[str]]
+    ):
+        # type: (...) -> List[TaskInitializer]
         """
         Tries to gather all available task IDs for different given inputs - build IDs, NVRs, package names
         and actual task IDs as well. Some of these may be unknown to the backend, some of them may not lead
@@ -1871,16 +2064,30 @@ class Koji(gluetool.Module):
         # all those builds.
         builds = []
 
-        builds += self._objects_to_builds('build', build_ids,
-                                          lambda build_id: [self._call_api('getBuild', build_id)])
-        builds += self._objects_to_builds('nvr', nvrs,
-                                          lambda nvr: [self._call_api('getBuild', nvr)])
-        builds += self._objects_to_builds('name', names,
-                                          lambda name: self._call_api('listTagged',
-                                                                      self.option('tag'),
-                                                                      package=name,
-                                                                      inherit=True,
-                                                                      latest=True))
+        builds += self._objects_to_builds(
+            'build',
+            build_ids,
+            lambda build_id: [self._call_api('getBuild', build_id)]
+        )
+        builds += self._objects_to_builds(
+            'nvr',
+            nvrs,
+            lambda nvr: [self._call_api('getBuild', nvr)]
+        )
+        builds += self._objects_to_builds(
+            'name',
+            names,
+            lambda name: cast(
+                List[Dict[str, Any]],
+                self._call_api(
+                    'listTagged',
+                    self.option('tag'),
+                    package=name,
+                    inherit=True,
+                    latest=True
+                )
+            )
+        )
 
         # Now extract task IDs.
         for build in builds:
@@ -1897,13 +2104,24 @@ class Koji(gluetool.Module):
         return task_initializers
 
     def koji_session(self):
+        # type: () -> Optional[koji.ClientSession]
         return self._session
 
     def _assert_tasks(self):
+        # type: () -> None
         if not self._tasks:
             self.debug('No tasks specified.')
 
-    def tasks(self, task_initializers=None, task_ids=None, build_ids=None, nvrs=None, names=None, **kwargs):
+    def tasks(
+            self,
+            task_initializers=None,  # type: Optional[List[TaskInitializer]]
+            task_ids=None,  # type: Optional[List[int]]
+            build_ids=None,  # type: Optional[List[int]]
+            nvrs=None,  # type: Optional[List[str]]
+            names=None,  # type: Optional[List[str]]
+            **kwargs  # type: Any
+    ):
+        # type: (...) -> List[KojiTask]
         """
         Returns a list of current tasks. If options are specified, new set of tasks is created using
         the provided options to find all available tasks, and this set becomes new set of current tasks,
@@ -1945,6 +2163,7 @@ class Koji(gluetool.Module):
         return self._tasks
 
     def primary_task(self):
+        # type: () -> Optional[KojiTask]
         """
         Returns a `primary` task, the first task in the list of current tasks.
 
@@ -1962,6 +2181,7 @@ class Koji(gluetool.Module):
 
     @property
     def eval_context(self):
+        # type: () -> Dict[str, Any]
         __content__ = {  # noqa
             # common for all artifact providers
             'ARTIFACT_TYPE': """
@@ -2005,6 +2225,8 @@ class Koji(gluetool.Module):
         }
 
     def sanity(self):
+        # type: () -> None
+
         # make sure that no conflicting options are specified
 
         # name option requires tag
@@ -2020,6 +2242,7 @@ class Koji(gluetool.Module):
             raise IncompatibleOptionsError("You need to specify build NVR with '--baseline-nvr' option")
 
     def execute(self):
+        # type: () -> None
         url = self.option('url')
         wait_timeout = self.option('wait')
 
@@ -2105,7 +2328,7 @@ class Brew(Koji, (gluetool.Module)):
     description = 'Provide Brew task details to other modules'
 
     # Koji.options contain hard defaults
-    options = Koji.options + (
+    options = Koji.options + [
         ('Brew options', {
             'automation-user-ids': {
                 'help': 'List of comma delimited user IDs that trigger resolving of issuer from dist git commit instead'
@@ -2120,7 +2343,7 @@ class Brew(Koji, (gluetool.Module)):
                 'help': 'File with URLs of repositories.'
             }
         }),  # yes, the comma is correct - `)` closes inner tuple, `,` says it is part of the outer tuple
-    )
+    ]
 
     required_options = Koji.required_options + [
         'automation-user-ids', 'docker-image-url-template'
@@ -2128,22 +2351,38 @@ class Brew(Koji, (gluetool.Module)):
 
     @cached_property
     def repo_url_map(self):
+        # type: () -> Any
         if not self.option('repo-url-map'):
             return []
 
         return gluetool.utils.load_yaml(self.option('repo-url-map'), logger=self.logger)
 
     def task_factory(self, task_initializer, wait_timeout=None, details=None, task_class=None):
+        # type: (TaskInitializer, Optional[int], Optional[InitDetailsType], Optional[Type[KojiTask]]) -> KojiTask
+
         # options checker does not handle multiple modules in the same file correctly, therefore it
         # raises "false" negative for the following use of parent's class options
-        details = dict_update({}, {
+        details = cast(InitDetailsType, dict_update({}, {
             'automation_user_ids': [int(user.strip()) for user in self.option('automation-user-ids').split(',')]
-        }, details or {})
+        }, cast(Optional[Dict[Any, Any]], details) or {}))
 
-        return super(Brew, self).task_factory(task_initializer, details=details, task_class=BrewTask,
-                                              wait_timeout=wait_timeout if wait_timeout else self.option('wait'))
+        return super(Brew, self).task_factory(
+            task_initializer,
+            details=details,
+            task_class=BrewTask,
+            wait_timeout=wait_timeout if wait_timeout else self.option('wait')
+        )
 
-    def _find_task_initializers(self, task_initializers=None, build_ids=None, **kwargs):
+    def _find_task_initializers(
+            self,
+            task_initializers=None,  # type: Optional[List[TaskInitializer]]
+            task_ids=None,  # type: Optional[List[int]]
+            build_ids=None,  # type: Optional[List[int]]
+            nvrs=None,  # type: Optional[List[str]]
+            names=None,  # type: Optional[List[str]]
+            **kwargs  # type: Any
+    ):
+        # type: (...) -> List[TaskInitializer]
         """
         Containers integration with Brew is messy.
 
@@ -2173,8 +2412,11 @@ class Brew(Koji, (gluetool.Module)):
         build_ids = build_ids or []
 
         # Just like the original, fetch builds for given build IDs
-        builds = self._objects_to_builds('build', build_ids,
-                                         lambda build_id: [self._call_api('getBuild', build_id)])
+        builds = self._objects_to_builds(
+            'build',
+            build_ids,
+            lambda build_id: cast(List[Dict[str, Any]], [self._call_api('getBuild', build_id)])
+        )
 
         # Check each build - if it does have task_id, it passes through. If it does not have task_id,
         # but it does have extras.container_koji_task_id, we create an initializer (with the correct
