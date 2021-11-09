@@ -6,6 +6,8 @@ import requests
 
 import gluetool
 
+# Type annotations
+from typing import Any, Optional  # noqa
 
 DEFAULT_VERSION = '1.26'
 
@@ -28,15 +30,19 @@ class Docker(gluetool.Module):
     shared_functions = ['docker']
 
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
         super(Docker, self).__init__(*args, **kwargs)
 
         self._docker = None
 
     def docker(self):
+        # type: () -> Optional[docker.DockerClient]
         return self._docker
 
     def execute(self):
+        # type: () -> None
         self._docker = docker.from_env(version=self.option('protocol-version'))
+        assert self._docker is not None
 
         try:
             version = self._docker.version()
