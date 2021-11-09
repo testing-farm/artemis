@@ -24,7 +24,7 @@ repos:
       - id: no-commit-to-branch
         args:
           - "--branch"
-          - "master"
+          - "main"
       - id: trailing-whitespace
 
   # Yet another static analysis, but these hooks "understand" Python syntax and semantics, and tend to check
