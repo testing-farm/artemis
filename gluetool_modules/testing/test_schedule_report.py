@@ -43,6 +43,16 @@ class TestScheduleReport(gluetool.Module):
                 'action': 'store',
                 'default': None,
                 'metavar': 'FILE'
+            },
+            'docs-link-reservation': {
+                'help': """
+                        A link to documentation of reservation workflow to display alongside the connection info.
+                        (default: %(default)s).
+                        """,
+                'action': 'store',
+                'default': None,
+                'metavar': 'URL',
+                'type': str
             }
         }),
         ('Polarion Options', {
@@ -301,6 +311,8 @@ class TestScheduleReport(gluetool.Module):
             label='finished schedule',
             include_errors=True,
             include_logs=True,
+            include_connection_info=True,
+            connection_info_docs_link=self.option('docs-link-reservation'),
             module=self
         )
 
