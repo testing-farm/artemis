@@ -18,7 +18,7 @@ from gluetool.utils import dict_update, new_xml_element, normalize_path
 
 from gluetool_modules.libs import sort_children
 from gluetool_modules.libs.artifacts import artifacts_location
-from gluetool_modules.libs.test_schedule import TestScheduleResult
+from gluetool_modules.libs.test_schedule import TestScheduleResult, TestScheduleEntryOutput, TestScheduleEntryStage
 
 # Type annotations
 from typing import cast, Any, Callable, Dict, List, Optional, Tuple  # noqa
@@ -371,16 +371,30 @@ sut     ansible_host={} ansible_user=root {}
             # type: (Any, str, str) -> Any
             return new_xml_element('property', _parent=properties, name='baseosci.{}'.format(name), value=value or '')
 
-        def _add_log(logs, name, href):
-            # type: (Any, str, str) -> Any
+        def _add_log(logs, name, path, href, schedule_entry=None):
+            # type: (Any, str, str, str, Optional[TestScheduleEntry]) -> Any
+
+            attrs = {
+                'name': name,
+                'href': href,
+                'schedule-stage': 'running'
+            }
+
+            if schedule_entry is not None:
+                attrs['schedule-entry'] = schedule_entry.id
+
+                schedule_entry.outputs.append(TestScheduleEntryOutput(
+                    stage=TestScheduleEntryStage.RUNNING,
+                    label=name,
+                    log_path=path,
+                    additional_data=None
+                ))
+
             return new_xml_element(
                 'log',
                 _parent=logs,
-                **{
-                    'name': name,
-                    'href': href,
-                    'schedule-stage': 'running'
-                })
+                **attrs
+            )
 
         def _add_testing_environment(test_case, name, arch, compose):
             # type: (Any, str, Any, Any) -> Any
@@ -422,19 +436,35 @@ sut     ansible_host={} ansible_user=root {}
             if task.logs:
                 for log in task.logs:
                     log_path = os.path.join(schedule_entry.artifact_dirpath, log)
-                    artifacts_location_url = artifacts_location(self, log_path, logger=schedule_entry.logger)
-                    _add_log(logs, name=log, href=artifacts_location_url)
 
-                artifacts_location_url = artifacts_location(
-                    self, schedule_entry.artifact_dirpath, logger=schedule_entry.logger)
-                _add_log(logs, name="log_dir", href=artifacts_location_url)
+                    _add_log(
+                        logs,
+                        name=log,
+                        path=log_path,
+                        href=artifacts_location(self, log_path, logger=schedule_entry.logger),
+                        schedule_entry=schedule_entry
+                    )
+
+                _add_log(
+                    logs,
+                    name="log_dir",
+                    path=schedule_entry.artifact_dirpath,
+                    href=artifacts_location(self, schedule_entry.artifact_dirpath, logger=schedule_entry.logger),
+                    schedule_entry=schedule_entry
+                )
 
             # ansible output only available
             else:
                 assert schedule_entry.work_dirpath
                 log_path = os.path.join(schedule_entry.work_dirpath, STI_ANSIBLE_LOG_FILENAME)
-                artifacts_location_url = artifacts_location(self, log_path, logger=schedule_entry.logger)
-                _add_log(logs, name=STI_ANSIBLE_LOG_FILENAME, href=artifacts_location_url)
+
+                _add_log(
+                    logs,
+                    name=STI_ANSIBLE_LOG_FILENAME,
+                    path=log_path,
+                    href=artifacts_location(self, log_path, logger=schedule_entry.logger),
+                    schedule_entry=schedule_entry
+                )
 
             assert schedule_entry.testing_environment is not None
             _add_testing_environment(test_case, 'requested', schedule_entry.testing_environment.arch,

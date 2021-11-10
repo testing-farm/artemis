@@ -19,7 +19,8 @@ from gluetool.utils import Command, load_yaml, new_xml_element, dict_update
 from gluetool_modules.libs import create_inspect_callback, sort_children
 from gluetool_modules.libs.artifacts import artifacts_location
 from gluetool_modules.libs.testing_environment import TestingEnvironment
-from gluetool_modules.libs.test_schedule import TestSchedule, TestScheduleResult
+from gluetool_modules.libs.test_schedule import TestSchedule, TestScheduleResult, TestScheduleEntryOutput, \
+    TestScheduleEntryStage
 from gluetool_modules.libs.test_schedule import TestScheduleEntry as BaseTestScheduleEntry
 
 # Type annotations
@@ -505,16 +506,30 @@ class TestScheduleTMT(Module):
             # type: (Any, str, str) -> Any
             return new_xml_element('property', _parent=properties, name='baseosci.{}'.format(name), value=value or '')
 
-        def _add_log(logs, name, href):
-            # type: (Any, str, str) -> Any
+        def _add_log(logs, name, path, href, schedule_entry=None):
+            # type: (Any, str, str, str, Optional[TestScheduleEntry]) -> Any
+
+            attrs = {
+                'name': name,
+                'href': href,
+                'schedule-stage': 'running'
+            }
+
+            if schedule_entry is not None:
+                attrs['schedule-entry'] = schedule_entry.id
+
+                schedule_entry.outputs.append(TestScheduleEntryOutput(
+                    stage=TestScheduleEntryStage.RUNNING,
+                    label=name,
+                    log_path=path,
+                    additional_data=None
+                ))
+
             return new_xml_element(
                 'log',
                 _parent=logs,
-                **{
-                    'name': name,
-                    'href': href,
-                    'schedule-stage': 'running'
-                })
+                **attrs
+            )
 
         def _add_testing_environment(test_case, name, arch, compose, snapshots):
             # type: (Any, str, Any, Any, bool) -> Any
@@ -550,12 +565,22 @@ class TestScheduleTMT(Module):
             _add_property(properties, 'variant', '')
 
             # add main log
-            artifacts_location_url = artifacts_location(self, task.log, logger=schedule_entry.logger)
-            _add_log(logs, name='testout.log', href=artifacts_location_url)
+            _add_log(
+                logs,
+                name='testout.log',
+                path=task.log,
+                href=artifacts_location(self, task.log, logger=schedule_entry.logger),
+                schedule_entry=schedule_entry
+            )
 
             # add log_dir
-            artifacts_dir_location_url = artifacts_location(self, task.artifacts_dir, logger=schedule_entry.logger)
-            _add_log(logs, name="log_dir", href=artifacts_dir_location_url)
+            _add_log(
+                logs,
+                name="log_dir",
+                path=task.artifacts_dir,
+                href=artifacts_location(self, task.artifacts_dir, logger=schedule_entry.logger),
+                schedule_entry=schedule_entry
+            )
 
             assert schedule_entry.testing_environment is not None
             _add_testing_environment(
