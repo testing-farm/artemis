@@ -10,20 +10,34 @@ import gluetool
 import gluetool.utils
 import gluetool_modules.libs
 import requests
+import semver
 
 from gluetool import GlueError, GlueCommandError, SoftGlueError
 from gluetool.log import log_dict, LoggerMixin
 from gluetool.result import Result
-from gluetool.utils import Command, dump_yaml, treat_url, normalize_multistring_option, wait, normalize_path
+from gluetool.utils import Command, dump_yaml, treat_url, normalize_multistring_option, wait, normalize_path, \
+    cached_property
 from gluetool_modules.libs.guest import NetworkedGuest
 
 from gluetool_modules.libs.testing_environment import TestingEnvironment
 
 from typing import Any, Dict, List, Optional, Tuple, cast  # noqa
 
-SUPPORTED_API_VERSIONS = (
-    'v0.0.16', 'v0.0.17', 'v0.0.18', 'v0.0.19', 'v0.0.20', 'v0.0.21', 'v0.0.24', 'v0.0.26', 'v0.0.27', 'v0.0.28'
-)
+# TODO: it would be better if we could import this from somewhere, or use artemis-cli directly...
+# Copied from artemis-cli.
+API_FEATURE_VERSIONS = {
+    feature: semver.VersionInfo.parse(version)
+    for feature, version in (
+        # Dummy version - we can't actually check the constraints to assure this. That could change if we could verify
+        # the constraints with a schema, and that would mean gain access to Artemis server package...
+        ('hw-constraints-disk-as-list', '0.0.27'),
+        ('log-types', '0.0.26'),
+        ('skip-prepare-verify-ssh', '0.0.24'),
+        ('hw-constraints', '0.0.19'),
+        ('arch-under-hw', '0.0.19'),
+        ('supported-baseline', '0.0.17')
+    )
+}
 
 DEFAULT_PRIORIY_GROUP = 'default-priority'
 DEFAULT_READY_TIMEOUT = 300
@@ -96,7 +110,7 @@ class ArtemisAPI(object):
     ''' Class that allows RESTful communication with Artemis API '''
 
     def __init__(self, module, api_url, api_version, timeout, tick):
-        # type: (gluetool.Module, str, str, int, int) -> None
+        # type: (gluetool.Module, str, semver.VersionInfo, int, int) -> None
 
         self.module = module
         self.url = treat_url(api_url)
@@ -192,9 +206,7 @@ class ArtemisAPI(object):
             with open(normalize_path(post_install_script)) as f:
                 post_install_script_contents = f.read()
 
-        # TODO: yes, semver will make this much better... Or better, artemis-cli package provide an easy-to-use
-        # bit of code to construct the payload.
-        if self.version in ('v0.0.19', 'v0.0.20', 'v0.0.21', 'v0.0.24', 'v0.0.26', 'v0.0.27', 'v0.0.28'):
+        if self.version >= API_FEATURE_VERSIONS['hw-constraints']:
             data = {
                 'keyname': keyname,
                 'environment': {
@@ -217,7 +229,7 @@ class ArtemisAPI(object):
             if cast(ArtemisProvisioner, self.module).hw_constraints:
                 data['environment']['hw']['constraints'] = cast(ArtemisProvisioner, self.module).hw_constraints
 
-        elif self.version in ('v0.0.16', 'v0.0.17', 'v0.0.18'):
+        elif self.version >= API_FEATURE_VERSIONS['supported-baseline']:
             data = {
                 'keyname': keyname,
                 'environment': {
@@ -850,6 +862,21 @@ class ArtemisProvisioner(gluetool.Module):
 
         return constraints
 
+    @cached_property
+    def api_version(self):
+        # type: () -> semver.VersionInfo
+
+        parseable_version = raw_version = self.option('api-version')
+
+        if raw_version.startswith('v'):
+            parseable_version = raw_version[1:]
+
+        try:
+            return semver.VersionInfo.parse(parseable_version)
+
+        except Exception:
+            raise GlueError('failed to parse API version: {}'.format(raw_version))
+
     def sanity(self):
         # type: () -> None
 
@@ -863,8 +890,10 @@ class ArtemisProvisioner(gluetool.Module):
         if not self.option('arch'):
             raise GlueError('Missing required option: --arch')
 
-        if self.option('api-version') not in SUPPORTED_API_VERSIONS:
-            raise GlueError('Unsupported API version, only {} are supported'.format(', '.join(SUPPORTED_API_VERSIONS)))
+        if self.api_version < API_FEATURE_VERSIONS['supported-baseline']:
+            raise GlueError('Unsupported API version, only {} are supported'.format(
+                ', '.join(API_FEATURE_VERSIONS.keys())
+            ))
 
     def __init__(self, *args, **kwargs):
         # type: (Any, Any) -> None
@@ -998,7 +1027,7 @@ class ArtemisProvisioner(gluetool.Module):
 
         self.api = ArtemisAPI(self,
                               self.option('api-url'),
-                              self.option('api-version'),
+                              self.api_version,
                               self.option('api-call-timeout'),
                               self.option('api-call-tick'))
 

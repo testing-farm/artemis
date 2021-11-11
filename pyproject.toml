@@ -148,6 +148,7 @@ requests-kerberos = "0.11.0"
 rpm-py-installer = "0.7.1"
 # last version of ruamel.yaml with python 2.7 support
 "ruamel.yaml.clib" = "0.2.2"
+semver = "^2.13.0"
 simplejson = "^3.17.2"
 sphinx = "1.5.2"
 sphinx-argparse = "0.2.0"
