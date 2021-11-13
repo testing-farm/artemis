@@ -10,7 +10,8 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Callable, Dict, Generic, Iterator, List, Optional, Pattern, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Generic, Iterable, Iterator, List, Optional, Pattern, Tuple, Type, TypeVar, \
+    Union, cast
 
 import gluetool
 import gluetool.log
@@ -226,11 +227,16 @@ except Exception as exc:
 
 
 if hasattr(shlex, 'join'):
-    command_join = shlex.join  # type: ignore[attr-defined]
+    # We cannot use `type: ignore` comment here, because it applies to Python 3.7 only, where `shlex.join`
+    # does not exist. In newer Python versions, is does and therefore the ignore hint is reported as unused.
+    # And there is no way to disable *that* report :/ See https://github.com/python/mypy/issues/8823
+    # Trying to work around this with a bit of `getattr()` - we *know* the attribute exists, and the types
+    # are a match, we just need to fool mypy a bit.
+    command_join = getattr(shlex, 'join')
 
 else:
-    def command_join(command: List[str]) -> str:
-        return ' '.join(shlex.quote(arg) for arg in command)
+    def command_join(split_command: Iterable[str]) -> str:
+        return ' '.join(shlex.quote(arg) for arg in split_command)
 
 
 class _AnyArchitecture:
