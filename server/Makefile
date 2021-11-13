@@ -1,6 +1,10 @@
 .DEFAULT_GOAL := help
 .PHONY: help install install-no-dev coverage gen-db-revision publish clean _env-info
 
+# Poetry does not handle "default" flavor of Python, and uses the most recent one. That's nice,
+# but we like to be in control, knowing what exactl we did install.
+DEFAULT_PYTHON ?= python3.7
+
 _env-info:
 	@echo "# Poetry: $$(type poetry) $$(poetry --version $$POETRY_ADDOPTS)"
 	@echo "# Global Poetry configuration:"
@@ -10,9 +14,13 @@ _env-info:
 	@echo "# Tox: $$(type tox) $$(tox --version)"
 
 install: _env-info  ## Install Artemis and development tools
+	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
+	poetry env info $$POETRY_ADDOPTS
 	poetry install -v --remove-untracked $$POETRY_ADDOPTS
 
 install-no-dev: _env-info  ## Install Artemis alone, no development tools
+	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
+	poetry env info $$POETRY_ADDOPTS
 	poetry install -v --no-dev --remove-untracked $$POETRY_ADDOPTS
 
 coverage: _env-info  ## Run tests with coverage
