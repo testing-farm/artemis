@@ -4,6 +4,7 @@
 # Poetry does not handle "default" flavor of Python, and uses the most recent one. That's nice,
 # but we like to be in control, knowing what exactl we did install.
 DEFAULT_PYTHON ?= python3.7
+PYTHON ?= $(DEFAULT_PYTHON)
 
 _env-info:
 	@echo "# Poetry: $$(type poetry) $$(poetry --version $$POETRY_ADDOPTS)"
@@ -16,12 +17,12 @@ _env-info:
 ##@ Installation
 
 install: _env-info  ## Install Artemis and development tools
-	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
+	poetry env use $(PYTHON) $$POETRY_ADDOPTS
 	poetry env info $$POETRY_ADDOPTS
 	poetry install -v --remove-untracked $$POETRY_ADDOPTS
 
 install-no-dev: _env-info  ## Install Artemis alone, no development tools
-	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
+	poetry env use $(PYTHON) $$POETRY_ADDOPTS
 	poetry env info $$POETRY_ADDOPTS
 	poetry install -v --no-dev --remove-untracked $$POETRY_ADDOPTS
 
@@ -30,10 +31,10 @@ install-no-dev: _env-info  ## Install Artemis alone, no development tools
 tests: test-units test-db-revisions test-pre-commit test-integration  ## Run all tests
 
 test-units: _env-info  ## Run unit tests
-	tox -e py37
+	tox -e py37,py38
 
 test-db-schema-revisions:  _env-info  ## Verify DB schema revisions
-	tox -e py37-db-schema-revisions
+	tox -e py37-db-schema-revisions,py38-db-schema-revisions
 
 test-pre-commit: install  ## Run pre-commit checks
 	git ls-files -- . | xargs -n200 poetry run pre-commit run --files
@@ -55,9 +56,11 @@ test-integration: _env-info  ## Run tests against real services
 
 	# Unit tests
 	tox -e py37 -- --against-db-url="postgresql://artemis:artemis@127.0.0.1:5432/unit_test_db"
+	tox -e py38 -- --against-db-url="postgresql://artemis:artemis@127.0.0.1:5432/unit_test_db"
 
 	# DB schema upgrade/downgrade
 	ARTEMIS_DB_URL="postgresql://artemis:artemis@127.0.0.1:5432/artemis" tox -e py37-db-schema-revisions
+	ARTEMIS_DB_URL="postgresql://artemis:artemis@127.0.0.1:5432/artemis" tox -e py38-db-schema-revisions
 
 	docker-compose down
 
