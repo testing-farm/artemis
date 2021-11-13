@@ -686,21 +686,18 @@ class GuestRequestManager:
             perform_safe_db_change(
                 guest_logger,
                 session,
-                sqlalchemy.insert(artemis_db.GuestRequest.__table__).values(
+                artemis_db.GuestRequest.create_query(
                     guestname=guestname,
-                    _environment=environment.serialize_to_json(),
+                    environment=environment,
                     ownername=DEFAULT_GUEST_REQUEST_OWNER,
                     ssh_keyname=guest_request.keyname,
                     ssh_port=DEFAULT_SSH_PORT,
                     ssh_username=DEFAULT_SSH_USERNAME,
                     priorityname=guest_request.priority_group,
-                    poolname=None,
-                    pool_data=json.dumps({}),
-                    _user_data=guest_request.user_data,
-                    state=GuestState.ROUTING,
+                    user_data=guest_request.user_data,
                     skip_prepare_verify_ssh=guest_request.skip_prepare_verify_ssh,
                     post_install_script=guest_request.post_install_script,
-                    _log_types=[{"logtype": log[0], "contenttype": log[1].value} for log in log_types],
+                    log_types=log_types,
                 ),
                 conflict_error=errors.InternalServerError,
                 failure_details=failure_details

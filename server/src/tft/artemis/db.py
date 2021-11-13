@@ -2,6 +2,7 @@ import datetime
 import enum
 import functools
 import hashlib
+import json
 import logging
 import secrets
 import threading
@@ -613,6 +614,44 @@ class GuestRequest(Base):
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
+
+    @classmethod
+    def create_query(
+        cls,
+        guestname: str,
+        environment: 'Environment',
+        ownername: str,
+        ssh_keyname: str,
+        ssh_port: int,
+        ssh_username: str,
+        priorityname: Optional[str],
+        user_data: Optional[UserDataType],
+        skip_prepare_verify_ssh: bool,
+        post_install_script: Optional[str],
+        log_types: List[Tuple[str, GuestLogContentType]]
+    ) -> sqlalchemy.insert:
+        return sqlalchemy.insert(cls.__table__).values(
+            guestname=guestname,
+            _environment=environment.serialize_to_json(),
+            ownername=ownername,
+            ssh_keyname=ssh_keyname,
+            ssh_port=ssh_port,
+            ssh_username=ssh_username,
+            priorityname=priorityname,
+            _user_data=user_data,
+            skip_prepare_verify_ssh=skip_prepare_verify_ssh,
+            post_install_script=post_install_script,
+            _log_types=[
+                {
+                    'logtype': log[0],
+                    'contenttype': log[1].value
+                }
+                for log in log_types
+            ],
+            state=GuestState.ROUTING,
+            poolname=None,
+            pool_data=json.dumps({}),
+        )
 
     @classmethod
     def log_event_by_guestname(
