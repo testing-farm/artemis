@@ -12,6 +12,7 @@ tests:
     POETRY_ADDOPTS: "--ansi"
     MYPY_FORCE_COLOR: "1"
     PYTEST_ADDOPTS: "--color=yes"
+    PRE_COMMIT_COLOR: "always"
   script:
     - make -C server/ test-pre-commit
     - make -C server/ test-units
