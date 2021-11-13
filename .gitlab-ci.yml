@@ -15,6 +15,7 @@ tests:
   script:
     - make -C server/ test-pre-commit
     - make -C server/ test-units
+    - make -C server/ test-db-schema-revisions
 
     - cd cli/
     - IN_TEST=yes tox -v

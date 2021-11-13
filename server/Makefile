@@ -18,10 +18,13 @@ install-no-dev: _env-info  ## Install Artemis alone, no development tools
 coverage: _env-info  ## Run tests with coverage
 	tox -e py37-coverage
 
-tests: test-units test-pre-commit test-integration  ## Run all tests
+tests: test-units test-db-revisions test-pre-commit test-integration  ## Run all tests
 
 test-units: _env-info  ## Run unit tests
-	tox
+	tox -e py37
+
+test-db-schema-revisions:  _env-info  ## Verify DB schema revisions
+	tox -e py37-db-schema-revisions
 
 test-pre-commit: install  ## Run pre-commit checks
 	git ls-files -- . | xargs -n200 poetry run pre-commit run --files
@@ -45,7 +48,7 @@ test-integration: _env-info  ## Run tests against real services
 	tox -e py37 -- --against-db-url="postgresql://artemis:artemis@127.0.0.1:5432/unit_test_db"
 
 	# DB schema upgrade/downgrade
-	ARTEMIS_DB_URL="postgresql://artemis:artemis@127.0.0.1:5432/artemis" tox -e py37-database-migrations
+	ARTEMIS_DB_URL="postgresql://artemis:artemis@127.0.0.1:5432/artemis" tox -e py37-db-schema-revisions
 
 	docker-compose down
 
