@@ -13,6 +13,8 @@ _env-info:
 	@poetry config --list --local $$POETRY_ADDOPTS
 	@echo "# Tox: $$(type tox) $$(tox --version)"
 
+##@ Installation
+
 install: _env-info  ## Install Artemis and development tools
 	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
 	poetry env info $$POETRY_ADDOPTS
@@ -23,8 +25,7 @@ install-no-dev: _env-info  ## Install Artemis alone, no development tools
 	poetry env info $$POETRY_ADDOPTS
 	poetry install -v --no-dev --remove-untracked $$POETRY_ADDOPTS
 
-coverage: _env-info  ## Run tests with coverage
-	tox -e py37-coverage
+##@ Tests
 
 tests: test-units test-db-revisions test-pre-commit test-integration  ## Run all tests
 
@@ -60,6 +61,16 @@ test-integration: _env-info  ## Run tests against real services
 
 	docker-compose down
 
+coverage: _env-info  ## Run tests with coverage
+	tox -e py37-coverage
+
+gen-db-revision:  ## Generate new DB revision
+	rm -rf test.db
+	poetry run alembic upgrade head
+	poetry run alembic revision --autogenerate -m "$(NAME)"
+
+##@ Documentation
+
 docs: docs-autodocs docs-knobs  ## Generate all documentation
 
 docs-autodocs:  ## Generate source code documentation
@@ -68,31 +79,17 @@ docs-autodocs:  ## Generate source code documentation
 docs-knobs: install  ## Generate up-to-date documentation of knobs
 	ARTEMIS_VAULT_PASSWORD=dummy-password poetry run ./extract-knobs --template-file ../docs/content/for-admins/knobs.adoc.j2 > ../docs/content/for-admins/knobs.adoc
 
-gen-db-revision:  ## Generate new DB revision
-	rm -rf test.db
-	poetry run alembic upgrade head
-	poetry run alembic revision --autogenerate -m "$(NAME)"
+##@ Release
 
 publish:  ## Publish server package to PyPI
 	@poetry publish --username $(PYPI_USERNAME) --password $(PYPI_PASSWORD) --build $$POETRY_ADDOPTS
+
+##@ Utility
 
 clean:  ## Remove installed virtual environment
 	rm -rf .tox
 	rm -rf .venv
 
+# See https://www.thapaliya.com/en/writings/well-documented-makefiles/ for details.
 help:  ## Show this help
-	@IFS=$$'\n' ; \
-	help_lines=(`fgrep -h "##" $(MAKEFILE_LIST) | fgrep -v fgrep | sed -e 's/\\$$//' | sed -e 's/##/:/' | sort`); \
-	printf "%s\n\n" "Usage: make [task]"; \
-	printf "%-20s %s\n" "task" "help" ; \
-	printf "%-20s %s\n" "------" "----" ; \
-	for help_line in $${help_lines[@]}; do \
-		IFS=$$':' ; \
-		help_split=($$help_line) ; \
-		help_command=`echo $${help_split[0]} | sed -e 's/^ *//' -e 's/ *$$//'` ; \
-		help_info=`echo $${help_split[2]} | sed -e 's/^ *//' -e 's/ *$$//'` ; \
-		printf '\033[36m'; \
-		printf "%-20s %s" $$help_command ; \
-		printf '\033[0m'; \
-		printf "%s\n" $$help_info; \
-	done
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make [target]\033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
