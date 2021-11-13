@@ -160,7 +160,7 @@ The table below describe the built-in support for various features. However, to 
 |[red]#no#
 |[red]#no#
 |[red]#no#
-|[red]#no#
+|[red]#yes#
 
 |===
 
