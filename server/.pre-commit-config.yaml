@@ -2,14 +2,15 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
   - repo: https://github.com/PyCQA/isort
-    rev: "5.7.0"
+    rev: "5.10.1"
     hooks:
       - id: isort
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v2.4.0
+    rev: v4.0.1
     hooks:
       - id: check-added-large-files
       - id: check-ast
+      - id: check-case-conflict
       - id: check-docstring-first
       - id: check-executables-have-shebangs
       - id: check-merge-conflict
@@ -26,6 +27,7 @@ repos:
           - "--branch"
           - "main"
       - id: trailing-whitespace
+      - id: fix-byte-order-marker
 
   # Yet another static analysis, but these hooks "understand" Python syntax and semantics, and tend to check
   # changes one makes to calm flake8 & mypy down, making sure all those "noqa" and "ignore" comments are helpful.
