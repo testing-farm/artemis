@@ -19,7 +19,9 @@ import enum
 import json
 import os
 import platform
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
+import threading
+import time
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import gluetool.log
 import prometheus_client.utils
@@ -35,7 +37,7 @@ from . import db as artemis_db
 from . import safe_call
 from .context import DATABASE, SESSION, with_context
 from .guest import GuestState
-from .knobs import KNOB_POOL_ENABLED
+from .knobs import KNOB_POOL_ENABLED, KNOB_WORKER_METRICS_TTL
 
 T = TypeVar('T')
 
@@ -2373,6 +2375,207 @@ class APIMetrics(MetricsBase):
 
 
 @dataclasses.dataclass
+class WorkerMetrics(MetricsBase):
+    """
+    Proxy for metrics related to workers.
+    """
+
+    worker_process_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
+    worker_thread_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
+    worker_updated_timestamp: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
+
+    _KEY_WORKER_PROCESS_COUNT = 'metrics.workers.{worker}.processes'
+    _KEY_WORKER_THREAD_COUNT = 'metrics.workers.{worker}.threads'
+    _KEY_UPDATED_TIMESTAMP = 'metrics.workers.{worker}.updated_timestamp'
+
+    @staticmethod
+    @with_context
+    def update_worker_counts(
+        *,
+        worker: str,
+        processes: int,
+        threads: int,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Update metrics for a given worker.
+
+        :param worker: name of the worker.
+        :param processes: number of worker processes.
+        :param threads: number of worker threads.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        set_metric(
+            logger,
+            cache,
+            WorkerMetrics._KEY_WORKER_PROCESS_COUNT.format(worker=worker),
+            processes,
+            ttl=KNOB_WORKER_METRICS_TTL.value
+        )
+
+        set_metric(
+            logger,
+            cache,
+            WorkerMetrics._KEY_WORKER_THREAD_COUNT.format(worker=worker),
+            threads,
+            ttl=KNOB_WORKER_METRICS_TTL.value
+        )
+
+        set_metric(
+            logger,
+            cache,
+            WorkerMetrics._KEY_UPDATED_TIMESTAMP.format(worker=worker),
+            int(datetime.datetime.timestamp(datetime.datetime.utcnow())),
+            ttl=KNOB_WORKER_METRICS_TTL.value
+        )
+
+        return Ok(None)
+
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Register instances of Prometheus metrics with the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
+        super(WorkerMetrics, self).register_with_prometheus(registry)
+
+        self.WORKER_PROCESS_COUNT = Gauge(
+            'worker_process_count',
+            'Number of processes by worker.',
+            ['worker'],
+            registry=registry
+        )
+
+        self.WORKER_THREAD_COUNT = Gauge(
+            'worker_thread_count',
+            'Number of threads by worker.',
+            ['worker'],
+            registry=registry
+        )
+
+        self.WORKER_UPDATED_TIMESTAMP = Gauge(
+            'worker_updated_timestamp',
+            'Last time worker info info has been updated.',
+            ['worker'],
+            registry=registry
+        )
+
+    @with_context
+    def sync(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
+        """
+        Load values from the storage and update this container with up-to-date values.
+
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        """
+
+        super(WorkerMetrics, self).sync()
+
+        self.worker_process_count = {
+            metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
+            for metric in iter_metric_names(logger, cache, 'metrics.workers.*.processes')
+        }
+
+        self.worker_thread_count = {
+            metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
+            for metric in iter_metric_names(logger, cache, 'metrics.workers.*.threads')
+        }
+
+        self.worker_updated_timestamp = {
+            metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
+            for metric in iter_metric_names(logger, cache, 'metrics.workers.*.updated_timestamp')
+        }
+
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
+
+        super(WorkerMetrics, self).update_prometheus()
+
+        reset_counters(self.WORKER_PROCESS_COUNT)
+        reset_counters(self.WORKER_THREAD_COUNT)
+        reset_counters(self.WORKER_UPDATED_TIMESTAMP)
+
+        # TODO: move these into `reset_counters` - these should be more reliable, and we wouldn't have to
+        # do the work on our own.
+        self.WORKER_PROCESS_COUNT.clear()
+        self.WORKER_THREAD_COUNT.clear()
+        self.WORKER_UPDATED_TIMESTAMP.clear()
+
+        for worker, processes in self.worker_process_count.items():
+            self.WORKER_PROCESS_COUNT \
+                .labels(worker=worker) \
+                .set(processes)
+
+        for worker, threads in self.worker_thread_count.items():
+            self.WORKER_THREAD_COUNT \
+                .labels(worker=worker) \
+                .set(threads)
+
+        for worker, timestamp in self.worker_updated_timestamp.items():
+            self.WORKER_UPDATED_TIMESTAMP \
+                .labels(worker=worker) \
+                .set(timestamp if timestamp is None else float(timestamp))
+
+    @staticmethod
+    def spawn_metrics_refresher(
+        logger: gluetool.log.ContextAdapter,
+        worker_name: str,
+        interval: int,
+        metrics_getter: Callable[[Any], Result[Tuple[int, int], Failure]],
+        thread_name: str = 'worker-metrics-refresher',
+        worker_instance: Optional[Any] = None,
+    ) -> threading.Thread:
+        """
+        Create and start a thread to refresh cached worker metrics.
+
+        A thread is started, to call ``metrics_getter`` periodically. After each call, data provided by the callable
+        are stored in a cache.
+
+        The thread is marked as ``daemon``, therefore it is not necessary to stop it when caller decides to quit.
+
+        :param logger: logger to use for logging.
+        :param worker_name: name of the worker.
+        :param worker_instance: instance of the worker. It is not inspected by the thread, and it's passed directly
+            to ``metrics_getter``.
+        :param interval: how often to refresh worker metrics.
+        :param metrics_getter: a callable with one parameter, ``worker_instance``. It is called every iteration
+            and should return a pair fo two values, number of worker processes and threads.
+        :param thread_name: name of the refresher thread.
+        :returns: running and daemonized thread.
+        """
+
+        def _refresh_loop() -> None:
+            while True:
+                r_metrics = metrics_getter(worker_instance)
+
+                if r_metrics.is_error:
+                    r_metrics.unwrap_error().handle(logger)
+
+                else:
+                    processes, threads = r_metrics.unwrap()
+
+                    WorkerMetrics.update_worker_counts(
+                        worker=worker_name,
+                        processes=processes,
+                        threads=threads
+                    )
+
+                time.sleep(interval)
+
+        thread = threading.Thread(target=_refresh_loop, name=thread_name, daemon=True)
+        thread.start()
+
+        return thread
+
+
+@dataclasses.dataclass
 class Metrics(MetricsBase):
     """
     Global metrics that don't fit anywhere else, and also a root of the tree of metrics.
@@ -2384,6 +2587,7 @@ class Metrics(MetricsBase):
     routing: RoutingMetrics = RoutingMetrics()
     tasks: TaskMetrics = TaskMetrics()
     api: APIMetrics = APIMetrics()
+    workers: WorkerMetrics = WorkerMetrics()
 
     # Registry this tree of metrics containers is tied to.
     _registry: Optional[CollectorRegistry] = None
@@ -2595,10 +2799,11 @@ def safe_call_and_handle(
 RedisIncrType = Callable[[str, int], None]
 RedisDecrType = RedisIncrType
 RedisGetType = Callable[[str], Optional[bytes]]
-RedisSetType = Callable[[str, int], None]
+RedisSetType = Callable[[str, int, Optional[int]], None]
 RedisDeleteType = Callable[[str], None]
 RedisHIncrByType = Callable[[str, str, int], None]
 RedisHGetAllType = Callable[[str], Optional[Dict[bytes, bytes]]]
+RedisScanIterType = Callable[[str], Generator[bytes, None, None]]
 
 
 def inc_metric(
@@ -2704,7 +2909,8 @@ def set_metric(
     logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     metric: str,
-    value: Optional[int] = None
+    value: Optional[int] = None,
+    ttl: Optional[int] = None
 ) -> None:
     """
     Set a metric counter for the given metric.
@@ -2713,6 +2919,7 @@ def set_metric(
     :param cache: cache instance to use for cache access.
     :param metric: metric name to retrieve.
     :param value: value to set to.
+    :param ttl: if set, metric would expire in ``ttl`` seconds, and will be removed from cache.
     """
 
     # Redis returns everything as bytes, therefore we need to decode field names to present them as strings
@@ -2723,7 +2930,7 @@ def set_metric(
         safe_call_and_handle(logger, cast(RedisDeleteType, cache.delete), metric)
 
     else:
-        safe_call_and_handle(logger, cast(RedisSetType, cache.set), metric, value)
+        safe_call_and_handle(logger, cast(RedisSetType, cache.set), metric, value, ttl)
 
 
 def get_metric_fields(
@@ -2753,3 +2960,29 @@ def get_metric_fields(
         field.decode(): int(count)
         for field, count in values.items()
     }
+
+
+def iter_metric_names(
+    logger: gluetool.log.ContextAdapter,
+    cache: redis.Redis,
+    match: str
+) -> Generator[bytes, None, None]:
+    """
+    Return a metric counter for the given metric.
+
+    :param logger: logger to use for logging.
+    :param cache: cache instance to use for cache access.
+    :param match: only metrics matching this glob pattern would be listed.
+    :yields: metric names.
+    """
+
+    # Redis returns everything as bytes, therefore we need to decode field names to present them as strings
+    # and convert values to integers. To make things more complicated, lack of type annotations forces us
+    # to wrap `get` with `cast` calls.
+
+    try:
+        for metric in cast(RedisScanIterType, cache.scan_iter)(match):
+            yield metric
+
+    except Exception as exc:
+        Failure.from_exc('exception raised inside a safe block', exc).handle(logger)

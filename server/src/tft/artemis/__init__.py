@@ -5,6 +5,7 @@ import inspect
 import itertools
 import json
 import os
+import platform
 import sys
 import traceback as _traceback
 from types import FrameType, TracebackType
@@ -724,8 +725,14 @@ def get_broker(
     logger: gluetool.log.ContextAdapter,
     application_name: Optional[str] = None
 ) -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
+    from .knobs import KNOB_WORKER_METRICS_UPDATE_TICK
+
     if os.getenv('IN_TEST', None):
         broker = dramatiq.brokers.stub.StubBroker(middleware=[
+            artemis_middleware.WorkerMetrics(
+                f'worker-{platform.node()}-{os.getpid()}',
+                KNOB_WORKER_METRICS_UPDATE_TICK.value
+            ),
             dramatiq.middleware.age_limit.AgeLimit(),
             dramatiq.middleware.time_limit.TimeLimit(),
             dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
@@ -777,6 +784,10 @@ def get_broker(
         broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
             confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value,
             middleware=[
+                artemis_middleware.WorkerMetrics(
+                    f'worker-{platform.node()}-{os.getpid()}',
+                    KNOB_WORKER_METRICS_UPDATE_TICK.value
+                ),
                 dramatiq.middleware.age_limit.AgeLimit(),
                 dramatiq.middleware.time_limit.TimeLimit(),
                 dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),

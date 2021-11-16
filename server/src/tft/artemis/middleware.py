@@ -1,5 +1,6 @@
 import datetime
 import inspect
+import threading
 import traceback
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Union, cast
 
@@ -7,8 +8,10 @@ import dramatiq.broker
 import dramatiq.message
 import dramatiq.middleware
 import dramatiq.middleware.retries
+import dramatiq.worker
 import gluetool.log
 from dramatiq.common import compute_backoff, current_millis
+from gluetool.result import Ok
 
 from .guest import GuestLogger
 
@@ -364,3 +367,31 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
             TaskMetrics.inc_overall_errored_messages(*labels)
 
     after_skip_message = after_process_message
+
+
+class WorkerMetrics(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+    """
+    Dramatiq broker middleware spawning a thread to keep refreshing worker metrics.
+    """
+
+    def __init__(self, worker_name: str, interval: int) -> None:
+        super(WorkerMetrics, self).__init__()
+
+        self.worker_name = worker_name
+        self.interval = interval
+
+        self._refresher: Optional[threading.Thread] = None
+
+    def after_worker_boot(self, signal: str, worker: dramatiq.worker.Worker) -> None:
+        from . import get_logger
+        from .metrics import WorkerMetrics as _WorkerMetrics
+
+        get_logger().warning('metrics refresher started')
+
+        self._refresher = _WorkerMetrics.spawn_metrics_refresher(
+            get_logger(),
+            self.worker_name,
+            self.interval,
+            lambda _worker: Ok((1, len(worker.workers))),
+            worker_instance=worker
+        )

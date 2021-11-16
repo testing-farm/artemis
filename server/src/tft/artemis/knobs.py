@@ -739,6 +739,26 @@ KNOB_POOL_ENABLED: Knob[bool] = Knob(
     default=True
 )
 
+KNOB_WORKER_METRICS_UPDATE_TICK: Knob[int] = Knob(
+    'worker.metrics.update-tick',
+    'How often, in seconds, should various workers update their metrics cache.',
+    has_db=False,
+    per_pool=False,
+    envvar='ARTEMIS_WORKER_METRICS_UPDATE_TICK',
+    cast_from_str=int,
+    default=60
+)
+
+KNOB_WORKER_METRICS_TTL: Knob[int] = Knob(
+    'worker.metrics.ttl',
+    'How long, in seconds, should various workers metrics remain in cache.',
+    has_db=False,
+    per_pool=False,
+    envvar='ARTEMIS_WORKER_METRICS_TTL',
+    cast_from_str=int,
+    default=120
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value
