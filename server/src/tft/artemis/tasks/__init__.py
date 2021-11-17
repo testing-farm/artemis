@@ -23,22 +23,22 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
-from . import Failure, get_broker, get_db, get_logger, metrics, safe_call
-from .context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
-from .db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
+from .. import Failure, get_broker, get_db, get_logger, metrics, safe_call
+from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
+from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
     SnapshotRequest, SSHKey, safe_db_change, upsert
-from .drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
-from .drivers import aws as aws_driver
-from .drivers import azure as azure_driver
-from .drivers import beaker as beaker_driver
-from .drivers import localhost as localhost_driver
-from .drivers import openstack as openstack_driver
-from .drivers import ping_shell_remote
-from .guest import GuestLogger, GuestState, SnapshotLogger
-from .knobs import KNOB_POOL_ENABLED, Knob
-from .profile import Profiler
-from .routing_policies import PolicyRuling
-from .script import hook_engine
+from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
+from ..drivers import aws as aws_driver
+from ..drivers import azure as azure_driver
+from ..drivers import beaker as beaker_driver
+from ..drivers import localhost as localhost_driver
+from ..drivers import openstack as openstack_driver
+from ..drivers import ping_shell_remote
+from ..guest import GuestLogger, GuestState, SnapshotLogger
+from ..knobs import KNOB_POOL_ENABLED, Knob
+from ..profile import Profiler
+from ..routing_policies import PolicyRuling
+from ..script import hook_engine
 
 # There is a very basic thing we must be aware of: a task - the Python function below - can run multiple times,
 # sequentialy or in parallel. It's like multithreading application above a database, without any locks available.
@@ -2417,7 +2417,7 @@ def do_prepare_verify_ssh(
     assert workspace.gr.poolname
     assert workspace.pool
 
-    from .middleware import NOTE_POOLNAME, set_message_note
+    from ..middleware import NOTE_POOLNAME, set_message_note
     set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     r_master_key = _get_master_key()
@@ -2466,7 +2466,7 @@ def do_prepare_post_install_script(
     guestname: str
 ) -> DoerReturnType:
     # Avoid circular imports
-    from .drivers import copy_to_remote, create_tempfile, run_remote
+    from ..drivers import copy_to_remote, create_tempfile, run_remote
 
     workspace = Workspace(
         logger,
@@ -2489,7 +2489,7 @@ def do_prepare_post_install_script(
     assert workspace.gr.poolname
     assert workspace.pool
 
-    from .middleware import NOTE_POOLNAME, set_message_note
+    from ..middleware import NOTE_POOLNAME, set_message_note
     set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     r_master_key = _get_master_key()
@@ -2569,7 +2569,7 @@ def do_guest_request_prepare_finalize_pre_connect(
     assert workspace.gr
     assert workspace.gr.poolname
 
-    from .middleware import NOTE_POOLNAME, set_message_note
+    from ..middleware import NOTE_POOLNAME, set_message_note
     set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     tasks: List[Actor] = []
@@ -2637,7 +2637,7 @@ def do_guest_request_prepare_finalize_post_connect(
     assert workspace.gr
     assert workspace.gr.poolname
 
-    from .middleware import NOTE_POOLNAME, set_message_note
+    from ..middleware import NOTE_POOLNAME, set_message_note
     set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     workspace.update_guest_state(
@@ -2724,7 +2724,7 @@ def do_release_guest_request(
     assert workspace.gr
 
     if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
-        from .middleware import NOTE_POOLNAME, set_message_note
+        from ..middleware import NOTE_POOLNAME, set_message_note
         set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
         workspace.spice_details['poolname'] = workspace.gr.poolname
@@ -2796,7 +2796,7 @@ def do_update_guest_request(
     assert workspace.pool
     assert workspace.gr.poolname
 
-    from .middleware import NOTE_POOLNAME, set_message_note
+    from ..middleware import NOTE_POOLNAME, set_message_note
     set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     workspace.spice_details['poolname'] = workspace.gr.poolname
@@ -3914,7 +3914,7 @@ def do_acquire_guest_console_url(
     assert workspace.gr
     assert workspace.gr.poolname
 
-    from .middleware import NOTE_POOLNAME, set_message_note
+    from ..middleware import NOTE_POOLNAME, set_message_note
     set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
 
     r_console = workspace.pool.acquire_console_url(logger, workspace.gr)
