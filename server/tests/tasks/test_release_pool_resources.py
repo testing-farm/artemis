@@ -16,7 +16,7 @@ from tft.artemis import Failure
 from tft.artemis.drivers import PoolDriver
 from tft.artemis.tasks import do_release_pool_resources
 
-from . import assert_failure_log
+from .. import assert_failure_log
 
 
 @fixture(name='mock_pool')

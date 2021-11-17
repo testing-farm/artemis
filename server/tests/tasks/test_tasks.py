@@ -17,7 +17,7 @@ import tft.artemis
 import tft.artemis.db
 import tft.artemis.tasks
 
-from . import MATCH, assert_log
+from .. import MATCH, assert_log
 
 
 @pytest.fixture

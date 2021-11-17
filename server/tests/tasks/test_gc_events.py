@@ -12,7 +12,7 @@ import tft.artemis.guest
 import tft.artemis.tasks
 from tft.artemis.tasks import KNOB_GC_EVENTS_THRESHOLD, do_gc_events
 
-from . import MATCH, assert_log
+from .. import MATCH, assert_log
 
 # Reset threshold to 24 hours
 KNOB_GC_EVENTS_THRESHOLD.value = 86400
