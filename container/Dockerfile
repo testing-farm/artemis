@@ -120,7 +120,9 @@ RUN chmod +x /wait-for-postgres.sh /wait-for-rabbitmq.sh /wait-for-api.sh /wait-
 #
 COPY server /APP/
 RUN    cd /APP \
-    && PYTHON=python3.7 make install-no-dev
+    && PYTHON=python3.7 make install-no-dev \
+    # Make Poetry configuration accesible to Poetry in containers
+    && chmod a+rw /tmp/.config/pypoetry/config.toml
 
 #
 # Make sure we can edit /etc/passwd, required to set valid username when run via Openshift
