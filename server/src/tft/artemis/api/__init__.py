@@ -623,7 +623,8 @@ class GuestRequestManager:
         logger: gluetool.log.ContextAdapter,
         environment_schema: JSONSchemaType
     ) -> GuestResponse:
-        from ..tasks import _get_pool_or_none, dispatch_task, get_guest_logger, route_guest_request
+        from ..tasks import _get_pool_or_none, dispatch_task, get_guest_logger
+        from ..tasks.route_guest_request import route_guest_request
 
         guestname = str(uuid.uuid4())
 
