@@ -1338,6 +1338,22 @@ class Workspace:
         if task:
             self.spice_details['task'] = task
 
+    @property
+    def final_result(self) -> DoerReturnType:
+        """
+        Return result stored in this workspace.
+
+        This property shall report tasks that fail to set any result - tasks' last step should be setting
+        workspace's :py:attr:`result` to a valid result, usually :py:data:`SUCCESS`.
+
+        :returns: value of :py:attr:`result`, or an error when ``result`` is still ``None``.
+        """
+
+        if self.result:
+            return self.result
+
+        return Error(Failure('task did not produce final result'))
+
     def handle_failure(
         self,
         failure: Failure,
