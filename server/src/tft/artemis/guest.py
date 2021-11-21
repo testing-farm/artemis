@@ -3,6 +3,7 @@ Guest request state definitions and helpers.
 """
 
 import enum
+from typing import cast
 
 import gluetool.log
 
@@ -75,6 +76,16 @@ class GuestLogger(gluetool.log.ContextAdapter):
             'ctx_guest_name': (10, guestname)
         })
 
+    @property
+    def guestname(self) -> str:
+        """
+        Return guest request name tracked by the logger.
+
+        :returns: name of the guest request to propagate into logging context.
+        """
+
+        return cast(str, self._contexts['guest_name'][1])
+
 
 class SnapshotLogger(gluetool.log.ContextAdapter):
     """
@@ -92,3 +103,13 @@ class SnapshotLogger(gluetool.log.ContextAdapter):
         super(SnapshotLogger, self).__init__(logger, {
             'ctx_snapshot_name': (11, snapshotname)
         })
+
+    @property
+    def snapshotname(self) -> str:
+        """
+        Return snapshot name tracked by the logger.
+
+        :returns: name of the snapshot to propagate into logging context.
+        """
+
+        return cast(str, self._contexts['snapshot_name'][1])
