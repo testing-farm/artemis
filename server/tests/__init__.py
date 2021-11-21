@@ -4,7 +4,10 @@ import re
 from typing import Any, Callable, Iterable, List, Optional, Tuple
 
 import _pytest.logging
+import _pytest.monkeypatch
 import jinja2
+from mock import MagicMock
+from typing_extensions import Protocol
 
 # Since this is our entry point when running tests, we must take care of injecting additional filters
 # into defaults before we start messing with Jinja. Otherwise, the template below would initialize
@@ -20,6 +23,16 @@ Cannot find log record with these properties:
     {{ field }} == {{ value }}
 {%- endfor %}
 """)
+
+
+class MockPatcher(Protocol):
+    def __call__(
+        self,
+        obj: Any,
+        member_name: str,
+        obj_name: Optional[str] = None
+    ) -> MagicMock:
+        pass
 
 
 class PatternMatching:

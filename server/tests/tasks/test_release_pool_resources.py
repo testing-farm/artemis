@@ -16,12 +16,12 @@ from tft.artemis import Failure
 from tft.artemis.drivers import PoolDriver
 from tft.artemis.tasks import do_release_pool_resources
 
-from .. import assert_failure_log
+from .. import MockPatcher, assert_failure_log
 
 
 @fixture(name='mock_pool')
 def fixture_mock_pool(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> Tuple[
     PoolDriver,
     Callable[
@@ -38,12 +38,8 @@ def fixture_mock_pool(
         return_value=Ok(None)
     )
 
-    mock_get_pool = MagicMock(
-        name='_get_pool (mock)',
-        return_value=Ok(mock_pool)
-    )
-
-    monkeypatch.setattr(tft.artemis.tasks, '_get_pool', mock_get_pool)
+    mock_get_pool = mockpatch(tft.artemis.tasks, '_get_pool')
+    mock_get_pool.return_value = Ok(mock_pool)
 
     return mock_pool, mock_get_pool
 
