@@ -38,6 +38,7 @@ from typing_extensions import Protocol
 from .. import __VERSION__, Failure, FailureDetailsType, JSONSchemaType
 from .. import db as artemis_db
 from .. import get_cache, get_db, get_logger, load_validation_schema, metrics, validate_data
+from ..cache import get_cache_value, iter_cache_keys
 from ..context import DATABASE, LOGGER, SESSION
 from ..drivers import PoolDriver
 from ..environment import Environment
@@ -1698,6 +1699,49 @@ class UserManagerComponent:
         return UserManager(db)
 
 
+class StatusManager:
+    def __init__(self, db: artemis_db.DB) -> None:
+        self.db = db
+
+    #
+    # Entry points hooked to routes
+    #
+    @staticmethod
+    def entry_workers_traffic(
+        manager: 'CacheManager',
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Response:
+        from ..middleware import WorkerTraffic
+
+        tasks: List[Dict[str, Any]] = []
+
+        for task_key in iter_cache_keys(logger, cache, WorkerTraffic.KEY_WORKER_TASK_PATTERN):
+            value = get_cache_value(logger, cache, task_key.decode())
+
+            if not value:
+                continue
+
+            tasks.append(json.loads(value.decode()))
+
+        return Response(
+            status=HTTP_200,
+            content=gluetool.log.format_dict(tasks),
+            headers={'Content-Type': 'application/json'}
+        )
+
+
+class StatusManagerComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is StatusManager or parameter.annotation == 'StatusManager'
+
+    def resolve(self, db: artemis_db.DB) -> StatusManager:
+        return StatusManager(db)
+
+
 #
 # Routes
 #
@@ -2258,6 +2302,61 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
     return wrapper
 
 
+# NEW: current worker tasks
+@route_generator
+def generate_routes_v0_0_32(
+    create_route: CreateRouteCallbackType,
+    name_prefix: str,
+    metadata: Any
+) -> List[Union[Route, Include]]:
+    return [
+        Include('/guests', [
+            create_route('/', get_guest_requests, method='GET'),
+            create_route('/', create_guest_request_v0_0_28, method='POST'),
+            create_route('/{guestname}', get_guest_request),  # noqa: FS003
+            create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
+            create_route('/events', get_events),
+            create_route('/{guestname}/events', get_guest_events),  # noqa: FS003
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')  # noqa: FS003,E501
+        ]),
+        Include('/knobs', [
+            create_route('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')  # noqa: FS003
+        ]),
+        Include('/users', [
+            create_route('/', UserManager.entry_get_users, method='GET'),
+            create_route('/{username}', UserManager.entry_get_user, method='GET'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_create_user, method='POST'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_delete_user, method='DELETE'),  # noqa: FS003
+            create_route('/{username}/tokens/{tokentype}/reset', UserManager.entry_reset_token, method='POST')  # noqa: FS003,E501
+        ]),
+        create_route('/metrics', get_metrics),
+        create_route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [  # noqa: FS003
+                create_route('/image-info', CacheManager.entry_pool_image_info),
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info),
+                create_route('/image-info', CacheManager.entry_refresh_pool_image_info, method='POST'),
+                create_route('/flavor-info', CacheManager.entry_refresh_pool_flavor_info, method='POST')
+            ])
+        ]),
+        Include('/_status', [
+            Include('/workers', [
+                create_route('/traffic', StatusManager.entry_workers_traffic)
+            ])
+        ]),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
+        create_route('/_schema', OpenAPIHandler(metadata=metadata))
+    ]
+
+
 # NEW: trigger pool info refresh
 # NEW: HW requirement changes - added `network`
 @route_generator
@@ -2666,9 +2765,8 @@ def generate_routes_v0_0_17(
 #: API versions. Based on this list, routes are created with proper endpoints, and possibly redirected
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
-    # NEW: trigger pool info refresh
-    # NEW: HW requirement changes - added `network`
-    ('v0.0.28', generate_routes_v0_0_28, [
+    # NEW: current worker tasks
+    ('v0.0.32', generate_routes_v0_0_32, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
         'current',
@@ -2677,6 +2775,9 @@ API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
         # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
         'toplevel'
     ]),
+    # NEW: trigger pool info refresh
+    # NEW: HW requirement changes - added `network`
+    ('v0.0.28', generate_routes_v0_0_28, []),
     # NEW: HW requirement changes - refactored `disk`
     ('v0.0.27', generate_routes_v0_0_27, []),
     # NEW: allow log-types to be specified in guest request
@@ -2743,6 +2844,7 @@ def run_app() -> molten.app.App:
         SnapshotRequestManagerComponent(),
         KnobManagerComponent(),
         CacheManagerComponent(),
+        StatusManagerComponent(),
         UserManagerComponent(),
         AuthContextComponent(),
         MetricsComponent(metrics_tree)

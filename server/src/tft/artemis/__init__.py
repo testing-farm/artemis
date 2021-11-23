@@ -66,6 +66,9 @@ stackprinter.set_excepthook(
 #: for this value - if you want to use different port, do specify it in ``BROKER_URL`` then.
 DEFAULT_RABBITMQ_PORT = 5672
 
+#: Default date/time format.
+DATETIME_FMT: str = '%Y-%m-%dT%H:%M:%S.%f'
+
 
 ExceptionInfoType = Union[
     # returned by sys.exc_info()
@@ -724,7 +727,7 @@ def get_broker(
     logger: gluetool.log.ContextAdapter,
     application_name: Optional[str] = None
 ) -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
-    from .knobs import KNOB_WORKER_PROCESS_METRICS_ENABLED
+    from .knobs import KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB_WORKER_TRAFFIC_METRICS_ENABLED
 
     middleware: List[dramatiq.Middleware] = []
 
@@ -735,6 +738,15 @@ def get_broker(
             artemis_middleware.WorkerMetrics(
                 f'worker-{platform.node()}-{os.getpid()}',
                 KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK.value
+            )
+        )
+
+    if KNOB_WORKER_TRAFFIC_METRICS_ENABLED.value is True:
+        middleware.append(
+            artemis_middleware.WorkerTraffic(
+                logger,
+                get_cache(logger),
+                f'worker-{platform.node()}-{os.getpid()}'
             )
         )
 

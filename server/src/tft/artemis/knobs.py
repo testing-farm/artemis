@@ -769,6 +769,27 @@ KNOB_WORKER_PROCESS_METRICS_TTL: Knob[int] = Knob(
     default=120
 )
 
+KNOB_WORKER_TRAFFIC_METRICS_ENABLED: Knob[bool] = Knob(
+    'worker.metrics.traffic.enabled',
+    'If enabled, various metrics related to tasks and requests would be collected.',
+    has_db=False,
+    per_pool=False,
+    envvar='ARTEMIS_WORKER_TRAFFIC_METRICS_ENABLED',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=True
+)
+
+KNOB_WORKER_TRAFFIC_METRICS_TTL: Knob[int] = Knob(
+    'worker.metrics.traffic.ttl',
+    'How long, in seconds, should worker traffic metrics remain in cache.',
+    has_db=False,
+    per_pool=False,
+    envvar='ARTEMIS_WORKER_TRAFFIC_METRICS_TTL',
+    cast_from_str=int,
+    # The value should be comparable to how long tasks can take, which depends on resources available to workers.
+    default=600
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value

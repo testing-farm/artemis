@@ -32,7 +32,7 @@ import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
 
-from . import __VERSION__, Failure
+from . import __VERSION__, DATETIME_FMT, Failure, SerializableContainer
 from . import db as artemis_db
 from . import safe_call
 from .cache import dec_cache_field, dec_cache_value, get_cache_value, inc_cache_field, inc_cache_value, \
@@ -98,6 +98,47 @@ CLI_CALL_DURATION_BUCKETS = (
     120, 180, 240, 300, 360, 420, 480, 540, 600,
     prometheus_client.utils.INF
 )
+
+
+@dataclasses.dataclass
+class WorkerTrafficTask(SerializableContainer):
+    """
+    One "task" as recorded for the purpose of exposing current workload of various workers.
+    """
+
+    workername: str
+    worker_pid: int
+    worker_tid: int
+    ctime: datetime.datetime
+    queue: str
+    actor: str
+    args: Dict[str, Union[str, None]]
+
+    def serialize_to_json(self) -> Dict[str, Any]:
+        """
+        Serialize container to JSON.
+
+        :returns: serialized form of container items.
+        """
+
+        serialized = super().serialize_to_json()
+
+        serialized['ctime'] = serialized['ctime'].strftime(DATETIME_FMT)
+
+        return serialized
+
+    @classmethod
+    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'WorkerTrafficTask':
+        """
+        Unserialize container from JSON.
+
+        :param serialized: serialized form of container.
+        :returns: unserialized container.
+        """
+
+        serialized['ctime'] = datetime.datetime.strptime(serialized['ctime'], DATETIME_FMT)
+
+        return cls(**serialized)
 
 
 def reset_counters(metric: Union[Counter, Gauge]) -> None:

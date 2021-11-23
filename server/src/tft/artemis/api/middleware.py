@@ -39,7 +39,8 @@ PROVISIONING_AUTH = [
 ]
 
 ADMIN_AUTH = [
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/users(?:/.+)?')
+    re.compile(r'(?:/v\d+\.\d+\.\d+)?/users(?:/.+)?'),
+    re.compile(r'(?:/v\d+\.\d+\.\d+)?/_status(?:/.+)?')
 ]
 
 
