@@ -21,7 +21,7 @@ import os
 import platform
 import threading
 import time
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import gluetool.log
 import prometheus_client.utils
@@ -35,6 +35,8 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info
 from . import __VERSION__, Failure
 from . import db as artemis_db
 from . import safe_call
+from .cache import dec_cache_field, dec_cache_value, get_cache_value, inc_cache_field, inc_cache_value, \
+    iter_cache_fields, iter_cache_keys, set_cache_value
 from .context import DATABASE, SESSION, with_context
 from .guest import GuestState
 from .knobs import KNOB_POOL_ENABLED, KNOB_WORKER_METRICS_TTL
@@ -2478,17 +2480,17 @@ class WorkerMetrics(MetricsBase):
 
         self.worker_process_count = {
             metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
-            for metric in iter_metric_names(logger, cache, 'metrics.workers.*.processes')
+            for metric in iter_cache_keys(logger, cache, 'metrics.workers.*.processes')
         }
 
         self.worker_thread_count = {
             metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
-            for metric in iter_metric_names(logger, cache, 'metrics.workers.*.threads')
+            for metric in iter_cache_keys(logger, cache, 'metrics.workers.*.threads')
         }
 
         self.worker_updated_timestamp = {
             metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
-            for metric in iter_metric_names(logger, cache, 'metrics.workers.*.updated_timestamp')
+            for metric in iter_cache_keys(logger, cache, 'metrics.workers.*.updated_timestamp')
         }
 
     def update_prometheus(self) -> None:
@@ -2735,77 +2737,6 @@ def upsert_dec_metric(
     upsert_metric(logger, session, model, primary_keys, -1)
 
 
-# Once mypy implements support for PEP 612, something like this would be the way to go.
-# https://github.com/python/mypy/issues/8645
-#
-# P = ParamSpec('P')
-#
-# def handle_failure(default: Union[T, None] = None) -> Callable[Concatenate[gluetool.log.ContextAdapter, P], T]:
-#    def decorator(fn: Callable[P, T]) -> Callable[Concatenate[gluetool.log.ContextAdapter, P], T]:
-#        @functools.wraps(fn)
-#        def wrapper(logger: gluetool.log.ContextAdapter, *args: Any, **kwargs: Any) -> T:
-#            try:
-#                return fn(*args, **kwargs)
-#
-#            except Exception as exc:
-#                Failure.from_exc('exception raised inside a safe block', exc).handle(logger)
-#
-#                return default
-#
-#        return wrapper
-#
-#    return decorator
-
-
-def safe_call_and_handle(
-    logger: gluetool.log.ContextAdapter,
-    fn: Callable[..., T],
-    *args: Any,
-    **kwargs: Any
-) -> Optional[T]:
-    """
-    Call given function, with provided arguments. If the call fails, log the resulting failure before returning it.
-
-    .. note::
-
-       Similar to :py:func:`tft.artemis.safe_call`, but
-
-       * does handle the potential failure, and
-       * does not return :py:class:`Result` instance but either the bare value or ``None``.
-
-       This is on purpose, because such a helper fits the needs of cache-related helpers we use for tracking
-       metrics. The failure to communicate with the case isn't a reason to interrupt the main body of work,
-       but it still needs to be reported.
-
-    :param logger: logger to use for logging.
-    :param fn: function to decorate.
-    :param args: positional arguments of ``fn``.
-    :param kwargs: keyword arguments of ``fn``.
-    :returns: if an exception was raised during the function call, a failure is logged and ``safe_call_and_handle``
-        returns ``None``. Otherwise, the return value of the call is returned.
-    """
-
-    try:
-        return fn(*args, **kwargs)
-
-    except Exception as exc:
-        Failure.from_exc('exception raised inside a safe block', exc).handle(logger)
-
-        return None
-
-
-# Our helper types - Redis library does have some types, but they are often way too open for our purposes.
-# We often can provide more restricting types.
-RedisIncrType = Callable[[str, int], None]
-RedisDecrType = RedisIncrType
-RedisGetType = Callable[[str], Optional[bytes]]
-RedisSetType = Callable[[str, int, Optional[int]], None]
-RedisDeleteType = Callable[[str], None]
-RedisHIncrByType = Callable[[str, str, int], None]
-RedisHGetAllType = Callable[[str], Optional[Dict[bytes, bytes]]]
-RedisScanIterType = Callable[[str], Generator[bytes, None, None]]
-
-
 def inc_metric(
     logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
@@ -2821,7 +2752,7 @@ def inc_metric(
     :param amount: amount to increment by.
     """
 
-    safe_call_and_handle(logger, cast(RedisIncrType, cache.incr), metric, amount)
+    inc_cache_value(logger, cache, metric, amount=amount)
 
 
 def dec_metric(
@@ -2839,7 +2770,7 @@ def dec_metric(
     :param amount: amount to decrement by.
     """
 
-    safe_call_and_handle(logger, cast(RedisDecrType, cache.decr), metric, amount)
+    dec_cache_value(logger, cache, metric, amount=amount)
 
 
 def inc_metric_field(
@@ -2859,7 +2790,7 @@ def inc_metric_field(
     :param amount: amount to increment by.
     """
 
-    safe_call_and_handle(logger, cast(RedisHIncrByType, cache.hincrby), metric, field, amount)
+    inc_cache_field(logger, cache, metric, field, amount=amount)
 
 
 def dec_metric_field(
@@ -2879,7 +2810,7 @@ def dec_metric_field(
     :param amount: amount to decrement by.
     """
 
-    safe_call_and_handle(logger, cast(RedisHIncrByType, cache.hincrby), metric, field, -1 * amount)
+    dec_cache_field(logger, cache, metric, field, amount=amount)
 
 
 def get_metric(
@@ -2900,7 +2831,7 @@ def get_metric(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `get` with `cast` calls.
 
-    value: Optional[bytes] = safe_call_and_handle(logger, cast(RedisGetType, cache.get), metric)
+    value: Optional[bytes] = get_cache_value(logger, cache, metric)
 
     return value if value is None else int(value)
 
@@ -2926,11 +2857,7 @@ def set_metric(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `get` with `cast` calls.
 
-    if value is None:
-        safe_call_and_handle(logger, cast(RedisDeleteType, cache.delete), metric)
-
-    else:
-        safe_call_and_handle(logger, cast(RedisSetType, cache.set), metric, value, ttl)
+    set_cache_value(logger, cache, metric, value=str(value).encode() if value is not None else None, ttl=ttl)
 
 
 def get_metric_fields(
@@ -2951,38 +2878,7 @@ def get_metric_fields(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `hgetall` with `cast` calls.
 
-    values = safe_call_and_handle(logger, cast(RedisHGetAllType, cache.hgetall), metric)
-
-    if values is None:
-        return {}
-
     return {
-        field.decode(): int(count)
-        for field, count in values.items()
+        field.decode(): int(value)
+        for field, value in iter_cache_fields(logger, cache, metric)
     }
-
-
-def iter_metric_names(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    match: str
-) -> Generator[bytes, None, None]:
-    """
-    Return a metric counter for the given metric.
-
-    :param logger: logger to use for logging.
-    :param cache: cache instance to use for cache access.
-    :param match: only metrics matching this glob pattern would be listed.
-    :yields: metric names.
-    """
-
-    # Redis returns everything as bytes, therefore we need to decode field names to present them as strings
-    # and convert values to integers. To make things more complicated, lack of type annotations forces us
-    # to wrap `get` with `cast` calls.
-
-    try:
-        for metric in cast(RedisScanIterType, cache.scan_iter)(match):
-            yield metric
-
-    except Exception as exc:
-        Failure.from_exc('exception raised inside a safe block', exc).handle(logger)
