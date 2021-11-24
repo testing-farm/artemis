@@ -54,12 +54,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/*
 Construct image string
 */}}
-{{- define "artemis.image" -}}
+{{- define "artemis.imageUntagged" -}}
   {{- $global := (pluck "global" .Values | first) -}}
   {{- $registryName := coalesce (pluck "imageRegistry" $global | first) .Values.image.registry -}}
   {{- $repositoryName := .Values.image.repository -}}
-  {{- $tag := .Values.image.tag | toString -}}
-  {{- printf "%s/%s:%s" $registryName $repositoryName $tag -}}
+  {{- printf "%s/%s" $registryName $repositoryName -}}
+{{- end -}}
+
+{{- define "artemis.image" -}}
+  {{- $tag := default .Chart.AppVersion .Values.image.tag | toString -}}
+  {{- printf "%s:%s" (include "artemis.imageUntagged" .) $tag -}}
+{{- end -}}
+
+{{- define "artemis.initdb.image" -}}
+  {{- printf "%s:latest" (include "artemis.imageUntagged" .) -}}
 {{- end -}}
 
 {{/*

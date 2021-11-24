@@ -15,7 +15,7 @@ global:
 image:
   registry: quay.io
   repository: testing-farm/artemis
-  tag: "latest"
+  #tag: ""
 
 ## PostgreSQL database access
 ##

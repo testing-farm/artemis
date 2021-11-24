@@ -22,7 +22,7 @@ spec:
             name: {{ template "artemis.config.configMapName" . }}
       initContainers:
         - name: wait-for-postgres
-          image: {{ template "artemis.image" . }}
+          image: {{ template "artemis.initdb.image" . }}
           imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
           command:
             - /wait-for-postgres.sh
