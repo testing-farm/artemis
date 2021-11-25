@@ -20,7 +20,7 @@ import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from pint import Quantity
-from typing_extensions import Protocol, TypedDict
+from typing_extensions import Literal, Protocol, TypedDict
 
 from .. import Failure, JSONType, SerializableContainer, get_cached_item, get_cached_items_as_list, log_dict_yaml, \
     process_output_to_str, refresh_cached_set, safe_call
@@ -134,11 +134,25 @@ ConfigImageSpecType = TypedDict(
     }
 )
 
-ConfigCapabilitiesDisableGuestLog = TypedDict(
-    'ConfigCapabilitiesDisableGuestLog',
+
+#: pools[].capabilities.disable-guest-logs
+ConfigCapabilitiesDisableGuestLogType = TypedDict(
+    'ConfigCapabilitiesDisableGuestLogType',
     {
         'log-name': str,
         'content-type': str
+    }
+)
+
+
+#: pools[].capabilities
+ConfigCapabilitiesType = TypedDict(
+    'ConfigCapabilitiesType',
+    {
+        'supported-architectures': Union[Literal['any'], List[str]],
+        'supports-snapshots': Union[str, bool],
+        'supports-spot-instances': Union[str, bool],
+        'disable-guest-logs': List[ConfigCapabilitiesDisableGuestLogType]
     }
 )
 
@@ -1461,7 +1475,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def capabilities(self) -> Result[PoolCapabilities, Failure]:
         capabilities = PoolCapabilities()
 
-        capabilities_config = self.pool_config.get('capabilities')
+        capabilities_config = cast(ConfigCapabilitiesType, self.pool_config.get('capabilities'))
 
         if not capabilities_config:
             return self.adjust_capabilities(capabilities)
@@ -1488,12 +1502,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         if 'supports-snapshots' in capabilities_config:
             capabilities.supports_snapshots = gluetool.utils.normalize_bool_option(
-                cast(str, capabilities_config['supports-snapshots'])
+                capabilities_config['supports-snapshots']
             )
 
         if 'supports-spot-instances' in capabilities_config:
             capabilities.supports_spot_instances = gluetool.utils.normalize_bool_option(
-                cast(str, capabilities_config['supports-spot-instances'])
+                capabilities_config['supports-spot-instances']
             )
 
         r_adjusted_capabilities = self.adjust_capabilities(capabilities)
@@ -1504,7 +1518,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         capabilities = r_adjusted_capabilities.unwrap()
 
         if 'disable-guest-logs' in capabilities_config:
-            for log_spec in cast(List[ConfigCapabilitiesDisableGuestLog], capabilities_config['disable-guest-logs']):
+            for log_spec in capabilities_config['disable-guest-logs']:
                 disabled_log = (log_spec['log-name'], GuestLogContentType(log_spec['content-type']))
 
                 capabilities.supported_guest_logs = [
