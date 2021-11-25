@@ -78,6 +78,9 @@ properties:
   subnet-id:
     type: string
 
+  use-only-when-addressed:
+    type: boolean
+
   use-spot-request:
     type: boolean
 

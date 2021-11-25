@@ -21,7 +21,7 @@ from tft.artemis.routing_policies import PolicyReturnType, create_preferrence_fi
     policy_can_acquire, policy_enough_resources, policy_least_crowded, policy_match_pool_name, \
     policy_one_attempt_forgiving, policy_pool_enabled, policy_prefer_spot_instances, policy_supports_architecture, \
     policy_supports_guest_logs, policy_supports_snapshots, policy_supports_spot_instances, policy_timeout_reached, \
-    run_routing_policies
+    policy_use_only_when_addressed, run_routing_policies
 
 #: If there are OpenStack pools still in the mix, then prefer these pools over the rest. If there are no OpenStack
 #: pools allowed anymore, return the original list: *prefer*, not *use only*.
@@ -52,6 +52,7 @@ policy_prefer_clouds = create_preferrence_filter_by_driver_class(
 POLICIES = [
     policy_timeout_reached,
     policy_pool_enabled,
+    policy_use_only_when_addressed,
     policy_match_pool_name,
     policy_can_acquire,
     policy_supports_architecture,

@@ -298,6 +298,10 @@ properties:
               items:
                 "$ref": "#/definitions/patch_image"
 
+            use-only-when-addressed:
+              type: boolean
+              default: false
+
             cost:
               type: object
 

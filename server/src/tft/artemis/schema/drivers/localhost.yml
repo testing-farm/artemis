@@ -19,6 +19,9 @@ properties:
   resources:
     type: object
 
+  use-only-when-addressed:
+    type: boolean
+
 additionalProperties: false
 
 required: []

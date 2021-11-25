@@ -66,6 +66,9 @@ properties:
   security-group:
     type: string
 
+  use-only-when-addressed:
+    type: boolean
+
   user-domain-name:
     type: string
 

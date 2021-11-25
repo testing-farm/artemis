@@ -746,6 +746,29 @@ def policy_can_acquire(
     ))
 
 
+@policy_boilerplate
+def policy_use_only_when_addressed(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Disallow pools that are marked as to be used only when requested by name.
+    """
+
+    if guest_request.environment.pool is not None:
+        return Ok(PolicyRuling(allowed_pools=pools))
+
+    return Ok(PolicyRuling(
+        allowed_pools=[
+            pool
+            for pool in pools
+            if pool.use_only_when_addressed is False
+        ]
+    ))
+
+
 def run_routing_policies(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
