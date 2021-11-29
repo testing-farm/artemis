@@ -439,6 +439,10 @@ class TaskLogger(gluetool.log.ContextAdapter):
             'ctx_task_name': (30, task_name)
         })
 
+    @property
+    def taskname(self) -> str:
+        return cast(str, self._contexts['task_name'][1])
+
     def begin(self) -> None:
         self.info('beginning')
 

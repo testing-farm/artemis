@@ -304,6 +304,10 @@ class PoolLogger(gluetool.log.ContextAdapter):
             'ctx_pool_name': (10, poolname)
         })
 
+    @property
+    def poolname(self) -> str:
+        return cast(str, self._contexts['pool_name'][1])
+
 
 @dataclasses.dataclass(repr=False)
 class PoolImageSSHInfo(SerializableContainer):

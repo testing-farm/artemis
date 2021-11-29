@@ -137,6 +137,10 @@ class PolicyLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, policy_name: str) -> None:
         super(PolicyLogger, self).__init__(logger, {'ctx_policy_name': (50, policy_name)})
 
+    @property
+    def policyname(self) -> str:
+        return cast(str, self._contexts['policy_name'][1])
+
 
 def policy_boilerplate(fn: PolicyType) -> PolicyType:
     """
