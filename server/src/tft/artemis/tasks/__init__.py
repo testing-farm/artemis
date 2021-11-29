@@ -2,12 +2,13 @@ import concurrent.futures
 import contextvars
 import datetime
 import enum
+import functools
 import inspect
 import json
 import os
 import random
 import threading
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union, cast
 
 import dramatiq
 import dramatiq.broker
@@ -533,6 +534,48 @@ def actor_kwargs(
         kwargs['periodic'] = periodic
 
     return kwargs
+
+
+#: Type variable representing :py:class:_Workspace and its child classes.
+WorkspaceBound = TypeVar('WorkspaceBound', bound='Workspace')
+
+
+def step(fn: Callable[[WorkspaceBound], None]) -> Callable[[WorkspaceBound], WorkspaceBound]:
+    """
+    Mark a function as a "task step".
+
+    A task step accepts only the workspace and returns nothing. Wrapper provided by the decorator
+    would test workspaces ``result`` property, and would not call the decorated function if ``result``
+    is no longer ``None``.
+
+    After calling the decorated function, wrapper returns the workspace itself. Together with the ``result``
+    test, this allows for chaining of steps since once ``result`` is set, no following steps would be executed.
+
+    .. code-block:: python
+
+       @step
+       def foo(workspace: Workspace) -> None:
+           workspace.bar()
+
+    :param fn: callable.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(workspace: WorkspaceBound) -> WorkspaceBound:
+        """
+        Wrapper for the decorated function.
+
+        :param self: workspace to pass to the decorated function.
+        """
+
+        if workspace.result:
+            return workspace
+
+        fn(workspace)
+
+        return workspace
+
+    return wrapper
 
 
 # Implementing the decorator as a class on purpose - it plays nicely with type annotations when used without
@@ -1284,6 +1327,10 @@ def get_snapshot_logger(
     )
 
 
+# TODO: all of the helpers could be converted to chainable methods, suitable for direct use with `step` decorator.
+# That's something to work on, then we could call them directly from tasks. And test them, that would be also cool...
+# But that needs a bit of support from type annotations, because the methods below often take many arguments, and we
+# *must* preserve their signatures.
 class Workspace:
     """
     A workspace is a container for tools commonly used by task doers - a workdesk, a drawer with hammers and
