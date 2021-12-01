@@ -724,13 +724,21 @@ def get_broker(
     logger: gluetool.log.ContextAdapter,
     application_name: Optional[str] = None
 ) -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
-    from .knobs import KNOB_WORKER_METRICS_UPDATE_TICK
+    from .knobs import KNOB_WORKER_PROCESS_METRICS_ENABLED
 
-    middleware: List[dramatiq.Middleware] = [
-        artemis_middleware.WorkerMetrics(
-            f'worker-{platform.node()}-{os.getpid()}',
-            KNOB_WORKER_METRICS_UPDATE_TICK.value
-        ),
+    middleware: List[dramatiq.Middleware] = []
+
+    if KNOB_WORKER_PROCESS_METRICS_ENABLED.value is True:
+        from .knobs import KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK
+
+        middleware.append(
+            artemis_middleware.WorkerMetrics(
+                f'worker-{platform.node()}-{os.getpid()}',
+                KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK.value
+            )
+        )
+
+    middleware += [
         dramatiq.middleware.age_limit.AgeLimit(),
         dramatiq.middleware.time_limit.TimeLimit(),
         dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),

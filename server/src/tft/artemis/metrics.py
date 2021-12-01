@@ -39,7 +39,7 @@ from .cache import dec_cache_field, dec_cache_value, get_cache_value, inc_cache_
     iter_cache_fields, iter_cache_keys, set_cache_value
 from .context import DATABASE, SESSION, with_context
 from .guest import GuestState
-from .knobs import KNOB_POOL_ENABLED, KNOB_WORKER_METRICS_TTL
+from .knobs import KNOB_POOL_ENABLED, KNOB_WORKER_PROCESS_METRICS_TTL
 
 T = TypeVar('T')
 
@@ -2416,7 +2416,7 @@ class WorkerMetrics(MetricsBase):
             cache,
             WorkerMetrics._KEY_WORKER_PROCESS_COUNT.format(worker=worker),
             processes,
-            ttl=KNOB_WORKER_METRICS_TTL.value
+            ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value
         )
 
         set_metric(
@@ -2424,7 +2424,7 @@ class WorkerMetrics(MetricsBase):
             cache,
             WorkerMetrics._KEY_WORKER_THREAD_COUNT.format(worker=worker),
             threads,
-            ttl=KNOB_WORKER_METRICS_TTL.value
+            ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value
         )
 
         set_metric(
@@ -2432,7 +2432,7 @@ class WorkerMetrics(MetricsBase):
             cache,
             WorkerMetrics._KEY_UPDATED_TIMESTAMP.format(worker=worker),
             int(datetime.datetime.timestamp(datetime.datetime.utcnow())),
-            ttl=KNOB_WORKER_METRICS_TTL.value
+            ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value
         )
 
         return Ok(None)

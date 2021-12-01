@@ -41,7 +41,8 @@ from ..context import DATABASE, LOGGER, SESSION
 from ..drivers import PoolDriver
 from ..environment import Environment
 from ..guest import GuestState
-from ..knobs import KNOB_LOGGING_JSON, KNOB_WORKER_METRICS_UPDATE_TICK, Knob
+from ..knobs import KNOB_LOGGING_JSON, KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK, \
+    Knob
 from ..script import hook_engine
 from ..tasks import Actor, _get_ssh_key, get_snapshot_logger
 from . import errors
@@ -2702,13 +2703,14 @@ def run_app() -> molten.app.App:
     metrics_tree = metrics.Metrics()
     metrics_tree.register_with_prometheus(CollectorRegistry())
 
-    api_worker_metrics_refresher = metrics.WorkerMetrics.spawn_metrics_refresher(  # noqa: F841
-        logger,
-        f'api-{platform.node()}-{os.getpid()}',
-        KNOB_WORKER_METRICS_UPDATE_TICK.value,
-        # TODO: try to find out the actual values
-        lambda _unused: Ok((1, KNOB_API_THREADS.value))
-    )
+    if KNOB_WORKER_PROCESS_METRICS_ENABLED.value is True:
+        metrics.WorkerMetrics.spawn_metrics_refresher(  # noqa: F841
+            logger,
+            f'api-{platform.node()}-{os.getpid()}',
+            KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK.value,
+            # TODO: try to find out the actual values
+            lambda _unused: Ok((1, KNOB_API_THREADS.value))
+        )
 
     components: List[molten.dependency_injection.Component[Any]] = [
         molten.settings.SettingsComponent(
