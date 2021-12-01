@@ -727,22 +727,24 @@ def get_broker(
 ) -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
     from .knobs import KNOB_WORKER_METRICS_UPDATE_TICK
 
+    middleware: List[dramatiq.Middleware] = [
+        artemis_middleware.WorkerMetrics(
+            f'worker-{platform.node()}-{os.getpid()}',
+            KNOB_WORKER_METRICS_UPDATE_TICK.value
+        ),
+        dramatiq.middleware.age_limit.AgeLimit(),
+        dramatiq.middleware.time_limit.TimeLimit(),
+        dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
+        dramatiq.middleware.callbacks.Callbacks(),
+        dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
+        dramatiq.middleware.current_message.CurrentMessage(),
+        artemis_middleware.Prometheus(),
+        artemis_middleware.Retries(),
+        periodiq.PeriodiqMiddleware()
+    ]
+
     if os.getenv('IN_TEST', None):
-        broker = dramatiq.brokers.stub.StubBroker(middleware=[
-            artemis_middleware.WorkerMetrics(
-                f'worker-{platform.node()}-{os.getpid()}',
-                KNOB_WORKER_METRICS_UPDATE_TICK.value
-            ),
-            dramatiq.middleware.age_limit.AgeLimit(),
-            dramatiq.middleware.time_limit.TimeLimit(),
-            dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
-            dramatiq.middleware.callbacks.Callbacks(),
-            dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
-            dramatiq.middleware.current_message.CurrentMessage(),
-            artemis_middleware.Prometheus(),
-            artemis_middleware.Retries(),
-            periodiq.PeriodiqMiddleware()
-        ])
+        broker = dramatiq.brokers.stub.StubBroker(middleware=middleware)
 
     else:
         from .knobs import KNOB_BROKER_CONFIRM_DELIVERY, KNOB_BROKER_URL
@@ -783,21 +785,7 @@ def get_broker(
 
         broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
             confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value,
-            middleware=[
-                artemis_middleware.WorkerMetrics(
-                    f'worker-{platform.node()}-{os.getpid()}',
-                    KNOB_WORKER_METRICS_UPDATE_TICK.value
-                ),
-                dramatiq.middleware.age_limit.AgeLimit(),
-                dramatiq.middleware.time_limit.TimeLimit(),
-                dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
-                dramatiq.middleware.callbacks.Callbacks(),
-                dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
-                dramatiq.middleware.current_message.CurrentMessage(),
-                artemis_middleware.Prometheus(),
-                artemis_middleware.Retries(),
-                periodiq.PeriodiqMiddleware()
-            ],
+            middleware=middleware,
             url=broker_url
         )
 
