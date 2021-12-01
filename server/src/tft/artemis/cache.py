@@ -241,6 +241,26 @@ def iter_cache_fields(
         yield field, value
 
 
+def get_cache_fields(
+    logger: gluetool.log.ContextAdapter,
+    cache: redis.Redis,
+    key: str
+) -> Dict[bytes, bytes]:
+    """
+    Return a mapping between fields and their values for a given cache key.
+
+    :param logger: logger to use for logging.
+    :param cache: cache instance to use for cache access.
+    :param key: cache key to retrieve.
+    :returns: mapping between fields and their values.
+    """
+
+    return {
+        field: value
+        for field, value in iter_cache_fields(logger, cache, key)
+    }
+
+
 def iter_cache_keys(
     logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
