@@ -18,7 +18,8 @@ from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 from typing_extensions import Literal, TypedDict
 
-from .. import Failure, JSONType, SerializableContainer, get_cached_item, get_cached_items_as_list, log_dict_yaml
+from .. import Failure, JSONType, SerializableContainer, log_dict_yaml
+from ..cache import get_cached_set_as_list, get_cached_set_item
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, Flavor, FlavorCpu, FlavorVirtualization
@@ -1380,14 +1381,14 @@ class AWSDriver(PoolDriver):
             ))
 
     def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
-        return get_cached_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
+        return get_cached_set_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
 
     def get_cached_pool_flavor_infos(self) -> Result[List[Flavor], Failure]:
         """
         Retrieve all flavor info known to the pool.
         """
 
-        return get_cached_items_as_list(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
+        return get_cached_set_as_list(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
 
     def fetch_pool_resources_metrics(
         self,

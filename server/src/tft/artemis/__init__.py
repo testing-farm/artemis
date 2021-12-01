@@ -1,6 +1,5 @@
 import contextvars
 import dataclasses
-import datetime
 import inspect
 import itertools
 import json
@@ -837,161 +836,63 @@ def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Fail
         return Error(Failure.from_exc('exception raised inside a safe block', exc))
 
 
+# Once mypy implements support for PEP 612, something like this would be the way to go.
+# https://github.com/python/mypy/issues/8645
 #
-# Helpful cache primitives
+# P = ParamSpec('P')
 #
-def refresh_cached_set(
-    cache: redis.Redis,
-    key: str,
-    items: Dict[str, SerializableContainer]
-) -> Result[None, Failure]:
+# def handle_failure(default: Union[T, None] = None) -> Callable[Concatenate[gluetool.log.ContextAdapter, P], T]:
+#    def decorator(fn: Callable[P, T]) -> Callable[Concatenate[gluetool.log.ContextAdapter, P], T]:
+#        @functools.wraps(fn)
+#        def wrapper(logger: gluetool.log.ContextAdapter, *args: Any, **kwargs: Any) -> T:
+#            try:
+#                return fn(*args, **kwargs)
+#
+#            except Exception as exc:
+#                Failure.from_exc('exception raised inside a safe block', exc).handle(logger)
+#
+#                return default
+#
+#        return wrapper
+#
+#    return decorator
+
+
+def safe_call_and_handle(
+    logger: gluetool.log.ContextAdapter,
+    fn: Callable[..., T],
+    *args: Any,
+    **kwargs: Any
+) -> Optional[T]:
     """
-    Refresh a cache entry with a given set of items.
+    Call given function, with provided arguments. If the call fails, log the resulting failure before returning it.
 
-    The cache stores items serialized as JSON blobs, reachable by the key given to them by the set.
+    .. note::
 
-    :param key: cache key storing the set.
-    :param items: set of items to store.
-    """
+       Similar to :py:func:`tft.artemis.safe_call`, but
 
-    key_updated = f'{key}.updated'
+       * does handle the potential failure, and
+       * does not return :py:class:`Result` instance but either the bare value or ``None``.
 
-    if not items:
-        # When we get an empty set of items, we should remove the key entirely, to make queries looking for
-        # return `None` aka "not found". It's the same as if we'd try to remove all entries, just with one
-        # action.
-        safe_call(
-            cast(Callable[[str], None], cache.delete),
-            key
-        )
+       This is on purpose, because such a helper fits the needs of cache-related helpers we use for tracking
+       metrics. The failure to communicate with the case isn't a reason to interrupt the main body of work,
+       but it still needs to be reported.
 
-        safe_call(
-            cast(Callable[[str, float], None], cache.set),
-            key_updated,
-            datetime.datetime.timestamp(datetime.datetime.utcnow())
-        )
-
-        return Ok(None)
-
-    # Two steps: create new structure, and replace the old one. We cannot check the old one
-    # and remove entries that are no longer valid.
-    new_key = f'{key}.new'
-
-    r_action = safe_call(
-        cast(Callable[[str, str, Dict[str, str]], None], cache.hmset),
-        new_key,
-        {
-            item_key: json.dumps(item.serialize_to_json())
-            for item_key, item in items.items()
-        }
-    )
-
-    if r_action.is_error:
-        return Error(r_action.unwrap_error())
-
-    safe_call(
-        cast(Callable[[str, str], None], cache.rename),
-        new_key,
-        key
-    )
-
-    safe_call(
-        cast(Callable[[str, float], None], cache.set),
-        key_updated,
-        datetime.datetime.timestamp(datetime.datetime.utcnow())
-    )
-
-    return Ok(None)
-
-
-def get_cached_items(
-    cache: redis.Redis,
-    key: str,
-    item_klass: Type[S]
-) -> Result[Optional[Dict[str, S]], Failure]:
-    """
-    Return cached items of a given type in the form of a mapping between their names and the instances.
-
-    Serves as a helper function for fetching homogenous sets of objects, like pool image infos.
-
-    See :py:func:`get_cached_items_as_list` for the variant returning items in a list.
+    :param logger: logger to use for logging.
+    :param fn: function to decorate.
+    :param args: positional arguments of ``fn``.
+    :param kwargs: keyword arguments of ``fn``.
+    :returns: if an exception was raised during the function call, a failure is logged and ``safe_call_and_handle``
+        returns ``None``. Otherwise, the return value of the call is returned.
     """
 
-    r_fetch = safe_call(
-        cast(Callable[[str], Optional[Dict[bytes, bytes]]], cache.hgetall),
-        key,
-    )
+    try:
+        return fn(*args, **kwargs)
 
-    if r_fetch.is_error:
-        return Error(r_fetch.unwrap_error())
+    except Exception as exc:
+        Failure.from_exc('exception raised inside a safe block', exc).handle(logger)
 
-    serialized = r_fetch.unwrap()
-
-    if serialized is None:
-        return Ok(None)
-
-    items: Dict[str, S] = {}
-
-    for item_key, item_serialized in serialized.items():
-        r_unserialize = safe_call(item_klass.unserialize_from_json, json.loads(item_serialized.decode('utf-8')))
-
-        if r_unserialize.is_error:
-            return Error(r_unserialize.unwrap_error())
-
-        items[item_key.decode('utf-8')] = r_unserialize.unwrap()
-
-    return Ok(items)
-
-
-def get_cached_items_as_list(
-    cache: redis.Redis,
-    key: str,
-    item_klass: Type[S]
-) -> Result[List[S], Failure]:
-    """
-    Return cached items of a given type in the form of a list of instances.
-
-    Serves as a helper function for fetching homogenous sets of objects, like pool image infos.
-
-    See :py:func:`get_cached_items` for the variant returning items in the form of a mapping.
-    """
-
-    r_fetch = get_cached_items(cache, key, item_klass)
-
-    if r_fetch.is_error:
-        return Error(r_fetch.unwrap_error())
-
-    items = r_fetch.unwrap()
-
-    return Ok(list(items.values()) if items else [])
-
-
-def get_cached_item(
-    cache: redis.Redis,
-    key: str,
-    item_key: str,
-    item_klass: Type[S]
-) -> Result[Optional[S], Failure]:
-    r_fetch = safe_call(
-        cast(Callable[[str, str], Optional[bytes]], cache.hget),
-        key,
-        item_key
-    )
-
-    if r_fetch.is_error:
-        return Error(r_fetch.unwrap_error())
-
-    serialized = r_fetch.unwrap()
-
-    if serialized is None:
-        return Ok(None)
-
-    r_unserialize = safe_call(item_klass.unserialize_from_json, json.loads(serialized.decode('utf-8')))
-
-    if r_unserialize.is_error:
-        return Error(r_unserialize.unwrap_error())
-
-    return Ok(r_unserialize.unwrap())
+        return None
 
 
 #: Custom type for JSON schema. We don't expect the schema structure though, all we do is loading it
