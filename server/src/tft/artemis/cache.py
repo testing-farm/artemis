@@ -211,7 +211,7 @@ def set_cache_fields(
     )
 
     if ttl is not None:
-        safe_call_and_handle(logger, cast(RedisExpireType, cache.expire), ttl)
+        safe_call_and_handle(logger, cast(RedisExpireType, cache.expire), key, ttl)
 
 
 def iter_cache_fields(
