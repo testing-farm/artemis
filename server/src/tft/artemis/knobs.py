@@ -739,22 +739,32 @@ KNOB_POOL_ENABLED: Knob[bool] = Knob(
     default=True
 )
 
-KNOB_WORKER_METRICS_UPDATE_TICK: Knob[int] = Knob(
-    'worker.metrics.update-tick',
-    'How often, in seconds, should various workers update their metrics cache.',
+KNOB_WORKER_PROCESS_METRICS_ENABLED: Knob[bool] = Knob(
+    'worker.metrics.process.enabled',
+    'If enabled, various metrics related to worker processes would be collected.',
     has_db=False,
     per_pool=False,
-    envvar='ARTEMIS_WORKER_METRICS_UPDATE_TICK',
+    envvar='ARTEMIS_WORKER_PROCESS_METRICS_ENABLED',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=True
+)
+
+KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK: Knob[int] = Knob(
+    'worker.metrics.process.update-tick',
+    'How often, in seconds, should workers update their process metrics cache.',
+    has_db=False,
+    per_pool=False,
+    envvar='ARTEMIS_WORKER_PROCESS_METRICS_UPDATE_TICK',
     cast_from_str=int,
     default=60
 )
 
-KNOB_WORKER_METRICS_TTL: Knob[int] = Knob(
-    'worker.metrics.ttl',
-    'How long, in seconds, should various workers metrics remain in cache.',
+KNOB_WORKER_PROCESS_METRICS_TTL: Knob[int] = Knob(
+    'worker.metrics.process.ttl',
+    'How long, in seconds, should worker process metrics remain in cache.',
     has_db=False,
     per_pool=False,
-    envvar='ARTEMIS_WORKER_METRICS_TTL',
+    envvar='ARTEMIS_WORKER_PROCESS_METRICS_TTL',
     cast_from_str=int,
     default=120
 )
