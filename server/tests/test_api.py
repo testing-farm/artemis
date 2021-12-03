@@ -17,6 +17,8 @@ from tft.artemis import __VERSION__
 from tft.artemis.api import CURRENT_MILESTONE_VERSION
 from tft.artemis.api.middleware import AuthContext, rewrite_request_path
 
+from . import MockPatcher
+
 
 @pytest.fixture(name='api_server')
 def fixture_api_server() -> molten.app.App:
@@ -610,23 +612,18 @@ def test_auth_context_verify_auth_admin_with_user_role(
 @pytest.fixture(name='mock_middleware')
 def fixture_mock_middleware(
     db: tft.artemis.db.DB,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher,
     auth_context: AuthContext
 ) -> Tuple[MagicMock, Callable[[molten.Request, tft.artemis.db.DB], Any]]:
-    mock_context_creator = MagicMock(
-        name='AuthContext<mock>',
-        return_value=auth_context
-    )
-
     mock_handler = MagicMock(
         name='handler<mock>',
         return_value=MagicMock(name='handler.return_value<mock>')
     )
 
-    monkeypatch.setattr(tft.artemis.api.middleware, 'AuthContext', mock_context_creator)
+    mockpatch(tft.artemis.api.middleware, 'AuthContext').return_value = auth_context
 
-    monkeypatch.setattr(auth_context, 'inject', MagicMock(name='auth_context.inject<mock>'))
-    monkeypatch.setattr(auth_context, 'verify_auth', MagicMock(name='auth_context.verify_auth<mock>'))
+    mockpatch(auth_context, 'inject', obj_name='auth_context')
+    mockpatch(auth_context, 'verify_auth', obj_name='auth_context')
     auth_context.request.path = '/guests'
 
     wrapped = tft.artemis.api.middleware.authorization_middleware(mock_handler)

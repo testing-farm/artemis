@@ -10,7 +10,7 @@ from sqlalchemy import Column, Integer, Text
 
 from tft.artemis.db import DB, Base, GuestRequest, SafeQuery, safe_db_change, upsert
 
-from . import assert_failure_log
+from . import MockPatcher, assert_failure_log
 
 # Base = sqlalchemy.ext.declarative.declarative_base()
 
@@ -65,7 +65,7 @@ def _schema_test_db_Counters_2records(session: sqlalchemy.orm.session.Session, _
 
 
 @pytest.fixture(name='mock_session')
-def fixture_mock_session(db: DB, monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> MagicMock:
+def fixture_mock_session(db: DB, mockpatch: MockPatcher) -> MagicMock:
     mock_session = MagicMock(
         name='Session<mock>',
         transaction=MagicMock(
@@ -74,12 +74,7 @@ def fixture_mock_session(db: DB, monkeypatch: _pytest.monkeypatch.MonkeyPatch) -
         )
     )
 
-    mock_sessionmaker = MagicMock(
-        name='sessionmaker<mock>',
-        return_value=mock_session
-    )
-
-    monkeypatch.setattr(db, '_sessionmaker', mock_sessionmaker)
+    mockpatch(db, '_sessionmaker').return_value = mock_session
 
     return mock_session
 

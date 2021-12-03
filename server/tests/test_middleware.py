@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import _pytest.logging
 import _pytest.monkeypatch
@@ -16,7 +16,7 @@ import tft.artemis.tasks
 from tft.artemis.middleware import _actor_arguments
 from tft.artemis.tasks import Actor, task
 
-from . import assert_failure_log, assert_log
+from . import MockPatcher, assert_failure_log, assert_log
 
 
 @pytest.fixture(name='actor_arguments')
@@ -151,12 +151,11 @@ def test_retry_message(
     logger: ContextAdapter,
     message: dramatiq.broker.MessageProxy,
     actor: Actor,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
     mock_broker = MagicMock(name='broker<mock>')
-    mock_message_backoff = MagicMock(return_value=79)
 
-    monkeypatch.setattr(tft.artemis.middleware, '_message_backoff', mock_message_backoff)
+    mockpatch(tft.artemis.middleware, '_message_backoff').return_value = 79
 
     tft.artemis.middleware._retry_message(
         logger,
@@ -168,30 +167,25 @@ def test_retry_message(
     assert message.options['retries'] == 1
     assert 'traceback' not in message.options
 
-    mock_message_backoff.assert_called_once_with(message, actor, 1)
+    cast(MagicMock, tft.artemis.middleware._message_backoff).assert_called_once_with(message, actor, 1)
     mock_broker.enqueue.assert_called_once_with(message, delay=79)
 
 
 def test_fail_message(
     logger: ContextAdapter,
     message: dramatiq.broker.MessageProxy,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
-    mock_failure = MagicMock(
-        name='Failure<mock>',
-        return_value=MagicMock(name='failure<mock>')
-    )
+    mock_failure = mockpatch(tft.artemis, 'Failure')
+    mock_failure.return_value = MagicMock(name='failure<mock>')
 
-    monkeypatch.setattr(tft.artemis, 'Failure', mock_failure)
-
-    mock_fail = MagicMock(name='message.fail<mock>')
-    monkeypatch.setattr(message, 'fail', mock_fail)
+    mockpatch(message, 'fail', obj_name='message')
 
     tft.artemis.middleware._fail_message(logger, message, 'dummy error message')
 
     mock_failure.assert_called_once_with('dummy error message')
     mock_failure.return_value.handle.assert_called_once_with(logger)
-    mock_fail.assert_called_once_with()
+    cast(MagicMock, message.fail).assert_called_once_with()
 
 
 @pytest.fixture(name='provisioning_actor')
@@ -264,13 +258,10 @@ def test_handle_tails_missing_guestname(
     provisioning_message: dramatiq.broker.MessageProxy,
     provisioning_actor: Actor,
     provisioning_actor_arguments: Dict[str, Optional[str]],
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
-    mock_fail_message = MagicMock(name='_fail_message<mock>')
-    monkeypatch.setattr(tft.artemis.middleware, '_fail_message', mock_fail_message)
-
-    mock_retry_message = MagicMock(name='_retry_message<mock>')
-    monkeypatch.setattr(tft.artemis.middleware, '_retry_message', mock_retry_message)
+    mockpatch(tft.artemis.middleware, '_fail_message')
+    mockpatch(tft.artemis.middleware, '_retry_message')
 
     del provisioning_actor_arguments['guestname']
 
@@ -281,8 +272,8 @@ def test_handle_tails_missing_guestname(
         provisioning_actor_arguments
     ) is True
 
-    mock_fail_message.assert_not_called()
-    mock_retry_message.assert_not_called()
+    cast(MagicMock, tft.artemis.middleware._fail_message).assert_not_called()
+    cast(MagicMock, tft.artemis.middleware._retry_message).assert_not_called()
 
     assert_failure_log(caplog, 'failed to extract actor arguments')
 
@@ -293,13 +284,10 @@ def test_handle_tails_missing_log_params(
     logging_message: dramatiq.broker.MessageProxy,
     logging_actor: Actor,
     logging_actor_arguments: Dict[str, Optional[str]],
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
-    mock_fail_message = MagicMock(name='_fail_message<mock>')
-    monkeypatch.setattr(tft.artemis.middleware, '_fail_message', mock_fail_message)
-
-    mock_retry_message = MagicMock(name='_retry_message<mock>')
-    monkeypatch.setattr(tft.artemis.middleware, '_retry_message', mock_retry_message)
+    mockpatch(tft.artemis.middleware, '_fail_message')
+    mockpatch(tft.artemis.middleware, '_retry_message')
 
     del logging_actor_arguments['logname']
     del logging_actor_arguments['contenttype']
@@ -311,8 +299,8 @@ def test_handle_tails_missing_log_params(
         logging_actor_arguments
     ) is True
 
-    mock_fail_message.assert_not_called()
-    mock_retry_message.assert_not_called()
+    cast(MagicMock, tft.artemis.middleware._fail_message).assert_not_called()
+    cast(MagicMock, tft.artemis.middleware._retry_message).assert_not_called()
 
     assert_failure_log(caplog, 'failed to extract actor arguments')
 
@@ -324,13 +312,9 @@ def test_handle_tails_provisioning(
     provisioning_message: dramatiq.broker.MessageProxy,
     provisioning_actor: Actor,
     provisioning_actor_arguments: Dict[str, Optional[str]],
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
-    mock_do_handle_tail = MagicMock(
-        name='handle_tail<mock>',
-        return_value=tft.artemis.tasks.SUCCESS
-    )
-    monkeypatch.setattr(provisioning_actor.options['tail_handler'], 'do_handle_tail', mock_do_handle_tail)
+    mockpatch(provisioning_actor.options['tail_handler'], 'do_handle_tail').return_value = tft.artemis.tasks.SUCCESS
 
     assert tft.artemis.middleware._handle_tails(
         logger,
@@ -339,7 +323,7 @@ def test_handle_tails_provisioning(
         provisioning_actor_arguments
     ) is True
 
-    mock_do_handle_tail.assert_called_once_with(
+    cast(MagicMock, provisioning_actor.options['tail_handler'].do_handle_tail).assert_called_once_with(
         ANY,
         db,
         ANY,
@@ -361,13 +345,9 @@ def test_handle_tails_logging(
     logging_message: dramatiq.broker.MessageProxy,
     logging_actor: Actor,
     logging_actor_arguments: Dict[str, Optional[str]],
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
-    mock_do_handle_tail = MagicMock(
-        name='handle_tail<mock>',
-        return_value=tft.artemis.tasks.SUCCESS
-    )
-    monkeypatch.setattr(logging_actor.options['tail_handler'], 'do_handle_tail', mock_do_handle_tail)
+    mockpatch(logging_actor.options['tail_handler'], 'do_handle_tail').return_value = tft.artemis.tasks.SUCCESS
 
     assert tft.artemis.middleware._handle_tails(
         logger,
@@ -376,7 +356,7 @@ def test_handle_tails_logging(
         logging_actor_arguments
     ) is True
 
-    mock_do_handle_tail.assert_called_once_with(
+    cast(MagicMock, logging_actor.options['tail_handler'].do_handle_tail).assert_called_once_with(
         ANY,
         db,
         ANY,

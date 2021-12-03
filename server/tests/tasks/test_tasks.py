@@ -17,7 +17,7 @@ import tft.artemis
 import tft.artemis.db
 import tft.artemis.tasks
 
-from .. import MATCH, assert_log
+from .. import MATCH, MockPatcher, assert_log
 
 
 @pytest.fixture
@@ -103,41 +103,36 @@ def test_run_doer_exception(
 
 def test_dispatch_task(
     logger: gluetool.log.ContextAdapter,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
-    mock_safe_call = MagicMock(return_value=gluetool.result.Ok(79))
     mock_fn = MagicMock()
 
-    monkeypatch.setattr(tft.artemis.tasks, 'safe_call', mock_safe_call)
+    mockpatch(tft.artemis.tasks, 'safe_call').return_value = gluetool.result.Ok(79)
 
     r = tft.artemis.tasks.dispatch_task(logger, mock_fn, 79)
 
     assert r.is_ok
-    mock_safe_call.assert_called_once_with(mock_fn.send, 79)
+    cast(MagicMock, tft.artemis.tasks.safe_call).assert_called_once_with(mock_fn.send, 79)  # type: ignore[attr-defined]
 
 
 def test_dispatcher_task_exception(
     logger: gluetool.log.ContextAdapter,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
-    mock_safe_call = MagicMock(
-        return_value=gluetool.result.Error(
-            tft.artemis.Failure('dummy failure')
-        )
-    )
-
     mock_fn = MagicMock(
         __str__=lambda x: 'dummy_task'
     )
 
-    monkeypatch.setattr(tft.artemis.tasks, 'safe_call', mock_safe_call)
+    mockpatch(tft.artemis.tasks, 'safe_call').return_value = gluetool.result.Error(
+        tft.artemis.Failure('dummy failure')
+    )
 
     r = tft.artemis.tasks.dispatch_task(logger, mock_fn)
 
     assert r.is_error
     assert isinstance(r.error, tft.artemis.Failure)
     assert r.error.message == 'failed to dispatch task'
-    mock_safe_call.assert_called_once_with(mock_fn.send)
+    cast(MagicMock, tft.artemis.tasks.safe_call).assert_called_once_with(mock_fn.send)  # type: ignore[attr-defined]
 
 
 # def test_foo(db, broker, worker):
@@ -167,13 +162,13 @@ TaskCoreArgsType = Tuple[
 @pytest.fixture
 def task_core_args(
     logger: gluetool.log.ContextAdapter,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> TaskCoreArgsType:
     task_logger = tft.artemis.tasks.TaskLogger(logger, 'dummy-task')
 
     cancel = threading.Event()
 
-    run_doer = MagicMock(name='mock_run_doer')
+    run_doer = mockpatch(tft.artemis.tasks, 'run_doer')
     doer = MagicMock(name='mock_doer')
     doer_args = (
         MagicMock(name='mock_doer_arg1'),
@@ -183,8 +178,6 @@ def task_core_args(
         'kwarg1': MagicMock(name='mock_doer_kwarg1'),
         'kwarg2': MagicMock(name='mock_doer_kwarg2')
     }
-
-    monkeypatch.setattr(tft.artemis.tasks, 'run_doer', run_doer)
 
     return task_logger, cancel, run_doer, doer, doer_args, doer_kwargs
 

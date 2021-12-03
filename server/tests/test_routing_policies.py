@@ -31,6 +31,8 @@ import tft.artemis.routing_policies
 from tft.artemis.drivers import PoolDriver
 from tft.artemis.metrics import PoolMetrics
 
+from . import MockPatcher
+
 
 # Routing knobs do have a DB source, therefore we cannot acquire their value right away
 # but we have to rather query them when needed.
@@ -198,7 +200,7 @@ def test_boilerplate_crash(mock_inputs: MockInputs) -> None:
 
 def test_collect_pool_capabilities(
     mock_inputs: MockInputs,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
@@ -207,7 +209,7 @@ def test_collect_pool_capabilities(
     ]
 
     for pool, capabilities in zip(mock_pools, mock_capabilities):
-        monkeypatch.setattr(pool, 'capabilities', MagicMock(return_value=Ok(capabilities)))
+        mockpatch(pool, 'capabilities').return_value = Ok(capabilities)
 
     r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
 
@@ -227,25 +229,23 @@ def test_collect_pool_capabilities(
 
 def test_collect_pool_capabilities_error(
     mock_inputs: MockInputs,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher
 ) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 
-    monkeypatch.setattr(
+    mockpatch(
         mock_pools[0],
-        'capabilities',
-        MagicMock(return_value=Ok(MagicMock(name=f'{mock_pools[0].poolname}.capabilities<mock>')))
-    )
-    monkeypatch.setattr(
+        'capabilities'
+    ).return_value = Ok(MagicMock(name=f'{mock_pools[0].poolname}.capabilities<mock>'))
+    mockpatch(
         mock_pools[1],
-        'capabilities',
-        MagicMock(return_value=Error(MagicMock(name='failure<mock>')))
-    )
-    monkeypatch.setattr(
+        'capabilities'
+    ).return_value = Error(MagicMock(name='failure<mock>'))
+    mockpatch(
         mock_pools[2],
-        'capabilities',
-        MagicMock(return_value=Ok(MagicMock(name=f'{mock_pools[2].poolname}.capabilities<mock>')))
-    )
+        'capabilities'
+    ).return_value = Ok(MagicMock(name=f'{mock_pools[2].poolname}.capabilities<mock>'))
 
     r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
 
@@ -576,7 +576,7 @@ def test_policy_supports_snapshots_no_trigger(
 
 
 def do_test_policy_least_crowded(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher,
     mock_inputs: MockInputs,
     pool_count: Optional[int] = None,
     one_crowded: bool = True
@@ -598,12 +598,9 @@ def do_test_policy_least_crowded(
         mock_pools = mock_pools[:pool_count]
         mock_metrics = mock_metrics[:pool_count]
 
-    monkeypatch.setattr(tft.artemis.routing_policies, 'collect_pool_metrics', MagicMock(
-        name='collect_pool_metrics<mock>',
-        return_value=Ok([
-            (_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)
-        ])
-    ))
+    mockpatch(tft.artemis.routing_policies, 'collect_pool_metrics').return_value = Ok([
+        (_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)
+    ])
 
     r_ruling = tft.artemis.routing_policies.policy_least_crowded(
         mock_logger,
@@ -630,25 +627,25 @@ def do_test_policy_least_crowded(
 
 
 def test_policy_least_crowded(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher,
     mock_inputs: MockInputs
 ) -> None:
-    do_test_policy_least_crowded(monkeypatch, mock_inputs)
+    do_test_policy_least_crowded(mockpatch, mock_inputs)
 
 
 def test_policy_least_crowded_one_pool(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher,
     mock_inputs: MockInputs
 ) -> None:
-    do_test_policy_least_crowded(monkeypatch, mock_inputs, pool_count=0)
-    do_test_policy_least_crowded(monkeypatch, mock_inputs, pool_count=1)
+    do_test_policy_least_crowded(mockpatch, mock_inputs, pool_count=0)
+    do_test_policy_least_crowded(mockpatch, mock_inputs, pool_count=1)
 
 
 def test_policy_least_crowded_one_pool_all_worthy(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher,
     mock_inputs: MockInputs
 ) -> None:
-    do_test_policy_least_crowded(monkeypatch, mock_inputs, one_crowded=False)
+    do_test_policy_least_crowded(mockpatch, mock_inputs, one_crowded=False)
 
 
 def do_test_policy_timeout_reached(
@@ -776,7 +773,7 @@ def test_policy_one_attempt_forgiving_no_events(mock_inputs: MockInputs) -> None
 
 
 def do_test_policy_enough_resources(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher,
     mock_inputs: MockInputs,
     pool_count: Optional[int] = None,
     one_crowded: bool = True
@@ -811,12 +808,9 @@ def do_test_policy_enough_resources(
         mock_pools = mock_pools[:pool_count]
         mock_metrics = mock_metrics[:pool_count]
 
-    monkeypatch.setattr(tft.artemis.routing_policies, 'collect_pool_metrics', MagicMock(
-        name='collect_pool_metrics<mock>',
-        return_value=Ok([
-            (_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)
-        ])
-    ))
+    mockpatch(tft.artemis.routing_policies, 'collect_pool_metrics').return_value = Ok([
+        (_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)
+    ])
 
     r_ruling = tft.artemis.routing_policies.policy_enough_resources(
         mock_logger,
@@ -843,22 +837,22 @@ def do_test_policy_enough_resources(
 
 
 def test_policy_enough_resources(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher,
     mock_inputs: MockInputs
 ) -> None:
-    do_test_policy_enough_resources(monkeypatch, mock_inputs)
+    do_test_policy_enough_resources(mockpatch, mock_inputs)
 
 
 def test_policy_enough_resources_one_pool(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher,
     mock_inputs: MockInputs
 ) -> None:
-    do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=0)
-    do_test_policy_enough_resources(monkeypatch, mock_inputs, pool_count=1)
+    do_test_policy_enough_resources(mockpatch, mock_inputs, pool_count=0)
+    do_test_policy_enough_resources(mockpatch, mock_inputs, pool_count=1)
 
 
 def test_policy_enough_resources_all_worthy(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    mockpatch: MockPatcher,
     mock_inputs: MockInputs
 ) -> None:
-    do_test_policy_enough_resources(monkeypatch, mock_inputs, one_crowded=False)
+    do_test_policy_enough_resources(mockpatch, mock_inputs, one_crowded=False)

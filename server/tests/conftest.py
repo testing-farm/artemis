@@ -1,7 +1,7 @@
 import contextvars
 import logging
 import os
-from typing import Callable, Generator, cast
+from typing import Any, Callable, Generator, Optional, cast
 
 import _pytest.config.argparsing
 import _pytest.fixtures
@@ -17,6 +17,7 @@ import redislite
 import sqlalchemy.engine.interfaces
 import sqlalchemy.engine.url
 import sqlalchemy_utils.functions
+from mock import MagicMock
 
 import alembic
 import alembic.config
@@ -24,6 +25,8 @@ import tft.artemis
 import tft.artemis.context
 import tft.artemis.knobs
 import tft.artemis.tasks
+
+from . import MockPatcher
 
 # The default list of database URLs we test against. Serves as a safe parameter when
 # no other URLs were requested via `--against-db-url`.
@@ -59,6 +62,45 @@ def pytest_generate_tests(metafunc: _pytest.python.Metafunc) -> None:
         return
 
     metafunc.parametrize('db_url', metafunc.config.option.against_db_url or DEFAULT_DB_URLS)
+
+
+@pytest.fixture
+def mockpatch(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> MockPatcher:
+    """
+    Returns a helper that patches given object with a :py:class:`MagicMock` instance.
+
+    This instance is then returned to user.
+
+    The following code:
+
+    .. code-block:: python
+
+       mock_baz = MagicMock(return_value=79)
+       monkeypatch.setattr(foo.bar, 'baz', mock_baz)
+
+    can be rewritten to use ``mockpatch``:
+
+    .. code-block:: python
+
+       # Patch foo.bar.baz with a mock object, and assign it a return value.
+       mockpatch(foo.bar, 'baz').return_value = 79
+
+    It becomes very useful once test does not need to actually label the mock instance with a local variable,
+    or when mock's tweaks are as trivial as ``return_value`` changes.
+    """
+
+    def _mockpatch(
+        obj: Any,
+        member_name: str,
+        obj_name: Optional[str] = None
+    ) -> MagicMock:
+        mock = MagicMock(name=f'{member_name}<M>' if obj_name is None else f'{obj_name}.{member_name}<M>')
+
+        monkeypatch.setattr(obj, member_name, mock)
+
+        return mock
+
+    return _mockpatch
 
 
 @pytest.fixture
