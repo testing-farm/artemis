@@ -856,3 +856,57 @@ def test_policy_enough_resources_all_worthy(
     mock_inputs: MockInputs
 ) -> None:
     do_test_policy_enough_resources(mockpatch, mock_inputs, one_crowded=False)
+
+
+def do_test_policy_use_only_when_addressed(
+    mock_inputs: MockInputs,
+    mark_pool: Optional[str],
+    requested_pool: Optional[str],
+    expected_pool_names: List[str]
+) -> None:
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    for pool in mock_pools:
+        cast(MagicMock, pool).use_only_when_addressed = pool.poolname == mark_pool
+
+    mock_guest_request.environment.pool = requested_pool
+
+    r_ruling = tft.artemis.routing_policies.policy_use_only_when_addressed(
+        mock_logger,
+        mock_session,
+        mock_pools,
+        mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+
+    assert isinstance(ruling, tft.artemis.routing_policies.PolicyRuling)
+    assert ruling.cancel is False
+
+    assert [pool.poolname for pool in ruling.allowed_pools] == expected_pool_names
+
+
+def test_policy_use_only_when_addressed_no_marked_pool(mock_inputs: MockInputs) -> None:
+    do_test_policy_use_only_when_addressed(mock_inputs, None, None, [pool.poolname for pool in mock_inputs.pools])
+
+
+def test_policy_use_only_when_addressed_marked_pool(mock_inputs: MockInputs) -> None:
+    do_test_policy_use_only_when_addressed(
+        mock_inputs,
+        'not-so-dummy-pool',
+        None,
+        [
+            pool.poolname for pool in mock_inputs.pools if pool.poolname != 'not-so-dummy-pool'
+        ]
+    )
+
+
+def test_policy_use_only_when_addressed_marked_pool_with_requested(mock_inputs: MockInputs) -> None:
+    do_test_policy_use_only_when_addressed(
+        mock_inputs,
+        'not-so-dummy-pool',
+        'dummy-pool',
+        [pool.poolname for pool in mock_inputs.pools]
+    )

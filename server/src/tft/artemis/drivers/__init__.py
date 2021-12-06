@@ -978,6 +978,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError()
 
+    @property
+    def use_only_when_addressed(self) -> bool:
+        return self.pool_config.get('use-only-when-addressed', False)
+
     def sanity(self) -> Result[bool, Failure]:
         """
         Do sanity checks after initializing the driver. Useful to check for pool configuration

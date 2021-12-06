@@ -478,3 +478,28 @@ capabilities:
     - log-name: messages
       content-type: blob
 ....
+
+=== Routing
+
+==== Use pool only when requested explicitly by name
+
+Supported by: `aws` `azure` `beaker` `localhost` `openstack`
+
+Pools can be marked as available only when requested by name, via `environment.pool` field of the request. Such a pool would be ignored by the routing when processing requests that did not request the particular pool, making it effectively invisible for more relaxed requests.
+
+.Specification
+[source,yaml]
+....
+use-only-when-addressed: <boolean>  # default: false
+....
+
+.Example
+[source,yaml]
+....
+- name: foo
+  driver: beaker
+  parameters:
+    # Pool "foo" is backed by a Beaker instance, and therefore usually takes longer to provision a machine. Let's
+    # make it available but only for users that are aware of this limitation, and ask for this pool directly.
+    use-only-when-addressed: true
+....

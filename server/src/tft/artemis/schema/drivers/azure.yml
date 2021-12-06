@@ -26,6 +26,9 @@ properties:
   resources:
     type: object
 
+  use-only-when-addressed:
+    type: boolean
+
   username:
     type: string
 
