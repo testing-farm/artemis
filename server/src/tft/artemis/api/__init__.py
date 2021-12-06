@@ -20,6 +20,7 @@ import molten.components
 import molten.dependency_injection
 import molten.openapi
 import molten.typing
+import redis
 import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.orm.exc
@@ -36,7 +37,7 @@ from typing_extensions import Protocol
 
 from .. import __VERSION__, Failure, FailureDetailsType, JSONSchemaType
 from .. import db as artemis_db
-from .. import get_db, get_logger, load_validation_schema, metrics, validate_data
+from .. import get_cache, get_db, get_logger, load_validation_schema, metrics, validate_data
 from ..context import DATABASE, LOGGER, SESSION
 from ..drivers import PoolDriver
 from ..environment import Environment
@@ -267,6 +268,20 @@ class MetricsComponent:
 
     def resolve(self) -> 'metrics.Metrics':
         return self.metrics_tree
+
+
+class CacheComponent:
+    is_cacheable = True
+    is_singleton = True
+
+    def __init__(self, cache: redis.Redis) -> None:
+        self.cache = cache
+
+    def can_handle_parameter(self, parameter: Parameter) -> bool:
+        return parameter.annotation is redis.Redis
+
+    def resolve(self) -> redis.Redis:
+        return self.cache
 
 
 class AuthContextComponent:
@@ -2699,6 +2714,7 @@ def run_app() -> molten.app.App:
             sys.exit(1)
 
     db = get_db(logger, application_name='artemis-api-server')
+    cache = get_cache(logger)
 
     metrics_tree = metrics.Metrics()
     metrics_tree.register_with_prometheus(CollectorRegistry())
@@ -2721,6 +2737,7 @@ def run_app() -> molten.app.App:
         SchemaComponent(),
         LoggerComponent(logger),
         DBComponent(db),
+        CacheComponent(cache),
         GuestRequestManagerComponent(),
         GuestEventManagerComponent(),
         SnapshotRequestManagerComponent(),
