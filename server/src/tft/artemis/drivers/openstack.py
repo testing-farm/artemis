@@ -941,11 +941,11 @@ class OpenStackDriver(PoolDriver):
                         cores=int(flavor['VCPUs'])
                     ),
                     # memory is reported in MiB
-                    memory=int(flavor['RAM']) * UNITS.mebibytes,
+                    memory=UNITS.Quantity(int(flavor['RAM']), UNITS.mebibytes),
                     disk=FlavorDisks([
                         FlavorDisk(
                             # diskspace is reported in GiB
-                            size=int(flavor['Disk']) * UNITS.gibibytes
+                            size=UNITS.Quantity(int(flavor['Disk']), UNITS.gibibytes)
                         )
                     ]),
                     virtualization=FlavorVirtualization(
