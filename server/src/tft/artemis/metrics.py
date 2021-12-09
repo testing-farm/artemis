@@ -149,134 +149,189 @@ U = TypeVar('U')
 T = TypeVar('T', bound=int)
 S = TypeVar('S', bound=Tuple[str, ...])
 
+FloatBound = TypeVar('FloatBound', bound=float)
+LabelBound = TypeVar('LabelBound', bound=Tuple[str, ...])
 
-class PrometheusAdapter(Generic[V]):
+
+class _PrometheusAdapter(Generic[S, V]):
     _metric_class: Type[V]
 
-    @classmethod
-    def register_with_prometheus(cls, registry: CollectorRegistry, parent: 'MetricBase') -> V:
-        return cls._metric_class(
-            parent.name,
-            parent.help,
-            labelnames=parent.labels,
+    def __init__(self, parent: 'MetricBase', labels: S) -> None:
+        self.parent = parent
+        self.labels = labels
+
+    def register_with_prometheus(self, registry: CollectorRegistry) -> V:
+        return self._metric_class(
+            self.parent.name,
+            self.parent.help,
+            labelnames=self.labels,
             registry=registry
         )
 
-    @classmethod
-    def update_prometheus(cls, parent: 'MetricBase', metric: V) -> Result[None, Failure]:
+    def update_prometheus(self, metric: V) -> Result[None, Failure]:
         raise NotImplementedError()
 
 
-class GaugeAdapter(PrometheusAdapter[Gauge]):
-    _metric_class = Gauge
+def _update_prometheus_gauge(parent: 'MetricBase[Tuple[()]]', metric: Gauge) -> Result[None, Failure]:
+    assert parent.value is not None
 
-    @classmethod
-    def update_prometheus(cls, parent: 'MetricBase', metric: Gauge) -> Result[None, Failure]:
-        assert parent.value is not None
+    reset_counters(metric)
 
-        reset_counters(metric)
+    metric._value.set(parent.value)
 
-        if isinstance(parent, LabeledMetric):
-            assert parent.labels
+    return Ok(None)
 
-            for labels, value in parent.value.items():
-                metric.labels(*labels)._value.set(value)
 
-        else:
-            metric._value.set(parent.value)
+def _update_prometheus_gauge_labeled(
+    parent: 'MetricBase[Dict[LabelBound, float]]',
+    metric: Gauge
+) -> Result[None, Failure]:
+    assert parent.value is not None
+
+    reset_counters(metric)
+
+    for labels, count in parent.value.items():
+        metric.labels(*labels)._value.set(count)
+
+    return Ok(None)
+
+
+_update_prometheus_counter = _update_prometheus_gauge
+_update_prometheus_counter_labeled = _update_prometheus_gauge_labeled
+
+
+def _update_prometheus_histogram(
+    parent: 'MetricBase[Dict[int, float]]',
+    metric: Histogram
+) -> Result[None, Failure]:
+    assert parent.value is not None
+
+    reset_histogram(metric)
+
+    for bucket_threshold, count in parent.value.items():
+        bucket_index = parent.histogram_buckets.index(
+            prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
+        )
+
+        metric._buckets[bucket_index].set(count)
+        metric._sum.inc(int(bucket_threshold) * count)
+
+    return Ok(None)
+
+
+RuntimeReaderType = Callable[[], Result[U, Failure]]
+
+
+class StorageAdapter(Generic[U]):
+    def __init__(self, parent: 'MetricBase') -> None:
+        self.parent = parent
+
+    def read(self) -> Result[U, Failure]:
+        raise NotImplementedError()
+
+    def inc(self) -> Result[None, Failure]:
+        raise NotImplementedError()
+
+
+class RuntimeStorageAdapter(StorageAdapter[U]):
+    def __init__(self, parent: 'MetricBase', reader: RuntimeReaderType) -> None:
+        super().__init__(parent)
+
+        self.reader = reader
+
+    def read(self) -> Result[U, Failure]:
+        return self.reader()
+
+
+class CacheStorageAdapter(StorageAdapter[U]):
+    def __init__(self, parent: 'MetricBase', cache_key: str) -> None:
+        super().__init__(parent)
+
+        self.cache_key = cache_key
+
+
+class CacheCounterStorageAdapter(CacheStorageAdapter[float]):
+    @with_context
+    def read(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[float, Failure]:
+        value = get_metric(logger, cache, self.cache_key)
+
+        return Ok(float('NaN') if value is None else float(value))
+
+    @with_context
+    def inc(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        inc_metric(logger, cache, self.cache_key)
 
         return Ok(None)
 
 
-class CounterAdapter(PrometheusAdapter[Counter]):
-    _metric_class = Counter
+LabeledCounterValueType = Dict[Tuple[str, ...], float]
+
+
+class LabeledCachedCounterStorageAdapter(StorageAdapter[LabeledCounterValueType]):
+    @classmethod
+    @with_context
+    def read(
+        cls,
+        parent: 'MetricBase',
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[LabeledCounterValueType, Failure]:
+        # When labels are not empty, values are stored in cache as a mapping, with names constructed from labels
+        # (label1:label2:label3:...).
+        assert parent.labels is not None
+
+        return Ok({
+            tuple(field.split(':', len(parent.labels) - 1)): value
+            for field, value in get_metric_fields(logger, cache, parent.cache_key).items()
+        })
 
     @classmethod
-    def update_prometheus(cls, parent: 'MetricBase', metric: Counter) -> Result[None, Failure]:
-        assert parent.value is not None
+    @with_context
+    def inc(
+        cls,
+        parent: 'MetricBase',
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis,
+        *field_components: str
+    ) -> Result[None, Failure]:
+        assert parent.labels
+        assert len(field_components) == len(parent.labels)
 
-        reset_counters(metric)
-
-        if isinstance(parent, LabeledMetric):
-            assert parent.labels
-
-            for labels, value in parent.value.items():
-                metric.labels(*labels)._value.set(value)
-
-        else:
-            metric._value.set(parent.value)
+        inc_metric_field(logger, cache, parent.cache_key, ':'.join(field_components))
 
         return Ok(None)
 
 
-class HistogramAdapter(PrometheusAdapter[Histogram]):
-    _metric_class = Histogram
-
-    @classmethod
-    def update_prometheus(cls, parent: 'MetricBase', metric: Histogram) -> Result[None, Failure]:
-        assert parent.value is not None
-
-        reset_histogram(metric)
-
-        assert isinstance(parent.value, dict)
-
-        if isinstance(parent, LabeledMetric):
-            pass
-
-        else:
-            assert parent.histogram_buckets
-
-            for bucket_threshold, count in parent.value.items():
-                bucket_index = parent.histogram_buckets.index(
-                    prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
-                )
-
-                metric._buckets[bucket_index].set(count)
-                metric._sum.inc(int(bucket_threshold) * count)
-
-        return Ok(None)
-
-
-class MetricBase(Generic[S, T, U]):
+class MetricBase(Generic[U]):
     def __init__(
         self,
         *,
         name: str,
         help: str,
-        prometheus_adapter: Type[PrometheusAdapter],
-        histogram_buckets: Optional[List[int]] = None,
-        cache_key: Optional[str] = None,
-        labels: Optional[S] = None,
-        read_from_system: Optional[Callable[[], Result[U, Failure]]] = None
     ) -> None:
-        assert cache_key is not None or read_from_system is not None, ''
-        assert prometheus_adapter is not HistogramAdapter or histogram_buckets, ''
-
         self.name = name
         self.help = help
 
-        self.cache_key = cache_key
+        self.storage_adapter: Optional[StorageAdapter] = None
+        self.prometheus_adapter: Optional[_PrometheusAdapter] = None
 
-        self.prometheus_adapter = prometheus_adapter
         self.prometheus_metric: Optional[MetricWrapperBase] = None
-        self.histogram_buckets = histogram_buckets
-
-        self.labels = labels
-
-        self.read_from_system = read_from_system
 
         self.value: Optional[U] = None
 
-    @with_context
-    def read_from_cache(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[U, Failure]:
-        raise NotImplementedError()
+    def inc(self) -> Result[None, Failure]:
+        return self.storage_adapter.inc()
 
     def sync(self) -> Result[None, Failure]:
-        if self.read_from_system is not None:
-            r_value = self.read_from_system()
-
-        else:
-            r_value = self.read_from_cache()
+        r_value = self.storage_adapter.read()
 
         if r_value.is_error:
             return Error(r_value.unwrap_error())
@@ -294,46 +349,89 @@ class MetricBase(Generic[S, T, U]):
         return self.prometheus_adapter.update_prometheus(self, self.prometheus_metric)
 
 
-class TrivialMetric(MetricBase[Tuple, T, T]):
-    def __init__(
-        self,
-        *,
-        name: str,
-        help: str,
-        prometheus_adapter: Type[PrometheusAdapter],
-        histogram_buckets: Optional[List[int]] = None,
-        cache_key: Optional[str] = None,
-        read_from_system: Optional[Callable[[], Result[T, Failure]]] = None
-    ) -> None:
-        super().__init__(
+def _construct_trivial_metric(
+    *,
+    name: str,
+    help: str,
+    monotonic: bool = False,
+    #    histogram_buckets: Optional[List[int]] = None,
+    runtime_reader: Optional[Callable[[], Result[U, Failure]]] = None
+) -> MetricBase[float]:
+    class _TrivialMetric(MetricBase[Tuple[()], float]):
+        pass
+
+        if runtime_reader:
+            storage_adapter: StorageAdapter = RuntimeStorageAdapter(self, runtime_reader)
+
+        else:
+            storage_adapter = CachedCounterStorageAdapter
+
+    return _TrivialMetric(
+        name=name,
+        help=help,
+        prometheus_adapter=prometheus_adapter,
+        storage_adapter=storage_adapter
+    )
+
+
+def metric(
+    *,
+    name: str,
+    help: str,
+    monotonic: bool = False,
+    labels: Optional[Tuple[str, ...]] = None,
+    #    storage_adapter: Type[StorageAdapter],
+    #    prometheus_adapter: Type[PrometheusAdapter],
+    #    histogram_buckets: Optional[List[int]] = None,
+    runtime_reader: Optional[Callable[[], Result[U, Failure]]] = None
+    #    read_from_system: Optional[Callable[[], Result[U, Failure]]] = None
+) -> MetricBase:
+    # assert prometheus_adapter is not PrometheusHistogramAdapter or histogram_buckets, ''
+
+    if labels:
+        pass
+
+
+
+        class _TrivialMetric(MetricBase[Tuple, float]):
+            pass
+
+        if runtime_reader:
+            storage_adapter: StorageAdapter = RuntimeStorageAdapter(self, runtime_reader)
+
+        else:
+            storage_adapter = CachedCounterStorageAdapter
+
+        return _TrivialMetric(
             name=name,
             help=help,
             prometheus_adapter=prometheus_adapter,
-            histogram_buckets=histogram_buckets,
-            cache_key=cache_key,
-            read_from_system=read_from_system
+            storage_adapter=storage_adapter
         )
 
-    @with_context
-    def inc(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[None, Failure]:
-        assert self.cache_key is not None
+class _PrometheusGaugeAdapter(_PrometheusAdapter[S, Gauge]):
+    _metric_class = Gauge
 
-        inc_metric(logger, cache, self.cache_key)
+    def update_prometheus(self, metric: Gauge) -> Result[None, Failure]:
+        assert self.parent.value is not None
+
+        reset_counters(metric)
+
+        if self.labels:
+            value = cast(Dict[S, float], self.parent.value)
+
+            for labels, count in value.items():
+                metric.labels(*labels)._value.set(count)
+
+        else:
+            metric._value.set(self.parent.value)
 
         return Ok(None)
-
-    @with_context
-    def read_from_cache(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[T, Failure]:
-        assert self.cache_key is not None
-
-        return Ok(cast(T, get_metric(logger, cache, self.cache_key)))
 
 
 class LabeledMetric(MetricBase[S, T, Dict[S, T]]):
     @with_context
     def read_from_cache(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[Dict[S, T], Failure]:
-        assert self.cache_key is not None
-
         # When labels are not empty, values are stored in cache as a mapping, with names constructed from labels
         # (label1:label2:label3:...).
         assert self.labels is not None
@@ -353,12 +451,24 @@ class LabeledMetric(MetricBase[S, T, Dict[S, T]]):
         *args: str
     ) -> Result[None, Failure]:
         assert self.labels
-        assert self.cache_key
         assert len(args) == len(self.labels)
 
         inc_metric_field(logger, cache, self.cache_key, ':'.join(args))
 
         return Ok(None)
+
+
+
+    db_pool_size: TrivialMetric[int] = TrivialMetric(
+        name='db_pool_size',
+        help='Maximal number of connections available in the pool.',
+        prometheus_adapter=PrometheusGaugeAdapter,
+        read_from_system=lambda: DBPoolMetrics._read_db_pool_property('size')
+    )
+
+
+
+
 
 
 class MetricsBase:
@@ -459,28 +569,28 @@ class DBPoolMetrics(MetricsBase):
     db_pool_size: TrivialMetric[int] = TrivialMetric(
         name='db_pool_size',
         help='Maximal number of connections available in the pool.',
-        prometheus_adapter=GaugeAdapter,
+        prometheus_adapter=PrometheusGaugeAdapter,
         read_from_system=lambda: DBPoolMetrics._read_db_pool_property('size')
     )
 
     db_pool_checked_in: TrivialMetric[int] = TrivialMetric(
         name='db_pool_checked_in',
         help='Current number of connections checked in',
-        prometheus_adapter=GaugeAdapter,
+        prometheus_adapter=PrometheusGaugeAdapter,
         read_from_system=lambda: DBPoolMetrics._read_db_pool_property('checked_in_connections')
     )
 
     db_pool_checked_out: TrivialMetric[int] = TrivialMetric(
         name='db_pool_checked_out',
         help='Current number of connections checked out',
-        prometheus_adapter=GaugeAdapter,
+        prometheus_adapter=PrometheusGaugeAdapter,
         read_from_system=lambda: DBPoolMetrics._read_db_pool_property('checked_out_connections')
     )
 
     db_pool_overflow: TrivialMetric[int] = TrivialMetric(
         name='db_pool_overflow',
         help='Current overflow of connections',
-        prometheus_adapter=GaugeAdapter,
+        prometheus_adapter=PrometheusGaugeAdapter,
         read_from_system=lambda: DBPoolMetrics._read_db_pool_property('current_overflow')
     )
 
@@ -1548,8 +1658,7 @@ class ProvisioningMetrics(MetricsBase):
     overall_provisioning_count: TrivialMetric[int] = TrivialMetric(
         name='overall_provisioning_count',
         help='Overall total number of all requested guest requests.',
-        cache_key='metrics.provisioning.requested',
-        prometheus_adapter=CounterAdapter
+        prometheus_adapter=PrometheusCounterAdapter
     )
 
     inc_requested = overall_provisioning_count.inc
@@ -1562,15 +1671,14 @@ class ProvisioningMetrics(MetricsBase):
     current_guest_request_count_total: TrivialMetric[int] = TrivialMetric(
         name='current_guest_request_count_total',
         help='Current total number of guest requests being provisioned.',
-        prometheus_adapter=CounterAdapter,
+        prometheus_adapter=PrometheusCounterAdapter,
         read_from_system=_read_current_guest_request_count_total
     )
 
     overall_successfull_provisioning_count: LabeledMetric[Tuple[str], int] = LabeledMetric(
         name='overall_successfull_provisioning_count',
         help='Overall total number of all successfully provisioned guest requests by pool.',
-        cache_key='metrics.provisioning.success',
-        prometheus_adapter=CounterAdapter,
+        prometheus_adapter=PrometheusCounterAdapter,
         labels=('pool',)
     )
 
@@ -1582,8 +1690,7 @@ class ProvisioningMetrics(MetricsBase):
     overall_failover_count: LabeledMetric[Tuple[str, str], int] = LabeledMetric(
         name='overall_failover_count',
         help='Overall total number of failovers to another pool by source and destination pool.',
-        cache_key='metrics.provisioning.failover',
-        prometheus_adapter=CounterAdapter,
+        prometheus_adapter=PrometheusCounterAdapter,
         labels=('from_pool', 'to_pool')
     )
 
@@ -1595,8 +1702,7 @@ class ProvisioningMetrics(MetricsBase):
     overall_successfull_failover_count: LabeledMetric[Tuple[str, str], int] = LabeledMetric(
         name='overall_successfull_failover_count',
         help='Overall total number of successful failovers to another pool by source and destination pool.',
-        cache_key='metrics.provisioning.failover.success',
-        prometheus_adapter=CounterAdapter,
+        prometheus_adapter=PrometheusCounterAdapter,
         labels=('from_pool', 'to_pool')
     )
 
@@ -1637,14 +1743,13 @@ class ProvisioningMetrics(MetricsBase):
     guest_ages: LabeledMetric[Tuple[str, str, str], int] = LabeledMetric(
         name='guest_request_age',
         help='Guest request ages by pool and state.',
-        prometheus_adapter=GaugeAdapter,
+        prometheus_adapter=PrometheusGaugeAdapter,
         labels=('pool', 'state', 'age_threshold')
     )
 
     # provisioning_durations: TrivialMetric[int] = TrivialMetric(
     #    name='provisioning_duration_seconds',
     #    help='The time spent provisioning a machine.',
-    #    cache_key='metrics.provisioning.durations',
     #    prometheus_adapter=HistogramAdapter,
     #    histogram_buckets=PROVISION_DURATION_BUCKETS
     # )
@@ -1681,8 +1786,7 @@ class RoutingMetrics(MetricsBase):
     overall_policy_calls_count: LabeledMetric[Tuple[str], int] = LabeledMetric(
         name='overall_policy_calls_count',
         help='Overall total number of policy call by policy name.',
-        cache_key='metrics.routing.policy.calls',
-        prometheus_adapter=CounterAdapter,
+        prometheus_adapter=PrometheusCounterAdapter,
         labels=('policy',)
     )
 
@@ -1694,8 +1798,7 @@ class RoutingMetrics(MetricsBase):
     overall_policy_cancellations_count: LabeledMetric[Tuple[str], int] = LabeledMetric(
         name='overall_policy_cancellations_count',
         help='Overall total number of policy canceling a guest request by policy name.',
-        cache_key='metrics.routing.policy.cancellations',
-        prometheus_adapter=CounterAdapter,
+        prometheus_adapter=PrometheusCounterAdapter,
         labels=('policy',)
     )
 
@@ -1707,8 +1810,7 @@ class RoutingMetrics(MetricsBase):
     overall_policy_rulings_count: LabeledMetric[Tuple[str, str, str], int] = LabeledMetric(
         name='overall_policy_rulings_count',
         help='Overall total number of policy rulings by policy name, pool name and whether the pool was allowed.',
-        cache_key='metrics.routing.policy.rulings',
-        prometheus_adapter=CounterAdapter,
+        prometheus_adapter=PrometheusCounterAdapter,
         labels=('policy', 'pool', 'allowed'),
     )
 
@@ -1756,8 +1858,7 @@ class TaskMetrics(MetricsBase):
     overall_message_count: LabeledMetric[Tuple[str, str], int] = LabeledMetric(
         name='overall_message_count',
         help='Overall total number of messages processed by queue and actor.',
-        cache_key='metrics.tasks.messages.overall',
-        prometheus_adapter=CounterAdapter,
+        prometheus_adapter=PrometheusCounterAdapter,
         labels=('queue_name', 'actor_name')
     )
 
@@ -1769,8 +1870,7 @@ class TaskMetrics(MetricsBase):
     overall_errored_message_count: LabeledMetric[Tuple[str, str], int] = LabeledMetric(
         name='overall_errored_message_count',
         help='Overall total number of errored messages by queue and actor.',
-        cache_key='metrics.tasks.messages.overall.errored',
-        prometheus_adapter=CounterAdapter,
+        prometheus_adapter=PrometheusCounterAdapter,
         labels=('queue', 'actor')
     )
 
