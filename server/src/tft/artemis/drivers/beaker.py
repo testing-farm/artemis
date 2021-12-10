@@ -404,6 +404,8 @@ def _create_wow_options(
 
 
 class BeakerDriver(PoolDriver):
+    pool_data_class = BeakerPoolData
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,

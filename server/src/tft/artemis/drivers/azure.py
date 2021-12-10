@@ -40,6 +40,8 @@ class AzurePoolResourcesIDs(PoolResourcesIDs):
 
 
 class AzureDriver(PoolDriver):
+    pool_data_class = AzurePoolData
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,

@@ -69,6 +69,8 @@ class OpenStackPoolResourcesIDs(PoolResourcesIDs):
 
 
 class OpenStackDriver(PoolDriver):
+    pool_data_class = OpenStackPoolData
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,

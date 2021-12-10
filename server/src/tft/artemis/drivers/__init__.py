@@ -916,6 +916,7 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
 class PoolDriver(gluetool.log.LoggerMixin):
     image_info_class: Type[PoolImageInfo] = PoolImageInfo
     flavor_info_class: Type[Flavor] = Flavor
+    pool_data_class: Type[PoolData] = PoolData
 
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'

@@ -1324,9 +1324,11 @@ class Workspace:
         cancel: threading.Event,
         guestname: Optional[str] = None,
         task: Optional[str] = None,
+        db: Optional[DB] = None,
         **default_details: Any
     ) -> None:
         self.logger = logger
+        self.db = db or _ROOT_DB
         self.session = session
         self.cancel = cancel
 
@@ -2038,6 +2040,7 @@ class ProvisioningTailHandler(TailHandler):
             logger,
             session,
             cancel,
+            db=db,
             task='provisioning-tail',
             **failure_details
         )
@@ -2152,6 +2155,7 @@ class LoggingTailHandler(TailHandler):
             logger,
             session,
             cancel,
+            db=db,
             task='logging-tail',
             **failure_details
         )
@@ -2815,152 +2819,6 @@ def release_guest_request(guestname: str) -> None:
     )
 
 
-def do_update_guest_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
-    guestname: str
-) -> DoerReturnType:
-    workspace = Workspace(
-        logger,
-        session,
-        cancel,
-        guestname=guestname,
-        task='update-guest-request'
-    )
-
-    workspace.handle_success('entered-task')
-
-    workspace.load_guest_request(guestname, state=GuestState.PROMISED)
-    workspace.load_gr_pool()
-
-    if workspace.result:
-        return workspace.result
-
-    assert workspace.gr
-    assert workspace.pool
-    assert workspace.gr.poolname
-
-    from ..middleware import NOTE_POOLNAME, set_message_note
-    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
-
-    workspace.spice_details['poolname'] = workspace.gr.poolname
-    current_pool_data = workspace.gr.pool_data
-
-    def _undo_guest_update() -> None:
-        assert workspace.gr
-        assert workspace.pool
-
-        r = workspace.pool.release_guest(logger, workspace.gr)
-
-        if r.is_ok:
-            return
-
-        workspace.handle_error(r, 'failed to undo guest update')
-
-    r_update = workspace.pool.update_guest(
-        logger,
-        session,
-        workspace.gr
-    )
-
-    if r_update.is_error:
-        return workspace.handle_error(r_update, 'failed to update guest')
-
-    provisioning_progress = r_update.unwrap()
-
-    # not returning here - pool was able to recover and proceed
-    for failure in provisioning_progress.pool_failures:
-        workspace.handle_failure(failure, 'pool encountered failure during update')
-
-    new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
-        'pool_data': provisioning_progress.pool_data.serialize()
-    }
-
-    if provisioning_progress.ssh_info is not None:
-        new_guest_values.update({
-            'ssh_username': provisioning_progress.ssh_info.username,
-            'ssh_port': provisioning_progress.ssh_info.port
-        })
-
-    if provisioning_progress.state == ProvisioningState.PENDING:
-        workspace.update_guest_state(
-            GuestState.PROMISED,
-            current_state=GuestState.PROMISED,
-            set_values=new_guest_values,
-            current_pool_data=current_pool_data
-        )
-
-        workspace.dispatch_task(update_guest_request, guestname, delay=provisioning_progress.delay_update)
-
-        if workspace.result:
-            _undo_guest_update()
-
-            return workspace.result
-
-        logger.info('scheduled update')
-
-        return workspace.handle_success('finished-task')
-
-    elif provisioning_progress.state == ProvisioningState.CANCEL:
-        logger.info('provisioning cancelled')
-
-        workspace.pool.release_guest(logger, workspace.gr)
-
-        if workspace.result:
-            return workspace.result
-
-        if ProvisioningTailHandler(GuestState.PROMISED, GuestState.ROUTING).handle_tail(
-            logger,
-            db,
-            session,
-            update_guest_request,
-            {
-                'guestname': workspace.gr.guestname
-            }
-        ):
-            return workspace.handle_success('finished-task')
-
-        return RESCHEDULE
-
-    assert provisioning_progress.address
-
-    new_guest_values['address'] = provisioning_progress.address
-
-    workspace.update_guest_state(
-        GuestState.PREPARING,
-        current_state=GuestState.PROMISED,
-        set_values=new_guest_values,
-        current_pool_data=current_pool_data
-    )
-
-    if workspace.result:
-        _undo_guest_update()
-
-        return workspace.result
-
-    logger.info('successfully acquired')
-
-    dispatch_preparing_pre_connect(logger, workspace)
-
-    if workspace.result:
-        _undo_guest_update()
-
-        return workspace.result
-
-    return workspace.handle_success('finished-task')
-
-
-@task(tail_handler=ProvisioningTailHandler(GuestState.PROMISED, GuestState.ROUTING))
-def update_guest_request(guestname: str) -> None:
-    task_core(
-        cast(DoerType, do_update_guest_request),
-        logger=get_guest_logger('update-guest-request', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
-    )
-
-
 def do_acquire_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -3031,6 +2889,8 @@ def do_acquire_guest_request(
         })
 
     if provisioning_progress.state == ProvisioningState.PENDING:
+        from .update_guest_request import update_guest_request
+
         workspace.update_guest_state(
             GuestState.PROMISED,
             current_state=GuestState.PROVISIONING,

@@ -16,6 +16,7 @@ from mock import ANY, MagicMock
 import tft.artemis.db
 import tft.artemis.middleware
 import tft.artemis.tasks
+import tft.artemis.tasks.update_guest_request
 from tft.artemis.middleware import _actor_arguments
 from tft.artemis.tasks import Actor, task
 
@@ -193,7 +194,7 @@ def test_fail_message(
 
 @pytest.fixture(name='provisioning_actor')
 def fixture_provisioning_actor() -> Actor:
-    return tft.artemis.tasks.update_guest_request
+    return tft.artemis.tasks.update_guest_request.update_guest_request
 
 
 @pytest.fixture(name='provisioning_actor_arguments')

@@ -495,6 +495,7 @@ def create_block_device_mappings(
 class AWSDriver(PoolDriver):
     image_info_class = AWSPoolImageInfo
     flavor_info_class = AWSFlavor
+    pool_data_class = AWSPoolData
 
     def __init__(
         self,

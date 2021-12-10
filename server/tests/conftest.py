@@ -11,6 +11,7 @@ import _pytest.fixtures
 import _pytest.logging
 import _pytest.monkeypatch
 import _pytest.python
+import dramatiq
 import gluetool.log
 import gluetool.utils
 import py.path
@@ -251,3 +252,20 @@ def fixture_redis(
     )
 
     yield
+
+
+@pytest.fixture(name='current_message')
+def fixture_current_message() -> dramatiq.MessageProxy:
+    message = dramatiq.Message(
+        queue_name='dummy-queue-name',
+        actor_name='dummy-actor-name',
+        args=tuple(),
+        kwargs=dict(),
+        options=dict()
+    )
+
+    proxy = dramatiq.MessageProxy(message)
+
+    tft.artemis.context.CURRENT_MESSAGE.set(proxy)
+
+    return proxy
