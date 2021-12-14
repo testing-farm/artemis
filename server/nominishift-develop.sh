@@ -53,7 +53,7 @@ fi
 
 poetry run artemis-api-server &
 poetry run artemis-dispatcher &
-poetry run dramatiq $ARTEMIS_WORKER_OPTIONS tft.artemis.tasks &
+poetry run dramatiq $ARTEMIS_WORKER_OPTIONS tft.artemis.tasks tft.artemis.tasks.route_guest_request &
 poetry run periodiq tft.artemis.tasks &
 
 sleep 100000

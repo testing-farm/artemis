@@ -105,7 +105,7 @@ case $APP in
         ;;
     worker)
         expose_hooks
-        COMMAND="poetry run dramatiq $ARTEMIS_WORKER_OPTIONS tft.artemis.tasks"
+        COMMAND="poetry run dramatiq $ARTEMIS_WORKER_OPTIONS tft.artemis.tasks tft.artemis.tasks.route_guest_request"
         ;;
     *)
         echo "Unknown application '$APP'"

@@ -38,7 +38,6 @@ from ..drivers import ping_shell_remote
 from ..guest import GuestLogger, GuestState, SnapshotLogger
 from ..knobs import KNOB_POOL_ENABLED, Knob
 from ..profile import Profiler
-from ..routing_policies import PolicyRuling
 from ..script import hook_engine
 
 # There is a very basic thing we must be aware of: a task - the Python function below - can run multiple times,
@@ -380,6 +379,9 @@ class Actor(Protocol):
     actor_name: str
     fn: BareActorType
     options: Dict[str, Any]
+
+    def __call__(self, *args: Any) -> None:
+        ...
 
     def send(
         self,
@@ -1384,6 +1386,8 @@ class Workspace:
         self.pool: Optional[PoolDriver] = None
         self.guest_events: Optional[List[GuestEvent]] = None
 
+        self.pools: List[PoolDriver] = []
+
         self.spice_details: Dict[str, Any] = {**default_details}
 
         if task:
@@ -1903,6 +1907,20 @@ class Workspace:
 
         return r.unwrap()
 
+    def load_pools(self: WorkspaceBound) -> WorkspaceBound:
+        if self.result:
+            return self
+
+        r_pools = get_pools(self.logger, self.session)
+
+        if r_pools.is_error:
+            self.result = self.handle_error(r_pools, 'failed to fetch pools')
+
+        else:
+            self.pools = r_pools.unwrap()
+
+        return self
+
 
 def _handle_successful_failover(
     logger: gluetool.log.ContextAdapter,
@@ -2123,6 +2141,8 @@ class ProvisioningTailHandler(TailHandler):
         )
 
         if self.new_state == GuestState.ROUTING:
+            from .route_guest_request import route_guest_request
+
             workspace.dispatch_task(route_guest_request, guestname)
 
         if workspace.result:
@@ -3131,125 +3151,6 @@ def acquire_guest_request(guestname: str, poolname: str) -> None:
         cast(DoerType, do_acquire_guest_request),
         logger=get_guest_logger('acquire-guest-request', _ROOT_LOGGER, guestname),
         doer_args=(guestname, poolname)
-    )
-
-
-def do_route_guest_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
-    guestname: str
-) -> DoerReturnType:
-    workspace = Workspace(logger, session, cancel, guestname=guestname, task='route-guest-request')
-
-    workspace.handle_success('entered-task')
-
-    # First, pick up our assigned guest request. Make sure it hasn't been
-    # processed yet.
-    workspace.load_guest_request(guestname, state=GuestState.ROUTING)
-
-    if workspace.result:
-        return workspace.result
-
-    # Do stuff, examine request, pick the provisioner, and send it a message.
-    #
-    # Be aware that while the request was free to take, it may be being processed by multiple instances of this
-    # task at once - we didn't acquire any lock! We could either introduce locking, or we can continue and make
-    # sure the request didn't change when we start commiting changes. And since asking for forgiveness is simpler
-    # than asking for permission, let's continue but be prepared to clean up if someone else did the work instead
-    # of us.
-
-    logger.info('finding suitable provisioner')
-
-    r_pools = get_pools(logger, session)
-
-    if r_pools.is_error:
-        return workspace.handle_error(r_pools, 'failed to fetch pools')
-
-    ruling = cast(
-        PolicyRuling,
-        workspace.run_hook(
-            'ROUTE',
-            session=session,
-            guest_request=workspace.gr,
-            pools=r_pools.unwrap()
-        )
-    )
-
-    # Route hook failed, request cannot be fulfilled ;(
-    if workspace.result:
-        return workspace.result
-
-    if ruling.cancel:
-        workspace.handle_success('routing-cancelled')
-
-        workspace.update_guest_state(
-            GuestState.ERROR,
-            current_state=GuestState.ROUTING
-        )
-
-        if workspace.result:
-            return workspace.result
-
-        return workspace.handle_success('finished-task')
-
-    # If no suitable pools found
-    if not ruling.allowed_pools:
-        return RESCHEDULE
-
-    # At this point, all pools are equally worthy: we may very well use the first one.
-    pool = ruling.allowed_pools[0]
-
-    assert workspace.gr
-    new_pool = pool.poolname
-    current_pool = workspace.gr.poolname
-
-    if _cancel_task_if(logger, cancel):
-        return RESCHEDULE
-
-    # Mark request as suitable for provisioning.
-    workspace.update_guest_state(
-        GuestState.PROVISIONING,
-        current_state=GuestState.ROUTING,
-        set_values={
-            'poolname': pool.poolname
-        },
-        pool=pool.poolname
-    )
-
-    if workspace.result:
-        # We failed to move guest to PROVISIONING state which means some other instance of this task changed
-        # guest's state instead of us, which means we should throw everything away because our decisions no
-        # longer matter.
-        return workspace.handle_success('finished-task')
-
-    # Fine, the query succeeded, which means we are the first instance of this task to move this far. For any other
-    # instance, the state change will fail and they will bail while we move on and try to dispatch the provisioning
-    # task.
-    workspace.dispatch_task(acquire_guest_request, guestname, pool.poolname)
-
-    if workspace.result:
-        workspace.ungrab_guest_request(GuestState.PROVISIONING, GuestState.ROUTING)
-
-        return workspace.result
-
-    logger.info('scheduled provisioning')
-
-    # New pool was chosen - log failover
-    if workspace.gr and current_pool and new_pool != current_pool:
-        logger.warning('failover - trying {} pool instead of {}'.format(new_pool, current_pool))
-        metrics.ProvisioningMetrics.inc_failover(current_pool, new_pool)
-
-    return workspace.handle_success('finished-task')
-
-
-@task(tail_handler=ProvisioningTailHandler(GuestState.ROUTING, GuestState.ERROR))
-def route_guest_request(guestname: str) -> None:
-    task_core(
-        cast(DoerType, do_route_guest_request),
-        logger=get_guest_logger('route-guest-request', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
     )
 
 
