@@ -1,5 +1,7 @@
 import datetime
 import inspect
+import json
+import os
 import threading
 import traceback
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Union, cast
@@ -10,6 +12,7 @@ import dramatiq.middleware
 import dramatiq.middleware.retries
 import dramatiq.worker
 import gluetool.log
+import redis
 from dramatiq.common import compute_backoff, current_millis
 from gluetool.result import Ok
 
@@ -395,3 +398,66 @@ class WorkerMetrics(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
             lambda _worker: Ok((1, len(worker.workers))),
             worker_instance=worker
         )
+
+
+class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+    KEY_WORKER_TASK = 'tasks.workers.traffic.{worker}.{pid}.{tid}'
+    KEY_WORKER_TASK_PATTERN = 'tasks.workers.traffic.*'
+
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis,
+        worker_name: str
+    ) -> None:
+        super().__init__()
+
+        self.logger = logger
+        self.cache = cache
+        self.worker_name = worker_name
+        self.worker_pid = os.getpid()
+
+    @property
+    def current_key(self) -> str:
+        return self.KEY_WORKER_TASK.format(worker=self.worker_name, pid=self.worker_pid, tid=threading.get_ident())
+
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+        from .cache import set_cache_value
+        from .knobs import KNOB_WORKER_TRAFFIC_METRICS_TTL
+        from .metrics import WorkerTrafficTask
+
+        actor = broker.get_actor(message.actor_name)
+        actor_arguments = _actor_arguments(self.logger, message, actor)
+
+        tid = threading.get_ident()
+
+        set_cache_value(
+            self.logger,
+            self.cache,
+            self.current_key,
+            json.dumps(WorkerTrafficTask(
+                workername=self.worker_name,
+                worker_pid=self.worker_pid,
+                worker_tid=tid,
+                ctime=datetime.datetime.utcnow(),
+                queue=cast(str, message.queue_name),
+                actor=cast(str, message.actor_name),
+                args=actor_arguments
+            ).serialize_to_json()).encode(),
+            ttl=KNOB_WORKER_TRAFFIC_METRICS_TTL.value
+        )
+
+    def after_process_message(
+        self,
+        broker: dramatiq.broker.Broker,
+        message: dramatiq.message.Message,
+        *,
+        # This is on purpose, our tasks never return anything useful.
+        result: None = None,
+        exception: Optional[BaseException] = None
+    ) -> None:
+        from .cache import delete_cache_value
+
+        delete_cache_value(self.logger, self.cache, self.current_key)
+
+    after_skip_message = after_process_message
