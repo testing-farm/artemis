@@ -851,7 +851,10 @@ class AWSDriver(PoolDriver):
                 return Error(r_bdms.unwrap_error())
 
         elif 'default-root-disk-size' in self.pool_config:
-            r_bdms = mappings.set_root_disk_size(UNITS[f'{self.pool_config["default-root-disk-size"]} GiB'])
+            r_bdms = mappings.set_root_disk_size(UNITS.Quantity(
+                self.pool_config["default-root-disk-size"],
+                UNITS.gebibytes
+            ))
 
             if r_bdms.is_error:
                 return Error(r_bdms.unwrap_error())
@@ -1362,7 +1365,7 @@ class AWSDriver(PoolDriver):
                         cores=int(flavor['VCpuInfo']['DefaultVCpus'])
                     ),
                     # memory is reported in MB
-                    memory=int(flavor['MemoryInfo']['SizeInMiB']) * UNITS.mebibytes,
+                    memory=UNITS.Quantity(int(flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
                     virtualization=FlavorVirtualization(
                         hypervisor=flavor.get('Hypervisor', None),
                         is_virtualized=True if flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS else False

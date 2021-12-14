@@ -589,7 +589,7 @@ def _parse_flavor_disk_size(
     raw_value = r_value.unwrap()
 
     if isinstance(raw_value, int):
-        real_value = raw_value * UNITS['bytes']
+        real_value = UNITS.Quantity(raw_value, UNITS.bytes)
 
     else:
         real_value = raw_value
