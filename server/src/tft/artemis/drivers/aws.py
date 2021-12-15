@@ -19,6 +19,7 @@ from gluetool.log import log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
+from pint import Quantity
 from typing_extensions import Literal, TypedDict
 
 from .. import Failure, JSONType, SerializableContainer, log_dict_yaml
@@ -453,6 +454,55 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         return self.update_mapping(mapping, size=size)
 
 
+def create_block_device_mappings(
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavor: Flavor,
+    default_root_disk_size: Optional[Quantity] = None
+) -> Result[BlockDeviceMappings, Failure]:
+    """
+    Prepare block device mapping according to given flavor.
+
+    .. note::
+
+        If the flavor does not specify a desired disk space, then fall back to ``default-root-disk-size``
+        configuration option. This will serve us until all flavors get their disk space.
+
+    :param image: image that will be used to create the instance. It serves as a source of block device
+        mapping data.
+    :param flavor: flavor providing the disk space information.
+    """
+
+    mappings = BlockDeviceMappings(image.block_device_mappings)
+
+    if flavor.disk and flavor.disk[0].size is not None:
+        r_bdms = mappings.set_root_disk_size(flavor.disk[0].size)
+
+        if r_bdms.is_error:
+            return Error(r_bdms.unwrap_error())
+
+    elif default_root_disk_size is not None:
+        r_bdms = mappings.set_root_disk_size(default_root_disk_size)
+
+        if r_bdms.is_error:
+            return Error(r_bdms.unwrap_error())
+
+# TODO: once we merge all the pieces, we should be able to request additional storage, e.g.:
+#
+#        r_mapping = mappings.append_mapping(
+#            '/dev/sdd',
+#            delete_on_termination=True,
+#            encrypted=False,
+#            size=UNITS('120 GiB'),
+#            volume_type='gp3'
+#        )
+#
+#        if r_mapping.is_error:
+#            return Error(r_mapping.unwrap_error())
+
+    return Ok(mappings)
+
+
 class AWSDriver(PoolDriver):
     image_info_class = AWSPoolImageInfo
     flavor_info_class = AWSFlavor
@@ -829,6 +879,7 @@ class AWSDriver(PoolDriver):
 
     def _create_block_device_mappings(
         self,
+        guest_request: GuestRequest,
         image: AWSPoolImageInfo,
         flavor: Flavor
     ) -> Result[BlockDeviceMappings, Failure]:
@@ -845,44 +896,19 @@ class AWSDriver(PoolDriver):
         :param flavor: flavor providing the disk space information.
         """
 
-        mappings = BlockDeviceMappings(image.block_device_mappings)
+        default_root_disk_size: Optional[Quantity] = None
 
-        if flavor.disk and flavor.disk[0].size is not None:
-            r_bdms = mappings.set_root_disk_size(flavor.disk[0].size)
+        if 'default-root-disk-size' in self.pool_config:
+            default_root_disk_size = UNITS.Quantity(self.pool_config["default-root-disk-size"], UNITS.gibibytes)
 
-            if r_bdms.is_error:
-                return Error(r_bdms.unwrap_error())
-
-        elif 'default-root-disk-size' in self.pool_config:
-            r_bdms = mappings.set_root_disk_size(UNITS.Quantity(
-                self.pool_config["default-root-disk-size"],
-                UNITS.gebibytes
-            ))
-
-            if r_bdms.is_error:
-                return Error(r_bdms.unwrap_error())
-
-# TODO: once we merge all the pieces, we should be able to request additional storage, e.g.:
-#
-#        r_mapping = mappings.append_mapping(
-#            '/dev/sdd',
-#            delete_on_termination=True,
-#            encrypted=False,
-#            size=UNITS('120 GiB'),
-#            volume_type='gp3'
-#        )
-#
-#        if r_mapping.is_error:
-#            return Error(r_mapping.unwrap_error())
-
-        return Ok(mappings)
+        return create_block_device_mappings(guest_request, image, flavor, default_root_disk_size=default_root_disk_size)
 
     def _request_instance(
         self,
         logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
         instance_type: Flavor,
-        image: AWSPoolImageInfo,
-        guestname: str
+        image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
 
@@ -902,12 +928,15 @@ class AWSDriver(PoolDriver):
         if 'security-group' in self.pool_config:
             command.extend(['--security-group-ids', self.pool_config['security-group']])
 
-        r_block_device_mappings = self._create_block_device_mappings(image, instance_type)
+        r_block_device_mappings = self._create_block_device_mappings(guest_request, image, instance_type)
 
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
 
-        command.append(f'--block-device-mappings={r_block_device_mappings.unwrap().serialize_to_json()}')
+        command.extend([
+            '--block-device-mappings',
+            json.dumps(r_block_device_mappings.unwrap().serialize_to_json())
+        ])
 
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
@@ -970,7 +999,7 @@ class AWSDriver(PoolDriver):
             else:
                 user_data = ""
 
-        r_block_device_mappings = self._create_block_device_mappings(image, instance_type)
+        r_block_device_mappings = self._create_block_device_mappings(guest_request, image, instance_type)
 
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
@@ -1280,7 +1309,7 @@ class AWSDriver(PoolDriver):
         if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
             return self._request_spot_instance(logger, session, guest_request, instance_type, image)
 
-        return self._request_instance(logger, instance_type, image, guest_request.guestname)
+        return self._request_instance(logger, guest_request, instance_type, image)
 
     def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """
