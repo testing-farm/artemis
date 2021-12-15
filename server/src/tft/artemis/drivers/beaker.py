@@ -538,30 +538,6 @@ class BeakerDriver(PoolDriver):
 
         return self._submit_job(logger, r_job_xml.unwrap())
 
-    def _reschedule_job(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        job_id: str
-    ) -> Result[str, Failure]:
-        """
-        Reschedule a Beaker job. Cancel the old job with `job_id`, create and
-        submit a new job with `environment` specs and return new `job_id`.
-
-        :param str job_id: Job id that will be rescheduled.
-        :param Environment environment: An environment of a guest.
-        :rtype: result.Result[str, Failure]
-        :returns: :py:class:`result.Result` with job id, or specification of error.
-        """
-
-        r_job_cancel = self._dispatch_resource_cleanup(self.logger, job_id=job_id)
-
-        if r_job_cancel.is_error:
-            return Error(r_job_cancel.unwrap_error())
-
-        return self._create_job(logger, session, guest_request)
-
     def _get_job_results(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -712,29 +688,15 @@ class BeakerDriver(PoolDriver):
             or (job_status == 'reserved' and job_result == 'warn')  # job failed, needs a bit more time to update status
 
         if job_is_failed:
-            r_reschedule_job = self._reschedule_job(
-                logger,
-                session,
-                guest_request,
-                BeakerPoolData.unserialize(guest_request).job_id
-            )
-
-            if r_reschedule_job.is_error:
-                failure = r_reschedule_job.unwrap_error()
-
-                if test_cli_error(failure, NO_DISTRO_MATCHES_RECIPE_ERROR_PATTEN):
-                    return self._handle_no_distro_matches_recipe_error(
-                        failure,
-                        guest_request,
-                        pool_data=BeakerPoolData.unserialize(guest_request)
-                    )
-
-                return Error(r_reschedule_job.unwrap_error())
-
             return Ok(ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=BeakerPoolData(job_id=r_reschedule_job.unwrap()),
-                delay_update=r_delay.unwrap()
+                state=ProvisioningState.CANCEL,
+                pool_data=BeakerPoolData.unserialize(guest_request),
+                pool_failures=[Failure(
+                    'beaker job failed',
+                    job_result=job_result,
+                    job_status=job_status,
+                    job_results=job_results.prettify()
+                )]
             ))
 
         return Error(Failure(
