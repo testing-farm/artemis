@@ -1002,8 +1002,10 @@ class AWSDriver(PoolDriver):
         return Ok(True)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
+        owners = cast(List[str], self.pool_config['image-owners'] if 'image-owners' in self.pool_config else ['self'])
+
         r_images = self._aws_command(
-            ['ec2', 'describe-images', '--owner=self'],
+            ['ec2', 'describe-images', '--owners'] + owners,
             key='Images',
             commandname='aws.ec2-describe-images'
         )

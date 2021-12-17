@@ -44,6 +44,10 @@ properties:
   master-key-name:
     type: string
 
+  image-owners:
+    type: array
+    items.type: string
+
   patch-flavors:
     type: array
 
