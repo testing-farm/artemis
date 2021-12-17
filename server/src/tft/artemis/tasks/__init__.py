@@ -1039,6 +1039,56 @@ def dispatch_group(
     return Ok(None)
 
 
+def _guest_state_update_query(
+    guestname: str,
+    new_state: GuestState,
+    current_state: Optional[GuestState] = None,
+    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+    current_pool_data: Optional[str] = None
+) -> Result[sqlalchemy.update, Failure]:
+    """
+    Create an ``UPDATE`` query for guest request state change.
+
+    :param guestname: name of the guest request to update.
+    :param new_state: desired new state.
+    :param current_state: if set, the query will make change only if the request is in this state when the query
+        is executed.
+    :param set_values: optional fields to update along with the state.
+    :param current_pool_data: if set, the query will make change only if the request's pool data match these when
+        the query is executed.
+    :returns: an ``UPDATE`` query reflecting the requested changes.
+    """
+
+    now = datetime.datetime.utcnow()
+
+    query = sqlalchemy \
+        .update(GuestRequest.__table__) \
+        .where(GuestRequest.guestname == guestname)
+
+    if current_state is not None:
+        query = query.where(GuestRequest.state == current_state)
+
+    if current_pool_data:
+        query = query.where(GuestRequest.pool_data == current_pool_data)
+
+    if set_values:
+        values = set_values
+        values.update({
+            'state': new_state,
+            'state_mtime': now
+        })
+
+    else:
+        values = {
+            'state': new_state,
+            'state_mtime': now
+        }
+
+    query = query.values(**values)
+
+    return Ok(query)
+
+
 def _update_guest_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -1063,34 +1113,23 @@ def _update_guest_state(
 
     logger.warning('state switch: {} => {}'.format(current_state_label, new_state.value))
 
-    now = datetime.datetime.utcnow()
+    r_query = _guest_state_update_query(
+        guestname=guestname,
+        new_state=new_state,
+        current_state=current_state,
+        set_values=set_values,
+        current_pool_data=current_pool_data
+    )
 
-    if set_values:
-        values = set_values
-        values.update({
-            'state': new_state,
-            'state_mtime': now
-        })
+    if r_query.is_error:
+        return Error(Failure.from_failure(
+            'failed to switch guest state',
+            r_query.unwrap_error(),
+            current_state=current_state_label,
+            new_state=new_state.value
+        ))
 
-    else:
-        values = {
-            'state': new_state,
-            'state_mtime': now
-        }
-
-    query = sqlalchemy \
-        .update(GuestRequest.__table__) \
-        .where(GuestRequest.guestname == guestname)
-
-    if current_state is not None:
-        query = query.where(GuestRequest.state == current_state)
-
-    if current_pool_data:
-        query = query.where(GuestRequest.pool_data == current_pool_data)
-
-    query = query.values(**values)
-
-    r = safe_db_change(logger, session, query)
+    r = safe_db_change(logger, session, r_query.unwrap())
 
     if r.is_error:
         return Error(Failure.from_failure(
