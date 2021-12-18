@@ -7,6 +7,7 @@ from typing import Any, List
 import gluetool.utils
 import pytest
 from gluetool.log import ContextAdapter, log_blob
+from gluetool.result import Result
 
 import tft.artemis
 import tft.artemis.drivers.beaker
@@ -37,15 +38,27 @@ def parse_spec(text: str) -> Any:
     return gluetool.utils.from_yaml(textwrap.dedent(text))
 
 
+def _eval_flavor(
+    logger: ContextAdapter,
+    constraint: ConstraintBase,
+    flavor: Flavor
+) -> Result[bool, tft.artemis.Failure]:
+    log_blob(logger.debug, 'constraint', constraint.format())  # noqa: FS002  # intended format()
+    log_blob(logger.debug, 'flavor', repr(flavor))
+
+    return constraint.eval_flavor(logger, flavor)
+
+
 def eval_flavor(
     logger: ContextAdapter,
     constraint: ConstraintBase,
     flavor: Flavor
 ) -> bool:
-    log_blob(logger.debug, 'constraint', constraint.format())  # noqa: FS002  # intended format()
-    log_blob(logger.debug, 'flavor', repr(flavor))
+    r = _eval_flavor(logger, constraint, flavor)
 
-    return constraint.eval_flavor(logger, flavor)
+    assert r.is_ok
+
+    return r.unwrap()
 
 
 def test_example_simple(logger: ContextAdapter) -> None:
@@ -995,7 +1008,11 @@ def test_spans(
 
     assert eval_flavor(logger, constraint, flavor) is True
 
-    pruned_constraint = constraint.prune_on_flavor(logger, flavor)
+    r_pruned_constraint = constraint.prune_on_flavor(logger, flavor)
+
+    assert r_pruned_constraint.is_ok
+
+    pruned_constraint = r_pruned_constraint.unwrap()
 
     assert pruned_constraint is not None
 
@@ -1008,3 +1025,65 @@ def test_spans(
     ]
 
     assert spans == expected_spans
+
+
+def test_missing_flavor_attribute(
+    logger: ContextAdapter
+) -> None:
+    constraint = tft.artemis.environment.Constraint.from_specification('foo', '> 1 GiB')
+
+    flavor = tft.artemis.environment.Flavor(
+        name='dummy-flavor',
+        id='dummy-flavor'
+    )
+
+    r = _eval_flavor(logger, constraint, flavor)
+
+    assert r.is_error
+    assert r.unwrap_error().message == 'unknown flavor property'
+    assert r.unwrap_error().details['property'] == 'foo'
+
+
+def test_reducer_short_circuit_and(
+    logger: ContextAdapter
+) -> None:
+    group = tft.artemis.environment.And([
+        tft.artemis.environment.Constraint.from_specification('cpu.processors', '> 1'),
+        tft.artemis.environment.Constraint.from_specification('foo', '> 1 GiB')
+    ])
+
+    flavor = tft.artemis.environment.Flavor(
+        name='dummy-flavor',
+        id='dummy-flavor',
+        cpu=FlavorCpu(
+            processors=8
+        )
+    )
+
+    r = _eval_flavor(logger, group, flavor)
+
+    assert r.is_error
+    assert r.unwrap_error().message == 'unknown flavor property'
+    assert r.unwrap_error().details['property'] == 'foo'
+
+
+def test_reducer_short_circuit_ok(
+    logger: ContextAdapter
+) -> None:
+    group = tft.artemis.environment.Or([
+        tft.artemis.environment.Constraint.from_specification('cpu.processors', '> 1'),
+        tft.artemis.environment.Constraint.from_specification('foo', '> 1 GiB')
+    ])
+
+    flavor = tft.artemis.environment.Flavor(
+        name='dummy-flavor',
+        id='dummy-flavor',
+        cpu=FlavorCpu(
+            processors=8
+        )
+    )
+
+    r = _eval_flavor(logger, group, flavor)
+
+    assert r.is_ok
+    assert r.unwrap() is True

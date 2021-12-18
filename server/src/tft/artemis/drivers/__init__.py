@@ -1222,11 +1222,16 @@ class PoolDriver(gluetool.log.LoggerMixin):
         gluetool.log.log_blob(logger.debug, 'constraint', constraints.format())  # noqa: FS002
 
         # The actual filter: pick flavors that pass the test and match the requirements.
-        suitable_flavors = [
-            flavor
-            for flavor in flavors
-            if constraints.eval_flavor(logger, flavor) is True
-        ]
+        suitable_flavors = []
+
+        for flavor in flavors:
+            r_suitable = constraints.eval_flavor(logger, flavor)
+
+            if r_suitable.is_error:
+                return Error(r_suitable.unwrap_error())
+
+            if r_suitable.unwrap() is True:
+                suitable_flavors.append(flavor)
 
         gluetool.log.log_dict(logger.debug, 'suitable flavors', suitable_flavors)
 
