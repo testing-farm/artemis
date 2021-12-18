@@ -15,7 +15,7 @@ import gluetool.log
 import jq
 import pint
 import sqlalchemy.orm.session
-from gluetool.log import log_dict
+from gluetool.log import ContextAdapter, log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
@@ -26,7 +26,8 @@ from .. import Failure, JSONType, SerializableContainer, log_dict_yaml
 from ..cache import get_cached_set_as_list, get_cached_set_item
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Flavor, FlavorBoot, FlavorCpu, FlavorVirtualization
+from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorBoot, FlavorCpu, FlavorVirtualization, \
+    Operator
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, HookImageInfoMapper, \
@@ -77,6 +78,11 @@ APIBlockDeviceMappingType = TypedDict(
     },
     total=True
 )
+
+
+DEFAULT_VOLUME_DELETE_ON_TERMINATION = True
+DEFAULT_VOLUME_ENCRYPTED = False
+DEFAULT_VOLUME_TYPE: EBSVolumeTypeType = 'gp3'
 
 
 # Type of container holding block device mappings.
@@ -327,6 +333,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     @staticmethod
     def create_mapping(
         device_name: str,
+        # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
         size: Optional[pint.Quantity] = None,
@@ -338,6 +345,14 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         All parameters except ``device_name`` are optional, and when not specified, their value in the device mapping
         will remain unset.
 
+        :param delete_on_termination: whether or not the volume should be removed automatically with the instance.
+            If left unset, the setting would not be set for the new mapping.
+        :param encrypted: whether or not the volume should be encrypted.
+            If left unset, the setting would not be set for the new mapping.
+        :param size: desired size of the volume.
+            If left unset, the setting would not be set for the new mapping.
+        :param volume_type: desired volume type.
+            If left unset, the setting would not be set for the new mapping.
         :returns: newly created mapping.
         """
 
@@ -358,6 +373,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     def update_mapping(
         mapping: APIBlockDeviceMappingType,
         device_name: Optional[str] = None,
+        # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
         size: Optional[pint.Quantity] = None,
@@ -369,6 +385,14 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         All parameters are optional, and when not specified, the value currently set in the block device mapping
         will remain unchanged.
 
+        :param delete_on_termination: whether or not the volume should be removed automatically with the instance.
+            If left unset, the existing setting would not be modified.
+        :param encrypted: whether or not the volume should be encrypted.
+            If left unset, the existing setting would not be modified.
+        :param size: desired size of the volume.
+            If left unset, the existing setting would not be modified.
+        :param volume_type: desired volume type.
+            If left unset, the existing setting would not be modified.
         :returns: updated mapping.
         """
 
@@ -424,6 +448,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     def enlarge(
         self,
         count: int,
+        # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
         size: Optional[pint.Quantity] = None,
@@ -431,6 +456,14 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     ) -> Result[None, Failure]:
         """
         Make sure mappings contain at least ``count`` items.
+        :param delete_on_termination: whether or not the volume should be removed automatically with the instance.
+            If left unset, the setting would not be set for the new mappings.
+        :param encrypted: whether or not the volume should be encrypted.
+            If left unset, the setting would not be set for the new mappings.
+        :param size: desired size of the volume.
+            If left unset, the setting would not be set for the new mappings.
+        :param volume_type: desired volume type.
+            If left unset, the setting would not be set for the new mappings.
         """
 
         current_count = len(self)
@@ -460,6 +493,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     def append_mapping(
         self,
         device_name: str,
+        # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
         size: Optional[pint.Quantity] = None,
@@ -471,6 +505,14 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         All parameters except ``device_name`` are optional, and when not specified, their value in the device mapping
         will remain unset.
 
+        :param delete_on_termination: whether or not the volume should be removed automatically with the instance.
+            If left unset, the setting would not be set for the new mapping.
+        :param encrypted: whether or not the volume should be encrypted.
+            If left unset, the setting would not be set for the new mapping.
+        :param size: desired size of the volume.
+            If left unset, the setting would not be set for the new mapping.
+        :param volume_type: desired volume type.
+            If left unset, the setting would not be set for the new mapping.
         :returns: newly created mapping.
         """
 
@@ -487,10 +529,25 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
 
         return r_create
 
-    def set_root_disk_size(
+    def update_root_volume(
         self,
-        size: Optional[pint.Quantity] = None
+        # common volume properties
+        delete_on_termination: Optional[bool] = None,
+        encrypted: Optional[bool] = None,
+        size: Optional[pint.Quantity] = None,
+        volume_type: Optional[EBSVolumeTypeType] = None
     ) -> Result[APIBlockDeviceMappingType, Failure]:
+        """
+        :param delete_on_termination: whether or not the volume should be removed automatically with the instance.
+            If left unset, the existing setting would not be modified.
+        :param encrypted: whether or not the volume should be encrypted.
+            If left unset, the existing setting would not be modified.
+        :param size: desired size of the volume.
+            If left unset, the existing setting would not be modified.
+        :param volume_type: desired volume type.
+            If left unset, the existing setting would not be modified.
+        """
+
         mapping = self._get_mapping(0)
 
         if mapping is None:
@@ -500,17 +557,231 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
                 block_device_mapping_index=0
             ))
 
-        return self.update_mapping(mapping, size=size)
+        return self.update_mapping(
+            mapping,
+            delete_on_termination=delete_on_termination,
+            encrypted=encrypted,
+            size=size,
+            volume_type=volume_type
+        )
+
+
+def _honor_constraint_disk(
+    logger: ContextAdapter,
+    constraint: Constraint,
+    mappings: BlockDeviceMappings,
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavor: Flavor,
+) -> Result[bool, Failure]:
+    logger.debug(f'honor-constraint-disk: {constraint}')
+
+    property_name, index, child_property_name = constraint.expand_name()
+
+    if child_property_name == 'size':
+        log_dict_yaml(logger.debug, '  mappings before', mappings.serialize_to_json())
+
+        assert index is not None
+
+        r_enlarge = mappings.enlarge(
+            index + 1,
+            delete_on_termination=DEFAULT_VOLUME_DELETE_ON_TERMINATION,
+            encrypted=DEFAULT_VOLUME_ENCRYPTED,
+            volume_type=DEFAULT_VOLUME_TYPE
+        )
+
+        if r_enlarge.is_error:
+            return Error(r_enlarge.unwrap_error())
+
+        mapping = mappings[index]
+
+        if constraint.operator in (Operator.EQ, Operator.GTE):
+            r_update = mappings.update_mapping(
+                mapping,
+                size=constraint.value
+            )
+
+            if r_update.is_error:
+                return Error(r_update.unwrap_error())
+
+        elif constraint.operator == Operator.GT:
+            r_update = mappings.update_mapping(
+                mapping,
+                size=constraint.value + UNITS.Quantity(1, 'gibibyte')
+            )
+
+            if r_update.is_error:
+                return Error(r_update.unwrap_error())
+
+        else:
+            return Error(Failure('cannot honor constraint', constraint=str(constraint)))
+
+        log_dict_yaml(logger.debug, '  mappings after', mappings.serialize_to_json())
+
+        return Ok(True)
+
+    return Ok(False)
+
+
+def _get_constraint_spans(
+    logger: ContextAdapter,
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavor: Flavor
+) -> Result[List[List[ConstraintBase]], Failure]:
+    if not guest_request.environment.has_hw_constraints:
+        return Ok([])
+
+    r_constraints = guest_request.environment.get_hw_constraints()
+
+    if r_constraints.is_error:
+        return Error(r_constraints.unwrap_error())
+
+    constraints = r_constraints.unwrap()
+
+    logger.debug(f'constraints: {constraints}')
+
+    assert constraints is not None
+
+    r_pruned_constraints = constraints.prune_on_flavor(logger, flavor)
+
+    if r_pruned_constraints.is_error:
+        return Error(r_pruned_constraints.unwrap_error())
+
+    pruned_constraints = r_pruned_constraints.unwrap()
+
+    logger.debug(f'pruned constraints: {pruned_constraints}')
+
+    assert pruned_constraints is not None
+
+    spans = list(pruned_constraints.spans(logger))
+
+    for i, span in enumerate(spans):
+        log_dict_yaml(logger.debug, f'span #{i}', [str(constraint) for constraint in span])
+
+    return Ok(spans)
+
+
+def setup_extra_volumes(
+    logger: ContextAdapter,
+    mappings: BlockDeviceMappings,
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavor: Flavor
+) -> Result[BlockDeviceMappings, Failure]:
+    """
+    Setup additional volumes, if required by HW constraints.
+
+    :param logger: logger to use for logging.
+    :param mappings: mappings to update.
+    :param guest_request: a request the mappings belong to.
+    :param image: an image that would be used to spin up the provisioned instance.
+    :param flavor: a flavor that would serve as a basis for the provisioned instance.
+    """
+
+    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+
+    if r_spans.is_error:
+        return Error(r_spans.unwrap_error())
+
+    spans = r_spans.unwrap()
+
+    if not spans:
+        return Ok(mappings)
+
+    # TODO: this could be a nice algorithm, picking the best span instead of the first one.
+    span = cast(List[Constraint], spans[0])
+
+    log_dict_yaml(logger.debug, 'selected span', [str(constraint) for constraint in span])
+
+    for constraint in span:
+        logger.debug(f'  {constraint}')
+
+        r_consumed = _honor_constraint_disk(
+            logger,
+            constraint.original_constraint or constraint,
+            mappings,
+            guest_request,
+            image,
+            flavor
+        )
+
+        if r_consumed.is_error:
+            return Error(r_consumed.unwrap_error())
+
+        if r_consumed.unwrap() is True:
+            continue
+
+        return Error(Failure(
+            'cannot honor constraint',
+            constraint=constraint.format()  # noqa: FS002
+        ))
+
+    return Ok(mappings)
+
+
+def setup_root_volume(
+    logger: ContextAdapter,
+    mappings: BlockDeviceMappings,
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavor: Flavor,
+    default_root_disk_size: Optional[pint.Quantity] = None,
+    # common volume properties
+    delete_on_termination: Optional[bool] = None,
+    encrypted: Optional[bool] = None,
+    size: Optional[pint.Quantity] = None,
+    volume_type: Optional[EBSVolumeTypeType] = None
+) -> Result[BlockDeviceMappings, Failure]:
+    """
+    Setup a root disk of given set of mappings.
+
+    :param logger: logger to use for logging.
+    :param mappings: mappings to update.
+    :param guest_request: a request the mappings belong to.
+    :param image: an image that would be used to spin up the provisioned instance.
+    :param flavor: a flavor that would serve as a basis for the provisioned instance.
+    :param default_root_disk_size: a default root disk size, if known. It would be used unless there's a better
+        value.
+    :param delete_on_termination: whether or not the volume should be removed automatically with the instance.
+        If left unset, the existing setting would not be modified.
+    :param encrypted: whether or not the volume should be encrypted.
+        If left unset, the existing setting would not be modified.
+    :param size: desired size of the volume.
+        If left unset, the existing setting would not be modified.
+    :param volume_type: desired volume type.
+        If left unset, the existing setting would not be modified.
+    """
+
+    if size is None:
+        if flavor.disk and flavor.disk[0].size is not None:
+            size = flavor.disk[0].size
+
+        elif default_root_disk_size is not None:
+            size = default_root_disk_size
+
+    r_bdms = mappings.update_root_volume(
+        delete_on_termination=delete_on_termination,
+        encrypted=encrypted,
+        size=size,
+        volume_type=volume_type
+    )
+
+    if r_bdms.is_error:
+        return Error(r_bdms.unwrap_error())
+
+    return Ok(mappings)
 
 
 def create_block_device_mappings(
+    logger: ContextAdapter,
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
     default_root_disk_size: Optional[Quantity] = None
 ) -> Result[BlockDeviceMappings, Failure]:
     """
-    Prepare block device mapping according to given flavor.
+    Prepare block device mapping according to match requested environment, image and flavor.
 
     .. note::
 
@@ -524,32 +795,32 @@ def create_block_device_mappings(
 
     mappings = BlockDeviceMappings(image.block_device_mappings)
 
-    if flavor.disk and flavor.disk[0].size is not None:
-        r_bdms = mappings.set_root_disk_size(flavor.disk[0].size)
+    r_mappings = setup_root_volume(
+        logger,
+        mappings,
+        guest_request,
+        image,
+        flavor,
+        default_root_disk_size=default_root_disk_size
+    )
 
-        if r_bdms.is_error:
-            return Error(r_bdms.unwrap_error())
+    if r_mappings.is_error:
+        return r_mappings
 
-    elif default_root_disk_size is not None:
-        r_bdms = mappings.set_root_disk_size(default_root_disk_size)
+    mappings = r_mappings.unwrap()
 
-        if r_bdms.is_error:
-            return Error(r_bdms.unwrap_error())
+    r_mappings = setup_extra_volumes(
+        logger,
+        mappings,
+        guest_request,
+        image,
+        flavor,
+    )
 
-# TODO: once we merge all the pieces, we should be able to request additional storage, e.g.:
-#
-#        r_mapping = mappings.append_mapping(
-#            '/dev/sdd',
-#            delete_on_termination=True,
-#            encrypted=False,
-#            size=UNITS('120 GiB'),
-#            volume_type='gp3'
-#        )
-#
-#        if r_mapping.is_error:
-#            return Error(r_mapping.unwrap_error())
+    if r_mappings.is_error:
+        return r_mappings
 
-    return Ok(mappings)
+    return Ok(r_mappings.unwrap())
 
 
 class AWSDriver(PoolDriver):
@@ -938,6 +1209,7 @@ class AWSDriver(PoolDriver):
 
     def _create_block_device_mappings(
         self,
+        logger: ContextAdapter,
         guest_request: GuestRequest,
         image: AWSPoolImageInfo,
         flavor: Flavor
@@ -960,7 +1232,13 @@ class AWSDriver(PoolDriver):
         if 'default-root-disk-size' in self.pool_config:
             default_root_disk_size = UNITS.Quantity(self.pool_config["default-root-disk-size"], UNITS.gibibytes)
 
-        return create_block_device_mappings(guest_request, image, flavor, default_root_disk_size=default_root_disk_size)
+        return create_block_device_mappings(
+            logger,
+            guest_request,
+            image,
+            flavor,
+            default_root_disk_size=default_root_disk_size
+        )
 
     def _request_instance(
         self,
@@ -987,7 +1265,7 @@ class AWSDriver(PoolDriver):
         if 'security-group' in self.pool_config:
             command.extend(['--security-group-ids', self.pool_config['security-group']])
 
-        r_block_device_mappings = self._create_block_device_mappings(guest_request, image, instance_type)
+        r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
 
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
@@ -1058,7 +1336,7 @@ class AWSDriver(PoolDriver):
             else:
                 user_data = ""
 
-        r_block_device_mappings = self._create_block_device_mappings(guest_request, image, instance_type)
+        r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
 
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
