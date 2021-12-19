@@ -41,7 +41,7 @@ def fixture_mock_pool(
         return_value=Ok(None)
     )
 
-    mock_get_pool = mockpatch(tft.artemis.tasks, '_get_pool')
+    mock_get_pool = mockpatch(tft.artemis.drivers.PoolDriver, 'load')
     mock_get_pool.return_value = Ok(mock_pool)
 
     return mock_pool, mock_get_pool

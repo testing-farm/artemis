@@ -1543,3 +1543,6 @@ class AWSDriver(PoolDriver):
                 state=GuestLogState.COMPLETE,
                 url=output
             ))
+
+
+PoolDriver._drivers_registry['aws'] = AWSDriver

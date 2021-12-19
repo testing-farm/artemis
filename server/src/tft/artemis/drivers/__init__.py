@@ -28,9 +28,10 @@ from typing_extensions import Literal, Protocol, TypedDict
 from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, process_output_to_str, safe_call
 from ..cache import get_cached_set_as_list, get_cached_set_item, refresh_cached_set
 from ..context import CACHE, LOGGER
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
+    SnapshotRequest, SSHKey
 from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorDisk, FlavorDisks, MeasurableConstraintValueType
-from ..knobs import Knob
+from ..knobs import KNOB_POOL_ENABLED, Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
 
@@ -938,6 +939,134 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
         self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
+
+    _drivers_registry: Dict[str, Type['PoolDriver']] = {}
+
+    @staticmethod
+    def _instantiate(
+        logger: gluetool.log.ContextAdapter,
+        driver_name: str,
+        poolname: str,
+        pool_config: Dict[str, Any]
+    ) -> Result['PoolDriver', Failure]:
+        pool_driver_class = PoolDriver._drivers_registry.get(driver_name)
+
+        if pool_driver_class is None:
+            return Error(Failure('cannot find pool driver', drivername=driver_name))
+
+        pool = pool_driver_class(logger, poolname, pool_config)
+
+        r_sanity = pool.sanity()
+
+        if r_sanity.is_error:
+            return Error(r_sanity.unwrap_error())
+
+        return Ok(pool)
+
+    # Because sometimes we just don't know whether the given pool actually exists or not...
+    @staticmethod
+    def load_or_none(
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        poolname: str
+    ) -> Result[Optional['PoolDriver'], Failure]:
+        r_pool_record = SafeQuery.from_session(session, Pool) \
+            .filter(Pool.poolname == poolname) \
+            .one_or_none()
+
+        if r_pool_record.is_error:
+            return Error(r_pool_record.unwrap_error())
+
+        pool_record = r_pool_record.unwrap()
+
+        if pool_record is None:
+            return Ok(None)
+
+        r_pool = PoolDriver._instantiate(logger, pool_record.driver, poolname, pool_record.parameters)
+
+        if r_pool.is_error:
+            return Error(r_pool.unwrap_error())
+
+        return Ok(r_pool.unwrap())
+
+        # And when .map()/.map_error() become available, the code above would become much less spaghetti-ish...
+        #
+        # TODO: switch to when map/map_error become available
+        #
+        # def instantiate(pool_record: Optional[Pool]) -> Result[Optional['PoolDriver'], Failure]:
+        #     if pool_record is None:
+        #         return Ok(None)
+        #
+        #     # `_instantiate()`` return either a pool or failure, never `None`. That is nice, but it isn't matching
+        #     # the expected return value of `load_or_none()`, therefore we need a cast.
+        #     return cast(
+        #         Result[Optional['PoolDriver'], Failure],
+        #         PoolDriver._instantiate(pool_record.driver, logger, poolname, pool_record.parameters)
+        #     )
+        #
+        # return SafeQuery.from_session(session, Pool) \
+        #     .filter(Pool.poolname == poolname) \
+        #     .one_or_none() \
+        #     .map(instantiate)
+
+    # ... and sometimes, we are pretty sure the pool does exist, and it's a hard error if we can't find it.
+    @staticmethod
+    def load(
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        poolname: str
+    ) -> Result['PoolDriver', Failure]:
+        r_pool = PoolDriver.load_or_none(logger, session, poolname)
+
+        if r_pool.is_error:
+            return Error(r_pool.unwrap_error())
+
+        pool = r_pool.unwrap()
+
+        if pool is None:
+            return Error(Failure(
+                'no such pool',
+                poolname=poolname
+            ))
+
+        return Ok(pool)
+
+        # TODO: switch to when map/map_error become available
+        #
+        # return PoolDriver.load_or_none(logger, session, poolname) \
+        #     .map(lambda pool: Error(Failure('no such pool', poolname=poolname)) if pool is None else Ok(pool))
+
+    @staticmethod
+    def load_all(
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        enabled_only: bool = True
+    ) -> Result[List['PoolDriver'], Failure]:
+        r_pools = SafeQuery.from_session(session, Pool).all()
+
+        if r_pools.is_error:
+            return Error(r_pools.unwrap_error())
+
+        pools: List[PoolDriver] = []
+
+        for pool_record in r_pools.unwrap():
+            if enabled_only is True:
+                r_enabled = KNOB_POOL_ENABLED.get_value(session=session, poolname=pool_record.poolname)
+
+                if r_enabled.is_error:
+                    return Error(r_enabled.unwrap_error())
+
+                if r_enabled.unwrap() is not True:
+                    continue
+
+            r_pool = PoolDriver._instantiate(logger, pool_record.driver, pool_record.poolname, pool_record.parameters)
+
+            if r_pool.is_error:
+                return Error(r_pool.unwrap_error())
+
+            pools.append(r_pool.unwrap())
+
+        return Ok(pools)
 
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__}: {self.poolname}>'

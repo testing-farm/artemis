@@ -500,3 +500,6 @@ class AzureDriver(PoolDriver):
             delay_update=r_delay.unwrap(),
             ssh_info=image.ssh
         ))
+
+
+PoolDriver._drivers_registry['azure'] = AzureDriver
