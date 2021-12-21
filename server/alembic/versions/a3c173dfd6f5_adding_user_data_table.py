@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 """Adding guest_requests.user_data column
 
 Revision ID: a3c173dfd6f5

@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 import base64
 import re
 from typing import Any, Callable, List, Pattern, Tuple, cast

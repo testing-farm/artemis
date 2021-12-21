@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 import _pytest.logging
 import _pytest.monkeypatch
 import gluetool.log

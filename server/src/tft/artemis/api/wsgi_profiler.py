@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 from typing import Any, cast
 
 # No relative import here - this file is used by gunicorn directly, not imported by our code.
