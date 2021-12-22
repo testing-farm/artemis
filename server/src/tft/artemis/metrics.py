@@ -24,7 +24,7 @@ import os
 import platform
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import gluetool.log
 import prometheus_client.utils
@@ -43,6 +43,10 @@ from .cache import dec_cache_field, dec_cache_value, get_cache_value, inc_cache_
 from .context import DATABASE, SESSION, with_context
 from .guest import GuestState
 from .knobs import KNOB_POOL_ENABLED, KNOB_WORKER_PROCESS_METRICS_TTL
+
+if TYPE_CHECKING:
+    from .tasks import ActorArgumentsType
+
 
 T = TypeVar('T')
 
@@ -115,7 +119,7 @@ class WorkerTrafficTask(SerializableContainer):
     ctime: datetime.datetime
     queue: str
     actor: str
-    args: Dict[str, Union[str, None]]
+    args: 'ActorArgumentsType'
 
     def serialize_to_json(self) -> Dict[str, Any]:
         """

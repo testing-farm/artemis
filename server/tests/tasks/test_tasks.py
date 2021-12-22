@@ -61,9 +61,9 @@ def test_run_doer(
         _db: tft.artemis.db.DB,
         _session: sqlalchemy.orm.session.Session,
         _cancel: threading.Event,
-        bar: int
+        bar: str
     ) -> tft.artemis.tasks.DoerReturnType:
-        assert bar == 79
+        assert bar == '79'
 
         return tft.artemis.tasks.RESCHEDULE
 
@@ -75,7 +75,7 @@ def test_run_doer(
             cancel,
             cast(tft.artemis.tasks.DoerType, foo),
             'test_run_doer',
-            79
+            '79'
         ) == tft.artemis.tasks.RESCHEDULE
 
 
@@ -112,10 +112,13 @@ def test_dispatch_task(
 
     mockpatch(tft.artemis.tasks, 'safe_call').return_value = gluetool.result.Ok(79)
 
-    r = tft.artemis.tasks.dispatch_task(logger, mock_fn, 79)
+    r = tft.artemis.tasks.dispatch_task(logger, mock_fn, '79')
 
     assert r.is_ok
-    cast(MagicMock, tft.artemis.tasks.safe_call).assert_called_once_with(mock_fn.send, 79)  # type: ignore[attr-defined]
+    cast(MagicMock, tft.artemis.tasks.safe_call).assert_called_once_with(  # type: ignore[attr-defined]
+        mock_fn.send,
+        '79'
+    )
 
 
 def test_dispatcher_task_exception(

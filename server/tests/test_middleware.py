@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, cast
 
 import _pytest.logging
 import _pytest.monkeypatch
@@ -18,7 +18,7 @@ import tft.artemis.middleware
 import tft.artemis.tasks
 import tft.artemis.tasks.update_guest_request
 from tft.artemis.middleware import _actor_arguments
-from tft.artemis.tasks import Actor, task
+from tft.artemis.tasks import Actor, ActorArgumentsType, task
 
 from . import MockPatcher, assert_failure_log, assert_log
 
@@ -32,7 +32,7 @@ def fixture_actor_arguments() -> Dict[str, MagicMock]:
 
 
 @pytest.fixture(name='message')
-def fixture_message(actor_arguments: Dict[str, Optional[str]]) -> dramatiq.broker.MessageProxy:
+def fixture_message(actor_arguments: ActorArgumentsType) -> dramatiq.broker.MessageProxy:
     message = dramatiq.message.Message(
         queue_name='dummy-queue',
         actor_name='dummy_actor',
@@ -61,7 +61,7 @@ def test_actor_arguments(
     logger: ContextAdapter,
     message: dramatiq.broker.MessageProxy,
     actor: Actor,
-    actor_arguments: Dict[str, Optional[str]]
+    actor_arguments: ActorArgumentsType
 ) -> None:
     assert _actor_arguments(logger, message, actor) == actor_arguments
 
@@ -69,7 +69,7 @@ def test_actor_arguments(
 def test_actor_arguments_signature_mismatch(
     logger: ContextAdapter,
     actor: Actor,
-    actor_arguments: Dict[str, Optional[str]],
+    actor_arguments: ActorArgumentsType,
     caplog: _pytest.logging.LogCaptureFixture
 ) -> None:
     broken_message = dramatiq.broker.MessageProxy(dramatiq.message.Message(
@@ -198,7 +198,7 @@ def fixture_provisioning_actor() -> Actor:
 
 
 @pytest.fixture(name='provisioning_actor_arguments')
-def fixture_provisioning_actor_arguments() -> Dict[str, Optional[str]]:
+def fixture_provisioning_actor_arguments() -> ActorArgumentsType:
     return {
         'guestname': 'dummy-guestname'
     }
@@ -207,7 +207,7 @@ def fixture_provisioning_actor_arguments() -> Dict[str, Optional[str]]:
 @pytest.fixture(name='provisioning_message')
 def fixture_provisioning_message(
     provisioning_actor: Actor,
-    provisioning_actor_arguments: Dict[str, Optional[str]]
+    provisioning_actor_arguments: ActorArgumentsType
 ) -> dramatiq.broker.MessageProxy:
     message = dramatiq.message.Message(
         queue_name='dummy-queue',
@@ -228,7 +228,7 @@ def fixture_logging_actor() -> Actor:
 
 
 @pytest.fixture(name='logging_actor_arguments')
-def fixture_logging_actor_arguments() -> Dict[str, Optional[str]]:
+def fixture_logging_actor_arguments() -> ActorArgumentsType:
     return {
         'guestname': 'dummy-guestname',
         'logname': 'console',
@@ -239,7 +239,7 @@ def fixture_logging_actor_arguments() -> Dict[str, Optional[str]]:
 @pytest.fixture(name='logging_message')
 def fixture_logging_message(
     logging_actor: Actor,
-    logging_actor_arguments: Dict[str, Optional[str]]
+    logging_actor_arguments: ActorArgumentsType
 ) -> dramatiq.broker.MessageProxy:
     message = dramatiq.message.Message(
         queue_name='dummy-queue',
@@ -261,7 +261,7 @@ def test_handle_tails_missing_guestname(
     logger: ContextAdapter,
     provisioning_message: dramatiq.broker.MessageProxy,
     provisioning_actor: Actor,
-    provisioning_actor_arguments: Dict[str, Optional[str]],
+    provisioning_actor_arguments: ActorArgumentsType,
     mockpatch: MockPatcher
 ) -> None:
     mockpatch(tft.artemis.middleware, '_fail_message')
@@ -287,7 +287,7 @@ def test_handle_tails_missing_log_params(
     logger: ContextAdapter,
     logging_message: dramatiq.broker.MessageProxy,
     logging_actor: Actor,
-    logging_actor_arguments: Dict[str, Optional[str]],
+    logging_actor_arguments: ActorArgumentsType,
     mockpatch: MockPatcher
 ) -> None:
     mockpatch(tft.artemis.middleware, '_fail_message')
@@ -315,7 +315,7 @@ def test_handle_tails_provisioning(
     logger: ContextAdapter,
     provisioning_message: dramatiq.broker.MessageProxy,
     provisioning_actor: Actor,
-    provisioning_actor_arguments: Dict[str, Optional[str]],
+    provisioning_actor_arguments: ActorArgumentsType,
     mockpatch: MockPatcher
 ) -> None:
     mockpatch(provisioning_actor.options['tail_handler'], 'do_handle_tail').return_value = tft.artemis.tasks.SUCCESS
@@ -348,7 +348,7 @@ def test_handle_tails_logging(
     logger: ContextAdapter,
     logging_message: dramatiq.broker.MessageProxy,
     logging_actor: Actor,
-    logging_actor_arguments: Dict[str, Optional[str]],
+    logging_actor_arguments: ActorArgumentsType,
     mockpatch: MockPatcher
 ) -> None:
     mockpatch(logging_actor.options['tail_handler'], 'do_handle_tail').return_value = tft.artemis.tasks.SUCCESS

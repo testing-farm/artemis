@@ -7,7 +7,7 @@ import json
 import os
 import threading
 import traceback
-from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set, cast
 
 import dramatiq.broker
 import dramatiq.message
@@ -23,7 +23,7 @@ from .guest import GuestLogger
 
 if TYPE_CHECKING:
     from . import ExceptionInfoType
-    from .tasks import Actor
+    from .tasks import Actor, ActorArgumentsType, ActorArgumentType
 
 
 # Dramatiq does not have a global default for maximal number of retries, the value is only present as a default
@@ -35,7 +35,7 @@ def _actor_arguments(
     logger: gluetool.log.ContextAdapter,
     message: dramatiq.message.Message,
     actor: 'Actor'
-) -> Dict[str, Union[str, None]]:
+) -> 'ActorArgumentsType':
     signature = inspect.signature(actor.fn)
 
     gluetool.log.log_dict(logger.debug, 'raw message data', message._message)
@@ -150,7 +150,7 @@ def _handle_tails(
     logger: gluetool.log.ContextAdapter,
     message: dramatiq.message.Message,
     actor: 'Actor',
-    actor_arguments: Dict[str, Optional[str]]
+    actor_arguments: 'ActorArgumentsType'
 ) -> bool:
     """
     Handle the "tails": when we run out of retries on a task, we cannot just let it fail, but we must take
@@ -225,7 +225,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # can
 
         guestname = actor_arguments['guestname'] if actor_arguments and 'guestname' in actor_arguments else None
 
-        if guestname:
+        if isinstance(guestname, str):
             logger = GuestLogger(logger, guestname)
 
         logger.info(f'retries: message={message.message_id} actor={actor.actor_name} current-retries={retries} max-retries={max_retries}')  # noqa: E501
@@ -351,7 +351,7 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
         # Extract the poolname. `None` is a good starting value, but it turns out that most of the tasks
         # relate to a particular pool in one way or another. Some tasks are given the poolname as a parameter,
         # and some can tell us by attaching a note to the message.
-        poolname: Optional[str] = None
+        poolname: ActorArgumentType = None
 
         if 'poolname' in actor_arguments:
             poolname = actor_arguments['poolname']

@@ -376,6 +376,10 @@ class DoerType(Protocol):
 # Task actor type *before* applying `@dramatiq.actor` decorator, which is hidden in our `@task` decorator.
 BareActorType = Callable[..., None]
 
+#: A type of a single task argument.
+ActorArgumentType = Union[None, str, enum.Enum]
+ActorArgumentsType = Dict[str, ActorArgumentType]
+
 
 # Task actor type.
 class Actor(Protocol):
@@ -383,18 +387,18 @@ class Actor(Protocol):
     fn: BareActorType
     options: Dict[str, Any]
 
-    def __call__(self, *args: Any) -> None:
+    def __call__(self, *args: ActorArgumentType) -> None:
         ...
 
     def send(
         self,
-        *args: Any
+        *args: ActorArgumentType
     ) -> None:
         ...
 
     def send_with_options(
         self,
-        args: Optional[Tuple[Any, ...]] = None,
+        args: Optional[Tuple[ActorArgumentType, ...]] = None,
         kwargs: Optional[Dict[str, Any]] = None,
         delay: Optional[int] = None,
         **options: Any
@@ -403,7 +407,7 @@ class Actor(Protocol):
 
     def message(
         self,
-        *args: Any
+        *args: ActorArgumentType
     ) -> dramatiq.Message:
         ...
 
@@ -413,7 +417,7 @@ class DispatchTaskType(Protocol):
         self,
         logger: gluetool.log.ContextAdapter,
         task: Actor,
-        *args: Any,
+        *args: ActorArgumentType,
         delay: Optional[int] = None
     ) -> Result[None, Failure]:
         ...
@@ -625,7 +629,7 @@ def run_doer(
     cancel: threading.Event,
     fn: DoerType,
     actor_name: str,
-    *args: Any,
+    *args: ActorArgumentType,
     **kwargs: Any
 ) -> DoerReturnType:
     """
@@ -738,7 +742,7 @@ def task_core(
     db: Optional[DB] = None,
     session: Optional[sqlalchemy.orm.session.Session] = None,
     cancel: Optional[threading.Event] = None,
-    doer_args: Optional[Tuple[Any, ...]] = None,
+    doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None
 ) -> None:
     logger.begin()
@@ -925,10 +929,40 @@ def _randomize_delay(delay: int) -> int:
     return max(0, delay + int(random.uniform(-KNOB_DELAY_UNIFORM_SPREAD.value, KNOB_DELAY_UNIFORM_SPREAD.value)))
 
 
+def format_task_invocation(
+    task: Actor,
+    *args: ActorArgumentType,
+    delay: Optional[int] = None
+) -> str:
+    formatted_args = [
+        str(arg) for arg in args
+    ]
+
+    if delay is not None:
+        formatted_args.append(f'delay={delay}')
+
+    return f'{task.actor_name}({", ".join(formatted_args)})'
+
+
+def format_task_group_invocation(
+    tasks: List[Actor],
+    *args: ActorArgumentType,
+    delay: Optional[int] = None
+) -> str:
+    formatted_args = [
+        str(arg) for arg in args
+    ]
+
+    if delay is not None:
+        formatted_args.append(f'delay={delay}')
+
+    return f'({" | ".join([task.actor_name for task in tasks])})({", ".join(formatted_args)})'
+
+
 def dispatch_task(
     logger: gluetool.log.ContextAdapter,
     task: Actor,
-    *args: Any,
+    *args: ActorArgumentType,
     delay: Optional[int] = None
 ) -> Result[None, Failure]:
     """
@@ -950,19 +984,7 @@ def dispatch_task(
         r = safe_call(task.send_with_options, args=args, delay=delay * 1000)
 
     if r.is_ok:
-        formatted_args = [
-            str(arg) for arg in args
-        ]
-
-        if delay is not None:
-            formatted_args += [
-                'delay={}'.format(delay)
-            ]
-
-        logger.info('scheduled task {}({})'.format(
-            task.actor_name,
-            ', '.join(formatted_args)
-        ))
+        logger.info(f'scheduled task {format_task_invocation(task, *args, delay=delay)}')
 
         if KNOB_CLOSE_AFTER_DISPATCH.value:
             logger.debug('closing broker connection as requested')
@@ -983,7 +1005,7 @@ def dispatch_task(
 def dispatch_group(
     logger: gluetool.log.ContextAdapter,
     tasks: List[Actor],
-    *args: Any,
+    *args: ActorArgumentType,
     on_complete: Optional[Actor] = None,
     delay: Optional[int] = None
 ) -> Result[None, Failure]:
@@ -1014,19 +1036,7 @@ def dispatch_group(
 
             group.run(delay=delay * 1000)
 
-        formatted_args = [
-            str(arg) for arg in args
-        ]
-
-        if delay is not None:
-            formatted_args += [
-                'delay={}'.format(delay)
-            ]
-
-        logger.info('scheduled group ({})({})'.format(
-            ' | '.join([task.actor_name for task in tasks]),
-            ', '.join(formatted_args)
-        ))
+        logger.info(f'scheduled group {format_task_group_invocation(tasks, *args, delay=delay)}')
 
     except Exception as exc:
         return Error(Failure.from_exc(
@@ -1924,7 +1934,7 @@ class TailHandler:
         db: DB,
         session: sqlalchemy.orm.session.Session,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]]
+        actor_arguments: ActorArgumentsType
     ) -> Dict[str, str]:
         return {}
 
@@ -1932,14 +1942,14 @@ class TailHandler:
         self,
         logger: gluetool.log.ContextAdapter,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]]
+        actor_arguments: ActorArgumentsType
     ) -> gluetool.log.ContextAdapter:
         return logger
 
-    def assert_actor_arguments(self, actor_arguments: Dict[str, Optional[str]], *names: str) -> bool:
+    def assert_actor_arguments(self, actor_arguments: ActorArgumentsType, *names: str) -> bool:
         return all([name in actor_arguments for name in names])
 
-    def extract_actor_arguments(self, actor_arguments: Dict[str, Optional[str]], *names: str) -> List[Optional[str]]:
+    def extract_actor_arguments(self, actor_arguments: ActorArgumentsType, *names: str) -> List[ActorArgumentType]:
         return [actor_arguments[name] for name in names]
 
     def do_handle_tail(
@@ -1949,7 +1959,7 @@ class TailHandler:
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]],
+        actor_arguments: ActorArgumentsType,
         failure_details: Dict[str, str]
     ) -> DoerReturnType:
         raise NotImplementedError()
@@ -1960,7 +1970,7 @@ class TailHandler:
         db: DB,
         session: sqlalchemy.orm.session.Session,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]]
+        actor_arguments: ActorArgumentsType
     ) -> bool:
         cancel = threading.Event()
 
@@ -2009,7 +2019,7 @@ class ProvisioningTailHandler(TailHandler):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]]
+        actor_arguments: ActorArgumentsType
     ) -> Dict[str, str]:
         details: Dict[str, str] = {}
 
@@ -2022,7 +2032,7 @@ class ProvisioningTailHandler(TailHandler):
         self,
         logger: gluetool.log.ContextAdapter,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]]
+        actor_arguments: ActorArgumentsType
     ) -> gluetool.log.ContextAdapter:
         return TaskLogger(logger, 'provisioning-tail')
 
@@ -2033,7 +2043,7 @@ class ProvisioningTailHandler(TailHandler):
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]],
+        actor_arguments: ActorArgumentsType,
         failure_details: Dict[str, str]
     ) -> DoerReturnType:
         workspace = Workspace(
@@ -2061,7 +2071,8 @@ class ProvisioningTailHandler(TailHandler):
         guestname, *_ = self.extract_actor_arguments(actor_arguments, 'guestname')
 
         # guestname can never be None
-        assert guestname is not None
+        # assert guestname is not None
+        assert isinstance(guestname, str)
 
         workspace.load_guest_request(guestname, state=self.current_state)
 
@@ -2118,7 +2129,7 @@ class LoggingTailHandler(TailHandler):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]]
+        actor_arguments: ActorArgumentsType
     ) -> Dict[str, str]:
         details: Dict[str, str] = {}
 
@@ -2137,7 +2148,7 @@ class LoggingTailHandler(TailHandler):
         self,
         logger: gluetool.log.ContextAdapter,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]]
+        actor_arguments: ActorArgumentsType
     ) -> gluetool.log.ContextAdapter:
         return TaskLogger(logger, 'logging-tail')
 
@@ -2148,7 +2159,7 @@ class LoggingTailHandler(TailHandler):
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
         actor: Actor,
-        actor_arguments: Dict[str, Optional[str]],
+        actor_arguments: ActorArgumentsType,
         failure_details: Dict[str, str]
     ) -> DoerReturnType:
         workspace = Workspace(
