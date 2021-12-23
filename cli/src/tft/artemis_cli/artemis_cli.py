@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 import json
 import os.path
 import shutil
@@ -15,13 +18,10 @@ import click_spinner
 import semver
 import stackprinter
 
-from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
-               DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW,
-               BasicAuthConfiguration, Configuration, Logger, artemis_create,
-               artemis_delete, artemis_get_console_url, artemis_inspect,
-               artemis_restore, artemis_update, confirm, fetch_artemis,
-               load_yaml, prettify_json, prettify_yaml, print_table, prompt,
-               validate_struct)
+from . import DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT, DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW, \
+    BasicAuthConfiguration, Configuration, Logger, artemis_create, artemis_delete, artemis_get_console_url, \
+    artemis_inspect, artemis_restore, artemis_update, confirm, fetch_artemis, load_yaml, prettify_json, prettify_yaml, \
+    print_table, prompt, validate_struct
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000

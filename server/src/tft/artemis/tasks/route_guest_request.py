@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 Find the most suitable pool for a given request, and dispatch its provisioning.
 

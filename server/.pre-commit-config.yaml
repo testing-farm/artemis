@@ -50,3 +50,12 @@ repos:
         entry: make -C server/ docs-knobs
         language: system
         pass_filenames: false
+
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.1.10
+    hooks:
+      - id: insert-license
+        files: \.py$
+        args:
+          - --license-filepath
+          - LICENSE_SPDX

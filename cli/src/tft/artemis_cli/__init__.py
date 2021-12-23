@@ -1,11 +1,13 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 import concurrent.futures
 import dataclasses
 import json
 import shlex
 import subprocess
 import sys
-from typing import (Any, Callable, Dict, Iterable, List, NamedTuple, NoReturn,
-                    Optional, Tuple, TypeVar)
+from typing import Any, Callable, Dict, Iterable, List, NamedTuple, NoReturn, Optional, Tuple, TypeVar
 
 import click
 import click_spinner
@@ -18,7 +20,6 @@ import ruamel.yaml.compat
 import semver
 import tabulate
 import urlnormalizer
-
 
 DEFAULT_API_TIMEOUT = 10
 DEFAULT_API_RETRIES = 10

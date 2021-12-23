@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 #
 # Artemis documentation build configuration file, created by
 # sphinx-quickstart on Sun Sep 27 19:29:52 2020.

@@ -1,3 +1,6 @@
+# Copyright Contributors to the Testing Farm project.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 Routing script, for picking suitable pools for a given guest request. It is called by Artemis every time it needs to
 decide which pool to ask for the actual provisioning.
