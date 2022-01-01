@@ -222,7 +222,10 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #
 #  boot:
 #      method: bios
+<<<<<<< HEAD
 #
+=======
+>>>>>>> Adds support for boot.method HW constraint
 #  cpu:
 #      processors: 1
 #      cores: 2
