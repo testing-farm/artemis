@@ -25,7 +25,7 @@ from .. import Failure, JSONType, SerializableContainer, log_dict_yaml
 from ..cache import get_cached_set_as_list, get_cached_set_item
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Flavor, FlavorBoot, FlavorCpu, FlavorVirtualization
+from ..environment import UNITS, Flavor, FlavorBoot, FlavorBootMethodType, FlavorCpu, FlavorVirtualization
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, HookImageInfoMapper, \
@@ -45,6 +45,22 @@ InstanceOwnerType = Tuple[Dict[str, Any], str]
 # Note: not using enum which would wrap the values with a Python class - these are being passed directly
 # in and out of AWS EC2 API, therefore sticking with plain strings.
 EBSVolumeTypeType = Literal['gp2', 'gp3', 'io1', 'io2', 'sc1', 'st1', 'standard']
+
+
+# Boot modes
+#
+# https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ami-boot.html
+#
+# Note: not using enum which would wrap the values with a Python class - these are being passed directly
+# in and out of AWS EC2 API, therefore sticking with plain strings.
+BootModeType = Literal['legacy-bios', 'uefi']
+
+
+def boot_mode_to_flavor(mode: BootModeType) -> FlavorBootMethodType:
+    if mode == 'legacy-bios':
+        return 'bios'
+
+    return cast(FlavorBootMethodType, mode)
 
 
 # Type of container holding EBS properties of a block device mapping.
@@ -1365,6 +1381,12 @@ class AWSDriver(PoolDriver):
                 AWSFlavor(
                     name=flavor['InstanceType'],
                     id=flavor['InstanceType'],
+                    boot=FlavorBoot(
+                        method=[
+                            boot_mode_to_flavor(mode)
+                            for mode in cast(List[BootModeType], flavor.get('SupportedBootModes', []))
+                        ]
+                    ),
                     cpu=FlavorCpu(
                         cores=int(flavor['VCpuInfo']['DefaultVCpus'])
                     ),
