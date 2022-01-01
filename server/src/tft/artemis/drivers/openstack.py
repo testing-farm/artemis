@@ -15,7 +15,8 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
-from ..environment import UNITS, Environment, Flavor, FlavorCpu, FlavorDisk, FlavorDisks, FlavorVirtualization
+from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, \
+    FlavorVirtualization
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, ConsoleUrlData, GuestLogUpdateProgress, HookImageInfoMapper, \
@@ -897,6 +898,7 @@ class OpenStackDriver(PoolDriver):
                 PoolImageInfo(
                     name=image['Name'],
                     id=image['ID'],
+                    boot=FlavorBoot(),
                     ssh=PoolImageSSHInfo()
                 )
                 for image in cast(List[Dict[str, str]], r_images.unwrap())

@@ -12,7 +12,8 @@ from gluetool.result import Result
 import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS, ConstraintBase, Environment, Flavor, FlavorCpu, FlavorNetwork, FlavorNetworks
+from tft.artemis.environment import UNITS, ConstraintBase, Environment, Flavor, FlavorBoot, FlavorCpu, FlavorNetwork, \
+    FlavorNetworks
 
 
 @pytest.fixture(name='schema_v0_0_19')
@@ -437,6 +438,63 @@ def test_example_multiple_networks(logger: ContextAdapter) -> None:
             ])
         )
     ) is False
+
+
+def test_example_boot(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        boot:
+          method: bios
+        """
+    )
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            boot=FlavorBoot(
+                method=['bios']
+            )
+        )
+    ) is True
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            boot=FlavorBoot(
+                method=['uefi']
+            )
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            boot=FlavorBoot()
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            boot=FlavorBoot(
+                method=['bios', 'uefi']
+            )
+        )
+    ) is True
 
 
 def test_example_operators(logger: ContextAdapter) -> None:
