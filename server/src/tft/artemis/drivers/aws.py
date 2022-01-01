@@ -25,7 +25,7 @@ from .. import Failure, JSONType, SerializableContainer, log_dict_yaml
 from ..cache import get_cached_set_as_list, get_cached_set_item
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Flavor, FlavorCpu, FlavorVirtualization
+from ..environment import UNITS, Flavor, FlavorBoot, FlavorCpu, FlavorVirtualization
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, HookImageInfoMapper, \
@@ -1325,6 +1325,7 @@ class AWSDriver(PoolDriver):
                 AWSPoolImageInfo(
                     name=image['Name'],
                     id=image['ImageId'],
+                    boot=FlavorBoot(),
                     ssh=PoolImageSSHInfo(),
                     platform_details=image['PlatformDetails'],
                     block_device_mappings=image['BlockDeviceMappings'],

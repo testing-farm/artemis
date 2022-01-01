@@ -11,6 +11,7 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
+from ..environment import FlavorBoot
 from ..metrics import ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, \
     PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
@@ -86,6 +87,7 @@ class AzureDriver(PoolDriver):
         return Ok(PoolImageInfo(
             name=imagename,
             id=imagename,
+            boot=FlavorBoot(),
             ssh=PoolImageSSHInfo()
         ))
 

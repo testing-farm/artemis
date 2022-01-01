@@ -18,7 +18,7 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure, log_dict_yaml
 from ..db import GuestRequest
-from ..environment import And, Constraint, ConstraintBase, Environment, Operator, Or
+from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Operator, Or
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, HookImageInfoMapper, PoolData, PoolDriver, PoolImageInfo, \
@@ -384,6 +384,7 @@ class BeakerDriver(PoolDriver):
         return Ok(PoolImageInfo(
             name=imagename,
             id=imagename,
+            boot=FlavorBoot(),
             ssh=PoolImageSSHInfo()
         ))
 

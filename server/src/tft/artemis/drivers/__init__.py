@@ -29,7 +29,7 @@ from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, process_
 from ..cache import get_cached_set_as_list, get_cached_set_item, refresh_cached_set
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, SnapshotRequest, SSHKey
-from ..environment import UNITS, Environment, Flavor, FlavorDisk, FlavorDisks, MeasurableConstraintValueType
+from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorDisk, FlavorDisks, MeasurableConstraintValueType
 from ..knobs import Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
@@ -342,6 +342,7 @@ class PoolImageInfo(SerializableContainer):
     name: str
     id: str
 
+    boot: FlavorBoot
     ssh: PoolImageSSHInfo
 
     def __repr__(self) -> str:
@@ -355,6 +356,7 @@ class PoolImageInfo(SerializableContainer):
         """
 
         serialized = super(PoolImageInfo, self).serialize_to_json()
+        serialized['boot'] = self.boot.serialize_to_json()
         serialized['ssh'] = self.ssh.serialize_to_json()
 
         return serialized
@@ -369,6 +371,7 @@ class PoolImageInfo(SerializableContainer):
         """
 
         image = cls(**serialized)
+        image.boot = FlavorBoot.unserialize_from_json(serialized['boot'])
         image.ssh = PoolImageSSHInfo.unserialize_from_json(serialized['ssh'])
 
         return image
