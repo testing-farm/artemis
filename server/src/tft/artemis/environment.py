@@ -22,7 +22,7 @@ import pint
 from gluetool.result import Error, Ok, Result
 from pint import Quantity
 
-from . import Failure, SerializableContainer, format_dict_yaml
+from . import Failure, SerializableContainer
 
 #: Unit registry, used and shared by all code.
 UNITS = pint.UnitRegistry()
@@ -96,15 +96,6 @@ class _FlavorSubsystemContainer(SerializableContainer):
 
     #: A prefix to add before all field names when formatting fields. If unset, no prefix is added.
     CONTAINER_PREFIX: ClassVar[Optional[str]] = None
-
-    def __repr__(self) -> str:
-        """
-        Return text representation of subsystem properties.
-
-        :returns: human-readable rendering of subsystem properties.
-        """
-
-        return format_dict_yaml(self.serialize_to_json())
 
     # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone some complex fields.
     def clone(self: U) -> U:
@@ -267,7 +258,7 @@ class FlavorCpu(_FlavorSubsystemContainer):
     model_name: Optional[str] = None
 
 
-@dataclasses.dataclass(repr=True)
+@dataclasses.dataclass(repr=False)
 class FlavorDisk(_FlavorSubsystemContainer):
     """
     Represents a HW properties related to persistent storage a flavor, one disk in particular.
@@ -395,7 +386,7 @@ class FlavorDisks(_FlavorSequenceContainer[FlavorDisk]):
         return len(self.items) - 1 + expansion.max_additional_items
 
 
-@dataclasses.dataclass(repr=True)
+@dataclasses.dataclass(repr=False)
 class FlavorNetwork(_FlavorSubsystemContainer):
     """
     Represents a HW properties related to a network interface of a flavor, one interface in particular.
@@ -479,7 +470,6 @@ class Flavor(_FlavorSubsystemContainer):
     #: Virtualization properties.
     virtualization: FlavorVirtualization = dataclasses.field(default_factory=FlavorVirtualization)
 
-    # TODO: because of a circular dependency, we can't derive this class from SerializableContainer :/
     def serialize_to_json(self) -> Dict[str, Any]:
         """
         Serialize properties to JSON.
