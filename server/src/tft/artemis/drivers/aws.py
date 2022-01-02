@@ -195,7 +195,7 @@ class AWSPoolData(PoolData):
     spot_instance_id: Optional[str] = None
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(repr=False)
 class AWSPoolImageInfo(PoolImageInfo):
     #: Carries ``PlatformDetails`` field as provided by AWS image description.
     platform_details: str
@@ -205,17 +205,6 @@ class AWSPoolImageInfo(PoolImageInfo):
 
     #: Carries `EnaSupport` field as provided by AWS image description.
     ena_support: bool
-
-    def __repr__(self) -> str:
-        return (
-            '<AWSPoolImageInfo:'
-            f' name={self.name}'
-            f' id={self.id}'
-            f' ssh={repr(self.ssh)}'
-            f' platform-details={self.platform_details}'
-            f' ena_support={self.ena_support}'
-            '>'
-        )
 
     def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
         serialized = super(AWSPoolImageInfo, self).serialize_to_json_scrubbed()
