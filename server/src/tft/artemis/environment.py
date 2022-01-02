@@ -12,7 +12,6 @@ size, etc.
 import dataclasses
 import enum
 import itertools
-import json
 import operator
 import re
 from typing import Any, Callable, ClassVar, Dict, Iterable, Iterator, List, Optional, Sequence, Type, TypeVar, Union, \
@@ -1383,8 +1382,8 @@ def constraints_from_environment_requirements(spec: SpecType) -> Result[Constrai
     return r_constraints
 
 
-@dataclasses.dataclass
-class HWRequirements:
+@dataclasses.dataclass(repr=False)
+class HWRequirements(SerializableContainer):
     """
     Represents HQ requirements of the environment.
     """
@@ -1396,8 +1395,8 @@ class HWRequirements:
     constraints: Optional[SpecType] = None
 
 
-@dataclasses.dataclass
-class OsRequirements:
+@dataclasses.dataclass(repr=False)
+class OsRequirements(SerializableContainer):
     """
     Represents OS requirements of the environment.
     """
@@ -1407,7 +1406,7 @@ class OsRequirements:
 
 
 @dataclasses.dataclass(repr=False)
-class Environment:
+class Environment(SerializableContainer):
     """
     Represents an environment and its dimensions.
 
@@ -1424,40 +1423,6 @@ class Environment:
     #: If set, the request limits the instance to be either a spot instance, or a regular one. If left unset,
     #: the request does not care, and any kind of instance can be used.
     spot_instance: Optional[bool] = None
-
-    def __repr__(self) -> str:
-        """
-        Return text representation of the environment suitable for logging.
-
-        :returns: human-readable rendering of the environment.
-        """
-
-        return json.dumps(dataclasses.asdict(self))
-
-    def serialize_to_json(self) -> Dict[str, Any]:
-        """
-        Serialize environment to a JSON.
-
-        :returns: serialized environment.
-        """
-
-        return dataclasses.asdict(self)
-
-    @classmethod
-    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'Environment':
-        """
-        Construct an environment from its JSON serialized form.
-
-        :param serialized: serialized environment.
-        :returns: new :py:class:`Environment` instance.
-        """
-
-        env = Environment(**serialized)
-
-        env.hw = HWRequirements(**serialized['hw'])
-        env.os = OsRequirements(**serialized['os'])
-
-        return env
 
     @property
     def has_hw_constraints(self) -> bool:
