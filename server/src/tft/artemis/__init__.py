@@ -157,6 +157,24 @@ class SerializableContainer:
 
         _YAML_DUMPABLE_CLASSES.add(cls)
 
+    def __str__(self) -> str:
+        """
+        Return text representation of the container.
+
+        :returns: human-readable rendering of the container.
+        """
+
+        return format_dict_yaml(self.serialize_to_json())
+
+    def __repr__(self) -> str:
+        """
+        Return text representation of the container.
+
+        :returns: human-readable rendering of the container.
+        """
+
+        return format_dict_yaml(self.serialize_to_json())
+
     def serialize_to_json(self) -> Dict[str, Any]:
         serialized = dataclasses.asdict(self)
 

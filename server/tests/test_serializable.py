@@ -34,10 +34,34 @@ class NestedContainer(tft.artemis.SerializableContainer):
     bar: str
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(repr=False)
 class NestingContainer(tft.artemis.SerializableContainer):
     foo: str
     child: NestedContainer
+    baz: int
+
+
+@pytest.fixture(name='nesting_container')
+def fixture_nesting_container() -> NestingContainer:
+    return NestingContainer(
+        foo='some foo value',
+        child=NestedContainer(
+            bar='some bar value'
+        ),
+        baz=79
+    )
+
+
+# Use lstrip() to get rid of the leading new-line - it's there because of the formatting of the multiline string,
+# which makes YAML easier to read. `dedent()` won't get rid of it.
+NESTING_CONTAINER_AS_STRING = textwrap.dedent(
+    """
+    foo: some foo value
+    child:
+        bar: some bar value
+    baz: 79
+    """
+).lstrip()
 
 
 def test_json() -> None:
@@ -73,38 +97,21 @@ def test_yaml_dumpable_registry() -> None:
     assert UnusedContainer in tft.artemis._YAML_DUMPABLE_CLASSES
 
 
-def test_nesting() -> None:
-    foo = NestingContainer(
-        foo='some foo value',
-        child=NestedContainer(
-            bar='some bar value'
-        )
-    )
+def test_nesting(nesting_container: NestingContainer) -> None:
+    serialized = nesting_container.serialize_to_json()
 
-    serialized = foo.serialize_to_json()
-
-    assert serialized == {'foo': 'some foo value', 'child': {'bar': 'some bar value'}}
+    assert serialized == {'baz': 79, 'foo': 'some foo value', 'child': {'bar': 'some bar value'}}
 
     bar = NestingContainer.unserialize_from_json(serialized)
 
-    assert foo == bar
-    assert type(foo) is type(bar)
+    assert nesting_container == bar
+    assert type(nesting_container) is type(bar)
 
 
-def test_to_yaml(YAML: ruamel.yaml.main.YAML) -> None:
-    foo = NestingContainer(
-        foo='some foo value',
-        child=NestedContainer(
-            bar='some bar value'
-        )
-    )
+def test_to_yaml(YAML: ruamel.yaml.main.YAML, nesting_container: NestingContainer) -> None:
+    assert tft.artemis.format_dict_yaml(nesting_container) == NESTING_CONTAINER_AS_STRING
 
-    # Use lstrip() to get rid of the leading new-line - it's there because of the formatting of the multiline string,
-    # which makes YAML easier to read. `dedent()` won't get rid of it.
-    assert tft.artemis.format_dict_yaml(foo) == textwrap.dedent(
-        """
-        foo: some foo value
-        child:
-            bar: some bar value
-        """
-    ).lstrip()
+
+def test_to_str(YAML: ruamel.yaml.main.YAML, nesting_container: NestingContainer) -> None:
+    assert str(nesting_container) == NESTING_CONTAINER_AS_STRING
+    assert repr(nesting_container) == NESTING_CONTAINER_AS_STRING
