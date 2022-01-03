@@ -51,12 +51,6 @@ expose_hooks() {
     done
 }
 
-# This is an important setting: do not allow Dramatiq to fetch more messages than needed. Fetch new message
-# once task is done and completed, avoid pre-fetching multiple messages at once. Pre-fetching messes with
-# priorities, and may lead to lost messages (although only in some very rare conditions).
-# TODO: make this controllable via ARTEMIS_* variable.
-export dramatiq_queue_prefetch=1
-
 ARTEMIS_CONTAINER_LOG_METHOD="${ARTEMIS_CONTAINER_LOG_METHOD:-file}"
 ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH="${ARTEMIS_CONTAINER_LOG_PROMTAIL_CONFIG_FILEPATH:-/promtail-config/promtail.yaml}"
 ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS="${ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS:-}"
@@ -82,6 +76,17 @@ fi
 if [ "$ARTEMIS_WORKER_QUEUES" != "" ]; then
     ARTEMIS_WORKER_OPTIONS="-Q ${ARTEMIS_WORKER_QUEUES} ${ARTEMIS_WORKER_OPTIONS}"
 fi
+
+# This is an important setting: do not allow Dramatiq to fetch more messages than needed. Fetch new message
+# once task is done and completed, avoid pre-fetching too many messages at once. Pre-fetching messes with
+# priorities, and may lead to lost messages (although only in some very rare conditions).
+#
+# TODO: when we add `artemis-worker` script, wrapping dramatiq worker CLI, we could make our ARTEMIS_* variable
+# to work transparently for everyone running the worker. Until then, we cannot patch dramatiq code to use our ARTEMIS_*
+# variable, neither can we make our code to read our variable and set the one read by Dramatiq before the variable
+# is used.
+export dramatiq_queue_prefetch="${ARTEMIS_WORKER_PREFETCH:-0}"
+export dramatiq_delay_queue_prefetch="${ARTEMIS_WORKER_PREFETCH_DELAYED:-0}"
 
 cd /APP
 
