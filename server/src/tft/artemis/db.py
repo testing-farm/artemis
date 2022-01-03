@@ -1,6 +1,8 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
+import dataclasses
 import datetime
 import enum
 import functools
@@ -11,11 +13,12 @@ import secrets
 import threading
 import time
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, Iterator, List, Optional, Tuple, Type, TypeVar, Union, \
-    cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Generic, Iterator, List, Optional, Tuple, Type, \
+    TypeVar, Union, cast
 
 import gluetool.glue
 import gluetool.log
+import psycopg2.errors
 import sqlalchemy
 import sqlalchemy.event
 import sqlalchemy.ext.declarative
@@ -24,6 +27,7 @@ from gluetool.result import Error, Ok, Result
 from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query as _Query
+from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 
@@ -410,6 +414,112 @@ def upsert(
         expected_records = expected_records if expected_records is not None else 1
 
     return safe_db_change(logger, session, statement, expected_records=expected_records)
+
+
+@dataclasses.dataclass
+class TransactionResult:
+    success: bool = False
+
+    failure: Optional['Failure'] = None
+    failed_query: Optional[str] = None
+
+
+@contextlib.contextmanager
+def transaction() -> Generator[TransactionResult, None, None]:
+    """
+    Thin context manager for handling possible transation rollback when executing multiple queries.
+
+    .. note::
+
+       Starting a DB session is **not** the responsibility of this context manager - that is left to caller, because
+       such a session can and would be used for queries that do not necessarily need to cause transaction rollback.
+
+    .. code-block:: python
+
+       with DB.get_session(transactional=True) as session:
+           with transaction() as result:
+               session.execute(sqlalchemy.insert(...))
+               session.execute(sqlalchemy.insert(...))
+               session.execute(sqlalchemy.insert(...))
+
+        if result.success is not True:
+            # handle transaction rollback (or DB error)
+            ...
+    """
+
+    result = TransactionResult()
+
+    def _save_error(exc: Exception) -> None:
+        result.success = False
+
+        if isinstance(exc, sqlalchemy.exc.StatementError):
+            result.failure = Failure.from_exc(
+                'failed to execute in transaction',
+                exc=exc,
+                query=exc.statement
+            )
+
+        else:
+            result.failure = Failure.from_exc(
+                'failed to execute in transaction',
+                exc=exc
+            )
+
+    try:
+        yield result
+
+    except sqlalchemy.exc.OperationalError as exc:
+        if not isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
+           or exc.orig.pgerror.strip() != 'ERROR:  could not serialize access due to concurrent update':
+            _save_error(exc)
+            return
+
+        result.success = False
+        result.failed_query = exc.statement
+
+    except Exception as exc:
+        _save_error(exc)
+
+    else:
+        result.success = True
+
+
+def execute_in_transaction(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    *queries: Union[sqlalchemy.insert, sqlalchemy.update]
+) -> Result[bool, 'Failure']:
+    """
+    Execute given SQL queries as if they were part of a single transaction, and detect transaction rollback.
+
+    .. note::
+
+       Since the DB session is an input parameter of this function, it is **not** the responsibility of this
+       function to start a transaction-aware DB session - that is left to caller, because such a session
+       can and would be used for other queries as well.
+
+    :returns: ``True`` when all queries were successfully executed, ``False`` otherwise.
+    """
+
+    try:
+        for query in queries:
+            session.execute(query)
+
+    except sqlalchemy.exc.OperationalError as exc:
+        if not isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
+           or exc.orig.pgerror.strip() != 'ERROR:  could not serialize access due to concurrent update':
+            raise exc
+
+        return Ok(False)
+
+    except Exception as exc:
+        return Error(Failure.from_exc(
+            'failed to execute in transaction',
+            exc=exc,
+            query=stringify_query(session, query)
+        ))
+
+    return Ok(True)
 
 
 class UserRoles(enum.Enum):
@@ -1111,6 +1221,21 @@ class DB:
     instance: Optional['DB'] = None
     _lock = threading.RLock()
 
+    #: "Root" engine, with the setup dictated by DB configuration.
+    engine: sqlalchemy.engine.Engine
+
+    #: Engine derived from :py:attr:`engine`, configured to use no transactions in an auto-commit fashion.
+    engine_autocommit: sqlalchemy.engine.Engine
+    #: Session factory on top of auto-commit :py:attr:`engine_autocommit` engine: ``AUTOCOMMIT`` isolation level
+    #: is applied to each and every query.
+    sessionmaker_autocommit: sessionmaker
+
+    #: Engine derived from :py:attr:`engine`, configured to transactions with ``REPEATABLE READ`` isolation level.
+    engine_transactional: sqlalchemy.engine.Engine
+    #: Session factory on top of auto-commit :py:attr:`engine_treansactional` engine: every session spawns
+    #: a transaction with ``REPEATABLE READ`` isolation level.
+    sessionmaker_transactional: sessionmaker
+
     def _setup_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1160,7 +1285,17 @@ class DB:
         else:
             self.engine = sqlalchemy.create_engine(url)
 
-        self._sessionmaker = sqlalchemy.orm.sessionmaker(bind=self.engine)
+        # TODO: hopefully, with better sqlalchemy stubs, cast() wouldn't be needed anymore
+        _engine_execution_options = cast(
+            Callable[..., sqlalchemy.engine.Engine],
+            self.engine.execution_options
+        )
+
+        self.engine_autocommit = _engine_execution_options(isolation_level='AUTOCOMMIT')
+        self.sessionmaker_autocommit = sqlalchemy.orm.sessionmaker(bind=self.engine_autocommit)
+
+        self.engine_transactional = _engine_execution_options(isolation_level='REPEATABLE READ')
+        self.sessionmaker_transactional = sqlalchemy.orm.sessionmaker(bind=self.engine_transactional)
 
     def __new__(
         cls,
@@ -1176,8 +1311,20 @@ class DB:
         return cls.instance
 
     @contextmanager
-    def get_session(self) -> Iterator[sqlalchemy.orm.session.Session]:
-        Session = sqlalchemy.orm.scoped_session(self._sessionmaker)
+    def get_session(self, transactional: bool = False) -> Iterator[sqlalchemy.orm.session.Session]:
+        """
+        Create new DB session.
+
+        :param transactional: if set, session will support transactions rather than auto-commit isolation level.
+        :returns: new DB session.
+        """
+
+        if transactional:
+            Session = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional)
+
+        else:
+            Session = sqlalchemy.orm.scoped_session(self.sessionmaker_autocommit)
+
         session = Session()
 
         if self._echo_pool:

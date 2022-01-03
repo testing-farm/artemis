@@ -184,6 +184,42 @@ def fixture_schema_actual(
     alembic.command.upgrade(alembic_config, 'head')
 
 
+@pytest.fixture(name='_schema_initialized_actual')
+def fixture_schema_initialized_actual(
+    session: sqlalchemy.orm.session.Session,
+    # TODO: cannot use `usefixtures` for a fixture - find a pytest issue where this is tracked
+    _schema_actual: Any
+) -> None:
+    import tft.artemis.environment
+
+    session.execute(sqlalchemy.insert(tft.artemis.db.User.__table__).values(username='dummy-user', role='ADMIN'))
+    session.execute(sqlalchemy.insert(tft.artemis.db.SSHKey.__table__).values(
+        keyname='dummy-ssh-key',
+        enabled=True,
+        ownername='dummy-user',
+        file='',
+        private='',
+        public=''
+    ))
+
+    session.execute(tft.artemis.db.GuestRequest.create_query(
+        'dummy-guest',
+        tft.artemis.environment.Environment(
+            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+            os=tft.artemis.environment.OsRequirements(compose='dummy-compose')
+        ),
+        'dummy-user',
+        'dummy-ssh-key',
+        22,
+        'root',
+        None,
+        None,
+        False,
+        None,
+        []
+    ))
+
+
 @pytest.fixture(name='redis')
 def fixture_redis(
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
