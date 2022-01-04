@@ -15,11 +15,12 @@ import itertools
 import json
 import operator
 import re
-from typing import Any, Callable, ClassVar, Dict, Iterator, List, Optional, Sequence, Type, TypeVar, Union, cast
+from typing import Any, Callable, ClassVar, Dict, Iterable, Iterator, List, Optional, Sequence, Type, TypeVar, Union, \
+    cast
 
 import gluetool.log
 import pint
-from gluetool.result import Ok, Result
+from gluetool.result import Error, Ok, Result
 from pint import Quantity
 
 from . import Failure, SerializableContainer, format_dict_yaml
@@ -603,7 +604,7 @@ class ConstraintBase:
     Base class for all classes representing one or more constraints.
     """
 
-    def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> bool:
+    def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Result[bool, Failure]:
         """
         Inspect the given flavor, and decide whether it fits the limits imposed by this constraint.
 
@@ -612,9 +613,13 @@ class ConstraintBase:
         :returns: ``True`` if the given flavor satisfies the constraint.
         """
 
-        return False
+        return Ok(False)
 
-    def prune_on_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Optional['ConstraintBase']:
+    def prune_on_flavor(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        flavor: Flavor
+    ) -> Result[Optional['ConstraintBase'], Failure]:
         """
         Decide whether to keep this constraint or not, given the flavor.
 
@@ -623,7 +628,12 @@ class ConstraintBase:
         :returns: constraint when the constraint evaluates to ``True``, ``None`` otherwise.
         """
 
-        return self if self.eval_flavor(logger, flavor) else None
+        r = self.eval_flavor(logger, flavor)
+
+        if r.is_error:
+            return Error(r.unwrap_error())
+
+        return Ok(self if r.unwrap() else None)
 
     def spans(
         self,
@@ -674,6 +684,31 @@ class ConstraintBase:
         return self.format()
 
 
+ReducerType = Callable[[Iterable[Result[bool, Failure]]], Result[bool, Failure]]
+
+
+def _reduce_any(values: Iterable[Result[bool, Failure]]) -> Result[bool, Failure]:
+    for value in values:
+        if value.is_error:
+            return value
+
+        if value.unwrap() is True:
+            return Ok(True)
+
+    return Ok(False)
+
+
+def _reduce_all(values: Iterable[Result[bool, Failure]]) -> Result[bool, Failure]:
+    for value in values:
+        if value.is_error:
+            return value
+
+        if value.unwrap() is not True:
+            return Ok(False)
+
+    return Ok(True)
+
+
 class CompoundConstraint(ConstraintBase):
     """
     Base class for all *compound* constraints, constraints imposed to more than one dimension.
@@ -681,7 +716,7 @@ class CompoundConstraint(ConstraintBase):
 
     def __init__(
         self,
-        reducer: Callable[[List[bool]], bool] = any,
+        reducer: ReducerType = _reduce_any,
         constraints: Optional[List[ConstraintBase]] = None
     ) -> None:
         """
@@ -694,7 +729,7 @@ class CompoundConstraint(ConstraintBase):
         self.reducer = reducer
         self.constraints = constraints or []
 
-    def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> bool:
+    def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Result[bool, Failure]:
         """
         Compare given flavor against the constraint.
 
@@ -705,12 +740,16 @@ class CompoundConstraint(ConstraintBase):
         :returns: ``True`` if the given flavor satisfies the constraint.
         """
 
-        return self.reducer([
+        return self.reducer(
             constraint.eval_flavor(logger, flavor)
             for constraint in self.constraints
-        ])
+        )
 
-    def prune_on_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Optional[ConstraintBase]:
+    def prune_on_flavor(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        flavor: Flavor
+    ) -> Result[Optional[ConstraintBase], Failure]:
         """
         Decide whether to keep this constraint or not, given the flavor.
 
@@ -719,20 +758,30 @@ class CompoundConstraint(ConstraintBase):
         :returns: constraint when the constraint evaluates to ``True``, ``None`` otherwise.
         """
 
-        if self.eval_flavor(logger, flavor) is not True:
-            return None
+        r = self.eval_flavor(logger, flavor)
+
+        if r.is_error:
+            return Error(r.unwrap_error())
+
+        if r.unwrap() is not True:
+            return Ok(None)
 
         pruned_constraints: List[ConstraintBase] = []
 
         for constraint in self.constraints:
-            pruned_constraint = constraint.prune_on_flavor(logger, flavor)
+            r_pruned = constraint.prune_on_flavor(logger, flavor)
+
+            if r_pruned.is_error:
+                return r_pruned
+
+            pruned_constraint = r_pruned.unwrap()
 
             if pruned_constraint is None:
                 continue
 
             pruned_constraints.append(pruned_constraint)
 
-        return self.__class__(constraints=pruned_constraints)
+        return Ok(self.__class__(constraints=pruned_constraints))
 
     def spans(
         self,
@@ -884,7 +933,7 @@ class Constraint(ConstraintBase):
 
         return f'(FLAVOR.{self.name} {self.operator.value} {self.value})'
 
-    def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> bool:
+    def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Result[bool, Failure]:
         """
         Compare given flavor against the constraint.
 
@@ -905,7 +954,14 @@ class Constraint(ConstraintBase):
 
             groups = property_path_step.groupdict()
 
-            flavor_property = getattr(flavor_property, groups['property_name'])
+            try:
+                flavor_property = getattr(flavor_property, groups['property_name'])
+
+            except AttributeError:
+                return Error(Failure(
+                    'unknown flavor property',
+                    property=groups['property_name']
+                ))
 
             if groups.get('index') is not None:
                 flavor_property_index = int(groups['index'])
@@ -934,7 +990,7 @@ class Constraint(ConstraintBase):
 
         logger.debug(f'eval-flavor: {flavor.name}.{self.name}: {type(flavor_property).__name__}({flavor_property}) {self.operator.value} {type(self.value).__name__}({self.value}): {result}')  # noqa: E501
 
-        return result
+        return Ok(result)
 
     def format(self, prefix: str = '') -> str:
         """
@@ -962,7 +1018,7 @@ class And(CompoundConstraint):
         :param constraints: list of constraints to group.
         """
 
-        super(And, self).__init__(all, constraints=constraints)
+        super(And, self).__init__(_reduce_all, constraints=constraints)
 
     def spans(
         self,
@@ -1017,7 +1073,7 @@ class Or(CompoundConstraint):
         :param constraints: list of constraints to group.
         """
 
-        super(Or, self).__init__(any, constraints=constraints)
+        super(Or, self).__init__(_reduce_any, constraints=constraints)
 
     def spans(
         self,
