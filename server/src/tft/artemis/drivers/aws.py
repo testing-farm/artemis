@@ -516,6 +516,13 @@ class AWSDriver(PoolDriver):
     def image_info_mapper(self) -> AWSHookImageInfoMapper:  # type: ignore[override]  # does not match supertype
         return AWSHookImageInfoMapper(self, 'AWS_ENVIRONMENT_TO_IMAGE')
 
+    @property
+    def _image_owners(self) -> List[str]:
+        return cast(
+            List[str],
+            self.pool_config.get('image-owners', ['self'])
+        )
+
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_native_post_install_script = True
         capabilities.supported_guest_logs = [
@@ -1330,7 +1337,7 @@ class AWSDriver(PoolDriver):
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
         r_images = self._aws_command(
-            ['ec2', 'describe-images', '--owner=self'],
+            ['ec2', 'describe-images', '--owners'] + self._image_owners,
             key='Images',
             commandname='aws.ec2-describe-images'
         )

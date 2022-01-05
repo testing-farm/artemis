@@ -1,0 +1,36 @@
+---
+title: "AWS driver"
+date: 2022-01-05T16:24:28+01:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== AWS
+
+=== Image owners
+
+When searching for images, AWS driver would list all images owned by the `self` owner, i.e. it is limited by images owned by the given credentials. To expand this set, it is possible to explicitly set the list of owners to include when looking for images a pool can use for provisioning.
+
+.Specification
+[source,yaml]
+....
+image-owners:
+  - owner-1
+  - owner-2
+  ...
+....
+
+.Example
+[source,yaml]
+....
+image-owners:
+  - self
+  - another-owner
+  - some-other-account
+....
+
+[IMPORTANT]
+====
+Once you opt in and use `image-owners` option, the list would be used **instead** of the default one, with `self` only. Therefore if you do wish to keep `self` in play, you need to make it one of the items of the `image-owners` list, as shown in the example above.
+====
