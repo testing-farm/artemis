@@ -39,12 +39,6 @@ properties:
   flavor-regex:
     type: string
 
-  instance-running-tick:
-    type: integer
-
-  instance-running-timeout:
-    type: integer
-
   master-key-name:
     type: string
 
@@ -74,12 +68,6 @@ properties:
   spot-price-bid-percentage:
     type: integer
 
-  spot-request-tick:
-    type: integer
-
-  spot-request-timeout:
-    type: integer
-
   subnet-id:
     type: string
 
@@ -97,8 +85,6 @@ required:
 - command
 - default-instance-type
 - default-region
-- instance-running-tick
-- instance-running-timeout
 - master-key-name
 - secret-access-key
 - security-group

@@ -108,14 +108,6 @@ pools:
       # get too many instances terminated.
       spot-price-bid-percentage: {{ aws.vms.spot_price_bid_percentage | default(10) }}
 
-      # Wait timeout/tick for fulfilling spot request
-      spot-request-timeout: {{ aws.vms.spot_request_timeout | default(60) }}
-      spot-request-tick: {{ aws.vms.spot_request_tick | default(1) }}
-
-      # wait timeout/tick for instance becoming running
-      instance-running-timeout: 120
-      instance-running-tick: 1
-
       post-install-script: "{{ aws.vms.post_install_script }}"
 
       # Custom instance types (or, as Artemis calls them, "flavors").
