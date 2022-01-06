@@ -3,6 +3,55 @@ description: Beaker pool driver schema
 
 type: object
 
+definitions:
+  hw_boot_method_translation:
+    type: object
+
+    properties:
+      operator:
+        type: string
+        enum:
+          - 'contains'
+          - 'not contains'
+
+      value:
+        type: string
+        enum:
+          - bios
+          - uefi
+
+      element:
+        type: string
+
+    required:
+      - operator
+      - value
+      - element
+
+    additionalProperties: false
+
+  hw_boot_method:
+    type: object
+
+    properties:
+      translations:
+        type: array
+        items:
+          "$ref": "#/definitions/hw_boot_method_translation"
+
+    required: []
+    additionalProperties: false
+
+  hw_boot:
+    type: object
+
+    properties:
+      method:
+        "$ref": "#/definitions/hw_boot_method"
+
+    required: []
+    additionalProperties: false
+
 properties:
 
   username:
@@ -33,6 +82,15 @@ properties:
     type: array
     items:
       type: string
+
+  hw-constraints:
+    type: object
+
+    properties:
+      boot:
+        "$ref": "#/definitions/hw_boot"
+
+    required: []
 
 additionalProperties: false
 

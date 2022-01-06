@@ -15,6 +15,7 @@ import pint
 import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter, log_xml
 from gluetool.result import Error, Ok, Result
+from typing_extensions import TypedDict
 
 from .. import Failure, SerializableContainer, log_dict_yaml
 from ..cache import get_cached_set, refresh_cached_set
@@ -59,6 +60,24 @@ class AvoidGroupHostnames(SerializableContainer):
     hostnames: List[str] = dataclasses.field(default_factory=list)
 
 
+ConstraintTranslationConfigType = TypedDict(
+    'ConstraintTranslationConfigType',
+    {
+        'operator': str,
+        'value': str,
+        'element': str
+    }
+)
+
+BootMethodConfigType = TypedDict(
+    'BootMethodConfigType',
+    {
+        'key': str,
+        'translations': List[ConstraintTranslationConfigType]
+    }
+)
+
+
 #: Mapping of operators to their Beaker representation. :py:attr:`Operator.MATCH` is missing on purpose: it is
 #: intercepted in :py:func:`operator_to_beaker_op`.
 OPERATOR_SIGN_TO_OPERATOR = {
@@ -92,7 +111,10 @@ def operator_to_beaker_op(operator: Operator, value: str) -> Tuple[str, str]:
     return 'like', value.replace('.*', '%').replace('.+', '%')
 
 
-def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.BeautifulSoup, Failure]:
+def constraint_to_beaker_filter(
+    constraint: ConstraintBase,
+    pool: 'BeakerDriver'
+) -> Result[bs4.BeautifulSoup, Failure]:
     """
     Convert a given constraint to XML tree representing Beaker filter compatible with Beaker's ``hostRequires``
     element.
@@ -102,7 +124,7 @@ def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.Beauti
         grouping_and = _new_tag('and')
 
         for child_constraint in constraint.constraints:
-            r_child_element = constraint_to_beaker_filter(child_constraint)
+            r_child_element = constraint_to_beaker_filter(child_constraint, pool)
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -115,7 +137,7 @@ def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.Beauti
         grouping_or = _new_tag('or')
 
         for child_constraint in constraint.constraints:
-            r_child_element = constraint_to_beaker_filter(child_constraint)
+            r_child_element = constraint_to_beaker_filter(child_constraint, pool)
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -125,6 +147,32 @@ def constraint_to_beaker_filter(constraint: ConstraintBase) -> Result[bs4.Beauti
         return Ok(grouping_or)
 
     constraint = cast(Constraint, constraint)
+
+    if constraint.name.startswith('boot.'):
+        if constraint.name == 'boot.method':
+            boot_method_config = cast(
+                BootMethodConfigType,
+                pool.pool_config.get('hw-constraints', {}).get('boot', {}).get('method', {})
+            )
+
+            for translation in boot_method_config.get('translations', []):
+                if translation['operator'] != constraint.operator.value or translation['value'] != constraint.value:
+                    continue
+
+                try:
+                    return Ok(bs4.BeautifulSoup(translation['element'], 'xml'))
+
+                except Exception as exc:
+                    return Error(Failure.from_exc(
+                        'failed to parse XML',
+                        exc,
+                        source=translation['element']
+                    ))
+
+            return Error(Failure(
+                'constraint not supported by driver',
+                constraint=constraint.format()  # noqa: FS002
+            ))
 
     if constraint.name.startswith('cpu.'):
         cpu = _new_tag('cpu')
@@ -242,7 +290,10 @@ def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, F
     return Ok(tree)
 
 
-def environment_to_beaker_filter(environment: Environment) -> Result[bs4.BeautifulSoup, Failure]:
+def environment_to_beaker_filter(
+    environment: Environment,
+    pool: 'BeakerDriver'
+) -> Result[bs4.BeautifulSoup, Failure]:
     """
     Convert a given environment to Beaker XML tree representing Beaker filter compatible with Beaker's ``hostRequires``
     element.
@@ -265,13 +316,13 @@ def environment_to_beaker_filter(environment: Environment) -> Result[bs4.Beautif
     constraints = r_constraints.unwrap()
 
     if constraints is None:
-        r_beaker_filter = constraint_to_beaker_filter(Constraint.from_arch(environment.hw.arch))
+        r_beaker_filter = constraint_to_beaker_filter(Constraint.from_arch(environment.hw.arch), pool)
 
     else:
         r_beaker_filter = constraint_to_beaker_filter(And([
             Constraint.from_arch(environment.hw.arch),
             constraints
-        ]))
+        ]), pool)
 
     if r_beaker_filter.is_error:
         return r_beaker_filter
@@ -381,6 +432,7 @@ def merge_beaker_filters(filters: List[bs4.BeautifulSoup]) -> Result[bs4.Beautif
 
 def create_beaker_filter(
     environment: Environment,
+    pool: 'BeakerDriver',
     avoid_groups: List[str],
     avoid_hostnames: List[str]
 ) -> Result[Optional[bs4.BeautifulSoup], Failure]:
@@ -396,7 +448,7 @@ def create_beaker_filter(
     beaker_filters: List[bs4.BeautifulSoup] = []
 
     if environment.has_hw_constraints:
-        r_beaker_filter = environment_to_beaker_filter(environment)
+        r_beaker_filter = environment_to_beaker_filter(environment, pool)
 
         if r_beaker_filter.is_error:
             return Error(r_beaker_filter.unwrap_error())
@@ -617,6 +669,7 @@ class BeakerDriver(PoolDriver):
 
         r_beaker_filter = create_beaker_filter(
             guest_request.environment,
+            self,
             r_avoid_groups.unwrap(),
             r_avoid_hostnames.unwrap()
         )
@@ -958,7 +1011,7 @@ class BeakerDriver(PoolDriver):
         # since `has_hw_constraints` was positive, there should be constraints...
         assert constraints is not None
 
-        r_filter = constraint_to_beaker_filter(constraints)
+        r_filter = constraint_to_beaker_filter(constraints, self)
 
         if r_filter.is_error:
             return Error(r_filter.unwrap_error())
