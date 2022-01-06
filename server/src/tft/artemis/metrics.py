@@ -1153,10 +1153,10 @@ class PoolsMetrics(MetricsBase):
 
         super(PoolsMetrics, self).sync()
 
-        # Avoid circullar imports
-        from .tasks import get_pools
+        # Avoid circular imports
+        from .drivers import PoolDriver
 
-        r_pools = get_pools(logger, session, enabled_only=False)
+        r_pools = PoolDriver.load_all(logger, session, enabled_only=False)
 
         if r_pools.is_error:
             r_pools.unwrap_error().handle(logger)

@@ -163,6 +163,10 @@ def config_to_db(
 
         logger.info('Adding pools')
 
+        # TODO: Azure driver can't guarantee proper authentication in case of more than one Azure pools, so need to
+        # warn the user about this.
+        azure_pools = 0
+
         for pool_config in server_config.get('pools', []):
             logger.info('  Adding pool "{}"'.format(pool_config['name']))
 
@@ -173,6 +177,9 @@ def config_to_db(
                     Failure('Pool "{}" uses both project-domain-name and project-domain-id, name will be used'.format(
                         pool_config['name']
                     )).handle(logger)
+
+            elif pool_config['driver'] == 'azure':
+                azure_pools += 1
 
             r = upsert(
                 logger,
@@ -191,6 +198,9 @@ def config_to_db(
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize pool record'
+
+        if azure_pools > 1:
+            Failure('Multiple Azure pools are not supported at the moment, authentication may fail.').handle(logger)
 
         # Insert our bootstrap users.
         def _add_user(username: str, role: UserRoles) -> None:

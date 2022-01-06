@@ -626,7 +626,7 @@ class GuestRequestManager:
         logger: gluetool.log.ContextAdapter,
         environment_schema: JSONSchemaType
     ) -> GuestResponse:
-        from ..tasks import _get_pool_or_none, dispatch_task, get_guest_logger
+        from ..tasks import dispatch_task, get_guest_logger
         from ..tasks.route_guest_request import route_guest_request
 
         guestname = str(uuid.uuid4())
@@ -692,7 +692,7 @@ class GuestRequestManager:
             # and we don't rely on this test when we actually create request. All we need here is a better
             # error message for user when they enter invalid pool name.
             if environment.pool is not None:
-                r_pool = _get_pool_or_none(guest_logger, session, environment.pool)
+                r_pool = PoolDriver.load_or_none(guest_logger, session, environment.pool)
 
                 if r_pool.is_error:
                     raise errors.InternalServerError(
@@ -1436,9 +1436,7 @@ class CacheManager:
         session: sqlalchemy.orm.session.Session,
         poolname: str
     ) -> PoolDriver:
-        from ..tasks import _get_pool_or_none
-
-        r_pool = _get_pool_or_none(logger, session, poolname)
+        r_pool = PoolDriver.load_or_none(logger, session, poolname)
 
         if r_pool.is_error:
             raise errors.InternalServerError(

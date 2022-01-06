@@ -29,7 +29,7 @@ from typing_extensions import Protocol
 
 from .. import Failure, get_broker, get_db, get_logger, metrics, safe_call
 from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
-from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Pool, SafeQuery, \
+from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SafeQuery, \
     SnapshotRequest, SSHKey, safe_db_change, upsert
 from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
 from ..drivers import aws as aws_driver
@@ -39,7 +39,7 @@ from ..drivers import localhost as localhost_driver
 from ..drivers import openstack as openstack_driver
 from ..drivers import ping_shell_remote
 from ..guest import GuestLogger, GuestState, SnapshotLogger
-from ..knobs import KNOB_POOL_ENABLED, Knob
+from ..knobs import Knob
 from ..profile import Profiler
 from ..script import hook_engine
 
@@ -1221,93 +1221,6 @@ def _update_snapshot_state(
     return Ok(True)
 
 
-# Because sometimes we just don't know whether the given pool actually exists or not...
-def _get_pool_or_none(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    poolname: str
-) -> Result[Optional[PoolDriver], Failure]:
-    r_pool = SafeQuery.from_session(session, Pool) \
-        .filter(Pool.poolname == poolname) \
-        .one_or_none()
-
-    if r_pool.is_error:
-        return Error(r_pool.unwrap_error())
-
-    pool_record = r_pool.unwrap()
-
-    if pool_record is None:
-        return Ok(None)
-
-    pool_driver_class = POOL_DRIVERS[pool_record.driver]
-    driver = pool_driver_class(logger, poolname, pool_record.parameters)
-
-    r_sanity = driver.sanity()
-
-    if r_sanity.is_error:
-        return Error(r_sanity.unwrap_error())
-
-    return Ok(driver)
-
-
-# ... and sometimes, we are pretty sure the pool does exist, and it's a hard error if we can't find it.
-def _get_pool(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    poolname: str
-) -> Result[PoolDriver, Failure]:
-    r_pool = _get_pool_or_none(logger, session, poolname)
-
-    if r_pool.is_error:
-        return Error(r_pool.unwrap_error())
-
-    pool = r_pool.unwrap()
-
-    if pool is None:
-        return Error(Failure(
-            'no such pool',
-            poolname=poolname
-        ))
-
-    return Ok(pool)
-
-
-def get_pools(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    enabled_only: bool = True
-) -> Result[List[PoolDriver], Failure]:
-    r_pools = SafeQuery.from_session(session, Pool).all()
-
-    if r_pools.is_error:
-        return Error(r_pools.unwrap_error())
-
-    pools: List[PoolDriver] = []
-
-    for pool_record in r_pools.unwrap():
-        pool_driver_class = POOL_DRIVERS[pool_record.driver]
-
-        if enabled_only is True:
-            r_enabled = KNOB_POOL_ENABLED.get_value(session=session, poolname=pool_record.poolname)
-
-            if r_enabled.is_error:
-                return Error(r_enabled.unwrap_error())
-
-            if r_enabled.unwrap() is not True:
-                continue
-
-        pools += [
-            pool_driver_class(logger, pool_record.poolname, pool_record.parameters)
-        ]
-
-    # NOTE(ivasilev) Currently Azure driver can't guarantee proper authentication in case of more than one Azure
-    # pools, so need to warn the user about this.
-    if len([d for d in pools if isinstance(d, azure_driver.AzureDriver)]) > 1:
-        logger.warning('Multiple Azure pools are not supported at the moment, authentication may fail.')
-
-    return Ok(pools)
-
-
 @with_context
 def _get_ssh_key(
     ownername: str,
@@ -1648,7 +1561,7 @@ class Workspace:
         assert self.gr
         assert self.gr.poolname is not None
 
-        r = _get_pool(self.logger, self.session, self.gr.poolname)
+        r = PoolDriver.load(self.logger, self.session, self.gr.poolname)
 
         if r.is_error:
             self.result = self.handle_error(r, 'pool sanity failed')
@@ -1680,7 +1593,7 @@ class Workspace:
         assert self.sr
         assert self.sr.poolname is not None
 
-        r = _get_pool(self.logger, self.session, self.sr.poolname)
+        r = PoolDriver.load(self.logger, self.session, self.sr.poolname)
 
         if r.is_error:
             self.result = self.handle_error(r, 'pool sanity failed')
@@ -1953,7 +1866,7 @@ class Workspace:
         if self.result:
             return self
 
-        r_pools = get_pools(self.logger, self.session)
+        r_pools = PoolDriver.load_all(self.logger, self.session)
 
         if r_pools.is_error:
             self.result = self.handle_error(r_pools, 'failed to fetch pools')
@@ -2300,7 +2213,7 @@ def do_release_pool_resources(
 
     workspace.handle_success('entered-task')
 
-    r_pool = _get_pool(logger, session, poolname)
+    r_pool = PoolDriver.load(logger, session, poolname)
 
     if r_pool.is_error:
         return workspace.handle_error(r_pool, 'pool sanity failed')
@@ -3895,7 +3808,7 @@ def do_refresh_pool_resources_metrics(
     # On the other hand, we schedule next iteration of this task here, and it seems to make sense
     # to retry if we fail to schedule it - without this, the "it will run once again anyway" concept
     # breaks down.
-    r_pool = _get_pool(logger, session, poolname)
+    r_pool = PoolDriver.load(logger, session, poolname)
 
     if r_pool.is_error:
         workspace.handle_error(r_pool, 'failed to load pool')
@@ -3985,7 +3898,7 @@ def do_refresh_pool_resources_metrics_dispatcher(
 
     logger.info('scheduling pool metrics refresh')
 
-    r_pools = get_pools(_ROOT_LOGGER, session)
+    r_pools = PoolDriver.load_all(_ROOT_LOGGER, session)
 
     if r_pools.is_error:
         workspace.handle_error(r_pools, 'failed to fetch pools')
@@ -4046,7 +3959,7 @@ def do_refresh_pool_image_info(
     # On the other hand, we schedule next iteration of this task here, and it seems to make sense
     # to retry if we fail to schedule it - without this, the "it will run once again anyway" concept
     # breaks down.
-    r_pool = _get_pool(logger, session, poolname)
+    r_pool = PoolDriver.load(logger, session, poolname)
 
     if r_pool.is_error:
         workspace.handle_error(r_pool, 'failed to load pool')
@@ -4086,7 +3999,7 @@ def do_refresh_pool_image_info_dispatcher(
 
     logger.info('scheduling pool image info refresh')
 
-    r_pools = get_pools(_ROOT_LOGGER, session)
+    r_pools = PoolDriver.load_all(_ROOT_LOGGER, session)
 
     if r_pools.is_error:
         workspace.handle_error(r_pools, 'failed to fetch pools')
@@ -4147,7 +4060,7 @@ def do_refresh_pool_flavor_info(
     # On the other hand, we schedule next iteration of this task here, and it seems to make sense
     # to retry if we fail to schedule it - without this, the "it will run once again anyway" concept
     # breaks down.
-    r_pool = _get_pool(logger, session, poolname)
+    r_pool = PoolDriver.load(logger, session, poolname)
 
     if r_pool.is_error:
         workspace.handle_error(r_pool, 'failed to load pool')
@@ -4184,7 +4097,7 @@ def do_refresh_pool_flavor_info_dispatcher(
 
     logger.info('scheduling pool flavor info refresh')
 
-    r_pools = get_pools(logger, session)
+    r_pools = PoolDriver.load_all(logger, session)
 
     if r_pools.is_error:
         workspace.handle_error(r_pools, 'failed to fetch pools')

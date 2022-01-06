@@ -1046,3 +1046,6 @@ class OpenStackDriver(PoolDriver):
             blob=cast(str, output),
             delay_update=delay_update
         ))
+
+
+PoolDriver._drivers_registry['openstack'] = OpenStackDriver

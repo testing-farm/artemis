@@ -45,3 +45,6 @@ class LocalhostDriver(PoolDriver):
         guest_request: GuestRequest
     ) -> Result[bool, Failure]:
         return Ok(True)
+
+
+PoolDriver._drivers_registry['localhost'] = LocalhostDriver

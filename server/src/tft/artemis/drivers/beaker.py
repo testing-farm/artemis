@@ -876,3 +876,6 @@ class BeakerDriver(PoolDriver):
         # now.
 
         return Ok(resources)
+
+
+PoolDriver._drivers_registry['beaker'] = BeakerDriver
