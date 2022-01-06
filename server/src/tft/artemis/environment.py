@@ -21,6 +21,7 @@ import gluetool.log
 import pint
 from gluetool.result import Error, Ok, Result
 from pint import Quantity
+from typing_extensions import Literal
 
 from . import Failure, SerializableContainer
 
@@ -47,7 +48,7 @@ S = TypeVar('S')
 
 #: Regular expression to match and split the value part of the key:value mapping. This value bundles together the
 #: operator, the actual value of the constraint, and units.
-VALUE_PATTERN = re.compile(r'^(?P<operator>==|!=|=~|=|>=|>|<=|<)?\s*(?P<value>.+?)\s*$')
+VALUE_PATTERN = re.compile(r'^(?P<operator>==|!=|=~|=|>=|>|<=|<|contains)?\s*(?P<value>.+?)\s*$')
 
 PROPERTY_PATTERN = re.compile(r'(?P<property_name>[a-z_]+)(?:\[(?P<index>[+-]?\d+)\])?')
 
@@ -210,6 +211,9 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #  arch: x86_64
 #  memory: 4 GiB
 #
+#  boot:
+#      method: bios
+#
 #  cpu:
 #      processors: 1
 #      cores: 2
@@ -225,6 +229,29 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 # network:
 #      - type: eth
 #      - type: eth
+
+
+FlavorBootMethodType = Union[Literal['bios'], Literal['uefi']]
+
+
+@dataclasses.dataclass(repr=False)
+class FlavorBoot(_FlavorSubsystemContainer):
+    """
+    Represents HW properties related to flavor boot process.
+    """
+
+    CONTAINER_PREFIX = 'boot'
+
+    # TODO: trying an enum here - see virtualization.type for a enum-like field not implemented with enum, but rather
+    # with the use of Literal type. Let's see which one would serve us better.
+    #: Supported boot methods.
+    #:
+    #: .. note::
+    #:
+    #:    Plural is correct here, internally we hold the list of supported boot methods, because some flavors (and
+    #:    images) can support more than one.
+    method: List[FlavorBootMethodType] = dataclasses.field(default_factory=list)
+
 
 @dataclasses.dataclass(repr=False)
 class FlavorCpu(_FlavorSubsystemContainer):
@@ -455,6 +482,9 @@ class Flavor(_FlavorSubsystemContainer):
     #: HW architecture of the flavor.
     arch: Optional[str] = None
 
+    #: Boot properties.
+    boot: FlavorBoot = dataclasses.field(default_factory=FlavorBoot)
+
     #: CPU properties.
     cpu: FlavorCpu = dataclasses.field(default_factory=FlavorCpu)
 
@@ -526,6 +556,7 @@ class Operator(enum.Enum):
     LT = '<'
     LTE = '<='
     MATCH = '=~'
+    CONTAINS = 'contains'
 
 
 def match(text: str, pattern: str) -> bool:
@@ -548,7 +579,8 @@ OPERATOR_SIGN_TO_OPERATOR = {
     '>=': Operator.GTE,
     '<': Operator.LT,
     '<=': Operator.LTE,
-    '=~': Operator.MATCH
+    '=~': Operator.MATCH,
+    'contains': Operator.CONTAINS
 }
 
 
@@ -559,7 +591,8 @@ OPERATOR_TO_HANDLER: Dict[Operator, OperatorHandlerType] = {
     Operator.GTE: operator.ge,
     Operator.LT: operator.lt,
     Operator.LTE: operator.le,
-    Operator.MATCH: match
+    Operator.MATCH: match,
+    Operator.CONTAINS: operator.contains
 }
 
 
@@ -1088,6 +1121,27 @@ class Or(CompoundConstraint):
                 yield members + span
 
 
+def _parse_boot(spec: SpecType) -> ConstraintBase:
+    """
+    Parse a boot-related constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    if 'method' in spec:
+        group.constraints += [
+            Constraint.from_specification('boot.method', f'contains {spec["method"]}', as_quantity=False)
+        ]
+
+    if len(group.constraints) == 1:
+        return group.constraints[0]
+
+    return group
+
+
 def _parse_cpu(spec: SpecType) -> ConstraintBase:
     """
     Parse a cpu-related constraints.
@@ -1275,6 +1329,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
     if 'arch' in spec:
         group.constraints += [Constraint.from_specification('arch', spec['arch'], as_quantity=False)]
+
+    if 'boot' in spec:
+        group.constraints += [_parse_boot(spec['boot'])]
 
     if 'cpu' in spec:
         group.constraints += [_parse_cpu(spec['cpu'])]

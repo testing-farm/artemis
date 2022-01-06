@@ -78,6 +78,13 @@ The table below describe the built-in support for various features. However, to 
 |[green]#yes#
 |[green]#yes#
 
+|`boot.method`
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+|[red]#no#
+
 |`cpu.cores`
 |[green]#yes#
 |[red]#no#
