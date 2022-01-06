@@ -30,6 +30,9 @@ def parse_hw(text: str) -> ConstraintBase:
         gluetool.utils.from_yaml(textwrap.dedent(text))
     )
 
+    if r_constraint.is_error:
+        r_constraint.unwrap_error().handle(tft.artemis.get_logger())
+
     assert r_constraint.is_ok
 
     return r_constraint.unwrap()
@@ -495,6 +498,63 @@ def test_example_boot(logger: ContextAdapter) -> None:
             )
         )
     ) is True
+
+
+def test_example_boot_not(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        boot:
+          method: "!= bios"
+        """
+    )
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            boot=FlavorBoot(
+                method=['bios']
+            )
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            boot=FlavorBoot(
+                method=['uefi']
+            )
+        )
+    ) is True
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            boot=FlavorBoot()
+        )
+    ) is True
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            boot=FlavorBoot(
+                method=['bios', 'uefi']
+            )
+        )
+    ) is False
 
 
 def test_example_operators(logger: ContextAdapter) -> None:

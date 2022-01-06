@@ -557,6 +557,7 @@ class Operator(enum.Enum):
     LTE = '<='
     MATCH = '=~'
     CONTAINS = 'contains'
+    NOTCONTAINS = 'not contains'
 
 
 def match(text: str, pattern: str) -> bool:
@@ -571,6 +572,22 @@ def match(text: str, pattern: str) -> bool:
     return re.match(pattern, text) is not None
 
 
+def notcontains(haystack: List[str], needle: str) -> bool:
+    """
+    Find out whether an item is in the given list.
+
+    .. note::
+
+       Opposite of :py:func:`operator.contains`.
+
+    :param haystack: container to examine.
+    :param needle: item to look for in ``haystack``.
+    :returns: ``True`` if ``needle`` is in ``haystack``.
+    """
+
+    return needle not in haystack
+
+
 OPERATOR_SIGN_TO_OPERATOR = {
     '=': Operator.EQ,
     '==': Operator.EQ,
@@ -580,7 +597,8 @@ OPERATOR_SIGN_TO_OPERATOR = {
     '<': Operator.LT,
     '<=': Operator.LTE,
     '=~': Operator.MATCH,
-    'contains': Operator.CONTAINS
+    'contains': Operator.CONTAINS,
+    'not contains': Operator.NOTCONTAINS
 }
 
 
@@ -592,7 +610,8 @@ OPERATOR_TO_HANDLER: Dict[Operator, OperatorHandlerType] = {
     Operator.LT: operator.lt,
     Operator.LTE: operator.le,
     Operator.MATCH: match,
-    Operator.CONTAINS: operator.contains
+    Operator.CONTAINS: operator.contains,
+    Operator.NOTCONTAINS: notcontains
 }
 
 
@@ -946,6 +965,16 @@ class Constraint(ConstraintBase):
             raw_value=value
         )
 
+    def change_operator(self, operator: Operator) -> None:
+        """
+        Change operator of this constraint to a given one.
+
+        :param operator: new operator.
+        """
+
+        self.operator = operator
+        self.operator_handler = OPERATOR_TO_HANDLER[operator]  # type: ignore[assignment]
+
     def __repr__(self) -> str:
         """
         Return text representation of the constrain suitable for logging.
@@ -1132,9 +1161,15 @@ def _parse_boot(spec: SpecType) -> ConstraintBase:
     group = And()
 
     if 'method' in spec:
-        group.constraints += [
-            Constraint.from_specification('boot.method', f'contains {spec["method"]}', as_quantity=False)
-        ]
+        constraint = Constraint.from_specification('boot.method', spec["method"], as_quantity=False)
+
+        if constraint.operator == Operator.EQ:
+            constraint.change_operator(Operator.CONTAINS)
+
+        elif constraint.operator == Operator.NEQ:
+            constraint.change_operator(Operator.NOTCONTAINS)
+
+        group.constraints += [constraint]
 
     if len(group.constraints) == 1:
         return group.constraints[0]
