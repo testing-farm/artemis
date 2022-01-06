@@ -29,6 +29,11 @@ properties:
   use-only-when-addressed:
     type: boolean
 
+  avoid-groups:
+    type: array
+    items:
+      type: string
+
 additionalProperties: false
 
 required: []

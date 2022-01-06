@@ -244,6 +244,9 @@ def environment_to_beaker_filter(environment: Environment) -> Result[bs4.Beautif
        Converts the `environment`, not just the constraints: in our world, ``arch`` stands separated from
        the constraints while in Beaker, ``arch`` is part of the XML filter subtree. Therefore if there are no
        constraints, this helper emits a XML filter based on architecture alone.
+
+    :param environment: environment as a source of constraints.
+    :returns: a constraint representing the environment.
     """
 
     r_constraints = environment.get_hw_constraints()
@@ -266,6 +269,138 @@ def environment_to_beaker_filter(environment: Environment) -> Result[bs4.Beautif
         return r_beaker_filter
 
     return _prune_beaker_filter(r_beaker_filter.unwrap())
+
+
+def groups_to_beaker_filter(avoid_groups: List[str]) -> Result[bs4.BeautifulSoup, Failure]:
+    """
+    Convert given lists of groups to Beaker XML tree representing Beaker filter compatible with Beaker's
+    ``hostRequires`` element.
+
+    For each ``group`` from ``avoid_groups`` list, a following element is created:
+
+    .. code-block:: xml
+
+       <group op="!=" value="$group"/>
+
+    :param avoid_groups: list of Beaker groups to filter out when provisioning.
+    :returns: a Beaker filter representing groups to avoid.
+    """
+
+    # This is a container for all per-tag group elements. When called with an empty list, this would result
+    # in an empty <and/> element being returned - but that's OK, _prune_beaker_filter() can deal with such
+    # elements, and it simplifies handling of return values, no pesky `if is None` tests.
+    container = _new_tag('and')
+
+    for group in avoid_groups:
+        container.append(_new_tag('group', op='!=', value=group))
+
+    return Ok(container)
+
+
+def merge_beaker_filters(filters: List[bs4.BeautifulSoup]) -> Result[bs4.BeautifulSoup, Failure]:
+    """
+    Merge given Beaker filters into a single filter.
+
+    Each filter must be a single element, but may have child elements. Filters would be merged into
+    a single tree in which all filters must be satisfied for the final filter to be satisfied.
+
+    :param filters: filters to merge.
+    :returns: a Beaker filter taking all given filters into account.
+    """
+
+    # When called with an empty list, this would result in an empty <and/> element being returned - but that's OK,
+    # _prune_beaker_filter() can deal with such elements, and it simplifies handling of return values, no pesky
+    # `if is None` tests.
+    if not filters:
+        return Ok(_new_tag('and'))
+
+    container = filters.pop(0)
+
+    while filters:
+        next_filter = filters.pop(0)
+
+        # When the container is already an <and/> element, we can simply add the next filter to container's
+        # children.
+        if container.name == 'and':
+            # Children of two <and/> elements can be easily merged, avoiding a nested <and/>.
+            if next_filter.name == 'and':
+                # TODO: for some reason, without a list only the first child is yielded from .children :/
+                for child in list(next_filter.children):
+                    container.append(child)
+
+            else:
+                container.append(next_filter)
+
+        # For any other element, we need to create a new container, <and/>, and add our current container to it
+        # as well as the next filter. That way, both branches needs to be satisfied for the final filter to be
+        # happy.
+        else:
+            new_container = _new_tag('and')
+
+            new_container.append(container)
+            new_container.append(next_filter)
+
+            container = new_container
+
+    return _prune_beaker_filter(container)
+
+
+def create_beaker_filter(
+    environment: Environment,
+    avoid_groups: List[str]
+) -> Result[Optional[bs4.BeautifulSoup], Failure]:
+    """
+    From given inputs, create a Beaker filter.
+
+    :param environment: environment as a source of constraints.
+    :param avoid_groups: list of Beaker groups to filter out when provisioning.
+    :returns: a Beaker filter taking all given inputs into account.
+    """
+
+    beaker_filters: List[bs4.BeautifulSoup] = []
+
+    if environment.has_hw_constraints:
+        r_beaker_filter = environment_to_beaker_filter(environment)
+
+        if r_beaker_filter.is_error:
+            return Error(r_beaker_filter.unwrap_error())
+
+        beaker_filters.append(r_beaker_filter.unwrap())
+
+    if avoid_groups:
+        r_beaker_filter = groups_to_beaker_filter(avoid_groups)
+
+        if r_beaker_filter.is_error:
+            return Error(r_beaker_filter.unwrap_error())
+
+        beaker_filters.append(r_beaker_filter.unwrap())
+
+    if not beaker_filters:
+        return Ok(None)
+
+    r_beaker_filter = merge_beaker_filters(beaker_filters)
+
+    if r_beaker_filter.is_error:
+        return Error(r_beaker_filter.unwrap_error())
+
+    return _prune_beaker_filter(r_beaker_filter.unwrap())
+
+
+def _create_wow_options(
+    logger: gluetool.log.ContextAdapter,
+    guest_request: GuestRequest,
+    distro: PoolImageInfo
+) -> Result[List[str], Failure]:
+    return Ok([
+        'workflow-simple',
+        '--dry-run',
+        '--prettyxml',
+        '--distro', distro.id,
+        '--arch', guest_request.environment.hw.arch,
+        '--task', '/distribution/dummy',
+        '--reserve',
+        '--reserve-duration', str(KNOB_RESERVATION_DURATION.value)
+    ])
 
 
 class BeakerDriver(PoolDriver):
@@ -291,6 +426,10 @@ class BeakerDriver(PoolDriver):
     @property
     def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
         return HookImageInfoMapper(self, 'BEAKER_ENVIRONMENT_TO_IMAGE')
+
+    @property
+    def avoid_groups(self) -> List[str]:
+        return cast(List[str], self.pool_config.get('avoid-groups', []))
 
     def _run_bkr(
         self,
@@ -403,15 +542,12 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with job xml, or specification of error.
         """
 
-        beaker_filter: Optional[bs4.BeautifulSoup] = None
+        r_beaker_filter = create_beaker_filter(guest_request.environment, self.avoid_groups)
 
-        if guest_request.environment.has_hw_constraints:
-            r_beaker_filter = environment_to_beaker_filter(guest_request.environment)
+        if r_beaker_filter.is_error:
+            return Error(r_beaker_filter.unwrap_error())
 
-            if r_beaker_filter.is_error:
-                return Error(r_beaker_filter.unwrap_error())
-
-            beaker_filter = r_beaker_filter.unwrap()
+        beaker_filter = r_beaker_filter.unwrap()
 
         r_distro = self.image_info_mapper.map(logger, guest_request)
 
@@ -420,6 +556,11 @@ class BeakerDriver(PoolDriver):
 
         distro = r_distro.unwrap()
 
+        r_wow_options = _create_wow_options(logger, guest_request, distro)
+
+        if r_wow_options.is_error:
+            return Error(r_wow_options.unwrap_error())
+
         self.log_acquisition_attempt(
             logger,
             session,
@@ -427,18 +568,7 @@ class BeakerDriver(PoolDriver):
             image=distro
         )
 
-        options = [
-            'workflow-simple',
-            '--dry-run',
-            '--prettyxml',
-            '--distro', distro.id,
-            '--arch', guest_request.environment.hw.arch,
-            '--task', '/distribution/dummy',
-            '--reserve',
-            '--reserve-duration', str(KNOB_RESERVATION_DURATION.value)
-        ]
-
-        r_workflow_simple = self._run_bkr(logger, options, commandname='bkr.workflow-simple')
+        r_workflow_simple = self._run_bkr(logger, r_wow_options.unwrap(), commandname='bkr.workflow-simple')
         if r_workflow_simple.is_error:
             return Error(r_workflow_simple.unwrap_error())
 
@@ -468,7 +598,7 @@ class BeakerDriver(PoolDriver):
                 job=job_xml.prettify()
             ))
 
-        host_requires.append(beaker_filter)
+        list(host_requires)[0].append(beaker_filter)
 
         log_xml(logger.debug, 'job with filter', job_xml)
 

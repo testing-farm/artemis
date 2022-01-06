@@ -1,0 +1,49 @@
+---
+title: "Beaker driver"
+date: 2021-12-13T23:30:02+01:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== Beaker
+
+=== Beaker groups
+
+To avoid provisioning machines owned by particular Beaker groups, driver can be configured to avoid them.
+
+.Specification
+[source,yaml]
+....
+avoid-groups:
+  - group-1
+  - group-2
+  ...
+....
+
+.Example
+[source,yaml]
+....
+avoid-groups:
+  # While our Beaker account has access to these groups, don't provision machines owned by them.
+  - special-gpus
+  - laptops
+....
+
+[TIP]
+====
+It is possible to configure multiple pools for the same set of Beaker credentials, each with different `avoid-groups` list. For example:
+
+[source,yaml]
+....
+# pool #1
+avoid-groups:
+  - laptops
+
+# pool #2
+avoid-groups:
+  - generic-group-owning-machines-not-owned-by-any-other-group
+....
+
+This way, common guest requests can be routed to pool #1, while requests in the need of a special laptop HW would be routed to pool #2.
+====
