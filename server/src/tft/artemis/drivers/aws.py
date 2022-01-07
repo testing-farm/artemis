@@ -825,7 +825,7 @@ class AWSDriver(PoolDriver):
         # TODO: move these into configuration. Before that, we need to add support for templates in tags, so we
         # could generate tags like `Name`. But it really belongs to configuration.
         tags: Dict[str, str] = {
-            'Name': f'{instance["PrivateIpAddress"]}::{instance["ImageId"]}'
+            'Name': f'{instance["PublicIpAddress"]}::{instance["ImageId"]}'
         }
 
         if pool_data.spot_instance_id is not None:
@@ -836,7 +836,7 @@ class AWSDriver(PoolDriver):
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
             pool_data=pool_data,
-            address=instance['PrivateIpAddress']
+            address=instance['PublicIpAddress']
         ))
 
     def update_guest(
