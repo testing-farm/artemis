@@ -13,10 +13,12 @@ import gluetool.log
 import gluetool.utils
 import pint
 import sqlalchemy.orm.session
-from gluetool.log import log_xml
+from gluetool.log import ContextAdapter, log_xml
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, log_dict_yaml
+from .. import Failure, SerializableContainer, log_dict_yaml
+from ..cache import get_cached_set, refresh_cached_set
+from ..context import CACHE
 from ..db import GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Operator, Or
 from ..knobs import Knob
@@ -49,6 +51,12 @@ class BeakerPoolData(PoolData):
 @dataclasses.dataclass
 class BeakerPoolResourcesIDs(PoolResourcesIDs):
     job_id: Optional[str] = None
+
+
+@dataclasses.dataclass(repr=False)
+class AvoidGroupHostnames(SerializableContainer):
+    groupname: str
+    hostnames: List[str] = dataclasses.field(default_factory=list)
 
 
 #: Mapping of operators to their Beaker representation. :py:attr:`Operator.MATCH` is missing on purpose: it is
@@ -297,6 +305,32 @@ def groups_to_beaker_filter(avoid_groups: List[str]) -> Result[bs4.BeautifulSoup
     return Ok(container)
 
 
+def hostnames_to_beaker_filter(avoid_hostnames: List[str]) -> Result[bs4.BeautifulSoup, Failure]:
+    """
+    Convert given lists of hostnames to Beaker XML tree representing Beaker filter compatible with Beaker's
+    ``hostRequires`` element.
+
+    For each ``hostname`` from ``avoid_hostnames`` list, a following element is created:
+
+    .. code-block:: xml
+
+       <hostname op="!=" value="$hostname"/>
+
+    :param avoid_hostnames: list of Beaker hostnames to filter out when provisioning.
+    :returns: a Beaker filter representing hostnamesto avoid.
+    """
+
+    # This is a container for all per-tag hostname elements. When called with an empty list, this would result
+    # in an empty <and/> element being returned - but that's OK, _prune_beaker_filter() can deal with such
+    # elements, and it simplifies handling of return values, no pesky `if is None` tests.
+    container = _new_tag('and')
+
+    for hostname in avoid_hostnames:
+        container.append(_new_tag('hostname', op='!=', value=hostname))
+
+    return Ok(container)
+
+
 def merge_beaker_filters(filters: List[bs4.BeautifulSoup]) -> Result[bs4.BeautifulSoup, Failure]:
     """
     Merge given Beaker filters into a single filter.
@@ -347,13 +381,15 @@ def merge_beaker_filters(filters: List[bs4.BeautifulSoup]) -> Result[bs4.Beautif
 
 def create_beaker_filter(
     environment: Environment,
-    avoid_groups: List[str]
+    avoid_groups: List[str],
+    avoid_hostnames: List[str]
 ) -> Result[Optional[bs4.BeautifulSoup], Failure]:
     """
     From given inputs, create a Beaker filter.
 
     :param environment: environment as a source of constraints.
     :param avoid_groups: list of Beaker groups to filter out when provisioning.
+    :param avoid_hostnames: list of Beaker hostnames to filter out when provisioning.
     :returns: a Beaker filter taking all given inputs into account.
     """
 
@@ -369,6 +405,14 @@ def create_beaker_filter(
 
     if avoid_groups:
         r_beaker_filter = groups_to_beaker_filter(avoid_groups)
+
+        if r_beaker_filter.is_error:
+            return Error(r_beaker_filter.unwrap_error())
+
+        beaker_filters.append(r_beaker_filter.unwrap())
+
+    if avoid_hostnames:
+        r_beaker_filter = hostnames_to_beaker_filter(avoid_hostnames)
 
         if r_beaker_filter.is_error:
             return Error(r_beaker_filter.unwrap_error())
@@ -406,6 +450,9 @@ def _create_wow_options(
 class BeakerDriver(PoolDriver):
     pool_data_class = BeakerPoolData
 
+    #: Template for a cache key holding avoid groups hostnames.
+    POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY = 'pool.{}.avoid-groups.hostnames'
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -425,13 +472,27 @@ class BeakerDriver(PoolDriver):
                 '--password', self.pool_config['password']
             ]
 
+        self.avoid_groups_hostnames_cache_key = self.POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY.format(self.poolname)  # noqa: FS002,E501
+
     @property
     def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
         return HookImageInfoMapper(self, 'BEAKER_ENVIRONMENT_TO_IMAGE')
 
     @property
-    def avoid_groups(self) -> List[str]:
-        return cast(List[str], self.pool_config.get('avoid-groups', []))
+    def avoid_groups(self) -> Result[List[str], Failure]:
+        return Ok(self.pool_config.get('avoid-groups', []))
+
+    @property
+    def avoid_hostnames(self) -> Result[List[str], Failure]:
+        r_avoid_hostnames = self.get_avoid_groups_hostnames()
+
+        if r_avoid_hostnames.is_error:
+            return Error(r_avoid_hostnames.unwrap_error())
+
+        return Ok(sum(
+            [group.hostnames for group in r_avoid_hostnames.unwrap().values()],
+            []
+        ))
 
     def _run_bkr(
         self,
@@ -544,7 +605,21 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with job xml, or specification of error.
         """
 
-        r_beaker_filter = create_beaker_filter(guest_request.environment, self.avoid_groups)
+        r_avoid_hostnames = self.avoid_hostnames
+
+        if r_avoid_hostnames.is_error:
+            return Error(r_avoid_hostnames.unwrap_error())
+
+        r_avoid_groups = self.avoid_groups
+
+        if r_avoid_groups.is_error:
+            return Error(r_avoid_groups.unwrap_error())
+
+        r_beaker_filter = create_beaker_filter(
+            guest_request.environment,
+            r_avoid_groups.unwrap(),
+            r_avoid_hostnames.unwrap()
+        )
 
         if r_beaker_filter.is_error:
             return Error(r_beaker_filter.unwrap_error())
@@ -1008,6 +1083,59 @@ class BeakerDriver(PoolDriver):
         # now.
 
         return Ok(resources)
+
+    def _fetch_avoid_group_hostnames(self, logger: ContextAdapter, groupname: str) -> Result[List[str], Failure]:
+        r_list = self._run_bkr(
+            logger,
+            [
+                'system-list',
+                '--xml-filter', f'<and><group op="=" value="{groupname}"/></and>'
+            ],
+            commandname='bkr.system-list-owned-by-group'
+        )
+
+        if r_list.is_error:
+            return Error(r_list.unwrap_error())
+
+        return Ok([
+            hostname.strip() for hostname in r_list.unwrap().stdout.splitlines()
+        ])
+
+    def refresh_avoid_groups_hostnames(self, logger: ContextAdapter) -> Result[None, Failure]:
+        groups: List[AvoidGroupHostnames] = []
+
+        r_avoid_groups = self.avoid_groups
+
+        if r_avoid_groups.is_error:
+            return Error(r_avoid_groups.unwrap_error())
+
+        for groupname in r_avoid_groups.unwrap():
+            r_list = self._fetch_avoid_group_hostnames(logger, groupname)
+
+            if r_list.is_error:
+                return Error(r_list.unwrap_error())
+
+            groups.append(AvoidGroupHostnames(
+                groupname=groupname,
+                hostnames=r_list.unwrap()
+            ))
+
+        r_refresh = refresh_cached_set(
+            CACHE.get(),
+            self.avoid_groups_hostnames_cache_key,
+            {
+                h.groupname: h
+                for h in groups
+            }
+        )
+
+        if r_refresh.is_error:
+            return Error(r_refresh.unwrap_error())
+
+        return Ok(None)
+
+    def get_avoid_groups_hostnames(self) -> Result[Dict[str, AvoidGroupHostnames], Failure]:
+        return get_cached_set(CACHE.get(), self.avoid_groups_hostnames_cache_key, AvoidGroupHostnames)
 
 
 PoolDriver._drivers_registry['beaker'] = BeakerDriver

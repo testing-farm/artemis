@@ -129,6 +129,16 @@ quicker.
 5+|A delay, in second, between successful acquire of a cloud instance
 and dispatching of post-acquire preparation tasks.
 
+|`actor.refresh-pool-avoid-groups-hostnames.schedule`
+|`str`
+|`ARTEMIS_ACTOR_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE`
+|`*/5 * * * *`
+|no
+
+
+
+5+|When to run refresh of Beaker avoid groups hostnames, as a Cron-like specification.
+
 |`actor.refresh-pool-flavor-info.schedule`
 |`str`
 |`ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_SCHEDULE`
