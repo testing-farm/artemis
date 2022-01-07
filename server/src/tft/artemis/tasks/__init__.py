@@ -1038,6 +1038,11 @@ def dispatch_group(
 
         logger.info(f'scheduled group {format_task_group_invocation(tasks, *args, delay=delay)}')
 
+        if KNOB_CLOSE_AFTER_DISPATCH.value:
+            logger.debug('closing broker connection as requested')
+
+            BROKER.connection.close()
+
     except Exception as exc:
         return Error(Failure.from_exc(
             'failed to dispatch group',
