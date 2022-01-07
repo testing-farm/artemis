@@ -26,7 +26,7 @@ container:
   stage: test_stage
   image: quay.io/buildah/stable:latest
   script:
-    - buildah bud -f container/Dockerfile .
+    - make server-image
 
 .docs:
   image: quay.io/testing-farm/gitlab-pages-hugo:latest
