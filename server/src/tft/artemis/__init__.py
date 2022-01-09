@@ -268,6 +268,9 @@ def process_output_to_str(output: gluetool.utils.ProcessOutput, stream: str = 's
     return cast(str, stream_content.decode('utf-8'))
 
 
+_DEFAULT_FAILURE_LOG_LABEL = 'failure'
+
+
 class Failure:
     """
     Bundles exception related info.
@@ -631,7 +634,10 @@ class Failure:
             details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))
 
         if self.exc_info:
-            details['traceback'] = stackprinter.format(self.exc_info)  # noqa: FS002
+            details['traceback'] = '\n'.join((
+                line.rstrip()
+                for line in stackprinter.format(self.exc_info, line_wrap=False).splitlines()  # noqa: FS002
+            ))
 
         if 'scrubbed_command' in details:
             details['scrubbed_command'] = gluetool.utils.format_command_line([details['scrubbed_command']])
@@ -658,19 +664,26 @@ class Failure:
 
         return details
 
+    def _printable(
+        self,
+        label: str = _DEFAULT_FAILURE_LOG_LABEL
+    ) -> str:
+        return f'{label}\n\n{format_dict_yaml(self.get_log_details())}'
+
+    def __str__(self) -> str:
+        return self._printable()
+
+    def __repr__(self) -> str:
+        return f'<Failure: message="{self.message}">'
+
     def log(
         self,
         log_fn: gluetool.log.LoggingFunctionType,
-        label: Optional[str] = None
+        label: str = _DEFAULT_FAILURE_LOG_LABEL
     ) -> None:
         exc_info = self.exc_info if self.exc_info else (None, None, None)
 
-        details = self.get_log_details()
-
-        if not label:
-            label = 'failure'
-
-        log_fn(f'{label}\n\n{format_dict_yaml(details)}', exc_info=exc_info)
+        log_fn(self._printable(label=label), exc_info=exc_info)
 
     def submit_to_sentry(self, logger: gluetool.log.ContextAdapter, **additional_tags: Any) -> None:
         if self.submited_to_sentry:
@@ -708,7 +721,7 @@ class Failure:
     def handle(
         self,
         logger: gluetool.log.ContextAdapter,
-        label: Optional[str] = None,
+        label: str = _DEFAULT_FAILURE_LOG_LABEL,
         sentry: bool = True,
         **details: Any
     ) -> None:
