@@ -1751,6 +1751,26 @@ def get_guest_requests(manager: GuestRequestManager, request: Request) -> Tuple[
     return HTTP_200, manager.get_guest_requests()
 
 
+def create_guest_request_v0_0_32(
+    guest_request: GuestRequest,
+    manager: GuestRequestManager,
+    request: Request,
+    auth: AuthContext,
+    logger: gluetool.log.ContextAdapter
+) -> Tuple[str, GuestResponse]:
+    # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
+    # and we got so far means user must be authenticated.
+    if auth.is_authentication_enabled and auth.is_authenticated:
+        assert auth.username
+
+        ownername = auth.username
+
+    else:
+        ownername = DEFAULT_GUEST_REQUEST_OWNER
+
+    return HTTP_201, manager.create(guest_request, ownername, logger, ENVIRONMENT_SCHEMAS['v0.0.32'])
+
+
 def create_guest_request_v0_0_28(
     guest_request: GuestRequest,
     manager: GuestRequestManager,
@@ -2305,6 +2325,7 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
 
 
 # NEW: current worker tasks
+# NEW: boot.method HW constraint
 @route_generator
 def generate_routes_v0_0_32(
     create_route: CreateRouteCallbackType,
@@ -2314,7 +2335,7 @@ def generate_routes_v0_0_32(
     return [
         Include('/guests', [
             create_route('/', get_guest_requests, method='GET'),
-            create_route('/', create_guest_request_v0_0_28, method='POST'),
+            create_route('/', create_guest_request_v0_0_32, method='POST'),
             create_route('/{guestname}', get_guest_request),  # noqa: FS003
             create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
             create_route('/events', get_events),
@@ -2768,6 +2789,7 @@ def generate_routes_v0_0_17(
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
     # NEW: current worker tasks
+    # NEW: boot.method HW constraint
     ('v0.0.32', generate_routes_v0_0_32, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.

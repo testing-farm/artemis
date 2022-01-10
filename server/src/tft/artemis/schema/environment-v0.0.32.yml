@@ -103,7 +103,7 @@ definitions:
           - type: string
           - type: integer
 
-      bios:
+      boot:
         "$ref": "#/definitions/hw_boot"
 
       cpu:
