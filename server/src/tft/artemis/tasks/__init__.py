@@ -279,6 +279,15 @@ KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE: Knob[str] = Knob(
     default='*/5 * * * *'
 )
 
+KNOB_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE: Knob[str] = Knob(
+    'actor.refresh-pool-avoid-groups-hostnames.schedule',
+    'When to run refresh of Beaker avoid groups hostnames, as a Cron-like specification.',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE',
+    cast_from_str=str,
+    default='*/5 * * * *'
+)
+
 #: A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks.
 KNOB_UPDATE_GUEST_LOG_DELAY: Knob[int] = Knob(
     'actor.dispatch-preparing.delay',
@@ -4069,4 +4078,93 @@ def gc_events() -> None:
     task_core(
         cast(DoerType, do_gc_events),
         logger=TaskLogger(_ROOT_LOGGER, 'gc-events')
+    )
+
+
+# TODO: this belongs to Beaker driver, but there's no mechanism in place for easy custom tasks.
+def do_refresh_pool_avoid_groups_hostnames(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    poolname: str
+) -> DoerReturnType:
+    workspace = Workspace(logger, session, cancel, task='refresh-pool-avoid-groups-hostnames')
+
+    workspace.handle_success('entered-task')
+
+    # Handling errors is slightly different in this task. While we fully use `handle_error()`,
+    # we do not return `RESCHEDULE` or `Error()` from this doer. This particular task is being
+    # rescheduled regularly anyway, and we probably do not want exponential delays, because
+    # they wouldn't make data any fresher when we'd finally succeed talking to the pool.
+    #
+    # On the other hand, we schedule next iteration of this task here, and it seems to make sense
+    # to retry if we fail to schedule it - without this, the "it will run once again anyway" concept
+    # breaks down.
+    r_pool = PoolDriver.load(logger, session, poolname)
+
+    if r_pool.is_error:
+        workspace.handle_error(r_pool, 'failed to load pool')
+
+    else:
+        pool = cast(beaker_driver.BeakerDriver, r_pool.unwrap())
+
+        r_refresh = pool.refresh_avoid_groups_hostnames(logger)
+
+        if r_refresh.is_error:
+            workspace.handle_error(r_refresh, 'failed to refresh pool avoid groups hostnames')
+
+    return workspace.handle_success('finished-task')
+
+
+@task(priority=TaskPriority.HIGH, queue_name=TaskQueue.POOL_DATA_REFRESH)
+def refresh_pool_avoid_groups_hostnames(poolname: str) -> None:
+    task_core(
+        cast(DoerType, do_refresh_pool_avoid_groups_hostnames),
+        logger=get_pool_logger('refresh-pool-groups-avoid-hostnames', _ROOT_LOGGER, poolname),
+        doer_args=(poolname,)
+    )
+
+
+def do_refresh_pool_avoid_groups_hostnames_dispatcher(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event
+) -> DoerReturnType:
+    workspace = Workspace(logger, session, cancel, task='refresh-pool-avoid-groups-hostnames-dispatcher')
+
+    workspace.handle_success('entered-task')
+
+    logger.info('scheduling pool avoid groups hostnames refresh')
+
+    r_pools = PoolDriver.load_all(logger, session)
+
+    if r_pools.is_error:
+        workspace.handle_error(r_pools, 'failed to fetch pools')
+
+        return workspace.handle_success('finished-task')
+
+    for pool in r_pools.unwrap():
+        if not isinstance(pool, beaker_driver.BeakerDriver):
+            continue
+
+        dispatch_task(
+            get_pool_logger('refresh-pool-avoid-groups-hostnames-dispatcher', logger, pool.poolname),
+            refresh_pool_avoid_groups_hostnames,
+            pool.poolname
+        )
+
+    return workspace.handle_success('finished-task')
+
+
+@task(
+    periodic=periodiq.cron(KNOB_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE.value),
+    priority=TaskPriority.HIGH,
+    queue_name=TaskQueue.PERIODIC
+)
+def refresh_pool_avoid_groups_hostnames_dispatcher() -> None:
+    task_core(
+        cast(DoerType, do_refresh_pool_avoid_groups_hostnames_dispatcher),
+        logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-avoid-groups-hostnames-dispatcher')
     )

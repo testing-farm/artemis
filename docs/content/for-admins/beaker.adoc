@@ -30,6 +30,18 @@ avoid-groups:
   - laptops
 ....
 
+Each provisioning Beaker job would then contain two sets of elements to implement this behavior:
+
+* `<group op="!=" value="$groupname"/>` to instruct Beaker to avoid this group,
+* `<hostname op="!=" value="$hostname"/>` to instruct Beaker to avoid machines *owned* by these groups.
+
+The list of machines owned by each group is cached, updated periodically by querying Beaker API.
+
+[NOTE]
+====
+For more notes on how drivers query their backends, see <<drivers.adoc#_collection_of_information,"Collection of information">>.
+====
+
 [TIP]
 ====
 It is possible to configure multiple pools for the same set of Beaker credentials, each with different `avoid-groups` list. For example:

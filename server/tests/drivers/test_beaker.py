@@ -2,13 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import textwrap
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import bs4
 import gluetool.utils
 import pytest
+from gluetool.log import ContextAdapter
+from gluetool.result import Ok
 
+import tft.artemis.drivers.beaker
 import tft.artemis.environment
+
+from .. import MockPatcher
 
 
 def parse_env(text: str) -> tft.artemis.environment.Environment:
@@ -78,6 +83,29 @@ def test_groups_to_beaker_filter(avoid_groups: List[str], expected: str) -> None
     assert str(beaker_filter) == expected
 
 
+@pytest.mark.parametrize(('avoid_hostnames', 'expected'), [
+    (
+        [],
+        '<and/>'
+    ),
+    (
+        ['dummy-hostname-1', 'dummy-hostname-2', 'dummy-hostname-3'],
+        '<and><hostname op="!=" value="dummy-hostname-1"/><hostname op="!=" value="dummy-hostname-2"/><hostname op="!=" value="dummy-hostname-3"/></and>'  # noqa: E501
+    )
+], ids=[
+    'no-hostnames',
+    'with-avoid-hostnames'
+])
+def test_hostnames_to_beaker_filter(avoid_hostnames: List[str], expected: str) -> None:
+    r_beaker_filter = tft.artemis.drivers.beaker.hostnames_to_beaker_filter(avoid_hostnames)
+
+    assert r_beaker_filter.is_ok
+
+    beaker_filter = r_beaker_filter.unwrap()
+
+    assert str(beaker_filter) == expected
+
+
 @pytest.mark.parametrize(('filters', 'expected'), [
     (
         [],
@@ -130,7 +158,7 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
     assert str(final_filter) == expected
 
 
-@pytest.mark.parametrize(('env', 'avoid_groups', 'expected'), [
+@pytest.mark.parametrize(('env', 'avoid_groups', 'avoid_hostnames', 'expected'), [
     (
         """
         ---
@@ -141,6 +169,7 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
         os:
           compose: dummy-compose
         """,
+        [],
         [],
         None,
     ),
@@ -157,6 +186,7 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
           compose: dummy-compose
         """,
         [],
+        [],
         '<and><system><arch op="==" value="x86_64"/></system><system><memory op="&gt;=" value="8192"/></system></and>'
     ),
     (
@@ -172,17 +202,23 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
           compose: dummy-compose
         """,
         ['dummy-group-1', 'dummy-group-2'],
-        '<and><system><arch op="==" value="x86_64"/></system><system><memory op="&gt;=" value="8192"/></system><group op="!=" value="dummy-group-1"/><group op="!=" value="dummy-group-2"/></and>'  # noqa: E501
+        ['dummy-hostname-1', 'dummy-hostname-2'],
+        '<and><system><arch op="==" value="x86_64"/></system><system><memory op="&gt;=" value="8192"/></system><group op="!=" value="dummy-group-1"/><group op="!=" value="dummy-group-2"/><hostname op="!=" value="dummy-hostname-1"/><hostname op="!=" value="dummy-hostname-2"/></and>'  # noqa: E501
     ),
 ], ids=[
     'simple-arch',
     'arch-and-constraints',
-    'arch-and-constraints-and-avoid-groups'
+    'arch-and-constraints-and-avoid-groups-and-hostnames'
 ])
-def test_create_beaker_filter(env: str, avoid_groups: List[str], expected: Optional[str]) -> None:
+def test_create_beaker_filter(
+    env: str,
+    avoid_groups: List[str],
+    avoid_hostnames: List[str],
+    expected: Optional[str]
+) -> None:
     environment = parse_env(env)
 
-    r_filter = tft.artemis.drivers.beaker.create_beaker_filter(environment, avoid_groups)
+    r_filter = tft.artemis.drivers.beaker.create_beaker_filter(environment, avoid_groups, avoid_hostnames)
 
     assert r_filter.is_ok
 
@@ -193,3 +229,67 @@ def test_create_beaker_filter(env: str, avoid_groups: List[str], expected: Optio
 
     else:
         assert str(filter) == expected
+
+
+@pytest.mark.parametrize(('pool_config', 'expected'), [
+    (
+        {},
+        []
+    ),
+    (
+        {
+            'avoid-groups': ['dummy-group-1', 'dummy-group-2']
+        },
+        ['dummy-group-1', 'dummy-group-2']
+    )
+], ids=[
+    'no-groups',
+    'with-groups'
+])
+def test_avoid_groups(logger: ContextAdapter, pool_config: Dict[str, Any], expected: List[str]) -> None:
+    pool = tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', pool_config)
+
+    r_avoid_groups = pool.avoid_groups
+
+    assert r_avoid_groups.is_ok
+    assert r_avoid_groups.unwrap() == expected
+
+
+@pytest.mark.parametrize(('cached_data', 'expected'), [
+    (
+        {},
+        []
+    ),
+    (
+        {
+            'group-1': tft.artemis.drivers.beaker.AvoidGroupHostnames(
+                'group-1',
+                ['dummy-hostname-1', 'dummy-hostname-2']
+            ),
+            'group-2': tft.artemis.drivers.beaker.AvoidGroupHostnames(
+                'group-2',
+                ['dummy-hostname-2']
+            )
+        },
+        ['dummy-hostname-1', 'dummy-hostname-2', 'dummy-hostname-2']
+    )
+], ids=[
+    'no-groups',
+    'with-groups'
+])
+def test_avoid_hostnames(
+    logger: ContextAdapter,
+    mockpatch: MockPatcher,
+    cached_data: Dict[str, tft.artemis.drivers.beaker.AvoidGroupHostnames],
+    expected: List[str]
+) -> None:
+    pool = tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', cached_data)
+    mockpatch(pool, 'get_avoid_groups_hostnames').return_value = Ok(cached_data)
+
+    r_avoid_hostnames = pool.avoid_hostnames
+
+    if r_avoid_hostnames.is_error:
+        r_avoid_hostnames.unwrap_error().handle(logger)
+
+    assert r_avoid_hostnames.is_ok
+    assert r_avoid_hostnames.unwrap() == expected
