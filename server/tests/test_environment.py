@@ -42,6 +42,39 @@ def parse_spec(text: str) -> Any:
     return gluetool.utils.from_yaml(textwrap.dedent(text))
 
 
+@pytest.fixture(name='pool')
+def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDriver:
+    pool_config = """
+    ---
+
+    hw-constraints:
+      boot:
+        method:
+          translations:
+            - operator: contains
+              value: bios
+              element: |
+                <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
+
+            - operator: not contains
+              value: bios
+              element: |
+                <key_value key="NETBOOT_METHOD" op="=" value="efigrub"/>
+
+            - operator: contains
+              value: uefi
+              element: |
+                <key_value key="NETBOOT_METHOD" op="=" value="efigrub"/>
+
+            - operator: not contains
+              value: uefi
+              element: |
+                <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
+    """
+
+    return tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', parse_spec(pool_config))
+
+
 def _eval_flavor(
     logger: ContextAdapter,
     constraint: ConstraintBase,
@@ -947,13 +980,54 @@ def test_schema_logic_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger
               - size: ">= 60 GiB"
         """,
         '<and><system><arch op="==" value="x86_64"/></system><disk><size op="&gt;=" value="64424509440"/></disk></and>'
+    ),
+    (
+        """
+        ---
+
+        arch: x86_64
+        constraints:
+            boot:
+                method: bios
+        """,
+        '<and><system><arch op="==" value="x86_64"/></system><key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/></and>'  # noqa: E501
+    ),
+    (
+        """
+        ---
+
+        arch: x86_64
+        constraints:
+            boot:
+                method: uefi
+        """,
+        '<and><system><arch op="==" value="x86_64"/></system><key_value key="NETBOOT_METHOD" op="=" value="efigrub"/></and>'  # noqa: E501
+    ),
+    (
+        """
+        ---
+
+        arch: x86_64
+        constraints:
+            boot:
+                method: "!= uefi"
+        """,
+        '<and><system><arch op="==" value="x86_64"/></system><key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/></and>'  # noqa: E501
     )
 ], ids=[
     'IBM__POWER9',
     'IBM__POWER_PPC970',
-    'DISK__SIZE_MIN_60G'
+    'DISK__SIZE_MIN_60G',
+    'NETBOOT_LEGACY',
+    'NETBOOT_UEFI',
+    'not NETBOOT_UEFI'
 ])
-def test_beaker_preset(logger: ContextAdapter, hw: str, expected: str) -> None:
+def test_beaker_preset(
+    logger: ContextAdapter,
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+    hw: str,
+    expected: str
+) -> None:
     spec = parse_spec(
         """
         ---
@@ -973,7 +1047,12 @@ def test_beaker_preset(logger: ContextAdapter, hw: str, expected: str) -> None:
 
     assert r_constraints.is_ok
 
-    r_host_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment)
+    r_host_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment, pool)
+
+    if r_host_filter.is_error:
+        r_host_filter.unwrap_error().handle(logger)
+
+        assert False, 'host filter failed'
 
     assert r_host_filter.is_ok
 

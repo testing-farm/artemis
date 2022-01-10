@@ -16,6 +16,10 @@ import tft.artemis.environment
 from .. import MockPatcher
 
 
+def parse_spec(text: str) -> Any:
+    return gluetool.utils.from_yaml(textwrap.dedent(text))
+
+
 def parse_env(text: str) -> tft.artemis.environment.Environment:
     return tft.artemis.environment.Environment.unserialize_from_json(
         gluetool.utils.from_yaml(textwrap.dedent(text))
@@ -30,6 +34,39 @@ def parse_hw(text: str) -> tft.artemis.environment.ConstraintBase:
     assert r_constraint.is_ok
 
     return r_constraint.unwrap()
+
+
+@pytest.fixture(name='pool')
+def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDriver:
+    pool_config = """
+    ---
+
+    hw-constraints:
+      boot:
+        method:
+          translations:
+            - operator: contains
+              value: bios
+              element: |
+                <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
+
+            - operator: not contains
+              value: bios
+              element: |
+                <key_value key="NETBOOT_METHOD" op="=" value="efigrub"/>
+
+            - operator: contains
+              value: uefi
+              element: |
+                <key_value key="NETBOOT_METHOD" op="=" value="efigrub"/>
+
+            - operator: not contains
+              value: uefi
+              element: |
+                <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
+    """
+
+    return tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', parse_spec(pool_config))
 
 
 @pytest.mark.parametrize(('env', 'expected'), [
@@ -48,10 +85,14 @@ def parse_hw(text: str) -> tft.artemis.environment.ConstraintBase:
 ], ids=[
     'simple-arch',
 ])
-def test_environment_to_beaker_filter(env: str, expected: str) -> None:
+def test_environment_to_beaker_filter(
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+    env: str,
+    expected: str
+) -> None:
     environment = parse_env(env)
 
-    r_beaker_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment)
+    r_beaker_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment, pool)
 
     assert r_beaker_filter.is_ok
 
@@ -211,6 +252,7 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
     'arch-and-constraints-and-avoid-groups-and-hostnames'
 ])
 def test_create_beaker_filter(
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
     env: str,
     avoid_groups: List[str],
     avoid_hostnames: List[str],
@@ -218,7 +260,7 @@ def test_create_beaker_filter(
 ) -> None:
     environment = parse_env(env)
 
-    r_filter = tft.artemis.drivers.beaker.create_beaker_filter(environment, avoid_groups, avoid_hostnames)
+    r_filter = tft.artemis.drivers.beaker.create_beaker_filter(environment, pool, avoid_groups, avoid_hostnames)
 
     assert r_filter.is_ok
 
