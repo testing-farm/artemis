@@ -51,7 +51,7 @@ def test_bdm_find_free_device_name() -> None:
         {
             'DeviceName': '/dev/sdp',
             'Ebs': {}
-        },
+        }
     ])
 
     r_name = mappings.find_free_device_name()
