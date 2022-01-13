@@ -892,13 +892,17 @@ class Constraint(ConstraintBase):
     #: If set, it is a raw unit specified by the constraint.
     unit: Optional[str] = None
 
+    #: If set, it is a "bigger" constraint, to which this constraint logically belongs as one of its aspects.
+    original_constraint: Optional['Constraint'] = None
+
     @classmethod
     def from_specification(
         cls: Type[T],
         name: str,
         raw_value: str,
         as_quantity: bool = True,
-        as_cast: Optional[Callable[[str], ConstraintValueType]] = None
+        as_cast: Optional[Callable[[str], ConstraintValueType]] = None,
+        original_constraint: Optional['Constraint'] = None
     ) -> T:
         """
         Parse raw constraint specification into our internal representation.
@@ -908,6 +912,8 @@ class Constraint(ConstraintBase):
         :param as_quantity: if set, value is treated as a quantity containing also unit, and as such the raw value is
             converted to :py:`pint.Quantity` instance.
         :param as_cast: if specified, this callable is used to convert raw value to its final type.
+        :param original_constraint: when specified, new constraint logically belongs to ``original_constraint``,
+            possibly representing one of its aspects.
         :raises ParseError: when parsing fails.
         :returns: a :py:class:`Constraint` representing the given specification.
         """
@@ -941,7 +947,8 @@ class Constraint(ConstraintBase):
             operator=operator,
             operator_handler=OPERATOR_TO_HANDLER[operator],
             value=value,
-            raw_value=raw_value
+            raw_value=raw_value,
+            original_constraint=original_constraint
         )
 
     @classmethod
@@ -1211,60 +1218,69 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
 
     :param spec: raw constraint block specification.
     :param disk_index: index of this disk among its peers in specification.
-    :raises ParseError: when specification is not valid.
     :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
     """
+
+    group = And()
 
     # Constructing a tree of conditions:
     #
     # (size is enough) || (last disk is expansion && has enough spare disks && min/max size is enough)
-
-    direct_group = And()
-    expansion_group = And()
-    root_group = Or()
-
-    direct_group.constraints += [
-        Constraint.from_specification(f'disk[{disk_index}].{constraint_name}', str(spec[constraint_name]))
-        for constraint_name in ('size',)
-        if constraint_name in spec
-    ]
-
-    # The old-style constraint when `space` existed. Remove once v0.0.26 is gone.
-    if 'space' in spec:
-        direct_group.constraints += [
-            Constraint.from_specification(f'disk[{disk_index}].size', str(spec['space']))
-        ]
-
-    if len(direct_group.constraints) == 1:
-        root_group.constraints += [direct_group.constraints[0]]
-
-    else:
-        root_group.constraints += [direct_group]
-
-    if 'size' in spec:
+    def _parse_size_spec(spec: SpecType) -> None:
         # Our "expansion" branch consists of several conditions that must be satisfied: we need to check
         # expansion is allowed first, then make sure the disk we're trying to match with the flavor fits
         # into what this expansion can handle, and then we can deal with min/max sizes supported by the
         # expansion.
+        direct_group = And()
+        expansion_group = And()
+
+        if 'size' in spec:
+            size = spec['size']
+
+        # The old-style constraint when `space` existed. Remove once v0.0.26 is gone.
+        else:
+            size = spec['space']
+
         constraint_name = f'disk[{disk_index}].size'
+        original_constraint = Constraint.from_specification(constraint_name, str(size))
+
+        direct_group.constraints += [original_constraint]
 
         expansion_group.constraints += [
-            Constraint.from_specification('disk.length', '> 0', as_quantity=False, as_cast=int),
-            Constraint.from_specification('disk[-1].is_expansion', 'True', as_quantity=False, as_cast=bool),
-            Constraint.from_specification('disk.expanded_length', f'> {disk_index}', as_quantity=False, as_cast=int)
+            Constraint.from_specification(
+                'disk.length',
+                '> 0',
+                as_quantity=False,
+                as_cast=int,
+                original_constraint=original_constraint
+            ),
+            Constraint.from_specification(
+                'disk[-1].is_expansion',
+                'True',
+                as_quantity=False,
+                as_cast=bool,
+                original_constraint=original_constraint
+            ),
+            Constraint.from_specification(
+                'disk.expanded_length',
+                f'> {disk_index}',
+                as_quantity=False,
+                as_cast=int,
+                original_constraint=original_constraint
+            )
         ]
 
-        size_constraint = Constraint.from_specification(constraint_name, str(spec['size']))
-
-        if size_constraint.operator in (Operator.EQ, Operator.GTE, Operator.LTE, Operator.GT, Operator.LT):
+        if original_constraint.operator in (Operator.EQ, Operator.GTE, Operator.LTE, Operator.GT, Operator.LT):
             expansion_group.constraints += [
                 Constraint.from_specification(
                     'disk[-1].min_size',
-                    f'<= {size_constraint.raw_value}'
+                    f'<= {original_constraint.raw_value}',
+                    original_constraint=original_constraint
                 ),
                 Constraint.from_specification(
                     'disk[-1].max_size',
-                    f'>= {size_constraint.raw_value}'
+                    f'>= {original_constraint.raw_value}',
+                    original_constraint=original_constraint
                 )
             ]
 
@@ -1272,12 +1288,26 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
             raise ParseError(
                 message='operator not supported',
                 constraint_name=constraint_name,
-                raw_value=str(spec['size'])
+                raw_value=str(size)
             )
 
-        root_group.constraints += [expansion_group]
+        group.constraints += [
+            Or([
+                direct_group,
+                expansion_group
+            ])
+        ]
 
-    return root_group
+    # group.constraints += [
+    #     Constraint.from_specification(f'disk[{disk_index}].{constraint_name}', str(spec[constraint_name]))
+    #     for constraint_name in ()
+    #     if constraint_name in spec
+    # ]
+
+    if 'size' in spec or 'space' in spec:
+        _parse_size_spec(spec)
+
+    return group
 
 
 def _parse_disks(spec: SpecType) -> ConstraintBase:
