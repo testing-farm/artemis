@@ -85,6 +85,15 @@ APIBlockDeviceMappingType = TypedDict(
 APIBlockDeviceMappingsType = List[APIBlockDeviceMappingType]
 
 
+#: Device names allowed or recommended by AWS EC2.
+#:
+#: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html#available-ec2-device-names
+EBS_DEVICE_NAMES = [
+    f'/dev/sd{letter}'
+    for letter in 'fghijklmnop'
+]
+
+
 class APIImageType(TypedDict):
     Name: str
     ImageId: str
@@ -396,6 +405,21 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
 
         except IndexError:
             return None
+
+    def find_free_device_name(self) -> Result[str, Failure]:
+        """
+        Find a first free device name, a name not used by any mapping so far.
+        """
+
+        used_names = [mapping['DeviceName'] for mapping in self.data if 'DeviceName' in mapping]
+
+        for name in EBS_DEVICE_NAMES:
+            if name in used_names:
+                continue
+
+            return Ok(name)
+
+        return Error(Failure('cannot find any free EBS device name'))
 
     def append_mapping(
         self,
