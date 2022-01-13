@@ -351,7 +351,7 @@ class FlavorDisk(_FlavorSubsystemContainer):
             disk.size = UNITS(disk.size)
 
         if disk.min_size is not None:
-            disk.min_size = UNITS(disk.max_size)
+            disk.min_size = UNITS(disk.min_size)
 
         if disk.max_size is not None:
             disk.max_size = UNITS(disk.max_size)
