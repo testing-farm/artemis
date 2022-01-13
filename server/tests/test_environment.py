@@ -1284,3 +1284,32 @@ def test_reducer_short_circuit_ok(
 
     assert r.is_ok
     assert r.unwrap() is True
+
+
+@pytest.mark.parametrize(('constraint_name', 'expected'), [
+    (
+        'arch',
+        ('arch', None, None)
+    ),
+    (
+        'boot.method',
+        ('boot', None, 'method')
+    ),
+    (
+        'disk[79].size',
+        ('disk', 79, 'size')
+    )
+], ids=[
+    'arch',
+    'boot.method',
+    'disk[79].size'
+])
+def test_expand_name(constraint_name: str, expected: tft.artemis.environment.ConstraintNameComponents) -> None:
+    assert tft.artemis.environment.Constraint(
+        name=constraint_name,
+        # The following don't match expected type, but they are not used by any code we're going to run.
+        operator=None,  # type: ignore[arg-type]
+        operator_handler=None,  # type: ignore[arg-type]
+        value=None,
+        raw_value=None  # type: ignore[arg-type]
+    ).expand_name() == expected

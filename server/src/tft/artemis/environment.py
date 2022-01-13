@@ -14,8 +14,8 @@ import enum
 import itertools
 import operator
 import re
-from typing import Any, Callable, ClassVar, Dict, Iterable, Iterator, List, Optional, Sequence, Type, TypeVar, Union, \
-    cast
+from typing import Any, Callable, ClassVar, Dict, Iterable, Iterator, List, NamedTuple, Optional, Sequence, Type, \
+    TypeVar, Union, cast
 
 import gluetool.log
 import pint
@@ -51,6 +51,9 @@ S = TypeVar('S')
 VALUE_PATTERN = re.compile(r'^(?P<operator>==|!=|=~|=|>=|>|<=|<|contains)?\s*(?P<value>.+?)\s*$')
 
 PROPERTY_PATTERN = re.compile(r'(?P<property_name>[a-z_]+)(?:\[(?P<index>[+-]?\d+)\])?')
+PROPERTY_EXPAND_PATTERN = re.compile(
+    r'(?P<property_name>[a-z_+]+)(?:\[(?P<index>[+-]?\d+)\])?(?:\.(?P<child_property_name>[a-z_]+))?'
+)
 
 #: Type of the operator callable. The operators accept two arguments, and returns result of their comparison.
 OperatorHandlerType = Callable[[Any, Any], bool]
@@ -80,6 +83,16 @@ U = TypeVar('U', bound='_FlavorSubsystemContainer')
 # V = TypeVar('V', bound='_FlavorSequenceContainer[U]')
 V = TypeVar('V', bound='_FlavorSequenceContainer')  # type: ignore[type-arg]  # Missing type parameters for generic type
 W = TypeVar('W', bound='FlavorDisk')
+
+
+ConstraintNameComponents = NamedTuple(
+    'ConstraintNameComponents',
+    [
+        ('property', str),
+        ('index', Optional[int]),
+        ('child_property', Optional[str])
+    ]
+)
 
 
 class _FlavorSubsystemContainer(SerializableContainer):
@@ -970,6 +983,26 @@ class Constraint(ConstraintBase):
             operator_handler=OPERATOR_TO_HANDLER[Operator.EQ],
             value=value,
             raw_value=value
+        )
+
+    def expand_name(self) -> ConstraintNameComponents:
+        """
+        Expand constraint name into its components.
+
+        :returns: tuple consisting of constraint name components: name, optional indices, child properties, etc.
+        """
+
+        match = PROPERTY_EXPAND_PATTERN.match(self.name)
+
+        # Cannot happen as long as we test our pattern well...
+        assert match is not None
+
+        groups = match.groupdict()
+
+        return ConstraintNameComponents(
+            property=groups['property_name'],
+            index=int(groups['index']) if groups['index'] is not None else None,
+            child_property=groups['child_property_name']
         )
 
     def change_operator(self, operator: Operator) -> None:
