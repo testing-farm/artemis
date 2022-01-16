@@ -65,29 +65,6 @@ if [ -z "$ARTEMIS_BROKER_URL" ]; then
     export ARTEMIS_BROKER_URL="${ARTEMIS_BROKER_PROTOCOL}://${ARTEMIS_BROKER_USERNAME}:${ARTEMIS_BROKER_PASSWORD}@${ARTEMIS_BROKER_HOST}"
 fi
 
-if [ "$ARTEMIS_WORKER_PROCESSES" != "" ]; then
-    ARTEMIS_WORKER_OPTIONS="-p ${ARTEMIS_WORKER_PROCESSES} ${ARTEMIS_WORKER_OPTIONS}"
-fi
-
-if [ "$ARTEMIS_WORKER_THREADS" != "" ]; then
-    ARTEMIS_WORKER_OPTIONS="-t ${ARTEMIS_WORKER_THREADS} ${ARTEMIS_WORKER_OPTIONS}"
-fi
-
-if [ "$ARTEMIS_WORKER_QUEUES" != "" ]; then
-    ARTEMIS_WORKER_OPTIONS="-Q ${ARTEMIS_WORKER_QUEUES} ${ARTEMIS_WORKER_OPTIONS}"
-fi
-
-# This is an important setting: do not allow Dramatiq to fetch more messages than needed. Fetch new message
-# once task is done and completed, avoid pre-fetching too many messages at once. Pre-fetching messes with
-# priorities, and may lead to lost messages (although only in some very rare conditions).
-#
-# TODO: when we add `artemis-worker` script, wrapping dramatiq worker CLI, we could make our ARTEMIS_* variable
-# to work transparently for everyone running the worker. Until then, we cannot patch dramatiq code to use our ARTEMIS_*
-# variable, neither can we make our code to read our variable and set the one read by Dramatiq before the variable
-# is used.
-export dramatiq_queue_prefetch="${ARTEMIS_WORKER_PREFETCH:-0}"
-export dramatiq_delay_queue_prefetch="${ARTEMIS_WORKER_PREFETCH_DELAYED:-0}"
-
 cd /APP
 
 case $APP in
@@ -110,9 +87,7 @@ case $APP in
         ;;
     worker)
         expose_hooks
-        COMMAND="poetry run dramatiq $ARTEMIS_WORKER_OPTIONS tft.artemis.tasks \
-                                                             tft.artemis.tasks.route_guest_request \
-                                                             tft.artemis.tasks.update_guest_request"
+        COMMAND="poetry run artemis-worker $ARTEMIS_WORKER_OPTIONS"
         ;;
     *)
         echo "Unknown application '$APP'"

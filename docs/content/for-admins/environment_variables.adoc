@@ -72,6 +72,13 @@ case-insensitive.
 * `ARTEMIS_ENABLE_AUTHENTICATION` (bool): If enabled, API requests must pass authentication by providing proper username and token. Default: `no`.
 * `ARTEMIS_ENABLE_AUTHORIZATION` (bool): If enabled, API requests must pass authorization by providing username with privileges high enough for the requested action. Default: `no`.
 
+=== Worker
+
+* `ARTEMIS_WORKER_PROCESSES` (int): Number of worker processes to spawn. Default: number of CPU cores.
+* `ARTEMIS_WORKER_THREADS` (int): Number of worker threads to spawn per process. Default: `4`.
+* `ARTEMIS_WORKER_PREFETCH` (int): Number of messages to prefetch from regular queues. Default: 2 for each worker thread.
+* `ARTEMIS_WORKER_PREFETCH_DELAYED` (int): Number of messages to prefetch from delay queues. Default: 1000 for each worker thread.
+* `ARTEMIS_WORKER_QUEUES` (space-separated list): If specified, worker will listen to only the given queues. Default: unset.
 
 === AWS driver
 
