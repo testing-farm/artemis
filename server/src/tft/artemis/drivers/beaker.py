@@ -90,11 +90,6 @@ OPERATOR_SIGN_TO_OPERATOR = {
 }
 
 
-CONSTRAINT_DISK_PATTERN = re.compile(r'disk(?:\[[+-]?\d+\])?\.')
-CONSTRAINT_DISK_EXPANSION_PATTERN = re.compile(r'(?:disk\[[+-]?\d+\].(?:is_expansion|min_size|max_size|length|expanded_length))|(?:disk\.(?:length|expanded_length))')  # noqa: E501
-CONSTRAINT_DISK_SIZE = re.compile(r'disk\[\d+\]\.size')
-
-
 def _new_tag(tag_name: str, **attrs: str) -> bs4.BeautifulSoup:
     return bs4.BeautifulSoup('', 'xml').new_tag(tag_name, **attrs)
 
@@ -147,9 +142,10 @@ def constraint_to_beaker_filter(
         return Ok(grouping_or)
 
     constraint = cast(Constraint, constraint)
+    constraint_name = constraint.expand_name()
 
-    if constraint.name.startswith('boot.'):
-        if constraint.name == 'boot.method':
+    if constraint_name.property == 'boot':
+        if constraint_name.child_property == 'method':
             boot_method_config = cast(
                 BootMethodConfigType,
                 pool.pool_config.get('hw-constraints', {}).get('boot', {}).get('method', {})
@@ -174,24 +170,24 @@ def constraint_to_beaker_filter(
                 constraint=constraint.format()  # noqa: FS002
             ))
 
-    if constraint.name.startswith('cpu.'):
+    if constraint_name.property == 'cpu':
         cpu = _new_tag('cpu')
 
-        if constraint.name == 'cpu.cores':
+        if constraint_name.child_property == 'cores':
             op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             processors = _new_tag('processors', op=op, value=value)
 
             cpu.append(processors)
 
-        elif constraint.name == 'cpu.model':
+        elif constraint_name.child_property == 'model':
             op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             processors = _new_tag('model', op=op, value=value)
 
             cpu.append(processors)
 
-        elif constraint.name == 'cpu.model_name':
+        elif constraint_name.child_property == 'model_name':
             op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             processors = _new_tag('model_name', op=op, value=value)
@@ -206,13 +202,13 @@ def constraint_to_beaker_filter(
 
         return Ok(cpu)
 
-    if CONSTRAINT_DISK_PATTERN.match(constraint.name):
-        if CONSTRAINT_DISK_EXPANSION_PATTERN.match(constraint.name):
+    if constraint_name.property == 'disk':
+        if constraint_name.child_property in ('is_expansion', 'min_size', 'max_size', 'length', 'expanded_length'):
             return Ok(_new_tag('or'))
 
         disk = _new_tag('disk')
 
-        if CONSTRAINT_DISK_SIZE.match(constraint.name):
+        if constraint_name.child_property == 'size':
             # `disk.size` is represented as quantity, for Beaker XML we need to convert to bytes, integer.
             op, value = operator_to_beaker_op(
                 constraint.operator,
@@ -223,10 +219,6 @@ def constraint_to_beaker_filter(
 
             disk.append(size)
 
-        elif CONSTRAINT_DISK_EXPANSION_PATTERN.match(constraint.name):
-            # ignored
-            pass
-
         else:
             return Error(Failure(
                 'contraint not supported by driver',
@@ -236,7 +228,7 @@ def constraint_to_beaker_filter(
 
         return Ok(disk)
 
-    if constraint.name == 'arch':
+    if constraint_name.property == 'arch':
         op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
         system = _new_tag('system')
@@ -246,7 +238,7 @@ def constraint_to_beaker_filter(
 
         return Ok(system)
 
-    if constraint.name == 'memory':
+    if constraint_name.property == 'memory':
         # `memory` is represented as quantity, for Beaker XML we need to convert to mibibytes, integer.
         op, value = operator_to_beaker_op(
             constraint.operator,
