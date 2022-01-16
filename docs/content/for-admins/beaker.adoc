@@ -8,6 +8,29 @@ draft: false
 
 == Beaker
 
+=== Credentials
+
+When Beaker access is protected by authentication, driver can be configured to include credentials when talking to its backend.
+
+.Specification
+[source,yaml]
+....
+username: <string>
+password: <string>
+....
+
+.Example
+[source,yaml]
+....
+username: a-beaker-username
+password: corresponding-password
+....
+
+[NOTE]
+====
+Both `username` and `password` are required when any of these two is used - driver expects either no explicit credentials, or both username and password to be given.
+====
+
 === Beaker groups
 
 To avoid provisioning machines owned by particular Beaker groups, driver can be configured to avoid them.
