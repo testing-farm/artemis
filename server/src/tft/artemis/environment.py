@@ -1249,6 +1249,7 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
         constraint_name = f'disk[{disk_index}].size'
 
         expansion_group.constraints += [
+            Constraint.from_specification('disk.length', '> 0', as_quantity=False, as_cast=int),
             Constraint.from_specification('disk[-1].is_expansion', 'True', as_quantity=False, as_cast=bool),
             Constraint.from_specification('disk.expanded_length', f'> {disk_index}', as_quantity=False, as_cast=int)
         ]

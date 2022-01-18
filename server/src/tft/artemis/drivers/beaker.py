@@ -91,7 +91,7 @@ OPERATOR_SIGN_TO_OPERATOR = {
 
 
 CONSTRAINT_DISK_PATTERN = re.compile(r'disk(?:\[[+-]?\d+\])?\.')
-CONSTRAINT_DISK_EXPANSION_PATTERN = re.compile(r'(?:disk\[[+-]?\d+\].(?:is_expansion|min_size|max_size|expanded_length))|(?:disk\.expanded_length)')  # noqa: E501
+CONSTRAINT_DISK_EXPANSION_PATTERN = re.compile(r'(?:disk\[[+-]?\d+\].(?:is_expansion|min_size|max_size|length|expanded_length))|(?:disk\.(?:length|expanded_length))')  # noqa: E501
 CONSTRAINT_DISK_SIZE = re.compile(r'disk\[\d+\]\.size')
 
 
