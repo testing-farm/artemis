@@ -113,10 +113,9 @@ def logger(caplog: _pytest.logging.LogCaptureFixture) -> gluetool.log.ContextAda
     # keep it for the future, it gets thrown away when tests did not fail.
     tft.artemis.knobs.KNOB_LOGGING_LEVEL.value = logging.DEBUG
 
-    # It might be better to avoid JSON when logging, but it might be also easier to test
-    # logged messages as they would be JSON, and therefore easier to parse and verify.
-    #
-    # tft.artemis.knobs.KNOB_LOGGING_JSON.value = False
+    # When testing logging, we can easily inspect captured log records. Non-JSON log *output* is better
+    # for humans when investigating test suite output and failed tests.
+    tft.artemis.knobs.KNOB_LOGGING_JSON.value = False
 
     logger = tft.artemis.get_logger()
 
