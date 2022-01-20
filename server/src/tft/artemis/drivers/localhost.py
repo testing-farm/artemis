@@ -19,6 +19,8 @@ class LocalhostDriver(PoolDriver):
     A dummy driver always "provisioning" a localhost for the given guest.
     """
 
+    drivername = 'localhost'
+
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,

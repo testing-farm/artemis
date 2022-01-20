@@ -40,6 +40,8 @@ class AzurePoolResourcesIDs(PoolResourcesIDs):
 
 
 class AzureDriver(PoolDriver):
+    drivername = 'azure'
+
     pool_data_class = AzurePoolData
 
     def __init__(
