@@ -421,6 +421,42 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
 
         return Error(Failure('cannot find any free EBS device name'))
 
+    def enlarge(
+        self,
+        count: int,
+        delete_on_termination: Optional[bool] = None,
+        encrypted: Optional[bool] = None,
+        size: Optional[pint.Quantity] = None,
+        volume_type: Optional[EBSVolumeTypeType] = None
+    ) -> Result[None, Failure]:
+        """
+        Make sure mappings contain at least ``count`` items.
+        """
+
+        current_count = len(self)
+
+        if current_count >= count:
+            return Ok(None)
+
+        for _ in range(count - current_count):
+            r_name = self.find_free_device_name()
+
+            if r_name.is_error:
+                return Error(r_name.unwrap_error())
+
+            r_append = self.append_mapping(
+                r_name.unwrap(),
+                delete_on_termination=delete_on_termination,
+                encrypted=encrypted,
+                size=size,
+                volume_type=volume_type
+            )
+
+            if r_append.is_error:
+                return Error(r_append.unwrap_error())
+
+        return Ok(None)
+
     def append_mapping(
         self,
         device_name: str,
