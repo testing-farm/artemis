@@ -81,6 +81,7 @@ mypy-extensions = "0.4.1"
 
 [tool.poetry.scripts]
 artemis-api-server = "tft.artemis.api:main"
+artemis-worker = "tft.artemis.scripts.worker:cmd_root"
 artemis-dispatcher = "tft.artemis.dispatcher:main"
 
 # New tools to work with database
