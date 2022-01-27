@@ -1,0 +1,10 @@
+---
+
+- compose: "a compose to provision"
+  arch: "an architecture to provision"
+
+  # Custom deadline: if set, after this many seconds provisioning would be cancelled.
+  # deadline: 30
+
+  # If set, add this particular matrix item in this many copies.
+  # repeat: 10
