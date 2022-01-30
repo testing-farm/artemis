@@ -18,10 +18,13 @@ import click_spinner
 import semver
 import stackprinter
 
-from . import DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT, DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW, \
-    BasicAuthConfiguration, Configuration, Logger, artemis_create, artemis_delete, artemis_get_console_url, \
-    artemis_inspect, artemis_restore, artemis_update, confirm, fetch_artemis, load_yaml, prettify_json, prettify_yaml, \
-    print_table, prompt, validate_struct
+from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
+               DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW,
+               BasicAuthConfiguration, Configuration, Logger, artemis_create,
+               artemis_delete, artemis_get_console_url, artemis_inspect,
+               artemis_restore, artemis_update, confirm, fetch_artemis,
+               load_yaml, prettify_json, prettify_yaml, print_table, prompt,
+               validate_struct)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000
@@ -41,6 +44,8 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('hw-constraints-boot-method', 'v0.0.32'),
+        ('hw-constraints-network', 'v0.0.28'),
         # Dummy version - we can't actually check the constraints to assure this. That could change if we could verify
         # the constraints with a schema, and that would mean gain access to Artemis server package...
         ('hw-constraints-disk-as-list', '0.0.27'),
