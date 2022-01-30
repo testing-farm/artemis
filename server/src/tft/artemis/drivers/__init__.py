@@ -916,7 +916,12 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
 class GuestLogUpdaterType(Protocol):
     __name__: str
 
-    def __call__(self, guest_request: GuestRequest, guest_log: GuestLog) -> Result[GuestLogUpdateProgress, Failure]:
+    def __call__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
         pass
 
 
@@ -1606,6 +1611,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def update_guest_log(
         self,
+        logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
@@ -1633,7 +1639,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 state=GuestLogState.ERROR
             ))
 
-        return updater(guest_request, guest_log)
+        return updater(logger, guest_request, guest_log)
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         """

@@ -2377,6 +2377,7 @@ def do_update_guest_log(
 
     elif guest_log.state == GuestLogState.UNSUPPORTED:
         r_update = workspace.pool.update_guest_log(
+            logger,
             workspace.gr,
             guest_log
         )
@@ -2386,18 +2387,21 @@ def do_update_guest_log(
             return workspace.handle_success('finished-task')
 
         r_update = workspace.pool.update_guest_log(
+            logger,
             workspace.gr,
             guest_log
         )
 
     elif guest_log.state == GuestLogState.PENDING:
         r_update = workspace.pool.update_guest_log(
+            logger,
             workspace.gr,
             guest_log
         )
 
     elif guest_log.state == GuestLogState.IN_PROGRESS:
         r_update = workspace.pool.update_guest_log(
+            logger,
             workspace.gr,
             guest_log
         )

@@ -997,6 +997,7 @@ class OpenStackDriver(PoolDriver):
     @guest_log_updater('openstack', 'console', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_console_url(
         self,
+        logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
@@ -1029,6 +1030,7 @@ class OpenStackDriver(PoolDriver):
     @guest_log_updater('openstack', 'console', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_blob(
         self,
+        logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:

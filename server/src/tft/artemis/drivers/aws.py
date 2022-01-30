@@ -1825,6 +1825,7 @@ class AWSDriver(PoolDriver):
     @guest_log_updater('aws', 'console', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_blob(
         self,
+        logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
@@ -1876,6 +1877,7 @@ class AWSDriver(PoolDriver):
     @guest_log_updater('aws', 'console', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_console_url(
         self,
+        logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
