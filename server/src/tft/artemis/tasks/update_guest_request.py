@@ -49,6 +49,10 @@ class Workspace(_Workspace):
 
     @step
     def save_current_data(self) -> None:
+        """
+        Save current request properties for later use.
+        """
+
         from ..middleware import NOTE_POOLNAME, set_message_note
 
         assert self.gr
@@ -62,6 +66,10 @@ class Workspace(_Workspace):
 
     @step
     def query_driver(self) -> None:
+        """
+        Query pool driver for update on provisioning progress.
+        """
+
         assert self.gr
         assert self.pool
 
@@ -88,12 +96,20 @@ class Workspace(_Workspace):
 
     @step
     def log_minor_failures(self) -> None:
+        """
+        Log all non-fatal failures reported by driver.
+        """
+
         # not returning here - pool was able to recover and proceed
         for failure in self.provisioning_progress.pool_failures:
             self.handle_failure(failure, 'pool encountered failure during update')
 
     @step
     def handle_pending(self) -> None:
+        """
+        Handle the ongoing provisioning.
+        """
+
         if self.provisioning_progress.state != ProvisioningState.PENDING:
             return
 
@@ -106,6 +122,10 @@ class Workspace(_Workspace):
 
     @step
     def handle_cancel(self) -> None:
+        """
+        Handle the canceled provisioning, and move the guest request to :py:attr:`GuestRequest.ROUTING` state.
+        """
+
         if self.provisioning_progress.state != ProvisioningState.CANCEL:
             return
 
@@ -128,6 +148,10 @@ class Workspace(_Workspace):
 
     @step
     def handle_complete(self) -> None:
+        """
+        Handle the completed provisioning, and move the guest request to :py:attr:`GuestRequest.PREPARING` state.
+        """
+
         if self.provisioning_progress.state != ProvisioningState.COMPLETE:
             return
 
@@ -173,6 +197,17 @@ class Workspace(_Workspace):
         cancel: threading.Event,
         guestname: str
     ) -> 'Workspace':
+        """
+        Create workspace.
+
+        :param logger: logger to use for logging.
+        :param db: DB instance to use for DB access.
+        :param session: DB session to use for DB access.
+        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
+        :param guestname: name of the request to process.
+        :returns: newly created workspace.
+        """
+
         return cls(logger, session, cancel, db=db, guestname=guestname, task='update-guest-request')
 
     @classmethod
