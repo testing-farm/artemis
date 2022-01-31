@@ -44,8 +44,8 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
-        ('hw-constraints-boot-method', 'v0.0.32'),
-        ('hw-constraints-network', 'v0.0.28'),
+        ('hw-constraints-boot-method', '0.0.32'),
+        ('hw-constraints-network', '0.0.28'),
         # Dummy version - we can't actually check the constraints to assure this. That could change if we could verify
         # the constraints with a schema, and that would mean gain access to Artemis server package...
         ('hw-constraints-disk-as-list', '0.0.27'),
