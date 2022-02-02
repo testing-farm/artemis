@@ -697,6 +697,12 @@ def setup_extra_volumes(
     for constraint in span:
         logger.debug(f'  {constraint}')
 
+        property_name, _, _ = (constraint.original_constraint or constraint).expand_name()
+
+        if property_name != 'disk':
+            logger.debug('    ignored')
+            continue
+
         r_consumed = _honor_constraint_disk(
             logger,
             constraint.original_constraint or constraint,
