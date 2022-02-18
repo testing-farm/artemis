@@ -368,6 +368,14 @@ def FAIL(result: Result[Any, Failure]) -> DoerReturnType:
     return Error(result.unwrap_error())
 
 
+# Task actor type *before* applying `@dramatiq.actor` decorator, which is hidden in our `@task` decorator.
+BareActorType = Callable[..., None]
+
+#: A type of a single task argument.
+ActorArgumentType = Union[None, str, enum.Enum]
+ActorArgumentsType = Dict[str, ActorArgumentType]
+
+
 # Task doer type.
 class DoerType(Protocol):
     def __call__(
@@ -376,18 +384,10 @@ class DoerType(Protocol):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
-        *args: Any,
-        **kwargs: Any
+        *args: ActorArgumentType,
+        **kwargs: ActorArgumentType
     ) -> DoerReturnType:
         ...
-
-
-# Task actor type *before* applying `@dramatiq.actor` decorator, which is hidden in our `@task` decorator.
-BareActorType = Callable[..., None]
-
-#: A type of a single task argument.
-ActorArgumentType = Union[None, str, enum.Enum]
-ActorArgumentsType = Dict[str, ActorArgumentType]
 
 
 # Task actor type.
