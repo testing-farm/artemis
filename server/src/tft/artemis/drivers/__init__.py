@@ -443,7 +443,7 @@ class PoolData:
 
     @classmethod
     def unserialize(cls: Type[T], guest_request: GuestRequest) -> T:
-        return cls(**json.loads(guest_request.pool_data))  # type: ignore[call-arg]
+        return cls(**json.loads(guest_request.pool_data))
 
 
 class ProvisioningState(enum.Enum):

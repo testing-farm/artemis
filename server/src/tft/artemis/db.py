@@ -604,6 +604,10 @@ class User(Base):
             role=role.value
         )
 
+    @property
+    def is_admin(self) -> bool:
+        return self.role == UserRoles.ADMIN  # type: ignore[comparison-overlap]
+
 
 class SSHKey(Base):
     __tablename__ = 'sshkeys'

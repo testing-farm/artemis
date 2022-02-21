@@ -133,7 +133,7 @@ class TaskQueue(enum.Enum):
 def cast_priority(raw_value: str) -> int:
     # First, try to find corresponding `TaskPriority` member.
     try:
-        return cast(int, TaskPriority[raw_value.upper()].value)
+        return TaskPriority[raw_value.upper()].value
 
     except KeyError:
         pass
@@ -154,7 +154,7 @@ def cast_priority(raw_value: str) -> int:
 def cast_queue(raw_value: str) -> str:
     # First, try to match the given value with a defined queue.
     try:
-        return cast(str, TaskQueue[raw_value.upper()].value)
+        return TaskQueue[raw_value.upper()].value
 
     except KeyError:
         pass
@@ -499,8 +499,8 @@ def actor_kwargs(
 
     # Here we keep the actual priority and queue as understood by dramatiq. In our code, we use enums,
     # to avoid magic values here and there, but we have to translate those for dramatiq.
-    priority_actual = cast(int, priority.value)
-    queue_actual = cast(str, queue_name.value)
+    priority_actual = priority.value
+    queue_actual = queue_name.value
 
     # We want to support two ways how to specify priority: using names of our predefined priorities ("high"),
     # or by a number, for tweaks needed by maintainers ("101"). We get the maintainers' input, and try to
@@ -2334,14 +2334,14 @@ def do_update_guest_log(
 
     logger.warning(f'logname={logname} contenttype={contenttype} state={guest_log.state}')
 
-    if guest_log.state == GuestLogState.ERROR:
+    if guest_log.state == GuestLogState.ERROR:  # type: ignore[comparison-overlap]
         # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
         # to different pool, and here the could succeed - but it's never going to be tried again since it's
         # in ERROR state and there's no way to "reset" the state - possibly do that in API via POST.
         return workspace.handle_success('finished-task')
 
     # TODO logs: it'd be nice to change logs' state to something final
-    if workspace.gr.state in (GuestState.CONDEMNED, GuestState.ERROR):
+    if workspace.gr.state in (GuestState.CONDEMNED, GuestState.ERROR):  # type: ignore[comparison-overlap]
         logger.warning('guest can no longer provide any useful logs')
 
         return workspace.handle_success('finished-task')
@@ -2375,14 +2375,14 @@ def do_update_guest_log(
             state=GuestLogState.UNSUPPORTED
         ))
 
-    elif guest_log.state == GuestLogState.UNSUPPORTED:
+    elif guest_log.state == GuestLogState.UNSUPPORTED:  # type: ignore[comparison-overlap]
         r_update = workspace.pool.update_guest_log(
             logger,
             workspace.gr,
             guest_log
         )
 
-    elif guest_log.state == GuestLogState.COMPLETE:
+    elif guest_log.state == GuestLogState.COMPLETE:  # type: ignore[comparison-overlap]
         if not guest_log.is_expired:
             return workspace.handle_success('finished-task')
 
@@ -2392,14 +2392,14 @@ def do_update_guest_log(
             guest_log
         )
 
-    elif guest_log.state == GuestLogState.PENDING:
+    elif guest_log.state == GuestLogState.PENDING:  # type: ignore[comparison-overlap]
         r_update = workspace.pool.update_guest_log(
             logger,
             workspace.gr,
             guest_log
         )
 
-    elif guest_log.state == GuestLogState.IN_PROGRESS:
+    elif guest_log.state == GuestLogState.IN_PROGRESS:  # type: ignore[comparison-overlap]
         r_update = workspace.pool.update_guest_log(
             logger,
             workspace.gr,
