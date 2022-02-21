@@ -18,7 +18,7 @@ from molten.errors import HTTPError
 from molten.http.status_codes import HTTP_200
 
 from .. import Failure
-from ..db import DB, SafeQuery, User, UserRoles
+from ..db import DB, SafeQuery, User
 from ..knobs import Knob
 from ..metrics import APIMetrics
 from . import errors
@@ -255,7 +255,7 @@ class AuthContext:
             if matches_path(self.request, ADMIN_AUTH):
                 self.verify_auth_basic(session, 'admin')
 
-                if self.user and self.is_authenticated and self.user.role == UserRoles.ADMIN:
+                if self.user and self.is_authenticated and self.user.is_admin:
                     self.is_authorized = True
                     return
 

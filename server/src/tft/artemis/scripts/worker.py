@@ -24,7 +24,7 @@ DRAMATIQ_PATH = shutil.which('dramatiq')
 def find_task_modules() -> Generator[str, None, None]:
     yield 'tft.artemis.tasks'
 
-    for mi in sorted(pkgutil.iter_modules(tasks.__path__), key=lambda x: x.name):  # type: ignore[attr-defined]
+    for mi in sorted(pkgutil.iter_modules(tasks.__path__), key=lambda x: x.name):
         yield f'tft.artemis.tasks.{mi.name}'
 
 

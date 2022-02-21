@@ -140,7 +140,7 @@ class SerializableContainer:
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super(SerializableContainer, self).__init__(*args, **kwargs)  # type: ignore[call-arg]
+        super(SerializableContainer, self).__init__(*args, **kwargs)
 
     # All classes derived from SerializableContainer can be represented as YAML, because they
     # inherit the `to_yaml()` method, which then depends on `serialize_to_json()` - and what

@@ -838,7 +838,7 @@ class GuestRequestManager:
                     failure_details=failure_details
                 )
 
-            if guest_request.state != GuestState.CONDEMNED:
+            if guest_request.state != GuestState.CONDEMNED:  # type: ignore[comparison-overlap]
                 snapshot_count_subquery = session.query(  # type: ignore[no-untyped-call] # untyped function "query"
                     sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
                 ).filter(

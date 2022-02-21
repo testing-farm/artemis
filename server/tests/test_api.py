@@ -559,7 +559,8 @@ def test_auth_context_verify_auth_admin(
 
     mock_user = MagicMock(
         name='user<mock>',
-        role=tft.artemis.db.UserRoles.ADMIN
+        role=tft.artemis.db.UserRoles.ADMIN,
+        is_admin=True
     )
 
     def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: str) -> None:
@@ -590,7 +591,8 @@ def test_auth_context_verify_auth_admin_with_user_role(
 
     mock_user = MagicMock(
         name='user<mock>',
-        role=tft.artemis.db.UserRoles.USER
+        role=tft.artemis.db.UserRoles.USER,
+        is_admin=False
     )
 
     def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: str) -> None:

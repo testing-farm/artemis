@@ -1013,7 +1013,7 @@ class Constraint(ConstraintBase):
         """
 
         self.operator = operator
-        self.operator_handler = OPERATOR_TO_HANDLER[operator]  # type: ignore[assignment]
+        self.operator_handler = OPERATOR_TO_HANDLER[operator]
 
     def __repr__(self) -> str:
         """
@@ -1074,7 +1074,7 @@ class Constraint(ConstraintBase):
             result = False
 
         else:
-            result = self.operator_handler(  # type: ignore[call-arg]  # Too many arguments - mypy issue #5485
+            result = self.operator_handler(
                 flavor_property,
                 self.value
             )
