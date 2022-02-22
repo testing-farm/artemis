@@ -40,6 +40,6 @@ fi
 poetry run artemis-api-server &
 poetry run artemis-dispatcher &
 poetry run artemis-worker $ARTEMIS_WORKER_OPTIONS &
-poetry run periodiq tft.artemis.tasks &
+poetry run artemis-scheduler &
 
 sleep 100000

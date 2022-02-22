@@ -3,14 +3,14 @@
 
 import multiprocessing
 import os
-import pkgutil
 import shutil
 import sys
-from typing import Generator, List, Optional
+from typing import List, Optional
 
 import click
 
-from .. import get_logger, tasks
+from .. import get_logger
+from . import find_task_modules
 
 # Worker threads default is hard to pick, it can be literally any integer. While for processes,
 # experience tends to map them to CPU cores, threads are harder to set. Therefor picking one low
@@ -19,13 +19,6 @@ DEFAULT_PROCESS_COUNT = multiprocessing.cpu_count()
 DEFAULT_THREAD_COUNT = 4
 
 DRAMATIQ_PATH = shutil.which('dramatiq')
-
-
-def find_task_modules() -> Generator[str, None, None]:
-    yield 'tft.artemis.tasks'
-
-    for mi in sorted(pkgutil.iter_modules(tasks.__path__), key=lambda x: x.name):
-        yield f'tft.artemis.tasks.{mi.name}'
 
 
 @click.command()

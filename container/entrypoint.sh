@@ -83,7 +83,7 @@ case $APP in
         ;;
     scheduler)
         expose_hooks
-        COMMAND="poetry run periodiq tft.artemis.tasks"
+        COMMAND="poetry run artemis-scheduler"
         ;;
     worker)
         expose_hooks
