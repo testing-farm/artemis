@@ -279,15 +279,6 @@ KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE: Knob[str] = Knob(
     default='*/5 * * * *'
 )
 
-KNOB_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE: Knob[str] = Knob(
-    'actor.refresh-pool-avoid-groups-hostnames.schedule',
-    'When to run refresh of Beaker avoid groups hostnames, as a Cron-like specification.',
-    has_db=False,
-    envvar='ARTEMIS_ACTOR_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE',
-    cast_from_str=str,
-    default='*/5 * * * *'
-)
-
 #: A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks.
 KNOB_UPDATE_GUEST_LOG_DELAY: Knob[int] = Knob(
     'actor.dispatch-preparing.delay',
@@ -1394,13 +1385,16 @@ class Workspace:
         self,
         failure: Failure,
         label: str,
-        sentry: bool = True
+        sentry: bool = True,
+        logger: Optional[gluetool.log.ContextAdapter] = None
     ) -> DoerReturnType:
-        failure.handle(self.logger, label=label, sentry=sentry, guestname=self.guestname, **self.spice_details)
+        logger = logger or self.logger
+
+        failure.handle(logger, label=label, sentry=sentry, guestname=self.guestname, **self.spice_details)
 
         if self.guestname:
             GuestRequest.log_error_event_by_guestname(
-                self.logger,
+                logger,
                 self.session,
                 self.guestname,
                 label,
@@ -1416,9 +1410,10 @@ class Workspace:
         self,
         result: Result[Any, Failure],
         label: str,
-        sentry: bool = True
+        sentry: bool = True,
+        logger: Optional[gluetool.log.ContextAdapter] = None
     ) -> DoerReturnType:
-        return self.handle_failure(result.unwrap_error(), label, sentry=sentry)
+        return self.handle_failure(result.unwrap_error(), label, sentry=sentry, logger=logger)
 
     def handle_success(
         self,
@@ -1837,14 +1832,22 @@ class Workspace:
 
         assert False, 'unreachable'
 
-    def dispatch_task(self, task: Actor, *args: Any, delay: Optional[int] = None) -> None:
+    def dispatch_task(
+        self,
+        task: Actor,
+        *args: Any,
+        delay: Optional[int] = None,
+        logger: Optional[gluetool.log.ContextAdapter] = None
+    ) -> None:
         if self.result:
             return
 
-        r = dispatch_task(self.logger, task, *args, delay=delay)
+        logger = logger or self.logger
+
+        r = dispatch_task(logger, task, *args, delay=delay)
 
         if r.is_error:
-            self.result = self.handle_error(r, 'failed to dispatch update task')
+            self.result = self.handle_error(r, 'failed to dispatch update task', logger=logger)
             return
 
     def dispatch_group(
@@ -4127,48 +4130,4 @@ def refresh_pool_avoid_groups_hostnames(poolname: str) -> None:
         cast(DoerType, do_refresh_pool_avoid_groups_hostnames),
         logger=get_pool_logger('refresh-pool-groups-avoid-hostnames', _ROOT_LOGGER, poolname),
         doer_args=(poolname,)
-    )
-
-
-def do_refresh_pool_avoid_groups_hostnames_dispatcher(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event
-) -> DoerReturnType:
-    workspace = Workspace(logger, session, cancel, task='refresh-pool-avoid-groups-hostnames-dispatcher')
-
-    workspace.handle_success('entered-task')
-
-    logger.info('scheduling pool avoid groups hostnames refresh')
-
-    r_pools = PoolDriver.load_all(logger, session)
-
-    if r_pools.is_error:
-        workspace.handle_error(r_pools, 'failed to fetch pools')
-
-        return workspace.handle_success('finished-task')
-
-    for pool in r_pools.unwrap():
-        if not isinstance(pool, beaker_driver.BeakerDriver):
-            continue
-
-        dispatch_task(
-            get_pool_logger('refresh-pool-avoid-groups-hostnames-dispatcher', logger, pool.poolname),
-            refresh_pool_avoid_groups_hostnames,
-            pool.poolname
-        )
-
-    return workspace.handle_success('finished-task')
-
-
-@task(
-    periodic=periodiq.cron(KNOB_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE.value),
-    priority=TaskPriority.HIGH,
-    queue_name=TaskQueue.PERIODIC
-)
-def refresh_pool_avoid_groups_hostnames_dispatcher() -> None:
-    task_core(
-        cast(DoerType, do_refresh_pool_avoid_groups_hostnames_dispatcher),
-        logger=TaskLogger(_ROOT_LOGGER, 'refresh-pool-avoid-groups-hostnames-dispatcher')
     )
