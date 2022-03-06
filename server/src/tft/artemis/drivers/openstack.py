@@ -772,7 +772,7 @@ class OpenStackDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
-        resource_ids = OpenStackPoolResourcesIDs.unserialize(raw_resource_ids)
+        resource_ids = OpenStackPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.instance_id:
             r_output = self._run_os([

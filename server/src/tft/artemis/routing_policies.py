@@ -65,7 +65,7 @@ class RulingHistoryItem(SerializableContainer):
     ruling: Optional[PolicyRuling] = None
     failure: Optional[Failure] = None
 
-    def serialize_to_json(self) -> SerializedRulingHistoryItemType:  # type: ignore[override]  # stricter return type
+    def serialize(self) -> SerializedRulingHistoryItemType:  # type: ignore[override]
         serialized: SerializedRulingHistoryItemType = {
             'policyname': self.policyname,
             'allowed-pools': [],
@@ -87,7 +87,7 @@ class RulingHistoryItem(SerializableContainer):
         return serialized
 
     @classmethod
-    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'RulingHistoryItem':
+    def unserialize(cls, serialized: SerializedRulingHistoryItemType) -> 'RulingHistoryItem':  # type: ignore[override]
         raise NotImplementedError()
 
 
@@ -803,7 +803,7 @@ def run_routing_policies(
 
     def _serialize_history() -> List[SerializedRulingHistoryItemType]:
         return [
-            history_item.serialize_to_json()
+            history_item.serialize()
             for history_item in history
         ]
 

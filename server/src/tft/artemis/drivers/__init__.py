@@ -343,7 +343,7 @@ class PoolImageInfo(SerializableContainer):
     boot: FlavorBoot
     ssh: PoolImageSSHInfo
 
-    def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
+    def serialize_scrubbed(self) -> Dict[str, Any]:
         """
         Serialize properties to JSON while scrubbing sensitive information.
 
@@ -513,8 +513,8 @@ class PoolResourcesIDs(SerializableContainer):
     def is_empty(self) -> bool:
         return all([value is None for key, value in dataclasses.asdict(self).items() if key != 'ctime'])
 
-    def serialize_to_json(self) -> Dict[str, Any]:
-        serialized = super(PoolResourcesIDs, self).serialize_to_json()
+    def serialize(self) -> Dict[str, Any]:
+        serialized = super(PoolResourcesIDs, self).serialize()
 
         # Convert datetime object to string
         serialized['ctime'] = serialized['ctime'].strftime(RESOURCE_CTIME_FMT) if serialized['ctime'] else None
@@ -522,20 +522,20 @@ class PoolResourcesIDs(SerializableContainer):
         return serialized
 
     @classmethod
-    def unserialize_from_json(cls: Type[S], serialized: Dict[str, Any]) -> S:
+    def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
         # Convert ctime string to datetime object
         serialized['ctime'] = datetime.datetime.strptime(serialized['ctime'], RESOURCE_CTIME_FMT) \
             if serialized['ctime'] else None
 
         return cls(**serialized)
 
-    # Adding (un)serialize methods because we have a dedicated serialized type.
-    def serialize(self) -> SerializedPoolResourcesIDs:
-        return self.serialize_to_str()
+    # Overwriting (un)serialize methods because we have a dedicated serialized type.
+    def serialize_to_json(self) -> SerializedPoolResourcesIDs:
+        return super().serialize_to_json()
 
     @classmethod
-    def unserialize(cls: Type[S], serialized: SerializedPoolResourcesIDs) -> S:
-        return cls.unserialize_from_str(serialized)
+    def unserialize_from_json(cls: Type[S], serialized: SerializedPoolResourcesIDs) -> S:
+        return super().unserialize_from_json(serialized)
 
 
 def _parse_flavor_disk_size(
@@ -1150,7 +1150,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             logger,
             release_pool_resources,
             self.poolname,
-            resource_ids.serialize(),
+            resource_ids.serialize_to_json(),
             guest_request.guestname if guest_request else None,
             delay=r_delay.unwrap()
         )
@@ -1373,7 +1373,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         gluetool.log.log_dict(logger.debug, 'sorted suitable flavors', sorted_suitable_flavors)
 
-        gluetool.log.log_dict(logger.debug, 'environment', environment.serialize_to_json())
+        gluetool.log.log_dict(logger.debug, 'environment', environment.serialize())
         gluetool.log.log_blob(logger.debug, 'constraints', constraints.format())  # noqa: FS002
 
         return Ok(sorted_suitable_flavors)
@@ -1390,12 +1390,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
         scrubbed_details: Any = {}
 
         if flavor is not None:
-            details['flavor'] = flavor.serialize_to_json()
-            scrubbed_details['flavor'] = flavor.serialize_to_json_scrubbed()
+            details['flavor'] = flavor.serialize()
+            scrubbed_details['flavor'] = flavor.serialize_scrubbed()
 
         if image is not None:
-            details['image'] = image.serialize_to_json()
-            scrubbed_details['image'] = image.serialize_to_json_scrubbed()
+            details['image'] = image.serialize()
+            scrubbed_details['image'] = image.serialize_scrubbed()
 
         log_dict_yaml(logger.info, 'provisioning from', details)
 

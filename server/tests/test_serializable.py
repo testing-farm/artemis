@@ -64,12 +64,25 @@ NESTING_CONTAINER_AS_STRING = textwrap.dedent(
 ).lstrip()
 
 
+def test_serialize() -> None:
+    foo = Container()
+
+    serialized = foo.serialize()
+
+    assert serialized == {'bar': 79, 'baz': []}
+
+    bar = Container.unserialize(serialized)
+
+    assert foo == bar
+    assert type(foo) is type(bar)
+
+
 def test_json() -> None:
     foo = Container()
 
     serialized = foo.serialize_to_json()
 
-    assert serialized == {'bar': 79, 'baz': []}
+    assert serialized == '{"bar": 79, "baz": []}'  # noqa: FS003  # not an f-string
 
     bar = Container.unserialize_from_json(serialized)
 
@@ -77,14 +90,14 @@ def test_json() -> None:
     assert type(foo) is type(bar)
 
 
-def test_str() -> None:
+def test_yaml() -> None:
     foo = Container()
 
-    serialized = foo.serialize_to_str()
+    serialized = foo.serialize_to_yaml()
 
-    assert serialized == '{"bar": 79, "baz": []}'  # noqa: FS003  # not an f-string
+    assert serialized == 'bar: 79\nbaz: []\n'
 
-    bar = Container.unserialize_from_str(serialized)
+    bar = Container.unserialize_from_yaml(serialized)
 
     assert foo == bar
     assert type(foo) is type(bar)
@@ -98,11 +111,11 @@ def test_yaml_dumpable_registry() -> None:
 
 
 def test_nesting(nesting_container: NestingContainer) -> None:
-    serialized = nesting_container.serialize_to_json()
+    serialized = nesting_container.serialize()
 
     assert serialized == {'baz': 79, 'foo': 'some foo value', 'child': {'bar': 'some bar value'}}
 
-    bar = NestingContainer.unserialize_from_json(serialized)
+    bar = NestingContainer.unserialize(serialized)
 
     assert nesting_container == bar
     assert type(nesting_container) is type(bar)

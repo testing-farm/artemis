@@ -221,8 +221,8 @@ class AWSPoolImageInfo(PoolImageInfo):
     #: Carries `EnaSupport` field as provided by AWS image description.
     ena_support: bool
 
-    def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
-        serialized = super(AWSPoolImageInfo, self).serialize_to_json_scrubbed()
+    def serialize_scrubbed(self) -> Dict[str, Any]:
+        serialized = super(AWSPoolImageInfo, self).serialize_scrubbed()
 
         for bd_mapping in serialized['block_device_mappings']:
             del bd_mapping['Ebs']['SnapshotId']
@@ -318,11 +318,11 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         self[index] = value
 
     # Override serialization - we're fine with quite a trivial approach.
-    def serialize_to_json(self) -> Dict[str, Any]:
+    def serialize(self) -> Dict[str, Any]:
         return cast(Dict[str, Any], self.data)
 
     @classmethod
-    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'BlockDeviceMappings':
+    def unserialize(cls, serialized: Dict[str, Any]) -> 'BlockDeviceMappings':
         cast_serialized = cast(APIBlockDeviceMappingsType, serialized)
 
         return BlockDeviceMappings(cast_serialized)
@@ -579,7 +579,7 @@ def _honor_constraint_disk(
     property_name, index, child_property_name = constraint.expand_name()
 
     if child_property_name == 'size':
-        log_dict_yaml(logger.debug, '  mappings before', mappings.serialize_to_json())
+        log_dict_yaml(logger.debug, '  mappings before', mappings.serialize())
 
         assert index is not None
 
@@ -616,7 +616,7 @@ def _honor_constraint_disk(
         else:
             return Error(Failure('cannot honor constraint', constraint=str(constraint)))
 
-        log_dict_yaml(logger.debug, '  mappings after', mappings.serialize_to_json())
+        log_dict_yaml(logger.debug, '  mappings after', mappings.serialize())
 
         return Ok(True)
 
@@ -929,7 +929,7 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
-        resource_ids = AWSPoolResourcesIDs.unserialize(raw_resource_ids)
+        resource_ids = AWSPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.spot_instance_id is not None:
             r_output = self._aws_command([
@@ -1227,7 +1227,7 @@ class AWSDriver(PoolDriver):
         log_dict_yaml(logger.info, 'using spot price', {
             'availability zone': self.pool_config['availability-zone'],
             'current price': current_price,
-            'instance type': instance_type.serialize_to_json(),
+            'instance type': instance_type.serialize(),
             'product description': image.platform_details,
             'bid': f'{spot_price_bid_percentage}%',
             'print': price
@@ -1306,7 +1306,7 @@ class AWSDriver(PoolDriver):
 
         command.extend([
             '--block-device-mappings',
-            json.dumps(r_block_device_mappings.unwrap().serialize_to_json())
+            r_block_device_mappings.unwrap().serialize_to_json()
         ])
 
         if 'additional-options' in self.pool_config:
@@ -1395,7 +1395,7 @@ class AWSDriver(PoolDriver):
             subnet_id=self.pool_config['subnet-id'],
             security_group=self.pool_config['security-group'],
             user_data=user_data,
-            block_device_mappings=r_block_device_mappings.unwrap().serialize_to_json()
+            block_device_mappings=r_block_device_mappings.unwrap().serialize()
         )
 
         log_dict_yaml(logger.info, 'spot request launch specification', json.loads(specification))

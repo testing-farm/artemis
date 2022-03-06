@@ -604,7 +604,7 @@ class BeakerDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
-        resource_ids = BeakerPoolResourcesIDs.unserialize(raw_resource_ids)
+        resource_ids = BeakerPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.job_id is not None:
             r_output = self._run_bkr(logger, ['job-cancel', resource_ids.job_id], commandname='bkr.job-cancel')

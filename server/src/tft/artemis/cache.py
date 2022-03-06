@@ -8,7 +8,6 @@ Helpful building blocks for cache operations.
 """
 
 import datetime
-import json
 from typing import Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, cast
 
 import gluetool.log
@@ -338,7 +337,7 @@ def refresh_cached_set(
         cast(RedisHMSet, cache.hmset),
         new_key,
         {
-            item_key.encode(): json.dumps(item.serialize_to_json()).encode()
+            item_key.encode(): item.serialize_to_json().encode()
             for item_key, item in items.items()
         }
     )
@@ -395,7 +394,7 @@ def get_cached_set(
         return Ok(items)
 
     for item_key, item_serialized in serialized.items():
-        r_unserialize = safe_call(item_klass.unserialize_from_json, json.loads(item_serialized.decode('utf-8')))
+        r_unserialize = safe_call(item_klass.unserialize_from_json, item_serialized.decode('utf-8'))
 
         if r_unserialize.is_error:
             return Error(r_unserialize.unwrap_error())
@@ -463,7 +462,7 @@ def get_cached_set_item(
     if serialized is None:
         return Ok(None)
 
-    r_unserialize = safe_call(item_klass.unserialize_from_json, json.loads(serialized.decode('utf-8')))
+    r_unserialize = safe_call(item_klass.unserialize_from_json, serialized.decode('utf-8'))
 
     if r_unserialize.is_error:
         return Error(r_unserialize.unwrap_error())

@@ -21,7 +21,7 @@ def parse_spec(text: str) -> Any:
 
 
 def parse_env(text: str) -> tft.artemis.environment.Environment:
-    return tft.artemis.environment.Environment.unserialize_from_json(
+    return tft.artemis.environment.Environment.unserialize(
         gluetool.utils.from_yaml(textwrap.dedent(text))
     )
 

@@ -143,7 +143,7 @@ class SerializableContainer:
         super(SerializableContainer, self).__init__(*args, **kwargs)
 
     # All classes derived from SerializableContainer can be represented as YAML, because they
-    # inherit the `to_yaml()` method, which then depends on `serialize_to_json()` - and what
+    # inherit the `to_yaml()` method, which then depends on `serialize()` - and what
     # we can represent as JSON, we can for sure represent as YAML as well.
     #
     # Instead of using decorator to mark classes derived from this one, we let interpreter call
@@ -164,7 +164,7 @@ class SerializableContainer:
         :returns: human-readable rendering of the container.
         """
 
-        return format_dict_yaml(self.serialize_to_json())
+        return self.serialize_to_yaml()
 
     def __repr__(self) -> str:
         """
@@ -173,9 +173,18 @@ class SerializableContainer:
         :returns: human-readable rendering of the container.
         """
 
-        return format_dict_yaml(self.serialize_to_json())
+        return self.serialize_to_yaml()
 
-    def serialize_to_json(self) -> Dict[str, Any]:
+    def serialize(self) -> Dict[str, Any]:
+        """
+        Return Python built-in types representing the content of this container.
+
+        Works in a recursive manner, every container member that's a subclass of :py:class:`SerializableContainer`
+        is processed as well.
+
+        See :py:meth:`unserialize` for the reversal operation.
+        """
+
         serialized = dataclasses.asdict(self)
 
         for field in dataclasses.fields(self):
@@ -185,12 +194,20 @@ class SerializableContainer:
             if not issubclass(field.type, SerializableContainer):
                 continue
 
-            serialized[field.name] = getattr(self, field.name).serialize_to_json()
+            serialized[field.name] = getattr(self, field.name).serialize()
 
         return serialized
 
     @classmethod
-    def unserialize_from_json(cls: Type[S], serialized: Dict[str, Any]) -> S:
+    def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
+        """
+        Create container instance representing the content described with Python built-in types.
+
+        Every container member whose type is a subclass of :py:class:`SerializableContainer` is restored as well.
+
+        See :py:meth:`serialize` for the reversal operation.
+        """
+
         unserialized = cls(**serialized)
 
         for field in dataclasses.fields(unserialized):
@@ -203,20 +220,61 @@ class SerializableContainer:
             if field.name not in serialized:
                 continue
 
-            setattr(unserialized, field.name, field.type.unserialize_from_json(serialized[field.name]))
+            setattr(unserialized, field.name, field.type.unserialize(serialized[field.name]))
 
         return unserialized
 
-    def serialize_to_str(self) -> str:
-        return json.dumps(self.serialize_to_json())
+    def serialize_to_json(self) -> str:
+        """
+        Return JSON blob representing the content of this container.
+
+        Works in a recursive manner, every container member that's a subclass of :py:class:`SerializableContainer`
+        is processed as well.
+
+        See :py:meth:`unserialize_from_json` for the reversal operation.
+        """
+
+        return json.dumps(self.serialize())
 
     @classmethod
-    def unserialize_from_str(cls: Type[S], serialized: str) -> S:
-        return cls.unserialize_from_json(json.loads(serialized))
+    def unserialize_from_json(cls: Type[S], serialized: str) -> S:
+        """
+        Create container instance representing the content described with a JSON blob.
+
+        Every container member whose type is a subclass of :py:class:`SerializableContainer` is restored as well.
+
+        See :py:meth:`serialize_to_json` for the reversal operation.
+        """
+
+        return cls.unserialize(json.loads(serialized))
+
+    def serialize_to_yaml(self) -> str:
+        """
+        Return YAML blob representing the content of this container.
+
+        Works in a recursive manner, every container member that's a subclass of :py:class:`SerializableContainer`
+        is processed as well.
+
+        See :py:meth:`unserialize_from_yaml` for the reversal operation.
+        """
+
+        return format_dict_yaml(self.serialize())
+
+    @classmethod
+    def unserialize_from_yaml(cls: Type[S], serialized: str) -> S:
+        """
+        Create container instance representing the content described with a YAML blob.
+
+        Every container member whose type is a subclass of :py:class:`SerializableContainer` is restored as well.
+
+        See :py:meth:`serialize_to_yaml` for the reversal operation.
+        """
+
+        return cls.unserialize(get_yaml().load(serialized))
 
     @classmethod
     def to_yaml(cls, representer: ruamel.yaml.representer.Representer, container: S) -> Any:
-        return representer.represent_dict(container.serialize_to_json())
+        return representer.represent_dict(container.serialize())
 
 
 # Two logging helpers, very similar to `format_dict` and `log_dict`, but emitting a YAML-ish output.
@@ -503,7 +561,7 @@ class Failure:
         event_details.pop('job_results', None)
 
         if 'environment' in event_details:
-            event_details['environment'] = event_details['environment'].serialize_to_json()
+            event_details['environment'] = event_details['environment'].serialize()
 
         if self.caused_by:
             event_details['caused_by'] = self.caused_by.get_event_details()
@@ -600,7 +658,7 @@ class Failure:
             data['stacktrace'] = Failure._get_sentry_stack_info(self.traceback)
 
         if 'environment' in extra:
-            extra['environment'] = extra['environment'].serialize_to_json()
+            extra['environment'] = extra['environment'].serialize()
 
         tags.update({
             key: value
@@ -651,7 +709,7 @@ class Failure:
             }
 
         if 'environment' in details:
-            details['environment'] = details['environment'].serialize_to_json()
+            details['environment'] = details['environment'].serialize()
 
         if self.caused_by:
             details['caused-by'] = self.caused_by.get_log_details()
