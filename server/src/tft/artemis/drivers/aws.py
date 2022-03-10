@@ -829,6 +829,15 @@ def create_block_device_mappings(
     return Ok(r_mappings.unwrap())
 
 
+def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> List[str]:
+    serialized_tags = ','.join([f'{{Key={name},Value={value}}}' for name, value in tags.items()])
+
+    return [
+        f'ResourceType={resource_type},Tags=[{serialized_tags}]'
+        for resource_type in resource_types
+    ]
+
+
 class AWSDriver(PoolDriver):
     drivername = 'aws'
 
@@ -1249,6 +1258,7 @@ class AWSDriver(PoolDriver):
     def _request_instance(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         instance_type: Flavor,
         image: AWSPoolImageInfo
@@ -1257,6 +1267,11 @@ class AWSDriver(PoolDriver):
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
+
+        r_base_tags = self.get_guest_tags(session, guest_request)
+
+        if r_base_tags.is_error:
+            return Error(r_base_tags.unwrap_error())
 
         command = [
             'ec2', 'run-instances',
@@ -1283,6 +1298,13 @@ class AWSDriver(PoolDriver):
 
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
+
+        tags = r_base_tags.unwrap()
+
+        if tags:
+            command += [
+                '--tag-specifications'
+            ] + _tags_to_tag_specifications(tags, 'instance', 'volume')
 
         r_instance_request = self._aws_command(command, key='Instances', commandname='aws.ec2-run-instances')
 
@@ -1320,6 +1342,11 @@ class AWSDriver(PoolDriver):
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
+
+        r_base_tags = self.get_guest_tags(session, guest_request)
+
+        if r_base_tags.is_error:
+            return Error(r_base_tags.unwrap_error())
 
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)
@@ -1360,11 +1387,24 @@ class AWSDriver(PoolDriver):
 
         log_dict_yaml(logger.info, 'spot request launch specification', json.loads(specification))
 
-        r_spot_request = self._aws_command([
+        command = [
             'ec2', 'request-spot-instances',
             f'--spot-price={spot_price}',
-            f'--launch-specification={" ".join(specification.split())}',
-        ], key='SpotInstanceRequests', commandname='aws.ec2-request-spot-instances')
+            f'--launch-specification={" ".join(specification.split())}'
+        ]
+
+        tags = r_base_tags.unwrap()
+
+        if tags:
+            command += [
+                '--tag-specifications'
+            ] + _tags_to_tag_specifications(tags, 'spot-instances-request')
+
+        r_spot_request = self._aws_command(
+            command,
+            key='SpotInstanceRequests',
+            commandname='aws.ec2-request-spot-instances'
+        )
 
         if r_spot_request.is_error:
             return Error(r_spot_request.unwrap_error())
@@ -1469,6 +1509,8 @@ class AWSDriver(PoolDriver):
 
         pool_data = AWSPoolData.unserialize(guest_request)
 
+        assert pool_data.instance_id is not None
+
         logger.info(f'current instance state {pool_data.instance_id}:{state}')
 
         # EC2 instance lifecycle documentation
@@ -1499,17 +1541,23 @@ class AWSDriver(PoolDriver):
                 delay_update=r_delay.unwrap()
             ))
 
-        # tag the instance if requested
-        # TODO: move these into configuration. Before that, we need to add support for templates in tags, so we
-        # could generate tags like `Name`. But it really belongs to configuration.
-        tags: Dict[str, str] = {
-            'Name': f'{instance["PrivateIpAddress"]}::{instance["ImageId"]}'
-        }
-
+        # Tag the instance if it has been created by a spot request. Tags assigned to spot request
+        # are not propagated to its instance.
         if pool_data.spot_instance_id is not None:
-            tags['SpotRequestId'] = pool_data.spot_instance_id
+            r_base_tags = self.get_guest_tags(session, guest_request)
 
-        self._tag_instance(logger, session, guest_request, instance, owner, tags=tags)
+            if r_base_tags.is_error:
+                return Error(r_base_tags.unwrap_error())
+
+            tags = {
+                **r_base_tags.unwrap(),
+                'SpotRequestId': pool_data.spot_instance_id
+            }
+
+            r_tag = self._tag_instance(pool_data.instance_id, owner, tags)
+
+            if r_tag.is_error:
+                return Error(r_tag.unwrap_error().update(tags=tags))
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
@@ -1537,50 +1585,20 @@ class AWSDriver(PoolDriver):
 
     def _tag_instance(
         self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        instance: Dict[str, Any],
+        instance_id: str,
         owner: str,
-        tags: Optional[GuestTagsType] = None
-    ) -> None:
-        base_tags = self.get_guest_tags(session, guest_request)
-
-        # TODO: this is a huge problem, AWS driver tends to ignore many of possible errors, we need to fix that
-        # so we can propagate issues like this one upwards.
-        if base_tags.is_error:
-            return
-
-        tags = {
-            **base_tags.unwrap(),
-            **(tags if tags is not None else {})
-        }
-
-        if not tags:
-            self.debug('Skipping tagging as no tags specified.')
-            return
-
+        tags: GuestTagsType
+    ) -> Result[JSONType, Failure]:
         # we need ARN of the instance for tagging
         # region can be transformed from availability zone by omiting the last character
-        arn = f'arn:aws:ec2:{self.pool_config["availability-zone"][:-1]}:{owner}:instance/{instance["InstanceId"]}'
+        arn = f'arn:aws:ec2:{self.pool_config["availability-zone"][:-1]}:{owner}:instance/{instance_id}'
 
-        r_tag = self._aws_command([
+        return self._aws_command([
             'resourcegroupstaggingapi',
             'tag-resources',
             '--resource-arn-list', arn,
             '--tags', ','.join([f'{tag}={value}' for tag, value in tags.items()])
         ], commandname='aws.resourcegroupstaggingapi-tag-resources')
-
-        # do not fail if failed to tag
-        if r_tag.is_error:
-            failure = r_tag.unwrap_error()
-
-            failure.update(
-                arn=arn,
-                tags=tags
-            )
-
-            failure.handle(logger, 'failed to tag AWS instance')
 
     def acquire_guest(
         self,
@@ -1652,7 +1670,7 @@ class AWSDriver(PoolDriver):
         if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
             return self._request_spot_instance(logger, session, guest_request, instance_type, image)
 
-        return self._request_instance(logger, guest_request, instance_type, image)
+        return self._request_instance(logger, session, guest_request, instance_type, image)
 
     def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         """

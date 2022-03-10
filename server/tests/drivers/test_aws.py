@@ -95,3 +95,16 @@ def test_bdm_enlarge_exhausted_names(monkeypatch: _pytest.monkeypatch.MonkeyPatc
     assert r.unwrap_error().message == 'cannot find any free EBS device name'
 
     assert len(mappings) == 0
+
+
+def test_tags_to_tags_specifications() -> None:
+    assert tft.artemis.drivers.aws._tags_to_tag_specifications(
+        {
+            'tag1': 'value1',
+            'tag2': 'value2'
+        },
+        'instance', 'volume'
+    ) == [
+        'ResourceType=instance,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2}]',  # noqa: FS003
+        'ResourceType=volume,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2}]'  # noqa: FS003
+    ]
