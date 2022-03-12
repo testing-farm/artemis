@@ -9,7 +9,7 @@ import json
 import os
 import re
 import threading
-from typing import Any, Dict, List, MutableSequence, Optional, Pattern, Tuple, cast
+from typing import Any, Dict, Generator, List, MutableSequence, Optional, Pattern, Tuple, cast
 
 import gluetool.log
 import jq
@@ -829,8 +829,21 @@ def create_block_device_mappings(
     return Ok(r_mappings.unwrap())
 
 
+def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None]:
+    for name, value in tags.items():
+        # Get rid of quotes and singlequotes, AWS won't accept those.
+        value = (value or '').replace('"', '<quote>').replace('\'', '<singlequote>')
+
+        # Replace an empty string with double quotes representing an empty string. AWS won't
+        # accept `Value=`, but is willing to accept `Value=""`.
+        yield name, value or '""'
+
+
 def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> List[str]:
-    serialized_tags = ','.join([f'{{Key={name},Value={value}}}' for name, value in tags.items()])
+    serialized_tags = ','.join([
+        f'{{Key={name},Value={value}}}'
+        for name, value in _sanitize_tags(tags)
+    ])
 
     return [
         f'ResourceType={resource_type},Tags=[{serialized_tags}]'
@@ -1550,7 +1563,9 @@ class AWSDriver(PoolDriver):
                 return Error(r_base_tags.unwrap_error())
 
             tags = {
-                **r_base_tags.unwrap(),
+                **{
+                    name: value for name, value in _sanitize_tags(r_base_tags.unwrap())
+                },
                 'SpotRequestId': pool_data.spot_instance_id
             }
 
