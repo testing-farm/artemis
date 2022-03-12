@@ -101,10 +101,15 @@ def test_tags_to_tags_specifications() -> None:
     assert tft.artemis.drivers.aws._tags_to_tag_specifications(
         {
             'tag1': 'value1',
-            'tag2': 'value2'
+            'tag2': 'value2',
+            'tag3': None,  # type: ignore[dict-item]
+            'tag4': '',
+            'tag5': 'foo bar',
+            'tag6': 'foo "bar"',
+            'tag7': 'foo \'bar\''
         },
         'instance', 'volume'
     ) == [
-        'ResourceType=instance,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2}]',  # noqa: FS003
-        'ResourceType=volume,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2}]'  # noqa: FS003
+        'ResourceType=instance,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2},{Key=tag3,Value=""},{Key=tag4,Value=""},{Key=tag5,Value=foo bar},{Key=tag6,Value=foo <quote>bar<quote>},{Key=tag7,Value=foo <singlequote>bar<singlequote>}]',  # noqa: E501,FS003
+        'ResourceType=volume,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2},{Key=tag3,Value=""},{Key=tag4,Value=""},{Key=tag5,Value=foo bar},{Key=tag6,Value=foo <quote>bar<quote>},{Key=tag7,Value=foo <singlequote>bar<singlequote>}]',  # noqa: E501,FS003
     ]
