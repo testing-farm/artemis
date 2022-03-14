@@ -174,7 +174,7 @@ def _validate_environment(
         )
 
     try:
-        return Environment.unserialize_from_json(environment)
+        return Environment.unserialize(environment)
 
     except Exception as exc:
         raise errors.BadRequestError(
@@ -409,7 +409,7 @@ class GuestResponse:
         return cls(
             guestname=guest.guestname,
             owner=guest.ownername,
-            environment=guest.environment.serialize_to_json(),
+            environment=guest.environment.serialize(),
             address=guest.address,
             ssh=GuestSSHInfo(
                 guest.ssh_username,
@@ -734,7 +734,7 @@ class GuestRequestManager:
                 guestname,
                 'created',
                 **{
-                    'environment': environment.serialize_to_json(),
+                    'environment': environment.serialize(),
                     'user_data': guest_request.user_data
                 }
             )
@@ -1482,7 +1482,7 @@ class CacheManager:
             return Response(
                 status=HTTP_200,
                 content=gluetool.log.format_dict({
-                    info.name: info.serialize_to_json()
+                    info.name: info.serialize()
                     for info in r_infos.unwrap()
                 }),
                 headers={'Content-Type': 'application/json'}

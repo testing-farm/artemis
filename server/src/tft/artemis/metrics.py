@@ -121,23 +121,23 @@ class WorkerTrafficTask(SerializableContainer):
     actor: str
     args: 'ActorArgumentsType'
 
-    def serialize_to_json(self) -> Dict[str, Any]:
+    def serialize(self) -> Dict[str, Any]:
         """
-        Serialize container to JSON.
+        Return Python built-in types representing the content of this container.
 
         :returns: serialized form of container items.
         """
 
-        serialized = super().serialize_to_json()
+        serialized = super().serialize()
 
         serialized['ctime'] = serialized['ctime'].strftime(DATETIME_FMT)
 
         return serialized
 
     @classmethod
-    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'WorkerTrafficTask':
+    def unserialize(cls, serialized: Dict[str, Any]) -> 'WorkerTrafficTask':
         """
-        Unserialize container from JSON.
+        Create container instance representing the content described with Python built-in types.
 
         :param serialized: serialized form of container.
         :returns: unserialized container.

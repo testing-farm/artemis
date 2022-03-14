@@ -151,7 +151,7 @@ def map_environment_to_image_info(
         unsuccessfull.
     """
 
-    log_dict_yaml(logger.info, 'deciding image name for environment', environment.serialize_to_json())
+    log_dict_yaml(logger.info, 'deciding image name for environment', environment.serialize())
 
     try:
         r_image_name = map_compose_to_imagename_by_pattern_map(
@@ -169,14 +169,14 @@ def map_environment_to_image_info(
 
         if imagename is None:
             log_dict_yaml(logger.info, 'compose not mapped to image name', {
-                'environment': environment.serialize_to_json(),
+                'environment': environment.serialize(),
                 'image-name': imagename
             })
 
             return Ok(None)
 
         log_dict_yaml(logger.info, 'compose mapped to image name', {
-            'environment': environment.serialize_to_json(),
+            'environment': environment.serialize(),
             'image-name': imagename
         })
 
@@ -186,8 +186,8 @@ def map_environment_to_image_info(
             return Error(r_image.unwrap_error())
 
         log_dict_yaml(logger.info, 'compose mapped to image', {
-            'environment': environment.serialize_to_json(),
-            'image': r_image.unwrap().serialize_to_json()
+            'environment': environment.serialize(),
+            'image': r_image.unwrap().serialize()
         })
 
         return Ok(r_image.unwrap())

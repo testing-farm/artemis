@@ -1041,7 +1041,7 @@ def test_beaker_preset(
 
     spec['hw'] = parse_spec(hw)
 
-    environment = Environment.unserialize_from_json(spec)
+    environment = Environment.unserialize(spec)
 
     r_constraints = environment.get_hw_constraints()
 

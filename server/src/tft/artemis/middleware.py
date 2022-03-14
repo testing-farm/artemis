@@ -3,7 +3,6 @@
 
 import datetime
 import inspect
-import json
 import os
 import threading
 import traceback
@@ -438,7 +437,7 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
             self.logger,
             self.cache,
             self.current_key,
-            json.dumps(WorkerTrafficTask(
+            WorkerTrafficTask(
                 workername=self.worker_name,
                 worker_pid=self.worker_pid,
                 worker_tid=tid,
@@ -446,7 +445,7 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
                 queue=cast(str, message.queue_name),
                 actor=cast(str, message.actor_name),
                 args=actor_arguments
-            ).serialize_to_json()).encode(),
+            ).serialize_to_json().encode(),
             ttl=KNOB_WORKER_TRAFFIC_METRICS_TTL.value
         )
 

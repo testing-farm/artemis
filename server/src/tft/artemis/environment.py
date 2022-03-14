@@ -179,28 +179,28 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
             item.clone() for item in self.items
         ])
 
-    def serialize_to_json(self) -> List[Dict[str, Any]]:  # type: ignore[override]  # expected
+    def serialize(self) -> List[Dict[str, Any]]:  # type: ignore[override]  # expected
         """
-        Serialize container to JSON.
+        Return Python built-in types representing the content of this container.
 
         :returns: serialized form of container items.
         """
 
         return [
-            item.serialize_to_json() for item in self.items
+            item.serialize() for item in self.items
         ]
 
     @classmethod
-    def unserialize_from_json(cls: Type[V], serialized: List[Dict[str, Any]]) -> V:  # type: ignore[override]
+    def unserialize(cls: Type[V], serialized: List[Dict[str, Any]]) -> V:  # type: ignore[override]
         """
-        Unserialize items from JSON.
+        Create container instance representing the content described with Python built-in types.
 
         :param serialized: serialized form of container items.
         :returns: unserialized container.
         """
 
         return cls([
-            cls.ITEM_CLASS.unserialize_from_json(serialized_item)
+            cls.ITEM_CLASS.unserialize(serialized_item)
             for serialized_item in serialized
         ])
 
@@ -329,14 +329,14 @@ class FlavorDisk(_FlavorSubsystemContainer):
     min_size: Optional[Quantity] = None
     max_size: Optional[Quantity] = None
 
-    def serialize_to_json(self) -> Dict[str, Any]:
+    def serialize(self) -> Dict[str, Any]:
         """
-        Serialize properties to JSON.
+        Return Python built-in types representing the content of this container.
 
         :returns: serialized form of flavor properties.
         """
 
-        serialized = super(FlavorDisk, self).serialize_to_json()
+        serialized = super(FlavorDisk, self).serialize()
 
         if self.size is not None:
             serialized['size'] = str(self.size)
@@ -350,15 +350,15 @@ class FlavorDisk(_FlavorSubsystemContainer):
         return serialized
 
     @classmethod
-    def unserialize_from_json(cls: Type[W], serialized: Dict[str, Any]) -> W:
+    def unserialize(cls: Type[W], serialized: Dict[str, Any]) -> W:
         """
-        Unserialize properties from JSON.
+        Create container instance representing the content described with Python built-in types.
 
         :param serialized: serialized form of flavor properties.
         :returns: disk properties of a flavor.
         """
 
-        disk = super(FlavorDisk, cls).unserialize_from_json(serialized)
+        disk = super(FlavorDisk, cls).unserialize(serialized)
 
         if disk.size is not None:
             disk.size = UNITS(disk.size)
@@ -513,43 +513,43 @@ class Flavor(_FlavorSubsystemContainer):
     #: Virtualization properties.
     virtualization: FlavorVirtualization = dataclasses.field(default_factory=FlavorVirtualization)
 
-    def serialize_to_json(self) -> Dict[str, Any]:
+    def serialize(self) -> Dict[str, Any]:
         """
-        Serialize properties to JSON.
+        Return Python built-in types representing the content of this container.
 
         :returns: serialized form of flavor properties.
         """
 
-        serialized = super(Flavor, self).serialize_to_json()
+        serialized = super(Flavor, self).serialize()
 
         if self.memory is not None:
             serialized['memory'] = str(self.memory)
 
         return serialized
 
-    def serialize_to_json_scrubbed(self) -> Dict[str, Any]:
+    def serialize_scrubbed(self) -> Dict[str, Any]:
         """
         Serialize properties to JSON while scrubbing sensitive information.
 
         :returns: serialized form of flavor properties.
         """
 
-        serialized = self.serialize_to_json()
+        serialized = self.serialize()
 
         del serialized['id']
 
         return serialized
 
     @classmethod
-    def unserialize_from_json(cls, serialized: Dict[str, Any]) -> 'Flavor':
+    def unserialize(cls, serialized: Dict[str, Any]) -> 'Flavor':
         """
-        Unserialize properties from JSON.
+        Create container instance representing the content described with Python built-in types.
 
         :param serialized: serialized form of flavor properties.
         :returns: flavor instance.
         """
 
-        flavor = super(Flavor, cls).unserialize_from_json(serialized)
+        flavor = super(Flavor, cls).unserialize(serialized)
 
         if flavor.memory is not None:
             flavor.memory = UNITS(flavor.memory)

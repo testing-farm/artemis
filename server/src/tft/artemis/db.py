@@ -665,7 +665,7 @@ class GuestRequest(Base):
         # avoid circular imports
         from .environment import Environment
 
-        return Environment.unserialize_from_json(cast(Dict[str, Any], self._environment))
+        return Environment.unserialize(cast(Dict[str, Any], self._environment))
 
     # This is tricky:
     # * we want to keep `nullable=False`, because `ctime` cannot ever be set to `NULL`. That way we're not forced
@@ -750,7 +750,7 @@ class GuestRequest(Base):
     ) -> sqlalchemy.insert:
         return sqlalchemy.insert(cls.__table__).values(
             guestname=guestname,
-            _environment=environment.serialize_to_json(),
+            _environment=environment.serialize(),
             ownername=ownername,
             ssh_keyname=ssh_keyname,
             ssh_port=ssh_port,

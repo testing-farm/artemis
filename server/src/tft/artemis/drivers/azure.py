@@ -105,7 +105,7 @@ class AzureDriver(PoolDriver):
 
         # delete vm first, resources second
 
-        resource_ids = AzurePoolResourcesIDs.unserialize(raw_resource_ids)
+        resource_ids = AzurePoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         def _delete_resource(res_id: str) -> Any:
             options = ['resource', 'delete', '--ids', res_id]
