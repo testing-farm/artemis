@@ -1444,6 +1444,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
     if 'network' in spec:
         group.constraints += [_parse_networks(spec['network'])]
 
+    if 'hostname' in spec:
+        group.constraints += [Constraint.from_specification('hostname', spec['hostname'], as_quantity=False)]
+
     if len(group.constraints) == 1:
         return group.constraints[0]
 

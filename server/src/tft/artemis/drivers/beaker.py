@@ -262,6 +262,16 @@ def constraint_to_beaker_filter(
 
         return Ok(system)
 
+    if constraint_name.property == 'hostname':
+        op, value = operator_to_beaker_op(
+            constraint.operator,
+            str(constraint.value)
+        )
+
+        hostname = _new_tag('hostname', op=op, value=value)
+
+        return Ok(hostname)
+
     return Error(Failure(
         'contraint not supported by driver',
         constraint=constraint.format(),  # noqa: FS002
