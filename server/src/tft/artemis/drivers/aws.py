@@ -152,6 +152,11 @@ JQ_QUERY_SUBNET_AVAILABLE_IPS = jq.compile('.Subnets | .[] | .AvailableIpAddress
 #: Extract console output from ``get-console-output`` output.
 JQ_QUERY_CONSOLE_OUTPUT = jq.compile('.Output')
 
+#: Extract IDs of EBS volumes attached to instance, as available from ``describe-instances``.
+#: Note the missing leading `.Reservations | ...` - this query is applied to one instance
+#: only, after its description has been acquired from API.
+JQ_QUERY_EBS_VOLUME_IDS = jq.compile('.BlockDeviceMappings | .[] | .Ebs.VolumeId')
+
 
 KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
     'aws.spot-open-timeout',
@@ -840,6 +845,12 @@ def create_block_device_mappings(
 
 
 def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None]:
+    """
+    Sanitize tags to make their values acceptable for AWS API and CLI.
+
+    Namely characters like a space (`` ``) and quotation marks (``"``) are rewritten.
+    """
+
     for name, value in tags.items():
         # Get rid of quotes and singlequotes, AWS won't accept those.
         value = (value or '').replace('"', '<quote>').replace('\'', '<singlequote>')
@@ -849,10 +860,40 @@ def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None
         yield name, value or '""'
 
 
-def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> List[str]:
-    serialized_tags = ','.join([
-        f'{{Key={name},Value={value}}}'
+def _serialize_tags(tags: GuestTagsType) -> List[str]:
+    """
+    Serialize tags to make them acceptable for AWS CLI.
+
+    AWS accepts tags in form of key/value lists, with field explicitly named:
+
+    .. code-block:: python
+
+       Key=foo,Value=bar Key=baz,Value=
+
+    See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#create-tag-examples for more details.
+    """
+
+    return [
+        f'Key={name},Value={value}'
         for name, value in _sanitize_tags(tags)
+    ]
+
+
+def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> List[str]:
+    """
+    Serialize tags to make them acceptable for ``--tag-specifications`` CLI option.
+
+    AWS accepts tags in form of a resource type plus a key/value list, with field explicitly named.
+
+    .. code-block:: python
+
+       ResourceType=foo,Tags=[{Key=foo,Value=bar},...]
+
+    See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-on-create-examples for more details.
+    """
+
+    serialized_tags = ','.join([
+        f'{{{tag}}}' for tag in _serialize_tags(tags)
     ])
 
     return [
@@ -1149,6 +1190,7 @@ class AWSDriver(PoolDriver):
     def _aws_command(
         self,
         args: List[str],
+        json_output: bool = True,
         key: Optional[str] = None,
         commandname: Optional[str] = None
     ) -> Result[JSONType, Failure]:
@@ -1164,7 +1206,7 @@ class AWSDriver(PoolDriver):
         r_run = run_cli_tool(
             self.logger,
             command,
-            json_output=True,
+            json_output=json_output,
             env=self.environ,
             poolname=self.poolname,
             commandname=commandname
@@ -1183,6 +1225,9 @@ class AWSDriver(PoolDriver):
             return Error(failure)
 
         output = r_run.unwrap()
+
+        if json_output is False:
+            return Ok(output.stdout)
 
         if key is None:
             return Ok(output.json)
@@ -1564,25 +1609,42 @@ class AWSDriver(PoolDriver):
                 delay_update=r_delay.unwrap()
             ))
 
-        # Tag the instance if it has been created by a spot request. Tags assigned to spot request
-        # are not propagated to its instance.
+        # Once we have a working instance, we need to apply tags, because:
+        #
+        # * tags applied to spot request are not propagated to instance, and
+        # * tags applied to instance are not applied to volumes and other attached resources.
+        #
+        # Therefore we need to apply tags explicitly here, even for non-spot instances - those
+        # are already tagged, but let's make sure their volumes are tagged as well.
+        r_base_tags = self.get_guest_tags(session, guest_request)
+
+        if r_base_tags.is_error:
+            return Error(r_base_tags.unwrap_error())
+
+        tags = r_base_tags.unwrap()
+
         if pool_data.spot_instance_id is not None:
-            r_base_tags = self.get_guest_tags(session, guest_request)
+            tags['SpotRequestId'] = pool_data.spot_instance_id
 
-            if r_base_tags.is_error:
-                return Error(r_base_tags.unwrap_error())
+        log_dict_yaml(logger.warning, 'instance', instance)
+        logger.warning(f'volume_ids: {JQ_QUERY_EBS_VOLUME_IDS.input(instance).all()}')
 
-            tags = {
-                **{
-                    name: value for name, value in _sanitize_tags(r_base_tags.unwrap())
-                },
-                'SpotRequestId': pool_data.spot_instance_id
-            }
+        try:
+            volume_ids = JQ_QUERY_EBS_VOLUME_IDS.input(instance).all()
 
-            r_tag = self._tag_instance(pool_data.instance_id, owner, tags)
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'failed to parse AWS output',
+                exc
+            ))
 
-            if r_tag.is_error:
-                return Error(r_tag.unwrap_error().update(tags=tags))
+        r_tag = self._tag_resources(
+            [pool_data.instance_id] + volume_ids,
+            tags
+        )
+
+        if r_tag.is_error:
+            return Error(r_tag.unwrap_error().update(tags=tags))
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
@@ -1608,22 +1670,18 @@ class AWSDriver(PoolDriver):
 
         return self._do_update_instance(logger, session, guest_request)
 
-    def _tag_instance(
+    def _tag_resources(
         self,
-        instance_id: str,
-        owner: str,
+        resource_ids: List[str],
         tags: GuestTagsType
     ) -> Result[JSONType, Failure]:
-        # we need ARN of the instance for tagging
-        # region can be transformed from availability zone by omiting the last character
-        arn = f'arn:aws:ec2:{self.pool_config["availability-zone"][:-1]}:{owner}:instance/{instance_id}'
-
         return self._aws_command([
-            'resourcegroupstaggingapi',
-            'tag-resources',
-            '--resource-arn-list', arn,
-            '--tags', ','.join([f'{tag}={value}' for tag, value in tags.items()])
-        ], commandname='aws.resourcegroupstaggingapi-tag-resources')
+            'ec2',
+            'create-tags',
+            '--resources'
+        ] + resource_ids + [
+            '--tags'
+        ] + _serialize_tags(tags), json_output=False, commandname='aws.tag-resources')
 
     def acquire_guest(
         self,
