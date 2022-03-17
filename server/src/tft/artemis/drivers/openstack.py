@@ -51,6 +51,16 @@ KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
     default=30
 )
 
+KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
+    'openstack.mapping.environment-to-image',
+    'Path to a pattern map file with environment to image mapping.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
+    cast_from_str=str,
+    default='artemis-image-map-openstack.yaml'
+)
+
 MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'^No server with a name or ID')
 INSTANCE_NOT_READY_ERROR_PATTERN = re.compile(r'^Instance [a-z0-9\-]+ is not ready')
 

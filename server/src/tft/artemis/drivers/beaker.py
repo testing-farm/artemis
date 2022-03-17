@@ -40,6 +40,16 @@ KNOB_RESERVATION_DURATION: Knob[int] = Knob(
     default=86400
 )
 
+KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
+    'beaker.mapping.environment-to-image',
+    'Path to a pattern map file with environment to image mapping.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
+    cast_from_str=str,
+    default='artemis-image-map-beaker.yaml'
+)
+
 
 NO_DISTRO_MATCHES_RECIPE_ERROR_PATTEN = re.compile(r'^Exception: .+:No distro tree matches Recipe:')
 

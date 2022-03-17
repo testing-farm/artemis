@@ -12,10 +12,22 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import FlavorBoot
+from ..knobs import Knob
 from ..metrics import ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, \
     PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
     SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
+
+KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
+    'azure.mapping.environment-to-image',
+    'Path to a pattern map file with environment to image mapping.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
+    cast_from_str=str,
+    default='artemis-image-map-azure.yaml'
+)
+
 
 AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'Microsoft.Compute/virtualMachines': ResourceType.VIRTUAL_MACHINE,

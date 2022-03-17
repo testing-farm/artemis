@@ -306,6 +306,22 @@ for the requested action.
 
 5+|Templated URL of serial console of an AWS EC2 instance.
 
+|`aws.mapping.environment-to-image`
+|`str`
+|`ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
+|`artemis-image-map-aws.yaml`
+|no
+
+
+|`aws.mapping.environment-to-image:$poolname`
+|
+|`ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$poolname`
+|
+|
+
+
+5+|Path to a pattern map file with environment to image mapping.
+
 |`aws.pending-timeout`
 |`int`
 |`ARTEMIS_AWS_PENDING_TIMEOUT`
@@ -326,6 +342,38 @@ for the requested action.
 
 5+|How long, in seconds, is an spot instance request allowed to stay in `open` state
 until cancelled and reprovisioned.
+
+|`azure.mapping.environment-to-image`
+|`str`
+|`ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
+|`artemis-image-map-azure.yaml`
+|no
+
+
+|`azure.mapping.environment-to-image:$poolname`
+|
+|`ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$poolname`
+|
+|
+
+
+5+|Path to a pattern map file with environment to image mapping.
+
+|`beaker.mapping.environment-to-image`
+|`str`
+|`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
+|`artemis-image-map-beaker.yaml`
+|no
+
+
+|`beaker.mapping.environment-to-image:$poolname`
+|
+|`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$poolname`
+|
+|
+
+
+5+|Path to a pattern map file with environment to image mapping.
 
 |`beaker.reservation.duration`
 |`int`
@@ -586,6 +634,22 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 
 
 5+|How long, in seconds, it takes for a console url to be qualified as expired.
+
+|`openstack.mapping.environment-to-image`
+|`str`
+|`ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
+|`artemis-image-map-openstack.yaml`
+|no
+
+
+|`openstack.mapping.environment-to-image:$poolname`
+|
+|`ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$poolname`
+|
+|
+
+
+5+|Path to a pattern map file with environment to image mapping.
 
 |`pool.cache-pattern-maps`
 |`bool`
