@@ -246,10 +246,44 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
         ['dummy-hostname-1', 'dummy-hostname-2'],
         '<and><system><arch op="==" value="x86_64"/></system><system><memory op="&gt;=" value="8192"/></system><group op="!=" value="dummy-group-1"/><group op="!=" value="dummy-group-2"/><hostname op="!=" value="dummy-hostname-1"/><hostname op="!=" value="dummy-hostname-2"/></and>'  # noqa: E501
     ),
+    (
+        """
+        ---
+
+        hw:
+          arch: x86_64
+          constraints:
+            hostname: dummy.host.com
+
+        os:
+          compose: dummy-compose
+        """,
+        [],
+        [],
+        '<and><system><arch op="==" value="x86_64"/></system><hostname op="==" value="dummy.host.com"/></and>'
+    ),
+    (
+        """
+        ---
+
+        hw:
+          arch: x86_64
+          constraints:
+            hostname: '=~ dummy..*.com'
+
+        os:
+          compose: dummy-compose
+        """,
+        [],
+        [],
+        '<and><system><arch op="==" value="x86_64"/></system><hostname op="like" value="dummy.%.com"/></and>'
+    )
 ], ids=[
     'simple-arch',
     'arch-and-constraints',
-    'arch-and-constraints-and-avoid-groups-and-hostnames'
+    'arch-and-constraints-and-avoid-groups-and-hostnames',
+    'hostname',
+    'hostname-match'
 ])
 def test_create_beaker_filter(
     pool: tft.artemis.drivers.beaker.BeakerDriver,

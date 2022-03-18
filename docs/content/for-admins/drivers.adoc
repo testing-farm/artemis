@@ -134,6 +134,13 @@ The table below describe the built-in support for various features. However, to 
 |[red]#no#
 |[yellow]#partial# See <<hw-notes-only-one-disk, #1>>.
 
+|`hostname`
+|[red]#no#
+|[red]#no#
+|[green]#yes#
+|[red]#no#
+|[red]#no#
+
 |`memory`
 |[green]#yes#
 |[red]#no#
