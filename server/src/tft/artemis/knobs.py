@@ -793,6 +793,33 @@ KNOB_WORKER_TRAFFIC_METRICS_TTL: Knob[int] = Knob(
     default=600
 )
 
+KNOB_DEPLOYMENT: Knob[str] = Knob(
+    'deployment.name',
+    'Optional name of the Artemis deployment (e.g. "production-01" or "development").',
+    has_db=False,
+    envvar='ARTEMIS_DEPLOYMENT',
+    cast_from_str=str,
+    default='undefined-deployment'
+)
+
+KNOB_COMPONENT: Knob[str] = Knob(
+    'deployment.component',
+    'Optional name of the Artemis component (e.g. "worker", "api", etc.).',
+    has_db=False,
+    envvar='ARTEMIS_COMPONENT',
+    cast_from_str=str,
+    default='undefined-component'
+)
+
+KNOB_DEPLOYMENT_ENVIRONMENT: Knob[str] = Knob(
+    'deployment.environment',
+    'Optional environment of the Artemis deployment (e.g. "production" or "staging").',
+    has_db=False,
+    envvar='ARTEMIS_DEPLOYMENT_ENVIRONMENT',
+    cast_from_str=str,
+    default='undefined-deployment-environment'
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value

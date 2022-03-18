@@ -466,6 +466,36 @@ for full list of connection parameters that can be specified via URL.
 
 5+|Database URL.
 
+|`deployment.component`
+|`str`
+|`ARTEMIS_COMPONENT`
+|`undefined-component`
+|no
+
+
+
+5+|Optional name of the Artemis component (e.g. "worker", "api", etc.).
+
+|`deployment.environment`
+|`str`
+|`ARTEMIS_DEPLOYMENT_ENVIRONMENT`
+|`undefined-deployment-environment`
+|no
+
+
+
+5+|Optional environment of the Artemis deployment (e.g. "production" or "staging").
+
+|`deployment.name`
+|`str`
+|`ARTEMIS_DEPLOYMENT`
+|`undefined-deployment`
+|no
+
+
+
+5+|Optional name of the Artemis deployment (e.g. "production-01" or "development").
+
 |`gc.events.schedule`
 |`str`
 |`ARTEMIS_GC_EVENTS_SCHEDULE`
