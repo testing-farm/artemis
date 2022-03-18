@@ -101,7 +101,7 @@ EBS_DEVICE_NAMES = [
 
 
 class APIImageType(TypedDict):
-    Name: str
+    Name: Optional[str]
     ImageId: str
     PlatformDetails: str
     BlockDeviceMappings: APIBlockDeviceMappingsType
@@ -1728,7 +1728,8 @@ class AWSDriver(PoolDriver):
         try:
             return Ok([
                 AWSPoolImageInfo(
-                    name=image['Name'],
+                    # .Name is optional and may be undefined or missing - use .ImageId in such a case
+                    name=image.get('Name') or image['ImageId'],
                     id=image['ImageId'],
                     boot=FlavorBoot(),
                     ssh=PoolImageSSHInfo(),
