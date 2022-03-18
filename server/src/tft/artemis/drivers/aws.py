@@ -192,6 +192,16 @@ KNOB_CONSOLE_EC2_URL: Knob[str] = Knob(
     default="https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0"  # noqa: FS003,E501
 )
 
+KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
+    'aws.mapping.environment-to-image',
+    'Path to a pattern map file with environment to image mapping.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
+    cast_from_str=str,
+    default='artemis-image-map-aws.yaml'
+)
+
 
 class FailedSpotRequest(Failure):
     def __init__(

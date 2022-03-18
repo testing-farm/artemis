@@ -1,13 +1,15 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import os.path
 from typing import cast
 
 import gluetool.glue
 import gluetool.log
+from gluetool.result import Error
 
 from tft.artemis.drivers import ImageInfoMapperOptionalResultType
-from tft.artemis.drivers.aws import AWSDriver, AWSPoolImageInfo
+from tft.artemis.drivers.aws import KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH, AWSDriver, AWSPoolImageInfo
 from tft.artemis.drivers.hooks import map_environment_to_image_info
 from tft.artemis.environment import Environment
 
@@ -18,12 +20,17 @@ def hook_AWS_ENVIRONMENT_TO_IMAGE(
     pool: AWSDriver,
     environment: Environment,
 ) -> ImageInfoMapperOptionalResultType[AWSPoolImageInfo]:
+    r_mapping_filepath = KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH.get_value(pool=pool)
+
+    if r_mapping_filepath.is_error:
+        return Error(r_mapping_filepath.unwrap_error())
+
     return cast(
         ImageInfoMapperOptionalResultType[AWSPoolImageInfo],
         map_environment_to_image_info(
             logger,
             pool,
             environment,
-            mapping_filename='artemis-image-map-aws.yaml'
+            mapping_filepath=os.path.abspath(r_mapping_filepath.unwrap())
         )
     )
