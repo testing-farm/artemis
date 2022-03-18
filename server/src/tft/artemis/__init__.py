@@ -626,6 +626,8 @@ class Failure:
         Returns three mappings, data, tags and extra, accepted by Sentry as issue details.
         """
 
+        from .knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT
+
         data: Dict[str, Any] = {}
         tags: Dict[str, str] = {}
         extra: Dict[str, Any] = self.details.copy()
@@ -659,6 +661,19 @@ class Failure:
 
         if 'environment' in extra:
             extra['environment'] = extra['environment'].serialize()
+
+        # Special tag, "server_name", is used by Sentry for tracking issues per servers.
+        tags['server_name'] = platform.node()
+
+        if KNOB_DEPLOYMENT.value:
+            tags['deployment'] = KNOB_DEPLOYMENT.value
+
+        # Special tag, "environment", is used by Sentry for tracking issues per environment.
+        if KNOB_DEPLOYMENT_ENVIRONMENT.value:
+            tags['environment'] = KNOB_DEPLOYMENT_ENVIRONMENT.value
+
+        # Special tag, "release", is used by Sentry for tracking issues per release.
+        tags['release'] = __VERSION__
 
         tags.update({
             key: value
