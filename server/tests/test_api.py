@@ -76,7 +76,8 @@ def test_api_about(api_client: molten.testing.TestClient) -> None:
         'package_version': __VERSION__,
         'image_digest': None,
         'image_url': None,
-        'artemis_deployment': None
+        'artemis_deployment': 'undefined-deployment',
+        'artemis_deployment_environment': 'undefined-deployment-environment'
     }
 
 

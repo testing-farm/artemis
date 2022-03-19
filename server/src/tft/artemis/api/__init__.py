@@ -46,8 +46,8 @@ from ..context import DATABASE, LOGGER, SESSION
 from ..drivers import PoolDriver
 from ..environment import Environment
 from ..guest import GuestState
-from ..knobs import KNOB_LOGGING_JSON, KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK, \
-    Knob
+from ..knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_JSON, \
+    KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK, Knob
 from ..script import hook_engine
 from ..tasks import Actor, _get_ssh_key, get_snapshot_logger
 from . import errors
@@ -514,6 +514,7 @@ class AboutResponse:
     image_digest: Optional[str]
     image_url: Optional[str]
     artemis_deployment: Optional[str]
+    artemis_deployment_environment: Optional[str]
 
 
 @dataclasses.dataclass
@@ -2162,7 +2163,8 @@ def get_about(request: Request) -> AboutResponse:
         package_version=__VERSION__,
         image_digest=os.getenv('ARTEMIS_IMAGE_DIGEST'),
         image_url=os.getenv('ARTEMIS_IMAGE_URL'),
-        artemis_deployment=os.getenv('ARTEMIS_DEPLOYMENT')
+        artemis_deployment=KNOB_DEPLOYMENT.value,
+        artemis_deployment_environment=KNOB_DEPLOYMENT_ENVIRONMENT.value
     )
 
 
