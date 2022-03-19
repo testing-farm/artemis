@@ -20,13 +20,13 @@ from typing_extensions import TypedDict
 from .. import Failure, SerializableContainer, log_dict_yaml
 from ..cache import get_cached_set, refresh_cached_set
 from ..context import CACHE
-from ..db import GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Operator, Or
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, HookImageInfoMapper, PoolData, PoolDriver, PoolImageInfo, \
-    PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
-    create_tempfile, run_cli_tool, test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
+    PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
+    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, run_cli_tool, test_cli_error
 
 NodeRefType = Any
 
@@ -539,6 +539,15 @@ class BeakerDriver(PoolDriver):
             ]
 
         self.avoid_groups_hostnames_cache_key = self.POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY.format(self.poolname)  # noqa: FS002,E501
+
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+        capabilities.supported_guest_logs = [
+            ('console', GuestLogContentType.URL),
+            ('console.log', GuestLogContentType.URL),
+            ('sys.log', GuestLogContentType.URL),
+        ]
+
+        return Ok(capabilities)
 
     @property
     def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
@@ -1203,6 +1212,82 @@ class BeakerDriver(PoolDriver):
 
     def get_avoid_groups_hostnames(self) -> Result[Dict[str, AvoidGroupHostnames], Failure]:
         return get_cached_set(CACHE.get(), self.avoid_groups_hostnames_cache_key, AvoidGroupHostnames)
+
+    def _get_beaker_machine_log_url(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        beaker_logname: str
+    ) -> Result[Optional[str], Failure]:
+        """
+        Extract location (URL) of Beaker machine log.
+
+        :param logger: logger to use for logging.
+        :param guest_request: a request whose logs to look for.
+        :param beaker_logname: a name of the log as known to Beaker (e.g. ``console.log``).
+        :returns: log URL, ``None`` when no such log was found, or a :py:class:`Failure` describing an error.
+        """
+
+        r_job_results = self._get_job_results(logger, BeakerPoolData.unserialize(guest_request).job_id)
+
+        if r_job_results.is_error:
+            return Error(r_job_results.unwrap_error())
+
+        logs = r_job_results.unwrap().select(f'recipe > logs > log[name="{beaker_logname}"]')
+
+        if not logs:
+            return Ok(None)
+
+        return Ok(logs[0]['href'])
+
+    def _update_guest_log_url(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog,
+        beaker_logname: str
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        r_url = self._get_beaker_machine_log_url(logger, guest_request, beaker_logname)
+
+        if r_url.is_error:
+            return Error(r_url.unwrap_error())
+
+        url = r_url.unwrap()
+
+        if url is None:
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.PENDING))
+
+        return Ok(GuestLogUpdateProgress(state=GuestLogState.COMPLETE, url=url))
+
+    # Since Beaker provides named logs, unlike other drivers, there are updaters for various log names.
+    # To satisfy the "standard" logging expectations, use some of those for common logs like console/url
+    # while keeping their Beaker-native names available at the same time.
+    @guest_log_updater('beaker', 'console', GuestLogContentType.URL)  # type: ignore[arg-type]
+    def _update_guest_log_console_url(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        return self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
+
+    @guest_log_updater('beaker', 'console.log', GuestLogContentType.URL)  # type: ignore[arg-type]
+    def _update_guest_log_console_log_url(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        return self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
+
+    @guest_log_updater('beaker', 'sys.log', GuestLogContentType.URL)  # type: ignore[arg-type]
+    def _update_guest_log_sys_log_url(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        return self._update_guest_log_url(logger, guest_request, guest_log, 'sys.log')
 
 
 PoolDriver._drivers_registry['beaker'] = BeakerDriver
