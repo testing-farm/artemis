@@ -27,6 +27,7 @@ import dramatiq.rate_limits.concurrent
 import gluetool.log
 import gluetool.sentry
 import gluetool.utils
+import jinja2
 import jinja2.defaults
 import jinja2_ansible_filters.core_filters
 import jsonschema
@@ -51,6 +52,7 @@ jinja2.defaults.DEFAULT_FILTERS.update(
 # Now we can import our stuff without any fear we'd miss DEFAULT_FILTERS update
 from . import db as artemis_db  # noqa: E402
 from . import middleware as artemis_middleware  # noqa: E402
+from .knobs import Knob  # noqa: E402
 
 if TYPE_CHECKING:
     from .environment import Environment
@@ -130,8 +132,37 @@ def get_yaml() -> ruamel.yaml.main.YAML:
     return YAML
 
 
+# This knob needs to live in this module, because its default value includes
+# __VERSION__ we can't import from knobs module (circular import).
+def cast_release(release_template: str) -> str:
+    """
+    Apply templating to user-defined release string.
+
+    Raw "release" may refer to ``__VERSION__``, render it as a template.
+    """
+
+    return cast(str, jinja2.Template(release_template).render(__VERSION__=__VERSION__))
+
+
+KNOB_RELEASE: Knob[str] = Knob(
+    'deployment.release',
+    'Optional name of the Artemis release (e.g. "0.0.35", "artemis@v0.0.35", "artemis@{{ __VERSION__ }}, etc.).',
+    has_db=False,
+    envvar='ARTEMIS_RELEASE',
+    cast_from_str=cast_release,
+    default=__VERSION__
+)
+
+
 # Gluetool Sentry instance
 gluetool_sentry = gluetool.sentry.Sentry()
+
+# TODO: Sentry() does not accept any parameters we could use to pas options down
+# to Sentry client. To expose release, we must set client's `release` attribute,
+# setting an event tag is not enough. It would be better to have a nicer way,
+# but despite crossing the encapsulation, it's still pretty safe. But fix it.
+if gluetool_sentry._client is not None:
+    gluetool_sentry._client.release = KNOB_RELEASE.value
 
 
 class SerializableContainer:
@@ -671,9 +702,6 @@ class Failure:
         # Special tag, "environment", is used by Sentry for tracking issues per environment.
         if KNOB_DEPLOYMENT_ENVIRONMENT.value:
             tags['environment'] = KNOB_DEPLOYMENT_ENVIRONMENT.value
-
-        # Special tag, "release", is used by Sentry for tracking issues per release.
-        tags['release'] = __VERSION__
 
         tags.update({
             key: value
