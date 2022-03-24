@@ -1538,6 +1538,8 @@ class AWSDriver(PoolDriver):
         if state in ('cancelled', 'failed', 'closed', 'disabled'):
             PoolMetrics.inc_error(self.poolname, 'spot-instance-terminated-prematurely')
 
+            spot_instance_fault = spot_instance.get('Fault', {})
+
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
                 pool_data=AWSPoolData.unserialize(guest_request),
@@ -1545,7 +1547,9 @@ class AWSDriver(PoolDriver):
                     'spot instance terminated prematurely',
                     spot_instance_state=state,
                     spot_instance_status=status,
-                    spot_instance_error=spot_instance['Status']['Message']
+                    spot_instance_error=spot_instance['Status']['Message'],
+                    spot_instance_error_code=spot_instance_fault.get('Code'),
+                    spot_instance_error_detail=spot_instance_fault.get('Message')
                 )]
             ))
 
