@@ -471,6 +471,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     ) -> Result[None, Failure]:
         """
         Make sure mappings contain at least ``count`` items.
+
         :param delete_on_termination: whether or not the volume should be removed automatically with the instance.
             If left unset, the setting would not be set for the new mappings.
         :param encrypted: whether or not the volume should be encrypted.

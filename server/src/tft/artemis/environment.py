@@ -923,7 +923,7 @@ class Constraint(ConstraintBase):
         :param name: name of the constraint.
         :param raw_value: raw value of the constraint.
         :param as_quantity: if set, value is treated as a quantity containing also unit, and as such the raw value is
-            converted to :py:`pint.Quantity` instance.
+            converted to :py:class`pint.Quantity` instance.
         :param as_cast: if specified, this callable is used to convert raw value to its final type.
         :param original_constraint: when specified, new constraint logically belongs to ``original_constraint``,
             possibly representing one of its aspects.
