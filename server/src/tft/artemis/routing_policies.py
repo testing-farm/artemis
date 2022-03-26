@@ -832,6 +832,7 @@ def run_routing_policies(
             return Error(Failure.from_failure(
                 'failed to route guest request',
                 r.unwrap_error(),
+                environment=guest_request.environment,
                 history=_serialize_history()
             ))
 
