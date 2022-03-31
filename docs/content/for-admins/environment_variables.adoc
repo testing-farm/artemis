@@ -47,6 +47,7 @@ case-insensitive.
 * `ARTEMIS_DB_POOL_SIZE` (int): Size of the DB connection pool. Default: `20`.
 * `ARTEMIS_DB_POOL_MAX_OVERFLOW` (int): Maximum size of connection pool overflow. Default: `10`.
 * `ARTEMIS_DB_PROTOCOL` (string): Schema for connecting to the database. This variable is available only when deploying using container, and is used if `ARTEMIS_DB_URL` is not set. Default: unset.
+* `ARTEMIS_DB_SCHEMA_REVISION` (string): Target database schema revision to upgrade/downgrade to. This variable is available only when deploying using container. Default: `head`
 * `ARTEMIS_DB_USERNAME` (string): Username for connecting to the database. This variable is available only when deploying using container, and is used if `ARTEMIS_DB_URL` is not set. Default: unset.
 * `ARTEMIS_DB_URL` (string): Database URL. Default: `sqlite:///test.db`.
 * `ARTEMIS_LOG_DB_POOL` (boolean|string): When enabled, Artemis would log events related to database connection pool. Accepts also `debug` for more details. Default: `no`.

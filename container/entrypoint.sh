@@ -76,7 +76,7 @@ case $APP in
         ;;
     initdb)
         # Initialize or upgrade the database to the latest version
-        poetry run alembic upgrade head || { echo "failed to upgrade DB Schema"; exit 1; }
+        poetry run alembic upgrade ${ARTEMIS_DB_SCHEMA_REVISION:-"head"} || { echo "failed to upgrade DB Schema"; exit 1; }
         # Initialize records from server.yml
         poetry run artemis-db-init-content config-to-db || { echo "failed to initialize DB content"; exit 1; }
         exit 0
