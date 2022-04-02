@@ -1,6 +1,8 @@
 tft namespace
 =============
 
+.. py:module:: tft
+
 Subpackages
 -----------
 

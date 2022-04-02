@@ -561,7 +561,7 @@ class Knob(Generic[T]):
         """
         For a given knobname - which belongs to a knob with per-pool capability - find its "parent" knob.
 
-        Per-pool knobs don't have 1:1 mapping between a Python :py:ref:`Knob` instance and its DB record.
+        Per-pool knobs don't have 1:1 mapping between a Python :py:class:`Knob` instance and its DB record.
         But the "parent" knob, the one actually declared somewhere in the source, can be found by name
         after stripping the pool name from the given knob name.
         """
