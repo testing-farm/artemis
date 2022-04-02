@@ -47,6 +47,7 @@ typing-extensions = "^3.7.4"
 periodiq = "^0.12.1"
 redis = "^3.5.3"
 jsonschema = "^3.2.0"
+sentry-sdk = "^1.5.8"
 
 [tool.poetry.dev-dependencies]
 # All development dependencies are left unpinned, untill we run into troubles with a particular version.
