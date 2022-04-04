@@ -990,7 +990,10 @@ class AWSDriver(PoolDriver):
             ], commandname='aws.ec2-cancel-spot-instance-requests')
 
             if r_output.is_error:
-                return Error(r_output.unwrap_error())
+                return Error(Failure.from_failure(
+                    'failed to cancel spot instance request',
+                    r_output.unwrap_error()
+                ))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
@@ -1001,7 +1004,10 @@ class AWSDriver(PoolDriver):
             ], commandname='aws.ec2-terminate-instances')
 
             if r_output.is_error:
-                return Error(r_output.unwrap_error())
+                return Error(Failure.from_failure(
+                    'failed to terminate instance',
+                    r_output.unwrap_error()
+                ))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
@@ -1147,6 +1153,11 @@ class AWSDriver(PoolDriver):
 
         # command returned an unxpected result
         if r_output.is_error:
+            return Error(Failure.from_failure(
+                'failed to fetch instance information',
+                r_output.unwrap_error()
+            ))
+
             return Error(r_output.unwrap_error())
 
         output = cast(List[Dict[str, Any]], r_output.unwrap())
@@ -1182,9 +1193,11 @@ class AWSDriver(PoolDriver):
             commandname='aws.ec2-describe-spot-instance-requests'
         )
 
-        # command returned an unxpected result
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch spot instance request information',
+                r_output.unwrap_error()
+            ))
 
         return Ok(cast(List[Dict[str, Any]], r_output.unwrap())[0])
 
@@ -1261,7 +1274,10 @@ class AWSDriver(PoolDriver):
         ], key='SpotPriceHistory', commandname='aws.ec2-describe-spot-price-history')
 
         if r_spot_price.is_error:
-            return Error(r_spot_price.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch spot price history',
+                r_spot_price.unwrap_error()
+            ))
 
         prices = cast(List[Dict[str, str]], r_spot_price.unwrap())
 
@@ -1378,7 +1394,10 @@ class AWSDriver(PoolDriver):
         r_instance_request = self._aws_command(command, key='Instances', commandname='aws.ec2-run-instances')
 
         if r_instance_request.is_error:
-            return Error(r_instance_request.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to start instance',
+                r_instance_request.unwrap_error()
+            ))
 
         instance_request = cast(List[Dict[str, str]], r_instance_request.unwrap())
 
@@ -1476,7 +1495,10 @@ class AWSDriver(PoolDriver):
         )
 
         if r_spot_request.is_error:
-            return Error(r_spot_request.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to request spot instance',
+                r_spot_request.unwrap_error()
+            ))
 
         spot_instance_id = cast(List[Dict[str, str]], r_spot_request.unwrap())[0]['SpotInstanceRequestId']
 
@@ -1643,13 +1665,18 @@ class AWSDriver(PoolDriver):
                 exc
             ))
 
-        r_tag = self._tag_resources(
-            [pool_data.instance_id] + volume_ids,
-            tags
-        )
+        taggable_resource_ids = [pool_data.instance_id] + volume_ids
+
+        r_tag = self._tag_resources(taggable_resource_ids, tags)
 
         if r_tag.is_error:
-            return Error(r_tag.unwrap_error().update(tags=tags))
+            return Error(Failure.from_failure(
+                'failed to tag resource',
+                r_output.unwrap_error().update(
+                    tags=tags,
+                    resource_ids=taggable_resource_ids
+                )
+            ))
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
@@ -1796,7 +1823,10 @@ class AWSDriver(PoolDriver):
         )
 
         if r_images.is_error:
-            return Error(r_images.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch image information',
+                r_images.unwrap_error()
+            ))
 
         try:
             return Ok([
@@ -1831,7 +1861,10 @@ class AWSDriver(PoolDriver):
         )
 
         if r_flavors.is_error:
-            return Error(r_flavors.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch instance type information',
+                r_flavors.unwrap_error()
+            ))
 
         if self.pool_config.get('flavor-regex'):
             flavor_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['flavor-regex'])
@@ -1899,7 +1932,10 @@ class AWSDriver(PoolDriver):
         ], commandname='aws.ec2-describe-instances')
 
         if r_instances.is_error:
-            return Error(r_instances.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch instance information',
+                r_instances.unwrap_error()
+            ))
 
         try:
             resources.usage.instances = len(JQ_QUERY_POOL_INSTANCES.input(r_instances.unwrap()).all())
@@ -1917,7 +1953,10 @@ class AWSDriver(PoolDriver):
         ], commandname='aws.ec2-describe-subnets')
 
         if r_subnet.is_error:
-            return Error(r_subnet.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch subnet information',
+                r_subnet.unwrap_error()
+            ))
 
         # Extract the total number of IPs...
         cidr = JQ_QUERY_SUBNET_CIDR.input(r_subnet.unwrap()).first()
@@ -1973,7 +2012,10 @@ class AWSDriver(PoolDriver):
         ], commandname='aws.ec2-get-console-output')
 
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch console output',
+                r_output.unwrap_error()
+            ))
 
         output = cast(str, JQ_QUERY_CONSOLE_OUTPUT.input(r_output.unwrap()).first())
 

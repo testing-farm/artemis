@@ -2253,6 +2253,8 @@ def run_cli_tool(
                 'detected a slow CLI command',
                 command_output=output,
                 scrubbed_command=command_scrubber(command),
+                poolname=poolname,
+                commandname=commandname,
                 time=command_time
             ).handle(logger, label='CLI output')
 
@@ -2277,7 +2279,9 @@ def run_cli_tool(
             'error running CLI command',
             exc,
             command_output=exc.output,
-            scrubbed_command=command_scrubber(command)
+            scrubbed_command=command_scrubber(command),
+            poolname=poolname,
+            commandname=commandname
         ))
 
     else:
@@ -2288,7 +2292,9 @@ def run_cli_tool(
             return Error(Failure(
                 'CLI did not emit any output',
                 command_output=output,
-                scrubbed_command=command_scrubber(command)
+                scrubbed_command=command_scrubber(command),
+                poolname=poolname,
+                commandname=commandname
             ))
 
         output_stdout = ''
@@ -2307,7 +2313,9 @@ def run_cli_tool(
             return Error(Failure(
                 'CLI did not emit any output, cannot treat as JSON',
                 command_output=output,
-                scrubbed_command=command_scrubber(command)
+                scrubbed_command=command_scrubber(command),
+                poolname=poolname,
+                commandname=commandname
             ))
 
         try:
@@ -2318,7 +2326,9 @@ def run_cli_tool(
                 'failed to convert string to JSON',
                 exc=exc,
                 command_output=output,
-                scrubbed_command=command_scrubber(command)
+                scrubbed_command=command_scrubber(command),
+                poolname=poolname,
+                commandname=commandname
             ))
 
     return Ok(CLIOutput(output, output_stdout))
