@@ -20,11 +20,11 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade():
+def upgrade() -> None:
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.add_column(sa.Column('post_install_script', sa.Text(), nullable=True))
 
 
-def downgrade():
+def downgrade() -> None:
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.drop_column('post_install_script')

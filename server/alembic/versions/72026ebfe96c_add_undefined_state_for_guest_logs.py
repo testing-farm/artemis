@@ -9,6 +9,8 @@ Revises: 0da45d07fde0
 Create Date: 2021-08-09 10:03:38.317918
 
 """
+from typing import Union
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -21,9 +23,9 @@ branch_labels = None
 depends_on = None
 
 
-def get_new_enum(name='guestlogstate'):
+def get_new_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
     if op.get_bind().dialect.name == 'postgresql':
-        state_enum = postgresql.ENUM(
+        enum = postgresql.ENUM(
             'UNSUPPORTED',
             'PENDING',
             'IN_PROGRESS',
@@ -34,24 +36,23 @@ def get_new_enum(name='guestlogstate'):
         )
 
         # We need an explicit create() here, because the users table is being altered in a batch.
-        state_enum.create(op.get_bind())
+        enum.create(op.get_bind())
 
-    else:
-        state_enum = postgresql.ENUM(
-            'UNSUPPORTED',
-            'PENDING',
-            'IN_PROGRESS',
-            'COMPLETE',
-            'ERROR',
-            name=name
-        )
+        return enum
 
-    return state_enum
+    return sa.Enum(
+        'UNSUPPORTED',
+        'PENDING',
+        'IN_PROGRESS',
+        'COMPLETE',
+        'ERROR',
+        name=name
+    )
 
 
-def get_old_enum(name='guestlogstate'):
+def get_old_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
     if op.get_bind().dialect.name == 'postgresql':
-        state_enum = postgresql.ENUM(
+        enum = postgresql.ENUM(
             'PENDING',
             'IN_PROGRESS',
             'COMPLETE',
@@ -61,26 +62,25 @@ def get_old_enum(name='guestlogstate'):
         )
 
         # We need an explicit create() here, because the users table is being altered in a batch.
-        state_enum.create(op.get_bind())
+        enum.create(op.get_bind())
 
-    else:
-        state_enum = postgresql.ENUM(
-            'PENDING',
-            'IN_PROGRESS',
-            'COMPLETE',
-            'ERROR',
-            name=name
-        )
+        return enum
 
-    return state_enum
+    return sa.Enum(
+        'PENDING',
+        'IN_PROGRESS',
+        'COMPLETE',
+        'ERROR',
+        name=name
+    )
 
 
-def upgrade():
+def upgrade() -> None:
     # create a temporary column, with the updated enum
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         batch_op.add_column(sa.Column(
             '__tmp_state',
-            get_new_enum(name='new_guestlogstate'),
+            get_new_enum('new_guestlogstate'),
             server_default='PENDING',
             nullable=False
         ))
@@ -104,7 +104,7 @@ def upgrade():
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         batch_op.add_column(sa.Column(
             'state',
-            get_new_enum(),
+            get_new_enum('guestlogstate'),
             server_default='PENDING',
             nullable=False
         ))
@@ -124,12 +124,12 @@ def upgrade():
             batch_op.execute("DROP TYPE new_guestlogstate;")
 
 
-def downgrade():
+def downgrade() -> None:
     # create a temporary column, with the old enum
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         batch_op.add_column(sa.Column(
             '__tmp_state',
-            get_old_enum(name='old_guestlogstate'),
+            get_old_enum('old_guestlogstate'),
             server_default='PENDING',
             nullable=False
         ))
@@ -155,7 +155,7 @@ def downgrade():
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         batch_op.add_column(sa.Column(
             'state',
-            get_old_enum(),
+            get_old_enum('guestlogstate'),
             server_default='PENDING',
             nullable=False
         ))

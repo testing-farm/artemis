@@ -25,7 +25,7 @@ depends_on = None
 # would render them unusable. Therefore both upgrade and downgrade work with string columns without any particular
 # size, allowing the downgrade to proceed.
 
-def upgrade():
+def upgrade() -> None:
     with op.batch_alter_table('users', schema=None) as batch_op:
         batch_op.alter_column(
             'admin_token',
@@ -41,7 +41,7 @@ def upgrade():
         )
 
 
-def downgrade():
+def downgrade() -> None:
     with op.batch_alter_table('users', schema=None) as batch_op:
         batch_op.alter_column(
             'admin_token',

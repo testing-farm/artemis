@@ -9,6 +9,8 @@ Revises: 9844f8f59644
 Create Date: 2021-07-27 18:38:03.569577
 
 """
+from typing import Union
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -21,9 +23,9 @@ branch_labels = None
 depends_on = None
 
 
-def get_enum_type():
+def get_enum_type() -> Union[sa.Enum, postgresql.ENUM]:
     if op.get_bind().dialect.name == 'postgresql':
-        state_enum = postgresql.ENUM(
+        enum = postgresql.ENUM(
             'ERROR',
             'PENDING',
             'ROUTING',
@@ -44,29 +46,28 @@ def get_enum_type():
         )
 
         # We need an explicit create() here, because the users table is being altered in a batch.
-        state_enum.create(op.get_bind())
+        enum.create(op.get_bind())
 
-    else:
-        state_enum = postgresql.ENUM(
-            'ERROR',
-            'PENDING',
-            'ROUTING',
-            'PROVISIONING',
-            'PROMISED',
-            'PREPARING',
-            'READY',
-            'CONDEMNED',
-            'RESTORING',
-            'PROCESSING',
-            'RELEASING',
-            'CREATING',
-            'STOPPING',
-            'STOPPED',
-            'STARTING',
-            name='gueststate'
-        )
+        return enum
 
-    return state_enum
+    return sa.Enum(
+        'ERROR',
+        'PENDING',
+        'ROUTING',
+        'PROVISIONING',
+        'PROMISED',
+        'PREPARING',
+        'READY',
+        'CONDEMNED',
+        'RESTORING',
+        'PROCESSING',
+        'RELEASING',
+        'CREATING',
+        'STOPPING',
+        'STOPPED',
+        'STARTING',
+        name='gueststate'
+    )
 
 # This revision replaces a varchar column with a custom enum. To perform the change correctly, without
 # breaking existing records, we need several steps:
@@ -90,7 +91,7 @@ def get_enum_type():
 #
 
 
-def upgrade():
+def upgrade() -> None:
     state_enum = get_enum_type()
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
@@ -112,7 +113,7 @@ def upgrade():
         batch_op.drop_column('__tmp_state')
 
 
-def downgrade():
+def downgrade() -> None:
     state_enum = get_enum_type()
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:

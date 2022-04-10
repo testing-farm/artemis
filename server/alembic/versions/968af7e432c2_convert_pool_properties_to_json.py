@@ -20,9 +20,9 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade():
+def upgrade() -> None:
     convert_column_str_to_json(op, 'pools', 'parameters', rename_to='_parameters')
 
 
-def downgrade():
+def downgrade() -> None:
     convert_column_json_to_str(op, 'pools', '_parameters', rename_to='parameters')

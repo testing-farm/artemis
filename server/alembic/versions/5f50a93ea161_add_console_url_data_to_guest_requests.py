@@ -20,13 +20,13 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade():
+def upgrade() -> None:
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.add_column(sa.Column('console_url', sa.String(), nullable=True))
         batch_op.add_column(sa.Column('console_url_expires', sa.DateTime(), nullable=True))
 
 
-def downgrade():
+def downgrade() -> None:
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.drop_column('console_url')
         batch_op.drop_column('console_url_expires')

@@ -19,9 +19,9 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade():
+def upgrade() -> None:
     convert_column_str_to_json(op, 'guest_requests', 'user_data', rename_to='_user_data')
 
 
-def downgrade():
+def downgrade() -> None:
     convert_column_json_to_str(op, 'guest_requests', '_user_data', rename_to='user_data')
