@@ -41,13 +41,23 @@ KNOB_RESERVATION_DURATION: Knob[int] = Knob(
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
-    'beaker.mapping.environment-to-image',
+    'beaker.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
     has_db=False,
     per_pool=True,
     envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
     default='artemis-image-map-beaker.yaml'
+)
+
+KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
+    'beaker.mapping.environment-to-image.pattern-map.needle',
+    'A pattern for needle to match in environment to image mapping file.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
+    cast_from_str=str,
+    default='{{ os.compose }}'
 )
 
 
