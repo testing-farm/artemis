@@ -98,7 +98,10 @@ class AzureDriver(PoolDriver):
         )
 
         if r_images_show.is_error:
-            return Error(r_images_show.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch image information',
+                r_images_show.unwrap_error()
+            ))
 
         return Ok(PoolImageInfo(
             name=imagename,
@@ -393,7 +396,10 @@ class AzureDriver(PoolDriver):
             ], commandname='az.login')
 
             if login_output.is_error:
-                return Error(login_output.unwrap_error())
+                return Error(Failure.from_failure(
+                    'failed to log into tenant',
+                    login_output.unwrap_error()
+                ))
 
         return Ok(None)
 
@@ -409,7 +415,10 @@ class AzureDriver(PoolDriver):
         ], commandname='az.vm-show')
 
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch instance information',
+                r_output.unwrap_error()
+            ))
         return Ok(r_output.unwrap())
 
     def _do_acquire_guest(

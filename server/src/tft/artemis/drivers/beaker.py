@@ -639,7 +639,10 @@ class BeakerDriver(PoolDriver):
             r_output = self._run_bkr(logger, ['job-cancel', resource_ids.job_id], commandname='bkr.job-cancel')
 
             if r_output.is_error:
-                return Error(r_output.unwrap_error())
+                return Error(Failure.from_failure(
+                    'failed to cancel job',
+                    r_output.unwrap_error()
+                ))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
@@ -723,7 +726,10 @@ class BeakerDriver(PoolDriver):
 
         r_workflow_simple = self._run_bkr(logger, r_wow_options.unwrap(), commandname='bkr.workflow-simple')
         if r_workflow_simple.is_error:
-            return Error(r_workflow_simple.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to create job',
+                r_workflow_simple.unwrap_error()
+            ))
 
         bkr_output = r_workflow_simple.unwrap()
 
@@ -784,7 +790,10 @@ class BeakerDriver(PoolDriver):
             r_job_submit = self._run_bkr(logger, ['job-submit', job_filepath], commandname='bkr.job-submit')
 
         if r_job_submit.is_error:
-            return Error(r_job_submit.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to submit job',
+                r_job_submit.unwrap_error()
+            ))
 
         bkr_output = r_job_submit.unwrap()
 
@@ -841,7 +850,10 @@ class BeakerDriver(PoolDriver):
         r_results = self._run_bkr(logger, ['job-results', job_id], commandname='bkr.job-results')
 
         if r_results.is_error:
-            return Error(r_results.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch job results',
+                r_results.unwrap_error()
+            ))
 
         bkr_output = r_results.unwrap()
 
@@ -1142,7 +1154,10 @@ class BeakerDriver(PoolDriver):
                 raw_machines = ''
 
             else:
-                return Error(failure)
+                return Error(Failure.from_failure(
+                    'failed to fetch system list',
+                    r_query_instances.unwrap_error()
+                ))
 
         else:
             raw_machines = r_query_instances.unwrap().stdout
@@ -1171,7 +1186,10 @@ class BeakerDriver(PoolDriver):
         )
 
         if r_list.is_error:
-            return Error(r_list.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch systems owned by a group',
+                r_list.unwrap_error().update(groupname=groupname)
+            ))
 
         return Ok([
             hostname.strip() for hostname in r_list.unwrap().stdout.splitlines()

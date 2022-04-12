@@ -308,7 +308,10 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options, commandname='os.server-show')
 
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch instance information',
+                r_output.unwrap_error()
+            ))
 
         return Ok(r_output.unwrap())
 
@@ -321,7 +324,10 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options, commandname='os.image-show')
 
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch snapshot information',
+                r_output.unwrap_error()
+            ))
 
         return Ok(r_output.unwrap())
 
@@ -476,7 +482,10 @@ class OpenStackDriver(PoolDriver):
         r_stop = self._run_os(os_options, json_format=False, commandname='os.server-stop')
 
         if r_stop.is_error:
-            return Error(r_stop.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to stop instance',
+                r_stop.unwrap_error()
+            ))
 
         return Ok(True)
 
@@ -490,6 +499,10 @@ class OpenStackDriver(PoolDriver):
         r_start = self._run_os(os_options, json_format=False, commandname='os.server-start')
 
         if r_start.is_error:
+            return Error(Failure.from_failure(
+                'failed to start instance',
+                r_start.unwrap_error()
+            ))
             return Error(r_start.unwrap_error())
 
         return Ok(True)
@@ -540,7 +553,10 @@ class OpenStackDriver(PoolDriver):
         ]
         r_output = self._run_os(os_options, commandname='os.console-url-show')
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch console URL',
+                r_output.unwrap_error()
+            ))
         # NOTE(ivasilev) The following cast is needed to keep quiet the typing check
         data = cast(Dict[str, str], r_output.unwrap())
 
@@ -569,7 +585,10 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options, commandname='os.server-image-create')
 
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to create snapshot',
+                r_output.unwrap_error()
+            ))
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
@@ -623,7 +642,10 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options, json_format=False, commandname='os.image-delete')
 
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to delete snapshot',
+                r_output.unwrap_error()
+            ))
 
         return Ok(True)
 
@@ -642,7 +664,10 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options, json_format=False, commandname='os.server-rebuild')
 
         if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to rebuild instance',
+                r_output.unwrap_error()
+            ))
 
         return Ok(True)
 
@@ -798,7 +823,10 @@ class OpenStackDriver(PoolDriver):
                 failure = r_output.unwrap_error()
                 failure.fail_guest_request = False
 
-                return Error(failure)
+                return Error(Failure.from_failure(
+                    'failed to delete instance',
+                    failure
+                ))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
@@ -822,7 +850,10 @@ class OpenStackDriver(PoolDriver):
         )
 
         if r_query_limits.is_error:
-            return Error(r_query_limits.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch tenant limits',
+                r_query_limits.unwrap_error()
+            ))
 
         raw_limits_container = r_query_limits.unwrap()
 
@@ -875,7 +906,10 @@ class OpenStackDriver(PoolDriver):
         ], json_format=True, commandname='os.ip-availability-list')
 
         if r_networks.is_error:
-            return Error(r_networks.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch network information',
+                r_networks.unwrap_error()
+            ))
 
         # networks have the following structure:
         # [
@@ -905,7 +939,10 @@ class OpenStackDriver(PoolDriver):
         r_images = self._run_os(['image', 'list'], commandname='os.image-list')
 
         if r_images.is_error:
-            return Error(r_images.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch image information',
+                r_images.unwrap_error()
+            ))
 
         try:
             return Ok([
@@ -943,7 +980,10 @@ class OpenStackDriver(PoolDriver):
         r_flavors = self._run_os(['flavor', 'list'], commandname='os.flavor-list')
 
         if r_flavors.is_error:
-            return Error(r_flavors.unwrap_error())
+            return Error(Failure.from_failure(
+                'failed to fetch flavor information',
+                r_flavors.unwrap_error()
+            ))
 
         if self.pool_config.get('flavor-regex'):
             flavor_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['flavor-regex'])
