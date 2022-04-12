@@ -36,6 +36,18 @@ import pkg_resources
 import redis
 import ruamel.yaml
 import ruamel.yaml.compat
+import sentry_sdk
+import sentry_sdk.integrations.argv
+import sentry_sdk.integrations.atexit
+import sentry_sdk.integrations.dedupe
+import sentry_sdk.integrations.excepthook
+import sentry_sdk.integrations.logging
+import sentry_sdk.integrations.modules
+import sentry_sdk.integrations.stdlib
+import sentry_sdk.integrations.threading
+import sentry_sdk.serializer
+import sentry_sdk.transport
+import sentry_sdk.utils
 import stackprinter
 from gluetool.result import Error, Ok, Result
 
@@ -53,6 +65,8 @@ jinja2.defaults.DEFAULT_FILTERS.update(
 from . import db as artemis_db  # noqa: E402
 from . import middleware as artemis_middleware  # noqa: E402
 from .knobs import Knob  # noqa: E402
+from .knobs import KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_SENTRY, KNOB_SENTRY_BASE_URL, \
+    KNOB_SENTRY_DISABLE_CERT_VERIFICATION, KNOB_SENTRY_DSN  # noqa: E402
 
 if TYPE_CHECKING:
     from .environment import Environment
@@ -154,15 +168,60 @@ KNOB_RELEASE: Knob[str] = Knob(
 )
 
 
-# Gluetool Sentry instance
-gluetool_sentry = gluetool.sentry.Sentry()
+class Sentry:
+    def __init__(self) -> None:
+        self.enabled = False
 
-# TODO: Sentry() does not accept any parameters we could use to pas options down
-# to Sentry client. To expose release, we must set client's `release` attribute,
-# setting an event tag is not enough. It would be better to have a nicer way,
-# but despite crossing the encapsulation, it's still pretty safe. But fix it.
-if gluetool_sentry._client is not None:
-    gluetool_sentry._client.release = KNOB_RELEASE.value
+        if KNOB_SENTRY_DSN.value in (None, 'undefined'):
+            return
+
+        self.enabled = True
+
+        if KNOB_SENTRY_DISABLE_CERT_VERIFICATION.value is True:
+            def _get_pool_options(
+                self: sentry_sdk.transport.HttpTransport,
+                ca_certs: Any
+            ) -> Dict[str, Any]:
+                return {
+                    # num_pools is a bit cryptic, btu comes from the original method
+                    'num_pools': 2,
+                    'cert_reqs': 'CERT_NONE'
+                }
+
+            sentry_sdk.transport.HttpTransport._get_pool_options = _get_pool_options  # type: ignore[assignment]
+
+        # Controls how many variables and other items are captured in event and stack frames. The default
+        # value of 10 is pretty small, 1000 should be more than enough for anything we ever encounter.
+        sentry_sdk.serializer.MAX_DATABAG_BREADTH = 1000
+
+        sentry_sdk.init(
+            dsn=KNOB_SENTRY_DSN.value,
+            release=KNOB_RELEASE.value,
+            environment=KNOB_DEPLOYMENT_ENVIRONMENT.value,
+            server_name=platform.node(),
+            debug=KNOB_LOGGING_SENTRY.value,
+            # log all issues - if we ever decide we need less, we can add knobs to control these
+            sample_rate=1.0,
+            traces_sample_rate=1.0,
+            # We need to override one parameter of on of the default integrations,
+            # so we're doomed to list all of them.
+            integrations=[
+                # Disable sending any log messages as standalone events
+                sentry_sdk.integrations.logging.LoggingIntegration(event_level=None),
+                # The rest is just default list of integrations.
+                # https://docs.sentry.io/platforms/python/configuration/integrations/default-integrations/
+                sentry_sdk.integrations.stdlib.StdlibIntegration(),
+                sentry_sdk.integrations.excepthook.ExcepthookIntegration(),
+                sentry_sdk.integrations.dedupe.DedupeIntegration(),
+                sentry_sdk.integrations.atexit.AtexitIntegration(),
+                sentry_sdk.integrations.modules.ModulesIntegration(),
+                sentry_sdk.integrations.argv.ArgvIntegration(),
+                sentry_sdk.integrations.threading.ThreadingIntegration()
+            ]
+        )
+
+
+SENTRY = Sentry()
 
 
 class SerializableContainer:
@@ -606,14 +665,39 @@ class Failure:
         return event_details
 
     @classmethod
-    def _get_sentry_stack_info(cls, frames: _traceback.StackSummary) -> Dict[str, Any]:
+    def _serialize_traceback(cls, message: str, frames: _traceback.StackSummary, ) -> Dict[str, Any]:
         """
-        Based on Raven's ``get_stack_info``. Because Raven is quite outdated, we need to convert
-        the traceback to a format Sentry accepts. The original method cannot deal with ``FrameSummary``
-        objects used by Python 3.5+, it understands only the old frame objects, witg ``f_*`` attributes.
+        Based on Sentry's stack trace serialization, this helper takes care of serializing
+        a traceback saved by ``Failure`` instance itself, i.e. when there was no exception.
         """
 
-        from raven.utils.stacks import get_lines_from_file, slim_frame_data
+        # Convert weird string-ish objects into strings we can use as part of serialized frames.
+        # Sentry SDK uses several types to carry lines of code, deal with all of them.
+        def _stringify(
+            v: Union[
+                str,
+                sentry_sdk.utils.AnnotatedValue,
+                List[str],
+                List[Union[sentry_sdk.utils.AnnotatedValue, str]],
+                None
+            ]
+        ) -> str:
+            if v is None:
+                return ''
+
+            if isinstance(v, str):
+                return v
+
+            if isinstance(v, sentry_sdk.utils.AnnotatedValue):
+                return str(v.value)
+
+            if isinstance(v, list):
+                return '\n'.join([
+                    (s.value or '') if isinstance(s, sentry_sdk.utils.AnnotatedValue) else s
+                    for s in v
+                ])
+
+            return str(v)
 
         result = []
         for frame in frames:
@@ -633,12 +717,12 @@ class Failure:
             if line is not None:
                 # Lines are indexed from 0, but human representation starts with 1: "1st line".
                 # Hence the decrement.
-                pre_context, context_line, post_context = get_lines_from_file(filename, lineno - 1, 5)
+                pre_context, context_line, post_context = sentry_sdk.utils.get_lines_from_file(filename, lineno - 1)
 
                 frame_result.update({
-                    'pre_context': pre_context,
-                    'context_line': context_line,
-                    'post_context': post_context,
+                    'pre_context': _stringify(pre_context),
+                    'context_line': _stringify(context_line),
+                    'post_context': _stringify(post_context)
                 })
 
             if frame.locals:
@@ -646,11 +730,24 @@ class Failure:
 
             result.append(frame_result)
 
-        stackinfo = {
-            'frames': slim_frame_data(result),
+        return {
+            # "Magic" structures, see sentry_sdk.utils for implementation creating these for exceptions.
+            'module': None,
+            # Type and value are required - but we have none of them, obviously, otherwise we'd use
+            # the exception and its type.
+            #
+            # Instead of an actual type, to comply with the way Sentry displays events with a traceback,
+            # we store the failure message as `type`, and ignore the `value` field. This should present
+            # nice and good looking event.
+            'type': message,
+            'value': None,
+            'mechanism': {
+                'type': 'generic'
+            },
+            'stacktrace': {
+                'frames': result
+            }
         }
-
-        return stackinfo
 
     def get_sentry_details(self) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
         """
@@ -659,13 +756,18 @@ class Failure:
 
         from .knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT
 
-        data: Dict[str, Any] = {}
+        event: Dict[str, Any] = {}
         tags: Dict[str, str] = {}
         extra: Dict[str, Any] = self.details.copy()
 
         extra['message'] = self.message
         extra['recoverable'] = self.recoverable
         extra['fail_guest_request'] = self.fail_guest_request
+
+        extra.update({
+            f'env.{name}': value
+            for name, value in os.environ.items()
+        })
 
         if 'scrubbed_command' in extra:
             extra['scrubbed_command'] = gluetool.utils.format_command_line([extra['scrubbed_command']])
@@ -685,10 +787,21 @@ class Failure:
         if 'poolname' in self.details:
             tags['poolname'] = self.details['poolname']
 
-        if self.traceback:
+        if self.exc_info:
+            event, _ = sentry_sdk.utils.event_from_exception(self.exc_info)
+
+        elif self.traceback:
             # Convert our traceback to format understood by Sentry, and store it in `data['stacktrace']` where Sentry
             # expects it to find when generating the message for submission.
-            data['stacktrace'] = Failure._get_sentry_stack_info(self.traceback)
+
+            event.update({
+                'level': 'error',
+                'exception': {
+                    'values': [
+                        Failure._serialize_traceback(self.message, self.traceback)
+                    ]
+                }
+            })
 
         if 'environment' in extra:
             extra['environment'] = extra['environment'].serialize()
@@ -702,6 +815,10 @@ class Failure:
         # Special tag, "environment", is used by Sentry for tracking issues per environment.
         if KNOB_DEPLOYMENT_ENVIRONMENT.value:
             tags['environment'] = KNOB_DEPLOYMENT_ENVIRONMENT.value
+
+        event.update({
+            'message': f'Failure: {self.message}'
+        })
 
         tags.update({
             key: value
@@ -718,7 +835,7 @@ class Failure:
                 'extra': caused_by_extra
             }
 
-        return data, tags, extra
+        return event, tags, extra
 
     def get_log_details(self) -> Dict[str, Any]:
         """
@@ -790,28 +907,32 @@ class Failure:
         if self.submited_to_sentry:
             return
 
-        data, tags, extra = self.get_sentry_details()
+        if not SENTRY.enabled:
+            return
+
+        event, tags, extra = self.get_sentry_details()
 
         if additional_tags:
             tags.update(additional_tags)
 
-        try:
-            self.sentry_event_id = gluetool_sentry.submit_message(
-                f'Failure: {self.message}',
-                exc_info=self.exc_info,
-                data=data,
-                tags=tags,
-                extra=extra
-            )
+        with sentry_sdk.push_scope() as scope:
+            for name, value in tags.items():
+                scope.set_tag(name, value)
 
-        except Exception as exc:
-            Failure.from_exc('failed to submit to Sentry', exc).handle(logger, sentry=False)
+            for name, value in extra.items():
+                scope.set_extra(name, value)
 
-        else:
-            self.submited_to_sentry = True
+            try:
+                self.sentry_event_id = sentry_sdk.capture_event(event, scope=scope)
 
-        if self.sentry_event_id:
-            self.sentry_event_url = gluetool_sentry.event_url(self.sentry_event_id, logger=logger)
+            except Exception as exc:
+                Failure.from_exc('failed to submit to Sentry', exc).handle(logger, sentry=False)
+
+            else:
+                self.submited_to_sentry = True
+
+            if self.sentry_event_id and KNOB_SENTRY_BASE_URL.value not in (None, 'undefined'):
+                self.sentry_event_url = f'{KNOB_SENTRY_BASE_URL.value}/?query={self.sentry_event_id}'
 
     def reraise(self) -> NoReturn:
         if self.exception:
@@ -841,8 +962,7 @@ def get_logger() -> gluetool.log.ContextAdapter:
 
     return gluetool.log.Logging.setup_logger(
         level=KNOB_LOGGING_LEVEL.value,
-        json_output=KNOB_LOGGING_JSON.value,
-        sentry=gluetool_sentry
+        json_output=KNOB_LOGGING_JSON.value
     )
 
 

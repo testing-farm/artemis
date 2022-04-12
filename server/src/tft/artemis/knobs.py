@@ -820,6 +820,44 @@ KNOB_DEPLOYMENT_ENVIRONMENT: Knob[str] = Knob(
     default='undefined-deployment-environment'
 )
 
+KNOB_SENTRY_DSN: Knob[Optional[str]] = Knob(
+    'sentry.dsn',
+    'Sentry DSN.',
+    has_db=False,
+    envvar='ARTEMIS_SENTRY_DSN',
+    cast_from_str=str,
+    # TODO: Knob cannot use None as actual default value. Needs a fix.
+    default='undefined'
+)
+
+KNOB_SENTRY_BASE_URL: Knob[Optional[str]] = Knob(
+    'sentry.base-url',
+    'Sentry base URL, for nice event URLs in logs.',
+    has_db=False,
+    envvar='ARTEMIS_SENTRY_BASE_URL',
+    cast_from_str=str,
+    # TODO: Knob cannot use None as actual default value. Needs a fix.
+    default='undefined'
+)
+
+KNOB_SENTRY_DISABLE_CERT_VERIFICATION: Knob[bool] = Knob(
+    'sentry.disable-cert-verification',
+    'When enabled, Artemis would disable HTTPS certificate verification when submitting to Sentry.',
+    has_db=False,
+    envvar='ARTEMIS_SENTRY_DISABLE_CERT_VERIFICATION',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+KNOB_LOGGING_SENTRY: Knob[bool] = Knob(
+    'logging.sentry',
+    'When enabled, Artemis would log more Sentry-related debug info.',
+    has_db=False,
+    envvar='ARTEMIS_LOG_SENTRY',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value

@@ -629,6 +629,16 @@ ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD seconds.
 5+|Level of logging. Accepted values are Python logging levels as defined by Python's
 https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 
+|`logging.sentry`
+|`bool`
+|`ARTEMIS_LOG_SENTRY`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would log more Sentry-related debug info.
+
 |`openstack.build-timeout`
 |`int`
 |`ARTEMIS_OPENSTACK_BUILD_TIMEOUT`
@@ -792,6 +802,36 @@ for said guest request again.
 
 
 5+|A time, in seconds, after which a guest request is cancelled if provisioning haven't succeeded.
+
+|`sentry.base-url`
+|`str`
+|`ARTEMIS_SENTRY_BASE_URL`
+|`undefined`
+|no
+
+
+
+5+|Sentry base URL, for nice event URLs in logs.
+
+|`sentry.disable-cert-verification`
+|`bool`
+|`ARTEMIS_SENTRY_DISABLE_CERT_VERIFICATION`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would disable HTTPS certificate verification when submitting to Sentry.
+
+|`sentry.dsn`
+|`str`
+|`ARTEMIS_SENTRY_DSN`
+|`undefined`
+|no
+
+
+
+5+|Sentry DSN.
 
 |`vault.password`
 |`str`
