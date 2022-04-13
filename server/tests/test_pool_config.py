@@ -67,7 +67,7 @@ def test_patch_unsupported() -> None:
     )
 
     assert r_outcome.is_ok
-    assert flavor.arch is None
+    assert flavor.arch == 'aarch64'
     assert flavor.memory is None
 
 

@@ -98,6 +98,7 @@ ConfigPatchFlavorSpecType = TypedDict(
     {
         'name': str,
         'name-regex': str,
+        'arch': str,
         'cpu': ConfigFlavorCPUSpecType,
         'disk': List[ConfigFlavorDiskSpecType],
         'virtualization': ConfigFlavorVirtualizationSpecType
@@ -109,6 +110,7 @@ ConfigPatchFlavorSpecType = TypedDict(
 class ConfigCustomFlavorSpecType(TypedDict):
     name: str
     base: str
+    arch: str
     cpu: ConfigFlavorCPUSpecType
     disk: List[ConfigFlavorDiskSpecType]
     virtualization: ConfigFlavorVirtualizationSpecType
@@ -591,6 +593,9 @@ def _apply_flavor_specification(
     This is a helper for building custom and patching existing flavors. Both kinds use the same configuration
     fields.
     """
+
+    if 'arch' in flavor_spec:
+        flavor.arch = flavor_spec['arch']
 
     if 'cpu' in flavor_spec:
         cpu_patch = flavor_spec['cpu']
@@ -1320,30 +1325,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_flavors.is_error:
             return Error(r_flavors.unwrap_error())
 
-        r_capabilities = self.capabilities()
-
-        if r_capabilities.is_error:
-            return Error(r_capabilities.unwrap_error())
-
-        pool_flavors = r_flavors.unwrap()
-        capabilities = r_capabilities.unwrap()
-
-        # For each flavor info and arch, create a Flavor description we can then match against the HW constraints.
-        # TODO: what if some flavors are not supported on all arches?
-        flavors: List[Flavor] = []
-
-        for flavor in pool_flavors:
-            if capabilities.supported_architectures is AnyArchitecture:
-                flavors.append(flavor)
-
-            else:
-                assert isinstance(capabilities.supported_architectures, list)
-
-                for arch in capabilities.supported_architectures:
-                    arch_flavor = flavor.clone()
-                    arch_flavor.arch = arch
-
-                    flavors.append(arch_flavor)
+        flavors = r_flavors.unwrap()
 
         gluetool.log.log_dict(logger.debug, 'available flavors', flavors)
 
