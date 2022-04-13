@@ -5,6 +5,16 @@ stages:
   - test_stage
   - deploy
 
+variables:
+  IMAGE: quay.io/testing-farm/artemis
+
+workflow:
+  rules:
+    # for merge requests
+    - if: $CI_MERGE_REQUEST_ID
+    # for the tip of the default branch
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 tests:
   stage: test_stage
   variables:
@@ -23,10 +33,29 @@ tests:
     - cd ..
 
 container:
-  stage: test_stage
+  stage: deploy
   image: quay.io/buildah/stable:latest
+  variables:
+    IMAGE_REF: $IMAGE:$CI_COMMIT_REF_NAME
+    IMAGE_SHA: $IMAGE:$CI_COMMIT_SHORT_SHA
+    IMAGE_LATEST: $IMAGE:LATEST
   script:
     - buildah bud -f container/Dockerfile .
+    # Setup push secret
+    - mkdir -p $HOME/.docker
+    - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
+    # Build image with branch name tag
+    - buildah bud -t $IMAGE_REF -f container/Dockerfile .
+    # Add commit short SHA tag
+    - buildah tag $IMAGE_REF $IMAGE_SHA
+    # Push images to registry
+    - buildah push $IMAGE_REF
+    - buildah push $IMAGE_SHA
+    # For default branch publish also a `:latest` image
+    - if [ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]; then
+        buildah tag $IMAGE_REF $IMAGE_LATEST;
+        buildah push $IMAGE_LATEST;
+      fi
 
 .docs:
   image: quay.io/testing-farm/gitlab-pages-hugo:latest
