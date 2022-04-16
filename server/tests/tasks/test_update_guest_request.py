@@ -18,7 +18,6 @@ import tft.artemis.guest
 import tft.artemis.routing_policies
 import tft.artemis.tasks
 import tft.artemis.tasks.update_guest_request
-from tft.artemis.middleware import NOTE_POOLNAME, get_metric_note
 from tft.artemis.tasks.update_guest_request import Workspace, update_guest_request
 
 from .. import MockPatcher
@@ -112,9 +111,6 @@ def test_save_current_data(
 
     assert workspace.save_current_data() is workspace
 
-    assert get_metric_note(NOTE_POOLNAME) == 'dummy-pool'
-
-    assert workspace.spice_details['poolname'] == 'dummy-pool'
     assert workspace.current_pool_data is cast(MagicMock, workspace.pool.pool_data_class.unserialize).return_value
 
 
@@ -449,6 +445,7 @@ def test_doer(
     # The method is not part of the public API, it's used by `_repr__()`, therefore it's risky, but let's see.
     assert cast(MagicMock, result)._extract_mock_name() == '.'.join([
         'entry<M>()',
+        'mark_note_poolname()',
         'save_current_data()',
         'query_driver()',
         'log_minor_failures()',

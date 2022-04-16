@@ -18,6 +18,7 @@ from dramatiq.broker import Broker
 
 import tft.artemis
 import tft.artemis.db
+import tft.artemis.middleware
 import tft.artemis.tasks
 
 from .. import MATCH, MockPatcher, assert_log
@@ -297,3 +298,45 @@ def test_task_core_reschedule(
         )
 
     assert_log(caplog, message='beginning', levelno=logging.INFO)
+
+
+@pytest.fixture(name='workspace')
+def fixture_workspace(
+    logger: gluetool.log.ContextAdapter,
+    db: tft.artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
+    current_message: dramatiq.MessageProxy
+) -> tft.artemis.tasks.Workspace:
+    return tft.artemis.tasks.Workspace(logger, session, threading.Event(), 'dummy-guest-name')
+
+
+@pytest.mark.usefixtures('dummy_guest_request', 'dummy_pool')
+def test_mark_note_poolname(
+    mockpatch: MockPatcher,
+    workspace: tft.artemis.tasks.Workspace
+) -> None:
+    assert workspace.gr
+
+    mockpatch(tft.artemis.middleware, 'set_message_note')
+
+    assert workspace.mark_note_poolname() is workspace
+
+    cast(MagicMock, tft.artemis.middleware.set_message_note).assert_called_once_with(
+        tft.artemis.middleware.NOTE_POOLNAME,
+        workspace.gr.poolname
+    )
+
+    assert workspace.spice_details['poolname'] == workspace.gr.poolname
+
+
+def test_mark_note_poolname_error_noop(
+    mockpatch: MockPatcher,
+    workspace: tft.artemis.tasks.Workspace
+) -> None:
+    workspace.result = tft.artemis.tasks.RESCHEDULE
+
+    mockpatch(tft.artemis.middleware, 'set_message_note')
+
+    assert workspace.mark_note_poolname() is workspace
+
+    cast(MagicMock, tft.artemis.middleware.set_message_note).assert_not_called()

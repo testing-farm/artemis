@@ -53,15 +53,9 @@ class Workspace(_Workspace):
         Save current request properties for later use.
         """
 
-        from ..middleware import NOTE_POOLNAME, set_message_note
-
         assert self.gr
-        assert self.gr.poolname
         assert self.pool
 
-        set_message_note(NOTE_POOLNAME, self.gr.poolname)
-
-        self.spice_details['poolname'] = self.gr.poolname
         self.current_pool_data = self.pool.pool_data_class.unserialize(self.gr)
 
     @step
@@ -232,6 +226,7 @@ class Workspace(_Workspace):
 
         return cls.create(logger, db, session, cancel, guestname) \
             .entry() \
+            .mark_note_poolname() \
             .save_current_data() \
             .query_driver() \
             .log_minor_failures() \

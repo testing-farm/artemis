@@ -2531,8 +2531,7 @@ def do_prepare_post_install_script(
     assert workspace.gr.poolname
     assert workspace.pool
 
-    from ..middleware import NOTE_POOLNAME, set_message_note
-    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
+    workspace.mark_note_poolname()
 
     r_master_key = _get_master_key()
 
@@ -2611,8 +2610,7 @@ def do_guest_request_prepare_finalize_pre_connect(
     assert workspace.gr
     assert workspace.gr.poolname
 
-    from ..middleware import NOTE_POOLNAME, set_message_note
-    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
+    workspace.mark_note_poolname()
 
     tasks: List[Actor] = []
 
@@ -2679,8 +2677,7 @@ def do_guest_request_prepare_finalize_post_connect(
     assert workspace.gr
     assert workspace.gr.poolname
 
-    from ..middleware import NOTE_POOLNAME, set_message_note
-    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
+    workspace.mark_note_poolname()
 
     workspace.update_guest_state(
         GuestState.READY,
@@ -2768,10 +2765,7 @@ def do_release_guest_request(
     assert workspace.gr
 
     if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
-        from ..middleware import NOTE_POOLNAME, set_message_note
-        set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
-
-        workspace.spice_details['poolname'] = workspace.gr.poolname
+        workspace.mark_note_poolname()
 
         workspace.load_gr_pool()
         workspace.load_ssh_key()
@@ -3695,8 +3689,7 @@ def do_acquire_guest_console_url(
     assert workspace.gr
     assert workspace.gr.poolname
 
-    from ..middleware import NOTE_POOLNAME, set_message_note
-    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
+    workspace.mark_note_poolname()
 
     r_console = workspace.pool.acquire_console_url(logger, workspace.gr)
     if r_console.is_error:
