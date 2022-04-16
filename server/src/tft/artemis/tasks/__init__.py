@@ -37,7 +37,6 @@ from ..drivers import azure as azure_driver
 from ..drivers import beaker as beaker_driver
 from ..drivers import localhost as localhost_driver
 from ..drivers import openstack as openstack_driver
-from ..drivers import ping_shell_remote
 from ..guest import GuestLogger, GuestState, SnapshotLogger
 from ..knobs import Knob
 from ..profile import Profiler
@@ -256,17 +255,6 @@ KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_SCHEDULE',
     cast_from_str=str,
     default='*/5 * * * *'
-)
-
-
-KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
-    'actor.verify-ssh.connect-timeout',
-    'Prepare stage SSH timeout.',
-    per_pool=True,
-    has_db=True,
-    envvar='ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT',
-    cast_from_str=int,
-    default=15
 )
 
 
@@ -1359,6 +1347,7 @@ class Workspace:
         self.guest_events: Optional[List[GuestEvent]] = None
 
         self.pools: List[PoolDriver] = []
+        self.master_key: Optional[SSHKey] = None
 
         self.spice_details: Dict[str, Any] = {**default_details}
 
@@ -1561,6 +1550,30 @@ class Workspace:
                 ),
                 'failed to find SSH key'
             )
+
+    def load_master_ssh_key(self: WorkspaceBound) -> WorkspaceBound:
+        if self.result:
+            return self
+
+        r = _get_ssh_key('artemis', 'master-key')
+
+        if r.is_error:
+            self.result = self.handle_error(r, 'failed to get master SSH key')
+            return self
+
+        self.master_key = r.unwrap()
+
+        if self.master_key is None:
+            self.result = self.handle_failure(
+                Failure(
+                    'no such SSH key',
+                    ownername='artemis',
+                    keyname='master-key'
+                ),
+                'failed to find SSH key'
+            )
+
+        return self
 
     def load_gr_pool(self) -> None:
         """
@@ -1902,6 +1915,21 @@ class Workspace:
 
         else:
             self.pools = r_pools.unwrap()
+
+        return self
+
+    def mark_note_poolname(self: WorkspaceBound) -> WorkspaceBound:
+        if self.result:
+            return self
+
+        from ..middleware import NOTE_POOLNAME, set_message_note
+
+        assert self.gr
+        assert self.gr.poolname
+
+        set_message_note(NOTE_POOLNAME, self.gr.poolname)
+
+        self.spice_details['poolname'] = self.gr.poolname
 
         return self
 
@@ -2471,75 +2499,6 @@ def update_guest_log(guestname: str, logname: str, contenttype: str) -> None:
     )
 
 
-def do_prepare_verify_ssh(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
-    guestname: str
-) -> DoerReturnType:
-    workspace = Workspace(
-        logger,
-        session,
-        cancel,
-        guestname=guestname,
-        task='prepare-verify-ssh'
-    )
-
-    workspace.handle_success('enter-task')
-
-    workspace.load_guest_request(guestname, state=GuestState.PREPARING)
-    workspace.load_gr_pool()
-
-    if workspace.result:
-        return workspace.result
-
-    assert workspace.gr
-    assert workspace.gr.address
-    assert workspace.gr.poolname
-    assert workspace.pool
-
-    from ..middleware import NOTE_POOLNAME, set_message_note
-    set_message_note(NOTE_POOLNAME, workspace.gr.poolname)
-
-    r_master_key = _get_master_key()
-
-    if r_master_key.is_error:
-        return workspace.handle_error(r_master_key, 'failed to fetch master key')
-
-    r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=session, pool=workspace.pool)
-
-    if r_ssh_timeout.is_error:
-        return workspace.handle_error(r_ssh_timeout, 'failed to obtain ssh timeout value')
-
-    r_ping = ping_shell_remote(
-        logger,
-        workspace.gr,
-        key=r_master_key.unwrap(),
-        ssh_timeout=r_ssh_timeout.unwrap(),
-        poolname=workspace.pool.poolname,
-        commandname='prepare-verify-ssh.shell-ping'
-    )
-
-    if r_ping.is_error:
-        # We do not want the generic "failed CLI" error here, to make SSH verification issues stand out more.
-        return workspace.handle_failure(
-            Failure.from_failure('failed to verify SSH', r_ping.unwrap_error()),
-            'failed to verify SSH'
-        )
-
-    return workspace.handle_success('finished-task')
-
-
-@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
-def prepare_verify_ssh(guestname: str) -> None:
-    task_core(
-        cast(DoerType, do_prepare_verify_ssh),
-        logger=get_guest_logger('prepare-verify-ssh', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
-    )
-
-
 def do_prepare_post_install_script(
     logger: gluetool.log.ContextAdapter,
     db: DB,
@@ -2549,6 +2508,7 @@ def do_prepare_post_install_script(
 ) -> DoerReturnType:
     # Avoid circular imports
     from ..drivers import copy_to_remote, create_tempfile, run_remote
+    from .prepare_verify_ssh import KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT
 
     workspace = Workspace(
         logger,
@@ -2766,6 +2726,8 @@ def dispatch_preparing_pre_connect(
 
     Tier 1: verify the basic accessibility of the guest.
     """
+
+    from .prepare_verify_ssh import prepare_verify_ssh
 
     assert workspace.gr
 

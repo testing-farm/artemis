@@ -18,7 +18,6 @@ import tft.artemis.guest
 import tft.artemis.routing_policies
 import tft.artemis.tasks
 import tft.artemis.tasks.update_guest_request
-from tft.artemis.api import GuestRequest
 from tft.artemis.middleware import NOTE_POOLNAME, get_metric_note
 from tft.artemis.tasks.update_guest_request import Workspace, update_guest_request
 
@@ -34,27 +33,6 @@ def fixture_workspace(
     current_message: dramatiq.MessageProxy
 ) -> Workspace:
     return Workspace.create(logger, db, session, threading.Event(), 'dummy-guest-name')
-
-
-@pytest.fixture(name='dummy_guest_request')
-def fixture_dummy_guest_request(workspace: Workspace) -> MagicMock:
-    workspace.gr = MagicMock(name='dummy-guest-request')
-
-    return workspace.gr
-
-
-@pytest.fixture(name='dummy_pool')
-def fixture_dummy_pool(
-    logger: gluetool.log.ContextAdapter,
-    workspace: Workspace,
-    dummy_guest_request: GuestRequest
-) -> tft.artemis.drivers.PoolDriver:
-    assert workspace.gr
-
-    workspace.gr.poolname = 'dummy-pool'
-    workspace.pool = tft.artemis.drivers.PoolDriver(logger, 'dummy-pool', {})
-
-    return workspace.pool
 
 
 @pytest.fixture(name='dummy_current_pool_data')
