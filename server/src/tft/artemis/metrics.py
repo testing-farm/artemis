@@ -384,8 +384,8 @@ class PoolResources(MetricsBase):
        to stick with Pint wherever we use a value with units.
     """
 
-    _KEY = 'metrics.pool.{poolname}.resources.{dimension}'
-    _KEY_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.resources.{dimension}.updated_timestamp'
+    _KEY = 'metrics.pool.{poolname}.resources.{dimension}'  # noqa: FS003
+    _KEY_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.resources.{dimension}.updated_timestamp'  # noqa: FS003
 
     _TRIVIAL_FIELDS = ('instances', 'cores', 'memory', 'diskspace', 'snapshots')
     _COMPOUND_FIELDS = ('networks',)
@@ -437,8 +437,8 @@ class PoolResources(MetricsBase):
 
         super().__init__()
 
-        self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)
-        self._key_updated_timestamp = PoolResources._KEY_UPDATED_TIMESTAMP.format(
+        self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)  # noqa: FS002
+        self._key_updated_timestamp = PoolResources._KEY_UPDATED_TIMESTAMP.format(  # noqa: FS002
             poolname=poolname, dimension=dimension.value
         )
 
@@ -744,14 +744,14 @@ class PoolMetrics(MetricsBase):
     Metrics of a particular pool.
     """
 
-    _KEY_ERRORS = 'metrics.pool.{poolname}.errors'
-    _KEY_CLI_CALLS = 'metrics.pool.{poolname}.cli-calls'
-    _KEY_CLI_EXIT_CODES = 'metrics.pool.{poolname}.cli-calls.exit-codes'
-    _KEY_CLI_CALLS_DURATIONS = 'metrics.pool.{poolname}.cli-calls.durations'
+    _KEY_ERRORS = 'metrics.pool.{poolname}.errors'  # noqa: FS003
+    _KEY_CLI_CALLS = 'metrics.pool.{poolname}.cli-calls'  # noqa: FS003
+    _KEY_CLI_EXIT_CODES = 'metrics.pool.{poolname}.cli-calls.exit-codes'  # noqa: FS003
+    _KEY_CLI_CALLS_DURATIONS = 'metrics.pool.{poolname}.cli-calls.durations'  # noqa: FS003
 
     # Image & flavor refresh process does not have their own metrics, hence using this container to track the "last
     # update" timestamp.
-    _KEY_INFO_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.{info}.updated_timestamp'
+    _KEY_INFO_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.{info}.updated_timestamp'  # noqa: FS003
 
     poolname: str
     enabled: bool
@@ -782,20 +782,20 @@ class PoolMetrics(MetricsBase):
         :param poolname: name of the pool whose metrics we're tracking.
         """
 
-        self.key_errors = self._KEY_ERRORS.format(poolname=poolname)
+        self.key_errors = self._KEY_ERRORS.format(poolname=poolname)  # noqa: FS002
 
-        self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(
+        self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(  # noqa: FS002
             poolname=poolname,
             info='image'
         )
-        self.key_flavor_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(
+        self.key_flavor_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(  # noqa: FS002
             poolname=poolname,
             info='flavor'
         )
 
-        self.key_cli_calls = self._KEY_CLI_CALLS.format(poolname=poolname)
-        self.key_cli_calls_exit_codes = self._KEY_CLI_EXIT_CODES.format(poolname=poolname)
-        self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)
+        self.key_cli_calls = self._KEY_CLI_CALLS.format(poolname=poolname)  # noqa: FS002
+        self.key_cli_calls_exit_codes = self._KEY_CLI_EXIT_CODES.format(poolname=poolname)  # noqa: FS002
+        self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)  # noqa: FS002
 
         self.poolname = poolname
         self.enabled = False
@@ -827,7 +827,7 @@ class PoolMetrics(MetricsBase):
     ) -> Result[None, Failure]:
         safe_call(
             cast(Callable[[str, float], None], cache.set),
-            PoolMetrics._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=pool, info=info),
+            PoolMetrics._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=pool, info=info),  # noqa: FS002
             datetime.datetime.timestamp(datetime.datetime.utcnow())
         )
 
@@ -877,7 +877,7 @@ class PoolMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error)
+        inc_metric_field(logger, cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error)  # noqa: FS002
         return Ok(None)
 
     @staticmethod
@@ -906,7 +906,7 @@ class PoolMetrics(MetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_CALLS.format(poolname=poolname),
+            PoolMetrics._KEY_CLI_CALLS.format(poolname=poolname),  # noqa: FS002
             commandname
         )
 
@@ -914,7 +914,7 @@ class PoolMetrics(MetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),
+            PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),  # noqa: FS002
             f'{commandname}:{exit_code}'
         )
 
@@ -924,7 +924,9 @@ class PoolMetrics(MetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname), f'{bucket}:{commandname}')
+            PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname),  # noqa: FS002
+            f'{bucket}:{commandname}'
+        )
 
         return Ok(None)
 
@@ -1018,7 +1020,7 @@ class PoolMetrics(MetricsBase):
             for field, count in get_metric_fields(
                 logger,
                 cache,
-                self._KEY_CLI_CALLS.format(poolname=self.poolname)
+                self._KEY_CLI_CALLS.format(poolname=self.poolname)  # noqa: FS002
             ).items()
         }
 
@@ -1038,7 +1040,8 @@ class PoolMetrics(MetricsBase):
             for field, count in get_metric_fields(
                 logger,
                 cache,
-                self._KEY_CLI_CALLS_DURATIONS.format(poolname=self.poolname)).items()
+                self._KEY_CLI_CALLS_DURATIONS.format(poolname=self.poolname)  # noqa: FS002
+            ).items()
         }
 
 
@@ -1189,7 +1192,7 @@ class PoolsMetrics(MetricsBase):
 
         def _create_pool_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
-                'pool_resources_{}{}'.format(name, f'_{unit}' if unit else ''),
+                f'pool_resources_{name}{"_{}".format(unit) if unit else ""}',  # noqa: FS002
                 f'Limits and usage of pool {name}',
                 ['pool', 'dimension'],
                 registry=registry
@@ -1197,7 +1200,7 @@ class PoolsMetrics(MetricsBase):
 
         def _create_network_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
-                'pool_resources_network_{}{}'.format(name, f'_{unit}' if unit else ''),
+                f'pool_resources_network_{name}{"_{}".format(unit) if unit else ""}',
                 f'Limits and usage of pool network {name}',
                 ['pool', 'network', 'dimension'],
                 registry=registry
@@ -2055,7 +2058,7 @@ class TaskMetrics(MetricsBase):
             logger,
             cache,
             TaskMetrics._KEY_MESSAGE_DURATIONS,
-            '{}:{}:{}:{}'.format(queue, actor, bucket, poolname or 'undefined')
+            f'{queue}:{actor}:{bucket}:{poolname or "undefined"}'
         )
 
         return Ok(None)
@@ -2434,9 +2437,9 @@ class WorkerMetrics(MetricsBase):
     worker_thread_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
     worker_updated_timestamp: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
 
-    _KEY_WORKER_PROCESS_COUNT = 'metrics.workers.{worker}.processes'
-    _KEY_WORKER_THREAD_COUNT = 'metrics.workers.{worker}.threads'
-    _KEY_UPDATED_TIMESTAMP = 'metrics.workers.{worker}.updated_timestamp'
+    _KEY_WORKER_PROCESS_COUNT = 'metrics.workers.{worker}.processes'  # noqa: FS003
+    _KEY_WORKER_THREAD_COUNT = 'metrics.workers.{worker}.threads'  # noqa: FS003
+    _KEY_UPDATED_TIMESTAMP = 'metrics.workers.{worker}.updated_timestamp'  # noqa: FS003
 
     @staticmethod
     @with_context
@@ -2462,7 +2465,7 @@ class WorkerMetrics(MetricsBase):
         set_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_WORKER_PROCESS_COUNT.format(worker=worker),
+            WorkerMetrics._KEY_WORKER_PROCESS_COUNT.format(worker=worker),  # noqa: FS002
             processes,
             ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value
         )
@@ -2470,7 +2473,7 @@ class WorkerMetrics(MetricsBase):
         set_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_WORKER_THREAD_COUNT.format(worker=worker),
+            WorkerMetrics._KEY_WORKER_THREAD_COUNT.format(worker=worker),  # noqa: FS002
             threads,
             ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value
         )
@@ -2478,7 +2481,7 @@ class WorkerMetrics(MetricsBase):
         set_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_UPDATED_TIMESTAMP.format(worker=worker),
+            WorkerMetrics._KEY_UPDATED_TIMESTAMP.format(worker=worker),  # noqa: FS002
             int(datetime.datetime.timestamp(datetime.datetime.utcnow())),
             ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value
         )

@@ -403,7 +403,7 @@ class WorkerMetrics(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
 
 class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
-    KEY_WORKER_TASK = 'tasks.workers.traffic.{worker}.{pid}.{tid}'
+    KEY_WORKER_TASK = 'tasks.workers.traffic.{worker}.{pid}.{tid}'  # noqa: FS003
     KEY_WORKER_TASK_PATTERN = 'tasks.workers.traffic.*'
 
     def __init__(
@@ -421,7 +421,11 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
     @property
     def current_key(self) -> str:
-        return self.KEY_WORKER_TASK.format(worker=self.worker_name, pid=self.worker_pid, tid=threading.get_ident())
+        return self.KEY_WORKER_TASK.format(  # noqa: FS002
+            worker=self.worker_name,
+            pid=self.worker_pid,
+            tid=threading.get_ident()
+        )
 
     def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
         from .cache import set_cache_value

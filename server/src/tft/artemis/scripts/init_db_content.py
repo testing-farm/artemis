@@ -65,7 +65,7 @@ def validate_config(
             return r_validation
 
         validation_errors += [
-            'pool "{}": {}'.format(pool.get('name'), error)
+            f'pool "{pool.get("name")}": {error}'
             for error in r_validation.unwrap()
         ]
 
@@ -135,7 +135,7 @@ def config_to_db(
 
         # Add pool-level tags
         for pool_config in server_config.get('pools', []):
-            poolname = pool_config['name']
+            poolname: str = pool_config['name']
 
             logger.info(f'Adding pool-level guest tags for pool {poolname}')
 
@@ -144,9 +144,7 @@ def config_to_db(
         logger.info('Adding priority groups')
 
         for priority_group_config in server_config.get('priority-groups', []):
-            logger.info('  Adding priority group "{}"'.format(
-                priority_group_config['name']
-            ))
+            logger.info(f'  Adding priority group "{priority_group_config["name"]}"')
 
             r = upsert(
                 logger,
@@ -168,15 +166,17 @@ def config_to_db(
         azure_pools = 0
 
         for pool_config in server_config.get('pools', []):
-            logger.info('  Adding pool "{}"'.format(pool_config['name']))
+            poolname = pool_config['name']
+
+            logger.info(f'  Adding pool "{poolname}"')
 
             pool_parameters = pool_config.get('parameters', {})
 
             if pool_config['driver'] == 'openstack':
                 if 'project-domain-name' in pool_parameters and 'project-domain-id' in pool_parameters:
-                    Failure('Pool "{}" uses both project-domain-name and project-domain-id, name will be used'.format(
-                        pool_config['name']
-                    )).handle(logger)
+                    Failure(
+                        f'Pool "{poolname}" uses both project-domain-name and project-domain-id, name will be used'
+                    ).handle(logger)
 
             elif pool_config['driver'] == 'azure':
                 azure_pools += 1
@@ -186,7 +186,7 @@ def config_to_db(
                 session,
                 Pool,
                 {
-                    Pool.poolname: pool_config['name']
+                    Pool.poolname: poolname
                 },
                 insert_data={
                     Pool.driver: pool_config['driver'],
@@ -243,7 +243,7 @@ def config_to_db(
                     role = UserRoles[user_config['role'].upper()]
 
                 except KeyError:
-                    raise Exception('Unknown role "{}" of user "{}"'.format(user_config['role'], username))
+                    raise Exception(f'Unknown role "{user_config["role"]}" of user "{username}"')
 
             else:
                 role = UserRoles.USER
@@ -251,10 +251,7 @@ def config_to_db(
             _add_user(username, role)
 
         for key_config in server_config.get('ssh-keys', []):
-            logger.info('Adding SSH key "{}", owner by {}'.format(
-                key_config['name'],
-                key_config['owner']
-            ))
+            logger.info(f'Adding SSH key "{key_config["name"]}", owner by {key_config["owner"]}')
 
             r = upsert(
                 logger,

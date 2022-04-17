@@ -726,7 +726,7 @@ class ConstraintBase:
         :returns: human-readable rendering of the constraint.
         """
 
-        return self.format()
+        return self.format()  # noqa: FS002
 
     def __str__(self) -> str:
         """
@@ -735,7 +735,7 @@ class ConstraintBase:
         :returns: human-readable rendering of the constraint.
         """
 
-        return self.format()
+        return self.format()  # noqa: FS002
 
 
 ReducerType = Callable[[Iterable[Result[bool, Failure]]], Result[bool, Failure]]
@@ -872,7 +872,7 @@ class CompoundConstraint(ConstraintBase):
         lines = [
             f'{prefix}{self.__class__.__name__}['
         ] + [
-            constraint.format(prefix=prefix + '    ')
+            constraint.format(prefix=prefix + '    ')  # noqa: FS002
             for constraint in self.constraints
         ] + [
             f'{prefix}]'

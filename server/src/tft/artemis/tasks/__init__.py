@@ -2734,7 +2734,7 @@ def do_guest_request_prepare_finalize_post_connect(
 
     # calculate provisioning duration time
     provisioning_duration = (datetime.datetime.utcnow() - workspace.gr.ctime).total_seconds()
-    logger.info(f"provisioning duration: {provisioning_duration}s")
+    logger.info(f'provisioning duration: {provisioning_duration}s')
 
     # update provisioning duration metrics
     metrics.ProvisioningMetrics.inc_provisioning_durations(provisioning_duration)
