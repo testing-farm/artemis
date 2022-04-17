@@ -5,8 +5,9 @@ repos:
     rev: "5.10.1"
     hooks:
       - id: isort
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.0.1
+    rev: v4.2.0
     hooks:
       - id: check-added-large-files
       - id: check-ast
@@ -52,7 +53,7 @@ repos:
         pass_filenames: false
 
   - repo: https://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.1.10
+    rev: v1.1.13
     hooks:
       - id: insert-license
         files: \.py$
