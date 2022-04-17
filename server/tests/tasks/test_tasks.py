@@ -4,6 +4,7 @@
 import logging
 import threading
 from typing import Dict, Generator, Tuple, cast
+from unittest.mock import MagicMock, call
 
 import _pytest.logging
 import _pytest.monkeypatch
@@ -14,7 +15,6 @@ import gluetool.utils
 import pytest
 import sqlalchemy.orm.session
 from dramatiq.broker import Broker
-from mock import MagicMock, call
 
 import tft.artemis
 import tft.artemis.db

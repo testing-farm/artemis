@@ -52,32 +52,22 @@ EBSVolumeTypeType = Literal['gp2', 'gp3', 'io1', 'io2', 'sc1', 'st1', 'standard'
 # Type of container holding EBS properties of a block device mapping.
 #
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-blockdev-template.html
-APIBlockDeviceMappingEbsType = TypedDict(
-    'APIBlockDeviceMappingEbsType',
-    {
-        'DeleteOnTermination': bool,
-        'Encrypted': bool,
-        'Iops': int,
-        'KmsKeyId': str,
-        'SnapshotId': str,
-        'VolumeSize': int,
-        'VolumeType': EBSVolumeTypeType
-    },
-    total=False
-)
+class APIBlockDeviceMappingEbsType(TypedDict, total=False):
+    DeleteOnTermination: bool
+    Encrypted: bool
+    Iops: int
+    KmsKeyId: str
+    SnapshotId: str
+    VolumeSize: int
+    VolumeType: EBSVolumeTypeType
 
 
 # Type of container holding block device mapping.
 #
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-blockdev-mapping.html
-APIBlockDeviceMappingType = TypedDict(
-    'APIBlockDeviceMappingType',
-    {
-        'DeviceName': str,
-        'Ebs': APIBlockDeviceMappingEbsType
-    },
-    total=True
-)
+class APIBlockDeviceMappingType(TypedDict, total=True):
+    DeviceName: str
+    Ebs: APIBlockDeviceMappingEbsType
 
 
 DEFAULT_VOLUME_DELETE_ON_TERMINATION = True
@@ -215,7 +205,7 @@ class FailedSpotRequest(Failure):
         spot_instance_id: str,
         **kwargs: Any
     ):
-        super(FailedSpotRequest, self).__init__(message, **kwargs)
+        super().__init__(message, **kwargs)
         self.spot_instance_id = spot_instance_id
 
 
@@ -237,7 +227,7 @@ class AWSPoolImageInfo(PoolImageInfo):
     ena_support: bool
 
     def serialize_scrubbed(self) -> Dict[str, Any]:
-        serialized = super(AWSPoolImageInfo, self).serialize_scrubbed()
+        serialized = super().serialize_scrubbed()
 
         for bd_mapping in serialized['block_device_mappings']:
             del bd_mapping['Ebs']['SnapshotId']
@@ -263,7 +253,7 @@ class AWSHookImageInfoMapper(HookImageInfoMapper[AWSPoolImageInfo]):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> ImageInfoMapperOptionalResultType[AWSPoolImageInfo]:
-        r_image = super(AWSHookImageInfoMapper, self).map_or_none(logger, guest_request)
+        r_image = super().map_or_none(logger, guest_request)
 
         if r_image.is_error:
             return r_image
@@ -305,7 +295,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     """
 
     def __init__(self, mappings: Optional[List[APIBlockDeviceMappingType]] = None):
-        super(BlockDeviceMappings, self).__init__()
+        super().__init__()
 
         self.data = mappings[:] if mappings else []
 
@@ -916,7 +906,7 @@ class AWSDriver(PoolDriver):
         poolname: str,
         pool_config: Dict[str, Any]
     ) -> None:
-        super(AWSDriver, self).__init__(logger, poolname, pool_config)
+        super().__init__(logger, poolname, pool_config)
         self.environ = {
             **os.environ,
             "AWS_ACCESS_KEY_ID": self.pool_config['access-key-id'],
@@ -1019,7 +1009,7 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
     ) -> Result[bool, Failure]:
-        r_answer = super(AWSDriver, self).can_acquire(logger, session, guest_request)
+        r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -1918,7 +1908,7 @@ class AWSDriver(PoolDriver):
 
         subnet_id = self.pool_config['subnet-id']
 
-        r_resources = super(AWSDriver, self).fetch_pool_resources_metrics(logger)
+        r_resources = super().fetch_pool_resources_metrics(logger)
 
         if r_resources.is_error:
             return Error(r_resources.unwrap_error())

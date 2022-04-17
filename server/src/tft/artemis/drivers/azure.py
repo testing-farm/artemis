@@ -62,7 +62,7 @@ class AzureDriver(PoolDriver):
         poolname: str,
         pool_config: Dict[str, Any],
     ) -> None:
-        super(AzureDriver, self).__init__(logger, poolname, pool_config)
+        super().__init__(logger, poolname, pool_config)
 
     @property
     def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
@@ -156,7 +156,7 @@ class AzureDriver(PoolDriver):
         the given environment.
         """
 
-        r_answer = super(AzureDriver, self).can_acquire(logger, session, guest_request)
+        r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())

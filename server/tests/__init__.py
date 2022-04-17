@@ -5,11 +5,11 @@ import logging
 import operator
 import re
 from typing import Any, Callable, Iterable, List, Optional, Tuple
+from unittest.mock import MagicMock
 
 import _pytest.logging
 import _pytest.monkeypatch
 import jinja2
-from mock import MagicMock
 from typing_extensions import Protocol
 
 # Since this is our entry point when running tests, we must take care of injecting additional filters
@@ -61,7 +61,7 @@ class MATCH(PatternMatching):
     """
 
     def __init__(self, pattern: str) -> None:
-        super(MATCH, self).__init__(pattern, 'match')
+        super().__init__(pattern, 'match')
 
 
 class SEARCH(PatternMatching):
@@ -77,7 +77,7 @@ class SEARCH(PatternMatching):
     """
 
     def __init__(self, pattern: str) -> None:
-        super(SEARCH, self).__init__(pattern, 'search')
+        super().__init__(pattern, 'search')
 
 
 def assert_log(

@@ -284,7 +284,7 @@ def get_metric_note(note: str) -> Optional[str]:
 
 class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
     def __init__(self) -> None:
-        super(Prometheus, self).__init__()
+        super().__init__()
 
         self._delayed_messages: Set[str] = set()
         self._message_start_times: Dict[str, int] = {}
@@ -380,7 +380,7 @@ class WorkerMetrics(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
     """
 
     def __init__(self, worker_name: str, interval: int) -> None:
-        super(WorkerMetrics, self).__init__()
+        super().__init__()
 
         self.worker_name = worker_name
         self.interval = interval

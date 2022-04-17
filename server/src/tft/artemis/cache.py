@@ -239,8 +239,7 @@ def iter_cache_fields(
     if all_fields is None:
         return
 
-    for field, value in all_fields.items():
-        yield field, value
+    yield from all_fields.items()
 
 
 def get_cache_fields(
@@ -278,8 +277,7 @@ def iter_cache_keys(
     """
 
     try:
-        for metric in cast(RedisScanIterType, cache.scan_iter)(match):
-            yield metric
+        yield from cast(RedisScanIterType, cache.scan_iter)(match)
 
     except Exception as exc:
         # TODO: try with safe_call_and_handle, but that's not tested with `yield` yet.

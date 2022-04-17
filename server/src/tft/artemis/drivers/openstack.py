@@ -89,7 +89,7 @@ class OpenStackDriver(PoolDriver):
         poolname: str,
         pool_config: Dict[str, Any]
     ) -> None:
-        super(OpenStackDriver, self).__init__(logger, poolname, pool_config)
+        super().__init__(logger, poolname, pool_config)
 
         self._os_cmd_base = [
             'openstack',
@@ -387,10 +387,10 @@ class OpenStackDriver(PoolDriver):
 
             tags = r_tags.unwrap()
 
-            property_options: List[str] = sum([
+            property_options: List[str] = sum((
                 ['--property', f'{tag}={value}']
                 for tag, value in tags.items()
-            ], [])
+            ), [])
 
             os_options = [
                 'server',
@@ -513,7 +513,7 @@ class OpenStackDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
     ) -> Result[bool, Failure]:
-        r_answer = super(OpenStackDriver, self).can_acquire(logger, session, guest_request)
+        r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -836,7 +836,7 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
-        r_resources = super(OpenStackDriver, self).fetch_pool_resources_metrics(logger)
+        r_resources = super().fetch_pool_resources_metrics(logger)
 
         if r_resources.is_error:
             return Error(r_resources.unwrap_error())

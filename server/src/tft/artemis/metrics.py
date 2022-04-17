@@ -268,7 +268,7 @@ class DBPoolMetrics(MetricsBase):
         Load values from the storage and update this container with up-to-date values.
         """
 
-        super(DBPoolMetrics, self).sync()
+        super().sync()
 
         db = DATABASE.get()
 
@@ -292,7 +292,7 @@ class DBPoolMetrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super(DBPoolMetrics, self).register_with_prometheus(registry)
+        super().register_with_prometheus(registry)
 
         self.POOL_SIZE = Gauge(
             'db_pool_size',
@@ -323,7 +323,7 @@ class DBPoolMetrics(MetricsBase):
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super(DBPoolMetrics, self).update_prometheus()
+        super().update_prometheus()
 
         self.POOL_SIZE.set(self.size)
         self.POOL_CHECKED_IN.set(self.checked_in_connections)
@@ -435,7 +435,7 @@ class PoolResources(MetricsBase):
         :param dimension: whether this instance describes limits or usage.
         """
 
-        super(PoolResources, self).__init__()
+        super().__init__()
 
         self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)
         self._key_updated_timestamp = PoolResources._KEY_UPDATED_TIMESTAMP.format(
@@ -461,7 +461,7 @@ class PoolResources(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super(PoolResources, self).sync()
+        super().sync()
 
         r_serialized = safe_call(cast(Callable[[str], Optional[str]], cache.get), self._key)
 
@@ -532,7 +532,7 @@ class PoolResourcesUsage(PoolResources):
         :param poolname: name of the pool whose metrics we're tracking.
         """
 
-        super(PoolResourcesUsage, self).__init__(poolname, PoolResourcesMetricsDimensions.USAGE)
+        super().__init__(poolname, PoolResourcesMetricsDimensions.USAGE)
 
 
 class PoolResourcesLimits(PoolResources):
@@ -547,7 +547,7 @@ class PoolResourcesLimits(PoolResources):
         :param poolname: name of the pool whose metrics we're tracking.
         """
 
-        super(PoolResourcesLimits, self).__init__(poolname, PoolResourcesMetricsDimensions.LIMITS)
+        super().__init__(poolname, PoolResourcesMetricsDimensions.LIMITS)
 
 
 @dataclasses.dataclass
@@ -593,7 +593,7 @@ class PoolResourcesDepleted:
             for fieldname in PoolResources._TRIVIAL_FIELDS
             if getattr(self, fieldname) is True
         ] + [
-            'network.{}'.format(network_name)
+            f'network.{network_name}'
             for network_name in self.networks
         ]
 
@@ -698,7 +698,7 @@ class PoolCostsMetrics(MetricsBase):
         :param poolname: name of the pool whose costs we are tracking.
         """
 
-        self._key = 'metrics.pool.{poolname}.cost.cumulative_cost'.format(poolname=poolname)
+        self._key = f'metrics.pool.{poolname}.cost.cumulative_cost'
 
         self.virtual_machine = None
         self.disk = None
@@ -919,12 +919,12 @@ class PoolMetrics(MetricsBase):
         )
 
         # duration
-        bucket = min([threshold for threshold in CLI_CALL_DURATION_BUCKETS if threshold > duration])
+        bucket = min(threshold for threshold in CLI_CALL_DURATION_BUCKETS if threshold > duration)
 
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname), '{}:{}'.format(bucket, commandname))
+            PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname), f'{bucket}:{commandname}')
 
         return Ok(None)
 
@@ -943,7 +943,7 @@ class PoolMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super(PoolMetrics, self).sync()
+        super().sync()
 
         r_enabled = KNOB_POOL_ENABLED.get_value(session=session, poolname=self.poolname)
 
@@ -1104,7 +1104,7 @@ class UndefinedPoolMetrics(MetricsBase):
         :param session: DB session to use for DB access.
         """
 
-        super(UndefinedPoolMetrics, self).sync()
+        super().sync()
 
         # NOTE: sqlalchemy overloads operators to construct the conditions, and `is` is not overloaded. Therefore
         # in the query, we have to use `==` instead of more Pythonic `is`.
@@ -1155,7 +1155,7 @@ class PoolsMetrics(MetricsBase):
         :param session: DB session to use for DB access.
         """
 
-        super(PoolsMetrics, self).sync()
+        super().sync()
 
         # Avoid circular imports
         from .drivers import PoolDriver
@@ -1185,20 +1185,20 @@ class PoolsMetrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super(PoolsMetrics, self).register_with_prometheus(registry)
+        super().register_with_prometheus(registry)
 
         def _create_pool_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
-                'pool_resources_{}{}'.format(name, '_{}'.format(unit) if unit else ''),
-                'Limits and usage of pool {}'.format(name),
+                'pool_resources_{}{}'.format(name, f'_{unit}' if unit else ''),
+                f'Limits and usage of pool {name}',
                 ['pool', 'dimension'],
                 registry=registry
             )
 
         def _create_network_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
-                'pool_resources_network_{}{}'.format(name, '_{}'.format(unit) if unit else ''),
-                'Limits and usage of pool network {}'.format(name),
+                'pool_resources_network_{}{}'.format(name, f'_{unit}' if unit else ''),
+                f'Limits and usage of pool network {name}',
                 ['pool', 'network', 'dimension'],
                 registry=registry
             )
@@ -1289,7 +1289,7 @@ class PoolsMetrics(MetricsBase):
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super(PoolsMetrics, self).update_prometheus()
+        super().update_prometheus()
 
         reset_counters(self.POOL_ERRORS)
         reset_counters(self.POOL_COSTS)
@@ -1461,7 +1461,7 @@ class ProvisioningMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_FAILOVER, '{}:{}'.format(from_pool, to_pool))
+        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_FAILOVER, f'{from_pool}:{to_pool}')
         return Ok(None)
 
     @staticmethod
@@ -1482,7 +1482,7 @@ class ProvisioningMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_FAILOVER_SUCCESS, '{}:{}'.format(from_pool, to_pool))
+        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_FAILOVER_SUCCESS, f'{from_pool}:{to_pool}')
         return Ok(None)
 
     @staticmethod
@@ -1503,9 +1503,9 @@ class ProvisioningMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        bucket = min([threshold for threshold in PROVISION_DURATION_BUCKETS if threshold > duration])
+        bucket = min(threshold for threshold in PROVISION_DURATION_BUCKETS if threshold > duration)
 
-        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_DURATIONS, '{}'.format(bucket))
+        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_DURATIONS, f'{bucket}')
 
         return Ok(None)
 
@@ -1524,7 +1524,7 @@ class ProvisioningMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super(ProvisioningMetrics, self).sync()
+        super().sync()
 
         NOW = datetime.datetime.utcnow()
 
@@ -1573,7 +1573,7 @@ class ProvisioningMetrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super(ProvisioningMetrics, self).register_with_prometheus(registry)
+        super().register_with_prometheus(registry)
 
         self.CURRENT_GUEST_REQUEST_COUNT_TOTAL = Gauge(
             'current_guest_request_count_total',
@@ -1628,7 +1628,7 @@ class ProvisioningMetrics(MetricsBase):
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super(ProvisioningMetrics, self).update_prometheus()
+        super().update_prometheus()
 
         self.CURRENT_GUEST_REQUEST_COUNT_TOTAL.set(self.current)
         self.OVERALL_PROVISIONING_COUNT._value.set(self.requested)
@@ -1647,7 +1647,7 @@ class ProvisioningMetrics(MetricsBase):
         for state, poolname, age in self.guest_ages:
             # Pick the smallest larger bucket threshold (e.g. age == 250 => 300, age == 3599 => 3600, ...)
             # There's always the last threshold, infinity, so the list should never be empty.
-            age_threshold = min([threshold for threshold in GUEST_AGE_BUCKETS if threshold > age.total_seconds()])
+            age_threshold = min(threshold for threshold in GUEST_AGE_BUCKETS if threshold > age.total_seconds())
 
             self.GUEST_AGES.labels(state=state, pool=poolname, age_threshold=age_threshold).inc()
 
@@ -1733,7 +1733,7 @@ class RoutingMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, RoutingMetrics._KEY_RULINGS, '{}:{}:yes'.format(policy_name, pool_name))
+        inc_metric_field(logger, cache, RoutingMetrics._KEY_RULINGS, f'{policy_name}:{pool_name}:yes')
         return Ok(None)
 
     @staticmethod
@@ -1754,7 +1754,7 @@ class RoutingMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, RoutingMetrics._KEY_RULINGS, '{}:{}:no'.format(policy_name, pool_name))
+        inc_metric_field(logger, cache, RoutingMetrics._KEY_RULINGS, f'{policy_name}:{pool_name}:no')
         return Ok(None)
 
     @with_context
@@ -1770,7 +1770,7 @@ class RoutingMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super(RoutingMetrics, self).sync()
+        super().sync()
 
         self.policy_calls = {
             field: count
@@ -1793,7 +1793,7 @@ class RoutingMetrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super(RoutingMetrics, self).register_with_prometheus(registry)
+        super().register_with_prometheus(registry)
 
         self.OVERALL_POLICY_CALLS_COUNT = Counter(
             'overall_policy_calls_count',
@@ -1821,7 +1821,7 @@ class RoutingMetrics(MetricsBase):
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super(RoutingMetrics, self).update_prometheus()
+        super().update_prometheus()
 
         for policy_name, count in self.policy_calls.items():
             self.OVERALL_POLICY_CALLS_COUNT.labels(policy=policy_name)._value.set(count)
@@ -1875,7 +1875,7 @@ class TaskMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_MESSAGES, f'{queue}:{actor}')
         return Ok(None)
 
     @staticmethod
@@ -1896,7 +1896,7 @@ class TaskMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_ERRORED_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_ERRORED_MESSAGES, f'{queue}:{actor}')
         return Ok(None)
 
     @staticmethod
@@ -1917,7 +1917,7 @@ class TaskMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_RETRIED_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_RETRIED_MESSAGES, f'{queue}:{actor}')
         return Ok(None)
 
     @staticmethod
@@ -1938,7 +1938,7 @@ class TaskMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_REJECTED_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_REJECTED_MESSAGES, f'{queue}:{actor}')
         return Ok(None)
 
     @staticmethod
@@ -1959,7 +1959,7 @@ class TaskMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_MESSAGES, f'{queue}:{actor}')
         return Ok(None)
 
     @staticmethod
@@ -1980,7 +1980,7 @@ class TaskMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        dec_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_MESSAGES, '{}:{}'.format(queue, actor))
+        dec_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_MESSAGES, f'{queue}:{actor}')
         return Ok(None)
 
     @staticmethod
@@ -2001,7 +2001,7 @@ class TaskMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, '{}:{}'.format(queue, actor))
+        inc_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, f'{queue}:{actor}')
         return Ok(None)
 
     @staticmethod
@@ -2022,7 +2022,7 @@ class TaskMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        dec_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, '{}:{}'.format(queue, actor))
+        dec_metric_field(logger, cache, TaskMetrics._KEY_CURRENT_DELAYED_MESSAGES, f'{queue}:{actor}')
         return Ok(None)
 
     @staticmethod
@@ -2049,7 +2049,7 @@ class TaskMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        bucket = min([threshold for threshold in MESSAGE_DURATION_BUCKETS if threshold > duration])
+        bucket = min(threshold for threshold in MESSAGE_DURATION_BUCKETS if threshold > duration)
 
         inc_metric_field(
             logger,
@@ -2073,7 +2073,7 @@ class TaskMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super(TaskMetrics, self).sync()
+        super().sync()
 
         # queue:actor => count
         self.overall_message_count = {
@@ -2119,7 +2119,7 @@ class TaskMetrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super(TaskMetrics, self).register_with_prometheus(registry)
+        super().register_with_prometheus(registry)
 
         self.OVERALL_MESSAGE_COUNT = Counter(
             'overall_message_count',
@@ -2180,7 +2180,7 @@ class TaskMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super(TaskMetrics, self).update_prometheus()
+        super().update_prometheus()
 
         def _update_counter(prom_metric: Counter, source: Dict[Tuple[str, str], int]) -> None:
             reset_counters(prom_metric)
@@ -2246,13 +2246,13 @@ class APIMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        bucket = min([threshold for threshold in HTTP_REQUEST_DURATION_BUCKETS if threshold > duration])
+        bucket = min(threshold for threshold in HTTP_REQUEST_DURATION_BUCKETS if threshold > duration)
 
         inc_metric_field(
             logger,
             cache,
             APIMetrics._KEY_REQUEST_DURATIONS,
-            '{}:{}:{}'.format(method, bucket, path)
+            f'{method}:{bucket}:{path}'
         )
 
         return Ok(None)
@@ -2277,7 +2277,7 @@ class APIMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, APIMetrics._KEY_REQUEST_COUNT, '{}:{}:{}'.format(method, status, path))
+        inc_metric_field(logger, cache, APIMetrics._KEY_REQUEST_COUNT, f'{method}:{status}:{path}')
         return Ok(None)
 
     @staticmethod
@@ -2298,7 +2298,7 @@ class APIMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, '{}:{}'.format(method, path))
+        inc_metric_field(logger, cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, f'{method}:{path}')
         return Ok(None)
 
     @staticmethod
@@ -2319,7 +2319,7 @@ class APIMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        dec_metric_field(logger, cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, '{}:{}'.format(method, path))
+        dec_metric_field(logger, cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, f'{method}:{path}')
         return Ok(None)
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -2329,7 +2329,7 @@ class APIMetrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super(APIMetrics, self).register_with_prometheus(registry)
+        super().register_with_prometheus(registry)
 
         self.REQUEST_DURATIONS = Histogram(
             'http_request_duration_milliseconds',
@@ -2362,7 +2362,7 @@ class APIMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super(APIMetrics, self).sync()
+        super().sync()
 
         # NOTE: some paths may contain `:` => `path` must be the last bit, and `split()` must be called
         # with limited number of splits to prevent `path` exploding.
@@ -2390,7 +2390,7 @@ class APIMetrics(MetricsBase):
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super(APIMetrics, self).update_prometheus()
+        super().update_prometheus()
 
         # Reset all duration buckets and sums first
         reset_histogram(self.REQUEST_DURATIONS)
@@ -2492,7 +2492,7 @@ class WorkerMetrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super(WorkerMetrics, self).register_with_prometheus(registry)
+        super().register_with_prometheus(registry)
 
         self.WORKER_PROCESS_COUNT = Gauge(
             'worker_process_count',
@@ -2524,7 +2524,7 @@ class WorkerMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super(WorkerMetrics, self).sync()
+        super().sync()
 
         self.worker_process_count = {
             metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
@@ -2546,7 +2546,7 @@ class WorkerMetrics(MetricsBase):
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super(WorkerMetrics, self).update_prometheus()
+        super().update_prometheus()
 
         reset_counters(self.WORKER_PROCESS_COUNT)
         reset_counters(self.WORKER_THREAD_COUNT)
@@ -2649,7 +2649,7 @@ class Metrics(MetricsBase):
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super(Metrics, self).register_with_prometheus(registry)
+        super().register_with_prometheus(registry)
 
         self._registry = registry
 

@@ -5,6 +5,7 @@ import contextvars
 import logging
 import os
 from typing import Any, Callable, Generator, Optional, cast
+from unittest.mock import MagicMock
 
 import _pytest.config.argparsing
 import _pytest.fixtures
@@ -21,7 +22,6 @@ import redislite
 import sqlalchemy.engine.interfaces
 import sqlalchemy.engine.url
 import sqlalchemy_utils.functions
-from mock import MagicMock
 
 import alembic
 import alembic.config

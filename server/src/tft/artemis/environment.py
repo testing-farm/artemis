@@ -85,14 +85,14 @@ V = TypeVar('V', bound='_FlavorSequenceContainer')  # type: ignore[type-arg]  # 
 W = TypeVar('W', bound='FlavorDisk')
 
 
-ConstraintNameComponents = NamedTuple(
-    'ConstraintNameComponents',
-    [
-        ('property', str),
-        ('index', Optional[int]),
-        ('child_property', Optional[str])
-    ]
-)
+class ConstraintNameComponents(NamedTuple):
+    """
+    Components of a constraint name.
+    """
+
+    property: str
+    property_index: Optional[int]
+    child_property: Optional[str]
 
 
 class _FlavorSubsystemContainer(SerializableContainer):
@@ -336,7 +336,7 @@ class FlavorDisk(_FlavorSubsystemContainer):
         :returns: serialized form of flavor properties.
         """
 
-        serialized = super(FlavorDisk, self).serialize()
+        serialized = super().serialize()
 
         if self.size is not None:
             serialized['size'] = str(self.size)
@@ -358,7 +358,7 @@ class FlavorDisk(_FlavorSubsystemContainer):
         :returns: disk properties of a flavor.
         """
 
-        disk = super(FlavorDisk, cls).unserialize(serialized)
+        disk = super().unserialize(serialized)
 
         if disk.size is not None:
             disk.size = UNITS(disk.size)
@@ -520,7 +520,7 @@ class Flavor(_FlavorSubsystemContainer):
         :returns: serialized form of flavor properties.
         """
 
-        serialized = super(Flavor, self).serialize()
+        serialized = super().serialize()
 
         if self.memory is not None:
             serialized['memory'] = str(self.memory)
@@ -549,7 +549,7 @@ class Flavor(_FlavorSubsystemContainer):
         :returns: flavor instance.
         """
 
-        flavor = super(Flavor, cls).unserialize(serialized)
+        flavor = super().unserialize(serialized)
 
         if flavor.memory is not None:
             flavor.memory = UNITS(flavor.memory)
@@ -647,7 +647,7 @@ class ParseError(Exception):
         :param message: optional error message.
         """
 
-        super(ParseError, self).__init__(message or 'failed to parse a constraint')
+        super().__init__(message or 'failed to parse a constraint')
 
         self.constraint_name = constraint_name
         self.raw_value = raw_value
@@ -1001,7 +1001,7 @@ class Constraint(ConstraintBase):
 
         return ConstraintNameComponents(
             property=groups['property_name'],
-            index=int(groups['index']) if groups['index'] is not None else None,
+            property_index=int(groups['index']) if groups['index'] is not None else None,
             child_property=groups['child_property_name']
         )
 
@@ -1109,7 +1109,7 @@ class And(CompoundConstraint):
         :param constraints: list of constraints to group.
         """
 
-        super(And, self).__init__(_reduce_all, constraints=constraints)
+        super().__init__(_reduce_all, constraints=constraints)
 
     def spans(
         self,
@@ -1164,7 +1164,7 @@ class Or(CompoundConstraint):
         :param constraints: list of constraints to group.
         """
 
-        super(Or, self).__init__(_reduce_any, constraints=constraints)
+        super().__init__(_reduce_any, constraints=constraints)
 
     def spans(
         self,

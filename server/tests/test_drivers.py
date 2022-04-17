@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from typing import Optional, Pattern, cast
+from unittest.mock import MagicMock
 
 import gluetool
 import gluetool.log
 import pytest
 import sqlalchemy
 from gluetool.result import Error, Ok, Result
-from mock import MagicMock
 
 import tft.artemis
 import tft.artemis.drivers

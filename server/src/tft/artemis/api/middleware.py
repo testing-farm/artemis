@@ -88,7 +88,7 @@ AUTH_CTX_HEADER = 'x-auth-ctx'
 
 
 def matches_path(request: Request, patterns: List[Pattern[str]]) -> bool:
-    return any((pattern.match(request.path) for pattern in patterns))
+    return any(pattern.match(request.path) for pattern in patterns)
 
 
 @dataclasses.dataclass

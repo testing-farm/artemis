@@ -40,7 +40,7 @@ def validate_config(
         return Error(r_validation.unwrap_error())
 
     validation_errors += [
-        'server: {}'.format(error)
+        f'server: {error}'
         for error in r_validation.unwrap()
     ]
 
@@ -108,7 +108,7 @@ def config_to_db(
     with db.get_session() as session:
         def _add_tags(poolname: str, input_tags: GuestTagsType) -> None:
             for tag, value in input_tags.items():
-                logger.info('  Adding {}={}'.format(tag, value))
+                logger.info(f'  Adding {tag}={value}')
 
                 r = upsert(
                     logger,
@@ -137,7 +137,7 @@ def config_to_db(
         for pool_config in server_config.get('pools', []):
             poolname = pool_config['name']
 
-            logger.info('Adding pool-level guest tags for pool {}'.format(poolname))
+            logger.info(f'Adding pool-level guest tags for pool {poolname}')
 
             _add_tags(poolname, cast(GuestTagsType, pool_config.get('guest_tags', {})))
 
@@ -204,7 +204,7 @@ def config_to_db(
 
         # Insert our bootstrap users.
         def _add_user(username: str, role: UserRoles) -> None:
-            logger.info('Adding user "{}" with role "{}"'.format(username, role.name))
+            logger.info(f'Adding user "{username}" with role "{role.name}"')
 
             # TODO: must handle case when the user exists, since we basically overwrite the tokens...
             admin_token, admin_token_hash = User.generate_token()
