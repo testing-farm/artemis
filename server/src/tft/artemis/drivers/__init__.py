@@ -1342,7 +1342,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if constraints is None:
             return Ok(flavors)
 
-        gluetool.log.log_blob(logger.debug, 'constraint', constraints.format())  # noqa: FS002
+        log_dict_yaml(logger.debug, 'constraint', constraints.serialize())
 
         # The actual filter: pick flavors that pass the test and match the requirements.
         suitable_flavors = []
@@ -1368,7 +1368,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         gluetool.log.log_dict(logger.debug, 'sorted suitable flavors', sorted_suitable_flavors)
 
         gluetool.log.log_dict(logger.debug, 'environment', environment.serialize())
-        gluetool.log.log_blob(logger.debug, 'constraints', constraints.format())  # noqa: FS002
+        log_dict_yaml(logger.debug, 'constraints', constraints.serialize())
 
         return Ok(sorted_suitable_flavors)
 

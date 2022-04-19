@@ -180,7 +180,7 @@ def constraint_to_beaker_filter(
 
             return Error(Failure(
                 'constraint not supported by driver',
-                constraint=constraint.format()  # noqa: FS002
+                constraint=repr(constraint)
             ))
 
     if constraint_name.property == 'cpu':
@@ -210,7 +210,7 @@ def constraint_to_beaker_filter(
         else:
             return Error(Failure(
                 'contraint not supported by driver',
-                constraint=constraint.format()  # noqa: FS002
+                constraint=repr(constraint)
             ))
 
         return Ok(cpu)
@@ -235,7 +235,7 @@ def constraint_to_beaker_filter(
         else:
             return Error(Failure(
                 'contraint not supported by driver',
-                constraint=constraint.format(),  # noqa: FS002
+                constraint=repr(constraint),
                 constraint_name=constraint.name
             ))
 
@@ -277,7 +277,7 @@ def constraint_to_beaker_filter(
 
     return Error(Failure(
         'contraint not supported by driver',
-        constraint=constraint.format(),  # noqa: FS002
+        constraint=repr(constraint),
         constraint_name=constraint.name
     ))
 

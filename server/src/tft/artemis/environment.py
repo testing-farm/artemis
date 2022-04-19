@@ -653,7 +653,7 @@ class ParseError(Exception):
         self.raw_value = raw_value
 
 
-class ConstraintBase:
+class ConstraintBase(SerializableContainer):
     """
     Base class for all classes representing one or more constraints.
     """
@@ -707,36 +707,6 @@ class ConstraintBase:
 
         yield (members or []) + [self]
 
-    def format(self, prefix: str = '') -> str:
-        """
-        Return pretty text representation of this constraint.
-
-        The output provides nicer formatting for humans to easier grasp the tree-like nature of the constraint tree.
-
-        :param prefix: characters to prepend to each line of the formatted output.
-        :returns: prettified, human-readable rendering of the constraint.
-        """
-
-        return '<not implemented>'
-
-    def __repr__(self) -> str:
-        """
-        Return text representation of the constraint suitable for logging.
-
-        :returns: human-readable rendering of the constraint.
-        """
-
-        return self.format()  # noqa: FS002
-
-    def __str__(self) -> str:
-        """
-        Return text representation of the constraint suitable for logging.
-
-        :returns: human-readable rendering of the constraint.
-        """
-
-        return self.format()  # noqa: FS002
-
 
 ReducerType = Callable[[Iterable[Result[bool, Failure]]], Result[bool, Failure]]
 
@@ -782,6 +752,39 @@ class CompoundConstraint(ConstraintBase):
 
         self.reducer = reducer
         self.constraints = constraints or []
+
+    def serialize(self) -> Dict[str, Any]:
+        """
+        Return Python built-in types representing the content of this container.
+
+        Works in a recursive manner, every container member that's a subclass of :py:class:`SerializableContainer`
+        is processed as well.
+
+        See :py:meth:`unserialize` for the reversal operation.
+
+        :returns: serialized form of this constraint.
+        """
+
+        return {
+            self.__class__.__name__.lower(): [
+                constraint.serialize() for constraint in self.constraints
+            ]
+        }
+
+    @classmethod
+    def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
+        """
+        Create container instance representing the content described with Python built-in types.
+
+        Every container member whose type is a subclass of :py:class:`SerializableContainer` is restored as well.
+
+        See :py:meth:`serialize` for the reversal operation.
+
+        :param serialized: serialized form of the container.
+        :raises NotImplementedError: this method is left intentionally not implemented.
+        """
+
+        raise NotImplementedError()
 
     def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Result[bool, Failure]:
         """
@@ -855,30 +858,6 @@ class CompoundConstraint(ConstraintBase):
         """
 
         raise NotImplementedError()
-
-    def format(self, prefix: str = '') -> str:
-        """
-        Return pretty text representation of this constraint.
-
-        The output provides nicer formatting for humans to easier grasp the tree-like nature of the constraint tree.
-
-        :param prefix: characters to prepend to each line of the formatted output.
-        :returns: prettified, human-readable rendering of the constraint.
-        """
-
-        if len(self.constraints) == 1:
-            return f'{prefix}{self.constraints[0].format()}'
-
-        lines = [
-            f'{prefix}{self.__class__.__name__}['
-        ] + [
-            constraint.format(prefix=prefix + '    ')  # noqa: FS002
-            for constraint in self.constraints
-        ] + [
-            f'{prefix}]'
-        ]
-
-        return '\n'.join(lines)
 
 
 @dataclasses.dataclass(repr=False)
@@ -985,6 +964,35 @@ class Constraint(ConstraintBase):
             raw_value=value
         )
 
+    def serialize(self) -> str:  # type: ignore[override]
+        """
+        Return Python built-in types representing the content of this container.
+
+        Works in a recursive manner, every container member that's a subclass of :py:class:`SerializableContainer`
+        is processed as well.
+
+        See :py:meth:`unserialize` for the reversal operation.
+
+        :returns: serialized form of this constraint.
+        """
+
+        return f'{self.name} {self.operator.value} {self.value}'
+
+    @classmethod
+    def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
+        """
+        Create container instance representing the content described with Python built-in types.
+
+        Every container member whose type is a subclass of :py:class:`SerializableContainer` is restored as well.
+
+        See :py:meth:`serialize` for the reversal operation.
+
+        :param serialized: serialized form of the container.
+        :raises NotImplementedError: this method is left intentionally not implemented.
+        """
+
+        raise NotImplementedError()
+
     def expand_name(self) -> ConstraintNameComponents:
         """
         Expand constraint name into its components.
@@ -1014,15 +1022,6 @@ class Constraint(ConstraintBase):
 
         self.operator = operator
         self.operator_handler = OPERATOR_TO_HANDLER[operator]
-
-    def __repr__(self) -> str:
-        """
-        Return text representation of the constrain suitable for logging.
-
-        :returns: human-readable rendering of the constraint.
-        """
-
-        return f'(FLAVOR.{self.name} {self.operator.value} {self.value})'
 
     def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Result[bool, Failure]:
         """
@@ -1083,20 +1082,8 @@ class Constraint(ConstraintBase):
 
         return Ok(result)
 
-    def format(self, prefix: str = '') -> str:
-        """
-        Return pretty text representation of this constraint.
 
-        The output provides nicer formatting for humans to easier grasp the tree-like nature of the constraint tree.
-
-        :param prefix: characters to prepend to each line of the formatted output.
-        :returns: prettified, human-readable rendering of the constraint.
-        """
-
-        return f'{prefix}(FLAVOR.{self.name} {self.operator.value} {self.value})'
-
-
-@dataclasses.dataclass
+@dataclasses.dataclass(repr=False)
 class And(CompoundConstraint):
     """
     Represents constraints that are grouped in ``and`` fashion.
@@ -1151,7 +1138,7 @@ class And(CompoundConstraint):
             yield members + sum(compounds, []) + simple_constraints
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(repr=False)
 class Or(CompoundConstraint):
     """
     Represents constraints that are grouped in ``or`` fashion.

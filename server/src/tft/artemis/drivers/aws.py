@@ -736,7 +736,7 @@ def setup_extra_volumes(
 
         return Error(Failure(
             'cannot honor constraint',
-            constraint=constraint.format()  # noqa: FS002
+            constraint=repr(constraint)
         ))
 
     return Ok(mappings)

@@ -59,8 +59,7 @@ NESTING_CONTAINER_AS_STRING = textwrap.dedent(
     foo: some foo value
     child:
         bar: some bar value
-    baz: 79
-    """
+    baz: 79"""
 ).lstrip()
 
 
@@ -95,7 +94,7 @@ def test_yaml() -> None:
 
     serialized = foo.serialize_to_yaml()
 
-    assert serialized == 'bar: 79\nbaz: []\n'
+    assert serialized == 'bar: 79\nbaz: []'
 
     bar = Container.unserialize_from_yaml(serialized)
 

@@ -1,7 +1,6 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import contextvars
 import dataclasses
 import inspect
 import itertools
@@ -121,11 +120,6 @@ FailureDetailsType = Dict[str, Any]
 JSONType = Union[str, int, float, List[Any], Dict[Any, Any], None]
 
 
-# Special context variable for YAML processor. `ruamel.YAML` instances keep internal state, and as such they cannot
-# be shared between threads without some kind of serialization. Rather than introducing a lock, we can use context
-# and keep a `YAML` instance for each thread. With a wrapper function, we can initialize missing instances when
-# accessed for the first time (`contextvars` package does not support default factory).
-_YAML: contextvars.ContextVar[Optional[ruamel.yaml.main.YAML]] = contextvars.ContextVar('_YAML', default=None)
 _YAML_DUMPABLE_CLASSES: MutableSet[Type[object]] = set()
 
 
@@ -134,14 +128,10 @@ def get_yaml() -> ruamel.yaml.main.YAML:
     Return a fully initialized instance of YAML processor.
     """
 
-    YAML = _YAML.get()
+    YAML = gluetool.utils.YAML()
 
-    if YAML is None:
-        YAML = gluetool.utils.YAML()
-        _YAML.set(YAML)
-
-        for cls in _YAML_DUMPABLE_CLASSES:
-            YAML.register_class(cls)
+    for cls in _YAML_DUMPABLE_CLASSES:
+        YAML.register_class(cls)
 
     return YAML
 
@@ -379,7 +369,13 @@ def format_dict_yaml(data: Any) -> str:
 
     ruamel.yaml.scalarstring.walk_tree(data)
 
-    YAML.dump(data, stream)
+    def strip_document_end_marker(s: str) -> str:
+        if s.endswith('...\n'):
+            s = s[:-4]
+
+        return s.strip()
+
+    YAML.dump(data, stream, transform=strip_document_end_marker)
 
     return stream.getvalue()
 
