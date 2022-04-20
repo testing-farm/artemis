@@ -763,11 +763,7 @@ class Failure:
         extra['message'] = self.message
         extra['recoverable'] = self.recoverable
         extra['fail_guest_request'] = self.fail_guest_request
-
-        extra.update({
-            f'env.{name}': value
-            for name, value in os.environ.items()
-        })
+        extra['env'] = os.environ.copy()
 
         if 'scrubbed_command' in extra:
             extra['scrubbed_command'] = gluetool.utils.format_command_line([extra['scrubbed_command']])
