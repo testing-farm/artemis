@@ -13,7 +13,7 @@ import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
 from tft.artemis.environment import UNITS, ConstraintBase, Environment, Flavor, FlavorBoot, FlavorCpu, FlavorNetwork, \
-    FlavorNetworks
+    FlavorNetworks, FlavorVirtualization
 
 
 @pytest.fixture(name='schema_v0_0_19')
@@ -586,6 +586,141 @@ def test_example_boot_not(logger: ContextAdapter) -> None:
             boot=FlavorBoot(
                 method=['bios', 'uefi']
             )
+        )
+    ) is False
+
+
+def test_example_virtualization_is_virtualized(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        virtualization:
+          is-virtualized: true
+        """
+    )
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            virtualization=FlavorVirtualization(
+                is_virtualized=True
+            )
+        )
+    ) is True
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            virtualization=FlavorVirtualization(
+                is_virtualized=False
+            )
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            virtualization=FlavorVirtualization()
+        )
+    ) is False
+
+
+def test_example_virtualization_is_supported(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        virtualization:
+          is-supported: true
+        """
+    )
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            virtualization=FlavorVirtualization(
+                is_supported=True
+            )
+        )
+    ) is True
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            virtualization=FlavorVirtualization(
+                is_supported=False
+            )
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            virtualization=FlavorVirtualization()
+        )
+    ) is False
+
+
+def test_example_virtualization_hypervisor(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        virtualization:
+          hypervisor: xen
+        """
+    )
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            virtualization=FlavorVirtualization(
+                hypervisor='xen'
+            )
+        )
+    ) is True
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            virtualization=FlavorVirtualization(
+                hypervisor='kvm'
+            )
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            virtualization=FlavorVirtualization()
         )
     ) is False
 
