@@ -970,10 +970,6 @@ class GuestRequest(Base):
             **details
         )
 
-    @property
-    def is_promised(self) -> bool:
-        return self.address is None
-
     def fetch_events(
         self,
         session: sqlalchemy.orm.session.Session,
