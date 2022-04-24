@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
     from . import Failure
     from .environment import Environment
+    from .tasks import Actor, ActorArgumentType
 
 
 # Type variables for use in our generic types
@@ -239,6 +240,101 @@ def stringify_query(session: sqlalchemy.orm.session.Session, query: Any) -> str:
     """
 
     return str(query.compile(dialect=session.bind.dialect))
+
+
+def execute_db_statement(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    statement: Union[sqlalchemy.insert, sqlalchemy.update, sqlalchemy.delete],
+    expected_records: Union[int, Tuple[int, int]] = 1,
+) -> Result[Optional[Any], 'Failure']:
+    """
+    Execute a given SQL query, ``INSERT``, ``UPDATE`` or ``DELETE``.
+
+    .. note::
+
+       This routine should replace :py:func:`safe_db_change` one day: we use ``safe_db_change()`` to perform
+       changes that must be synchronized with other actions, like dispatching tasks, which is something
+       we are moving to different implementation based on transaction outbox.
+    """
+
+    from . import Failure
+
+    def to_failure(exc: Exception) -> Failure:
+        if isinstance(exc, sqlalchemy.exc.StatementError):
+            return Failure.from_exc(
+                'failed to execute DB statement',
+                exc,
+                statement=exc.statement,
+                serialization_failure=False
+            )
+
+        return Failure.from_exc(
+            'failed to execute DB statement',
+            exc,
+            serialization_failure=False
+        )
+
+    try:
+        result = cast(
+            sqlalchemy.engine.ResultProxy,
+            session.execute(statement)
+        )
+
+        if result.is_insert:
+            # TODO: INSERT sets this correctly, but what about INSERT + ON CONFLICT? If the row exists,
+            # TODO: rowcount is set to 0, but the (optional) UPDATE did happen, so... UPSERT should probably
+            # TODO: be ready to accept both 0 and 1. We might need to return more than just true/false for
+            # TODO: ON CONFLICT to become auditable.
+            affected_rows = result.rowcount
+
+        else:
+            affected_rows = result.rowcount
+
+        if isinstance(expected_records, tuple) \
+           and not (expected_records[0] <= affected_rows <= expected_records[1]):
+            return Error(Failure(
+                'unexpected number of affected rows',
+                statement=stringify_query(session, statement),
+                serialization_failure=False,
+                affected_rows=affected_rows,
+                expected_affected_rows_min=expected_records[0],
+                expected_affected_rows_max=expected_records[1]
+            ))
+
+        elif affected_rows != expected_records:
+            return Error(Failure(
+                'unexpected number of affected rows',
+                statement=stringify_query(session, statement),
+                serialization_failure=False,
+                affected_rows=affected_rows,
+                expected_affected_rows=expected_records
+            ))
+
+        logger.debug(f'found {affected_rows} matching rows, as expected')
+
+    except sqlalchemy.exc.OperationalError as exc:
+        if not isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
+           or exc.orig.pgerror.strip() != 'ERROR:  could not serialize access due to concurrent update':
+
+            return Error(to_failure(exc))
+
+        return Error(Failure(
+            'failed to execute DB statement',
+            query=exc.statement,
+            serialization_failure=True
+        ))
+
+    except Exception as exc:
+        return Error(to_failure(exc))
+
+    else:
+        if result.is_insert:
+            logger.debug(f'created record with primary key {result.inserted_primary_key}')
+
+            return Ok(result.inserted_primary_key)
+
+        return Ok(None)
 
 
 def safe_db_change(
@@ -646,6 +742,67 @@ class Pool(Base):
         return cast(Dict[str, Any], self._parameters)
 
     guests = relationship('GuestRequest', back_populates='pool')
+
+
+class TaskRequest(Base):
+    """
+    A request to run a task by dispatcher.
+
+    Dispatching a task immediately, e.g. with :py:func:`tft.artemis.tasks.dispatch_task`, might be easier
+    but also prone to condition known as "dual write": when task is a follow-up of a DB change, it's impossible
+    to guarantee that either both (the DB change and message dispatch) or none of those are performed, with DB
+    or broker transactions only.
+
+    A solution most suitable to us is called "transaction outbox": instead of dispatching a task, a DB record
+    is created within the same transaction as the original DB change. These "task requests" are then read by
+    another service that transforms them into actual broker messages, removing the DB record after successfull
+    dispatch.
+
+    Thanks to this split, we can guarantee a both DB change and the need for a follow-up message are safely stored.
+
+    * https://microservices.io/patterns/data/transactional-outbox.html
+    """
+
+    __tablename__ = 'task_requests'
+
+    id = Column(Integer(), primary_key=True, autoincrement=True)
+    taskname = Column(Text(), nullable=False)
+    arguments = Column(JSON(), nullable=False)
+    delay = Column(Integer(), nullable=True)
+
+    @classmethod
+    def create_query(
+        cls,
+        task: 'Actor',
+        *args: 'ActorArgumentType',
+        delay: Optional[int] = None
+    ) -> sqlalchemy.insert:
+        """
+        """
+
+        return sqlalchemy.insert(cls.__table__).values(
+            taskname=task.actor_name,
+            arguments=list(args),
+            delay=delay
+        )
+
+    @classmethod
+    def create(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        task: 'Actor',
+        *args: 'ActorArgumentType',
+        delay: Optional[int] = None
+    ) -> Result[int, 'Failure']:
+        stmt = cls.create_query(task, *args, delay=delay)
+
+        r = execute_db_statement(logger, session, stmt)
+
+        if r.is_error:
+            return Error(r.unwrap_error())
+
+        return Ok(cast(Tuple[int], r.unwrap())[0])
 
 
 UserDataType = Dict[str, Optional[str]]

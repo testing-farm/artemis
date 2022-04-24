@@ -49,7 +49,7 @@ from ..guest import GuestState
 from ..knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_JSON, \
     KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK, Knob
 from ..script import hook_engine
-from ..tasks import Actor, _get_ssh_key, get_snapshot_logger
+from ..tasks import Actor, _get_ssh_key, format_task_invocation, get_snapshot_logger
 from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
@@ -627,7 +627,7 @@ class GuestRequestManager:
         logger: gluetool.log.ContextAdapter,
         environment_schema: JSONSchemaType
     ) -> GuestResponse:
-        from ..tasks import dispatch_task, get_guest_logger
+        from ..tasks import get_guest_logger
         from ..tasks.route_guest_request import route_guest_request
 
         guestname = str(uuid.uuid4())
@@ -667,7 +667,7 @@ class GuestRequestManager:
                     failure_details=failure_details
                 )
 
-        with self.db.get_session() as session:
+        with self.db.get_session(transactional=True) as session:
             SESSION.set(session)
 
             # Check whether key exists - still open to race condition, but the window is quite short,
@@ -709,25 +709,28 @@ class GuestRequestManager:
                         failure_details=failure_details
                     )
 
-            perform_safe_db_change(
-                guest_logger,
-                session,
-                artemis_db.GuestRequest.create_query(
-                    guestname=guestname,
-                    environment=environment,
-                    ownername=DEFAULT_GUEST_REQUEST_OWNER,
-                    ssh_keyname=guest_request.keyname,
-                    ssh_port=DEFAULT_SSH_PORT,
-                    ssh_username=DEFAULT_SSH_USERNAME,
-                    priorityname=guest_request.priority_group,
-                    user_data=guest_request.user_data,
-                    skip_prepare_verify_ssh=guest_request.skip_prepare_verify_ssh,
-                    post_install_script=guest_request.post_install_script,
-                    log_types=log_types,
-                ),
-                conflict_error=errors.InternalServerError,
-                failure_details=failure_details
+            create_guest_stmt = artemis_db.GuestRequest.create_query(
+                guestname=guestname,
+                environment=environment,
+                ownername=DEFAULT_GUEST_REQUEST_OWNER,
+                ssh_keyname=guest_request.keyname,
+                ssh_port=DEFAULT_SSH_PORT,
+                ssh_username=DEFAULT_SSH_USERNAME,
+                priorityname=guest_request.priority_group,
+                user_data=guest_request.user_data,
+                skip_prepare_verify_ssh=guest_request.skip_prepare_verify_ssh,
+                post_install_script=guest_request.post_install_script,
+                log_types=log_types
             )
+
+            r_create = artemis_db.execute_db_statement(guest_logger, session, create_guest_stmt)
+
+            if r_create.is_error:
+                raise errors.InternalServerError(
+                    logger=guest_logger,
+                    caused_by=r_create.unwrap_error(),
+                    failure_details=failure_details
+                )
 
             artemis_db.GuestRequest.log_event_by_guestname(
                 guest_logger,
@@ -740,41 +743,19 @@ class GuestRequestManager:
                 }
             )
 
-            r_dispatch = dispatch_task(guest_logger, route_guest_request, guestname)
+            r_task = artemis_db.TaskRequest.create(guest_logger, session, route_guest_request, guestname)
 
-            if r_dispatch.is_error:
-                # Now we're in a pickle. We successfully created a new guest request, but we failed to start
-                # the provisioning chain of tasks. We can't retry too much, because we need to send a response
-                # to client Soon (TM), and we can't leave the guest request in the database, because we won't
-                # provision it. We could try to remove it, but what if we fail to do so? We risk we'd be stuck
-                # with an orphaned guest request.
-                #
-                # Transactions probably would help - we could prepare the addition, but not commit the change,
-                # try to dispatch and only commit when we succeed. But there's a race condition: what if the
-                # freshly dispatched task is executed before our commit and finds no guest record?
-                #
-                # At this moment, we try to do the following: at least handle the dispatch failure, then try to
-                # remove the record from database - and report a internal error in any case.
-
-                r_dispatch.unwrap_error().handle(guest_logger)
-
-                perform_safe_db_change(
-                    guest_logger,
-                    session,
-                    sqlalchemy.delete(artemis_db.GuestRequest.__table__).where(
-                        artemis_db.GuestRequest.guestname == guestname
-                    ),
-                    conflict_error=errors.InternalServerError,
-                    failure_details=failure_details
-                )
-
-                # We successfully removed the request, but return the internal error anyway because of the
-                # failed dispatch.
+            if r_task.is_error:
                 raise errors.InternalServerError(
                     logger=guest_logger,
-                    caused_by=r_dispatch.unwrap_error(),
+                    caused_by=r_task.unwrap_error(),
                     failure_details=failure_details
                 )
+
+            guest_logger.info('created')
+            guest_logger.info(
+                f'requested task #{r_task.unwrap()} {format_task_invocation(route_guest_request, guestname)}'
+            )
 
             # Everything went well, update our accounting.
             metrics.ProvisioningMetrics.inc_requested()
@@ -809,7 +790,7 @@ class GuestRequestManager:
             return GuestResponse.from_db(guest_request_record)
 
     def delete_by_guestname(self, guestname: str, request: Request, logger: gluetool.log.ContextAdapter) -> None:
-        from ..tasks import dispatch_task, get_guest_logger, release_guest_request
+        from ..tasks import get_guest_logger, release_guest_request
 
         failure_details = {
             'guestname': guestname
@@ -852,12 +833,28 @@ class GuestRequestManager:
                     .where(snapshot_count_subquery.c.snapshot_count == 0) \
                     .values(state=GuestState.CONDEMNED)
 
+                r_state = artemis_db.execute_db_statement(guest_logger, session, query)
+
                 # The query can miss either with existing snapshots, or when the guest request has been
                 # removed from DB already. The "gone already" situation could be better expressed by
                 # returning "404 Not Found", but we can't tell which of these two situations caused the
                 # change to go vain, therefore returning general "409 Conflict", expressing our believe
                 # user should resolve the conflict and try again.
-                perform_safe_db_change(guest_logger, session, query)
+                if r_state.is_error:
+                    failure = r_state.unwrap_error()
+
+                    if failure.details.get('serialization_failure', False):
+                        raise errors.ConflictError(
+                            logger=guest_logger,
+                            caused_by=failure,
+                            failure_details=failure_details
+                        )
+
+                    raise errors.InternalServerError(
+                        logger=guest_logger,
+                        caused_by=failure,
+                        failure_details=failure_details
+                    )
 
                 artemis_db.GuestRequest.log_event_by_guestname(
                     guest_logger,
@@ -866,31 +863,20 @@ class GuestRequestManager:
                     'condemned'
                 )
 
-            r_dispatch = dispatch_task(guest_logger, release_guest_request, guestname)
+                guest_logger.info('condemned')
 
-            if r_dispatch.is_error:
-                # This looks like a problem: we already marked the request as condemned, but we failed to dispatch
-                # the task. We can't undo that change, because we did not bother to save the original state.
-                #
-                # But this does not have to be an issue, because we can freely report this error to user, and
-                # ask him to try again since this change is idempotent - when marking the request as condemned,
-                # we don't check its current state. If the request is already condemned, we merely proceed to
-                # dispatch the task.
-                #
-                # This is not a perfect solution: if we fail to dispatch the task, we report the error and expect
-                # user to try again. User may decide to give up, leaving us with a condemned request and no release
-                # task to take care of it.
-                #
-                # The other possible course of action - mark the request as condemned and then use a dispatcher
-                # process to dispatch the task asynchronously - has its own issues. For example, when facing excess
-                # of messages to process, workers may take time to reach the release task we scheduled - dispatcher
-                # would keep dispatching the task because the request still exists and is still marked as condemned,
-                # adding even more messages to the mix.
+            r_task = artemis_db.TaskRequest.create(guest_logger, session, release_guest_request, guestname)
+
+            if r_task.is_error:
                 raise errors.InternalServerError(
                     logger=guest_logger,
-                    caused_by=r_dispatch.unwrap_error(),
+                    caused_by=r_task.unwrap_error(),
                     failure_details=failure_details
                 )
+
+            guest_logger.info(
+                f'requested task #{r_task.unwrap()} {format_task_invocation(release_guest_request, guestname)}'
+            )
 
     def acquire_guest_console_url(
         self,
