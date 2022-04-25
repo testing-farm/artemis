@@ -332,20 +332,22 @@ def cmd_guest_create(
         logger = Logger()
         # check that post_install_script is a valid file and read it
         if os.path.isfile(post_install_script):
+            logger.info("post-install-script argument is treated as a file")
             with open(post_install_script) as f:
                 post_install = f.read()
         # check that post_install_script is a valid url, if it is - try to download the script
         elif urllib.parse.urlparse(post_install_script).netloc:
             res = cfg.http_session.get(post_install_script)
             if res.ok:
+                logger.info("post-install-script argument is treated as a url")
                 # NOTE(ivasilev) content is bytes so a decode step is necessary
                 post_install = res.content.decode("utf-8")
-            else:
-                logger.error("Could not fetch post-install-script {}".format(post_install_script))
-        else:
-            # not a file and cant be downloaded
-            logger.error("Post-install-script {} is not present locally and can't be downloaded".format(
-                post_install_script))
+        # If neither of the first 2 steps worked - treat as raw data
+        if not post_install:
+            logger.info("post-install-script argument is treated as a raw script")
+            # Treat the data as script contents
+            # NOTE(ivasilev) Need to remove possible string escaping like \\n
+            post_install = post_install_script.replace('\\n', '\n')
 
     data['post_install_script'] = post_install
 
