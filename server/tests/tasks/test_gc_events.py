@@ -69,40 +69,40 @@ def _schema_empty(session: sqlalchemy.orm.session.Session, _schema_actual: None)
 @pytest.fixture
 def _schema_with_events(session: sqlalchemy.orm.session.Session, _schema_empty: None) -> None:
     # This one is owned by existing guest, but it's too young
-    session.add((
+    session.add(
         tft.artemis.db.GuestEvent(
             eventname='dummy-event-young',
             guestname='dummy-guest',
             updated=datetime.datetime.utcnow() - datetime.timedelta(seconds=KNOB_GC_EVENTS_THRESHOLD.value / 2)
         )
-    ))
+    )
 
     # This one is owned by existing guest, but it's old enough
-    session.add((
+    session.add(
         tft.artemis.db.GuestEvent(
             eventname='dummy-event-old',
             guestname='dummy-guest',
             updated=datetime.datetime.utcnow() - datetime.timedelta(seconds=KNOB_GC_EVENTS_THRESHOLD.value * 2)
         )
-    ))
+    )
 
     # This one is owned by nonexistent guest, but it's young
-    session.add((
+    session.add(
         tft.artemis.db.GuestEvent(
             eventname='dummy-event-young',
             guestname='dummy-removed-guest',
             updated=datetime.datetime.utcnow() - datetime.timedelta(seconds=KNOB_GC_EVENTS_THRESHOLD.value / 2)
         )
-    ))
+    )
 
     # This one is owned by nonexistent guest, but it's old enough
-    session.add((
+    session.add(
         tft.artemis.db.GuestEvent(
             eventname='dummy-event-old',
             guestname='dummy-removed-guest',
             updated=datetime.datetime.utcnow() - datetime.timedelta(seconds=KNOB_GC_EVENTS_THRESHOLD.value * 2)
         )
-    ))
+    )
 
     session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
 

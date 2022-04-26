@@ -58,7 +58,7 @@ class KnobSourceEnv(KnobSource[T]):
     """
 
     def __init__(self, knob: 'Knob[T]', envvar: str) -> None:
-        super(KnobSourceEnv, self).__init__(knob)
+        super().__init__(knob)
 
         self.envvar = envvar
 
@@ -144,7 +144,7 @@ class KnobSourceDefault(KnobSource[T]):
     """
 
     def __init__(self, knob: 'Knob[T]', default: T, default_label: Optional[str] = None) -> None:
-        super(KnobSourceDefault, self).__init__(knob)
+        super().__init__(knob)
 
         self.default = default
         self.default_label = default_label
@@ -261,7 +261,7 @@ class KnobSourceActual(KnobSource[T]):
     """
 
     def __init__(self, knob: 'Knob[T]', value: T) -> None:
-        super(KnobSourceActual, self).__init__(knob)
+        super().__init__(knob)
 
         self.value = value
 
@@ -276,7 +276,7 @@ class KnobSourceActual(KnobSource[T]):
 
 class KnobError(ValueError):
     def __init__(self, knob: 'Knob[T]', message: str, failure: Optional['Failure'] = None) -> None:
-        super(KnobError, self).__init__(f'Badly configured knob: {message}')
+        super().__init__(f'Badly configured knob: {message}')
 
         self.knobname = knob.knobname
         self.failure = failure
@@ -481,7 +481,7 @@ class Knob(Generic[T]):
         if self.cast_from_str:
             traits += [f'cast-from-str={self.cast_from_str.__name__}']
 
-        traits += sum([source.to_repr() for source in self._sources], [])
+        traits += sum((source.to_repr() for source in self._sources), [])
 
         return f'<Knob: {self.knobname}: {" ".join(traits)}>'
 
@@ -865,5 +865,5 @@ def get_vault_password() -> str:
     if password:
         return password
 
-    with open(KNOB_VAULT_PASSWORD_FILEPATH.value, 'r') as f:
+    with open(KNOB_VAULT_PASSWORD_FILEPATH.value) as f:
         return f.read()

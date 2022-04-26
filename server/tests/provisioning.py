@@ -140,7 +140,7 @@ class HerdPrinter(threading.Thread):
     KEEP_PRINTING = True
 
     def __init__(self, guests: List[GuestRequest]) -> None:
-        super(HerdPrinter, self).__init__(target=self.do_run, args=(guests,), daemon=False)
+        super().__init__(target=self.do_run, args=(guests,), daemon=False)
 
     def do_run(self, guests: List[GuestRequest]) -> None:
         start = datetime.datetime.utcnow()

@@ -3,6 +3,7 @@
 
 import logging
 from typing import Any, Dict, cast
+from unittest.mock import ANY, MagicMock
 
 import _pytest.logging
 import _pytest.monkeypatch
@@ -11,7 +12,6 @@ import dramatiq.message
 import dramatiq.middleware.retries
 import pytest
 from gluetool.log import ContextAdapter
-from mock import ANY, MagicMock
 
 import tft.artemis.db
 import tft.artemis.middleware

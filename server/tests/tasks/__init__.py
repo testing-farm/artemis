@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from typing import Any, Optional
-
-from mock import MagicMock
+from unittest.mock import MagicMock
 
 import tft.artemis.guest
 from tft.artemis.tasks import DoerType, TaskLogger

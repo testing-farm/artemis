@@ -360,7 +360,7 @@ def upsert(
     """
 
     if session.bind.dialect.name != 'postgresql':
-        raise gluetool.glue.GlueError('UPSERT is not support for dialect "{}"'.format(session.bind.dialect.name))
+        raise gluetool.glue.GlueError(f'UPSERT is not support for dialect "{session.bind.dialect.name}"')
 
     from sqlalchemy.dialects.postgresql import insert
 
@@ -1246,7 +1246,7 @@ class DB:
 
         self.logger = logger
 
-        logger.info('connecting to db {}'.format(url))
+        logger.info(f'connecting to db {url}')
 
         if KNOB_LOGGING_DB_QUERIES.value:
             gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
@@ -1305,7 +1305,7 @@ class DB:
     ) -> 'DB':
         with cls._lock:
             if cls.instance is None:
-                cls.instance = super(DB, cls).__new__(cls)
+                cls.instance = super().__new__(cls)
                 cls.instance._setup_instance(logger, url, application_name=application_name)
 
         return cls.instance

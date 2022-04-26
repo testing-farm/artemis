@@ -200,7 +200,7 @@ class JSONRenderer(molten.JSONRenderer):
         if isinstance(obj, enum.Enum):
             return obj.value
 
-        return super(JSONRenderer, self).default(obj)
+        return super().default(obj)
 
 
 class SchemaComponent(molten.components.SchemaComponent):
@@ -216,7 +216,7 @@ class SchemaComponent(molten.components.SchemaComponent):
         data: molten.typing.RequestData
     ) -> Any:
         try:
-            return super(SchemaComponent, self).resolve(parameter, data)
+            return super().resolve(parameter, data)
 
         except molten.errors.HTTPError as exc:
             raise errors.BadRequestError(
@@ -2180,7 +2180,7 @@ class OpenAPIHandler(_OpenAPIHandler):
     """
 
     def __call__(self, app: BaseApp) -> Response:  # type: ignore[override] # return type incompatible with supertype
-        super(OpenAPIHandler, self).__call__(app)
+        super().__call__(app)
 
         return Response(
             status=HTTP_200,

@@ -4,6 +4,7 @@
 import base64
 import re
 from typing import Any, Callable, List, Pattern, Tuple, cast
+from unittest.mock import MagicMock
 
 import _pytest.monkeypatch
 import gluetool.log
@@ -11,7 +12,6 @@ import molten
 import molten.testing
 import pytest
 import sqlalchemy
-from mock import MagicMock
 
 import tft.artemis.api
 import tft.artemis.api.middleware

@@ -4,13 +4,13 @@
 import json
 import threading
 from typing import Callable, Tuple, cast
+from unittest.mock import MagicMock
 
 import _pytest.logging
 import _pytest.monkeypatch
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
-from mock import MagicMock
 from pytest import fixture
 
 import tft.artemis.drivers

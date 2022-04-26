@@ -58,12 +58,9 @@ ConfigFlavorCPUSpecType = TypedDict(
 
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].disk (static disk)
-ConfigFlavorDiskSpecificSpecType = TypedDict(
-    'ConfigFlavorDiskSpecificSpecType',
-    {
-        'size': Optional[Union[int, str]]
-    }
-)
+class ConfigFlavorDiskSpecificSpecType(TypedDict):
+    size: Optional[Union[int, str]]
+
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].disk (expansion)
 ConfigFlavorDiskExpansionSpecType = TypedDict(
@@ -109,16 +106,13 @@ ConfigPatchFlavorSpecType = TypedDict(
 
 
 #: pools[].parameters.custom-flavors[]
-ConfigCustomFlavorSpecType = TypedDict(
-    'ConfigCustomFlavorSpecType',
-    {
-        'name': str,
-        'base': str,
-        'cpu': ConfigFlavorCPUSpecType,
-        'disk': List[ConfigFlavorDiskSpecType],
-        'virtualization': ConfigFlavorVirtualizationSpecType
-    }
-)
+class ConfigCustomFlavorSpecType(TypedDict):
+    name: str
+    base: str
+    cpu: ConfigFlavorCPUSpecType
+    disk: List[ConfigFlavorDiskSpecType]
+    virtualization: ConfigFlavorVirtualizationSpecType
+
 
 ConfigFlavorSpecType = Union[ConfigPatchFlavorSpecType, ConfigCustomFlavorSpecType]
 
@@ -304,7 +298,7 @@ class CLIOutput:
 
 class PoolLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str) -> None:
-        super(PoolLogger, self).__init__(logger, {
+        super().__init__(logger, {
             'ctx_pool_name': (10, poolname)
         })
 
@@ -514,7 +508,7 @@ class PoolResourcesIDs(SerializableContainer):
         return all([value is None for key, value in dataclasses.asdict(self).items() if key != 'ctime'])
 
     def serialize(self) -> Dict[str, Any]:
-        serialized = super(PoolResourcesIDs, self).serialize()
+        serialized = super().serialize()
 
         # Convert datetime object to string
         serialized['ctime'] = serialized['ctime'].strftime(RESOURCE_CTIME_FMT) if serialized['ctime'] else None
@@ -881,7 +875,7 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
     """
 
     def __init__(self, pool: 'PoolDriver', hook_name: str) -> None:
-        super(HookImageInfoMapper, self).__init__(pool)
+        super().__init__(pool)
 
         self.hook_name = hook_name
 
@@ -960,7 +954,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         poolname: str,
         pool_config: Dict[str, Any]
     ) -> None:
-        super(PoolDriver, self).__init__(logger)
+        super().__init__(logger)
 
         self.poolname = poolname
         self.pool_config = pool_config

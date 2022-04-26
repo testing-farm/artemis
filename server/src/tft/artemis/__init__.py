@@ -230,7 +230,7 @@ class SerializableContainer:
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super(SerializableContainer, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     # All classes derived from SerializableContainer can be represented as YAML, because they
     # inherit the `to_yaml()` method, which then depends on `serialize()` - and what
@@ -243,7 +243,7 @@ class SerializableContainer:
         Register given subclass as capable of being represented as YAML.
         """
 
-        super(SerializableContainer, cls).__init_subclass__()
+        super().__init_subclass__()
 
         _YAML_DUMPABLE_CLASSES.add(cls)
 
@@ -848,10 +848,10 @@ class Failure:
             details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))
 
         if self.exc_info:
-            details['traceback'] = '\n'.join((
+            details['traceback'] = '\n'.join(
                 line.rstrip()
                 for line in stackprinter.format(self.exc_info, line_wrap=False).splitlines()  # noqa: FS002
-            ))
+            )
 
         if 'scrubbed_command' in details:
             details['scrubbed_command'] = gluetool.utils.format_command_line([details['scrubbed_command']])

@@ -18,6 +18,7 @@ just a couple of parameters - together with fixtures, this makes the actual test
 
 import datetime
 from typing import List, NamedTuple, Optional, Type, cast
+from unittest.mock import MagicMock
 
 import _pytest.monkeypatch
 import gluetool.log
@@ -25,7 +26,6 @@ import pytest
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok
-from mock import MagicMock
 
 import tft.artemis
 import tft.artemis.context
@@ -59,15 +59,11 @@ def ENOUGH_RESOURCES_EXCESS_MULTIPLIER(session: sqlalchemy.orm.session.Session) 
     return tft.artemis.routing_policies.KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session=session).unwrap() + 10
 
 
-MockInputs = NamedTuple(
-    'MockInputs',
-    [
-        ('logger', gluetool.log.ContextAdapter),
-        ('session', sqlalchemy.orm.session.Session),
-        ('pools', List[PoolDriver]),
-        ('guest_request', MagicMock)
-    ]
-)
+class MockInputs(NamedTuple):
+    logger: gluetool.log.ContextAdapter
+    session: sqlalchemy.orm.session.Session
+    pools: List[PoolDriver]
+    guest_request: MagicMock
 
 
 @pytest.fixture

@@ -445,7 +445,7 @@ class FailureHandlerType(Protocol):
 
 class TaskLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, task_name: str) -> None:
-        super(TaskLogger, self).__init__(logger, {
+        super().__init__(logger, {
             'ctx_task_name': (30, task_name)
         })
 
@@ -460,12 +460,12 @@ class TaskLogger(gluetool.log.ContextAdapter):
         self.info('finished')
 
     def failed(self, failure: Failure) -> None:
-        self.error('failed:\n{}'.format(stackprinter.format(failure.exception)))
+        self.error(f'failed:\n{stackprinter.format(failure.exception)}')
 
 
 def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:
     var_value = os.getenv(
-        'ARTEMIS_ACTOR_{}_{}'.format(actor_name.upper(), var_name),
+        f'ARTEMIS_ACTOR_{actor_name.upper()}_{var_name}',
         default
     )
 
@@ -683,7 +683,7 @@ def run_doer(
             thread_name_prefix=threading.current_thread().name
         )
 
-        logger.debug('submitting task doer {}'.format(fn))
+        logger.debug(f'submitting task doer {fn}')
 
         # We need to propagate our current context to newly spawned thread. To do that, we need to copy our context,
         # and then use its `run()` method instead of the function we'd run in our new thread. `run()` would then
@@ -891,7 +891,7 @@ def task_core(
 
     # To avoid chain a of exceptions in the log - which we already logged above - raise a generic,
     # insignificant exception to notify scheduler that this task failed and needs to be retried.
-    raise Exception('message processing failed: {}'.format(doer_result.unwrap_error().message))
+    raise Exception(f'message processing failed: {doer_result.unwrap_error().message}')
 
 
 def _cancel_task_if(
@@ -1126,7 +1126,7 @@ def _update_guest_state(
 
     current_state_label = current_state.value if current_state is not None else '<ignored>'
 
-    logger.warning('state switch: {} => {}'.format(current_state_label, new_state.value))
+    logger.warning(f'state switch: {current_state_label} => {new_state.value}')
 
     r_query = _guest_state_update_query(
         guestname=guestname,
@@ -1155,7 +1155,7 @@ def _update_guest_state(
         ))
 
     if r.value is False:
-        logger.warning('state switch: {} => {}: failed'.format(current_state_label, new_state.value))
+        logger.warning(f'state switch: {current_state_label} => {new_state.value}: failed')
 
         return Error(Failure(
             'did not switch guest state',
@@ -1163,7 +1163,7 @@ def _update_guest_state(
             new_state=new_state.value
         ))
 
-    logger.warning('state switch: {} => {}: succeeded'.format(current_state_label, new_state.value))
+    logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')
 
     workspace.handle_success('state-changed')
 
@@ -1191,7 +1191,7 @@ def _update_snapshot_state(
         **details
     )
 
-    logger.warning('state switch: {} => {}'.format(current_state.value, new_state.value))
+    logger.warning(f'state switch: {current_state.value} => {new_state.value}')
 
     if set_values:
         values = set_values
@@ -1221,7 +1221,7 @@ def _update_snapshot_state(
         ))
 
     if r.value is False:
-        logger.warning('state switch: {} => {}: failed'.format(current_state.value, new_state.value))
+        logger.warning(f'state switch: {current_state.value} => {new_state.value}: failed')
 
         return Error(Failure(
             'did not switch snapshot state',
@@ -1229,7 +1229,7 @@ def _update_snapshot_state(
             new_state=new_state.value
         ))
 
-    logger.warning('state switch: {} => {}: succeeded'.format(current_state.value, new_state.value))
+    logger.warning(f'state switch: {current_state.value} => {new_state.value}: succeeded')
 
     workspace.handle_success('snapshot-state-changed')
 
@@ -1870,7 +1870,7 @@ class Workspace:
         r_engine = hook_engine(hook_name)
 
         if r_engine.is_error:
-            self.result = self.handle_error(r_engine, 'failed to load {} hook'.format(hook_name))
+            self.result = self.handle_error(r_engine, f'failed to load {hook_name} hook')
             return
 
         engine = r_engine.unwrap()
@@ -1940,7 +1940,7 @@ def _handle_successful_failover(
     poolname = workspace.gr.poolname
 
     if previous_poolname and previous_poolname != poolname:
-        logger.warning('successful failover - from pool {} to {}'.format(previous_poolname, poolname))
+        logger.warning(f'successful failover - from pool {previous_poolname} to {poolname}')
         metrics.ProvisioningMetrics.inc_failover_success(previous_poolname, poolname)
 
 
@@ -2134,7 +2134,7 @@ class ProvisioningTailHandler(TailHandler):
         if workspace.result:
             return workspace.result
 
-        logger.info('reverted to {}'.format(self.new_state.value))
+        logger.info(f'reverted to {self.new_state.value}')
 
         return workspace.handle_success('finished-task')
 
@@ -2734,7 +2734,7 @@ def do_guest_request_prepare_finalize_post_connect(
 
     # calculate provisioning duration time
     provisioning_duration = (datetime.datetime.utcnow() - workspace.gr.ctime).total_seconds()
-    logger.info("provisioning duration: {}s".format(provisioning_duration))
+    logger.info(f"provisioning duration: {provisioning_duration}s")
 
     # update provisioning duration metrics
     metrics.ProvisioningMetrics.inc_provisioning_durations(provisioning_duration)
@@ -4057,7 +4057,7 @@ def do_gc_events(
         ) \
         .where(GuestEvent.guestname.notin_(guest_count_subquery)) \
         .where(sqlalchemy.func.age(GuestEvent.updated) >= sqlalchemy.func.cast(
-            '{} SECONDS'.format(KNOB_GC_EVENTS_THRESHOLD.value),
+            f'{KNOB_GC_EVENTS_THRESHOLD.value} SECONDS',
             sqlalchemy.dialects.postgresql.INTERVAL
         ))
 

@@ -13,7 +13,7 @@ from . import Failure
 
 class ScriptEngine:
     def __init__(self) -> None:
-        super(ScriptEngine, self).__init__()
+        super().__init__()
 
         self.functions: Dict[str, Callable[..., Result[Any, Failure]]] = {}
         self.variables: Dict[str, Callable[..., Result[Any, Failure]]] = {}

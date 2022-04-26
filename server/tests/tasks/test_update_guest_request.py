@@ -3,13 +3,13 @@
 
 import threading
 from typing import Any, List, cast
+from unittest.mock import MagicMock
 
 import dramatiq
 import gluetool.log
 import pytest
 import sqlalchemy
 from gluetool.result import Error, Ok
-from mock import MagicMock
 
 import tft.artemis
 import tft.artemis.db

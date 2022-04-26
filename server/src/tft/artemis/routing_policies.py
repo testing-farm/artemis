@@ -138,7 +138,7 @@ KNOB_ROUTE_POOL_ENABLED: Knob[bool] = Knob(
 
 class PolicyLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, policy_name: str) -> None:
-        super(PolicyLogger, self).__init__(logger, {'ctx_policy_name': (50, policy_name)})
+        super().__init__(logger, {'ctx_policy_name': (50, policy_name)})
 
     @property
     def policyname(self) -> str:
@@ -554,7 +554,7 @@ def policy_least_crowded(
 
     log_dict(logger.debug, 'pool metrics', pool_metrics)
 
-    min_usage = min([metrics.current_guest_request_count for _, metrics in pool_metrics])
+    min_usage = min(metrics.current_guest_request_count for _, metrics in pool_metrics)
 
     return Ok(PolicyRuling(
         allowed_pools=[

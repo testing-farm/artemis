@@ -3,6 +3,7 @@
 
 import datetime
 from typing import cast
+from unittest.mock import MagicMock
 
 import _pytest.logging
 import _pytest.monkeypatch
@@ -11,7 +12,6 @@ import pytest
 import sqlalchemy
 import sqlalchemy.ext.declarative
 import sqlalchemy.orm.session
-from mock import MagicMock
 from sqlalchemy import Column, Integer, Text
 
 import tft.artemis.db

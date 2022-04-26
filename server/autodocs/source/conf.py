@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -70,7 +69,7 @@ try:
     artemis_version = pkg_resources.get_distribution('tft-artemis').version
 
 except Exception as exc:
-    print('Failed to identify Artemis version: {}'.format(exc), file=sys.stderr)
+    print(f'Failed to identify Artemis version: {exc}', file=sys.stderr)
     sys.exit(1)
 
 # The short X.Y version.

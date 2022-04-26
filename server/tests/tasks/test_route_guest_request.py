@@ -4,6 +4,7 @@
 import logging
 import threading
 from typing import Any, Optional, cast
+from unittest.mock import MagicMock
 
 import _pytest.logging
 import _pytest.monkeypatch
@@ -11,7 +12,6 @@ import gluetool.log
 import pytest
 import sqlalchemy
 from gluetool.result import Error
-from mock import MagicMock
 
 import tft.artemis
 import tft.artemis.db

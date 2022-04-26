@@ -70,22 +70,15 @@ class AvoidGroupHostnames(SerializableContainer):
     hostnames: List[str] = dataclasses.field(default_factory=list)
 
 
-ConstraintTranslationConfigType = TypedDict(
-    'ConstraintTranslationConfigType',
-    {
-        'operator': str,
-        'value': str,
-        'element': str
-    }
-)
+class ConstraintTranslationConfigType(TypedDict):
+    operator: str
+    value: str
+    element: str
 
-BootMethodConfigType = TypedDict(
-    'BootMethodConfigType',
-    {
-        'key': str,
-        'translations': List[ConstraintTranslationConfigType]
-    }
-)
+
+class BootMethodConfigType(TypedDict):
+    key: str
+    translations: List[ConstraintTranslationConfigType]
 
 
 #: Mapping of operators to their Beaker representation. :py:attr:`Operator.MATCH` is missing on purpose: it is
@@ -525,7 +518,7 @@ class BeakerDriver(PoolDriver):
         poolname: str,
         pool_config: Dict[str, Any]
     ) -> None:
-        super(BeakerDriver, self).__init__(logger, poolname, pool_config)
+        super().__init__(logger, poolname, pool_config)
 
         # Prepare `bkr` command with options we can already deduce.
         self._bkr_command = [
@@ -565,7 +558,7 @@ class BeakerDriver(PoolDriver):
             return Error(r_avoid_hostnames.unwrap_error())
 
         return Ok(sum(
-            [group.hostnames for group in r_avoid_hostnames.unwrap().values()],
+            (group.hostnames for group in r_avoid_hostnames.unwrap().values()),
             []
         ))
 
@@ -1021,7 +1014,7 @@ class BeakerDriver(PoolDriver):
         """
 
         # First, check the parent class, maybe its tests already have the answer.
-        r_answer = super(BeakerDriver, self).can_acquire(logger, session, guest_request)
+        r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -1130,7 +1123,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
-        r_resources = super(BeakerDriver, self).fetch_pool_resources_metrics(logger)
+        r_resources = super().fetch_pool_resources_metrics(logger)
 
         if r_resources.is_error:
             return Error(r_resources.unwrap_error())
