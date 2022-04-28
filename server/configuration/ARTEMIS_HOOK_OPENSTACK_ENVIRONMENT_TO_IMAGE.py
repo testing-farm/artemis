@@ -9,7 +9,8 @@ from gluetool.result import Error
 
 from tft.artemis.drivers import ImageInfoMapperOptionalResultType, PoolImageInfo
 from tft.artemis.drivers.hooks import map_environment_to_image_info
-from tft.artemis.drivers.openstack import KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH, OpenStackDriver
+from tft.artemis.drivers.openstack import KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH, \
+    KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE, OpenStackDriver
 from tft.artemis.environment import Environment
 
 
@@ -24,9 +25,15 @@ def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(
     if r_mapping_filepath.is_error:
         return Error(r_mapping_filepath.unwrap_error())
 
+    r_needle_template = KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE.get_value(pool=pool)
+
+    if r_needle_template.is_error:
+        return Error(r_needle_template.unwrap_error())
+
     return map_environment_to_image_info(
         logger,
         pool,
         environment,
+        r_needle_template.unwrap(),
         mapping_filepath=os.path.abspath(r_mapping_filepath.unwrap())
     )

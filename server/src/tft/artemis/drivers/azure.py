@@ -19,13 +19,23 @@ from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilit
     SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
-    'azure.mapping.environment-to-image',
+    'azure.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
     has_db=False,
     per_pool=True,
     envvar='ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
     default='artemis-image-map-azure.yaml'
+)
+
+KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
+    'azure.mapping.environment-to-image.pattern-map.needle',
+    'A pattern for needle to match in environment to image mapping file.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
+    cast_from_str=str,
+    default='{{ os.compose }}'
 )
 
 

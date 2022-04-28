@@ -13,7 +13,7 @@ import gluetool.log
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, log_dict_yaml
+from .. import Failure, log_dict_yaml, safe_call
 from ..environment import Environment
 from ..knobs import KNOB_CONFIG_DIRPATH, Knob
 from . import ImageInfoMapperOptionalResultType, PoolDriver, PoolImageInfo
@@ -78,20 +78,23 @@ def get_pattern_map(
         return Ok(pattern_map)
 
 
-def map_compose_to_imagename_by_pattern_map(
+def map_environment_to_imagename_by_pattern_map(
     logger: gluetool.log.ContextAdapter,
     pool: PoolDriver,
-    compose_id: str,
+    environment: Environment,
+    needle_template: str,
     mapping_filename: Optional[str] = None,
     mapping_filepath: Optional[str] = None
 ) -> Result[Optional[str], Failure]:
     """
-    Using a given pattern mapping file, try to map a compose to its corresponding image name.
+    Using a given pattern mapping file, try to map an environment to its corresponding image name.
 
     Pattern mapping files are described
     `here <https://gluetool.readthedocs.io/en/latest/gluetool.utils.html#gluetool.utils.PatternMap>`_.
 
-    :param compose_id: compose ID to translate.
+    :param environment: environment to map to an image name.
+    :param needle_template: a template to render the string to look for in the pattern map. ``environment``
+        is passed to template when rendering.
     :param mapping_filename: if set, pattern mapping file of this name is searched in Artemis' configuration directory.
     :param mapping_filepath: if set, this pattern mapping file is searched.
     :returns: either a image name, or :py:class:`tft.artemis.Failure` if the mapping was unsuccessfull.
@@ -104,24 +107,34 @@ def map_compose_to_imagename_by_pattern_map(
         mapping_filepath = os.path.join(KNOB_CONFIG_DIRPATH.value, mapping_filename)
 
     else:
-        return Error(Failure('no compose/image mapping file specified', compose=compose_id))
+        return Error(Failure('no compose/image mapping file specified', environment=environment))
+
+    r_needle = safe_call(
+        gluetool.utils.render_template,
+        needle_template,
+        logger=logger,
+        **environment.serialize()
+    )
+
+    if r_needle.is_error:
+        return Error(r_needle.unwrap_error())
 
     logger.debug(f'using pattern map {mapping_filepath}')
 
     r_cache_enabled = KNOB_CACHE_PATTERN_MAPS.get_value(poolname=pool.poolname)
 
     if r_cache_enabled.is_error:
-        return Error(r_cache_enabled.unwrap_error())
+        return Error(r_cache_enabled.unwrap_error().update(environment=environment))
 
     r_pattern_map = get_pattern_map(logger, mapping_filepath, use_cache=r_cache_enabled.unwrap())
 
     if r_pattern_map.is_error:
-        return Error(r_pattern_map.unwrap_error().update(compose=compose_id))
+        return Error(r_pattern_map.unwrap_error().update(environment=environment))
 
     pattern_map = r_pattern_map.unwrap()
 
     try:
-        imagename = pattern_map.match(compose_id)
+        imagename = pattern_map.match(r_needle.unwrap())
 
     except gluetool.glue.GlueError:
         return Ok(None)
@@ -133,6 +146,7 @@ def map_environment_to_image_info(
     logger: gluetool.log.ContextAdapter,
     pool: PoolDriver,
     environment: Environment,
+    needle_template: str,
     mapping_filename: Optional[str] = None,
     mapping_filepath: Optional[str] = None
 ) -> ImageInfoMapperOptionalResultType[PoolImageInfo]:
@@ -145,6 +159,9 @@ def map_environment_to_image_info(
 
     Then, this name is looked up in the pool, and if it does exist, its description is returned.
 
+    :param environment: environment to map to an image info.
+    :param needle_template: a template to render the string to look for in the pattern map. ``environment``
+        is passed to template when rendering.
     :param mapping_filename: if set, pattern mapping file of this name is searched in Artemis' configuration directory.
     :param mapping_filepath: if set, this pattern mapping file is searched.
     :returns: either cloud-specific image information, or :py:class:`tft.artemis.Failure` if the mapping was
@@ -154,10 +171,11 @@ def map_environment_to_image_info(
     log_dict_yaml(logger.info, 'deciding image name for environment', environment.serialize())
 
     try:
-        r_image_name = map_compose_to_imagename_by_pattern_map(
+        r_image_name = map_environment_to_imagename_by_pattern_map(
             logger,
             pool,
-            environment.os.compose,
+            environment,
+            needle_template,
             mapping_filename=mapping_filename,
             mapping_filepath=mapping_filepath
         )

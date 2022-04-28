@@ -52,7 +52,7 @@ KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
-    'openstack.mapping.environment-to-image',
+    'openstack.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
     has_db=False,
     per_pool=True,
@@ -60,6 +60,17 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     cast_from_str=str,
     default='artemis-image-map-openstack.yaml'
 )
+
+KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
+    'openstack.mapping.environment-to-image.pattern-map.needle',
+    'A pattern for needle to match in environment to image mapping file.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
+    cast_from_str=str,
+    default='{{ os.compose }}'
+)
+
 
 MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'^No server with a name or ID')
 INSTANCE_NOT_READY_ERROR_PATTERN = re.compile(r'^Instance [a-z0-9\-]+ is not ready')

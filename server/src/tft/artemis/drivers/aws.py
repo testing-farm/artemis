@@ -188,13 +188,23 @@ KNOB_CONSOLE_EC2_URL: Knob[str] = Knob(
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
-    'aws.mapping.environment-to-image',
+    'aws.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
     has_db=False,
     per_pool=True,
     envvar='ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
     default='artemis-image-map-aws.yaml'
+)
+
+KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
+    'aws.mapping.environment-to-image.pattern-map.needle',
+    'A pattern for needle to match in environment to image mapping file.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
+    cast_from_str=str,
+    default='{{ os.compose }}'
 )
 
 
