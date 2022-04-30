@@ -70,8 +70,7 @@ traceback: |-
         12   def _a() -> None:
     --> 13       raise ValueError('dummy error happened')
 
-    ValueError: dummy error happened
-""".replace('__FILE__', __file__)
+    ValueError: dummy error happened""".replace('__FILE__', __file__)
 
 
 def test_printable(failure: Failure) -> None:

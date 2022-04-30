@@ -6,7 +6,7 @@ from typing import Any, List
 
 import gluetool.utils
 import pytest
-from gluetool.log import ContextAdapter, log_blob
+from gluetool.log import ContextAdapter
 from gluetool.result import Result
 
 import tft.artemis
@@ -80,8 +80,8 @@ def _eval_flavor(
     constraint: ConstraintBase,
     flavor: Flavor
 ) -> Result[bool, tft.artemis.Failure]:
-    log_blob(logger.debug, 'constraint', constraint.format())  # noqa: FS002  # intended format()
-    log_blob(logger.debug, 'flavor', repr(flavor))
+    tft.artemis.log_dict_yaml(logger.debug, 'constraint', constraint.serialize())
+    tft.artemis.log_dict_yaml(logger.debug, 'flavor', flavor.serialize())
 
     return constraint.eval_flavor(logger, flavor)
 
@@ -675,7 +675,7 @@ def test_example_exact_value(logger: ContextAdapter) -> None:
         """
     )
 
-    assert constraint1.format() == constraint2.format()  # noqa: FS002  # intended format()
+    assert repr(constraint1) == repr(constraint2)
 
 
 def test_example_unit_with_space() -> None:
@@ -695,7 +695,7 @@ def test_example_unit_with_space() -> None:
         """
     )
 
-    assert constraint1.format() == constraint2.format()  # noqa: FS002  # intended format()
+    assert repr(constraint1) == repr(constraint2)
 
 
 def test_example_units_conversion(logger: ContextAdapter) -> None:
@@ -1086,7 +1086,7 @@ def test_beaker_preset(
             )
         ),
         [
-            ['(FLAVOR.cpu.model == 65)', '(FLAVOR.cpu.family == 15)']
+            ['cpu.model == 65', 'cpu.family == 15']
         ]
     ),
     (
@@ -1152,43 +1152,43 @@ def test_beaker_preset(
         ),
         [
             [
-                '(FLAVOR.disk[0].size >= 11 gibibyte)',
-                '(FLAVOR.disk[0].size >= 40 gibibyte)',
-                '(FLAVOR.disk[1].size >= 1 tebibyte)'
+                'disk[0].size >= 11 gibibyte',
+                'disk[0].size >= 40 gibibyte',
+                'disk[1].size >= 1 tebibyte'
             ],
             [
-                '(FLAVOR.disk[0].size >= 11 gibibyte)',
-                '(FLAVOR.disk[0].size >= 40 gibibyte)',
-                '(FLAVOR.disk[1].size < 2 tebibyte)'
+                'disk[0].size >= 11 gibibyte',
+                'disk[0].size >= 40 gibibyte',
+                'disk[1].size < 2 tebibyte'
             ],
-            ['(FLAVOR.disk[0].size >= 11 gibibyte)', '(FLAVOR.cpu.processors >= 4)'],
-            ['(FLAVOR.disk[0].size >= 11 gibibyte)', '(FLAVOR.disk[0].size >= 40 gibibyte)'],
+            ['disk[0].size >= 11 gibibyte', 'cpu.processors >= 4'],
+            ['disk[0].size >= 11 gibibyte', 'disk[0].size >= 40 gibibyte'],
             [
-                '(FLAVOR.disk[0].size >= 11 gibibyte)',
-                '(FLAVOR.disk[0].size >= 10 gibibyte)',
-                '(FLAVOR.disk[0].size >= 20 gibibyte)'
+                'disk[0].size >= 11 gibibyte',
+                'disk[0].size >= 10 gibibyte',
+                'disk[0].size >= 20 gibibyte'
             ],
-            ['(FLAVOR.disk[0].size >= 11 gibibyte)', '(FLAVOR.cpu.processors >= 2)'],
-            ['(FLAVOR.disk[0].size >= 11 gibibyte)', '(FLAVOR.cpu.processors >= 3)'],
+            ['disk[0].size >= 11 gibibyte', 'cpu.processors >= 2'],
+            ['disk[0].size >= 11 gibibyte', 'cpu.processors >= 3'],
             [
-                '(FLAVOR.disk[0].size >= 13 gibibyte)',
-                '(FLAVOR.disk[0].size >= 40 gibibyte)',
-                '(FLAVOR.disk[1].size >= 1 tebibyte)'
+                'disk[0].size >= 13 gibibyte',
+                'disk[0].size >= 40 gibibyte',
+                'disk[1].size >= 1 tebibyte'
             ],
             [
-                '(FLAVOR.disk[0].size >= 13 gibibyte)',
-                '(FLAVOR.disk[0].size >= 40 gibibyte)',
-                '(FLAVOR.disk[1].size < 2 tebibyte)'
+                'disk[0].size >= 13 gibibyte',
+                'disk[0].size >= 40 gibibyte',
+                'disk[1].size < 2 tebibyte'
             ],
-            ['(FLAVOR.disk[0].size >= 13 gibibyte)', '(FLAVOR.cpu.processors >= 4)'],
-            ['(FLAVOR.disk[0].size >= 13 gibibyte)', '(FLAVOR.disk[0].size >= 40 gibibyte)'],
+            ['disk[0].size >= 13 gibibyte', 'cpu.processors >= 4'],
+            ['disk[0].size >= 13 gibibyte', 'disk[0].size >= 40 gibibyte'],
             [
-                '(FLAVOR.disk[0].size >= 13 gibibyte)',
-                '(FLAVOR.disk[0].size >= 10 gibibyte)',
-                '(FLAVOR.disk[0].size >= 20 gibibyte)'
+                'disk[0].size >= 13 gibibyte',
+                'disk[0].size >= 10 gibibyte',
+                'disk[0].size >= 20 gibibyte'
             ],
-            ['(FLAVOR.disk[0].size >= 13 gibibyte)', '(FLAVOR.cpu.processors >= 2)'],
-            ['(FLAVOR.disk[0].size >= 13 gibibyte)', '(FLAVOR.cpu.processors >= 3)']
+            ['disk[0].size >= 13 gibibyte', 'cpu.processors >= 2'],
+            ['disk[0].size >= 13 gibibyte', 'cpu.processors >= 3']
         ]
     )
 ], ids=[
