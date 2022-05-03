@@ -770,10 +770,10 @@ class PoolMetrics(MetricsBase):
 
     # commandname => count
     cli_calls: Dict[str, int]
-    # commandname:exitcode => count
-    cli_calls_exit_codes: Dict[Tuple[str, str], int]
-    # bucket:commandname => count
-    cli_calls_durations: Dict[Tuple[str, str], int]
+    # commandname:exit-code:cause => count
+    cli_calls_exit_codes: Dict[Tuple[str, str, str], int]
+    # bucket:commandname:exit-code:cause => count
+    cli_calls_durations: Dict[Tuple[str, str, str, str], int]
 
     def __init__(self, poolname: str) -> None:
         """
@@ -888,7 +888,8 @@ class PoolMetrics(MetricsBase):
         exit_code: int,
         duration: float,
         logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        cache: redis.Redis,
+        cause: Optional[str] = None
     ) -> Result[None, Failure]:
         """
         Increase counter for a given CLI command by 1.
@@ -897,10 +898,13 @@ class PoolMetrics(MetricsBase):
         :param commandname: command "ID" - something to tell commands and group of commands apart.
         :param exit_code: exit code of the command.
         :param duration: duration of the command session, in seconds.
+        :param cause: optional string explaining the reason for non-zero exit code.
         :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
+
+        cause = cause or ''
 
         # raw count
         inc_metric_field(
@@ -915,7 +919,7 @@ class PoolMetrics(MetricsBase):
             logger,
             cache,
             PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),  # noqa: FS002
-            f'{commandname}:{exit_code}'
+            f'{commandname}:{exit_code}:{cause}'
         )
 
         # duration
@@ -925,7 +929,7 @@ class PoolMetrics(MetricsBase):
             logger,
             cache,
             PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname),  # noqa: FS002
-            f'{bucket}:{commandname}'
+            f'{bucket}:{commandname}:{exit_code}:{cause}'
         )
 
         return Ok(None)
@@ -1024,9 +1028,9 @@ class PoolMetrics(MetricsBase):
             ).items()
         }
 
-        # commandname:exit-code => count
+        # commandname:exit-code:cause => count
         self.cli_calls_exit_codes = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
             for field, count in get_metric_fields(
                 logger,
                 cache,
@@ -1034,9 +1038,9 @@ class PoolMetrics(MetricsBase):
             ).items()
         }
 
-        # bucket:commandname => count
+        # bucket:commandname:exit-code:cause => count
         self.cli_calls_durations = {
-            cast(Tuple[str, str], tuple(field.split(':', 2))): count
+            cast(Tuple[str, str, str, str], tuple(field.split(':', 3))): count
             for field, count in get_metric_fields(
                 logger,
                 cache,
@@ -1067,8 +1071,8 @@ class UndefinedPoolMetrics(MetricsBase):
     flavor_info_updated_timestamp: Optional[float]
 
     cli_calls: Dict[str, int]
-    cli_calls_exit_codes: Dict[Tuple[str, str], int]
-    cli_calls_durations: Dict[Tuple[str, str], int]
+    cli_calls_exit_codes: Dict[Tuple[str, str, str], int]
+    cli_calls_durations: Dict[Tuple[str, str, str, str], int]
 
     def __init__(self, poolname: str) -> None:
         """
@@ -1274,15 +1278,15 @@ class PoolsMetrics(MetricsBase):
 
         self.CLI_CALLS_EXIT_CODES = Counter(
             'cli_calls_exit_codes',
-            'Overall total number of CLI commands exit codes, per pool, command name and exit code.',
-            ['pool', 'command', 'exit_code'],
+            'Overall total number of CLI commands exit codes, per pool, command name, exit code and cause of error.',
+            ['pool', 'command', 'exit_code', 'cause'],
             registry=registry
         )
 
         self.CLI_CALLS_DURATIONS = Histogram(
             'cli_call_duration_seconds',
-            'The time spent executing CLI commands, by pool and command name.',
-            ['pool', 'command'],
+            'The time spent executing CLI commands, by pool, command name, exit code and cause of error.',
+            ['pool', 'command', 'exit_code', 'cause'],
             buckets=CLI_CALL_DURATION_BUCKETS,
             registry=registry
         )
@@ -1368,22 +1372,22 @@ class PoolsMetrics(MetricsBase):
                     .labels(pool=poolname, command=commandname) \
                     ._value.set(count)
 
-            for (commandname, exit_code), count in pool_metrics.cli_calls_exit_codes.items():
+            for (commandname, exit_code, cause), count in pool_metrics.cli_calls_exit_codes.items():
                 self.CLI_CALLS_EXIT_CODES \
-                    .labels(pool=poolname, command=commandname, exit_code=exit_code) \
+                    .labels(pool=poolname, command=commandname, exit_code=exit_code, cause=cause) \
                     ._value.set(count)
 
-            for (bucket_threshold, commandname), count in pool_metrics.cli_calls_durations.items():
+            for (bucket_threshold, commandname, exit_code, cause), count in pool_metrics.cli_calls_durations.items():
                 bucket_index = CLI_CALL_DURATION_BUCKETS.index(
                     prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
                 )
 
                 self.CLI_CALLS_DURATIONS \
-                    .labels(pool=poolname, command=commandname) \
+                    .labels(pool=poolname, command=commandname, exit_code=exit_code, cause=cause) \
                     ._buckets[bucket_index] \
                     .set(count)
                 self.CLI_CALLS_DURATIONS \
-                    .labels(pool=poolname, command=commandname) \
+                    .labels(pool=poolname, command=commandname, exit_code=exit_code, cause=cause) \
                     ._sum \
                     .inc(float(bucket_threshold) * count)
 
