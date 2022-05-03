@@ -30,7 +30,7 @@ from typing_extensions import Protocol
 from .. import Failure, get_broker, get_db, get_logger, metrics, safe_call
 from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SafeQuery, \
-    SnapshotRequest, SSHKey, safe_db_change, upsert
+    SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change, upsert
 from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
 from ..drivers import aws as aws_driver
 from ..drivers import azure as azure_driver
@@ -731,7 +731,8 @@ def task_core(
     session: Optional[sqlalchemy.orm.session.Session] = None,
     cancel: Optional[threading.Event] = None,
     doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
-    doer_kwargs: Optional[Dict[str, Any]] = None
+    doer_kwargs: Optional[Dict[str, Any]] = None,
+    session_isolation: bool = False
 ) -> None:
     logger.begin()
 
@@ -848,7 +849,7 @@ def task_core(
 
     try:
         if session is None:
-            with db.get_session() as session:
+            with db.get_session(transactional=session_isolation is True) as session:
                 doer_result = _run_doer(session)
 
         else:
@@ -1930,6 +1931,75 @@ class Workspace:
         set_message_note(NOTE_POOLNAME, self.gr.poolname)
 
         self.spice_details['poolname'] = self.gr.poolname
+
+        return self
+
+    def update_guest_state_and_request_task(
+        self: WorkspaceBound,
+        new_state: GuestState,
+        task: Actor,
+        *task_arguments: ActorArgumentType,
+        current_state: Optional[GuestState] = None,
+        set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+        current_pool_data: Optional[str] = None,
+        delay: Optional[int] = None,
+        **details: Any
+    ) -> WorkspaceBound:
+        """
+        Update guest request state and plan a follow-up task.
+        """
+
+        if self.result:
+            return self
+
+        assert self.guestname
+
+        current_state_label = current_state.value if current_state is not None else '<ignored>'
+
+        def handle_error(r: Result[Any, Any], message: str) -> WorkspaceBound:
+            assert r.is_error
+
+            self.result = self.handle_failure(
+                Failure.from_failure(
+                    message,
+                    r.unwrap_error(),
+                    current_state=current_state_label,
+                    new_state=new_state.value,
+                    task_name=task.actor_name,
+                    task_args=task_arguments
+                ).update(**details),
+                message
+            )
+
+            return self
+
+        self.logger.info(f'state switch: {current_state_label} => {new_state.value}')
+
+        r_state_update_query = _guest_state_update_query(
+            guestname=self.guestname,
+            new_state=new_state,
+            current_state=current_state,
+            set_values=set_values,
+            current_pool_data=current_pool_data
+        )
+
+        if r_state_update_query.is_error:
+            return handle_error(r_state_update_query, 'failed to create state update query')
+
+        r_update = execute_db_statement(self.logger, self.session, r_state_update_query.unwrap())
+
+        if r_update.is_error:
+            return handle_error(r_update, 'failed to switch guest state')
+
+        r_task = TaskRequest.create(self.logger, self.session, task, *task_arguments, delay=delay)
+
+        if r_task.is_error:
+            return handle_error(r_task, 'failed to add task request')
+
+        self.logger.info(f'state switched {current_state_label} => {new_state.value}')
+        self.logger.info(
+            f'requested task #{r_task.unwrap()} {format_task_invocation(task, *task_arguments, delay=delay)}'
+        )
 
         return self
 

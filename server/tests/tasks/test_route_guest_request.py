@@ -22,7 +22,7 @@ import tft.artemis.tasks
 import tft.artemis.tasks.route_guest_request
 from tft.artemis.tasks.route_guest_request import Workspace
 
-from .. import assert_log
+from .. import MockPatcher, assert_log
 from . import assert_task_core_call
 
 
@@ -190,70 +190,25 @@ def test_evaluate_ruling_empty(
 
 def test_switch_to_provisioning(
     workspace: Workspace,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    mockpatch: MockPatcher
 ) -> None:
     workspace.gr = MagicMock(name='dummy-guest-request')
     workspace.new_pool = MagicMock(name='dummy-pool')
 
-    patch(monkeypatch, workspace, 'update_guest_state')
+    mockpatch(workspace, 'update_guest_state_and_request_task')
 
     assert workspace.switch_to_provisioning() is workspace
 
-    cast(MagicMock, workspace.update_guest_state).assert_called_once_with(
+    cast(MagicMock, workspace.update_guest_state_and_request_task).assert_called_once_with(
         tft.artemis.guest.GuestState.PROVISIONING,
+        tft.artemis.tasks.acquire_guest_request,
+        workspace.guestname,
+        workspace.new_pool.poolname,
         current_state=tft.artemis.guest.GuestState.ROUTING,
         set_values={
             'poolname': workspace.new_pool.poolname
         },
-        pool=workspace.new_pool.poolname
-    )
-
-
-def test_dispatch_provisioning(
-    workspace: Workspace,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
-) -> None:
-    workspace.new_pool = MagicMock(name='pool1')
-
-    patch(monkeypatch, workspace, 'dispatch_task')
-    patch(monkeypatch, workspace, 'ungrab_guest_request')
-
-    assert workspace.dispatch_provisioning() is workspace
-
-    cast(MagicMock, workspace.dispatch_task).assert_called_once_with(
-        tft.artemis.tasks.acquire_guest_request,
-        workspace.guestname,
-        workspace.new_pool.poolname
-    )
-
-    cast(MagicMock, workspace.ungrab_guest_request).assert_not_called()
-
-
-def test_dispatch_provisioning_fail_dispatch(
-    workspace: Workspace,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
-) -> None:
-    workspace.new_pool = MagicMock(name='pool1')
-
-    mock_error: tft.artemis.tasks.DoerReturnType = Error(tft.artemis.Failure('mock error'))
-
-    def mock_dispatch_task(*args: Any, **kwargs: Any) -> None:
-        workspace.result = mock_error
-
-    patch(monkeypatch, workspace, 'dispatch_task').side_effect = mock_dispatch_task
-    patch(monkeypatch, workspace, 'ungrab_guest_request')
-
-    assert workspace.dispatch_provisioning() is workspace
-
-    cast(MagicMock, workspace.dispatch_task).assert_called_once_with(
-        tft.artemis.tasks.acquire_guest_request,
-        workspace.guestname,
-        workspace.new_pool.poolname
-    )
-
-    cast(MagicMock, workspace.ungrab_guest_request).assert_called_once_with(
-        tft.artemis.guest.GuestState.PROVISIONING,
-        tft.artemis.guest.GuestState.ROUTING
+        poolname=workspace.new_pool.poolname
     )
 
 
@@ -316,7 +271,6 @@ def test_doer(
         'query_policies()',
         'evaluate_ruling()',
         'switch_to_provisioning()',
-        'dispatch_provisioning()',
         'exit()',
         'final_result'
     ])

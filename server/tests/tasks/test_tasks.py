@@ -18,10 +18,12 @@ from dramatiq.broker import Broker
 
 import tft.artemis
 import tft.artemis.db
+import tft.artemis.guest
 import tft.artemis.middleware
 import tft.artemis.tasks
+import tft.artemis.tasks.route_guest_request
 
-from .. import MATCH, MockPatcher, assert_log
+from .. import MATCH, SEARCH, MockPatcher, assert_log
 
 
 @pytest.fixture
@@ -307,7 +309,13 @@ def fixture_workspace(
     session: sqlalchemy.orm.session.Session,
     current_message: dramatiq.MessageProxy
 ) -> tft.artemis.tasks.Workspace:
-    return tft.artemis.tasks.Workspace(logger, session, threading.Event(), 'dummy-guest-name')
+    return tft.artemis.tasks.Workspace(
+        logger,
+        session,
+        threading.Event(),
+        'dummy-guest',
+        db=db
+    )
 
 
 @pytest.mark.usefixtures('dummy_guest_request', 'dummy_pool')
@@ -340,3 +348,149 @@ def test_mark_note_poolname_error_noop(
     assert workspace.mark_note_poolname() is workspace
 
     cast(MagicMock, tft.artemis.middleware.set_message_note).assert_not_called()
+
+
+@pytest.mark.usefixtures('_schema_initialized_actual')
+def test_update_guest_state_and_request_task(
+    #    logger: gluetool.log.ContextAdapter,
+    db: tft.artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
+    workspace: tft.artemis.tasks.Workspace,
+    caplog: _pytest.logging.LogCaptureFixture,
+    mockpatch: MockPatcher
+) -> None:
+    assert workspace.update_guest_state_and_request_task(
+        tft.artemis.guest.GuestState.PROVISIONING,
+        tft.artemis.tasks.acquire_guest_request,
+        'dummy-guest',
+        'dummy-pool-name',
+        delay=79,
+        current_state=tft.artemis.guest.GuestState.ROUTING,
+        set_values={
+            'poolname': 'dummy-pool-name'
+        },
+        poolname='dummy-pool-name'
+    ) is workspace
+
+    assert workspace.result is None
+
+    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.INFO)
+    assert_log(caplog, message=SEARCH(r'state switched routing => provisioning'), levelno=logging.INFO)
+    assert_log(
+        caplog,
+        message=SEARCH(r'requested task #1 acquire_guest_request\(dummy-guest, dummy-pool-name, delay=79\)'),
+        levelno=logging.INFO
+    )
+
+    with db.get_session() as new_session:
+        r_tasks = tft.artemis.db.SafeQuery \
+            .from_session(new_session, tft.artemis.db.TaskRequest) \
+            .all()
+
+        assert r_tasks.is_ok
+
+        tasks = [task for task in r_tasks.unwrap()]
+
+        assert len(tasks) == 1
+
+        task = tasks[0]
+
+        assert task.id == 1
+        assert task.taskname == 'acquire_guest_request'
+        assert task.arguments == ['dummy-guest', 'dummy-pool-name']
+        assert task.delay == 79
+
+        r_guests = tft.artemis.db.SafeQuery \
+            .from_session(new_session, tft.artemis.db.GuestRequest) \
+            .all()
+
+        assert r_guests.is_ok
+
+        guests = [guest for guest in r_guests.unwrap()]
+
+        assert len(guests) == 1
+
+        guest = guests[0]
+
+        assert guest.poolname == 'dummy-pool-name'
+        assert guest.state == tft.artemis.guest.GuestState.PROVISIONING  # type: ignore[comparison-overlap]
+
+
+@pytest.mark.usefixtures('_schema_initialized_actual')
+def test_update_guest_state_and_request_task_no_such_guest(
+    #    logger: gluetool.log.ContextAdapter,
+    db: tft.artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
+    workspace: tft.artemis.tasks.Workspace,
+    caplog: _pytest.logging.LogCaptureFixture,
+    mockpatch: MockPatcher
+) -> None:
+    workspace.guestname = 'not-so-dummy-guest'
+
+    assert workspace.update_guest_state_and_request_task(
+        tft.artemis.guest.GuestState.PROVISIONING,
+        tft.artemis.tasks.acquire_guest_request,
+        'not-so-dummy-guest',
+        'dummy-pool-name',
+        delay=79,
+        current_state=tft.artemis.guest.GuestState.ROUTING,
+        set_values={
+            'poolname': 'dummy-pool-name'
+        },
+        poolname='dummy-pool-name'
+    ) is workspace
+
+    assert workspace.result is not None
+    assert workspace.result.is_error
+
+    failure = workspace.result.unwrap_error()
+
+    assert failure.message == 'failed to switch guest state'
+    assert failure.details['current_state'] == 'routing'
+    assert failure.details['new_state'] == 'provisioning'
+    assert failure.details['task_name'] == 'acquire_guest_request'
+    assert failure.details['task_args'] == ('not-so-dummy-guest', 'dummy-pool-name')
+    assert failure.details['poolname'] == 'dummy-pool-name'
+    assert failure.details['guestname'] == 'not-so-dummy-guest'
+    assert failure.recoverable is True
+
+    assert failure.caused_by is not None
+
+    assert failure.caused_by.message == 'unexpected number of affected rows'
+    assert failure.caused_by.details['affected_rows'] == 0
+    assert failure.caused_by.details['expected_affected_rows'] == 1
+    assert failure.caused_by.details['statement'].startswith('UPDATE')
+
+    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.INFO)
+    # assert_log(caplog, message=SEARCH(r'state switched routing => provisioning'), levelno=logging.INFO)
+    # assert_log(
+    #    caplog,
+    #    message=SEARCH(r'requested task #1 acquire_guest_request\(dummy-guest, dummy-pool-name, delay=79\)'),
+    #    levelno=logging.INFO
+    # )
+
+    with db.get_session() as new_session:
+        r_tasks = tft.artemis.db.SafeQuery \
+            .from_session(new_session, tft.artemis.db.TaskRequest) \
+            .all()
+
+        assert r_tasks.is_ok
+
+        tasks = [task for task in r_tasks.unwrap()]
+
+        assert not tasks
+
+        r_guests = tft.artemis.db.SafeQuery \
+            .from_session(new_session, tft.artemis.db.GuestRequest) \
+            .all()
+
+        assert r_guests.is_ok
+
+        guests = [guest for guest in r_guests.unwrap()]
+
+        assert len(guests) == 1
+
+        guest = guests[0]
+
+        assert guest.poolname is None
+        assert guest.state == tft.artemis.guest.GuestState.ROUTING  # type: ignore[comparison-overlap]

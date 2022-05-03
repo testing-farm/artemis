@@ -103,6 +103,7 @@ class Workspace(_Workspace):
         Move the guest request to :py:attr:`GuestRequest.PROVISIONING` state.
         """
 
+        assert self.guestname
         assert self.gr
         assert self.new_pool
 
@@ -112,30 +113,17 @@ class Workspace(_Workspace):
         # of network issue? We need to try the task again, and, should the above be correct, we wouldn't find
         # the guest in ROUTING state, and we'd quit right away.
 
-        self.update_guest_state(
+        self.update_guest_state_and_request_task(
             GuestState.PROVISIONING,
+            acquire_guest_request,
+            self.guestname,
+            self.new_pool.poolname,
             current_state=GuestState.ROUTING,
             set_values={
                 'poolname': self.new_pool.poolname
             },
-            pool=self.new_pool.poolname
+            poolname=self.new_pool.poolname
         )
-
-    @step
-    def dispatch_provisioning(self) -> None:
-        """
-        Dispatch the provisioning tasks.
-
-        After successfull switch to :py:attr:`GuestState.PROVISIONING`, we are sure to be the first routing task
-        that got this far with the routing of this request, therefore we can safely dispatch the provisioning task.
-        """
-
-        assert self.new_pool
-
-        self.dispatch_task(acquire_guest_request, self.guestname, self.new_pool.poolname)
-
-        if self.result:
-            self.ungrab_guest_request(GuestState.PROVISIONING, GuestState.ROUTING)
 
     @step
     def exit(self) -> None:
@@ -181,7 +169,6 @@ class Workspace(_Workspace):
             .query_policies() \
             .evaluate_ruling() \
             .switch_to_provisioning() \
-            .dispatch_provisioning() \
             .exit() \
             .final_result
 
@@ -197,5 +184,6 @@ def route_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.route_guest_request),
         logger=get_guest_logger('route-guest-request', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
+        session_isolation=True
     )
