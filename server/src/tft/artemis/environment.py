@@ -18,6 +18,7 @@ from typing import Any, Callable, ClassVar, Dict, Iterable, Iterator, List, Name
     TypeVar, Union, cast
 
 import gluetool.log
+import gluetool.utils
 import pint
 from gluetool.result import Error, Ok, Result
 from pint import Quantity
@@ -1204,6 +1205,51 @@ def _parse_boot(spec: SpecType) -> ConstraintBase:
     return group
 
 
+def _parse_virtualization(spec: SpecType) -> ConstraintBase:
+    """
+    Parse a virtualization-related constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    if 'is-virtualized' in spec:
+        group.constraints += [
+            Constraint.from_specification(
+                'virtualization.is_virtualized',
+                str(spec['is-virtualized']),
+                as_quantity=False,
+                as_cast=gluetool.utils.normalize_bool_option
+            )
+        ]
+
+    if 'is-supported' in spec:
+        group.constraints += [
+            Constraint.from_specification(
+                'virtualization.is_supported',
+                str(spec['is-supported']),
+                as_quantity=False,
+                as_cast=gluetool.utils.normalize_bool_option
+            )
+        ]
+
+    if 'hypervisor' in spec:
+        group.constraints += [
+            Constraint.from_specification(
+                'virtualization.hypervisor',
+                spec['hypervisor'],
+                as_quantity=False
+            )
+        ]
+
+    if len(group.constraints) == 1:
+        return group.constraints[0]
+
+    return group
+
+
 def _parse_cpu(spec: SpecType) -> ConstraintBase:
     """
     Parse a cpu-related constraints.
@@ -1433,6 +1479,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
     if 'hostname' in spec:
         group.constraints += [Constraint.from_specification('hostname', spec['hostname'], as_quantity=False)]
+
+    if 'virtualization' in spec:
+        group.constraints += [_parse_virtualization(spec['virtualization'])]
 
     if len(group.constraints) == 1:
         return group.constraints[0]
