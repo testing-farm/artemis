@@ -40,7 +40,6 @@ container:
     IMAGE_SHA: $IMAGE:$CI_COMMIT_SHORT_SHA
     IMAGE_LATEST: $IMAGE:latest
   script:
-    - buildah bud -f container/Dockerfile .
     # Setup push secret
     - mkdir -p $HOME/.docker
     - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
