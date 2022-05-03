@@ -38,7 +38,7 @@ container:
   variables:
     IMAGE_REF: $IMAGE:$CI_COMMIT_REF_NAME
     IMAGE_SHA: $IMAGE:$CI_COMMIT_SHORT_SHA
-    IMAGE_LATEST: $IMAGE:LATEST
+    IMAGE_LATEST: $IMAGE:latest
   script:
     - buildah bud -f container/Dockerfile .
     # Setup push secret
