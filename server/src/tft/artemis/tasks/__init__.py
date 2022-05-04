@@ -2622,7 +2622,8 @@ def do_prepare_post_install_script(
             key=r_master_key.unwrap(),
             ssh_timeout=r_ssh_timeout.unwrap(),
             poolname=workspace.pool.poolname,
-            commandname='prepare-post-install-script.copy-to-remote'
+            commandname='prepare-post-install-script.copy-to-remote',
+            cause_extractor=workspace.pool.cli_error_cause_extractor
         )
 
     if r_upload.is_error:
@@ -2635,7 +2636,8 @@ def do_prepare_post_install_script(
         key=r_master_key.unwrap(),
         ssh_timeout=r_ssh_timeout.unwrap(),
         poolname=workspace.pool.poolname,
-        commandname='prepare-post-install-script.execute'
+        commandname='prepare-post-install-script.execute',
+        cause_extractor=workspace.pool.cli_error_cause_extractor
     )
 
     if r_ssh.is_error:

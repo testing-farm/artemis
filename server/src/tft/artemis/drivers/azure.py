@@ -9,6 +9,8 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
+from tft.artemis.drivers.aws import awscli_error_cause_extractor
+
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import FlavorBoot
@@ -370,7 +372,8 @@ class AzureDriver(PoolDriver):
             json_output=json_format,
             command_scrubber=lambda cmd: (['azure'] + options),
             poolname=self.poolname,
-            commandname=commandname
+            commandname=commandname,
+            cause_extractor=awscli_error_cause_extractor
         )
 
         if r_run.is_error:
