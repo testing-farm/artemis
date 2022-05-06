@@ -105,12 +105,16 @@ AWS_VM_HYPERVISORS = ('nitro', 'xen')
 class AWSCLIErrorCauses(CLIErrorCauses):
     NONE = 'none'
     MISSING_INSTANCE = 'missing-instance'
+    MISSING_SPOT_INSTANCE_REQUEST = 'missing-spot-instance-request'
     REQUEST_LIMIT_EXCEEDED = 'request-limit-exceeded'
 
 
 CLI_ERROR_PATTERNS = {
     AWSCLIErrorCauses.MISSING_INSTANCE: re.compile(
         r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist'
+    ),
+    AWSCLIErrorCauses.MISSING_SPOT_INSTANCE_REQUEST: re.compile(
+        r'.+\(InvalidSpotInstanceRequestID\.NotFound\).+The spot instance request ID \'.+\' does not exist'
     ),
     AWSCLIErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(
         r'.+\(RequestLimitExceeded\).+Request limit exceeded'
@@ -1263,13 +1267,15 @@ class AWSDriver(PoolDriver):
         if r_run.is_error:
             failure = r_run.unwrap_error()
 
-            # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
-            # run this method, we would never evenr made it remove instance that doesn't exist.
-            if failure.command_output \
-               and awscli_error_cause_extractor(failure.command_output) == AWSCLIErrorCauses.MISSING_INSTANCE:
-                failure.recoverable = False
+            # Detect "instance does not exist" - these errors are clearly irrecoverable. No matter how often we would
+            # run these CLI commands, we would never ever made them work with instances that don't exist.
+            if failure.command_output:
+                cause = awscli_error_cause_extractor(failure.command_output)
 
-                PoolMetrics.inc_error(self.poolname, AWSCLIErrorCauses.MISSING_INSTANCE.value)
+                if cause in (AWSCLIErrorCauses.MISSING_INSTANCE, AWSCLIErrorCauses.MISSING_SPOT_INSTANCE_REQUEST):
+                    failure.recoverable = False
+
+                    PoolMetrics.inc_error(self.poolname, cause.value)
 
             return Error(failure)
 
