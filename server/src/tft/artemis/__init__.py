@@ -625,6 +625,10 @@ class Failure:
             'type': str(type(exc))
         }
 
+    @property
+    def command_output(self) -> Optional[gluetool.utils.ProcessOutput]:
+        return self.details.get('command_output')
+
     def get_event_details(self) -> Dict[str, Any]:
         """
         Returns a mapping of failure details, suitable for storing in DB as a guest event details.

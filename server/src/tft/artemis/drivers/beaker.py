@@ -17,16 +17,16 @@ from gluetool.log import ContextAdapter, log_xml
 from gluetool.result import Error, Ok, Result
 from typing_extensions import TypedDict
 
-from .. import Failure, SerializableContainer, log_dict_yaml
+from .. import Failure, SerializableContainer, log_dict_yaml, process_output_to_str
 from ..cache import get_cached_set, refresh_cached_set
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Operator, Or
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
     PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, run_cli_tool, test_cli_error
+    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, run_cli_tool
 
 NodeRefType = Any
 
@@ -61,7 +61,32 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 )
 
 
-NO_DISTRO_MATCHES_RECIPE_ERROR_PATTEN = re.compile(r'^Exception: .+:No distro tree matches Recipe:')
+class BkrErrorCauses(CLIErrorCauses):
+    NONE = 'none'
+    NO_DISTRO_MATCHES_RECIPE = 'no-distro-matches-recipe'
+
+
+CLI_ERROR_PATTERNS = {
+    BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE: re.compile(r'^Exception: .+:No distro tree matches Recipe:')
+}
+
+
+def bkr_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> BkrErrorCauses:
+    if output.exit_code == 0:
+        return BkrErrorCauses.NONE
+
+    stderr = process_output_to_str(output, stream='stderr')
+
+    if stderr is None:
+        return BkrErrorCauses.NONE
+
+    for cause, pattern in CLI_ERROR_PATTERNS.items():
+        if not pattern.match(stderr):
+            continue
+
+        return cause
+
+    return BkrErrorCauses.NONE
 
 
 @dataclasses.dataclass
@@ -592,7 +617,8 @@ class BeakerDriver(PoolDriver):
             self._bkr_command + options,
             json_output=False,
             poolname=self.poolname,
-            commandname=commandname
+            commandname=commandname,
+            cause_extractor=bkr_error_cause_extractor
         )
 
         if r_run.is_error:
@@ -613,7 +639,7 @@ class BeakerDriver(PoolDriver):
 
         failure.recoverable = False
 
-        PoolMetrics.inc_error(self.poolname, 'no-distro-matches-recipe')
+        PoolMetrics.inc_error(self.poolname, BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE.value)
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.CANCEL,
@@ -1088,7 +1114,8 @@ class BeakerDriver(PoolDriver):
         if r_create_job.is_error:
             failure = r_create_job.unwrap_error()
 
-            if test_cli_error(failure, NO_DISTRO_MATCHES_RECIPE_ERROR_PATTEN):
+            if failure.command_output \
+               and bkr_error_cause_extractor(failure.command_output) == BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE:
                 return self._handle_no_distro_matches_recipe_error(failure, guest_request)
 
             return Error(r_create_job.unwrap_error())

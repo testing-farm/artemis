@@ -307,6 +307,21 @@ class PoolLogger(gluetool.log.ContextAdapter):
         return cast(str, self._contexts['pool_name'][1])
 
 
+class CLIErrorCauses(enum.Enum):
+    """
+    A base class for enums listing various error causes recognized by pools for their CLI tools.
+    """
+
+    pass
+
+
+#: A type for callables extracting CLI error cause from process output.
+CLIErrorCauseExtractor = Callable[
+    [gluetool.utils.ProcessOutput],
+    CLIErrorCauses
+]
+
+
 @dataclasses.dataclass(repr=False)
 class PoolImageSSHInfo(SerializableContainer):
     username: str = 'root'
@@ -938,6 +953,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     image_info_class: Type[PoolImageInfo] = PoolImageInfo
     flavor_info_class: Type[Flavor] = Flavor
     pool_data_class: Type[PoolData] = PoolData
+    cli_error_cause_extractor: Optional[CLIErrorCauseExtractor] = None
 
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
@@ -2189,7 +2205,8 @@ def run_cli_tool(
     env: Optional[Dict[str, str]] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
-    commandname: Optional[str] = None
+    commandname: Optional[str] = None,
+    cause_extractor: Optional[CLIErrorCauseExtractor] = None
 ) -> Result[CLIOutput, Failure]:
     """
     Run a given command, and return its output.
@@ -2230,7 +2247,8 @@ def run_cli_tool(
                 poolname,
                 commandname,
                 output.exit_code,
-                command_time
+                command_time,
+                cause=cause_extractor(output) if cause_extractor is not None else None
             )
 
         joined_command = command_join(command)
@@ -2328,23 +2346,6 @@ def run_cli_tool(
     return Ok(CLIOutput(output, output_stdout))
 
 
-def test_cli_error(failure: Failure, error_pattern: Pattern[str]) -> bool:
-    if 'command_output' not in failure.details:
-        return False
-
-    os_output = cast(gluetool.utils.ProcessOutput, failure.details['command_output'])
-
-    if not os_output.stderr:
-        return False
-
-    stderr = cast(bytes, os_output.stderr).decode('utf-8')
-
-    if error_pattern.match(stderr):
-        return True
-
-    return False
-
-
 def run_remote(
     logger: gluetool.log.ContextAdapter,
     guest_request: GuestRequest,
@@ -2354,7 +2355,8 @@ def run_remote(
     ssh_timeout: int,
     # for CLI calls metrics
     poolname: Optional[str] = None,
-    commandname: Optional[str] = None
+    commandname: Optional[str] = None,
+    cause_extractor: Optional[CLIErrorCauseExtractor] = None
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -2376,7 +2378,8 @@ def run_remote(
                 command_join(command)
             ],
             poolname=poolname,
-            commandname=commandname
+            commandname=commandname,
+            cause_extractor=cause_extractor
         )
 
 
@@ -2390,7 +2393,8 @@ def copy_to_remote(
     ssh_timeout: int,
     # for CLI calls metrics
     poolname: Optional[str] = None,
-    commandname: Optional[str] = None
+    commandname: Optional[str] = None,
+    cause_extractor: Optional[CLIErrorCauseExtractor] = None
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -2409,7 +2413,8 @@ def copy_to_remote(
                 f'{guest_request.ssh_username}@{guest_request.address}:{dst}',
             ],
             poolname=poolname,
-            commandname=commandname
+            commandname=commandname,
+            cause_extractor=cause_extractor
         )
 
 
@@ -2423,7 +2428,8 @@ def copy_from_remote(
     ssh_timeout: int,
     # for CLI calls metrics
     poolname: Optional[str] = None,
-    commandname: Optional[str] = None
+    commandname: Optional[str] = None,
+    cause_extractor: Optional[CLIErrorCauseExtractor] = None
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -2442,7 +2448,8 @@ def copy_from_remote(
                 dst
             ],
             poolname=poolname,
-            commandname=commandname
+            commandname=commandname,
+            cause_extractor=cause_extractor
         )
 
 
@@ -2454,7 +2461,8 @@ def ping_shell_remote(
     ssh_timeout: int,
     # for CLI calls metrics
     poolname: Optional[str] = None,
-    commandname: Optional[str] = None
+    commandname: Optional[str] = None,
+    cause_extractor: Optional[CLIErrorCauseExtractor] = None
 ) -> Result[bool, Failure]:
     """
     Try to run a simple ``echo`` command on a given guest, and verify its output.
@@ -2474,7 +2482,8 @@ def ping_shell_remote(
         key=key,
         ssh_timeout=ssh_timeout,
         poolname=poolname,
-        commandname=commandname
+        commandname=commandname,
+        cause_extractor=cause_extractor
     )
 
     if r_ssh.is_error:

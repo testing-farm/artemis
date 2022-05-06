@@ -12,6 +12,7 @@ import threading
 from typing import Any, Dict, Generator, List, MutableSequence, Optional, Pattern, Tuple, cast
 
 import gluetool.log
+import gluetool.utils
 import jq
 import pint
 import sqlalchemy.orm.session
@@ -22,7 +23,7 @@ from jinja2 import Template
 from pint import Quantity
 from typing_extensions import Literal, TypedDict
 
-from .. import Failure, JSONType, SerializableContainer, log_dict_yaml
+from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, process_output_to_str
 from ..cache import get_cached_set_as_list, get_cached_set_item
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -30,10 +31,10 @@ from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorBoot,
     Operator
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, GuestTagsType, HookImageInfoMapper, \
-    ImageInfoMapperOptionalResultType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, \
-    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, guest_log_updater, \
-    run_cli_tool, test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
+    HookImageInfoMapper, ImageInfoMapperOptionalResultType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
+    PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
+    guest_log_updater, run_cli_tool
 
 #
 # Custom typing types
@@ -101,7 +102,39 @@ class APIImageType(TypedDict):
 AWS_VM_HYPERVISORS = ('nitro', 'xen')
 
 
-MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist')
+class AWSCLIErrorCauses(CLIErrorCauses):
+    NONE = 'none'
+    MISSING_INSTANCE = 'missing-instance'
+    REQUEST_LIMIT_EXCEEDED = 'request-limit-exceeded'
+
+
+CLI_ERROR_PATTERNS = {
+    AWSCLIErrorCauses.MISSING_INSTANCE: re.compile(
+        r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist'
+    ),
+    AWSCLIErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(
+        r'.+\(RequestLimitExceeded\).+Request limit exceeded'
+    )
+}
+
+
+def awscli_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> AWSCLIErrorCauses:
+    if output.exit_code == 0:
+        return AWSCLIErrorCauses.NONE
+
+    stderr = process_output_to_str(output, stream='stderr')
+
+    if stderr is None:
+        return AWSCLIErrorCauses.NONE
+
+    for cause, pattern in CLI_ERROR_PATTERNS.items():
+        if not pattern.match(stderr):
+            continue
+
+        return cause
+
+    return AWSCLIErrorCauses.NONE
+
 
 AWS_INSTANCE_SPECIFICATION = Template("""
 {
@@ -1223,7 +1256,8 @@ class AWSDriver(PoolDriver):
             json_output=json_output,
             env=self.environ,
             poolname=self.poolname,
-            commandname=commandname
+            commandname=commandname,
+            cause_extractor=awscli_error_cause_extractor
         )
 
         if r_run.is_error:
@@ -1231,10 +1265,11 @@ class AWSDriver(PoolDriver):
 
             # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
             # run this method, we would never evenr made it remove instance that doesn't exist.
-            if test_cli_error(failure, MISSING_INSTANCE_ERROR_PATTERN):
+            if failure.command_output \
+               and awscli_error_cause_extractor(failure.command_output) == AWSCLIErrorCauses.MISSING_INSTANCE:
                 failure.recoverable = False
 
-                PoolMetrics.inc_error(self.poolname, 'missing-instance')
+                PoolMetrics.inc_error(self.poolname, AWSCLIErrorCauses.MISSING_INSTANCE.value)
 
             return Error(failure)
 

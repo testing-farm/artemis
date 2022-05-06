@@ -45,6 +45,7 @@ from .guest import GuestState
 from .knobs import KNOB_POOL_ENABLED, KNOB_WORKER_PROCESS_METRICS_TTL
 
 if TYPE_CHECKING:
+    from .drivers import CLIErrorCauses
     from .tasks import ActorArgumentsType
 
 
@@ -889,7 +890,7 @@ class PoolMetrics(MetricsBase):
         duration: float,
         logger: gluetool.log.ContextAdapter,
         cache: redis.Redis,
-        cause: Optional[str] = None
+        cause: Optional['CLIErrorCauses'] = None,
     ) -> Result[None, Failure]:
         """
         Increase counter for a given CLI command by 1.
@@ -904,8 +905,6 @@ class PoolMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        cause = cause or ''
-
         # raw count
         inc_metric_field(
             logger,
@@ -919,7 +918,7 @@ class PoolMetrics(MetricsBase):
             logger,
             cache,
             PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),  # noqa: FS002
-            f'{commandname}:{exit_code}:{cause}'
+            f'{commandname}:{exit_code}:{cause.value if cause else ""}'
         )
 
         # duration
@@ -929,7 +928,7 @@ class PoolMetrics(MetricsBase):
             logger,
             cache,
             PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname),  # noqa: FS002
-            f'{bucket}:{commandname}:{exit_code}:{cause}'
+            f'{bucket}:{commandname}:{exit_code}:{cause.value if cause else ""}'
         )
 
         return Ok(None)

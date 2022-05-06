@@ -107,7 +107,8 @@ def test_ping(
         key=workspace.master_key,
         ssh_timeout=workspace.ssh_connect_timeout,
         poolname=workspace.pool.poolname,
-        commandname='prepare-verify-ssh.shell-ping'
+        commandname='prepare-verify-ssh.shell-ping',
+        cause_extractor=workspace.pool.cli_error_cause_extractor
     )
 
 
@@ -134,7 +135,8 @@ def test_ping_error(
         key=workspace.master_key,
         ssh_timeout=workspace.ssh_connect_timeout,
         poolname=workspace.pool.poolname,
-        commandname='prepare-verify-ssh.shell-ping'
+        commandname='prepare-verify-ssh.shell-ping',
+        cause_extractor=workspace.pool.cli_error_cause_extractor
     )
 
     assert workspace.result is not None

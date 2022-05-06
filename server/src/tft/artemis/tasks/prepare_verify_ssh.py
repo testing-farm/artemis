@@ -82,7 +82,8 @@ class Workspace(_Workspace):
             key=self.master_key,
             ssh_timeout=self.ssh_connect_timeout,
             poolname=self.pool.poolname,
-            commandname='prepare-verify-ssh.shell-ping'
+            commandname='prepare-verify-ssh.shell-ping',
+            cause_extractor=self.pool.cli_error_cause_extractor
         )
 
         if r_ping.is_error:

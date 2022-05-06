@@ -13,15 +13,16 @@ import jq
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONType, log_dict_yaml
+from .. import Failure, JSONType, log_dict_yaml, process_output_to_str
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, \
     FlavorVirtualization
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, ConsoleUrlData, GuestLogUpdateProgress, HookImageInfoMapper, \
-    PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, run_cli_tool, test_cli_error
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, ConsoleUrlData, GuestLogUpdateProgress, \
+    HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, \
+    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, \
+    run_cli_tool
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -72,8 +73,36 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 )
 
 
-MISSING_INSTANCE_ERROR_PATTERN = re.compile(r'^No server with a name or ID')
-INSTANCE_NOT_READY_ERROR_PATTERN = re.compile(r'^Instance [a-z0-9\-]+ is not ready')
+class OsErrorCauses(CLIErrorCauses):
+    NONE = 'none'
+    NO_SUCH_COMMAND = 'no-such-command'
+    MISSING_INSTANCE = 'missing-instance'
+    INSTANCE_NOT_READY = 'instance-not-ready'
+
+
+CLI_ERROR_PATTERNS = {
+    OsErrorCauses.NO_SUCH_COMMAND: re.compile(r'openstack: .+ is not an openstack command'),
+    OsErrorCauses.MISSING_INSTANCE: re.compile(r'^No server with a name or ID'),
+    OsErrorCauses.INSTANCE_NOT_READY: re.compile(r'^Instance [a-z0-9\-]+ is not ready')
+}
+
+
+def os_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> OsErrorCauses:
+    if output.exit_code == 0:
+        return OsErrorCauses.NONE
+
+    stdout = process_output_to_str(output, stream='stdout')
+    stderr = process_output_to_str(output, stream='stderr')
+
+    for cause, pattern in CLI_ERROR_PATTERNS.items():
+        if stdout and pattern.match(stdout):
+            return cause
+
+        if stderr and pattern.match(stderr):
+            return cause
+
+    return OsErrorCauses.NONE
+
 
 # IP address is suplied in a list of mappings
 JQ_QUERY_INSTANCE_IPV4_ADDRESS = jq.compile('.addresses | to_entries[0].value[0]')
@@ -166,7 +195,8 @@ class OpenStackDriver(PoolDriver):
             json_output=json_format,
             command_scrubber=lambda cmd: (['openstack'] + options),
             poolname=self.poolname,
-            commandname=commandname
+            commandname=commandname,
+            cause_extractor=os_error_cause_extractor
         )
 
         if r_run.is_error:
@@ -174,10 +204,11 @@ class OpenStackDriver(PoolDriver):
 
             # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
             # run this method, we would never evenr made it remove instance that doesn't exist.
-            if test_cli_error(failure, MISSING_INSTANCE_ERROR_PATTERN):
+            if failure.command_output \
+               and os_error_cause_extractor(failure.command_output) == OsErrorCauses.MISSING_INSTANCE:
                 failure.recoverable = False
 
-                PoolMetrics.inc_error(self.poolname, 'missing-instance')
+                PoolMetrics.inc_error(self.poolname, OsErrorCauses.MISSING_INSTANCE.value)
 
             return Error(failure)
 
@@ -1050,7 +1081,8 @@ class OpenStackDriver(PoolDriver):
             failure = r_output.unwrap_error()
 
             # Detect "instance not ready".
-            if test_cli_error(failure, INSTANCE_NOT_READY_ERROR_PATTERN):
+            if failure.command_output \
+               and os_error_cause_extractor(failure.command_output) == OsErrorCauses.INSTANCE_NOT_READY:
                 return Ok(None)
 
         return r_output
