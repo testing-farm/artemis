@@ -1688,9 +1688,6 @@ class AWSDriver(PoolDriver):
         if pool_data.spot_instance_id is not None:
             tags['SpotRequestId'] = pool_data.spot_instance_id
 
-        log_dict_yaml(logger.warning, 'instance', instance)
-        logger.warning(f'volume_ids: {JQ_QUERY_EBS_VOLUME_IDS.input(instance).all()}')
-
         try:
             volume_ids = JQ_QUERY_EBS_VOLUME_IDS.input(instance).all()
 
