@@ -859,7 +859,7 @@ def test_example_regex(logger: ContextAdapter) -> None:
         ---
 
         cpu:
-            model_name: "=~ .*AMD.*"
+            model-name: "=~ .*AMD.*"
         """
     )
 
@@ -979,7 +979,7 @@ def test_clueless_flavor(logger: ContextAdapter) -> None:
 
         cpu:
             family: 79
-            model_name: AMD
+            model-name: AMD
         """
     )
 
@@ -1101,7 +1101,7 @@ def test_schema_logic_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger
         arch: "ppc64"
         constraints:
             cpu:
-              model_name: "=~ .*PPC970.*"
+              model-name: "=~ .*PPC970.*"
         """,
         '<and><system><arch op="==" value="ppc64"/></system><cpu><model_name op="like" value="%PPC970%"/></cpu></and>'
     ),

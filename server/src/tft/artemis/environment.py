@@ -1267,8 +1267,12 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
     ]
 
     group.constraints += [
-        Constraint.from_specification(f'cpu.{constraint_name}', str(spec[constraint_name]), as_quantity=False)
-        for constraint_name in ('model_name',)
+        Constraint.from_specification(
+            f'cpu.{constraint_name.replace("-", "_")}',
+            str(spec[constraint_name]),
+            as_quantity=False
+        )
+        for constraint_name in ('model-name',)
         if constraint_name in spec
     ]
 
