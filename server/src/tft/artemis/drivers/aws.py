@@ -71,6 +71,15 @@ class APIBlockDeviceMappingType(TypedDict, total=True):
     Ebs: APIBlockDeviceMappingEbsType
 
 
+# Type of container holding processor info of an instance type
+#
+# https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ProcessorInfo.html
+class APIInstanceTypeProcessorInfo(TypedDict):
+    SupportedArchitectures: List[str]
+    SustainedClockSpeedInGhz: float
+
+
 DEFAULT_VOLUME_DELETE_ON_TERMINATION = True
 DEFAULT_VOLUME_ENCRYPTED = False
 DEFAULT_VOLUME_TYPE: EBSVolumeTypeType = 'gp3'
@@ -938,6 +947,27 @@ def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> Li
         f'ResourceType={resource_type},Tags=[{serialized_tags}]'
         for resource_type in resource_types
     ]
+
+
+def _aws_arch_to_arch(arch: str) -> str:
+    """
+    Convert processors architecture as known to AWS EC2 API to architecture as tracked by Artemis.
+
+    There is at least one difference, AWS' ``arm64`` is usually called ``aarch64`` by other drivers
+    supported by Artemis. This function serves as a small compatibility layer.
+
+    :param str: architecture as known to AWS EC2. Usually retrieved from ``ProcessorInfo`` structure
+        as described at https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ProcessorInfo.html.
+    :returns: architecture name, or ``None`` when architecture is unsupported or unknown.
+    """
+
+    if arch == 'x86_64':
+        return 'x86_64'
+
+    if arch == 'arm64':
+        return 'aarch64'
+
+    return arch
 
 
 class AWSDriver(PoolDriver):
@@ -1892,6 +1922,13 @@ class AWSDriver(PoolDriver):
     def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
 
+        r_capabilities = self.capabilities()
+
+        if r_capabilities.is_error:
+            return Error(r_capabilities.unwrap_error())
+
+        capabilities = r_capabilities.unwrap()
+
         r_flavors = self._aws_command(
             ['ec2', 'describe-instance-types'],
             key='InstanceTypes',
@@ -1910,25 +1947,39 @@ class AWSDriver(PoolDriver):
         else:
             flavor_name_pattern = None
 
+        flavors: List[Flavor] = []
+
+        # Here we covert instance types retrieved from API into flavors. We filter out instance types
+        # whose names don't match a flavor name patter, if specified. Then we take a look at architectures
+        # supported by instance type, and create distinct flavors for each architecture. That way, we can
+        # have pools supporting more than one architecture, and let Artemis match flavors and requestes
+        # based on their attributes, not because maintainers "hide" the instance types with wrong parameters.
         try:
-            return Ok([
-                AWSFlavor(
-                    name=flavor['InstanceType'],
-                    id=flavor['InstanceType'],
-                    cpu=FlavorCpu(
-                        cores=int(flavor['VCpuInfo']['DefaultVCpus'])
-                    ),
-                    # memory is reported in MB
-                    memory=UNITS.Quantity(int(flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
-                    virtualization=FlavorVirtualization(
-                        hypervisor=flavor.get('Hypervisor', None),
-                        is_virtualized=True if flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS else False
-                    ),
-                    ena_support=flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported')
-                )
-                for flavor in cast(List[Dict[str, Any]], r_flavors.unwrap())
-                if flavor_name_pattern is None or flavor_name_pattern.match(flavor['InstanceType'])
-            ])
+            for flavor in cast(List[Dict[str, Any]], r_flavors.unwrap()):
+                if flavor_name_pattern is not None and not flavor_name_pattern.match(flavor['InstanceType']):
+                    continue
+
+                for arch in cast(APIInstanceTypeProcessorInfo, flavor['ProcessorInfo'])['SupportedArchitectures']:
+                    artemis_arch = _aws_arch_to_arch(arch)
+
+                    if not capabilities.supports_arch(artemis_arch):
+                        continue
+
+                    flavors.append(AWSFlavor(
+                        name=flavor['InstanceType'],
+                        id=flavor['InstanceType'],
+                        arch=artemis_arch,
+                        cpu=FlavorCpu(
+                            cores=int(flavor['VCpuInfo']['DefaultVCpus'])
+                        ),
+                        # memory is reported in MB
+                        memory=UNITS.Quantity(int(flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
+                        virtualization=FlavorVirtualization(
+                            hypervisor=flavor.get('Hypervisor', None),
+                            is_virtualized=True if flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS else False
+                        ),
+                        ena_support=flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported')
+                    ))
 
         except KeyError as exc:
             return Error(Failure.from_exc(
@@ -1936,6 +1987,8 @@ class AWSDriver(PoolDriver):
                 exc,
                 flavor_info=r_flavors.unwrap()
             ))
+
+        return Ok(flavors)
 
     def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
         return get_cached_set_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
