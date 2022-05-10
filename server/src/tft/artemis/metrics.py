@@ -46,7 +46,7 @@ from .knobs import KNOB_POOL_ENABLED, KNOB_WORKER_PROCESS_METRICS_TTL
 
 if TYPE_CHECKING:
     from .drivers import CLIErrorCauses
-    from .tasks import ActorArgumentsType
+    from .tasks import NamedActorArgumentsType
 
 
 T = TypeVar('T')
@@ -120,7 +120,7 @@ class WorkerTrafficTask(SerializableContainer):
     ctime: datetime.datetime
     queue: str
     actor: str
-    args: 'ActorArgumentsType'
+    args: 'NamedActorArgumentsType'
 
     def serialize(self) -> Dict[str, Any]:
         """

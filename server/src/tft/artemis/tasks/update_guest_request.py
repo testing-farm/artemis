@@ -20,7 +20,7 @@ import sqlalchemy.orm.session
 from ..db import DB
 from ..drivers import PoolData, ProvisioningProgress, ProvisioningState
 from ..guest import GuestState
-from . import _ROOT_LOGGER, RESCHEDULE, DoerReturnType, DoerType, ProvisioningTailHandler
+from . import _ROOT_LOGGER, RESCHEDULE, DoerReturnType, DoerType, ProvisioningTailHandler, TaskCall
 from . import Workspace as _Workspace
 from . import dispatch_preparing_pre_connect, get_guest_logger, step, task, task_core
 
@@ -130,10 +130,11 @@ class Workspace(_Workspace):
             self.logger,
             self.db,
             self.session,
-            update_guest_request,
-            {
-                'guestname': self.gr.guestname
-            }
+            TaskCall(
+                actor=update_guest_request,
+                args=(self.gr.guestname,),
+                arg_names=('guestname',)
+            )
         ):
             self.result = self.handle_success('finished-task')
             return

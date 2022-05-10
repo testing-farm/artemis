@@ -13,6 +13,7 @@ import _pytest.logging
 import _pytest.monkeypatch
 import _pytest.python
 import dramatiq
+import dramatiq.brokers.rabbitmq
 import gluetool.log
 import gluetool.utils
 import py.path
@@ -277,9 +278,12 @@ def fixture_broker(
 
         return broker
 
-    monkeypatch.setattr(tft.artemis, 'get_broker', get_broker)
+    broker = get_broker(logger)
 
-    return tft.artemis.get_broker(logger)
+    monkeypatch.setattr(tft.artemis, 'get_broker', get_broker)
+    tft.artemis.tasks.BROKER = broker
+
+    return broker
 
 
 @pytest.fixture

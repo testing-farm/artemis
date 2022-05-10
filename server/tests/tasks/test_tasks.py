@@ -3,7 +3,8 @@
 
 import logging
 import threading
-from typing import Dict, Tuple, cast
+import unittest
+from typing import Any, Dict, Tuple, cast
 from unittest.mock import MagicMock, call
 
 import _pytest.logging
@@ -88,41 +89,57 @@ def test_run_doer_exception(
             )
 
 
+@pytest.fixture(name='actor')
+def fixture_actor() -> tft.artemis.tasks.Actor:
+    @tft.artemis.tasks.task()
+    def dummy_actor(foo: Any) -> None:
+        print(foo)
+
+    return dummy_actor
+
+
 def test_dispatch_task(
     logger: gluetool.log.ContextAdapter,
-    mockpatch: MockPatcher
+    broker: dramatiq.Broker,
+    mockpatch: MockPatcher,
+    actor: tft.artemis.tasks.Actor
 ) -> None:
-    mock_fn = MagicMock()
-
     mockpatch(tft.artemis.tasks, 'safe_call').return_value = gluetool.result.Ok(79)
 
-    r = tft.artemis.tasks.dispatch_task(logger, mock_fn, '79')
+    r = tft.artemis.tasks.dispatch_task(logger, actor, '79')
 
     assert r.is_ok
+
     cast(MagicMock, tft.artemis.tasks.safe_call).assert_called_once_with(  # type: ignore[attr-defined]
-        mock_fn.send,
-        '79'
+        broker.enqueue,
+        # TODO: verify it was a message
+        unittest.mock.ANY,
+        delay=None
     )
 
 
+@pytest.mark.usefixtures('broker')
 def test_dispatcher_task_exception(
     logger: gluetool.log.ContextAdapter,
-    mockpatch: MockPatcher
+    broker: dramatiq.Broker,
+    mockpatch: MockPatcher,
+    actor: tft.artemis.tasks.Actor
 ) -> None:
-    mock_fn = MagicMock(
-        __str__=lambda x: 'dummy_task'
-    )
-
     mockpatch(tft.artemis.tasks, 'safe_call').return_value = gluetool.result.Error(
         tft.artemis.Failure('dummy failure')
     )
 
-    r = tft.artemis.tasks.dispatch_task(logger, mock_fn)
+    r = tft.artemis.tasks.dispatch_task(logger, actor, '79')
 
     assert r.is_error
     assert isinstance(r.error, tft.artemis.Failure)
     assert r.error.message == 'failed to dispatch task'
-    cast(MagicMock, tft.artemis.tasks.safe_call).assert_called_once_with(mock_fn.send)  # type: ignore[attr-defined]
+    cast(MagicMock, tft.artemis.tasks.safe_call).assert_called_once_with(  # type: ignore[attr-defined]
+        broker.enqueue,
+        # TODO: verify it was a message
+        unittest.mock.ANY,
+        delay=None
+    )
 
 
 # def test_foo(db, broker, worker):
@@ -359,7 +376,11 @@ def test_update_guest_state_and_request_task(
     assert_log(caplog, message=SEARCH(r'state switched routing => provisioning'), levelno=logging.INFO)
     assert_log(
         caplog,
-        message=SEARCH(r'requested task #1 acquire_guest_request\(dummy-guest, dummy-pool, delay=79\)'),
+        message="""requested task #1:
+actor: acquire_guest_request
+args:
+    guestname: dummy-guest
+    poolname: dummy-pool""",
         levelno=logging.INFO
     )
 

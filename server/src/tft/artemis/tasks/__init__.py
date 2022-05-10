@@ -3,6 +3,7 @@
 
 import concurrent.futures
 import contextvars
+import dataclasses
 import datetime
 import enum
 import functools
@@ -26,7 +27,7 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol, TypedDict
 
-from .. import Failure, get_broker, get_db, get_logger, metrics, safe_call
+from .. import Failure, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, safe_call
 from ..context import DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SafeQuery, \
     SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change, upsert
@@ -351,7 +352,9 @@ BareActorType = Callable[..., None]
 
 #: A type of a single task argument.
 ActorArgumentType = Union[None, str, enum.Enum]
-ActorArgumentsType = Dict[str, ActorArgumentType]
+
+#: A type of name/value container with actor arguments.
+NamedActorArgumentsType = Dict[str, ActorArgumentType]
 
 
 # Task doer type.
@@ -426,6 +429,125 @@ class Actor(Protocol):
         **options: Any
     ) -> dramatiq.Message:
         ...
+
+
+@dataclasses.dataclass(repr=False)
+class TaskCall(SerializableContainer):
+    """
+    A class bundling together information Artemis has about a particular *executed* task call.
+    """
+
+    #: A task callable that has been executed.
+    actor: Actor
+    #: Arguments given to the task.
+    args: Tuple[ActorArgumentType, ...]
+
+    #: Argument names, listed in the same order as arguments in :py:attr:`args`.
+    arg_names: Tuple[str, ...]
+
+    delay: Optional[int] = None
+
+    _named_args: Optional[NamedActorArgumentsType] = None
+    _tail_handler: Optional['TailHandler'] = None
+
+    def __repr__(self) -> str:
+        formatted_args = [
+            str(arg) for arg in self.args
+        ]
+
+        if self.delay is not None:
+            formatted_args.append(f'delay={self.delay}')
+
+        return f'{self.actor.actor_name}({", ".join(formatted_args)})'
+
+    @property
+    def named_args(self) -> NamedActorArgumentsType:
+        """
+        Returns a mapping between argument names and their values.
+        """
+
+        if self._named_args is None:
+            self._named_args = {
+                name: arg
+                for name, arg in zip(self.arg_names, self.args)
+            }
+
+        return self._named_args
+
+    def has_args(self, *names: str) -> bool:
+        """
+        Verifies all given argument names are indeed available in this instance.
+
+        :param names: argument names to verify.
+        """
+
+        return all([name in self.named_args for name in names])
+
+    def extract_args(self, *names: str) -> List[ActorArgumentType]:
+        """
+        Extract all arguments specified by their names.
+        """
+
+        return [self.named_args[name] for name in names]
+
+    @property
+    def tail_handler(self) -> Optional['TailHandler']:
+        return self.actor.options['tail_handler']
+
+    @property
+    def has_tail_handler(self) -> bool:
+        return self.tail_handler is not None
+
+    @classmethod
+    def _construct(
+        cls,
+        actor: Actor,
+        *args: ActorArgumentType,
+        delay: Optional[int] = None
+    ) -> 'TaskCall':
+        signature = inspect.signature(actor.fn)
+        arg_names = tuple(name for name in signature.parameters.keys())
+
+        assert len(signature.parameters) == len(args), 'actor signature parameters does not match message content'
+
+        return TaskCall(
+            actor=actor,
+            args=args,
+            arg_names=arg_names,
+            delay=delay
+        )
+
+    @classmethod
+    def from_message(
+        cls,
+        broker: dramatiq.broker.Broker,
+        message: dramatiq.message.Message,
+        delay: Optional[int] = None
+    ) -> 'TaskCall':
+        return cls._construct(
+            cast('Actor', broker.get_actor(message.actor_name)),
+            *message.args,
+            delay=delay
+        )
+
+    @classmethod
+    def from_call(
+        cls,
+        actor: Actor,
+        *args: ActorArgumentType,
+        delay: Optional[int] = None
+    ) -> 'TaskCall':
+        return cls._construct(actor, *args, delay=delay)
+
+    def serialize(self) -> Dict[str, Any]:
+        return {
+            'actor': self.actor.actor_name,
+            'args': self.named_args
+        }
+
+    @classmethod
+    def unserialize(cls, serialized: Dict[str, Any]) -> 'TaskCall':
+        raise NotImplementedError()
 
 
 class DispatchTaskType(Protocol):
@@ -945,57 +1067,32 @@ def _randomize_delay(delay: int) -> int:
     return max(0, delay + int(random.uniform(-KNOB_DELAY_UNIFORM_SPREAD.value, KNOB_DELAY_UNIFORM_SPREAD.value)))
 
 
-def format_task_invocation(
-    task: Actor,
-    *args: ActorArgumentType,
-    delay: Optional[int] = None
-) -> str:
-    formatted_args = [
-        str(arg) for arg in args
-    ]
-
-    if delay is not None:
-        formatted_args.append(f'delay={delay}')
-
-    return f'{task.actor_name}({", ".join(formatted_args)})'
+def serialize_task_invocation(
+    task: TaskCall
+) -> Dict[str, Any]:
+    return {
+        'tasks': task.serialize()
+    }
 
 
-def format_task_group_invocation(
-    tasks: List[Actor],
-    *args: ActorArgumentType,
-    delay: Optional[int] = None
-) -> str:
-    formatted_args = [
-        str(arg) for arg in args
-    ]
-
-    if delay is not None:
-        formatted_args.append(f'delay={delay}')
-
-    return f'({" | ".join([task.actor_name for task in tasks])})({", ".join(formatted_args)})'
+def serialize_task_group_invocation(
+    tasks: List[TaskCall],
+    on_complete: Optional[TaskCall] = None
+) -> Dict[str, Any]:
+    return {
+        'group': [task_call.serialize() for task_call in tasks],
+        'on-complete': on_complete.serialize() if on_complete is not None else None
+    }
 
 
-def format_task_sequence_invocation(
-    tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]],
-    on_complete: Optional[Tuple[Actor, Tuple[ActorArgumentType, ...]]] = None,
-    delay: Optional[int] = None
-) -> str:
-    formatted_tasks: List[str] = [
-        format_task_invocation(task, *args)
-        for task, args in tasks
-    ]
-
-    if on_complete:
-        task, args = on_complete
-
-        formatted_tasks.append(format_task_invocation(task, *args))
-
-    formatted_sequence = [f'({" > ".join(formatted_tasks)})']
-
-    if delay is not None:
-        formatted_sequence.append(f'delay={delay}')
-
-    return ', '.join(formatted_sequence)
+def serialize_task_sequence_invocation(
+    tasks: List[TaskCall],
+    on_complete: Optional[TaskCall] = None
+) -> Dict[str, Any]:
+    return {
+        'sequence': [task_call.serialize() for task_call in tasks],
+        'on-complete': on_complete.serialize() if on_complete is not None else None
+    }
 
 
 def dispatch_task(
@@ -1013,17 +1110,17 @@ def dispatch_task(
     :param delay: if set, the task will be delayed by this many seconds.
     """
 
-    if delay is None:
-        r = safe_call(task.send, *args)
+    message = task.message(*args)
 
-    else:
-        delay = _randomize_delay(delay)
+    # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
+    actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
 
-        # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
-        r = safe_call(task.send_with_options, args=args, delay=delay * 1000)
+    task_call = TaskCall.from_message(BROKER, message, delay=delay)
+
+    r = safe_call(BROKER.enqueue, message, delay=actual_delay)
 
     if r.is_ok:
-        logger.info(f'scheduled task {format_task_invocation(task, *args, delay=delay)}')
+        log_dict_yaml(logger.info, 'scheduled task', serialize_task_invocation(task_call))
 
         if KNOB_CLOSE_AFTER_DISPATCH.value:
             logger.debug('closing broker connection as requested')
@@ -1035,9 +1132,7 @@ def dispatch_task(
     return Error(Failure.from_failure(
         'failed to dispatch task',
         r.unwrap_error(),
-        task_name=task.actor_name,
-        task_args=args,
-        task_delay=delay
+        task_call=task_call
     ))
 
 
@@ -1058,24 +1153,37 @@ def dispatch_group(
     :param delay: if set, the task will be delayed by this many seconds.
     """
 
+    # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
+    actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
+
     try:
-        group = dramatiq.group([
+        messages = [
             task.message(*args)
             for task in tasks
-        ])
+        ]
+
+        task_calls: List[TaskCall] = [
+            TaskCall.from_message(BROKER, message, delay=delay)
+            for message in messages
+        ]
+
+        on_complete_task_call: Optional[TaskCall] = None
+
+        group = dramatiq.group(messages)
 
         if on_complete:
-            group.add_completion_callback(on_complete.message(*args))
+            on_complete_message = on_complete.message(*args)
+            on_complete_task_call = TaskCall.from_message(BROKER, on_complete_message)
 
-        if delay is None:
-            group.run()
+            group.add_completion_callback(on_complete_message)
 
-        else:
-            delay = _randomize_delay(delay)
+        group.run(delay=actual_delay)
 
-            group.run(delay=delay * 1000)
-
-        logger.info(f'scheduled group {format_task_group_invocation(tasks, *args, delay=delay)}')
+        log_dict_yaml(
+            logger.info,
+            'scheduled group',
+            serialize_task_group_invocation(task_calls, on_complete=on_complete_task_call)
+        )
 
         if KNOB_CLOSE_AFTER_DISPATCH.value:
             logger.debug('closing broker connection as requested')
@@ -1086,8 +1194,8 @@ def dispatch_group(
         return Error(Failure.from_exc(
             'failed to dispatch group',
             exc,
-            group_tasks=[task.actor_name for task in tasks],
-            group_args=args
+            group_tasks=task_calls,
+            group_on_complete=on_complete_task_call
         ))
 
     return Ok(None)
@@ -1111,29 +1219,39 @@ def dispatch_sequence(
     :param delay: if set, the task will be delayed by this many seconds.
     """
 
-    # Add `pipe_ignore` to disable result propagation. We ignore task results.
+    # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
+    actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
 
     try:
-        pipeline = dramatiq.pipeline([
+        # Add `pipe_ignore` to disable result propagation. We ignore task results.
+        messages = [
             task.message_with_options(args=args, pipe_ignore=True)
             for task, args in tasks
-        ])
+        ]
+
+        task_calls: List[TaskCall] = [
+            TaskCall.from_message(BROKER, message, delay=delay)
+            for message in messages
+        ]
+
+        on_complete_task_call: Optional[TaskCall] = None
+
+        pipeline = dramatiq.pipeline(messages)
 
         if on_complete:
-            task, args = on_complete
+            on_complete_message = on_complete[0].message_with_options(args=on_complete[1], pipe_ignore=True)
+            on_complete_task_call = TaskCall.from_message(BROKER, on_complete_message)
 
-            pipeline = pipeline | task.message_with_options(args=args, pipe_ignore=True)
+            pipeline = pipeline | on_complete_message
 
-        if delay is None:
-            pipeline.run()
+        pipeline.run(delay=actual_delay)
 
-        else:
-            delay = _randomize_delay(delay)
+        print(pipeline.messages)
 
-            pipeline.run(delay=delay * 1000)
-
-        logger.info(
-            f'scheduled sequence {format_task_sequence_invocation(tasks, on_complete=on_complete, delay=delay)}'
+        log_dict_yaml(
+            logger.info,
+            'scheduled sequence',
+            serialize_task_sequence_invocation(task_calls, on_complete=on_complete_task_call)
         )
 
         if KNOB_CLOSE_AFTER_DISPATCH.value:
@@ -1145,10 +1263,8 @@ def dispatch_sequence(
         return Error(Failure.from_exc(
             'failed to dispatch sequence',
             exc,
-            sequence_tasks=[
-                (task.actor_name, args)
-                for task, args in tasks
-            ]
+            sequence_tasks=task_calls,
+            sequence_on_complete=on_complete_task_call
         ))
 
     return Ok(None)
@@ -2108,8 +2224,10 @@ class Workspace:
             return handle_error(r_task, 'failed to add task request')
 
         self.logger.info(f'state switched {current_state_label} => {new_state.value}')
-        self.logger.info(
-            f'requested task #{r_task.unwrap()} {format_task_invocation(task, *task_arguments, delay=delay)}'
+        log_dict_yaml(
+            self.logger.info,
+            f'requested task #{r_task.unwrap()}',
+            TaskCall.from_call(task, *task_arguments, delay=delay).serialize()
         )
 
         return self
@@ -2159,24 +2277,16 @@ class TailHandler:
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType
+        task_call: TaskCall
     ) -> Dict[str, str]:
         return {}
 
     def get_logger(
         self,
         logger: gluetool.log.ContextAdapter,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType
+        task_call: TaskCall
     ) -> gluetool.log.ContextAdapter:
         return logger
-
-    def assert_actor_arguments(self, actor_arguments: ActorArgumentsType, *names: str) -> bool:
-        return all([name in actor_arguments for name in names])
-
-    def extract_actor_arguments(self, actor_arguments: ActorArgumentsType, *names: str) -> List[ActorArgumentType]:
-        return [actor_arguments[name] for name in names]
 
     def do_handle_tail(
         cls,
@@ -2184,8 +2294,7 @@ class TailHandler:
         db: DB,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType,
+        task_call: TaskCall,
         failure_details: Dict[str, str]
     ) -> DoerReturnType:
         raise NotImplementedError()
@@ -2195,15 +2304,14 @@ class TailHandler:
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType
+        task_call: TaskCall
     ) -> bool:
         cancel = threading.Event()
 
-        logger = self.get_logger(logger, actor, actor_arguments)
-        failure_details = self.get_failure_details(logger, db, session, actor, actor_arguments)
+        logger = self.get_logger(logger, task_call)
+        failure_details = self.get_failure_details(logger, db, session, task_call)
 
-        r = self.do_handle_tail(logger, db, session, cancel, actor, actor_arguments, failure_details)
+        r = self.do_handle_tail(logger, db, session, cancel, task_call, failure_details)
 
         if r.is_ok:
             if r is SUCCESS:
@@ -2224,7 +2332,7 @@ class TailHandler:
             print(r.unwrap())
             Failure(
                 'unexpected outcome of tail handler',
-                actor_name=actor.actor_name,
+                task_call=task_call,
                 **cast(Any, failure_details)
             ).handle(logger)
 
@@ -2244,21 +2352,19 @@ class ProvisioningTailHandler(TailHandler):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType
+        task_call: TaskCall
     ) -> Dict[str, str]:
         details: Dict[str, str] = {}
 
-        if 'guestname' in actor_arguments:
-            details['guestname'] = cast(str, actor_arguments['guestname'])
+        if 'guestname' in task_call.named_args:
+            details['guestname'] = cast(str, task_call.named_args['guestname'])
 
         return details
 
     def get_logger(
         self,
         logger: gluetool.log.ContextAdapter,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType
+        task_call: TaskCall
     ) -> gluetool.log.ContextAdapter:
         return TaskLogger(logger, 'provisioning-tail')
 
@@ -2268,8 +2374,7 @@ class ProvisioningTailHandler(TailHandler):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType,
+        task_call: TaskCall,
         failure_details: Dict[str, str]
     ) -> DoerReturnType:
         workspace = Workspace(
@@ -2284,17 +2389,17 @@ class ProvisioningTailHandler(TailHandler):
         # Chicken and egg problem: we need guestname for logging context, but if it's missing,
         # we need to report the failure, and that's usually done by calling `handle_error`.
         # Which needs guestname...
-        if not self.assert_actor_arguments(actor_arguments, 'guestname'):
+        if not task_call.has_args('guestname'):
             r: DoerReturnType = Error(Failure(
                 'cannot handle chain tail with undefined arguments',
-                actor_arguments=actor_arguments
+                task_call=task_call
             ))
 
             workspace.handle_error(r, 'failed to extract actor arguments')
 
             return IGNORE(r)
 
-        guestname, *_ = self.extract_actor_arguments(actor_arguments, 'guestname')
+        guestname, *_ = task_call.extract_args('guestname')
 
         # guestname can never be None
         # assert guestname is not None
@@ -2354,27 +2459,25 @@ class LoggingTailHandler(TailHandler):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType
+        task_call: TaskCall
     ) -> Dict[str, str]:
         details: Dict[str, str] = {}
 
-        if 'guestname' in actor_arguments:
-            details['guestname'] = cast(str, actor_arguments['guestname'])
+        if 'guestname' in task_call.named_args:
+            details['guestname'] = cast(str, task_call.named_args['guestname'])
 
-        if 'logname' in actor_arguments:
-            details['logname'] = cast(str, actor_arguments['logname'])
+        if 'logname' in task_call.named_args:
+            details['logname'] = cast(str, task_call.named_args['logname'])
 
-        if 'contenttype' in actor_arguments:
-            details['contenttype'] = cast(str, actor_arguments['contenttype'])
+        if 'contenttype' in task_call.named_args:
+            details['contenttype'] = cast(str, task_call.named_args['contenttype'])
 
         return details
 
     def get_logger(
         self,
         logger: gluetool.log.ContextAdapter,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType
+        task_call: TaskCall
     ) -> gluetool.log.ContextAdapter:
         return TaskLogger(logger, 'logging-tail')
 
@@ -2384,8 +2487,7 @@ class LoggingTailHandler(TailHandler):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
-        actor: Actor,
-        actor_arguments: ActorArgumentsType,
+        task_call: TaskCall,
         failure_details: Dict[str, str]
     ) -> DoerReturnType:
         workspace = Workspace(
@@ -2397,18 +2499,17 @@ class LoggingTailHandler(TailHandler):
             **failure_details
         )
 
-        if not self.assert_actor_arguments(actor_arguments, 'guestname', 'logname', 'contenttype'):
+        if not task_call.has_args('guestname', 'logname', 'contenttype'):
             r: DoerReturnType = Error(Failure(
                 'cannot handle logging tail with undefined arguments',
-                actor_arguments=actor_arguments
+                task_call=task_call
             ))
 
             workspace.handle_error(r, 'failed to extract actor arguments')
 
             return IGNORE(r)
 
-        guestname, logname, contenttype = self.extract_actor_arguments(
-            actor_arguments,
+        guestname, logname, contenttype = task_call.extract_args(
             'guestname',
             'logname',
             'contenttype'
@@ -3091,11 +3192,11 @@ def do_acquire_guest_request(
             logger,
             db,
             session,
-            acquire_guest_request,
-            {
-                'guestname': workspace.gr.guestname,
-                'poolname': workspace.pool.poolname
-            }
+            TaskCall(
+                actor=acquire_guest_request,
+                args=(workspace.gr.guestname, workspace.pool.poolname),
+                arg_names=('guestname', 'poolname')
+            )
         ):
             return workspace.handle_success('finished-task')
 

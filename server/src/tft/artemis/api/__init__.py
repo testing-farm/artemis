@@ -40,7 +40,7 @@ from typing_extensions import Protocol
 
 from .. import __VERSION__, Failure, FailureDetailsType, JSONSchemaType
 from .. import db as artemis_db
-from .. import get_cache, get_db, get_logger, load_validation_schema, metrics, validate_data
+from .. import get_cache, get_db, get_logger, load_validation_schema, log_dict_yaml, metrics, validate_data
 from ..cache import get_cache_value, iter_cache_keys
 from ..context import DATABASE, LOGGER, SESSION
 from ..drivers import PoolDriver
@@ -49,7 +49,7 @@ from ..guest import GuestState
 from ..knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_JSON, \
     KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK, Knob
 from ..script import hook_engine
-from ..tasks import Actor, _get_ssh_key, format_task_invocation, get_snapshot_logger
+from ..tasks import Actor, TaskCall, _get_ssh_key, get_snapshot_logger
 from . import errors
 from .middleware import AuthContext, authorization_middleware, error_handler_middleware, prometheus_middleware
 
@@ -753,8 +753,10 @@ class GuestRequestManager:
                 )
 
             guest_logger.info('created')
-            guest_logger.info(
-                f'requested task #{r_task.unwrap()} {format_task_invocation(route_guest_request, guestname)}'
+            log_dict_yaml(
+                guest_logger.info,
+                f'requested task #{r_task.unwrap()}',
+                TaskCall.from_call(route_guest_request, guestname).serialize()
             )
 
             # Everything went well, update our accounting.
@@ -874,8 +876,10 @@ class GuestRequestManager:
                     failure_details=failure_details
                 )
 
-            guest_logger.info(
-                f'requested task #{r_task.unwrap()} {format_task_invocation(release_guest_request, guestname)}'
+            log_dict_yaml(
+                guest_logger.info,
+                f'requested task #{r_task.unwrap()}',
+                TaskCall.from_call(release_guest_request, guestname).serialize()
             )
 
     def acquire_guest_console_url(

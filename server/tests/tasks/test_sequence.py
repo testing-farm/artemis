@@ -13,7 +13,7 @@ import redis
 
 from tft.artemis.tasks import Actor, dispatch_sequence, task
 
-from .. import MATCH, assert_log
+from .. import assert_log
 
 
 @pytest.fixture(name='actor')
@@ -56,7 +56,25 @@ def test_sequence(
     assert_log(
         caplog,
         levelno=logging.INFO,
-        message=MATCH(r'scheduled sequence \(dummy_actor\(foo1, bar1\) > dummy_actor\(foo2, bar2\) > dummy_actor\(foo3, bar3\) > dummy_actor\(foo4, bar4\)')  # noqa: E501
+        message="""scheduled sequence:
+sequence:
+  - actor: dummy_actor
+    args:
+        foo: foo1
+        bar: bar1
+  - actor: dummy_actor
+    args:
+        foo: foo2
+        bar: bar2
+  - actor: dummy_actor
+    args:
+        foo: foo3
+        bar: bar3
+on-complete:
+    actor: dummy_actor
+    args:
+        foo: foo4
+        bar: bar4"""
     )
 
     broker.join(actor.queue_name)
