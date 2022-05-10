@@ -491,3 +491,129 @@ class CurrentMessage(dramatiq.middleware.Middleware):  # type: ignore[misc]  # c
         from .context import CURRENT_MESSAGE
 
         CURRENT_MESSAGE.set(None)
+
+
+class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+    def __init__(self, cache: redis.Redis) -> None:
+        super().__init__()
+
+        self.cache = cache
+
+        self._tokens: Dict[str, str] = {}
+
+    @property
+    def actor_options(self) -> Set[str]:
+        return {
+            'singleton',
+            'singleton_deadline'
+        }
+
+    @staticmethod
+    def _lock_name(task_call: 'TaskCall') -> str:
+        lockname = f'tasks.singleton.{task_call.actor.actor_name}'
+
+        if not task_call.args:
+            return lockname
+
+        return f'{lockname}.{":".join(str(arg) for arg in task_call.args)}'
+
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+        from . import Failure, get_logger
+        from .knobs import KNOB_LOGGING_SINGLETON_LOCKS
+        from .tasks import TaskCall
+
+        logger = get_logger()
+
+        task_call = TaskCall.from_message(broker, message)
+
+        failure_details: Dict[str, Any] = {
+            'task_call': task_call
+        }
+
+        logger = task_call.logger(logger, failure_details)
+
+        if not task_call.actor.options['singleton']:
+            logger.debug('not a singleton')
+            return
+
+        from .cache import acquire_lock
+
+        lockname = failure_details['lockname'] = self._lock_name(task_call)
+
+        token = acquire_lock(logger, self.cache, lockname, ttl=task_call.actor.options['singleton_deadline'])
+
+        if token is None:
+            if KNOB_LOGGING_SINGLETON_LOCKS.value is True:
+                logger.info(f'singleton-lock: lockname={lockname} acquire=failed')
+
+            failure_details['broker_message'] = _dump_message(message)
+            Failure('failed to acquire singleton lock', **failure_details).handle(logger)
+
+            return resolve_retry_message(logger, broker, task_call)
+
+        self._tokens[message.message_id] = token
+
+        if KNOB_LOGGING_SINGLETON_LOCKS.value is True:
+            logger.info(f'singleton-lock: lockname={lockname} acquire=succeeded token={token}')
+
+        logger.info(f'acquired singleton lock with token {token}')
+
+    def after_process_message(
+        self,
+        broker: dramatiq.broker.Broker,
+        message: dramatiq.message.Message,
+        *,
+        # This is on purpose, our tasks never return anything useful.
+        result: None = None,
+        exception: Optional[BaseException] = None
+    ) -> None:
+        from . import get_logger
+        from .knobs import KNOB_LOGGING_SINGLETON_LOCKS
+        from .tasks import TaskCall
+
+        logger = get_logger()
+
+        task_call = TaskCall.from_message(broker, message)
+
+        failure_details: Dict[str, Any] = {
+            'task_call': task_call
+        }
+
+        logger = task_call.logger(logger, failure_details)
+
+        if not task_call.actor.options['singleton']:
+            logger.debug('not a singleton')
+            return
+
+        from .cache import release_lock
+
+        lockname = failure_details['lockname'] = self._lock_name(task_call)
+        token = failure_details['token'] = self._tokens.pop(message.message_id, None)
+
+        if token is None:
+            return _fail_message(
+                logger,
+                message,
+                'lost singleton lock token',
+                recoverable=False,
+                **failure_details
+            )
+
+        released = release_lock(logger, self.cache, lockname, token)
+
+        if released is False:
+            if KNOB_LOGGING_SINGLETON_LOCKS.value is True:
+                logger.info(f'singleton-lock: lockname={lockname} release=failed token={token}')
+
+            return _fail_message(
+                logger,
+                message,
+                'failed to release singleton lock',
+                recoverable=False,
+                **failure_details
+            )
+
+        if KNOB_LOGGING_SINGLETON_LOCKS.value is True:
+            logger.info(f'singleton-lock: lockname={lockname} release=succeeded token={token}')
+
+        logger.info('released singleton lock')

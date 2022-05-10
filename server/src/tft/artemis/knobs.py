@@ -858,6 +858,15 @@ KNOB_LOGGING_SENTRY: Knob[bool] = Knob(
     default=False
 )
 
+KNOB_LOGGING_SINGLETON_LOCKS: Knob[bool] = Knob(
+    'logging.singleton-locks',
+    'When enabled, Artemis would log more debuginfo related to singleton task locking.',
+    has_db=False,
+    envvar='ARTEMIS_LOG_SINGLETON_LOCKS',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value
