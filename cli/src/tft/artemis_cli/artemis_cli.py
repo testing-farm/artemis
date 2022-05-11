@@ -961,4 +961,5 @@ def cmd_status_top(cfg: Configuration, tick: int) -> None:
             print_tasks(cfg, tasks)
 
             status.update(f'Updating every {tick} seconds...')
+
             sleep(tick)
