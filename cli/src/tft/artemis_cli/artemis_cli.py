@@ -14,16 +14,16 @@ from typing import Any, Dict, List, Optional, cast
 
 import click
 import click_completion
-import click_spinner
+import rich.table
 import semver
 import stackprinter
 
 from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
-               DEFAULT_RETRY_BACKOFF_FACTOR, GREEN, NL, RED, WHITE, YELLOW,
-               BasicAuthConfiguration, Configuration, Logger, artemis_create,
-               artemis_delete, artemis_get_console_url, artemis_inspect,
-               artemis_restore, artemis_update, confirm, fetch_artemis,
-               load_yaml, prettify_json, prettify_yaml, print_table, prompt,
+               DEFAULT_RETRY_BACKOFF_FACTOR, BasicAuthConfiguration,
+               Configuration, artemis_create, artemis_delete, artemis_inspect,
+               artemis_update, confirm, fetch_artemis, load_yaml, print_events,
+               print_guest_logs, print_guests, print_json, print_knobs,
+               print_table, print_tasks, print_users, print_yaml,
                validate_struct)
 
 # to prevent infinite loop in pagination support
@@ -64,6 +64,12 @@ ALLOWED_LOG_TYPES = ["console:blob", "console:url"]
 @click.group()
 @click.pass_context
 @click.option(
+    '-o', '--output-format',
+    type=click.Choice(['table', 'json', 'yaml']),
+    default='table',
+    help='Format of table-like output'
+)
+@click.option(
     '--config',
     type=str,
     default=click.get_app_dir('artemis-cli'),
@@ -87,7 +93,14 @@ ALLOWED_LOG_TYPES = ["console:blob", "console:url"]
     default=DEFAULT_RETRY_BACKOFF_FACTOR,
     help='API retry backoff factor (seconds)'
 )
-def cli_root(ctx: Any, config: str, api_timeout: int, api_retries: int, api_retry_backoff_factor: int) -> None:
+def cli_root(
+    ctx: Any,
+    config: str,
+    output_format: str,
+    api_timeout: int,
+    api_retries: int,
+    api_retry_backoff_factor: int
+) -> None:
     ctx.ensure_object(Configuration)
 
     cfg = cast(
@@ -95,15 +108,12 @@ def cli_root(ctx: Any, config: str, api_timeout: int, api_retries: int, api_retr
         ctx.obj
     )
 
-    cfg.logger = Logger()
     cfg.config_dirpath = os.path.expanduser(config)
     cfg.config_filepath = os.path.join(cfg.config_dirpath, 'config.yaml')
 
     if not os.path.exists(cfg.config_dirpath) or not os.path.exists(cfg.config_filepath):
         if ctx.invoked_subcommand != 'init':
-            click.echo(RED(
-                'Config file {} does not exists, running configuration wizard'.format(cfg.config_filepath),
-            ))
+            cfg.logger.info(f'Config file {cfg.config_filepath} does not exists, running configuration wizard.')
 
         ctx.invoke(cmd_init)
         sys.exit(0)
@@ -113,28 +123,23 @@ def cli_root(ctx: Any, config: str, api_timeout: int, api_retries: int, api_retr
     validation = validate_struct(cfg.raw_config, 'config')
 
     if not validation.result or cfg.raw_config is None:
-
-        click.echo(RED(
-            'Config file {} must be updated, found following validation errors:'.format(cfg.config_filepath),
-        ))
+        cfg.logger.error(
+            f'Config file {cfg.config_filepath} must be updated, found following validation errors:',
+            exit=False
+        )
 
         for error in validation.errors:
-            NL()
-            click.echo(RED(
-                '  * {}'.format(error.message)
-            ))
-            NL()
-        if cfg.raw_config is None:
-            NL()
-            click.echo(RED('Empty configuration file'))
-            NL()
+            cfg.logger.error(f'* {error.message}', exit=False)
 
-        click.echo(YELLOW(
-            'Running configuration wizard'
-        ))
+        if cfg.raw_config is None:
+            cfg.logger.error('Empty configuration file', exit=False)
+
+        cfg.logger.info('Running configuration wizard.')
 
         ctx.invoke(cmd_init)
         sys.exit(0)
+
+    cfg.output_format = output_format
 
     cfg.install_http_retries(api_timeout, api_retries, api_retry_backoff_factor)
 
@@ -157,69 +162,6 @@ def cli_root(ctx: Any, config: str, api_timeout: int, api_retries: int, api_retr
 
     if 'provisioning_poll_interval' in cfg.raw_config:
         cfg.provisioning_poll_interval = cfg.raw_config['provisioning_poll_interval']
-
-
-@cli_root.group(name='snapshot', short_help='Snapshots related commands')
-@click.pass_obj
-def cmd_snapshot(cfg: Configuration) -> None:
-    pass
-
-
-@cmd_snapshot.command(name='create', short_help='Create snapshot of a guest')
-@click.option('--guest', required=True, help='Guest id')
-@click.option('--no-start-again', is_flag=True, help='Do not start the guest after snapshotting')
-@click.pass_obj
-def cmd_snapshot_create(
-        cfg: Configuration,
-        guest: str,
-        no_start_again: bool
-) -> None:
-    data = {
-        'start_again': not no_start_again
-    }
-
-    response = artemis_create(cfg, 'guests/{}/snapshots'.format(guest), data=data)
-    cfg.logger.info(prettify_json(True, response.json()))
-
-
-@cmd_snapshot.command(name='inspect', short_help='Inspect snapshot of a guest')
-@click.option('--guest', required=True, help='Guest id')
-@click.option('--snapshot', required=True, help='Snapshot id')
-@click.pass_obj
-def cmd_snapshot_inspect(
-        cfg: Configuration,
-        guest: str,
-        snapshot: str,
-) -> None:
-    response = artemis_inspect(cfg, 'guests/{}/snapshots'.format(guest), snapshot)
-    cfg.logger.info(prettify_json(True, response.json()))
-
-
-@cmd_snapshot.command(name='restore', short_help='Restore snapshot of a guest')
-@click.option('--guest', required=True, help='Guest id')
-@click.option('--snapshot', required=True, help='Snapshot id')
-@click.pass_obj
-def cmd_snapshot_restore(
-        cfg: Configuration,
-        guest: str,
-        snapshot: str,
-) -> None:
-    response = artemis_restore(cfg, 'guests/{}/snapshots'.format(guest), snapshot)
-    cfg.logger.info(prettify_json(True, response.json()))
-
-
-@cmd_snapshot.command(name='cancel', short_help='Delete snapshot of a guest')
-@click.option('--guest', required=True, help='Guest id')
-@click.option('--snapshot', required=True, help='Snapshot id')
-@click.pass_obj
-def cmd_snapshot_cancel(
-        cfg: Configuration,
-        guest: str,
-        snapshot: str,
-) -> None:
-    artemis_delete(cfg, 'guests/{}/snapshots'.format(guest), snapshot)
-    # TODO: add 404 handling
-    cfg.logger.info('snapshot "{}" has been canceled'.format(snapshot))
 
 
 @cli_root.group(name='guest', short_help='Guest related commands')
@@ -302,7 +244,7 @@ def cmd_guest_create(
                 environment['hw']['constraints'] = json.loads(hw_constraints)
 
             except Exception as exc:
-                cfg.logger.error('failed to parse HW constraints: {}'.format(exc))
+                cfg.logger.error(f'failed to parse HW constraints: {exc}')
 
     elif hw_constraints is not None:
         cfg.logger.error('HW constraints are supported with API 0.0.19 and newer')
@@ -315,7 +257,7 @@ def cmd_guest_create(
             data['user_data'] = json.loads(user_data)
 
         except Exception as exc:
-            cfg.logger.error('failed to parse user data: {}'.format(exc))
+            cfg.logger.error(f'failed to parse user data: {exc}')
 
     environment['os'] = {'compose': compose}
 
@@ -329,22 +271,27 @@ def cmd_guest_create(
 
     post_install = None
     if post_install_script:
-        logger = Logger()
         # check that post_install_script is a valid file and read it
         if os.path.isfile(post_install_script):
-            logger.info("post-install-script argument is treated as a file")
+            cfg.logger.info('post-install-script argument is treated as a file')
+
             with open(post_install_script) as f:
                 post_install = f.read()
+
         # check that post_install_script is a valid url, if it is - try to download the script
         elif urllib.parse.urlparse(post_install_script).netloc:
             res = cfg.http_session.get(post_install_script)
+
             if res.ok:
-                logger.info("post-install-script argument is treated as a url")
+                cfg.logger.info('post-install-script argument is treated as a url')
+
                 # NOTE(ivasilev) content is bytes so a decode step is necessary
                 post_install = res.content.decode("utf-8")
+
         # If neither of the first 2 steps worked - treat as raw data
         if not post_install:
-            logger.info("post-install-script argument is treated as a raw script")
+            cfg.logger.info('post-install-script argument is treated as a raw script')
+
             # Treat the data as script contents
             # NOTE(ivasilev) Need to remove possible string escaping like \\n
             post_install = post_install_script.replace('\\n', '\n')
@@ -353,39 +300,81 @@ def cmd_guest_create(
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['log-types']:
         log_types = log_types if log_types else []
-        data['log_types'] = list(set(tuple(log.split(':', 1)) for log in log_types))
+        data['log_types'] = list({tuple(log.split(':', 1)) for log in log_types})
+
     elif log_types:
-        cfg.logger.error('--log-types is supported with API v0.0.26 and newer')
+        cfg.logger.error(f'--log-types is supported with API {API_FEATURE_VERSIONS["log-types"]} and newer')
+        sys.exit(1)
 
     response = artemis_create(cfg, 'guests/', data)
-    print(prettify_json(True, response.json()))
 
-    if wait:
-        guestname = response.json()['guestname']
-        state = response.json()['state']
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
 
-        # click_spinner runs asynchronously and after printing a spinner frame, it waits 250ms before writing a
-        # backspace character. Therefore, for printing updates, return to beginning of line and message is
-        # terminated with a newline and an extra whitespace for the backspace.
-        with click_spinner.spinner():
-            while True:
-                new_state = artemis_inspect(cfg, 'guests', guestname).json()['state']
+    guest = response.json()
 
-                if state == new_state:
-                    sleep(cfg.provisioning_poll_interval)
-                    continue
+    if not wait:
+        print_guests(cfg, [guest])
+        return
 
-                state = new_state
+    if cfg.output_format == 'table':
+        def before() -> None:
+            cfg.console.clear()
 
-                print('\rNew state:', new_state, end='\n ')
+        def on_update(guest: Dict[str, Any]) -> None:
+            cfg.console.clear()
 
-                if state == 'ready' or state == 'error':
-                    break
+            print_guests(cfg, [guest])
 
-        if state == 'ready':
-            click.echo(GREEN('Provisioning finished. Guest is ready.'))
-        elif state == 'error':
-            click.echo(RED('Provisioning finished with an error.'))
+        def after(guest: Dict[str, Any]) -> None:
+            pass
+
+    else:
+        def before() -> None:
+            pass
+
+        def on_update(guest: Dict[str, Any]) -> None:
+            pass
+
+        def after(guest: Dict[str, Any]) -> None:
+            print_guests(cfg, [guest])
+
+    before()
+
+    print_guests(cfg, [guest])
+
+    guestname = guest['guestname']
+    state = guest['state']
+
+    with cfg.console.status('Waiting for guest to become ready...', spinner='dots'):
+        while True:
+            response = artemis_inspect(cfg, 'guests', guestname)
+
+            if not response.ok:
+                cfg.logger.unhandled_api_response(response)
+
+            guest = response.json()
+
+            new_state = guest['state']
+
+            if state == new_state:
+                sleep(cfg.provisioning_poll_interval)
+                continue
+
+            state = new_state
+
+            on_update(guest)
+
+            if state == 'ready' or state == 'error':
+                break
+
+    after(guest)
+
+    if state == 'ready':
+        cfg.logger.success('Provisioning finished, guest is ready.')
+
+    elif state == 'error':
+        cfg.logger.error('Provisioning finished with an error.')
 
 
 @cmd_guest.command(name='inspect', short_help='Inspect provisioning request')
@@ -393,29 +382,70 @@ def cmd_guest_create(
 @click.pass_obj
 def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
     response = artemis_inspect(cfg, 'guests', guestname)
-    print(prettify_json(True, response.json()))
+
+    if response.ok:
+        print_guests(cfg, [response.json()])
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cmd_guest.command(name='cancel', short_help='Cancel provisioning request')
+@click.option(
+    '--continue-on-error/--no-continue-on-error',
+    default=False,
+    help='When set, errors would be logged but CLI would continue with next guest request in the list'
+)
 @click.argument('guestnames', metavar='ID...', default=None, nargs=-1,)
 @click.pass_obj
-def cmd_cancel(cfg: Configuration, guestnames: List[str]) -> None:
-    logger = Logger()
+def cmd_cancel(cfg: Configuration, guestnames: List[str], continue_on_error: bool = False) -> None:
     for guestname in guestnames:
-        response = artemis_delete(cfg, 'guests', guestname, logger=logger)
-        if response.status_code == 404:
-            logger.error('guest "{}" has not been found'.format(guestname))
-        elif response.status_code == 409:
-            logger.error('guest "{}" has provisioned snapshots. Remove the snapshots first'.format(guestname))
+        response = artemis_delete(cfg, 'guests', guestname)
+
         if response.ok:
-            logger.info('guest "{}" has been canceled'.format(guestname))
+            cfg.logger.success(f'guest {guestname} has been canceled')
+
+        elif response.status_code == 404:
+            cfg.logger.error(f'guest {guestname} not found', exit=not continue_on_error)
+
+        elif response.status_code == 409:
+            cfg.logger.warning(f'guest {guestname} owns snapshots, remove them first')
+
+        else:
+            cfg.logger.unhandled_api_response(response, exit=not continue_on_error)
 
 
 @cmd_guest.command(name='list', short_help='List provisioning requests')
+@click.option(
+    '--sort-by',
+    type=click.Choice(['ctime']),
+    default='ctime'
+)
+@click.option(
+    '--sort-order',
+    type=click.Choice(['asc', 'desc']),
+    default='asc'
+)
 @click.pass_obj
-def cmd_guest_list(cfg: Configuration) -> None:
+def cmd_guest_list(
+    cfg: Configuration,
+    sort_by: str = 'ctime',
+    sort_order: str = 'asc'
+) -> None:
     response = artemis_inspect(cfg, 'guests', '')
-    print(prettify_json(True, response.json()))
+
+    if response.ok:
+        guests = cast(List[Dict[str, Any]], response.json())
+
+        guests.sort(key=lambda x: cast(str, x[sort_by]))
+
+        if sort_order == 'desc':
+            guests.reverse()
+
+        print_guests(cfg, guests)
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cmd_guest.command(name='events', short_help='List event log')
@@ -438,27 +468,28 @@ def cmd_guest_events(
         last: Optional[int] = None
 ) -> None:
     """
-    Prints event log
+    Prints event log.
 
-    Optional argument guestname limits events only to given guest.
-    Event log support pagination (with default value on Artemi server).
-    Events can be also limited by first N values.
+    When optional guestname is given, only events related to this guest are show. Events can be paginated and limited
+    by date and time.
     """
-    params: Dict[str, Any] = {}
-    # sorting by 'updated', 'asc' is default, 'desc' is used for --last
-    params['sort_field'] = 'updated'
-    params['sort_by'] = 'asc'
 
-    def _set_param(name: Any, value: Any) -> None:
-        if value:
-            params[name] = value
+    params: Dict[str, Any] = {
+        # sorting by 'updated', 'asc' is default, 'desc' is used for --last
+        'sort_field': 'updated',
+        'sort_by': 'asc'
+    }
 
     for param in ['page_size', 'page', 'since', 'until']:
-        _set_param(param, locals().get(param))
+        value = locals().get(param)
+
+        if value is not None:
+            params[param] = value
 
     if len([x for x in [first, last, page] if x]) > 1:
-        cfg.logger = Logger()
-        Logger().error('only one of --first, --last and --page parameters could be used at once')
+        cfg.logger.error('--first, --last and --page cannot be used together')
+
+        sys.exit(1)
 
     if first:
         params['page_size'] = first
@@ -471,33 +502,50 @@ def cmd_guest_events(
 
     if guestname:
         # get events for given guest
-        rid = '{}/events'.format(guestname)
+        rid = f'{guestname}/events'
     else:
         # get all events
         rid = 'events'
 
+    events: List[Dict[str, Any]] = []
+
     if page or first or last:
         # request for specific page
         response = artemis_inspect(cfg, 'guests', rid, params=params)
-        results_json = response.json()
+
+        if response.ok:
+            events = response.json()
+
+        else:
+            cfg.logger.unhandled_api_response(response)
+
     else:
         # get all pages
-        results_json = []
         for page in range(1, PAGINATION_MAX_COUNT):
             params['page'] = page
+
             response = artemis_inspect(cfg, 'guests', rid, params=params)
-            results_json = results_json + response.json()
-            if len(response.json()) < page_size:
-                # last page, result is complete
-                break
+
+            if response.ok:
+                new_events = response.json()
+
+                events += new_events
+
+                if len(new_events) < page_size:
+                    # last page, result is complete
+                    break
+
+            else:
+                cfg.logger.unhandled_api_response(response)
+
         else:
-            Logger().error('Pagination: reached limit {} pages'.format(PAGINATION_MAX_COUNT))
+            cfg.logger.error(f'reached limit of {PAGINATION_MAX_COUNT} pages')
 
     if last:
         # for --last, sorting has opposit order, need to reverse here
-        results_json.reverse()
+        events.reverse()
 
-    print(prettify_json(True, results_json))
+    print_events(cfg, events)
 
 
 @cmd_guest.command(name='logs', short_help='Get specific logs from the guest')
@@ -518,7 +566,7 @@ def cmd_guest_log(
     if force:
         response = fetch_artemis(
             cfg,
-            '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+            f'/guests/{guestname}/logs/{logname}/{contenttype}',
             method='post',
             allow_statuses=[202]
         )
@@ -526,7 +574,7 @@ def cmd_guest_log(
     else:
         response = fetch_artemis(
             cfg,
-            '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+            f'/guests/{guestname}/logs/{logname}/{contenttype}',
             allow_statuses=[200, 404, 409]
         )
 
@@ -534,7 +582,7 @@ def cmd_guest_log(
             # first time asking for this type of log
             response = fetch_artemis(
                 cfg,
-                '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+                f'/guests/{guestname}/logs/{logname}/{contenttype}',
                 method='post',
                 allow_statuses=[202]
             )
@@ -545,18 +593,28 @@ def cmd_guest_log(
             # settle down.
             response = fetch_artemis(
                 cfg,
-                '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+                f'/guests/{guestname}/logs/{logname}/{contenttype}',
                 method='post',
                 allow_statuses=[202]
             )
 
-    if wait:
-        res_error = False
-        with click_spinner.spinner():
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
+
+    log = response.json()
+
+    if not wait:
+        if log:
+            print_guest_logs(cfg, [log])
+
+    else:
+        cfg.console.clear()
+
+        with cfg.console.status('Waiting for guest log to become ready...', spinner='dots'):
             while True:
                 response = fetch_artemis(
                     cfg,
-                    '/guests/{}/logs/{}/{}'.format(guestname, logname, contenttype),
+                    f'/guests/{guestname}/logs/{logname}/{contenttype}',
                     allow_statuses=[200, 404, 409]
                 )
 
@@ -565,22 +623,30 @@ def cmd_guest_log(
                     pass
 
                 elif response.status_code == 200:
-                    state = response.json()['state']
-                    res_error = (state == 'error')
-                    contenttype = response.json()['contenttype']
-                    blob = response.json()['blob']
-                    is_blob_ready = (state == 'in-progress' and contenttype == 'blob' and blob)
-                    if state in ['complete', 'unsupported'] or is_blob_ready or res_error:
+                    log = response.json()
+
+                    cfg.console.clear()
+
+                    print_guest_logs(cfg, [log], console=cfg.console)
+
+                    state = log['state']
+
+                    if state in ('complete', 'unsupported', 'error'):
+                        break
+
+                    if state == 'in-progress' and contenttype == 'blob' and log['blob']:
                         break
 
                 else:
-                    cfg.logger.error('unexpected status code {}'.format(response.status_code))
+                    cfg.logger.unhandled_api_response(response)
 
                 time.sleep(cfg.provisioning_poll_interval)
 
-        click.echo(GREEN('Guest log obtained.') if not res_error else RED('An error occurred.'))
+        if log['state'] in ('unsupported', 'error'):
+            cfg.logger.error('failed to obtain guest request log')
 
-    cfg.logger.info(prettify_json(True, response.json() or {}))
+        if log['state'] in ('completed', 'in-progress'):
+            cfg.logger.success('guest log obtained')
 
 
 # XXX FIXME(ivasilev) Switch to the generalized guest logs approach with console url being a special log type
@@ -594,8 +660,16 @@ def cmd_console(cfg: Configuration) -> None:
 @click.argument('guestname', metavar='ID', default=None,)
 @click.pass_obj
 def cmd_console_url(cfg: Configuration, guestname: str) -> None:
-    response = artemis_get_console_url(cfg, 'guests', guestname)
-    cfg.logger.info(prettify_json(True, response.json()))
+    response = fetch_artemis(
+        cfg,
+        f'/guests/{guestname}/logs/console/url'
+    )
+
+    if response.ok:
+        print_guest_logs(cfg, [response.json()])
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cli_root.command(name='init', short_help='Initialize configuration file.')
@@ -606,63 +680,26 @@ def cmd_init(cfg: Configuration) -> None:
     other bits must be explicitly provided by the user.
     """
 
-    # We try to use one way to do the same thing, including "printing to terminal". For that purpose,
-    # we have Logger class and cfg.logger and so on. But in this particular function, we want to print
-    # large pile of text, with colors, and that's more readable without logger. So, here's the exception...
+    cfg.console.print(f"""
 
-    # Oh God, how I miss the preprocessor ...
-    def TITLE(s: str) -> None:
-        click.echo(YELLOW(s))
+Following sequence of questions will help you setup configuration for Artemis CLI.
 
-    def TEXT(s: str) -> None:
-        click.echo(WHITE(s))
+Configuration file location is {cfg.config_filepath}
 
-    def ERROR(s: str) -> None:
-        click.echo(RED(s))
-
-    def WARN(s: str) -> None:
-        click.echo(GREEN(s))
-
-    def SUCCESS(s: str) -> None:
-        click.echo(GREEN(s))
-
-    def QUESTION(s: str) -> str:
-        return YELLOW(s)
-
-    TEXT("""
-Hi! Following sequence of questions will help you setup configuration for this tool.
-Configuration file is placed at {}
-
-Feel free to interrupt it anytime, nothing is saved until the very last step.
-""". format(cfg.config_filepath))
+Feel free to quit anytime, nothing is saved until the very last step.
+""")
 
     #
     # Artemis API
     #
-    TITLE('** Artemis API URL **')
-    TEXT("""
-URL of Artemis API, for example 'http://artemis.example.com/v0.0.18'
-""")
-
-    artemis_api_url = prompt(
-        cfg,
-        QUESTION('Enter URL of Artemis API'),
-        type=str,
-        default=None
+    cfg.console.rule('[bold red]Artemis API URL')
+    artemis_api_url = cfg.console.input(
+        ':question_mark: URL of Artemis API (for example "http://artemis.example.com/v0.0.18"): '
     )
 
-    NL()
-
-    TITLE('** Artemis API version **')
-    TEXT("""
-API version to use for talking to Artemis, for example '0.0.18'
-""")
-
-    artemis_api_version = prompt(
-        cfg,
-        QUESTION('Enter API version'),
-        type=str,
-        default=None
+    cfg.console.rule('[bold red]Artemis API version')
+    artemis_api_version = cfg.console.input(
+        ':question_mark: API version to use when talking to Artemis (for example "0.0.18"): '
     )
 
     tmp_config_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
@@ -676,20 +713,12 @@ artemis_api_version: {artemis_api_version}
 
         tmp_config_file.flush()
 
-    if confirm(
-        cfg,
-        QUESTION('Do you wish to check the configuration file, possibly modifying it?'),
-        False,
-        default=True
-    ):
+    cfg.console.rule()
+
+    if confirm('Do you wish to view the configuration file, possibly modifying it?', default=True, console=cfg.console):
         click.edit(filename=tmp_config_file.name)
 
-    if confirm(
-        cfg,
-        QUESTION('Do you wish to save this as your configuration file?'),
-        False,
-        default=False
-    ):
+    if confirm('Do you wish to save this as your configuration file?', default=False, console=cfg.console):
         assert cfg.config_dirpath is not None
         assert cfg.config_filepath is not None
 
@@ -700,10 +729,10 @@ artemis_api_version: {artemis_api_version}
 
         shutil.copy(tmp_config_file.name, cfg.config_filepath)
 
-        SUCCESS('Saved, your config file has been updated')
+        cfg.console.log(':+1: [green]Saved, your config file has been updated.[/green]')
 
     else:
-        WARN('Ok, your answers were thrown away.')
+        cfg.console.log(':+1: [yellow]Your answers were thrown away.[/yellow]')
 
 
 @cli_root.group(name='knob', short_help='Knob related commands')
@@ -715,22 +744,13 @@ def cmd_knob(cfg: Configuration) -> None:
 @cmd_knob.command(name='list', short_help='List all knobs')
 @click.pass_obj
 def cmd_knob_list(cfg: Configuration) -> None:
-    knobs = cast(List[Dict[str, str]], artemis_inspect(cfg, 'knobs', '').json())
+    response = artemis_inspect(cfg, 'knobs', '')
 
-    table = [
-        ['Name', 'Value', 'Type', 'Editable', 'Help']
-    ] + [
-        [
-            knob['name'],
-            knob["value"],
-            knob['cast'],
-            'yes' if knob['editable'] else 'no',
-            knob['help']
-        ]
-        for knob in sorted(knobs, key=lambda x: x['name'])
-    ]
+    if response.ok:
+        print_knobs(cfg, response.json())
 
-    print_table(table)
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cmd_knob.command(name='get', short_help='Get knob value')
@@ -740,7 +760,16 @@ def cmd_knob_get(
         cfg: Configuration,
         knobname: str
 ) -> None:
-    print(prettify_yaml(True, artemis_inspect(cfg, 'knobs', knobname).json()))
+    response = artemis_inspect(cfg, 'knobs', knobname)
+
+    if response.ok:
+        print_knobs(cfg, [response.json()])
+
+    elif response.status_code == 404:
+        cfg.logger.error(f'knob "{knobname}" does not exist')
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cmd_knob.command(name='set', short_help='Set knob value')
@@ -752,7 +781,16 @@ def cmd_knob_set(
         knobname: str,
         value: str
 ) -> None:
-    print(prettify_yaml(True, artemis_update(cfg, 'knobs/{}'.format(knobname), {'value': value}).json()))
+    response = artemis_update(cfg, f'knobs/{knobname}', {'value': value})
+
+    if response.ok:
+        print_knobs(cfg, [response.json()])
+
+    elif response.status_code == 404:
+        cfg.logger.error(f'knob "{knobname}" does not exist')
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cmd_knob.command(name='delete', short_help='Remove knob')
@@ -762,15 +800,16 @@ def cmd_knob_delete(
         cfg: Configuration,
         knobname: str
 ) -> None:
-    logger = Logger()
-
-    response = artemis_delete(cfg, 'knobs', knobname, logger=logger)
-
-    if response.status_code == 404:
-        logger.error('knob "{}" does not exist'.format(knobname))
+    response = artemis_delete(cfg, 'knobs', knobname)
 
     if response.ok:
-        logger.info('knob "{}" has been removed'.format(knobname))
+        cfg.logger.success(f'knob "{knobname}" has been removed')
+
+    elif response.status_code == 404:
+        cfg.logger.error(f'knob "{knobname}" does not exist')
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cli_root.group(name='user', short_help='User management commands')
@@ -788,7 +827,13 @@ def cmd_token(cfg: Configuration) -> None:
 @cmd_user.command(name='list', short_help='List all users')
 @click.pass_obj
 def cmd_user_list(cfg: Configuration) -> None:
-    print(prettify_yaml(True, artemis_inspect(cfg, 'users', '').json()))
+    response = artemis_inspect(cfg, 'users', '')
+
+    if response.ok:
+        print_users(cfg, response.json())
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cmd_user.command(name='inspect', short_help='Inspect a user')
@@ -798,7 +843,13 @@ def cmd_user_inspect(
     cfg: Configuration,
     username: str
 ) -> None:
-    print(prettify_yaml(True, artemis_inspect(cfg, 'users', username).json()))
+    response = artemis_inspect(cfg, 'users', username)
+
+    if response.ok:
+        print_users(cfg, [response.json()])
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cmd_user.command(name='create', short_help='Create a user')
@@ -810,13 +861,13 @@ def cmd_user_create(
         username: str,
         role: str
 ) -> None:
-    print(prettify_yaml(True, artemis_create(
-        cfg,
-        'users/{}'.format(username),
-        {
-            'role': role
-        }
-    ).json()))
+    response = artemis_create(cfg, f'users/{username}', {'role': role})
+
+    if response.ok:
+        print_users(cfg, [response.json()])
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cmd_user.command(name='delete', short_help='Delete a user')
@@ -826,13 +877,16 @@ def cmd_user_delete(
     cfg: Configuration,
     username: str
 ) -> None:
-    response = artemis_delete(cfg, 'users', username, logger=cfg.logger)
-
-    if response.status_code == 404:
-        cfg.logger.error('user "{}" does not exist'.format(username))
+    response = artemis_delete(cfg, 'users', username)
 
     if response.ok:
-        cfg.logger.info('user "{}" has been removed'.format(username))
+        cfg.logger.success(f'user "{username}" has been removed')
+
+    elif response.status_code == 404:
+        cfg.logger.error(f'user "{username}" does not exist')
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cmd_token.command(name='reset', short_help='Reset user\'s token')
@@ -844,9 +898,67 @@ def cmd_user_token_reset(
     username: str,
     tokentype: str
 ) -> None:
-    response = artemis_create(cfg, 'users/{}/tokens/{}/reset'.format(username, tokentype), {}, logger=cfg.logger)
+    response = artemis_create(cfg, f'users/{username}/tokens/{tokentype}/reset', {})
 
-    if response.status_code != 201:
-        cfg.logger.error('failed to reset token: {}'.format(response.text))
+    if response.ok:
+        if cfg.output_format == 'table':
+            token = response.json()
 
-    print(prettify_yaml(True, response.json()))
+            table = rich.table.Table()
+
+            for header in ['Token type', 'Token']:
+                table.add_column(header)
+
+            table.add_row(token['tokentype'], token['token'])
+
+            print_table(table)
+
+        elif cfg.output_format == 'json':
+            print_json(response.json())
+
+        elif cfg.output_format == 'yaml':
+            print_yaml(response.json())
+
+    elif response.status_code == 404:
+        cfg.logger.error(f'user "{username}" does not exist')
+
+    else:
+        cfg.logger.unhandled_api_response(response)
+
+
+@cli_root.group(name='status', short_help='Status and introspection commands')
+@click.pass_obj
+def cmd_status(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_status.command(name='tasks', short_help='Display current tasks')
+@click.pass_obj
+def cmd_status_tasks(cfg: Configuration) -> None:
+    response = fetch_artemis(cfg, '/_status/workers/traffic')
+
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
+
+    print_tasks(cfg, response.json())
+
+
+@cmd_status.command(name='top', short_help='Display current tasks in a top-like fashion')
+@click.option('--tick', metavar='N', type=int, default=10, help='Refresh output every N seconds')
+@click.pass_obj
+def cmd_status_top(cfg: Configuration, tick: int) -> None:
+    with cfg.console.status('Updating task list...', spinner='dots') as status:
+        while True:
+            status.update('Updating task list...')
+            response = fetch_artemis(cfg, '/_status/workers/traffic')
+
+            if not response.ok:
+                cfg.logger.unhandled_api_response(response)
+
+            tasks = response.json()
+
+            cfg.console.clear()
+            print_tasks(cfg, tasks)
+
+            status.update(f'Updating every {tick} seconds...')
+            sleep(tick)
