@@ -1738,6 +1738,26 @@ def get_guest_requests(manager: GuestRequestManager, request: Request) -> Tuple[
     return HTTP_200, manager.get_guest_requests()
 
 
+def create_guest_request_v0_0_38(
+    guest_request: GuestRequest,
+    manager: GuestRequestManager,
+    request: Request,
+    auth: AuthContext,
+    logger: gluetool.log.ContextAdapter
+) -> Tuple[str, GuestResponse]:
+    # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
+    # and we got so far means user must be authenticated.
+    if auth.is_authentication_enabled and auth.is_authenticated:
+        assert auth.username
+
+        ownername = auth.username
+
+    else:
+        ownername = DEFAULT_GUEST_REQUEST_OWNER
+
+    return HTTP_201, manager.create(guest_request, ownername, logger, ENVIRONMENT_SCHEMAS['v0.0.38'])
+
+
 def create_guest_request_v0_0_37(
     guest_request: GuestRequest,
     manager: GuestRequestManager,
@@ -2332,6 +2352,61 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
     return wrapper
 
 
+# NEW: added hostname HW constraint
+@route_generator
+def generate_routes_v0_0_38(
+    create_route: CreateRouteCallbackType,
+    name_prefix: str,
+    metadata: Any
+) -> List[Union[Route, Include]]:
+    return [
+        Include('/guests', [
+            create_route('/', get_guest_requests, method='GET'),
+            create_route('/', create_guest_request_v0_0_38, method='POST'),
+            create_route('/{guestname}', get_guest_request),  # noqa: FS003
+            create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
+            create_route('/events', get_events),
+            create_route('/{guestname}/events', get_guest_events),  # noqa: FS003
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')  # noqa: FS003,E501
+        ]),
+        Include('/knobs', [
+            create_route('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')  # noqa: FS003
+        ]),
+        Include('/users', [
+            create_route('/', UserManager.entry_get_users, method='GET'),
+            create_route('/{username}', UserManager.entry_get_user, method='GET'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_create_user, method='POST'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_delete_user, method='DELETE'),  # noqa: FS003
+            create_route('/{username}/tokens/{tokentype}/reset', UserManager.entry_reset_token, method='POST')  # noqa: FS003,E501
+        ]),
+        create_route('/metrics', get_metrics),
+        create_route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [  # noqa: FS003
+                create_route('/image-info', CacheManager.entry_pool_image_info),
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info),
+                create_route('/image-info', CacheManager.entry_refresh_pool_image_info, method='POST'),
+                create_route('/flavor-info', CacheManager.entry_refresh_pool_flavor_info, method='POST')
+            ])
+        ]),
+        Include('/_status', [
+            Include('/workers', [
+                create_route('/traffic', StatusManager.entry_workers_traffic)
+            ])
+        ]),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
+        create_route('/_schema', OpenAPIHandler(metadata=metadata))
+    ]
+
+
 # NEW: virtualization HW constraint
 @route_generator
 def generate_routes_v0_0_37(
@@ -2851,8 +2926,8 @@ def generate_routes_v0_0_17(
 #: API versions. Based on this list, routes are created with proper endpoints, and possibly redirected
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
-    # NEW: virtualization HW constraint
-    ('v0.0.37', generate_routes_v0_0_37, [
+    # NEW: added hostname HW constraint
+    ('v0.0.38', generate_routes_v0_0_38, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
         'current',
@@ -2861,6 +2936,8 @@ API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
         # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
         'toplevel'
     ]),
+    # NEW: virtualization HW constraint
+    ('v0.0.37', generate_routes_v0_0_37, []),
     # NEW: current worker tasks
     # NEW: boot.method HW constraint
     ('v0.0.32', generate_routes_v0_0_32, []),
