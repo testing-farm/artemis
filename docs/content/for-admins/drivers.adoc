@@ -95,7 +95,7 @@ The table below describe the built-in support for various features. However, to 
 |`cpu.family`
 |[green]#yes# *
 |[red]#no#
-|[red]#no#
+|[red]#yes#
 |[red]#no#
 |[green]#yes# *
 

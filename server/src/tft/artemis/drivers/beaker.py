@@ -214,23 +214,30 @@ def constraint_to_beaker_filter(
         if constraint_name.child_property == 'cores':
             op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
-            processors = _new_tag('processors', op=op, value=value)
+            cores = _new_tag('cores', op=op, value=value)
 
-            cpu.append(processors)
+            cpu.append(cores)
+
+        elif constraint_name.child_property == 'family':
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+            family = _new_tag('family', op=op, value=value)
+
+            cpu.append(family)
 
         elif constraint_name.child_property == 'model':
             op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
-            processors = _new_tag('model', op=op, value=value)
+            model = _new_tag('model', op=op, value=value)
 
-            cpu.append(processors)
+            cpu.append(model)
 
         elif constraint_name.child_property == 'model_name':
             op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
-            processors = _new_tag('model_name', op=op, value=value)
+            model_name = _new_tag('model_name', op=op, value=value)
 
-            cpu.append(processors)
+            cpu.append(model_name)
 
         else:
             return Error(Failure(
