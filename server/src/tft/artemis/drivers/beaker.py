@@ -601,7 +601,7 @@ class BeakerDriver(PoolDriver):
 
         return Ok(sum(
             (group.hostnames for group in r_avoid_hostnames.unwrap().values()),
-            []
+            self.pool_config.get('avoid-hostnames', [])
         ))
 
     def _run_bkr(

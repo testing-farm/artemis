@@ -65,6 +65,11 @@ The list of machines owned by each group is cached, updated periodically by quer
 For more notes on how drivers query their backends, see <<drivers.adoc#_collection_of_information,"Collection of information">>.
 ====
 
+[NOTE]
+====
+`avoid-hostnames` and `avoid-groups` are fully compatible, and can be used together.
+====
+
 [TIP]
 ====
 It is possible to configure multiple pools for the same set of Beaker credentials, each with different `avoid-groups` list. For example:
@@ -81,4 +86,53 @@ avoid-groups:
 ....
 
 This way, common guest requests can be routed to pool #1, while requests in the need of a special laptop HW would be routed to pool #2.
+====
+
+=== Beaker hostnames
+
+To avoid provisioning particular machines, driver can be configured to avoid them.
+
+.Specification
+[source,yaml]
+....
+avoid-hostnames:
+  - hostname-1
+  - hostname-2
+  ...
+....
+
+.Example
+[source,yaml]
+....
+avoid-hostnames:
+  # The following machines are not to be used for day-to-day jobs.
+  - some.valuable.machine.com
+  # This is a special laptop we do not want to use at all.
+  - big-boss.foo.com
+....
+
+Each provisioning Beaker job would then contain a set of `<hostname/>` elements to instruct Beaker to avoid the listed machines.
+
+[NOTE]
+====
+`avoid-hostnames` and `avoid-groups` are fully compatible, and can be used together.
+====
+
+[TIP]
+====
+It is possible to configure multiple pools for the same set of Beaker credentials, each with different `avoid-hostnames` list. For example:
+
+[source,yaml]
+....
+# pool #1
+avoid-hostnames:
+  - fancy1.foo.com
+  - fancy2.foo.com
+
+# pool #2
+avoid-hostnames:
+  # Can use fancyN machines, but...
+  - not-so-fancy1.foo.com
+  - not-so-fancy2.foo.com
+....
 ====
