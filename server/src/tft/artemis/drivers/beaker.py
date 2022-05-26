@@ -576,6 +576,7 @@ class BeakerDriver(PoolDriver):
         self.avoid_groups_hostnames_cache_key = self.POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY.format(self.poolname)  # noqa: FS002,E501
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+        capabilities.supports_hostnames = True
         capabilities.supported_guest_logs = [
             ('console', GuestLogContentType.URL),
             ('console.log', GuestLogContentType.URL),

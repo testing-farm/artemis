@@ -409,6 +409,9 @@ class PoolCapabilities:
     #: List of log name/log content type pairs describing that logs are supported by the driver.
     supported_guest_logs: List[Tuple[str, GuestLogContentType]] = dataclasses.field(default_factory=list)
 
+    #: If set, the pool can find instances by their hostnames.
+    supports_hostnames: bool = False
+
     def supports_arch(self, arch: str) -> bool:
         """
         Check whether a given architecture is supported. It is either listed among architectures supported
@@ -1218,6 +1221,31 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         if not capabilities.supports_arch(guest_request.environment.hw.arch):
             return Ok(False)
+
+        # Check whether given HW constraints do not go against what pool can deliver.
+        #
+        # There may be more checks implemented by the driver, but some conflicts we
+        # can identify right away.
+        if guest_request.environment.has_hw_constraints:
+            r_constraints = guest_request.environment.get_hw_constraints()
+
+            if r_constraints.is_error:
+                return Error(r_constraints.unwrap_error())
+
+            constraints = r_constraints.unwrap()
+
+            assert constraints is not None
+
+            # If request may depend on particular machine hostname to be available
+            # (or not available), pool must support hostnames first.
+            if not capabilities.supports_hostnames:
+                r_uses_hostname = constraints.uses_constraint(logger, 'hostname')
+
+                if r_uses_hostname.is_error:
+                    return Error(r_uses_hostname.unwrap_error())
+
+                if r_uses_hostname.unwrap() is True:
+                    return Ok(False)
 
         return Ok(True)
 
