@@ -21,6 +21,9 @@ server/configuration/master-key.yaml
 server/configuration/.vault_pass
 
 # Generated docs and their sources
+cli/autodocs/source/tft.artemis_cli.rst
+cli/autodocs/source/tft.artemis_cli.*.rst
+cli/autodocs/build/*
 server/autodocs/source/tft.artemis.rst
 server/autodocs/source/tft.artemis.*.rst
 server/autodocs/build/*
