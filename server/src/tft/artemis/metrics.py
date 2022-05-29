@@ -1666,7 +1666,7 @@ class ProvisioningMetrics(MetricsBase):
                 prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
             )
             self.PROVISION_DURATIONS._buckets[bucket_index].set(count)
-            self.PROVISION_DURATIONS._sum.inc(int(bucket_threshold) * count)
+            self.PROVISION_DURATIONS._sum.inc(float(bucket_threshold) * count)
 
 
 @dataclasses.dataclass
