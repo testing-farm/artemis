@@ -140,6 +140,10 @@ def _fail_message(
 
     from . import Failure
 
+    # asdict() is nice, but returns ordered dict. we don't care about order, and OrderedDict would
+    # need extra care when serializing anywhere, so convert it to plain dict.
+    details['message'] = dict(**message.asdict())
+
     Failure(error_message, **details).handle(logger)
 
     message.fail()

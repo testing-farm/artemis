@@ -187,7 +187,7 @@ def test_fail_message(
 
     tft.artemis.middleware._fail_message(logger, message, 'dummy error message')
 
-    mock_failure.assert_called_once_with('dummy error message')
+    mock_failure.assert_called_once_with('dummy error message', message=dict(**message.asdict()))
     mock_failure.return_value.handle.assert_called_once_with(logger)
     cast(MagicMock, message.fail).assert_called_once_with()
 
