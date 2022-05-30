@@ -91,30 +91,30 @@ def test_get_message_limit_from_message(
     message: dramatiq.broker.MessageProxy,
     actor: Actor
 ) -> None:
-    message.options['dummy_limit'] = 79
-    actor.options['dummy_limit'] = 97
+    message.options['max_retries'] = 79
+    actor.options['max_retries'] = 97
 
-    assert tft.artemis.middleware._get_message_limit(message, actor, 'dummy_limit', 979) == 79
+    assert tft.artemis.middleware._get_message_limit(message, actor, 'max_retries', 979) == 79
 
 
 def test_get_message_limit_from_actor(
     message: dramatiq.broker.MessageProxy,
     actor: Actor
 ) -> None:
-    message.options['dummy_limit'] = None
-    actor.options['dummy_limit'] = 97
+    message.options['max_retries'] = None
+    actor.options['max_retries'] = 97
 
-    assert tft.artemis.middleware._get_message_limit(message, actor, 'dummy_limit', 979) == 97
+    assert tft.artemis.middleware._get_message_limit(message, actor, 'max_retries', 979) == 97
 
 
 def test_get_message_limit_from_default(
     message: dramatiq.broker.MessageProxy,
     actor: Actor
 ) -> None:
-    message.options['dummy_limit'] = None
-    actor.options['dummy_limit'] = None
+    message.options['max_retries'] = None
+    actor.options['max_retries'] = None
 
-    assert tft.artemis.middleware._get_message_limit(message, actor, 'dummy_limit', 979) == 979
+    assert tft.artemis.middleware._get_message_limit(message, actor, 'max_retries', 979) == 979
 
 
 @pytest.mark.parametrize(
@@ -318,6 +318,8 @@ def test_handle_tails_provisioning(
     provisioning_actor_arguments: ActorArgumentsType,
     mockpatch: MockPatcher
 ) -> None:
+    assert provisioning_actor.options['tail_handler']
+
     mockpatch(provisioning_actor.options['tail_handler'], 'do_handle_tail').return_value = tft.artemis.tasks.SUCCESS
 
     assert tft.artemis.middleware._handle_tails(
@@ -351,6 +353,8 @@ def test_handle_tails_logging(
     logging_actor_arguments: ActorArgumentsType,
     mockpatch: MockPatcher
 ) -> None:
+    assert logging_actor.options['tail_handler']
+
     mockpatch(logging_actor.options['tail_handler'], 'do_handle_tail').return_value = tft.artemis.tasks.SUCCESS
 
     assert tft.artemis.middleware._handle_tails(

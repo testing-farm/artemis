@@ -24,7 +24,7 @@ import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
 import stackprinter
 from gluetool.result import Error, Ok, Result
-from typing_extensions import Protocol
+from typing_extensions import Protocol, TypedDict
 
 from .. import Failure, get_broker, get_db, get_logger, metrics, safe_call
 from ..context import DATABASE, LOGGER, SESSION, with_context
@@ -369,10 +369,29 @@ class DoerType(Protocol):
 
 
 # Task actor type.
+class ActorOptions(TypedDict):
+    # Retries middleware
+    max_retries: Optional[int]
+    min_backoff: Optional[int]
+    max_backoff: Optional[int]
+    retries: Optional[int]
+    # TODO: possibly a callable, need to check Dramatiq docs
+    retry_when: Any
+    throws: Optional[Exception]
+    tail_handler: Optional['TailHandler']
+
+    # Singleton middleware
+    singleton: bool
+    singleton_deadline: int
+
+    # Middleware notes
+    artemis_notes: Optional[Dict[str, str]]
+
+
 class Actor(Protocol):
     actor_name: str
     fn: BareActorType
-    options: Dict[str, Any]
+    options: ActorOptions
 
     def __call__(self, *args: ActorArgumentType) -> None:
         ...

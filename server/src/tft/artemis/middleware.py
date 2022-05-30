@@ -169,9 +169,11 @@ def _handle_tails(
     The task here is to dispatch the correct handler.
     """
 
-    from .tasks import TailHandler, get_root_db
+    from .tasks import get_root_db
 
-    tail_handler = cast(TailHandler, actor.options['tail_handler'])
+    tail_handler = actor.options['tail_handler']
+    assert tail_handler
+
     tail_logger = tail_handler.get_logger(logger, actor, actor_arguments)
 
     db = get_root_db(tail_logger)
@@ -243,7 +245,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # can
            retry_when is None and max_retries is not None and retries >= max_retries:
 
             # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
-            if actor.options.get('tail_handler') is None:
+            if actor.options['tail_handler'] is None:
                 return _fail_message(
                     logger,
                     message,
