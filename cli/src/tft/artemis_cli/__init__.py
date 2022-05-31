@@ -1,30 +1,38 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import concurrent.futures
 import dataclasses
 import json
-import shlex
-import subprocess
 import sys
-from typing import Any, Callable, Dict, Iterable, List, NamedTuple, NoReturn, Optional, Tuple, TypeVar
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, cast
 
 import click
-import click_spinner
 import jsonschema
 import pkg_resources
 import requests
 import requests.adapters
+import rich.console
+import rich.highlighter
+import rich.json
+import rich.syntax
+import rich.table
+import rich.text
 import ruamel.yaml
 import ruamel.yaml.compat
 import semver
-import tabulate
 import urlnormalizer
 
 DEFAULT_API_TIMEOUT = 10
 DEFAULT_API_RETRIES = 10
 # should lead to delays of 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256 seconds
 DEFAULT_RETRY_BACKOFF_FACTOR = 1
+
+# If our terminal is not a terminal, enforce width to be very big to avoid wrapping and truncating lines when
+# redirected into a file or pipe.
+_console_width: Optional[int] = None if sys.stdout.isatty() else 10000
+
+DEFAULT_CONSOLE = rich.console.Console(width=_console_width)
+DEFAULT_LOGGING_CONSOLE = rich.console.Console(stderr=True, width=_console_width)
 
 
 class ValidationResult(NamedTuple):
@@ -40,29 +48,81 @@ class Logger:
     Simple class providing semantic logging.
     """
 
-    def __init__(self, context: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        context: Optional[str] = None,
+        console: Optional[rich.console.Console] = None
+    ) -> None:
         self.context = context
+        self.console = console or DEFAULT_LOGGING_CONSOLE
 
-        self._context_prefix = '[{}] '.format(context) if context else ''
+        self._context_prefix = f'[{context}] ' if context else ''
 
-    def debug(self, msg: str) -> None:
-        # We need to introduce options controling logging output first!
-        # click.echo()
-        pass
+    def info(self, msg: str, icon: str = ':information:', colorize: bool = True) -> None:
+        if colorize:
+            color_enable, color_reset = '[white]', '[/white]'
 
-    def info(self, msg: str) -> None:
-        click.echo(YELLOW('{}{}'.format(self._context_prefix, msg)))
+        else:
+            color_enable, color_reset = '', ''
 
-    def warn(self, msg: str) -> None:
-        click.echo(YELLOW('{}{}'.format(self._context_prefix, msg)))
+        self.console.print(f'{icon} {color_enable}{msg}{color_reset}')
 
-    def error(self, msg: str) -> NoReturn:
-        click.echo(RED('{}{}'.format(self._context_prefix, msg)), err=True)
+    def success(self, msg: str, icon: str = ':+1:', colorize: bool = True) -> None:
+        if colorize:
+            color_enable, color_reset = '[green]', '[/green]'
 
-        sys.exit(1)
+        else:
+            color_enable, color_reset = '', ''
 
-    def success(self, msg: str) -> None:
-        click.echo(GREEN('{}{}'.format(self._context_prefix, msg)))
+        self.console.print(f'{icon} {color_enable}{msg}{color_reset}')
+
+    def warning(self, msg: str, icon: str = ':heavy_exclamation_mark:', colorize: bool = True) -> None:
+        if colorize:
+            color_enable, color_reset = '[yellow]', '[/yellow]'
+
+        else:
+            color_enable, color_reset = '', ''
+
+        self.console.print(f'{icon} {color_enable}{msg}{color_reset}')
+
+    def error(
+        self,
+        msg: str,
+        icon: str = ':-1:',
+        colorize: bool = True,
+        exception: bool = False,
+        exit: bool = True
+    ) -> None:
+        if colorize:
+            color_enable, color_reset = '[red]', '[/red]'
+
+        else:
+            color_enable, color_reset = '', ''
+
+        self.console.print(f'{icon} {color_enable}{msg}{color_reset}')
+
+        if exception:
+            self.console.print_exception()
+
+        if exit:
+            sys.exit(1)
+
+    def unhandled_api_response(self, response: requests.Response, exit: bool = True) -> None:
+        message = [
+            f'unhandled API response, HTTP {response.status_code}'
+        ]
+
+        if response.content:
+            try:
+                message += [
+                    '',
+                    f'API message: {response.json()["message"]}'
+                ]
+
+            except Exception:
+                self.warning('cannot extract better message from API response')
+
+        self.error('\n'.join(message), exit=exit)
 
 
 class TimeoutHTTPAdapter(requests.adapters.HTTPAdapter):
@@ -71,7 +131,7 @@ class TimeoutHTTPAdapter(requests.adapters.HTTPAdapter):
 
         super().__init__(*args, **kwargs)
 
-    def send(self, request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:    # type: ignore
+    def send(self, request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:  # type: ignore[override]
         kwargs.setdefault('timeout', self.timeout)
 
         return super().send(request, **kwargs)
@@ -86,9 +146,10 @@ class BasicAuthConfiguration:
 
 @dataclasses.dataclass
 class Configuration:
-    raw_config: Optional[Any] = None
+    console = DEFAULT_CONSOLE
+    logger: Logger = Logger(console=DEFAULT_LOGGING_CONSOLE)
 
-    logger: Logger = dataclasses.field(default_factory=Logger)
+    raw_config: Optional[Any] = None
 
     config_dirpath: Optional[str] = None
     config_filepath: Optional[str] = None
@@ -113,7 +174,7 @@ class Configuration:
         retries: int,
         retry_backoff_factor: int
     ) -> None:
-        retry_strategy = requests.packages.urllib3.util.retry.Retry(
+        retry_strategy = requests.packages.urllib3.util.retry.Retry(  # type: ignore[attr-defined]
             total=retries,
             status_forcelist=[
                 429,  # Too Many Requests
@@ -137,37 +198,68 @@ class Configuration:
         self.http_session.mount('http://', timeout_adapter)
 
 
-# Colorization
-def BLUE(s: str) -> str:
-    return click.style(s, fg='blue')
+def _yaml_to_string(data: Any, indent: Optional[int] = 2) -> str:
+    stream = ruamel.yaml.compat.StringIO()
+
+    Y = ruamel.yaml.YAML()
+    Y.indent(sequence=indent, mapping=indent, offset=0)
+    Y.dump(data, stream)
+
+    return stream.getvalue()
 
 
-def CYAN(s: str) -> str:
-    return click.style(s, fg='cyan')
+def _string_to_yaml(yaml: str) -> Any:
+    stream = ruamel.yaml.compat.StringIO(yaml)
+
+    return ruamel.yaml.safe_load(stream)
 
 
-def GREEN(s: str) -> str:
-    return click.style(s, fg='green')
+# A full-fledged YAML highlighter would be better...
+class YAMLHighlighter(rich.highlighter.JSONHighlighter):
+    pass
 
 
-def RED(s: str) -> str:
-    return click.style(s, fg='red')
+class RichYAML:
+    """
+    A renderable which pretty prints YAML.
 
+    Args:
+        json (str): JSON encoded data.
+        indent (Union[None, int, str], optional): Number of characters to indent by. Defaults to 2.
+        highlight (bool, optional): Enable highlighting. Defaults to True.
+    """
 
-def YELLOW(s: str) -> str:
-    return click.style(s, fg='yellow')
+    def __init__(
+        self,
+        yaml: str,
+        indent: Optional[int] = 2,
+        highlight: bool = True
+    ) -> None:
+        # normalize by converting from string to data structure and back, and apply indent
+        data = _string_to_yaml(yaml)
+        yaml = _yaml_to_string(data, indent=indent)
 
+        highlighter = YAMLHighlighter() if highlight else rich.highlighter.NullHighlighter()
+        self.text = highlighter(yaml)
 
-def WHITE(s: str) -> str:
-    return click.style(s, fg='white')
+        self.text.no_wrap = True
+        self.text.overflow = None
 
+    @classmethod
+    def from_data(
+        cls,
+        data: Any,
+        indent: Optional[int] = 2,
+        highlight: bool = True
+    ) -> 'RichYAML':
+        return cls(_yaml_to_string(data), indent=indent, highlight=highlight)
 
-def NL() -> None:
-    click.echo('')
+    def __rich__(self) -> rich.text.Text:
+        return self.text
 
 
 def load_yaml(filepath: str) -> Any:
-    with open(filepath, 'r') as f:
+    with open(filepath) as f:
         return ruamel.yaml.safe_load(f)
 
 
@@ -177,7 +269,7 @@ def save_yaml(data: Any, filepath: str) -> None:
 
 
 def validate_struct(data: Any, schema_name: Any) -> ValidationResult:
-    schema_filepath = pkg_resources.resource_filename('tft.artemis_cli', 'schemas/{}.yaml'.format(schema_name))
+    schema_filepath = pkg_resources.resource_filename('tft.artemis_cli', f'schemas/{schema_name}.yaml')
     schema = load_yaml(schema_filepath)
 
     try:
@@ -194,76 +286,10 @@ def validate_struct(data: Any, schema_name: Any) -> ValidationResult:
         )
 
 
-def prettify_json(flag: bool, data: Any) -> str:
-    if not flag:
-        return json.dumps(data)
-
-    return json.dumps(data, sort_keys=True, indent=4)
-
-
-def prettify_yaml(flag: bool, data: Any) -> str:
-    Y = ruamel.yaml.YAML()
-
-    if flag:
-        Y.indent(sequence=2, mapping=2, offset=0)
-
-    stream = ruamel.yaml.compat.StringIO()
-
-    Y.dump(data, stream)
-
-    return stream.getvalue()
-
-
-def execute_command(
-    cmd: List[str],
-    spinner: bool = False,
-    logger: Optional[Logger] = None,
-    accept_exit_codes: Optional[Iterable[int]] = None,
-    **kwargs: Any
-):
-    # type: (...) -> subprocess.CompletedProcess[bytes]
-
-    # add "accepted exit codes" when needed
-
-    accept_exit_codes = accept_exit_codes or [0]
-
-    logger = logger or Logger()
-
-    with click_spinner.spinner(disable=not spinner):
-        try:
-            result = subprocess.run(cmd, **kwargs)
-
-        except subprocess.SubprocessError as exc:
-            logger.error('Failed to complete command: {}'.format(exc))
-
-    if result.returncode not in accept_exit_codes:
-        logger.error("""
-Failed to complete command, exited with code {}:
-
-{}
-
-STDOUT: ---v---v---v---v---v---
-{}
-        ---^---^---^---^---^---
-
-STDERR: ---v---v---v---v---v---
-{}
-        ---^---^---^---^---^---
-""".format(
-            result.returncode,
-            shlex.quote(' '.join(cmd)),
-            result.stdout.decode('utf-8') if result.stdout else '',
-            result.stderr.decode('utf-8') if result.stderr else ''
-        ))
-
-    return result
-
-
 def fetch_remote(
     cfg: Configuration,
     url: str,
     logger: Optional[Logger] = None,
-    spinner: bool = False,
     method: str = 'get',
     request_kwargs: Optional[Dict[str, Any]] = None,
     on_error: Optional[Callable[[requests.Response, Dict[str, Any]], None]] = None,
@@ -277,27 +303,24 @@ def fetch_remote(
 
     url = urlnormalizer.normalize_url(url)
 
-    with click_spinner.spinner(disable=not spinner):
-        if method == 'get':
-            res = cfg.http_session.get(url, **request_kwargs)
+    if method == 'get':
+        res = cfg.http_session.get(url, **request_kwargs)
 
-        elif method == 'post':
-            res = cfg.http_session.post(url, **request_kwargs)
+    elif method == 'post':
+        res = cfg.http_session.post(url, **request_kwargs)
 
-        elif method == 'delete':
-            res = cfg.http_session.delete(url, **request_kwargs)
+    elif method == 'delete':
+        res = cfg.http_session.delete(url, **request_kwargs)
 
-        elif method == 'put':
-            res = cfg.http_session.put(url, **request_kwargs)
+    elif method == 'put':
+        res = cfg.http_session.put(url, **request_kwargs)
 
     if res.status_code not in allow_statuses:
         if on_error:
             on_error(res, request_kwargs)
 
         else:
-            logger.error(
-                'Failed to communicate with remote url {}, responded with code {}'.format(url, res.status_code)
-            )
+            logger.error(f'Failed to communicate with remote url {url}, responded with code {res.status_code}')
 
     return res
 
@@ -311,16 +334,21 @@ def fetch_artemis(
     allow_statuses: Optional[List[int]] = None
 ) -> requests.Response:
     assert cfg.artemis_api_url is not None
-    if not logger:
-        logger = Logger()
+
+    logger = logger or Logger()
 
     def _error_callback(res: requests.Response, request_kwargs: Dict[str, Any]) -> None:
         assert logger is not None
 
-        logger.error(
-            'Failed to communicate with Artemis API Server, responded with code {}: {}'
-            '\nRequest:\n{}\n{}'.format(res.status_code, res.reason, res.request.url, request_kwargs)
-        )
+        logger.error(f"""
+Failed to communicate with Artemis API Server, responded with code {res.status_code}: {res.reason}'
+
+Request:
+
+  {res.request.url}
+
+  {request_kwargs}
+""")
 
     if cfg.authentication_method == 'basic':
         from requests.auth import HTTPBasicAuth
@@ -338,8 +366,8 @@ def fetch_artemis(
 
     return fetch_remote(
         cfg,
-        '{}/{}'.format(cfg.artemis_api_url, endpoint),
-        logger,
+        f'{cfg.artemis_api_url}/{endpoint}',
+        logger=logger,
         method=method,
         request_kwargs=request_kwargs,
         on_error=_error_callback,
@@ -357,9 +385,9 @@ def artemis_inspect(
 ) -> requests.Response:
     return fetch_artemis(
         cfg,
-        '/{}/{}'.format(resource, rid),
+        f'/{resource}/{rid}',
         request_kwargs={'json': data, 'params': params},
-        logger=None
+        logger=logger
     )
 
 
@@ -371,10 +399,10 @@ def artemis_create(
 ) -> requests.Response:
     return fetch_artemis(
         cfg,
-        '/{}'.format(resource),
+        f'/{resource}',
         method='post',
         request_kwargs={'json': data},
-        logger=None
+        logger=logger
     )
 
 
@@ -386,10 +414,10 @@ def artemis_update(
 ) -> requests.Response:
     return fetch_artemis(
         cfg,
-        '/{}'.format(resource),
+        f'/{resource}',
         method='put',
         request_kwargs={'json': data},
-        logger=None
+        logger=logger
     )
 
 
@@ -402,10 +430,10 @@ def artemis_restore(
 ) -> requests.Response:
     return fetch_artemis(
         cfg,
-        '/{}/{}/restore'.format(resource, rid),
+        f'/{resource}/{rid}/restore',
         method='post',
         request_kwargs={'json': data},
-        logger=None
+        logger=logger
     )
 
 
@@ -417,118 +445,245 @@ def artemis_delete(
 ) -> requests.Response:
     return fetch_artemis(
         cfg,
-        '{}/{}'.format(resource, rid),
+        f'{resource}/{rid}',
         method='delete',
-        logger=None,
+        logger=logger,
         allow_statuses=[200, 201, 204, 404, 409]
     )
 
 
-def artemis_get_console_url(
-    cfg: Configuration,
-    resource: str,
-    rid: str,
-    logger: Optional[Logger] = None
-) -> requests.Response:
-    return fetch_artemis(
-        cfg,
-        '/{}/{}/console/url'.format(resource, rid),
-        request_kwargs={},
-        logger=None
-    )
-
-
 def confirm(
-    cfg: Configuration,
     msg: str,
-    force: bool,
     default: bool = False,
     abort: bool = False,
+    console: Optional[rich.console.Console] = None
 ) -> Any:
-    """Wrapped click.confirm function to print to stderr."""
-    assert cfg.logger is not None
+    console = console or DEFAULT_CONSOLE
 
-    if force:
-        return force
+    response = console.input(f'{msg} (yes|no) ')
 
-    if cfg.output_format == 'human':
-        click.echo(msg, nl=False)
-        return click.confirm('', default=default, abort=abort, err=True)
+    if response.lower() in ('y', 'yes'):
+        return True
 
-    if abort:
-        cfg.logger.info(msg)
+    if response.lower() in ('n', 'no') and abort:
         raise click.Abort()
 
     return False
 
 
-def prompt(cfg: Configuration, msg: str, type: Any = None, default: Optional[str] = None) -> Any:
-    """Wrapped click.prompt function to print to stderr."""
-    assert cfg.logger is not None
-
-    if cfg.output_format == 'human':
-        click.echo(msg, nl=False)
-        return click.prompt('', type=type, default=default, err=True)
-
-    cfg.logger.error(
-        'click.prompt() unsupported in non-human output mode, please use the command-line options instead'
-    )
+def print_table(table: rich.table.Table, console: Optional[rich.console.Console] = None) -> None:
+    (console or DEFAULT_CONSOLE).print(table)
 
 
-def print_table(
-    table: List[List[str]],
-    format: str = 'text'
+def print_json(data: Any, console: Optional[rich.console.Console] = None) -> None:
+    (console or DEFAULT_CONSOLE).print(json.dumps(data, sort_keys=True, indent=4))
+
+
+def print_yaml(data: Any, console: Optional[rich.console.Console] = None) -> None:
+    (console or DEFAULT_CONSOLE).print(_yaml_to_string(data, indent=2))
+
+
+CollectionType = List[Dict[str, Any]]
+
+
+def print_collection(
+    cfg: Configuration,
+    collection: CollectionType,
+    tabulate: Callable[[CollectionType], rich.table.Table],
+    console: Optional[rich.console.Console] = None
 ) -> None:
-    def _to_items() -> List[Dict[str, str]]:
-        as_list = []
+    if cfg.output_format == 'table':
+        print_table(tabulate(collection), console=console)
 
-        headers = table[0]
+    elif cfg.output_format == 'json':
+        print_json(collection, console=console)
 
-        for row in table[1:]:
-            as_list.append({
-                header: cell for header, cell in zip(headers, row)
-            })
-
-        return as_list
-
-    if format == 'text':
-        printable = tabulate.tabulate(
-            table,
-            headers='firstrow',
-            tablefmt='psql'
-        )
-
-    elif format == 'json':
-        printable = prettify_json(True, _to_items())
-
-    elif format == 'yaml':
-        printable = prettify_yaml(True, _to_items())
-
-    else:
-        assert False, 'Table format {} is not supported'
-
-    click.echo(printable)
+    elif cfg.output_format == 'yaml':
+        print_yaml(collection, console=console)
 
 
-JobReturnType = TypeVar('JobReturnType')
-JobCallbackType = Callable[..., JobReturnType]
-JobType = Tuple[JobCallbackType[JobReturnType], List[Any], Dict[str, Any]]
+GUEST_STATE_COLORS = {
+    'routing': 'yellow',
+    'provisioning': 'magenta',
+    'promised': 'blue',
+    'preparing': 'cyan',
+    'ready': 'green',
+    'cancelled': 'red',
+    'error': 'red'
+}
 
 
-def execute_jobs(
-    jobs: List[JobType[JobReturnType]],
-    max_workers: Optional[int] = None
-):
-    # type: (...) -> List[concurrent.futures.Future[JobReturnType]]
+def colorize_guest_state(state: str) -> str:
+    color = GUEST_STATE_COLORS.get(state, 'white')
 
-    futures = []
+    return f'[{color}]{state}[/{color}]'
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for callback, args, kwargs in jobs:
-            futures.append(executor.submit(callback, *args, **kwargs))
 
-        done, pending = concurrent.futures.wait(futures)
+def print_guests(
+    cfg: Configuration,
+    guests: CollectionType,
+    console: Optional[rich.console.Console] = None
+) -> None:
+    def tabulate(guests: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
 
-        assert not pending
+        for header in ['Guestname', 'Compose', 'Arch', 'Pool', 'State', 'CTime / MTime', 'Address', 'User Data']:
+            table.add_column(header, no_wrap=(header == 'Guestname'))
 
-    return futures
+        for guest in guests:
+            table.add_row(
+                guest['guestname'],
+                guest['environment']['os']['compose'],
+                guest['environment']['hw']['arch'],
+                guest['environment']['pool'],
+                colorize_guest_state(guest['state']),
+                f'{guest["ctime"]}\n{guest["state_mtime"]}',
+                guest['address'],
+                RichYAML.from_data(guest['user_data']) if guest['user_data'] else ''
+            )
+
+        return table
+
+    print_collection(cfg, guests, tabulate, console=console)
+
+
+_eventname_emojis = {
+    'entered-task': ':point_right:',
+    'finished-task': ':point_left:',
+    'state-changed': ':birthday_cake:',
+    'created': ':baby:'
+}
+
+
+def print_events(
+    cfg: Configuration,
+    events: CollectionType,
+    console: Optional[rich.console.Console] = None
+) -> None:
+    def tabulate(events: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
+
+        for header in ['Time', 'Event', 'Guestname', 'Details']:
+            table.add_column(header)
+
+        for event in events:
+            eventname = event['eventname']
+            details = event['details']
+
+            if eventname == 'state-changed':
+                current_state = colorize_guest_state(details['current_state'])
+                new_state = colorize_guest_state(details['new_state'])
+
+                details = f'{current_state} :point_right: {new_state}'
+
+            else:
+                details = RichYAML.from_data(details) if details else ''
+
+            eventname_emoji = _eventname_emojis.get(eventname, ':information:')
+            eventname = f'{eventname_emoji} {eventname}'
+
+            table.add_row(
+                event['updated'],
+                eventname,
+                event['guestname'],
+                details
+            )
+
+        return table
+
+    print_collection(cfg, events, tabulate, console=console)
+
+
+def print_knobs(
+    cfg: Configuration,
+    knobs: CollectionType,
+    console: Optional[rich.console.Console] = None
+) -> None:
+    def tabulate(knobs: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
+
+        for header in ['Name', 'Value', 'Type', 'Editable', 'Help']:
+            table.add_column(header)
+
+        for knob in sorted(knobs, key=lambda x: cast(str, x['name'])):
+            table.add_row(
+                knob['name'],
+                ('yes' if knob['value'] else 'no') if isinstance(knob['value'], bool) else str(knob['value']),
+                knob['cast'],
+                'yes' if knob['editable'] else 'no',
+                knob['help']
+            )
+
+        return table
+
+    print_collection(cfg, knobs, tabulate, console=console)
+
+
+def print_users(
+    cfg: Configuration,
+    users: CollectionType,
+    console: Optional[rich.console.Console] = None
+) -> None:
+    def tabulate(users: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
+
+        for header in ['Name', 'Role']:
+            table.add_column(header)
+
+        for user in sorted(users, key=lambda x: cast(str, x['username'])):
+            table.add_row(
+                user['username'],
+                user['role']
+            )
+
+        return table
+
+    print_collection(cfg, users, tabulate, console=console)
+
+
+def print_guest_logs(
+    cfg: Configuration,
+    logs: CollectionType,
+    console: Optional[rich.console.Console] = None
+) -> None:
+    def tabulate(logs: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
+
+        for header in ['Content Type', 'State', 'URL', 'Updated', 'Expires']:
+            table.add_column(header)
+
+        for log in logs:
+            table.add_row(
+                log['contenttype'],
+                log['state'],
+                log['url'],
+                log['updated'],
+                log['expires']
+            )
+
+        return table
+
+    print_collection(cfg, logs, tabulate, console=console)
+
+
+def print_tasks(
+    cfg: Configuration,
+    tasks: CollectionType,
+    console: Optional[rich.console.Console] = None
+) -> None:
+    def tabulate(tasks: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
+
+        for header in ['Task', 'Arguments', 'CTime']:
+            table.add_column(header)
+
+        for task in tasks:
+            table.add_row(
+                task['actor'].replace('_', '-'),
+                RichYAML.from_data(task['args']) if task['args'] else '',
+                task['ctime']
+            )
+
+        return table
+
+    print_collection(cfg, tasks, tabulate, console=console)

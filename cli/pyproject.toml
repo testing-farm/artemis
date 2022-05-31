@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "tft-artemis-cli"
-version = "0.0.1"
-description = "Comand line tool for Artemis service"
+version = "0.0.2"
+description = "Command-line tool for Artemis service"
 authors = [
     "Milos Prchlik <mprchlik@redhat.com>",
     "Ondrej Ptak <optak@redhat.com>"
@@ -15,16 +15,14 @@ packages = [
 python = "~3.7"
 requests = "*"
 click = "*"
-click_spinner = "*"
 jsonschema = "*"
-"ruamel.yaml" = "^0.15.51"
-tabulate = "*"
-urlnormalizer = "^1.2.5"
-click_completion = "^0.5.2"
+"ruamel.yaml" = "*"
+urlnormalizer = "*"
+click_completion = "*"
 # TODO: once 3.0.0 is released, it should provide type annotations
-semver = "^2.13.0"
-stackprinter = "^0.2.4"
-rich = "^2.2.6"
+semver = "*"
+stackprinter = "*"
+rich = "*"
 
 [tool.poetry.dev-dependencies]
 # All development dependencies are left unpinned, untill we run into troubles with a particular version.
