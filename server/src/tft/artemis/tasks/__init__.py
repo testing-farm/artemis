@@ -15,7 +15,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union, c
 
 import dramatiq
 import dramatiq.broker
-import dramatiq.middleware.current_message
 import gluetool.log
 import gluetool.utils
 import periodiq
@@ -28,7 +27,7 @@ from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol
 
 from .. import Failure, get_broker, get_db, get_logger, metrics, safe_call
-from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
+from ..context import DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SafeQuery, \
     SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change, upsert
 from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
@@ -758,7 +757,6 @@ def task_core(
 
     LOGGER.set(logger)
     DATABASE.set(db)
-    CURRENT_MESSAGE.set(dramatiq.middleware.current_message.CurrentMessage.get_current_message())
 
     # Small helper so we can keep all session-related stuff inside one block, and avoid repetition or more than
     # one `get_session()` call.

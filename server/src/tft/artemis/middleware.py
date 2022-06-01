@@ -30,6 +30,14 @@ if TYPE_CHECKING:
 DEFAULT_MAX_RETRIES = 20
 
 
+def _dump_message(message: dramatiq.message.Message) -> Dict[str, Any]:
+    # message.asdict() is nice, but returns ordered dict. we don't care about
+    # order, and OrderedDict would need extra care when serializing anywhere,
+    # so convert it to plain dict.
+
+    return dict(**message.asdict())
+
+
 def _actor_arguments(
     logger: gluetool.log.ContextAdapter,
     message: dramatiq.message.Message,
@@ -140,9 +148,7 @@ def _fail_message(
 
     from . import Failure
 
-    # asdict() is nice, but returns ordered dict. we don't care about order, and OrderedDict would
-    # need extra care when serializing anywhere, so convert it to plain dict.
-    details['message'] = dict(**message.asdict())
+    details['broker_message'] = _dump_message(message)
 
     Failure(error_message, **details).handle(logger)
 
@@ -471,3 +477,30 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         delete_cache_value(self.logger, self.cache, self.current_key)
 
     after_skip_message = after_process_message
+
+
+class CurrentMessage(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+    """
+    Middleware that exposes the current message via a context variable.
+
+    Based on :py:class:`dramatiq.middleware.current_message.CurrentMessage`,
+    but modifies our context variables instead of managing its own storage.
+    """
+
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+        from .context import CURRENT_MESSAGE
+
+        CURRENT_MESSAGE.set(message)
+
+    def after_process_message(
+        self,
+        broker: dramatiq.broker.Broker,
+        message: dramatiq.message.Message,
+        *,
+        # This is on purpose, our tasks never return anything useful.
+        result: None = None,
+        exception: Optional[BaseException] = None
+    ) -> None:
+        from .context import CURRENT_MESSAGE
+
+        CURRENT_MESSAGE.set(None)
