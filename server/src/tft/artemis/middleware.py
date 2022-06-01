@@ -241,7 +241,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # can
                 return _fail_message(
                     logger,
                     message,
-                    f'retries exceeded for message {message.message_id}',
+                    'retries exceeded',
                     task_name=actor.actor_name,
                     task_args=actor_arguments,
                     guestname=guestname
