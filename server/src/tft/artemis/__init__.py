@@ -974,10 +974,7 @@ def get_config() -> Dict[str, Any]:
     )
 
 
-def get_broker(
-    logger: gluetool.log.ContextAdapter,
-    application_name: Optional[str] = None
-) -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
+def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.Middleware]:
     from .knobs import KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB_WORKER_TRAFFIC_METRICS_ENABLED
 
     middleware: List[dramatiq.Middleware] = []
@@ -1013,51 +1010,56 @@ def get_broker(
         periodiq.PeriodiqMiddleware()
     ]
 
-    if os.getenv('IN_TEST', None):
-        broker = dramatiq.brokers.stub.StubBroker(middleware=middleware)
+    return middleware
 
-    else:
-        from .knobs import KNOB_BROKER_CONFIRM_DELIVERY, KNOB_BROKER_URL
 
-        # TODO: for actual limiter, we would need to throw in either Redis or Memcached.
-        # Using stub and a dummy key for now, but it's just not going to do its job properly.
+def get_broker(
+    logger: gluetool.log.ContextAdapter,
+    application_name: Optional[str] = None
+) -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
+    from .knobs import KNOB_BROKER_CONFIRM_DELIVERY, KNOB_BROKER_URL
 
-        broker_url = KNOB_BROKER_URL.value
+    middleware: List[dramatiq.Middleware] = get_broker_middleware(logger)
 
-        # Client properties must be encoded into URL, Pika does not allow `url` + `client_properties` at the same time.
-        client_properties: Dict[str, str] = {}
+    # TODO: for actual limiter, we would need to throw in either Redis or Memcached.
+    # Using stub and a dummy key for now, but it's just not going to do its job properly.
 
-        if application_name is not None:
-            client_properties['connection_name'] = application_name
+    broker_url = KNOB_BROKER_URL.value
 
-        if client_properties:
-            import urllib.parse
+    # Client properties must be encoded into URL, Pika does not allow `url` + `client_properties` at the same time.
+    client_properties: Dict[str, str] = {}
 
-            parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
+    if application_name is not None:
+        client_properties['connection_name'] = application_name
 
-            parsed_query: Dict[str, Union[str, Dict[str, str]]] = {
-                k: v
-                for k, v in urllib.parse.parse_qsl(parsed_url.query)
-            }
+    if client_properties:
+        import urllib.parse
 
-            parsed_query['client_properties'] = client_properties
+        parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
 
-            broker_url = urllib.parse.ParseResult(
-                scheme=parsed_url.scheme,
-                netloc=parsed_url.netloc,
-                path=parsed_url.path,
-                params=parsed_url.params,
-                query=urllib.parse.urlencode(parsed_query),
-                fragment=parsed_url.fragment
-            ).geturl()
+        parsed_query: Dict[str, Union[str, Dict[str, str]]] = {
+            k: v
+            for k, v in urllib.parse.parse_qsl(parsed_url.query)
+        }
 
-        logger.debug(f'final broker URL is {broker_url}')
+        parsed_query['client_properties'] = client_properties
 
-        broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
-            confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value,
-            middleware=middleware,
-            url=broker_url
-        )
+        broker_url = urllib.parse.ParseResult(
+            scheme=parsed_url.scheme,
+            netloc=parsed_url.netloc,
+            path=parsed_url.path,
+            params=parsed_url.params,
+            query=urllib.parse.urlencode(parsed_query),
+            fragment=parsed_url.fragment
+        ).geturl()
+
+    logger.debug(f'final broker URL is {broker_url}')
+
+    broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
+        confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value,
+        middleware=middleware,
+        url=broker_url
+    )
 
     dramatiq.set_broker(broker)
 
