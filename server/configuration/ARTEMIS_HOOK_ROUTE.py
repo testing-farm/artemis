@@ -21,7 +21,7 @@ import tft.artemis.drivers.openstack
 from tft.artemis.db import GuestRequest
 from tft.artemis.drivers import PoolDriver
 from tft.artemis.routing_policies import PolicyReturnType, create_preferrence_filter_by_driver_class, \
-    policy_can_acquire, policy_enough_resources, policy_least_crowded, policy_match_pool_name, \
+    policy_can_acquire, policy_enough_resources, policy_match_pool_name, policy_most_free_addresses, \
     policy_one_attempt_forgiving, policy_pool_enabled, policy_prefer_spot_instances, policy_supports_architecture, \
     policy_supports_guest_logs, policy_supports_snapshots, policy_supports_spot_instances, policy_timeout_reached, \
     policy_use_only_when_addressed, run_routing_policies
@@ -69,7 +69,9 @@ POLICIES = [
     # or:
     # policy_prefer_aws,
     policy_prefer_spot_instances,
-    policy_least_crowded
+    policy_most_free_addresses,
+    # or:
+    # policy_least_crowded
 ]
 
 

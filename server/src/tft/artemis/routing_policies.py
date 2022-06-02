@@ -566,6 +566,83 @@ def policy_least_crowded(
 
 
 @policy_boilerplate
+def policy_most_free_addresses(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Pick a pool with most free network addresses.
+    """
+
+    if len(pools) <= 1:
+        return Ok(PolicyRuling(allowed_pools=pools))
+
+    r_pool_metrics = collect_pool_metrics(pools)
+
+    if r_pool_metrics.is_error:
+        return Error(r_pool_metrics.unwrap_error())
+
+    pool_metrics = r_pool_metrics.unwrap()
+
+    # Hold usage report - pools and resources that were checked, and the outcome of the check.
+    usage_report: List[List[str]] = []
+
+    def pool_to_free_addresses(pool: PoolDriver, metrics: PoolMetrics) -> int:
+        free_addresses = 0
+
+        for network_name, network_limit in metrics.resources.limits.networks.items():
+            network_usage = metrics.resources.usage.networks.get(network_name)
+
+            # Networks that don't report any usage are treated as having enough resources - again, pool does not care
+            # about this network enough to provide data.
+            if network_usage is None or network_usage.addresses is None or network_limit.addresses is None:
+                network_free_addresses = 0
+
+            else:
+                network_free_addresses = network_limit.addresses - network_usage.addresses
+
+            free_addresses += network_free_addresses
+
+            usage_report.append([
+                pool.poolname,
+                'network.addresses',
+                str(network_limit.addresses) if network_limit else '',
+                str(network_usage.addresses) if network_usage else '',
+                str(network_free_addresses)
+            ])
+
+        return free_addresses
+
+    # Find out how many addresses each pool has...
+    pool_addresses = {
+        pool: pool_to_free_addresses(pool, metrics)
+        for pool, metrics in pool_metrics
+    }
+
+    # ... so we could get the biggest amount...
+    max_addresses = max(pool_addresses.values())
+
+    log_table(
+        logger.info,
+        'pool addresses',
+        [
+            ['Pool', 'Metric', 'Limit', 'Usage', 'Free']
+        ] + usage_report,
+        headers='firstrow',
+        tablefmt='psql'
+    )
+
+    # ... and allow all pools with this number of free addresses.
+    return Ok(PolicyRuling(allowed_pools=[
+        pool
+        for pool, addresses in pool_addresses.items()
+        if addresses == max_addresses
+    ]))
+
+
+@policy_boilerplate
 def policy_one_attempt_forgiving(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
