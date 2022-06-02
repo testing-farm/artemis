@@ -112,6 +112,9 @@ class _FlavorSubsystemContainer(SerializableContainer):
     #: A prefix to add before all field names when formatting fields. If unset, no prefix is added.
     CONTAINER_PREFIX: ClassVar[Optional[str]] = None
 
+    #: A list of properties that exist but are not backed by any attribute or value.
+    VIRTUAL_PROPERTIES: List[str] = []
+
     # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone some complex fields.
     def clone(self: U) -> U:
         clone = dataclasses.replace(self)
@@ -487,6 +490,8 @@ class Flavor(_FlavorSubsystemContainer):
     Represents various properties of a flavor.
     """
 
+    VIRTUAL_PROPERTIES = ['hostname']
+
     #: Human-readable name of the flavor.
     name: str
 
@@ -659,6 +664,17 @@ class ConstraintBase(SerializableContainer):
     Base class for all classes representing one or more constraints.
     """
 
+    def uses_constraint(self, logger: gluetool.log.ContextAdapter, constraint_name: str) -> Result[bool, Failure]:
+        """
+        Inspect constraint whether it or its children use a constraint of a given name.
+
+        :param logger: logger to use for logging.
+        :param constraint_name: constraint name to look for.
+        :raises NotImplementedError: method is left for child classes to implement.
+        """
+
+        raise NotImplementedError()
+
     def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Result[bool, Failure]:
         """
         Inspect the given flavor, and decide whether it fits the limits imposed by this constraint.
@@ -800,6 +816,24 @@ class CompoundConstraint(ConstraintBase):
 
         return self.reducer(
             constraint.eval_flavor(logger, flavor)
+            for constraint in self.constraints
+        )
+
+    def uses_constraint(self, logger: gluetool.log.ContextAdapter, constraint_name: str) -> Result[bool, Failure]:
+        """
+        Inspect constraint whether it or its children use a constraint of a given name.
+
+        :param logger: logger to use for logging.
+        :param constraint_name: constraint name to look for.
+        :returns: ``True`` if the given constraint or its children use given constraint name.
+        """
+
+        # Using "any" on purpose: we cannot use the reducer belonging to this constraint,
+        # because that one may yield result based on validity of all child constraints.
+        # But we want to answer the question "is *any* of child constraints using the given
+        # constraint?", not "are all using it?".
+        return _reduce_any(
+            constraint.uses_constraint(logger, constraint_name)
             for constraint in self.constraints
         )
 
@@ -1045,6 +1079,10 @@ class Constraint(ConstraintBase):
 
             groups = property_path_step.groupdict()
 
+            if groups['property_name'] in getattr(flavor_property, 'VIRTUAL_PROPERTIES', []):
+                flavor_property = None
+                break
+
             try:
                 flavor_property = getattr(flavor_property, groups['property_name'])
 
@@ -1082,6 +1120,17 @@ class Constraint(ConstraintBase):
         logger.debug(f'eval-flavor: {flavor.name}.{self.name}: {type(flavor_property).__name__}({flavor_property}) {self.operator.value} {type(self.value).__name__}({self.value}): {result}')  # noqa: E501
 
         return Ok(result)
+
+    def uses_constraint(self, logger: gluetool.log.ContextAdapter, constraint_name: str) -> Result[bool, Failure]:
+        """
+        Inspect constraint whether it or its children use a constraint of a given name.
+
+        :param logger: logger to use for logging.
+        :param constraint_name: constraint name to look for.
+        :returns: ``True`` if the given constraint or its children use given constraint name.
+        """
+
+        return Ok(self.expand_name().property == constraint_name)
 
 
 @dataclasses.dataclass(repr=False)

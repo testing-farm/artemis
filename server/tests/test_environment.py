@@ -1448,3 +1448,70 @@ def test_expand_name(constraint_name: str, expected: tft.artemis.environment.Con
         value=None,
         raw_value=None  # type: ignore[arg-type]
     ).expand_name() == expected
+
+
+@pytest.mark.parametrize(('hw', 'expected'), [
+    (
+        """
+        ---
+
+        hostname: foo
+        """,
+        True
+    ),
+    (
+        """
+        ---
+
+        memory: "2048 GiB"
+        """,
+        False
+    ),
+    (
+        """
+        ---
+
+        and:
+          - memory: "2048 GiB"
+          - cpu:
+              cores: 64
+          - or:
+              - virtualization:
+                  is-virtualized: true
+              - hostname: foo
+        """,
+        True
+    ),
+    (
+        """
+        ---
+
+        and:
+          - memory: "2048 GiB"
+          - cpu:
+              cores: 64
+          - or:
+              - virtualization:
+                  is-virtualized: true
+              - virtualization:
+                  is-virtualized: false
+        """,
+        False
+    )
+], ids=[
+    'uses',
+    'does-not-use',
+    'uses-nested',
+    'does-not-use-nested'
+])
+def test_uses_constraint(
+    logger: ContextAdapter,
+    hw: str,
+    expected: bool
+) -> None:
+    constraint = parse_hw(hw)
+
+    r = constraint.uses_constraint(logger, 'hostname')
+
+    assert r.is_ok
+    assert r.unwrap() is expected
