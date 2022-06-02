@@ -3,7 +3,7 @@
 
 import logging
 import threading
-from typing import Dict, Generator, Tuple, cast
+from typing import Dict, Tuple, cast
 from unittest.mock import MagicMock, call
 
 import _pytest.logging
@@ -14,7 +14,6 @@ import gluetool.log
 import gluetool.utils
 import pytest
 import sqlalchemy.orm.session
-from dramatiq.broker import Broker
 
 import tft.artemis
 import tft.artemis.db
@@ -34,24 +33,6 @@ def server_config(logger: gluetool.log.ContextAdapter) -> tft.artemis.JSONType:
 @pytest.fixture
 def cancel() -> threading.Event:
     return threading.Event()
-
-
-@pytest.fixture
-def broker() -> dramatiq.broker.Broker:
-    broker = dramatiq.get_broker()
-    broker.flush_all()
-
-    return broker
-
-
-@pytest.fixture
-def worker(broker: Broker) -> Generator[dramatiq.Worker, None, None]:
-    worker = dramatiq.Worker(broker, worker_timeout=100)
-    worker.start()
-
-    yield worker
-
-    worker.stop()
 
 
 def test_run_doer(

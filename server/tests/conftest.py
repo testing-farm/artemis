@@ -253,6 +253,43 @@ def fixture_redis(
     yield
 
 
+@pytest.fixture(name='broker')
+def fixture_broker(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    logger: gluetool.log.ContextAdapter,
+    # require redis to make sure middleware has access to cache
+    redis: redis.Redis,
+) -> dramatiq.broker.Broker:
+    def get_broker(
+        logger: gluetool.log.ContextAdapter,
+        application_name: Optional[str] = None
+    ) -> dramatiq.broker.Broker:
+        middleware = tft.artemis.get_broker_middleware(logger)
+        broker = dramatiq.brokers.stub.StubBroker(middleware=middleware)
+
+        dramatiq.set_broker(broker)
+
+        return broker
+
+    monkeypatch.setattr(tft.artemis, 'get_broker', get_broker)
+
+    return tft.artemis.get_broker(logger)
+
+
+@pytest.fixture
+def worker(
+    broker: dramatiq.broker.Broker,
+    # require redis to make sure worker middleware has access to cache
+    redis: redis.Redis,
+) -> Generator[dramatiq.Worker, None, None]:
+    worker = dramatiq.Worker(broker, worker_timeout=100)
+    worker.start()
+
+    yield worker
+
+    worker.stop()
+
+
 @pytest.fixture(name='current_message')
 def fixture_current_message() -> dramatiq.MessageProxy:
     message = dramatiq.Message(
