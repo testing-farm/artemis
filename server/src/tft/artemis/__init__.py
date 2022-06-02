@@ -1004,7 +1004,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
         dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
         dramatiq.middleware.callbacks.Callbacks(),
         dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
-        dramatiq.middleware.current_message.CurrentMessage(),
+        artemis_middleware.CurrentMessage(),
         artemis_middleware.Prometheus(),
         artemis_middleware.Retries(),
         periodiq.PeriodiqMiddleware()
