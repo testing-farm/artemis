@@ -8,6 +8,7 @@ Helpful building blocks for cache operations.
 """
 
 import datetime
+import uuid
 from typing import Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, cast
 
 import gluetool.log
@@ -466,3 +467,109 @@ def get_cached_set_item(
         return Error(r_unserialize.unwrap_error())
 
     return Ok(r_unserialize.unwrap())
+
+
+#
+# Distributed locking
+#
+# Many articles on the topic, e.g.:
+#
+# * https://redis.io/docs/reference/patterns/distributed-locks/
+# * https://medium.com/geekculture/distributed-lock-implementation-with-redis-and-python-22ae932e10ee
+#
+def acquire_lock(
+    logger: gluetool.log.ContextAdapter,
+    cache: redis.Redis,
+    lockname: str,
+    ttl: Optional[int] = None
+) -> Optional[str]:
+    """
+    Acquire a shared lock.
+
+    Lock is set to a random token as long as the key did not exist.
+
+    :param logger: logger to use for logging.
+    :param cache: cache instance to use for cache access.
+    :param lockname: key holding representing the lock.
+    :param ttl: if set, lock will be held for this many seconds until removed automatically
+        if not released before.
+    :returns: token assigned to lock when operation was successfull, or ``None``
+        if lock was already held by someone else.
+    """
+
+    token = str(uuid.uuid4())
+
+    r = safe_call_and_handle(
+        logger,
+        cache.set,
+        lockname,
+        token,
+        ex=ttl,
+        nx=True
+    )
+
+    return token if r is True else None
+
+
+def release_lock(
+    logger: gluetool.log.ContextAdapter,
+    cache: redis.Redis,
+    lockname: str,
+    token: str
+) -> bool:
+    """
+    Release a shared lock.
+
+    Lock - a key that represents the lock - is removed as long as its content matches given token.
+
+    :param logger: logger to use for logging.
+    :param cache: cache instance to use for cache access.
+    :param lockname: key holding representing the lock.
+    :param token: lock is expected to have this particular value.
+    :returns: ``True`` when the operation was successfull, ``False`` otherwise.
+    """
+
+    pipeline = cache.pipeline(transaction=True)
+
+    try:
+        pipeline.watch(lockname)
+
+        actual_token = pipeline.get(lockname)
+
+        if actual_token is None:
+            Failure(
+                'lock does not exist anymore',
+                lockname=lockname,
+                token=token
+            ).handle(logger)
+
+            pipeline.unwatch()
+
+            return False
+
+        if actual_token.decode('utf-8') != token:
+            Failure(
+                'lock token changed before release',
+                lockname=lockname,
+                token=token
+            ).handle(logger)
+
+            pipeline.unwatch()
+
+            return False
+
+        pipeline.multi()
+        pipeline.delete(lockname)
+        pipeline.execute()
+
+    except redis.exceptions.WatchError as exc:
+        Failure.from_exc(
+            'lock token changed during transaction',
+            exc,
+            lockname=lockname,
+            token=token
+        ).handle(logger)
+
+        return False
+
+    return True

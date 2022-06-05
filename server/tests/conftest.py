@@ -290,6 +290,11 @@ def worker(
     worker.stop()
 
 
+@pytest.fixture(name='cache')
+def fixture_cache(logger: gluetool.log.ContextAdapter, redis: redis.Redis) -> redis.Redis:
+    return tft.artemis.get_cache(logger)
+
+
 @pytest.fixture(name='current_message')
 def fixture_current_message() -> dramatiq.MessageProxy:
     message = dramatiq.Message(
