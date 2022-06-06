@@ -391,6 +391,7 @@ class ActorOptions(TypedDict):
 class Actor(Protocol):
     actor_name: str
     fn: BareActorType
+    queue_name: str
     options: ActorOptions
 
     def __call__(self, *args: ActorArgumentType) -> None:
@@ -414,6 +415,15 @@ class Actor(Protocol):
     def message(
         self,
         *args: ActorArgumentType
+    ) -> dramatiq.Message:
+        ...
+
+    def message_with_options(
+        self,
+        args: Optional[Tuple[ActorArgumentType, ...]] = None,
+        delay: Optional[int] = None,
+        pipe_ignore: bool = False,
+        **options: Any
     ) -> dramatiq.Message:
         ...
 
@@ -965,6 +975,29 @@ def format_task_group_invocation(
     return f'({" | ".join([task.actor_name for task in tasks])})({", ".join(formatted_args)})'
 
 
+def format_task_sequence_invocation(
+    tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]],
+    on_complete: Optional[Tuple[Actor, Tuple[ActorArgumentType, ...]]] = None,
+    delay: Optional[int] = None
+) -> str:
+    formatted_tasks: List[str] = [
+        format_task_invocation(task, *args)
+        for task, args in tasks
+    ]
+
+    if on_complete:
+        task, args = on_complete
+
+        formatted_tasks.append(format_task_invocation(task, *args))
+
+    formatted_sequence = [f'({" > ".join(formatted_tasks)})']
+
+    if delay is not None:
+        formatted_sequence.append(f'delay={delay}')
+
+    return ', '.join(formatted_sequence)
+
+
 def dispatch_task(
     logger: gluetool.log.ContextAdapter,
     task: Actor,
@@ -1055,6 +1088,67 @@ def dispatch_group(
             exc,
             group_tasks=[task.actor_name for task in tasks],
             group_args=args
+        ))
+
+    return Ok(None)
+
+
+def dispatch_sequence(
+    logger: gluetool.log.ContextAdapter,
+    tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]],
+    on_complete: Optional[Tuple[Actor, Tuple[ActorArgumentType, ...]]] = None,
+    delay: Optional[int] = None
+) -> Result[None, Failure]:
+    """
+    Dispatch given tasks as a pipeline.
+
+    Based on Dramatiq's :py:class:`dramatiq.pipeline` implementation, but since we are
+    not interested in task results, "sequence" is more fitting.
+
+    :param logger: logger to use for logging.
+    :param tasks: list of callables, Dramatiq tasks, to dispatch, with their arguments.
+    :param on_complete: a task to dispatch when the last task completes.
+    :param delay: if set, the task will be delayed by this many seconds.
+    """
+
+    # Add `pipe_ignore` to disable result propagation. We ignore task results.
+
+    try:
+        pipeline = dramatiq.pipeline([
+            task.message_with_options(args=args, pipe_ignore=True)
+            for task, args in tasks
+        ])
+
+        if on_complete:
+            task, args = on_complete
+
+            pipeline = pipeline | task.message_with_options(args=args, pipe_ignore=True)
+
+        if delay is None:
+            pipeline.run()
+
+        else:
+            delay = _randomize_delay(delay)
+
+            pipeline.run(delay=delay * 1000)
+
+        logger.info(
+            f'scheduled sequence {format_task_sequence_invocation(tasks, on_complete=on_complete, delay=delay)}'
+        )
+
+        if KNOB_CLOSE_AFTER_DISPATCH.value:
+            logger.debug('closing broker connection as requested')
+
+            BROKER.connection.close()
+
+    except Exception as exc:
+        return Error(Failure.from_exc(
+            'failed to dispatch sequence',
+            exc,
+            sequence_tasks=[
+                (task.actor_name, args)
+                for task, args in tasks
+            ]
         ))
 
     return Ok(None)

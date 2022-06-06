@@ -19,6 +19,7 @@ import dramatiq.brokers.stub
 import dramatiq.middleware.age_limit
 import dramatiq.middleware.callbacks
 import dramatiq.middleware.current_message
+import dramatiq.middleware.pipelines
 import dramatiq.middleware.shutdown
 import dramatiq.middleware.time_limit
 import dramatiq.rate_limits.backends
@@ -1004,6 +1005,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
         dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
         dramatiq.middleware.callbacks.Callbacks(),
         dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
+        dramatiq.middleware.pipelines.Pipelines(),
         artemis_middleware.CurrentMessage(),
         artemis_middleware.Prometheus(),
         artemis_middleware.Retries(),
