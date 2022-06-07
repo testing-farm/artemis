@@ -32,10 +32,9 @@ def get_new_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
             'COMPLETE',
             'ERROR',
             name=name,
-            create_type=True
+            create_type=False
         )
 
-        # We need an explicit create() here, because the users table is being altered in a batch.
         enum.create(op.get_bind())
 
         return enum
@@ -58,10 +57,9 @@ def get_old_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
             'COMPLETE',
             'ERROR',
             name=name,
-            create_type=True
+            create_type=False
         )
 
-        # We need an explicit create() here, because the users table is being altered in a batch.
         enum.create(op.get_bind())
 
         return enum
