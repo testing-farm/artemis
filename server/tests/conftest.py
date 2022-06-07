@@ -202,6 +202,12 @@ def fixture_schema_initialized_actual(
         public=''
     ))
 
+    session.execute(sqlalchemy.insert(tft.artemis.db.Pool.__table__).values(
+        poolname='dummy-pool',
+        driver='localhost',
+        _parameters={}
+    ))
+
     session.execute(tft.artemis.db.GuestRequest.create_query(
         'dummy-guest',
         tft.artemis.environment.Environment(

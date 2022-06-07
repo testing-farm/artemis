@@ -44,7 +44,9 @@ def _schema_empty(session: sqlalchemy.orm.session.Session, _schema_actual: None)
         keyname='dummy-key',
         enabled=True,
         ownername='dummy-user',
-        file=''
+        file='',
+        private='',
+        public=''
     ))
 
     session.add(tft.artemis.db.GuestRequest(
@@ -54,7 +56,10 @@ def _schema_empty(session: sqlalchemy.orm.session.Session, _schema_actual: None)
         priorityname='dummy-priority-group',
         poolname='dummy-pool',
         ctime=datetime.datetime.utcnow(),
-        state='ready',
+        # TODO: sqlalchemy uses enum member names, not values, and GuestState values are lowercased,
+        # therefore they don't match the enum members in DB. upper() is needed, but the correct
+        # fix would be to change values of GuestState members to uppercased versions.
+        state=tft.artemis.guest.GuestState.READY.value.upper(),
         address=None,
         ssh_keyname='dummy-key',
         ssh_port=22,
