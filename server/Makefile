@@ -38,26 +38,38 @@ test-db-schema-revisions:  _env-info  ## Verify DB schema revisions
 test-pre-commit: install  ## Run pre-commit checks
 	git ls-files -- . | xargs -n200 poetry run pre-commit run --files
 
+
+INTEGRATION_POSTGRES_HOSTNAME := "localhost"
+INTEGRATION_POSTGRES_PORT := "5432"
+INTEGRATION_POSTGRES_USER := "artemis"
+INTEGRATION_POSTGRES_PASSWORD := artemis
+INTEGRATION_POSTGRES_DATABASE := "unit_test_db"
+INTEGRATION_POSTGRES_URI := "postgresql://$(INTEGRATION_POSTGRES_USER):$(INTEGRATION_POSTGRES_PASSWORD)@$(INTEGRATION_POSTGRES_HOSTNAME):$(INTEGRATION_POSTGRES_PORT)/$(INTEGRATION_POSTGRES_DATABASE)"
+
 test-integration: _env-info  ## Run tests against real services
 	# Spawn the real processes, and we have a bunch of them handy
 	docker-compose up -d postgres
 
 	# Wait for PostgreSQL to become available
 	while /bin/true; do \
-	    pg_isready --host 127.0.0.1 --port 5432; \
+	    pg_isready --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT); \
 	    if [[ "$$?" == "0" ]]; then break; fi; \
 	    sleep 1; \
 	done
 
 	# Our user lacks power to create database, grant it that right. Another option would be to have a dedicated user
 	# for managing DBs, but that would require greater rework of how tests are handling DB.
-	PGPASSWORD=mysecretpassword psql --host 127.0.0.1 --port 5432 -U postgres -c "ALTER USER artemis CREATEDB"
+	PGPASSWORD=mysecretpassword psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U postgres -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
+	PGPASSWORD=mysecretpassword psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U postgres -c "ALTER USER $(INTEGRATION_POSTGRES_USER) CREATEDB"
+	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "CREATE DATABASE $(INTEGRATION_POSTGRES_DATABASE)"
 
 	# Unit tests
-	tox -e py37 -- --against-db-url="postgresql://artemis:artemis@127.0.0.1:5432/unit_test_db"
+	tox -e py37 -- -x --against-db-url="$(INTEGRATION_POSTGRES_URI)"
 
 	# DB schema upgrade/downgrade
-	ARTEMIS_DB_URL="postgresql://artemis:artemis@127.0.0.1:5432/artemis" tox -e py37-db-schema-revisions
+	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "CREATE DATABASE $(INTEGRATION_POSTGRES_DATABASE)"
+	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" tox -e py37-db-schema-revisions
+	PGPASSWORD=mysecretpassword psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U postgres -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
 
 	docker-compose down
 

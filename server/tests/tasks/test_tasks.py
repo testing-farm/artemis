@@ -344,13 +344,13 @@ def test_update_guest_state_and_request_task(
         tft.artemis.guest.GuestState.PROVISIONING,
         tft.artemis.tasks.acquire_guest_request,
         'dummy-guest',
-        'dummy-pool-name',
+        'dummy-pool',
         delay=79,
         current_state=tft.artemis.guest.GuestState.ROUTING,
         set_values={
-            'poolname': 'dummy-pool-name'
+            'poolname': 'dummy-pool'
         },
-        poolname='dummy-pool-name'
+        poolname='dummy-pool'
     ) is workspace
 
     assert workspace.result is None
@@ -359,7 +359,7 @@ def test_update_guest_state_and_request_task(
     assert_log(caplog, message=SEARCH(r'state switched routing => provisioning'), levelno=logging.INFO)
     assert_log(
         caplog,
-        message=SEARCH(r'requested task #1 acquire_guest_request\(dummy-guest, dummy-pool-name, delay=79\)'),
+        message=SEARCH(r'requested task #1 acquire_guest_request\(dummy-guest, dummy-pool, delay=79\)'),
         levelno=logging.INFO
     )
 
@@ -378,7 +378,7 @@ def test_update_guest_state_and_request_task(
 
         assert task.id == 1
         assert task.taskname == 'acquire_guest_request'
-        assert task.arguments == ['dummy-guest', 'dummy-pool-name']
+        assert task.arguments == ['dummy-guest', 'dummy-pool']
         assert task.delay == 79
 
         r_guests = tft.artemis.db.SafeQuery \
@@ -393,7 +393,7 @@ def test_update_guest_state_and_request_task(
 
         guest = guests[0]
 
-        assert guest.poolname == 'dummy-pool-name'
+        assert guest.poolname == 'dummy-pool'
         assert guest.state == tft.artemis.guest.GuestState.PROVISIONING  # type: ignore[comparison-overlap]
 
 
@@ -412,13 +412,13 @@ def test_update_guest_state_and_request_task_no_such_guest(
         tft.artemis.guest.GuestState.PROVISIONING,
         tft.artemis.tasks.acquire_guest_request,
         'not-so-dummy-guest',
-        'dummy-pool-name',
+        'dummy-pool',
         delay=79,
         current_state=tft.artemis.guest.GuestState.ROUTING,
         set_values={
-            'poolname': 'dummy-pool-name'
+            'poolname': 'dummy-pool'
         },
-        poolname='dummy-pool-name'
+        poolname='dummy-pool'
     ) is workspace
 
     assert workspace.result is not None
@@ -430,8 +430,8 @@ def test_update_guest_state_and_request_task_no_such_guest(
     assert failure.details['current_state'] == 'routing'
     assert failure.details['new_state'] == 'provisioning'
     assert failure.details['task_name'] == 'acquire_guest_request'
-    assert failure.details['task_args'] == ('not-so-dummy-guest', 'dummy-pool-name')
-    assert failure.details['poolname'] == 'dummy-pool-name'
+    assert failure.details['task_args'] == ('not-so-dummy-guest', 'dummy-pool')
+    assert failure.details['poolname'] == 'dummy-pool'
     assert failure.details['guestname'] == 'not-so-dummy-guest'
     assert failure.recoverable is True
 
@@ -446,7 +446,7 @@ def test_update_guest_state_and_request_task_no_such_guest(
     # assert_log(caplog, message=SEARCH(r'state switched routing => provisioning'), levelno=logging.INFO)
     # assert_log(
     #    caplog,
-    #    message=SEARCH(r'requested task #1 acquire_guest_request\(dummy-guest, dummy-pool-name, delay=79\)'),
+    #    message=SEARCH(r'requested task #1 acquire_guest_request\(dummy-guest, dummy-pool, delay=79\)'),
     #    levelno=logging.INFO
     # )
 
