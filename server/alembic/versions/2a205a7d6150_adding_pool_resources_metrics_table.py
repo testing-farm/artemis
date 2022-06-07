@@ -31,17 +31,14 @@ def get_enum_type() -> Union[sa.Enum, postgresql.ENUM]:
             name='poolresourcesmetricsdimensions',
             create_type=True
         )
+    else:
+        enum = sa.Enum(
+            'LIMITS',
+            'USAGE',
+            name='poolresourcesmetricsdimensions'
+        )
 
-        # We need an explicit create() here, because the table is being altered in a batch.
-        enum.create(op.get_bind())
-
-        return enum
-
-    return sa.Enum(
-        'LIMITS',
-        'USAGE',
-        name='poolresourcesmetricsdimensions'
-    )
+    return enum
 
 
 def upgrade() -> None:
