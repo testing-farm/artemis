@@ -29,10 +29,9 @@ def get_enum_type() -> Union[sa.Enum, postgresql.ENUM]:
             'USER',
             'ADMIN',
             name='userroles',
-            create_type=True
+            create_type=False
         )
 
-        # We need an explicit create() here, because the users table is being altered in a batch.
         enum.create(op.get_bind())
 
         return enum
