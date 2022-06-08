@@ -119,6 +119,8 @@ RUN chmod +x /wait-for-postgres.sh /wait-for-rabbitmq.sh /wait-for-api.sh /wait-
 # Copy Artemis sources and Alembic data and install Artemis
 #
 COPY server /APP/
+# TODO: remove once server/client Makefiles wouldn't refer to their parent directory
+COPY Makefile.lib /
 RUN    cd /APP \
     && PYTHON=python3.7 make install-no-dev \
     # Make Poetry configuration accesible to Poetry in containers

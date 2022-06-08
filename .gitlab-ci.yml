@@ -30,9 +30,8 @@ tests:
     - make -C server/ test-units
     - make -C server/ test-db-schema-revisions
 
-    - cd cli/
-    - IN_TEST=yes tox -v
-    - cd ..
+    - make -C cli/ test-pre-commit
+    - make -C cli/ test-units
 
 container:
   stage: deploy
