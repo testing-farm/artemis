@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import datetime
-import inspect
 import os
 import threading
 import traceback
@@ -22,7 +21,7 @@ from .guest import GuestLogger
 
 if TYPE_CHECKING:
     from . import ExceptionInfoType
-    from .tasks import Actor, ActorArgumentsType, ActorArgumentType
+    from .tasks import Actor, ActorArgumentType, TaskCall
 
 
 # Dramatiq does not have a global default for maximal number of retries, the value is only present as a default
@@ -38,74 +37,49 @@ def _dump_message(message: dramatiq.message.Message) -> Dict[str, Any]:
     return dict(**message.asdict())
 
 
-def _actor_arguments(
-    logger: gluetool.log.ContextAdapter,
-    message: dramatiq.message.Message,
-    actor: 'Actor'
-) -> 'ActorArgumentsType':
-    signature = inspect.signature(actor.fn)
-
-    gluetool.log.log_dict(logger.debug, 'raw message data', message._message)
-
-    if len(signature.parameters) != len(message._message[2]):
-        from . import Failure
-
-        Failure(
-            'actor signature parameters does not match message content',
-            signature=[name for name in signature.parameters.keys()],
-            arguments=[repr(arg) for arg in message._message[2]]
-        ).handle(logger)
-
-        return {}
-
-    return {
-        name: message._message[2][index]
-        for index, name in enumerate(signature.parameters.keys())
-    }
-
-
 def _get_message_limit(
     message: dramatiq.broker.MessageProxy,
-    actor: 'Actor',
     key: str,
-    default: int
+    default: int,
+    actor: Optional['Actor'] = None,
 ) -> int:
     value = cast(Optional[int], message.options.get(key))
 
     if value:
         return value
 
-    value = cast(Optional[int], actor.options.get(key))
+    if actor:
+        value = cast(Optional[int], actor.options.get(key))
 
-    if value:
-        return value
+        if value:
+            return value
 
     return default
 
 
-def _message_max_retries(message: dramatiq.broker.MessageProxy, actor: 'Actor') -> int:
-    return _get_message_limit(message, actor, 'max_retries', DEFAULT_MAX_RETRIES)
+def _message_max_retries(message: dramatiq.broker.MessageProxy, actor: Optional['Actor'] = None) -> int:
+    return _get_message_limit(message, 'max_retries', DEFAULT_MAX_RETRIES, actor=actor)
 
 
-def _message_min_backoff(message: dramatiq.broker.MessageProxy, actor: 'Actor') -> int:
-    return _get_message_limit(message, actor, 'min_backoff', dramatiq.middleware.retries.DEFAULT_MIN_BACKOFF)
+def _message_min_backoff(message: dramatiq.broker.MessageProxy, actor: Optional['Actor'] = None) -> int:
+    return _get_message_limit(message, 'min_backoff', dramatiq.middleware.retries.DEFAULT_MIN_BACKOFF, actor=actor)
 
 
-def _message_max_backoff(message: dramatiq.broker.MessageProxy, actor: 'Actor') -> int:
-    return _get_message_limit(message, actor, 'max_backoff', dramatiq.middleware.retries.DEFAULT_MAX_BACKOFF)
+def _message_max_backoff(message: dramatiq.broker.MessageProxy, actor: Optional['Actor'] = None) -> int:
+    return _get_message_limit(message, 'max_backoff', dramatiq.middleware.retries.DEFAULT_MAX_BACKOFF, actor=actor)
 
 
 def _message_backoff(
     message: dramatiq.broker.MessageProxy,
-    actor: 'Actor',
-    retries: int
+    retries: int,
+    actor: Optional['Actor'] = None
 ) -> int:
     return cast(
         int,
         compute_backoff(
             retries,
-            factor=_message_min_backoff(message, actor),
-            max_backoff=_message_max_backoff(message, actor)
+            factor=_message_min_backoff(message, actor=actor),
+            max_backoff=_message_max_backoff(message, actor=actor)
         )[1]
     )
 
@@ -114,7 +88,7 @@ def _retry_message(
     logger: gluetool.log.ContextAdapter,
     broker: dramatiq.broker.Broker,
     message: dramatiq.message.Message,
-    actor: 'Actor',
+    task_call: Optional['TaskCall'] = None,
     exc_info: Optional['ExceptionInfoType'] = None
 ) -> None:
     """
@@ -127,7 +101,7 @@ def _retry_message(
         message.options['traceback'] = '\n'.join(traceback.format_exception(*exc_info, limit=30))
 
     retries = cast(int, message.options['retries'])
-    backoff = _message_backoff(message, actor, retries)
+    backoff = _message_backoff(message, retries, actor=task_call.actor if task_call else None)
 
     retry_at = datetime.datetime.utcnow() + datetime.timedelta(milliseconds=backoff)
 
@@ -158,8 +132,7 @@ def _fail_message(
 def _handle_tails(
     logger: gluetool.log.ContextAdapter,
     message: dramatiq.message.Message,
-    actor: 'Actor',
-    actor_arguments: 'ActorArgumentsType'
+    task_call: 'TaskCall'
 ) -> bool:
     """
     Handle the "tails": when we run out of retries on a task, we cannot just let it fail, but we must take
@@ -171,15 +144,15 @@ def _handle_tails(
 
     from .tasks import get_root_db
 
-    tail_handler = actor.options['tail_handler']
-    assert tail_handler
+    tail_handler = task_call.tail_handler
+    assert tail_handler is not None
 
-    tail_logger = tail_handler.get_logger(logger, actor, actor_arguments)
+    tail_logger = tail_handler.get_logger(logger, task_call)
 
     db = get_root_db(tail_logger)
 
     with db.get_session() as session:
-        if tail_handler.handle_tail(tail_logger, db, session, actor, actor_arguments):
+        if tail_handler.handle_tail(tail_logger, db, session, task_call):
             return True
 
     tail_logger.error('failed to handle the chain tail')
@@ -222,43 +195,41 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # can
             return
 
         from . import get_logger
+        from .tasks import TaskCall
 
         logger = get_logger()
 
-        actor = cast('Actor', broker.get_actor(message.actor_name))
+        task_call = TaskCall.from_message(broker, message)
 
         # `retries` key is initialized to 0 - while other fields are optional, this one is expected to exist.
         retries = message.options.setdefault('retries', 0)
-        max_retries = _message_max_retries(message, actor)
-        retry_when = actor.options.get('retry_when', self.retry_when)
+        max_retries = _message_max_retries(message, task_call.actor)
+        retry_when = task_call.actor.options.get('retry_when', self.retry_when)
 
-        actor_arguments = _actor_arguments(logger, message, actor)
-
-        guestname = actor_arguments['guestname'] if actor_arguments and 'guestname' in actor_arguments else None
+        guestname = task_call.named_args.get('guestname', None)
 
         if isinstance(guestname, str):
             logger = GuestLogger(logger, guestname)
 
-        logger.info(f'retries: message={message.message_id} actor={actor.actor_name} current-retries={retries} max-retries={max_retries}')  # noqa: E501
+        logger.info(f'retries: message={message.message_id} actor={task_call.actor.actor_name} current-retries={retries} max-retries={max_retries}')  # noqa: E501
 
         if retry_when is not None and not retry_when(retries, exception) or \
            retry_when is None and max_retries is not None and retries >= max_retries:
 
             # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
-            if actor.options['tail_handler'] is None:
+            if not task_call.has_tail_handler:
                 return _fail_message(
                     logger,
                     message,
                     'retries exceeded',
-                    task_name=actor.actor_name,
-                    task_args=actor_arguments,
+                    task_call=task_call,
                     guestname=guestname
                 )
 
-            if _handle_tails(logger, message, actor, actor_arguments) is True:
+            if _handle_tails(logger, message, task_call) is True:
                 return
 
-        _retry_message(logger, broker, message, actor)
+        _retry_message(logger, broker, message, task_call=task_call)
 
 
 MESSAGE_NOTE_OPTION_KEY = 'artemis_notes'
@@ -346,15 +317,12 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
         result: None = None,
         exception: Optional[BaseException] = None
     ) -> None:
-        from . import get_logger
         from .metrics import TaskMetrics
-
-        logger = get_logger()
+        from .tasks import TaskCall
 
         labels = (message.queue_name, message.actor_name)
-        actor = broker.get_actor(message.actor_name)
 
-        actor_arguments = _actor_arguments(logger, message, actor)
+        task_call = TaskCall.from_message(broker, message)
 
         message_start_time = self._message_start_times.pop(message.message_id, current_millis())
         message_duration = current_millis() - message_start_time
@@ -364,8 +332,8 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
         # and some can tell us by attaching a note to the message.
         poolname: ActorArgumentType = None
 
-        if 'poolname' in actor_arguments:
-            poolname = actor_arguments['poolname']
+        if 'poolname' in task_call.named_args:
+            poolname = task_call.named_args['poolname']
 
         elif message.options:
             poolname = get_metric_note(NOTE_POOLNAME)
@@ -443,9 +411,9 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         from .cache import set_cache_value
         from .knobs import KNOB_WORKER_TRAFFIC_METRICS_TTL
         from .metrics import WorkerTrafficTask
+        from .tasks import TaskCall
 
-        actor = broker.get_actor(message.actor_name)
-        actor_arguments = _actor_arguments(self.logger, message, actor)
+        task_call = TaskCall.from_message(broker, message)
 
         tid = threading.get_ident()
 
@@ -460,7 +428,7 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
                 ctime=datetime.datetime.utcnow(),
                 queue=cast(str, message.queue_name),
                 actor=cast(str, message.actor_name),
-                args=actor_arguments
+                args=task_call.named_args
             ).serialize_to_json().encode(),
             ttl=KNOB_WORKER_TRAFFIC_METRICS_TTL.value
         )

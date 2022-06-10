@@ -70,6 +70,7 @@ from .knobs import KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_SENTRY, KNOB_SENTRY
 
 if TYPE_CHECKING:
     from .environment import Environment
+    from .tasks import TaskCall
 
 stackprinter.set_excepthook(
     style='darkbg2',
@@ -441,6 +442,7 @@ class Failure:
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
+        task_call: Optional['TaskCall'] = None,
         **details: Any
     ):
         self.message = message
@@ -472,6 +474,9 @@ class Failure:
 
         if environment:
             self.details['environment'] = environment
+
+        if task_call:
+            self.details['task_call'] = task_call
 
         if exc_info:
             self.exception = exc_info[1]
@@ -519,6 +524,7 @@ class Failure:
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
+        task_call: Optional['TaskCall'] = None,
         **details: Any
     ) -> 'Failure':
         return Failure(
@@ -534,6 +540,7 @@ class Failure:
             scrubbed_command=scrubbed_command,
             command_output=command_output,
             environment=environment,
+            task_call=task_call,
             **details
         )
 
@@ -547,6 +554,7 @@ class Failure:
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
+        task_call: Optional['TaskCall'] = None,
         **details: Any
     ) -> 'Failure':
         """
@@ -573,6 +581,7 @@ class Failure:
             scrubbed_command=scrubbed_command,
             command_output=command_output,
             environment=environment,
+            task_call=task_call,
             **details
         )
 
@@ -582,6 +591,7 @@ class Failure:
         scrubbed_command: Optional[List[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
+        task_call: Optional['TaskCall'] = None,
         **details: Any
     ) -> 'Failure':
         self.details.update(details)
@@ -594,6 +604,9 @@ class Failure:
 
         if environment:
             self.details['environment'] = environment
+
+        if task_call:
+            self.details['task_call'] = task_call
 
         return self
 
@@ -653,6 +666,9 @@ class Failure:
 
         if 'environment' in event_details:
             event_details['environment'] = event_details['environment'].serialize()
+
+        if 'task_call' in event_details:
+            event_details['task_call'] = event_details['task_call'].serialize()
 
         if self.caused_by:
             event_details['caused_by'] = self.caused_by.get_event_details()
@@ -803,6 +819,9 @@ class Failure:
         if 'environment' in extra:
             extra['environment'] = extra['environment'].serialize()
 
+        if 'task_call' in extra:
+            extra['task_call'] = extra['task_call'].serialize()
+
         # Special tag, "server_name", is used by Sentry for tracking issues per servers.
         tags['server_name'] = platform.node()
 
@@ -867,6 +886,9 @@ class Failure:
 
         if 'environment' in details:
             details['environment'] = details['environment'].serialize()
+
+        if 'task_call' in details:
+            details['task_call'] = details['task_call'].serialize()
 
         if self.caused_by:
             details['caused-by'] = self.caused_by.get_log_details()
