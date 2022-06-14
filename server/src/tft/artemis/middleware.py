@@ -248,7 +248,10 @@ def set_message_note(note: str, value: str) -> None:
 
     from .context import CURRENT_MESSAGE
 
-    options = cast(Dict[str, Dict[str, str]], CURRENT_MESSAGE.get().options)
+    message_proxy = CURRENT_MESSAGE.get()
+    assert message_proxy is not None
+
+    options = cast(Dict[str, Dict[str, str]], message_proxy.options)
     options.setdefault(MESSAGE_NOTE_OPTION_KEY, {})
     options[MESSAGE_NOTE_OPTION_KEY][note] = value
 
@@ -260,7 +263,10 @@ def get_metric_note(note: str) -> Optional[str]:
 
     from .context import CURRENT_MESSAGE
 
-    options = cast(Dict[str, Dict[str, str]], CURRENT_MESSAGE.get().options)
+    message_proxy = CURRENT_MESSAGE.get()
+    assert message_proxy is not None
+
+    options = cast(Dict[str, Dict[str, str]], message_proxy.options)
 
     return options.get(MESSAGE_NOTE_OPTION_KEY, {}).get(note)
 

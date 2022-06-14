@@ -104,7 +104,13 @@ def test_dispatch_task(
     mockpatch: MockPatcher,
     actor: tft.artemis.tasks.Actor
 ) -> None:
-    mockpatch(tft.artemis.tasks, 'safe_call').return_value = gluetool.result.Ok(79)
+    mockpatch(tft.artemis.tasks, 'safe_call').return_value = gluetool.result.Ok(dramatiq.Message(
+        queue_name='dummy-queue',
+        actor_name='dummy-actor',
+        args=('79',),
+        kwargs={},
+        options={}
+    ))
 
     r = tft.artemis.tasks.dispatch_task(logger, actor, '79')
 
@@ -380,7 +386,12 @@ def test_update_guest_state_and_request_task(
 actor: acquire_guest_request
 args:
     guestname: dummy-guest
-    poolname: dummy-pool""",
+    poolname: dummy-pool
+delay: 79
+message:
+    id:
+task-request:
+    id: 1""",
         levelno=logging.INFO
     )
 

@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import uuid
 from typing import Any, List
 
 import _pytest.logging
+import _pytest.monkeypatch
 import dramatiq
 import dramatiq.broker
 import gluetool.log
@@ -31,9 +33,16 @@ def test_sequence(
     redis: redis.Redis,
     worker: dramatiq.Worker,
     actor: Actor,
-    caplog: _pytest.logging.LogCaptureFixture
+    caplog: _pytest.logging.LogCaptureFixture,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch
 ) -> None:
     results: List[str] = []
+    mock_uuids = ['uuid1', 'uuid2', 'uuid3', 'uuid4']
+
+    def mock_uuid4() -> str:
+        return mock_uuids.pop(0)
+
+    monkeypatch.setattr(uuid, 'uuid4', mock_uuid4)
 
     @task()
     def dummy_actor(foo: Any, bar: Any) -> None:
@@ -62,19 +71,39 @@ sequence:
     args:
         foo: foo1
         bar: bar1
+    delay:
+    message:
+        id: uuid1
+    task-request:
+        id:
   - actor: dummy_actor
     args:
         foo: foo2
         bar: bar2
+    delay:
+    message:
+        id: uuid2
+    task-request:
+        id:
   - actor: dummy_actor
     args:
         foo: foo3
         bar: bar3
+    delay:
+    message:
+        id: uuid3
+    task-request:
+        id:
 on-complete:
     actor: dummy_actor
     args:
         foo: foo4
-        bar: bar4"""
+        bar: bar4
+    delay:
+    message:
+        id: uuid4
+    task-request:
+        id:"""
     )
 
     broker.join(actor.queue_name)

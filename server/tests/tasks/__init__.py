@@ -5,6 +5,7 @@ from typing import Any, Optional
 from unittest.mock import MagicMock
 
 import tft.artemis.guest
+import tft.artemis.tasks
 from tft.artemis.tasks import DoerType, TaskLogger
 
 
@@ -41,5 +42,6 @@ def assert_task_core_call(
     # Some tasks go even beyond task logger by creating a guest logger. If we were given a task name,
     # let's verify guest logger has been created correctly.
     if test_guest_logger:
-        assert isinstance(kwargs['logger']._logger, tft.artemis.guest.GuestLogger)
-        assert kwargs['logger']._logger.guestname == test_guest_logger
+        assert isinstance(kwargs['logger']._logger, tft.artemis.tasks.MessageLogger)
+        assert isinstance(kwargs['logger']._logger._logger, tft.artemis.guest.GuestLogger)
+        assert kwargs['logger']._logger._logger.guestname == test_guest_logger
