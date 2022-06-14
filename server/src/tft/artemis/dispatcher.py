@@ -117,7 +117,13 @@ def handle_task_request(
     except ActorNotFound as exc:
         return _log_failure(Failure.from_exc('failed to find task', exc), 'failed to find task')
 
-    r_dispatch = dispatch_task(logger, actor, *task_arguments, delay=task_request.delay)
+    r_dispatch = dispatch_task(
+        logger,
+        actor,
+        *task_arguments,
+        delay=task_request.delay,
+        task_request_id=task_request.id
+    )
 
     if r_dispatch.is_error:
         return _log_failure(r_dispatch.unwrap_error(), 'failed to dispatch task')

@@ -28,7 +28,7 @@ from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol, TypedDict
 
 from .. import Failure, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, safe_call
-from ..context import DATABASE, LOGGER, SESSION, with_context
+from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SafeQuery, \
     SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change, upsert
 from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
@@ -447,6 +447,10 @@ class TaskCall(SerializableContainer):
 
     delay: Optional[int] = None
 
+    # For tracking messages through logs
+    message_id: Optional[str] = None
+    task_request_id: Optional[int] = None
+
     _named_args: Optional[NamedActorArgumentsType] = None
     _tail_handler: Optional['TailHandler'] = None
 
@@ -503,7 +507,9 @@ class TaskCall(SerializableContainer):
         cls,
         actor: Actor,
         *args: ActorArgumentType,
-        delay: Optional[int] = None
+        delay: Optional[int] = None,
+        message: Optional[dramatiq.Message] = None,
+        task_request_id: Optional[int] = None
     ) -> 'TaskCall':
         signature = inspect.signature(actor.fn)
         arg_names = tuple(name for name in signature.parameters.keys())
@@ -514,20 +520,25 @@ class TaskCall(SerializableContainer):
             actor=actor,
             args=args,
             arg_names=arg_names,
-            delay=delay
+            delay=delay,
+            message_id=message.message_id if message is not None else None,
+            task_request_id=task_request_id
         )
 
     @classmethod
     def from_message(
         cls,
         broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message,
-        delay: Optional[int] = None
+        message: dramatiq.Message,
+        delay: Optional[int] = None,
+        task_request_id: Optional[int] = None
     ) -> 'TaskCall':
         return cls._construct(
             cast('Actor', broker.get_actor(message.actor_name)),
             *message.args,
-            delay=delay
+            delay=delay,
+            message=message,
+            task_request_id=task_request_id
         )
 
     @classmethod
@@ -535,14 +546,22 @@ class TaskCall(SerializableContainer):
         cls,
         actor: Actor,
         *args: ActorArgumentType,
-        delay: Optional[int] = None
+        delay: Optional[int] = None,
+        task_request_id: Optional[int] = None
     ) -> 'TaskCall':
-        return cls._construct(actor, *args, delay=delay)
+        return cls._construct(actor, *args, delay=delay, task_request_id=task_request_id)
 
     def serialize(self) -> Dict[str, Any]:
         return {
             'actor': self.actor.actor_name,
-            'args': self.named_args
+            'args': self.named_args,
+            'delay': self.delay,
+            'message': {
+                'id': self.message_id
+            },
+            'task-request': {
+                'id': self.task_request_id
+            }
         }
 
     @classmethod
@@ -581,8 +600,31 @@ class FailureHandlerType(Protocol):
         ...
 
 
+class MessageLogger(gluetool.log.ContextAdapter):
+    def __init__(self, logger: gluetool.log.ContextAdapter, message: dramatiq.Message) -> None:
+        super().__init__(logger, {
+            'ctx_message_id': (5, message.message_id)
+        })
+
+    @property
+    def message_id(self) -> str:
+        return cast(str, self._contexts['message_id'][1])
+
+
 class TaskLogger(gluetool.log.ContextAdapter):
-    def __init__(self, logger: gluetool.log.ContextAdapter, task_name: str) -> None:
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        task_name: str,
+        message: Optional[dramatiq.Message] = None
+    ) -> None:
+        if not message:
+            message_proxy = CURRENT_MESSAGE.get(None)
+            message = message_proxy._message if message_proxy is not None else None
+
+        if message:
+            logger = MessageLogger(logger, message)
+
         super().__init__(logger, {
             'ctx_task_name': (30, task_name)
         })
@@ -1099,7 +1141,8 @@ def dispatch_task(
     logger: gluetool.log.ContextAdapter,
     task: Actor,
     *args: ActorArgumentType,
-    delay: Optional[int] = None
+    delay: Optional[int] = None,
+    task_request_id: Optional[int] = None
 ) -> Result[None, Failure]:
     """
     Dispatch a given task.
@@ -1115,25 +1158,27 @@ def dispatch_task(
     # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
     actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
 
-    task_call = TaskCall.from_message(BROKER, message, delay=delay)
+    task_call = TaskCall.from_message(BROKER, message, delay=delay, task_request_id=task_request_id)
 
     r = safe_call(BROKER.enqueue, message, delay=actual_delay)
 
-    if r.is_ok:
-        log_dict_yaml(logger.info, 'scheduled task', serialize_task_invocation(task_call))
+    if r.is_error:
+        return Error(Failure.from_failure(
+            'failed to dispatch task',
+            r.unwrap_error(),
+            task_call=task_call
+        ))
 
-        if KNOB_CLOSE_AFTER_DISPATCH.value:
-            logger.debug('closing broker connection as requested')
+    task_call.message_id = cast(dramatiq.Message, r.unwrap()).message_id
 
-            BROKER.connection.close()
+    log_dict_yaml(logger.info, 'scheduled task', serialize_task_invocation(task_call))
 
-        return Ok(None)
+    if KNOB_CLOSE_AFTER_DISPATCH.value:
+        logger.debug('closing broker connection as requested')
 
-    return Error(Failure.from_failure(
-        'failed to dispatch task',
-        r.unwrap_error(),
-        task_call=task_call
-    ))
+        BROKER.connection.close()
+
+    return Ok(None)
 
 
 def dispatch_group(
@@ -2223,11 +2268,13 @@ class Workspace:
         if r_task.is_error:
             return handle_error(r_task, 'failed to add task request')
 
+        task_request_id = r_task.unwrap()
+
         self.logger.info(f'state switched {current_state_label} => {new_state.value}')
         log_dict_yaml(
             self.logger.info,
-            f'requested task #{r_task.unwrap()}',
-            TaskCall.from_call(task, *task_arguments, delay=delay).serialize()
+            f'requested task #{task_request_id}',
+            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
         )
 
         return self

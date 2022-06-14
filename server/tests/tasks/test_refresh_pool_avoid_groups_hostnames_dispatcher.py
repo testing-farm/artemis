@@ -77,8 +77,8 @@ def test_dispatch_refresh(
     logger = cast(Optional[tft.artemis.tasks.TaskLogger], kwargs.get('logger'))
 
     assert logger is not None
-    assert isinstance(logger._logger, tft.artemis.drivers.PoolLogger)
-    assert logger._logger.poolname == 'beaker'
+    assert isinstance(logger._logger._logger, tft.artemis.drivers.PoolLogger)  # type: ignore[union-attr]
+    assert logger._logger._logger.poolname == 'beaker'  # type: ignore[union-attr]
 
 
 def test_dispatch_refresh_failure(

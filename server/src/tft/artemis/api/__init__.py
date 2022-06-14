@@ -752,11 +752,13 @@ class GuestRequestManager:
                     failure_details=failure_details
                 )
 
+            task_request_id = r_task.unwrap()
+
             guest_logger.info('created')
             log_dict_yaml(
                 guest_logger.info,
-                f'requested task #{r_task.unwrap()}',
-                TaskCall.from_call(route_guest_request, guestname).serialize()
+                f'requested task #{task_request_id}',
+                TaskCall.from_call(route_guest_request, guestname, task_request_id=task_request_id).serialize()
             )
 
             # Everything went well, update our accounting.
@@ -876,10 +878,12 @@ class GuestRequestManager:
                     failure_details=failure_details
                 )
 
+            task_request_id = r_task.unwrap()
+
             log_dict_yaml(
                 guest_logger.info,
-                f'requested task #{r_task.unwrap()}',
-                TaskCall.from_call(release_guest_request, guestname).serialize()
+                f'requested task #{task_request_id}',
+                TaskCall.from_call(release_guest_request, guestname, task_request_id=task_request_id).serialize()
             )
 
     def acquire_guest_console_url(
