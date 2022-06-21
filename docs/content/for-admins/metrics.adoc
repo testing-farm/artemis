@@ -76,7 +76,9 @@ Following metrics are generated for every known pool, and represent limits and c
 * `pool_resources_network_addresses` (gauge) Current limits and usage of pool networks.
 * `pool_resources_updated_timestamp` (gauge): Last time the pool metrics were updated, as Unix timestamp.
 * `pool_costs` (counter): Overall total cost of resources used by a pool, per pool and resource type.
+* `pool_image_info_count` (gauge): Number of cached image info entries.
 * `pool_image_info_updated_timestamp` (gauge): Last time pool image info has been updated.
+* `pool_flavor_info_count` (gauge): Number of cached flavor info entries.
 * `pool_flavor_info_updated_timestamp` (gauge): Last time pool flavor info has been updated.
 
 === Pool operations

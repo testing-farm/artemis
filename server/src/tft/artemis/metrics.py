@@ -751,7 +751,8 @@ class PoolMetrics(MetricsBase):
     _KEY_CLI_CALLS_DURATIONS = 'metrics.pool.{poolname}.cli-calls.durations'  # noqa: FS003
 
     # Image & flavor refresh process does not have their own metrics, hence using this container to track the "last
-    # update" timestamp.
+    # update" timestamp and other.
+    _KEY_INFO_COUNT = 'metrics.pool.{poolname}.{info}.count'  # noqa: FS003
     _KEY_INFO_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.{info}.updated_timestamp'  # noqa: FS003
 
     poolname: str
@@ -766,7 +767,9 @@ class PoolMetrics(MetricsBase):
 
     errors: Dict[str, int]
 
+    image_info_count: Optional[float]
     image_info_updated_timestamp: Optional[float]
+    flavor_info_count: Optional[float]
     flavor_info_updated_timestamp: Optional[float]
 
     # commandname => count
@@ -785,9 +788,17 @@ class PoolMetrics(MetricsBase):
 
         self.key_errors = self._KEY_ERRORS.format(poolname=poolname)  # noqa: FS002
 
+        self.key_image_info_count = self._KEY_INFO_COUNT.format(  # noqa: FS002
+            poolname=poolname,
+            info='image'
+        )
         self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(  # noqa: FS002
             poolname=poolname,
             info='image'
+        )
+        self.key_flavor_info_count = self._KEY_INFO_COUNT.format(  # noqa: FS002
+            poolname=poolname,
+            info='flavor'
         )
         self.key_flavor_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(  # noqa: FS002
             poolname=poolname,
@@ -810,7 +821,9 @@ class PoolMetrics(MetricsBase):
 
         self.errors = {}
 
+        self.image_info_count = None
         self.image_info_updated_timestamp = None
+        self.flavor_info_count = None
         self.flavor_info_updated_timestamp = None
 
         self.cli_calls = {}
@@ -818,6 +831,22 @@ class PoolMetrics(MetricsBase):
         self.cli_calls_durations = {}
 
         self.__post_init__()
+
+    @staticmethod
+    @with_context
+    def _refresh_info_count(
+        pool: str,
+        info: str,
+        count: float,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        safe_call(
+            cast(Callable[[str, float], None], cache.set),
+            PoolMetrics._KEY_INFO_COUNT.format(poolname=pool, info=info),  # noqa: FS002
+            count
+        )
+
+        return Ok(None)
 
     @staticmethod
     @with_context
@@ -835,30 +864,40 @@ class PoolMetrics(MetricsBase):
         return Ok(None)
 
     @staticmethod
-    def refresh_image_info_updated_timestamp(
-        pool: str
+    def refresh_image_info_metrics(
+        pool: str,
+        image_count: int
     ) -> Result[None, Failure]:
         """
         Update "latest updated" timestamp of pool image info cache to current time.
 
         :param pool: pool whose cache has been updated.
+        :param image_count: number of cached image info entries.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        return PoolMetrics._refresh_info_updated_timestamp(pool, 'image')
+        PoolMetrics._refresh_info_count(pool, 'image', image_count)
+        PoolMetrics._refresh_info_updated_timestamp(pool, 'image')
+
+        return Ok(None)
 
     @staticmethod
-    def refresh_flavor_info_updated_timestamp(
-        pool: str
+    def refresh_flavor_info_metrics(
+        pool: str,
+        flavor_count: int
     ) -> Result[None, Failure]:
         """
         Update "latest updated" timestamp of pool flavor info cache to current time.
 
         :param pool: pool whose cache has been updated.
+        :param flavor_count: number of cached flavor info entries.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        return PoolMetrics._refresh_info_updated_timestamp(pool, 'flavor')
+        PoolMetrics._refresh_info_count(pool, 'flavor', flavor_count)
+        PoolMetrics._refresh_info_updated_timestamp(pool, 'flavor')
+
+        return Ok(None)
 
     @staticmethod
     @with_context
@@ -1003,12 +1042,26 @@ class PoolMetrics(MetricsBase):
             for errorname, count in get_metric_fields(logger, cache, self.key_errors).items()
         }
 
+        count = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self.key_image_info_count)
+
+        self.image_info_count = count if count is None else float(count)
+
         updated = cast(
             Callable[[str], Optional[bytes]],
             cache.get
         )(self.key_image_info_refresh_timestamp)
 
         self.image_info_updated_timestamp = updated if updated is None else float(updated)
+
+        count = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self.key_flavor_info_count)
+
+        self.flavor_info_count = count if count is None else float(count)
 
         updated = cast(
             Callable[[str], Optional[bytes]],
@@ -1066,7 +1119,9 @@ class UndefinedPoolMetrics(MetricsBase):
 
     errors: Dict[str, int]
 
+    image_info_count: Optional[float]
     image_info_updated_timestamp: Optional[float]
+    flavor_info_count: Optional[float]
     flavor_info_updated_timestamp: Optional[float]
 
     cli_calls: Dict[str, int]
@@ -1092,7 +1147,9 @@ class UndefinedPoolMetrics(MetricsBase):
 
         self.errors = {}
 
+        self.image_info_count = None
         self.image_info_updated_timestamp = None
+        self.flavor_info_count = None
         self.flavor_info_updated_timestamp = None
 
         self.cli_calls = {}
@@ -1254,9 +1311,23 @@ class PoolsMetrics(MetricsBase):
 
         self.POOL_RESOURCES_UPDATED_TIMESTAMP = _create_pool_resource_metric('updated_timestamp')
 
+        self.POOL_IMAGE_INFO_COUNT = Gauge(
+            'pool_image_info_count',
+            'Number of cached image info entries.',
+            ['pool'],
+            registry=registry
+        )
+
         self.POOL_IMAGE_INFO_UPDATED_TIMESTAMP = Gauge(
             'pool_image_info_updated_timestamp',
             'Last time pool image info has been updated.',
+            ['pool'],
+            registry=registry
+        )
+
+        self.POOL_FLAVOR_INFO_COUNT = Gauge(
+            'pool_flavor_info_count',
+            'Number of cached flavor info entries.',
             ['pool'],
             registry=registry
         )
@@ -1358,9 +1429,17 @@ class PoolsMetrics(MetricsBase):
                 .labels(pool=poolname, dimension='usage') \
                 .set(pool_metrics.resources.usage.updated_timestamp or float('NaN'))
 
+            self.POOL_IMAGE_INFO_COUNT \
+                .labels(pool=poolname) \
+                .set(pool_metrics.image_info_count or float('NaN'))
+
             self.POOL_IMAGE_INFO_UPDATED_TIMESTAMP \
                 .labels(pool=poolname) \
                 .set(pool_metrics.image_info_updated_timestamp or float('NaN'))
+
+            self.POOL_FLAVOR_INFO_COUNT \
+                .labels(pool=poolname) \
+                .set(pool_metrics.flavor_info_count or float('NaN'))
 
             self.POOL_FLAVOR_INFO_UPDATED_TIMESTAMP \
                 .labels(pool=poolname) \

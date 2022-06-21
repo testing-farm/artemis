@@ -2005,12 +2005,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_config_images.is_error:
             return Error(r_config_images.unwrap_error())
 
+        all_images = real_images + r_config_images.unwrap()
+
         r_refresh = refresh_cached_set(
             CACHE.get(),
             self.image_info_cache_key,
             {
                 ii.name: ii
-                for ii in (real_images + r_config_images.unwrap())
+                for ii in all_images
                 if ii.name
             }
         )
@@ -2018,7 +2020,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_refresh.is_error:
             return Error(r_refresh.unwrap_error())
 
-        PoolMetrics(self.poolname).refresh_image_info_updated_timestamp(self.poolname)
+        PoolMetrics(self.poolname).refresh_image_info_metrics(self.poolname, len(all_images))
 
         return Ok(None)
 
@@ -2141,12 +2143,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_config_flavors.is_error:
             return Error(r_config_flavors.unwrap_error())
 
+        all_flavors = real_flavors + r_config_flavors.unwrap()
+
         r_refresh = refresh_cached_set(
             CACHE.get(),
             self.flavor_info_cache_key,
             {
                 fi.name: fi
-                for fi in (real_flavors + r_config_flavors.unwrap())
+                for fi in all_flavors
                 if fi.name
             }
         )
@@ -2154,7 +2158,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_refresh.is_error:
             return Error(r_refresh.unwrap_error())
 
-        PoolMetrics(self.poolname).refresh_flavor_info_updated_timestamp(self.poolname)
+        PoolMetrics(self.poolname).refresh_flavor_info_metrics(self.poolname, len(all_flavors))
 
         return Ok(None)
 
