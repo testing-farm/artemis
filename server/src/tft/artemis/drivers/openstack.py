@@ -978,6 +978,12 @@ class OpenStackDriver(PoolDriver):
         return Ok(resources)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
+        if self.pool_config.get('image-regex'):
+            image_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['image-regex'])
+
+        else:
+            image_name_pattern = None
+
         r_images = self._run_os(['image', 'list'], commandname='os.image-list')
 
         if r_images.is_error:
@@ -995,6 +1001,7 @@ class OpenStackDriver(PoolDriver):
                     ssh=PoolImageSSHInfo()
                 )
                 for image in cast(List[Dict[str, str]], r_images.unwrap())
+                if image_name_pattern is None or image_name_pattern.match(image['Name'])
             ])
 
         except KeyError as exc:

@@ -39,6 +39,14 @@ properties:
   flavor-regex:
     type: string
 
+  image-name-filter:
+    type: array
+    items:
+      type: string
+
+  image-regex:
+    type: string
+
   master-key-name:
     type: string
 

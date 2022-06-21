@@ -1884,40 +1884,74 @@ class AWSDriver(PoolDriver):
         return Ok(True)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        r_images = self._aws_command(
-            ['ec2', 'describe-images', '--owners'] + self._image_owners,
-            key='Images',
-            commandname='aws.ec2-describe-images'
-        )
+        if self.pool_config.get('image-regex'):
+            image_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['image-regex'])
 
-        if r_images.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch image information',
-                r_images.unwrap_error()
-            ))
+        else:
+            image_name_pattern = None
 
-        try:
-            return Ok([
-                AWSPoolImageInfo(
-                    # .Name is optional and may be undefined or missing - use .ImageId in such a case
-                    name=image.get('Name') or image['ImageId'],
-                    id=image['ImageId'],
-                    boot=FlavorBoot(),
-                    ssh=PoolImageSSHInfo(),
-                    platform_details=image['PlatformDetails'],
-                    block_device_mappings=image['BlockDeviceMappings'],
-                    # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or `None`
-                    ena_support=image.get('EnaSupport', False) or False
-                )
-                for image in cast(List[APIImageType], r_images.unwrap())
-            ])
+        def _fetch_images(name_filter: Optional[str] = None) -> Result[List[PoolImageInfo], Failure]:
+            cli_options = [
+                'ec2',
+                'describe-images',
+                '--owners'
+            ] + self._image_owners
 
-        except KeyError as exc:
-            return Error(Failure.from_exc(
-                'malformed image description',
-                exc,
-                image_info=r_images.unwrap()
-            ))
+            if name_filter is not None:
+                cli_options += [
+                    '--filter', f'Name=name,Values={name_filter}'
+                ]
+
+            r_images = self._aws_command(
+                cli_options,
+                key='Images',
+                commandname='aws.ec2-describe-images'
+            )
+
+            if r_images.is_error:
+                return Error(Failure.from_failure(
+                    'failed to fetch image information',
+                    r_images.unwrap_error()
+                ))
+
+            try:
+                return Ok([
+                    AWSPoolImageInfo(
+                        # .Name is optional and may be undefined or missing - use .ImageId in such a case
+                        name=image.get('Name') or image['ImageId'],
+                        id=image['ImageId'],
+                        boot=FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        platform_details=image['PlatformDetails'],
+                        block_device_mappings=image['BlockDeviceMappings'],
+                        # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or `None`
+                        ena_support=image.get('EnaSupport', False) or False
+                    )
+                    for image in cast(List[APIImageType], r_images.unwrap())
+                    if image_name_pattern is None or image_name_pattern.match(image.get('Name') or image['ImageId'])
+                ])
+
+            except KeyError as exc:
+                return Error(Failure.from_exc(
+                    'malformed image description',
+                    exc,
+                    image_info=r_images.unwrap()
+                ))
+
+        images: List[PoolImageInfo] = []
+        # As a default, use `[None]` - if image-name-filter is not specified, we'd iterate at least
+        # once with name_filter=None thanks to this, simplifying the code.
+        image_filters = cast(List[Optional[str]], self.pool_config.get('image-name-filter', [None]))
+
+        for name_filter in image_filters:
+            r_images = _fetch_images(name_filter=name_filter)
+
+            if r_images.is_error:
+                return r_images
+
+            images += r_images.unwrap()
+
+        return Ok(images)
 
     def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
