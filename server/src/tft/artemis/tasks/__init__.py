@@ -448,7 +448,7 @@ class TaskCall(SerializableContainer):
     delay: Optional[int] = None
 
     # For tracking messages through logs
-    message_id: Optional[str] = None
+    broker_message: Optional[dramatiq.Message] = None
     task_request_id: Optional[int] = None
 
     _named_args: Optional[NamedActorArgumentsType] = None
@@ -495,6 +495,10 @@ class TaskCall(SerializableContainer):
         return [self.named_args[name] for name in names]
 
     @property
+    def broker_message_id(self) -> Optional[str]:
+        return self.broker_message.message_id if self.broker_message is not None else None
+
+    @property
     def tail_handler(self) -> Optional['TailHandler']:
         return self.actor.options['tail_handler']
 
@@ -508,7 +512,7 @@ class TaskCall(SerializableContainer):
         actor: Actor,
         *args: ActorArgumentType,
         delay: Optional[int] = None,
-        message: Optional[dramatiq.Message] = None,
+        broker_message: Optional[dramatiq.Message] = None,
         task_request_id: Optional[int] = None
     ) -> 'TaskCall':
         signature = inspect.signature(actor.fn)
@@ -521,7 +525,7 @@ class TaskCall(SerializableContainer):
             args=args,
             arg_names=arg_names,
             delay=delay,
-            message_id=message.message_id if message is not None else None,
+            broker_message=broker_message,
             task_request_id=task_request_id
         )
 
@@ -529,15 +533,15 @@ class TaskCall(SerializableContainer):
     def from_message(
         cls,
         broker: dramatiq.broker.Broker,
-        message: dramatiq.Message,
+        broker_message: dramatiq.Message,
         delay: Optional[int] = None,
         task_request_id: Optional[int] = None
     ) -> 'TaskCall':
         return cls._construct(
-            cast('Actor', broker.get_actor(message.actor_name)),
-            *message.args,
+            cast('Actor', broker.get_actor(broker_message.actor_name)),
+            *broker_message.args,
             delay=delay,
-            message=message,
+            broker_message=broker_message,
             task_request_id=task_request_id
         )
 
@@ -557,7 +561,7 @@ class TaskCall(SerializableContainer):
             'args': self.named_args,
             'delay': self.delay,
             'message': {
-                'id': self.message_id
+                'id': self.broker_message_id
             },
             'task-request': {
                 'id': self.task_request_id
@@ -1168,8 +1172,6 @@ def dispatch_task(
             r.unwrap_error(),
             task_call=task_call
         ))
-
-    task_call.message_id = cast(dramatiq.Message, r.unwrap()).message_id
 
     log_dict_yaml(logger.info, 'scheduled task', serialize_task_invocation(task_call))
 
