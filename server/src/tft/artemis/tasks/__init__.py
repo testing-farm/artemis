@@ -497,23 +497,29 @@ class TaskCall(SerializableContainer):
     def logger(
         self,
         logger: gluetool.log.ContextAdapter,
-        failure_details: Dict[str, Any]
+        failure_details: Optional[Dict[str, Any]] = None
     ) -> gluetool.log.ContextAdapter:
         logger = TaskLogger(logger, self.actor.actor_name, message=self.broker_message)
 
         if self.has_args('guestname'):
-            guestname = failure_details['guestname'] = self.named_args['guestname']
+            guestname = self.named_args['guestname']
 
             assert isinstance(guestname, str)
 
             logger = GuestLogger(logger, guestname)
 
+            if failure_details is not None:
+                failure_details['guestname'] = guestname
+
         if self.has_args('poolname'):
-            poolname = failure_details['poolname'] = self.named_args['poolname']
+            poolname = self.named_args['poolname']
 
             assert isinstance(poolname, str)
 
             logger = PoolLogger(logger, poolname)
+
+            if failure_details is not None:
+                failure_details['poolname'] = poolname
 
         return logger
 
