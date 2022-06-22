@@ -8,6 +8,34 @@ draft: false
 
 == AWS
 
+=== Image filters
+
+When searching for images, AWS driver would list all images available to <<_image_owners,image owners>> configured for the pool. This can be a substantial amount of images, especially when pool has access to public catalogs, and large number of images may considerably extend the time needed to acquire necessary information from AWS API and increase resource usage. To limit the set of inspected images, it is possible to specify a wildcard filters to apply to image names.
+
+[NOTE]
+====
+Wildcard paterns accepted by `image-name-filter` are an exception to Artemis prefering regular expressions when working with patterns. These patterns are not regular expressions, they will be passed to AWS CLI's `--filter` option which accepts glob-like wildcards only. See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html#Filtering_Resources_CLI[AWS EC2 documentation] for more details on filters.
+====
+
+.Specification
+[source,yaml]
+....
+image-name-filter:
+  - glob-1
+  - glob-2
+  ...
+....
+
+.Example
+[source,yaml]
+....
+image-name-filter:
+  # Include only images with names starting with "foo-" prefix...
+  - foo-*
+  # ... and images with "a-team-" prefix.
+  - a-team-*
+....
+
 === Image owners
 
 When searching for images, AWS driver would list all images owned by the `self` owner, i.e. it is limited by images owned by the given credentials. To expand this set, it is possible to explicitly set the list of owners to include when looking for images a pool can use for provisioning.

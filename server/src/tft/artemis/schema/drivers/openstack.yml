@@ -27,6 +27,9 @@ properties:
   flavor-regex:
     type: string
 
+  image-regex:
+    type: string
+
   ip-version:
     type: string
     enum:
