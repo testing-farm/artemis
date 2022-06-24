@@ -39,7 +39,7 @@ properties:
   flavor-regex:
     type: string
 
-  image-name-filter:
+  image-name-filters:
     type: array
     items:
       type: string
