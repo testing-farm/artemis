@@ -2038,9 +2038,6 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
-        # TODO: Extract usage of components - CPU cores, memory, disk space - but that might be much harder.
-        # TODO: Or even pointless and not needed.
-
         subnet_id = self.pool_config['subnet-id']
 
         r_resources = super().fetch_pool_resources_metrics(logger)
@@ -2049,6 +2046,16 @@ class AWSDriver(PoolDriver):
             return Error(r_resources.unwrap_error())
 
         resources = r_resources.unwrap()
+
+        r_flavors = self.get_cached_pool_flavor_infos()
+
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        flavors = {
+            flavor.name: flavor
+            for flavor in r_flavors.unwrap()
+        }
 
         # Count instances - only those using our subnet
         r_instances = self._aws_command([
@@ -2062,8 +2069,24 @@ class AWSDriver(PoolDriver):
                 r_instances.unwrap_error()
             ))
 
+        resources.usage.instances = 0
+        resources.usage.cores = 0
+        resources.usage.memory = 0
+
         try:
-            resources.usage.instances = len(JQ_QUERY_POOL_INSTANCES.input(r_instances.unwrap()).all())
+            for instance_info in JQ_QUERY_POOL_INSTANCES.input(r_instances.unwrap()).all():
+                resources.usage.instances += 1
+
+                flavor = flavors.get(instance_info['InstanceType'])
+
+                # This may happen, with multiple pools with different flavors using the same credentials
+                # and overlapping subnets.
+                if flavor is None:
+                    logger.warning(f'flavor {instance_info["InstanceType"]} not cached')
+                    continue
+
+                resources.usage.cores += flavor.cpu.cores or 0
+                resources.usage.memory += flavor.memory.to('bytes').magnitude if flavor.memory is not None else 0
 
         except Exception as exc:
             return Error(Failure.from_exc(
