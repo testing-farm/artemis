@@ -1941,7 +1941,7 @@ class AWSDriver(PoolDriver):
         images: List[PoolImageInfo] = []
         # As a default, use `[None]` - if image-name-filter is not specified, we'd iterate at least
         # once with name_filter=None thanks to this, simplifying the code.
-        image_filters = cast(List[Optional[str]], self.pool_config.get('image-name-filter', [None]))
+        image_filters = cast(List[Optional[str]], self.pool_config.get('image-name-filters', [None]))
 
         for name_filter in image_filters:
             r_images = _fetch_images(name_filter=name_filter)
