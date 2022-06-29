@@ -948,6 +948,8 @@ class GuestRequest(Base):
         :param details: additional event details. The mapping will be stored as a JSON blob.
         """
 
+        from . import log_dict_yaml
+
         r = safe_db_change(
             logger,
             session,
@@ -966,7 +968,10 @@ class GuestRequest(Base):
                 'eventname': eventname
             })
 
-            gluetool.log.log_dict(logger.warning, f'failed to log event {eventname}', details)
+            log_dict_yaml(logger.warning, 'failed to log event', {
+                'eventname': eventname,
+                'details': details
+            })
 
             # TODO: this handle() call can be removed once we fix callers of log_guest_event and they start consuming
             # its return value. At this moment, they ignore it, therefore we have to keep reporting the failures on
@@ -980,7 +985,10 @@ class GuestRequest(Base):
 
             return Error(failure)
 
-        gluetool.log.log_dict(logger.info, f'logged event {eventname}', details)
+        log_dict_yaml(logger.info, 'logged event', {
+            'eventname': eventname,
+            'details': details
+        })
 
         return Ok(None)
 
