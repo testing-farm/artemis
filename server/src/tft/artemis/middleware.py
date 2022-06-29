@@ -17,8 +17,6 @@ import redis
 from dramatiq.common import compute_backoff, current_millis
 from gluetool.result import Ok
 
-from .guest import GuestLogger
-
 if TYPE_CHECKING:
     from . import ExceptionInfoType
     from .tasks import Actor, ActorArgumentType, TaskCall
@@ -167,6 +165,48 @@ def _handle_tails(
     return False
 
 
+def resolve_retry_message(
+    logger: gluetool.log.ContextAdapter,
+    broker: dramatiq.broker.Broker,
+    task_call: 'TaskCall'
+) -> None:
+    from . import log_dict_yaml
+
+    assert task_call.broker_message is not None
+
+    # `retries` key is initialized to 0 - while other fields are optional, this one is expected to exist.
+    retries = task_call.broker_message.options.setdefault('retries', 0)
+    max_retries = _message_max_retries(task_call.broker_message, task_call.actor)
+
+    log_dict_yaml(
+        logger.info,
+        'retry message',
+        {
+            'task_call': task_call.serialize(),
+            'retries': {
+                'current': retries,
+                'max': max_retries
+            }
+        }
+    )
+
+    if max_retries is not None and retries >= max_retries:
+        # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
+        if not task_call.has_tail_handler:
+            return _fail_message(
+                logger,
+                task_call.broker_message,
+                'retries exceeded',
+                task_call=task_call,
+                guestname=task_call.named_args.get('guestname', None)
+            )
+
+        if _handle_tails(logger, task_call.broker_message, task_call) is True:
+            return
+
+    _retry_message(logger, broker, task_call.broker_message, task_call=task_call)
+
+
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # cannot subclass 'Retries'
     @property
     def actor_options(self) -> Set[str]:
@@ -198,38 +238,9 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # can
         from .tasks import TaskCall
 
         logger = get_logger()
-
         task_call = TaskCall.from_message(broker, message)
 
-        # `retries` key is initialized to 0 - while other fields are optional, this one is expected to exist.
-        retries = message.options.setdefault('retries', 0)
-        max_retries = _message_max_retries(message, task_call.actor)
-        retry_when = task_call.actor.options.get('retry_when', self.retry_when)
-
-        guestname = task_call.named_args.get('guestname', None)
-
-        if isinstance(guestname, str):
-            logger = GuestLogger(logger, guestname)
-
-        logger.info(f'retries: message={message.message_id} actor={task_call.actor.actor_name} current-retries={retries} max-retries={max_retries}')  # noqa: E501
-
-        if retry_when is not None and not retry_when(retries, exception) or \
-           retry_when is None and max_retries is not None and retries >= max_retries:
-
-            # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
-            if not task_call.has_tail_handler:
-                return _fail_message(
-                    logger,
-                    message,
-                    'retries exceeded',
-                    task_call=task_call,
-                    guestname=guestname
-                )
-
-            if _handle_tails(logger, message, task_call) is True:
-                return
-
-        _retry_message(logger, broker, message, task_call=task_call)
+        resolve_retry_message(task_call.logger(logger), broker, task_call)
 
 
 MESSAGE_NOTE_OPTION_KEY = 'artemis_notes'
