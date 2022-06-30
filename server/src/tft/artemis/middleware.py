@@ -539,8 +539,9 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         from .cache import acquire_lock
 
         lockname = failure_details['lockname'] = self._lock_name(task_call)
+        ttl = failure_details['lock_deadline'] = task_call.actor.options['singleton_deadline']
 
-        token = acquire_lock(logger, self.cache, lockname, ttl=task_call.actor.options['singleton_deadline'])
+        token = acquire_lock(logger, self.cache, lockname, ttl=ttl)
 
         if token is None:
             if KNOB_LOGGING_SINGLETON_LOCKS.value is True:
