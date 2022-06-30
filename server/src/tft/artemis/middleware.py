@@ -549,7 +549,9 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
             failure_details['broker_message'] = _dump_message(message)
             Failure('failed to acquire singleton lock', **failure_details).handle(logger)
 
-            return resolve_retry_message(logger, broker, task_call)
+            resolve_retry_message(logger, broker, task_call)
+
+            raise dramatiq.middleware.SkipMessage('failed to acquire singleton lock')
 
         self._tokens[message.message_id] = token
 
