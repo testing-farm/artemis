@@ -1031,7 +1031,8 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
         artemis_middleware.CurrentMessage(),
         artemis_middleware.Prometheus(),
         artemis_middleware.Retries(),
-        periodiq.PeriodiqMiddleware()
+        periodiq.PeriodiqMiddleware(),
+        artemis_middleware.SingletonTask(get_cache(logger))
     ]
 
     return middleware

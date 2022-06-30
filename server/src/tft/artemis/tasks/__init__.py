@@ -189,6 +189,15 @@ KNOB_ACTOR_DEFAULT_MAX_BACKOFF: Knob[int] = Knob(
     default=60
 )
 
+KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE: Knob[int] = Knob(
+    'actor.default-singleton-deadline',
+    'The biggest possible deadline for a singleton task, in seconds.',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_DEFAULT_SINGLETON_DEADLINE',
+    cast_from_str=int,
+    default=300
+)
+
 KNOB_ACTOR_DEFAULT_PRIORITY: Knob[int] = Knob(
     'actor.default-priority',
     'Task priority ("HIGH", "DEFAULT", "LOW" or any positive integer).',
@@ -749,7 +758,10 @@ def actor_kwargs(
         'queue_name': queue_actual,
         'max_retries': int(actor_control_value(actor_name, 'RETRIES', KNOB_ACTOR_DEFAULT_RETRIES_COUNT.value)),
         'min_backoff': int(actor_control_value(actor_name, 'MIN_BACKOFF', KNOB_ACTOR_DEFAULT_MIN_BACKOFF.value)),
-        'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value))
+        'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value)),
+        'singleton_deadline': int(
+            actor_control_value(actor_name, 'SINGLETON_DEADLINE', KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE.value)
+        ),
     }
 
     if periodic is not None:
@@ -808,13 +820,16 @@ class task:
         priority: TaskPriority = TaskPriority.DEFAULT,
         queue_name: TaskQueue = TaskQueue.DEFAULT,
         periodic: Optional[periodiq.CronSpec] = None,
-        tail_handler: Optional['TailHandler'] = None
+        tail_handler: Optional['TailHandler'] = None,
+        singleton: bool = False
     ) -> None:
         self.priority = priority
         self.queue_name = queue_name
         self.periodic = periodic
 
         self.tail_handler = tail_handler
+
+        self.singleton = singleton
 
     def __call__(self, fn: BareActorType) -> Actor:
         actor_name_uppersized = fn.__name__.upper()
@@ -829,6 +844,7 @@ class task:
         dramatiq_actor = dramatiq.actor(
             fn,
             tail_handler=self.tail_handler,
+            singleton=self.singleton,
             **dramatiq_kwargs
         )
 
@@ -963,7 +979,10 @@ def task_core(
 
     # TODO: implement a proper decorator, or merge this into @task decorator - but @task seems to be flawed,
     # which requires a fix, therefore merge this into @task once it gets fixed.
-    actor_name = inspect.stack()[1].frame.f_code.co_name
+    caller_frame = inspect.stack()[1]
+
+    actor_name = caller_frame.frame.f_code.co_name
+
     profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
 
     if profile_actor:
@@ -4084,6 +4103,7 @@ def acquire_guest_console_url(guestname: str) -> None:
 
 
 @task(
+    singleton=True,
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.POOL_DATA_REFRESH
 )
@@ -4125,6 +4145,7 @@ def do_refresh_pool_resources_metrics_dispatcher(
 
 
 @task(
+    singleton=True,
     periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value),
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.PERIODIC
@@ -4185,6 +4206,7 @@ def do_refresh_pool_image_info(
 
 
 @task(
+    singleton=True,
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.POOL_DATA_REFRESH
 )
@@ -4226,6 +4248,7 @@ def do_refresh_pool_image_info_dispatcher(
 
 
 @task(
+    singleton=True,
     periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value),
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.PERIODIC
@@ -4285,7 +4308,7 @@ def do_refresh_pool_flavor_info(
     return workspace.handle_success('finished-task')
 
 
-@task(priority=TaskPriority.HIGH, queue_name=TaskQueue.POOL_DATA_REFRESH)
+@task(singleton=True, priority=TaskPriority.HIGH, queue_name=TaskQueue.POOL_DATA_REFRESH)
 def refresh_pool_flavor_info(poolname: str) -> None:
     task_core(
         cast(DoerType, do_refresh_pool_flavor_info),
@@ -4324,6 +4347,7 @@ def do_refresh_pool_flavor_info_dispatcher(
 
 
 @task(
+    singleton=True,
     periodic=periodiq.cron(KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE.value),
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.PERIODIC
@@ -4394,6 +4418,7 @@ def do_gc_events(
 
 
 @task(
+    singleton=True,
     periodic=periodiq.cron(KNOB_GC_EVENTS_SCHEDULE.value),
     priority=TaskPriority.LOW,
     queue_name=TaskQueue.PERIODIC
@@ -4441,7 +4466,7 @@ def do_refresh_pool_avoid_groups_hostnames(
     return workspace.handle_success('finished-task')
 
 
-@task(priority=TaskPriority.HIGH, queue_name=TaskQueue.POOL_DATA_REFRESH)
+@task(singleton=True, priority=TaskPriority.HIGH, queue_name=TaskQueue.POOL_DATA_REFRESH)
 def refresh_pool_avoid_groups_hostnames(poolname: str) -> None:
     task_core(
         cast(DoerType, do_refresh_pool_avoid_groups_hostnames),

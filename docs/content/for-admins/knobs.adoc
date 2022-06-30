@@ -108,6 +108,16 @@ quicker.
 
 5+|A number of time a failing task get retried. Serves as a default value for tasks without custom setting.
 
+|`actor.default-singleton-deadline`
+|`int`
+|`ARTEMIS_ACTOR_DEFAULT_SINGLETON_DEADLINE`
+|`300`
+|no
+
+
+
+5+|The biggest possible deadline for a singleton task, in seconds.
+
 |`actor.delay-uniform-spread`
 |`int`
 |`ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD`
@@ -686,6 +696,16 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 
 
 5+|When enabled, Artemis would log more Sentry-related debug info.
+
+|`logging.singleton-locks`
+|`bool`
+|`ARTEMIS_LOG_SINGLETON_LOCKS`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would log more debuginfo related to singleton task locking.
 
 |`openstack.build-timeout`
 |`int`
