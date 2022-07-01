@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union, c
 
 import dramatiq
 import dramatiq.broker
+import dramatiq.common
 import gluetool.log
 import gluetool.utils
 import periodiq
@@ -544,6 +545,13 @@ class TaskCall(SerializableContainer):
     def has_tail_handler(self) -> bool:
         return self.tail_handler is not None
 
+    @property
+    def age(self) -> Optional[float]:
+        if self.broker_message is None:
+            return None
+
+        return cast(int, dramatiq.common.current_millis() - self.broker_message.message_timestamp) / 1000.0
+
     @classmethod
     def _construct(
         cls,
@@ -599,7 +607,10 @@ class TaskCall(SerializableContainer):
             'args': self.named_args,
             'delay': self.delay,
             'message': {
-                'id': self.broker_message_id
+                'id': self.broker_message_id,
+                'age': self.age,
+                'queue': self.broker_message.queue_name if self.broker_message else None,
+                'options': self.broker_message.options if self.broker_message else {}
             },
             'task-request': {
                 'id': self.task_request_id

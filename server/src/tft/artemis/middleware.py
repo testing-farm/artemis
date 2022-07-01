@@ -198,7 +198,11 @@ def resolve_retry_message(
                 task_call.broker_message,
                 'retries exceeded',
                 task_call=task_call,
-                guestname=task_call.named_args.get('guestname', None)
+                guestname=task_call.named_args.get('guestname', None),
+                retries={
+                    'current': retries,
+                    'max': max_retries
+                }
             )
 
         if _handle_tails(logger, task_call.broker_message, task_call) is True:

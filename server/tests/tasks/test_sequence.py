@@ -15,7 +15,7 @@ import redis
 
 from tft.artemis.tasks import Actor, dispatch_sequence, task
 
-from .. import assert_log
+from .. import MATCH, assert_log
 
 
 @pytest.fixture(name='actor')
@@ -65,7 +65,7 @@ def test_sequence(
     assert_log(
         caplog,
         levelno=logging.INFO,
-        message="""scheduled sequence:
+        message=MATCH(r"""(?m)scheduled sequence:
 sequence:
   - actor: dummy_actor
     args:
@@ -74,6 +74,10 @@ sequence:
     delay:
     message:
         id: uuid1
+        age: [0-9\.]+
+        queue: default
+        options:
+            pipe_ignore: true
     task-request:
         id:
   - actor: dummy_actor
@@ -83,6 +87,10 @@ sequence:
     delay:
     message:
         id: uuid2
+        age: [0-9\.]+
+        queue: default
+        options:
+            pipe_ignore: true
     task-request:
         id:
   - actor: dummy_actor
@@ -92,6 +100,10 @@ sequence:
     delay:
     message:
         id: uuid3
+        age: [0-9\.]+
+        queue: default
+        options:
+            pipe_ignore: true
     task-request:
         id:
 on-complete:
@@ -102,8 +114,12 @@ on-complete:
     delay:
     message:
         id: uuid4
+        age: [0-9\.]+
+        queue: default
+        options:
+            pipe_ignore: true
     task-request:
-        id:"""
+        id:""")
     )
 
     broker.join(actor.queue_name)

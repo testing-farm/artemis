@@ -390,6 +390,9 @@ args:
 delay: 79
 message:
     id:
+    age:
+    queue:
+    options: {}
 task-request:
     id: 1""",
         levelno=logging.INFO
