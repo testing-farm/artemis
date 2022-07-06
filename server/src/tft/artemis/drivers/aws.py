@@ -1032,17 +1032,6 @@ class AWSDriver(PoolDriver):
 
         return Ok(True)
 
-    def _dispatch_resource_cleanup(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        instance_id: Optional[str] = None,
-        spot_instance_id: Optional[str] = None,
-        guest_request: Optional[GuestRequest] = None
-    ) -> Result[None, Failure]:
-        resource_ids = AWSPoolResourcesIDs(instance_id=instance_id, spot_instance_id=spot_instance_id)
-
-        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
-
     def release_pool_resources(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1868,15 +1857,20 @@ class AWSDriver(PoolDriver):
 
         pool_data = AWSPoolData.unserialize(guest_request)
 
-        if pool_data.instance_id is None and pool_data.spot_instance_id is None:
+        resource_ids: List[AWSPoolResourcesIDs] = []
+
+        # Prevent "double free" error by using a sequence: if we succeed freeing the instance,
+        # we no longer try to free it in the case of retries, we'd focus on spot request only.
+        if pool_data.instance_id is not None:
+            resource_ids.append(AWSPoolResourcesIDs(instance_id=pool_data.instance_id))
+
+        if pool_data.spot_instance_id is not None:
+            resource_ids.append(AWSPoolResourcesIDs(spot_instance_id=pool_data.spot_instance_id))
+
+        if not resource_ids:
             return Error(Failure('guest has no identification'))
 
-        r_cleanup = self._dispatch_resource_cleanup(
-            logger,
-            instance_id=pool_data.instance_id,
-            spot_instance_id=pool_data.spot_instance_id,
-            guest_request=guest_request
-        )
+        r_cleanup = self.dispatch_resource_cleanup(logger, *resource_ids, guest_request=guest_request)
 
         if r_cleanup.is_error:
             return Error(r_cleanup.unwrap_error())
