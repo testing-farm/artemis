@@ -3,9 +3,10 @@
 
 import multiprocessing
 import os
+import shlex
 import shutil
 import sys
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import click
 
@@ -68,7 +69,7 @@ DRAMATIQ_PATH = shutil.which('dramatiq')
 def cmd_root(
     processes: Optional[int],
     threads: Optional[int],
-    queue: List[str],
+    queue: Tuple[str, ...],
     tasks: List[str],
     queue_prefetch: Optional[int],
     delay_queue_prefetch: Optional[int]
@@ -83,6 +84,27 @@ def cmd_root(
     cmd: List[str] = [
         'dramatiq'
     ]
+
+    # We need to place tasks first and then options - when reversed, Dramatiq
+    # would be unable to process command-line with queue names and task names
+    # correctly
+    if tasks:
+        logger.info(f'running limited set of tasks: {", ".join(tasks)}')
+
+        cmd += tasks
+
+    else:
+        logger.info('running all tasks from tft.artemis.tasks package')
+
+        cmd += list(find_task_modules())
+
+    if queue:
+        logger.info(f'listening to limited number of queues: {", ".join(queue)}')
+
+        cmd += ['--queues'] + list(queue)
+
+    else:
+        logger.info('listening to all queues')
 
     if processes is not None:
         logger.info(f'spawning {processes} worker processes')
@@ -99,26 +121,6 @@ def cmd_root(
 
     else:
         logger.warning('spawning *default* number of worker threads per process')
-
-    if queue:
-        logger.info(f'listening to limited number of queues: {", ".join(queue)}')
-
-        # It should work as separate items, but for some reason, Dramatiq refuses to accept such a form.
-        # Therefore merging value with option into a single cmd item.
-        cmd += [f'--queues={" ".join(queue)}']
-
-    else:
-        logger.info('listening to all queues')
-
-    if tasks:
-        logger.info(f'running limited set of tasks: {", ".join(tasks)}')
-
-        cmd += tasks
-
-    else:
-        logger.info('running all tasks from tft.artemis.tasks package')
-
-        cmd += list(find_task_modules())
 
     env = os.environ.copy()
 
@@ -137,6 +139,8 @@ def cmd_root(
 
     else:
         logger.warning('pre-fetching *default* number of delayed messages per worker process')
+
+    logger.info(f'dramatiq command-line: {" ".join(shlex.quote(s) for s in cmd)}')
 
     os.execve(
         DRAMATIQ_PATH,
