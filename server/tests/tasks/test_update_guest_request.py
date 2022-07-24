@@ -458,6 +458,7 @@ def test_doer(
     ])
 
 
+@pytest.mark.usefixtures('current_message')
 def test_task(
     mockpatch: MockPatcher
 ) -> None:
