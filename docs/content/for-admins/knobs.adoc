@@ -517,7 +517,7 @@ for full list of connection parameters that can be specified via URL.
 |`db.url`
 |`str`
 |`ARTEMIS_DB_URL`
-|`sqlite:///test.db`
+|`None`
 |no
 
 
