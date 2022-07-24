@@ -3138,67 +3138,6 @@ def dispatch_preparing_pre_connect(
         workspace.dispatch_task(guest_request_prepare_finalize_pre_connect, workspace.guestname)
 
 
-def do_release_guest_request(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
-    guestname: str
-) -> DoerReturnType:
-    workspace = Workspace(logger, session, cancel, guestname=guestname, task='release-guest-request')
-
-    workspace.handle_success('entered-task')
-
-    workspace.load_guest_request(guestname, state=GuestState.CONDEMNED)
-
-    if workspace.result:
-        return workspace.result
-
-    assert workspace.gr
-
-    if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
-        workspace.mark_note_poolname()
-
-        workspace.load_gr_pool()
-        workspace.load_ssh_key()
-
-        if workspace.result:
-            return workspace.result
-
-        assert workspace.pool
-
-        r_release = workspace.pool.release_guest(logger, workspace.gr)
-
-        if r_release.is_error:
-            return workspace.handle_error(r_release, 'failed to release guest')
-
-    query = sqlalchemy \
-        .delete(GuestRequest.__table__) \
-        .where(GuestRequest.guestname == guestname) \
-        .where(GuestRequest.state == GuestState.CONDEMNED)
-
-    r_delete = safe_db_change(logger, session, query)
-
-    if r_delete.is_error:
-        return workspace.handle_error(r_delete, 'failed to remove guest request record')
-
-    # We ignore the actual return value: the query was executed, but we either removed exactly one record,
-    # which is good, or we removed 0 records, which is also acceptable, as somebody already did that for us.
-    # We did schedule the release of resources successfully, which means we left no loose ends.
-    workspace.handle_success('released')
-
-    return workspace.handle_success('finished-task')
-
-
-@task()
-def release_guest_request(guestname: str) -> None:
-    task_core(
-        cast(DoerType, do_release_guest_request),
-        logger=get_guest_logger('release-guest-request', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
-    )
-
-
 def do_acquire_guest_request(
     logger: gluetool.log.ContextAdapter,
     db: DB,
