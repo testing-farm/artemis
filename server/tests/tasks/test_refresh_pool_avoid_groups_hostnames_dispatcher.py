@@ -77,8 +77,9 @@ def test_dispatch_refresh(
     logger = cast(Optional[tft.artemis.tasks.TaskLogger], kwargs.get('logger'))
 
     assert logger is not None
-    assert isinstance(logger._logger._logger, tft.artemis.drivers.PoolLogger)  # type: ignore[union-attr]
-    assert logger._logger._logger.poolname == 'beaker'  # type: ignore[union-attr]
+    assert isinstance(logger, tft.artemis.tasks.TaskLogger)
+    assert isinstance(logger._logger, tft.artemis.drivers.PoolLogger)
+    assert logger._logger.poolname == 'beaker'
 
 
 def test_dispatch_refresh_failure(
@@ -151,6 +152,7 @@ def test_doer(
     ])
 
 
+@pytest.mark.usefixtures('current_message')
 def test_task(
     mockpatch: MockPatcher
 ) -> None:

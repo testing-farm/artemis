@@ -276,6 +276,7 @@ def test_doer(
     ])
 
 
+@pytest.mark.usefixtures('current_message')
 def test_task(
     monkeypatch: _pytest.monkeypatch.MonkeyPatch
 ) -> None:

@@ -306,7 +306,7 @@ def fixture_cache(logger: gluetool.log.ContextAdapter, redis: redis.Redis) -> re
 
 
 @pytest.fixture(name='current_message')
-def fixture_current_message() -> dramatiq.MessageProxy:
+def fixture_current_message() -> Generator[dramatiq.MessageProxy, None, None]:
     message = dramatiq.Message(
         queue_name='dummy-queue-name',
         actor_name='dummy-actor-name',
@@ -319,4 +319,6 @@ def fixture_current_message() -> dramatiq.MessageProxy:
 
     tft.artemis.context.CURRENT_MESSAGE.set(proxy)
 
-    return proxy
+    yield proxy
+
+    tft.artemis.context.CURRENT_MESSAGE.set(None)
