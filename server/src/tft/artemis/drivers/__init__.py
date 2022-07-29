@@ -955,6 +955,31 @@ def guest_log_updater(
     return wrapper
 
 
+def render_tags(
+    logger: gluetool.log.ContextAdapter,
+    tags: GuestTagsType,
+    vars: Dict[str, Any]
+) -> Result[GuestTagsType, Failure]:
+    for name, tag_template in tags.items():
+        r_rendered = safe_call(
+            gluetool.utils.render_template,
+            tag_template,
+            **vars,
+            logger=logger
+        )
+
+        if r_rendered.is_error:
+            return Error(Failure.from_failure(
+                'failed to render guest tags',
+                r_rendered.unwrap_error(),
+                tag_template=tag_template
+            ))
+
+        tags[name] = r_rendered.unwrap()
+
+    return Ok(tags)
+
+
 class PoolDriver(gluetool.log.LoggerMixin):
     drivername: str
 
@@ -1730,6 +1755,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def get_guest_tags(
         self,
+        logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
     ) -> Result[GuestTagsType, Failure]:
@@ -1771,7 +1797,15 @@ class PoolDriver(gluetool.log.LoggerMixin):
         # TODO: drivers could accept a template for the name, to allow custom naming schemes
         tags['ArtemisGuestLabel'] = f'artemis-guest-{datetime.datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")}'
 
-        return Ok(tags)
+        r_rendered_tags = render_tags(logger, tags, {
+            'GUESTNAME': guest_request.guestname,
+            'ENVIRONMENT': guest_request.environment
+        })
+
+        if r_rendered_tags.is_error:
+            return Error(r_rendered_tags.unwrap_error())
+
+        return Ok(r_rendered_tags.unwrap())
 
     def _fetch_pool_resources_metrics_from_config(
         self,

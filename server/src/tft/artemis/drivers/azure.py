@@ -459,7 +459,7 @@ class AzureDriver(PoolDriver):
             image=image
         )
 
-        r_base_tags = self.get_guest_tags(session, guest_request)
+        r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_base_tags.is_error:
             return Error(r_base_tags.unwrap_error())

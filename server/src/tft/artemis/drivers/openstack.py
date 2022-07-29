@@ -422,7 +422,7 @@ class OpenStackDriver(PoolDriver):
                If user_data_filename is an empty string then the guest vm is booted with no user-data.
             """
 
-            r_tags = self.get_guest_tags(session, guest_request)
+            r_tags = self.get_guest_tags(logger, session, guest_request)
 
             if r_tags.is_error:
                 return Error(r_tags.unwrap_error())

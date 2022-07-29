@@ -1424,7 +1424,7 @@ class AWSDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_base_tags = self.get_guest_tags(session, guest_request)
+        r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_base_tags.is_error:
             return Error(r_base_tags.unwrap_error())
@@ -1502,7 +1502,7 @@ class AWSDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_base_tags = self.get_guest_tags(session, guest_request)
+        r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_base_tags.is_error:
             return Error(r_base_tags.unwrap_error())
@@ -1714,7 +1714,7 @@ class AWSDriver(PoolDriver):
         #
         # Therefore we need to apply tags explicitly here, even for non-spot instances - those
         # are already tagged, but let's make sure their volumes are tagged as well.
-        r_base_tags = self.get_guest_tags(session, guest_request)
+        r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_base_tags.is_error:
             return Error(r_base_tags.unwrap_error())
