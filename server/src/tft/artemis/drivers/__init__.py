@@ -1167,7 +1167,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def dispatch_resource_cleanup(
         self,
         logger: gluetool.log.ContextAdapter,
-        resource_ids: PoolResourcesIDs,
+        *resource_ids: PoolResourcesIDs,
         guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
         """
@@ -1176,7 +1176,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         driver.
         """
 
-        if resource_ids.is_empty():
+        if all(resource_id.is_empty() for resource_id in resource_ids):
             return Ok(None)
 
         r_delay = KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY.get_value(pool=self)
@@ -1184,17 +1184,21 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        resource_ids.ctime = guest_request.ctime if guest_request else None
+        for resource_id in resource_ids:
+            resource_id.ctime = guest_request.ctime if guest_request else None
 
         # Local import, to avoid circular imports
-        from ..tasks import dispatch_task, release_pool_resources
+        from ..tasks import dispatch_sequence, release_pool_resources
 
-        return dispatch_task(
+        return dispatch_sequence(
             logger,
-            release_pool_resources,
-            self.poolname,
-            resource_ids.serialize_to_json(),
-            guest_request.guestname if guest_request else None,
+            [
+                (
+                    release_pool_resources,
+                    (self.poolname, resource_id.serialize_to_json(), guest_request.guestname if guest_request else None)
+                )
+                for resource_id in resource_ids
+            ],
             delay=r_delay.unwrap()
         )
 
