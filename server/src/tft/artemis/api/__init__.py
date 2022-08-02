@@ -794,7 +794,8 @@ class GuestRequestManager:
             return GuestResponse.from_db(guest_request_record)
 
     def delete_by_guestname(self, guestname: str, request: Request, logger: gluetool.log.ContextAdapter) -> None:
-        from ..tasks import get_guest_logger, release_guest_request
+        from ..tasks import get_guest_logger
+        from ..tasks.release_guest_request import release_guest_request
 
         failure_details = {
             'guestname': guestname
