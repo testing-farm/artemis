@@ -55,4 +55,4 @@ gen-db-revision:  ## Generate new DB revision
 docs: .common-docs docs-knobs
 
 docs-knobs: install  ## Generate up-to-date documentation of knobs
-	ARTEMIS_VAULT_PASSWORD=dummy-password poetry run ./extract-knobs --template-file ../docs/content/for-admins/knobs.adoc.j2 > ../docs/content/for-admins/knobs.adoc
+	ARTEMIS_DB_URL=sqlite:// ARTEMIS_VAULT_PASSWORD=dummy-password poetry run ./extract-knobs --template-file ../docs/content/for-admins/knobs.adoc.j2 > ../docs/content/for-admins/knobs.adoc

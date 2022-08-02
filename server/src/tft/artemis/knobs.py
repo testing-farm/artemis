@@ -649,8 +649,7 @@ KNOB_DB_URL: Knob[str] = Knob(
     'Database URL.',
     has_db=False,
     envvar='ARTEMIS_DB_URL',
-    cast_from_str=str,
-    default='sqlite:///test.db'
+    cast_from_str=str
 )
 
 KNOB_VAULT_PASSWORD: Knob[Optional[str]] = Knob(
