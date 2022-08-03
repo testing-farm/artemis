@@ -27,8 +27,8 @@ from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_
 from ..cache import get_cached_set_as_list, get_cached_set_item
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorBoot, FlavorCpu, FlavorVirtualization, \
-    Operator
+from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorBoot, FlavorBootMethodType, FlavorCpu, \
+    FlavorVirtualization, Operator
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
@@ -192,6 +192,11 @@ JQ_QUERY_CONSOLE_OUTPUT = jq.compile('.Output')
 #: Note the missing leading `.Reservations | ...` - this query is applied to one instance
 #: only, after its description has been acquired from API.
 JQ_QUERY_EBS_VOLUME_IDS = jq.compile('.BlockDeviceMappings | .[] | .Ebs.VolumeId')
+
+#: Extract supported boot modes of an instance type, as available from ``describe-instance-types``.
+JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES = jq.compile('.SupportedBootModes | .[]')
+#: Extract supported boot mode of an instance, as available from ``describe-images``.
+JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE = jq.compile('.BootMode')
 
 
 KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
@@ -970,6 +975,26 @@ def _aws_arch_to_arch(arch: str) -> str:
     return arch
 
 
+def _aws_boot_to_boot(boot_method: str) -> FlavorBootMethodType:
+    """
+    Convert image/instance type boot method as known to AWS EC2 API to boot method as tracked by Artemis.
+
+    There is at least one difference, AWS' ``legacy-bios`` is usually called just ``bios`` by other
+    drivers supported by Artemis. This function serves as a small compatibility layer.
+
+    :param str: boot method as known to AWS EC2.
+    :returns: boot method as known to Artemis.
+    """
+
+    if boot_method == 'legacy-bios':
+        return 'bios'
+
+    if boot_method == 'uefi':
+        return 'uefi'
+
+    return cast(FlavorBootMethodType, boot_method)
+
+
 class AWSDriver(PoolDriver):
     drivername = 'aws'
 
@@ -1142,6 +1167,15 @@ class AWSDriver(PoolDriver):
             'image and flavor ENA compatibility',
             lambda logger, flavor: not (flavor.ena_support == 'required' and image.ena_support is not True)
         ))
+
+        # Make sure that, if image supports a particular boot method only, we drop all flavors that do not support it
+        if image.boot.method:
+            suitable_flavors = list(logging_filter(
+                logger,
+                suitable_flavors,
+                'image boot method is supported',
+                lambda logger, flavor: image.boot.method[0] in flavor.boot.method
+            ))
 
         if not suitable_flavors:
             if self.pool_config.get('use-default-flavor-when-no-suitable', True):
@@ -1910,29 +1944,49 @@ class AWSDriver(PoolDriver):
                     r_images.unwrap_error()
                 ))
 
-            try:
-                return Ok([
-                    AWSPoolImageInfo(
+            images: List[PoolImageInfo] = []
+
+            for image in cast(List[APIImageType], r_images.unwrap()):
+                if image_name_pattern is not None \
+                   and not image_name_pattern.match(image.get('Name') or image['ImageId']):
+                    continue
+
+                try:
+                    aws_boot_method = cast(Optional[str], JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE.input(image).first())
+
+                except Exception as exc:
+                    return Error(Failure.from_exc(
+                        'failed to parse AWS output',
+                        exc
+                    ))
+
+                if aws_boot_method:
+                    image_boot = FlavorBoot(method=[_aws_boot_to_boot(aws_boot_method)])
+
+                else:
+                    image_boot = FlavorBoot()
+
+                try:
+                    images.append(AWSPoolImageInfo(
                         # .Name is optional and may be undefined or missing - use .ImageId in such a case
                         name=image.get('Name') or image['ImageId'],
                         id=image['ImageId'],
-                        boot=FlavorBoot(),
+                        boot=image_boot,
                         ssh=PoolImageSSHInfo(),
                         platform_details=image['PlatformDetails'],
                         block_device_mappings=image['BlockDeviceMappings'],
                         # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or `None`
                         ena_support=image.get('EnaSupport', False) or False
-                    )
-                    for image in cast(List[APIImageType], r_images.unwrap())
-                    if image_name_pattern is None or image_name_pattern.match(image.get('Name') or image['ImageId'])
-                ])
+                    ))
 
-            except KeyError as exc:
-                return Error(Failure.from_exc(
-                    'malformed image description',
-                    exc,
-                    image_info=r_images.unwrap()
-                ))
+                except KeyError as exc:
+                    return Error(Failure.from_exc(
+                        'malformed image description',
+                        exc,
+                        image_info=r_images.unwrap()
+                    ))
+
+            return Ok(images)
 
         images: List[PoolImageInfo] = []
         # As a default, use `[None]` - if image-name-filter is not specified, we'd iterate at least
@@ -1995,10 +2049,23 @@ class AWSDriver(PoolDriver):
                     if not capabilities.supports_arch(artemis_arch):
                         continue
 
+                    try:
+                        boot_methods: List[FlavorBootMethodType] = [
+                            _aws_boot_to_boot(boot_method)
+                            for boot_method in JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES.input(flavor).all()
+                        ]
+
+                    except Exception as exc:
+                        return Error(Failure.from_exc(
+                            'failed to parse AWS output',
+                            exc
+                        ))
+
                     flavors.append(AWSFlavor(
                         name=flavor['InstanceType'],
                         id=flavor['InstanceType'],
                         arch=artemis_arch,
+                        boot=FlavorBoot(method=boot_methods),
                         cpu=FlavorCpu(
                             cores=int(flavor['VCpuInfo']['DefaultVCpus'])
                         ),
