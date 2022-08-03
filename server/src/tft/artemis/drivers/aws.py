@@ -23,7 +23,7 @@ from jinja2 import Template
 from pint import Quantity
 from typing_extensions import Literal, TypedDict
 
-from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, process_output_to_str
+from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str
 from ..cache import get_cached_set_as_list, get_cached_set_item
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -1128,18 +1128,20 @@ class AWSDriver(PoolDriver):
 
         # console/URL logs require ENA support
         if guest_request.requests_guest_log('console', GuestLogContentType.URL):
-            suitable_flavors = [
-                flavor
-                for flavor in suitable_flavors
-                if flavor.ena_support in ('required', 'supported')
-            ]
+            suitable_flavors = list(logging_filter(
+                logger,
+                suitable_flavors,
+                'console requires ENA',
+                lambda logger, flavor: flavor.ena_support in ('required', 'supported')
+            ))
 
         # Make sure that, if image does not support ENA, we drop all flavors that require the support
-        suitable_flavors = [
-            flavor
-            for flavor in suitable_flavors
-            if not (flavor.ena_support == 'required' and image.ena_support is not True)
-        ]
+        suitable_flavors = list(logging_filter(
+            logger,
+            suitable_flavors,
+            'image and flavor ENA compatibility',
+            lambda logger, flavor: not (flavor.ena_support == 'required' and image.ena_support is not True)
+        ))
 
         if not suitable_flavors:
             if self.pool_config.get('use-default-flavor-when-no-suitable', True):

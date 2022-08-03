@@ -1251,3 +1251,19 @@ def partition(predicate: Callable[[T], bool], iterable: Iterable[T]) -> Tuple[It
     iter1, iter2 = itertools.tee(iterable)
 
     return filter(predicate, iter1), itertools.filterfalse(predicate, iter2)
+
+
+def logging_filter(
+    logger: gluetool.log.ContextAdapter,
+    items: List[T],
+    filter_name: str,
+    filter_callable: Callable[[gluetool.log.ContextAdapter, T], bool]
+) -> Generator[T, None, None]:
+    for item in items:
+        if filter_callable(logger, item):
+            log_dict_yaml(logger.debug, f'filter {filter_name}: allowed', item)
+
+            yield item
+
+        else:
+            log_dict_yaml(logger.debug, f'filter {filter_name}: denied', item)
