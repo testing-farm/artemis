@@ -997,6 +997,7 @@ class OpenStackDriver(PoolDriver):
                 PoolImageInfo(
                     name=image['Name'],
                     id=image['ID'],
+                    arch=None,
                     boot=FlavorBoot(),
                     ssh=PoolImageSSHInfo()
                 )

@@ -701,6 +701,7 @@ class BeakerDriver(PoolDriver):
         return Ok(PoolImageInfo(
             name=imagename,
             id=imagename,
+            arch=None,
             boot=FlavorBoot(),
             ssh=PoolImageSSHInfo()
         ))

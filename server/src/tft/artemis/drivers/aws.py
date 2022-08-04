@@ -103,6 +103,7 @@ EBS_DEVICE_NAMES = [
 class APIImageType(TypedDict):
     Name: Optional[str]
     ImageId: str
+    Architecture: str
     PlatformDetails: str
     BlockDeviceMappings: APIBlockDeviceMappingsType
     EnaSupport: Optional[bool]
@@ -1151,6 +1152,14 @@ class AWSDriver(PoolDriver):
 
         suitable_flavors = cast(List[AWSFlavor], r_suitable_flavors.unwrap())
 
+        if image.arch:
+            suitable_flavors = list(logging_filter(
+                logger,
+                suitable_flavors,
+                'image and flavor arch matches',
+                lambda logger, flavor: flavor.arch == image.arch
+            ))
+
         # console/URL logs require ENA support
         if guest_request.requests_guest_log('console', GuestLogContentType.URL):
             suitable_flavors = list(logging_filter(
@@ -1971,6 +1980,7 @@ class AWSDriver(PoolDriver):
                         # .Name is optional and may be undefined or missing - use .ImageId in such a case
                         name=image.get('Name') or image['ImageId'],
                         id=image['ImageId'],
+                        arch=_aws_arch_to_arch(image['Architecture']),
                         boot=image_boot,
                         ssh=PoolImageSSHInfo(),
                         platform_details=image['PlatformDetails'],

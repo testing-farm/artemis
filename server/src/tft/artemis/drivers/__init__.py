@@ -351,6 +351,7 @@ class PoolImageInfo(SerializableContainer):
     name: str
     id: str
 
+    arch: Optional[str]
     boot: FlavorBoot
     ssh: PoolImageSSHInfo
 
