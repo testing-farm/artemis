@@ -148,7 +148,7 @@ def _validate_environment(
     logger: gluetool.log.ContextAdapter,
     environment: Any,
     schema: JSONSchemaType,
-    failure_details: Dict[str, str]
+    failure_details: FailureDetailsType
 ) -> Environment:
     r_validation = validate_data(environment, schema)
 
@@ -634,7 +634,8 @@ class GuestRequestManager:
 
         failure_details = {
             'guestname': guestname,
-            'keyname': guest_request.keyname
+            'keyname': guest_request.keyname,
+            'raw_environment': guest_request.environment
         }
 
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
