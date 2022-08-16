@@ -917,6 +917,19 @@ for said guest request again.
 
 5+|Sentry DSN.
 
+|`template.delimiters.variable`
+|`str`
+|`ARTEMIS_TEMPLATE_VARIABLE_DELIMITERS`
+|`{{,}}`
+|no
+
+
+
+5+|Variable delimiters for various Jinja2 templates.
+Useful when Artemis deployment renders templates that Artemis itself is supposed to render.
+The value shall be comma-separated list of two strings, the start and end delimiter
+of a variable to render in a template.
+
 |`vault.password`
 |`str`
 |`ARTEMIS_VAULT_PASSWORD`

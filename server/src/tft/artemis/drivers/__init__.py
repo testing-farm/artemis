@@ -25,7 +25,8 @@ from gluetool.result import Error, Ok, Result
 from pint import Quantity
 from typing_extensions import Literal, Protocol, TypedDict
 
-from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, process_output_to_str, safe_call
+from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, process_output_to_str, render_template, \
+    safe_call
 from ..cache import get_cached_set_as_list, get_cached_set_item, refresh_cached_set
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
@@ -962,12 +963,7 @@ def render_tags(
     vars: Dict[str, Any]
 ) -> Result[GuestTagsType, Failure]:
     for name, tag_template in tags.items():
-        r_rendered = safe_call(
-            gluetool.utils.render_template,
-            tag_template,
-            **vars,
-            logger=logger
-        )
+        r_rendered = render_template(tag_template, **vars)
 
         if r_rendered.is_error:
             return Error(Failure.from_failure(
