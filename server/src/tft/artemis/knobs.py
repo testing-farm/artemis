@@ -866,6 +866,20 @@ KNOB_LOGGING_SINGLETON_LOCKS: Knob[bool] = Knob(
     default=False
 )
 
+KNOB_TEMPLATE_VARIABLE_DELIMITERS: Knob[str] = Knob(
+    'template.delimiters.variable',
+    """
+    Variable delimiters for various Jinja2 templates.
+    Useful when Artemis deployment renders templates that Artemis itself is supposed to render.
+    The value shall be comma-separated list of two strings, the start and end delimiter
+    of a variable to render in a template.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_TEMPLATE_VARIABLE_DELIMITERS',
+    cast_from_str=str,
+    default='{{,}}'
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value

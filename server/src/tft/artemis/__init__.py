@@ -66,7 +66,7 @@ from . import db as artemis_db  # noqa: E402
 from . import middleware as artemis_middleware  # noqa: E402
 from .knobs import Knob  # noqa: E402
 from .knobs import KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_SENTRY, KNOB_SENTRY_BASE_URL, \
-    KNOB_SENTRY_DISABLE_CERT_VERIFICATION, KNOB_SENTRY_DSN  # noqa: E402
+    KNOB_SENTRY_DISABLE_CERT_VERIFICATION, KNOB_SENTRY_DSN, KNOB_TEMPLATE_VARIABLE_DELIMITERS  # noqa: E402
 
 if TYPE_CHECKING:
     from .environment import Environment
@@ -1267,3 +1267,36 @@ def logging_filter(
 
         else:
             log_dict_yaml(logger.debug, f'filter {filter_name}: denied', item)
+
+
+# Pre-compile template variable delimiters.
+try:
+    TEMPLATE_VARIABLE_DELIMITERS = KNOB_TEMPLATE_VARIABLE_DELIMITERS.value.split(',', 1)
+
+except Exception as exc:
+    Failure.from_exc(
+        'failed to compile template variable delimiters',
+        exc,
+        delimiters=KNOB_TEMPLATE_VARIABLE_DELIMITERS.value
+    ).handle(get_logger())
+
+    sys.exit(1)
+
+
+def render_template(template: str, **kwargs: Any) -> Result[str, Failure]:
+    try:
+        _template = jinja2.Template(
+            template,
+            variable_start_string=TEMPLATE_VARIABLE_DELIMITERS[0],
+            variable_end_string=TEMPLATE_VARIABLE_DELIMITERS[1]
+        )
+
+        return Ok(_template.render(**kwargs).strip())
+
+    except Exception as exc:
+        return Error(Failure.from_exc(
+            'failed to render template',
+            exc,
+            template=template,
+            variables=kwargs
+        ))

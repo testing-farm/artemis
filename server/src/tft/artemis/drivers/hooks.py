@@ -13,7 +13,7 @@ import gluetool.log
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, log_dict_yaml, safe_call
+from .. import Failure, log_dict_yaml, render_template
 from ..environment import Environment
 from ..knobs import KNOB_CONFIG_DIRPATH, Knob
 from . import ImageInfoMapperOptionalResultType, PoolDriver, PoolImageInfo
@@ -109,12 +109,7 @@ def map_environment_to_imagename_by_pattern_map(
     else:
         return Error(Failure('no compose/image mapping file specified', environment=environment))
 
-    r_needle = safe_call(
-        gluetool.utils.render_template,
-        needle_template,
-        logger=logger,
-        **environment.serialize()
-    )
+    r_needle = render_template(needle_template, **environment.serialize())
 
     if r_needle.is_error:
         return Error(r_needle.unwrap_error())
