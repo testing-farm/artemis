@@ -1067,6 +1067,15 @@ class BeakerDriver(PoolDriver):
         if r_answer.unwrap() is False:
             return r_answer
 
+        r_distro = self.image_info_mapper.map_or_none(logger, guest_request)
+        if r_distro.is_error:
+            return Error(r_distro.unwrap_error())
+
+        distro = r_distro.unwrap()
+
+        if distro is None:
+            return Ok(False)
+
         # Parent implementation does not care, but we still might: support for HW constraints is still
         # far from being complete and fully tested, therefore we should check whether we are able to
         # convert the constraints - if there are any - to a Beaker XML filter.
