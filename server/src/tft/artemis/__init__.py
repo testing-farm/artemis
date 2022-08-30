@@ -140,24 +140,30 @@ def get_yaml() -> ruamel.yaml.main.YAML:
 
 # This knob needs to live in this module, because its default value includes
 # __VERSION__ we can't import from knobs module (circular import).
-def cast_release(release_template: str) -> str:
-    """
-    Apply templating to user-defined release string.
-
-    Raw "release" may refer to ``__VERSION__``, render it as a template.
-    """
-
-    return cast(str, jinja2.Template(release_template).render(__VERSION__=__VERSION__))
-
-
-KNOB_RELEASE: Knob[str] = Knob(
+#
+# There is also yet another circular dependency: to render the template, render_template()
+# needs KNOB_TEMPLATE_VARIABLE_DELIMITERS, and may fail and then need Failure, which might
+# be not imported yet, so we can't use the knob directly, but via a helper get-release()
+# which provides the deferred rendering.
+_KNOB_RELEASE: Knob[str] = Knob(
     'deployment.release',
     'Optional name of the Artemis release (e.g. "0.0.35", "artemis@v0.0.35", "artemis@{{ __VERSION__ }}, etc.).',
     has_db=False,
     envvar='ARTEMIS_RELEASE',
-    cast_from_str=cast_release,
+    cast_from_str=str,
     default=__VERSION__
 )
+
+
+def get_release() -> str:
+    r_release = render_template(_KNOB_RELEASE.value, __VERSION__=__VERSION__)
+
+    if r_release.is_error:
+        r_release.unwrap_error().handle(get_logger())
+
+        return __VERSION__
+
+    return r_release.unwrap()
 
 
 class Sentry:
@@ -188,7 +194,7 @@ class Sentry:
 
         sentry_sdk.init(
             dsn=KNOB_SENTRY_DSN.value,
-            release=KNOB_RELEASE.value,
+            release=get_release(),
             environment=KNOB_DEPLOYMENT_ENVIRONMENT.value,
             server_name=platform.node(),
             debug=KNOB_LOGGING_SENTRY.value,
