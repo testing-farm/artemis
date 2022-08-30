@@ -111,11 +111,6 @@ class ConstraintTranslationConfigType(TypedDict):
     element: str
 
 
-class BootMethodConfigType(TypedDict):
-    key: str
-    translations: List[ConstraintTranslationConfigType]
-
-
 #: Mapping of operators to their Beaker representation. :py:attr:`Operator.MATCH` is missing on purpose: it is
 #: intercepted in :py:func:`operator_to_beaker_op`.
 OPERATOR_SIGN_TO_OPERATOR = {
@@ -142,6 +137,31 @@ def operator_to_beaker_op(operator: Operator, value: str) -> Tuple[str, str]:
 
     # MATCH has special handling - convert the pattern to a wildcard form - and that may be weird :/
     return 'like', value.replace('.*', '%').replace('.+', '%')
+
+
+def _translate_constraint_by_config(
+    constraint: Constraint,
+    translations: List[ConstraintTranslationConfigType]
+) -> Result[bs4.BeautifulSoup, Failure]:
+    for translation in translations:
+        if translation['operator'] != constraint.operator.value or translation['value'] != constraint.value:
+            continue
+
+        try:
+            return Ok(bs4.BeautifulSoup(translation['element'], 'xml'))
+
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'failed to parse XML',
+                exc,
+                source=translation['element']
+            ))
+
+    return Error(Failure(
+        'contraint not supported by driver',
+        constraint=repr(constraint),
+        constraint_name=constraint.name
+    ))
 
 
 def constraint_to_beaker_filter(
@@ -184,29 +204,14 @@ def constraint_to_beaker_filter(
 
     if constraint_name.property == 'boot':
         if constraint_name.child_property == 'method':
-            boot_method_config = cast(
-                BootMethodConfigType,
-                pool.pool_config.get('hw-constraints', {}).get('boot', {}).get('method', {})
+            return _translate_constraint_by_config(
+                constraint,
+                pool.pool_config
+                    .get('hw-constraints', {})
+                    .get('boot', {})
+                    .get('method', {})
+                    .get('translations', [])
             )
-
-            for translation in boot_method_config.get('translations', []):
-                if translation['operator'] != constraint.operator.value or translation['value'] != constraint.value:
-                    continue
-
-                try:
-                    return Ok(bs4.BeautifulSoup(translation['element'], 'xml'))
-
-                except Exception as exc:
-                    return Error(Failure.from_exc(
-                        'failed to parse XML',
-                        exc,
-                        source=translation['element']
-                    ))
-
-            return Error(Failure(
-                'constraint not supported by driver',
-                constraint=repr(constraint)
-            ))
 
     if constraint_name.property == 'cpu':
         cpu = _new_tag('cpu')
@@ -306,6 +311,27 @@ def constraint_to_beaker_filter(
         hostname = _new_tag('hostname', op=op, value=value)
 
         return Ok(hostname)
+
+    if constraint_name.property == 'virtualization':
+        if constraint_name.child_property == 'is_virtualized':
+            return _translate_constraint_by_config(
+                constraint,
+                pool.pool_config
+                    .get('hw-constraints', {})
+                    .get('virtualization', {})
+                    .get('is_virtualized', {})
+                    .get('translations', [])
+            )
+
+        if constraint_name.child_property == 'hypervisor':
+            return _translate_constraint_by_config(
+                constraint,
+                pool.pool_config
+                    .get('hw-constraints', {})
+                    .get('virtualization', {})
+                    .get('hypervisor', {})
+                    .get('translations', [])
+            )
 
     return Error(Failure(
         'contraint not supported by driver',
