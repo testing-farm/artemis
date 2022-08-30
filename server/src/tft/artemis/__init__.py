@@ -156,14 +156,20 @@ _KNOB_RELEASE: Knob[str] = Knob(
 
 
 def get_release() -> str:
-    r_release = render_template(_KNOB_RELEASE.value, __VERSION__=__VERSION__)
+    # TODO: for now, hardcode the output
+    # There is a cycle of calls (sentry -> get_release -> render_template -> variable boundaries -> Failure -> Sentry)
+    # Fixing it will take more work than simple move of functions around.
 
-    if r_release.is_error:
-        r_release.unwrap_error().handle(get_logger())
+    return f'artemis@{__VERSION__}'
 
-        return __VERSION__
-
-    return r_release.unwrap()
+#    r_release = render_template(_KNOB_RELEASE.value, __VERSION__=__VERSION__)
+#
+#    if r_release.is_error:
+#        r_release.unwrap_error().handle(get_logger())
+#
+#        return __VERSION__
+#
+#    return r_release.unwrap()
 
 
 class Sentry:
