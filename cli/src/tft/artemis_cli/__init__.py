@@ -527,7 +527,9 @@ def print_guests(
     def tabulate(guests: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
 
-        for header in ['Guestname', 'Compose', 'Arch', 'Pool', 'State', 'CTime / MTime', 'Address', 'User Data']:
+        for header in [
+            'Guestname', 'Compose', 'Arch', 'Pool', 'State', 'CTime / SMTime / MTime', 'Address', 'User Data'
+        ]:
             table.add_column(header, no_wrap=(header == 'Guestname'))
 
         for guest in guests:
@@ -537,7 +539,7 @@ def print_guests(
                 guest['environment']['hw']['arch'],
                 guest['environment']['pool'],
                 colorize_guest_state(guest['state']),
-                f'{guest["ctime"]}\n{guest["state_mtime"]}',
+                f'{guest["ctime"]}\n{guest["state_mtime"]}\n{guest["mtime"]}',
                 guest['address'],
                 RichYAML.from_data(guest['user_data']) if guest['user_data'] else ''
             )

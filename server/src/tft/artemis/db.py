@@ -25,7 +25,7 @@ import sqlalchemy.ext.declarative
 import sqlalchemy.sql.expression
 from gluetool.result import Error, Ok, Result
 from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import column_property, relationship
 from sqlalchemy.orm.query import Query as _Query
 from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy_utils import EncryptedType
@@ -805,6 +805,85 @@ class TaskRequest(Base):
         return Ok(cast(Tuple[int], r.unwrap())[0])
 
 
+class GuestEvent(Base):
+    __tablename__ = 'guest_events'
+
+    _id = Column(Integer(), primary_key=True)
+    updated = Column(DateTime, default=datetime.datetime.utcnow)
+    guestname = Column(String(250), nullable=False, index=True)
+    eventname = Column(String(250), nullable=False)
+
+    # Details are stored as JSON blob, in a "hidden" column - when accessing event details, we'd like to cast them to
+    # proper type, and there will never ever be an event having a list or an integer as a detail, it will always
+    # be a mapping. Therefore `_details` column and `details` property to apply proper cast call.
+    _details = Column(JSON(), nullable=False, server_default='{}')
+
+    def __init__(
+        self,
+        eventname: str,
+        guestname: str,
+        updated: Optional[datetime.datetime] = None,
+        **details: Any
+    ) -> None:
+        self.eventname = eventname
+        self.guestname = guestname
+        self.updated = updated or datetime.datetime.utcnow()
+        self._details = details
+
+    @property
+    def details(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], self._details)
+
+    @classmethod
+    def fetch(
+        cls,
+        session: sqlalchemy.orm.session.Session,
+        eventname: Optional[str] = None,
+        guestname: Optional[str] = None,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        sort_field: str = 'updated',
+        sort_order: str = 'desc',
+        since: Optional[str] = None,
+        until: Optional[str] = None
+    ) -> Result[List['GuestEvent'], 'Failure']:
+        query = SafeQuery.from_session(session, GuestEvent)
+
+        if guestname is not None:
+            query = query.filter(cls.guestname == guestname)
+
+        if eventname:
+            query = query.filter(cls.eventname == eventname)
+
+        if since:
+            query = query.filter(cls.updated >= since)
+
+        if until:
+            query = query.filter(cls.updated <= until)
+
+        try:
+            sort_field_column = getattr(cls, sort_field)
+            sort_field_direction = getattr(sort_field_column, sort_order)
+
+        except AttributeError:
+            return Error(Failure(
+                'cannot sort events',
+                sort_field=sort_field,
+                sort_order=sort_order
+            ))
+
+        # E.g. order_by(GuestEvent.updated.desc())
+        query = query.order_by(sort_field_direction())
+
+        if page_size is not None:
+            query = query.limit(page_size)
+
+            if page is not None:
+                query = query.offset((page - 1) * page_size)
+
+        return query.all()
+
+
 UserDataType = Dict[str, Optional[str]]
 
 
@@ -853,6 +932,13 @@ class GuestRequest(Base):
 
     state = Column(Enum(GuestState), nullable=False)
     state_mtime = Column(DateTime(), nullable=True)
+
+    mtime: datetime.datetime = column_property(  # type: ignore[assignment]
+        sqlalchemy  # type: ignore[attr-defined]
+        .select(sqlalchemy.func.max(GuestEvent.updated))
+        .where(GuestEvent.guestname == guestname)
+        .scalar_subquery()
+    )
 
     address = Column(String(250), nullable=True)
 
@@ -1192,85 +1278,6 @@ class GuestLog(Base):
             return False
 
         return self.expires < datetime.datetime.utcnow()
-
-
-class GuestEvent(Base):
-    __tablename__ = 'guest_events'
-
-    _id = Column(Integer(), primary_key=True)
-    updated = Column(DateTime, default=datetime.datetime.utcnow)
-    guestname = Column(String(250), nullable=False, index=True)
-    eventname = Column(String(250), nullable=False)
-
-    # Details are stored as JSON blob, in a "hidden" column - when accessing event details, we'd like to cast them to
-    # proper type, and there will never ever be an event having a list or an integer as a detail, it will always
-    # be a mapping. Therefore `_details` column and `details` property to apply proper cast call.
-    _details = Column(JSON(), nullable=False, server_default='{}')
-
-    def __init__(
-        self,
-        eventname: str,
-        guestname: str,
-        updated: Optional[datetime.datetime] = None,
-        **details: Any
-    ) -> None:
-        self.eventname = eventname
-        self.guestname = guestname
-        self.updated = updated or datetime.datetime.utcnow()
-        self._details = details
-
-    @property
-    def details(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self._details)
-
-    @classmethod
-    def fetch(
-        cls,
-        session: sqlalchemy.orm.session.Session,
-        eventname: Optional[str] = None,
-        guestname: Optional[str] = None,
-        page: Optional[int] = None,
-        page_size: Optional[int] = None,
-        sort_field: str = 'updated',
-        sort_order: str = 'desc',
-        since: Optional[str] = None,
-        until: Optional[str] = None
-    ) -> Result[List['GuestEvent'], 'Failure']:
-        query = SafeQuery.from_session(session, GuestEvent)
-
-        if guestname is not None:
-            query = query.filter(cls.guestname == guestname)
-
-        if eventname:
-            query = query.filter(cls.eventname == eventname)
-
-        if since:
-            query = query.filter(cls.updated >= since)
-
-        if until:
-            query = query.filter(cls.updated <= until)
-
-        try:
-            sort_field_column = getattr(cls, sort_field)
-            sort_field_direction = getattr(sort_field_column, sort_order)
-
-        except AttributeError:
-            return Error(Failure(
-                'cannot sort events',
-                sort_field=sort_field,
-                sort_order=sort_order
-            ))
-
-        # E.g. order_by(GuestEvent.updated.desc())
-        query = query.order_by(sort_field_direction())
-
-        if page_size is not None:
-            query = query.limit(page_size)
-
-            if page is not None:
-                query = query.offset((page - 1) * page_size)
-
-        return query.all()
 
 
 class SnapshotRequest(Base):
