@@ -195,6 +195,16 @@ and dispatching of post-acquire preparation tasks.
 
 5+|Prepare stage SSH timeout.
 
+|`actor.worker-ping.schedule`
+|`str`
+|`ARTEMIS_ACTOR_WORKER_PING_SCHEDULE`
+|`*/5 * * * *`
+|no
+
+
+
+5+|When to run worker ping task, as a Cron-like specification.
+
 |`api.enable-authentication`
 |`bool`
 |`ARTEMIS_ENABLE_AUTHENTICATION`

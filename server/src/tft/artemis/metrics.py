@@ -2515,13 +2515,41 @@ class WorkerMetrics(MetricsBase):
     Proxy for metrics related to workers.
     """
 
+    worker_ping: Optional[float] = None
+
     worker_process_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
     worker_thread_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
     worker_updated_timestamp: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
 
+    _KEY_WORKER_PING = 'metrics.workers.ping'
+
     _KEY_WORKER_PROCESS_COUNT = 'metrics.workers.{worker}.processes'  # noqa: FS003
     _KEY_WORKER_THREAD_COUNT = 'metrics.workers.{worker}.threads'  # noqa: FS003
     _KEY_UPDATED_TIMESTAMP = 'metrics.workers.{worker}.updated_timestamp'  # noqa: FS003
+
+    @staticmethod
+    @with_context
+    def update_worker_ping(
+        *,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Update worker ping timestamp.
+
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        set_metric(
+            logger,
+            cache,
+            WorkerMetrics._KEY_WORKER_PING,
+            int(datetime.datetime.timestamp(datetime.datetime.utcnow()))
+        )
+
+        return Ok(None)
 
     @staticmethod
     @with_context
@@ -2579,6 +2607,12 @@ class WorkerMetrics(MetricsBase):
 
         super().register_with_prometheus(registry)
 
+        self.WORKER_PING = Gauge(
+            'worker_ping',
+            'Last time worker ping task has been executed.',
+            registry=registry
+        )
+
         self.WORKER_PROCESS_COUNT = Gauge(
             'worker_process_count',
             'Number of processes by worker.',
@@ -2611,6 +2645,9 @@ class WorkerMetrics(MetricsBase):
 
         super().sync()
 
+        worker_ping: Optional[float] = get_metric(logger, cache, self._KEY_WORKER_PING)
+        self.worker_ping = worker_ping if worker_ping is None else float(worker_ping)
+
         self.worker_process_count = {
             metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
             for metric in iter_cache_keys(logger, cache, 'metrics.workers.*.processes')
@@ -2632,6 +2669,8 @@ class WorkerMetrics(MetricsBase):
         """
 
         super().update_prometheus()
+
+        self.WORKER_PING.set(self.worker_ping or float('Nan'))
 
         reset_counters(self.WORKER_PROCESS_COUNT)
         reset_counters(self.WORKER_THREAD_COUNT)
