@@ -1,0 +1,32 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: GCP pool driver schema
+
+type: object
+
+properties:
+  capabilities:
+    type: object
+
+  account:
+    description: Google *service* account to use in order to create VM instances.
+    type: string
+
+  key_file:
+    description: Key file associated with the supplied account in order to authenticate.
+    type: string
+
+  project:
+    description: Project under which should the VM instances be spawned.
+    type: string
+
+  zone:
+    description: |
+      Geographical zone where the instances should be located.
+      See: https://cloud.google.com/compute/docs/regions-zones/
+      Example: us-east4-c
+    type: string
+
+
+additionalProperties: false
+
+required: [account, key_file, project, zone]
