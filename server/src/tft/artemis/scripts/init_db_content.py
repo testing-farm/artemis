@@ -253,6 +253,10 @@ def config_to_db(
         for key_config in server_config.get('ssh-keys', []):
             logger.info(f'Adding SSH key "{key_config["name"]}", owner by {key_config["owner"]}')
 
+            # Private key *must* end with a new-line character. Make sure there's
+            # exactly one.
+            private = key_config['private'].strip() + '\n'
+
             r = upsert(
                 logger,
                 session,
@@ -263,7 +267,7 @@ def config_to_db(
                 insert_data={
                     SSHKey.enabled: True,
                     SSHKey.ownername: key_config['owner'],
-                    SSHKey.private: key_config['private'].strip(),
+                    SSHKey.private: private,
                     SSHKey.public: key_config['public'].strip(),
                     # When adding new key, leave `file` column empty - it will be dropped in the future,
                     # and we do not have any usable value for it.
@@ -275,7 +279,7 @@ def config_to_db(
                     # With `file` preserved, a downgrade to older Artemis should work, because those versions
                     # worked with keys in extra files, and we keep that information safe. We just don't have it
                     # for any *new* keys...
-                    'private': key_config['private'].strip(),
+                    'private': private,
                     'public': key_config['public'].strip()
                 }
             )
