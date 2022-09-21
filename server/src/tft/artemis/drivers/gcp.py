@@ -64,7 +64,7 @@ class GCPDriver(PoolDriver):
                            'activate-service-account', self.pool_config['account'],
                            '--key-file', self.pool_config['key_file'],
                            '--format=json']
-        gcloud_auth_cmd_exec_result = run_cli_tool(self.logger, gcloud_auth_cmd, json_output='True')
+        gcloud_auth_cmd_exec_result = run_cli_tool(self.logger, gcloud_auth_cmd, json_output=True)
         assert gcloud_auth_cmd_exec_result.is_ok
 
         posix_username_result = self.retrieve_posix_username_for_service_account(self.pool_config['account'])
@@ -88,7 +88,7 @@ class GCPDriver(PoolDriver):
         if image_description_result.is_error:
             return Error(Failure.from_failure('Failed to fetch image information', image_description_result.unwrap_error()))
 
-        image_description = image_description_result.ok
+        image_description = image_description_result.unwrap()
         image_info = PoolImageInfo(name=image_description['name'],
                                    id=image_description['id'],
                                    arch=image_description['architecture'],
@@ -136,17 +136,17 @@ class GCPDriver(PoolDriver):
         if instance_info_result.is_error:
             return Error(Failure('no such guest'))
 
-        instance_info = r_output.unwrap()
+        instance_info = instance_info_result.unwrap()
         if not instance_info:
             return Error(Failure('Server show commmand output is empty'))
 
-        status = output['status'].lower()
+        status = instance_info['status'].lower()
         pool_data = GCPPoolData.unserialize(guest_request)
 
         if status == 'failed':
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=AzurePoolData.unserialize(guest_request),
+                pool_data=GCPPoolData.unserialize(guest_request),
                 pool_failures=[Failure('instance ended up in "failed" state')]
             ))
 
@@ -154,7 +154,7 @@ class GCPDriver(PoolDriver):
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
-            pool_data=AzurePoolData.unserialize(guest_request),
+            pool_data=GCPPoolData.unserialize(guest_request),
             address=ip_address
         ))
 
@@ -165,16 +165,17 @@ class GCPDriver(PoolDriver):
         pool_data = GCPPoolData.unserialize(guest_request)
         delete_instance_cmd_result = self.run_gcloud_compute_subcommand(['instances', 'delete', f'{pool_data.name}', f'--zone={pool_data.zone}'])
         if delete_instance_cmd_result.is_error:
-            return Error(delete_instance_cmd_result.error)
+            return Error(delete_instance_cmd_result.unwrap_error())
         return Ok(True)
 
     def retrieve_posix_username_for_service_account(self, account_email: str) -> Result[str, Failure]:
         iam_describe_service_account_cmd = ['gcloud', 'iam', 'service-accounts', 'describe', account_email, '--format=json']
         describe_service_cmd_result = run_cli_tool(self.logger, iam_describe_service_account_cmd, json_output=True)
         if describe_service_cmd_result.is_error:
-            return Failure.from_failure('failed to get service account description', describe_service_cmd_result.error)
+            failure = Failure.from_failure('failed to get service account description', describe_service_cmd_result.unwrap_error())
+            return Error(failure)
 
-        service_account_id = describe_service_cmd_result.ok.json['uniqueId']
+        service_account_id = cast(Dict[Any, Any], describe_service_cmd_result.unwrap().json)['uniqueId']
         posix_username = f'sa_{service_account_id}'
         return Ok(posix_username)
 
@@ -194,12 +195,12 @@ class GCPDriver(PoolDriver):
 
         delay_cfg_option_read_result = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
         if delay_cfg_option_read_result.is_error:
-            return Error(delay_cfg_option_read_result.error)
+            return Error(delay_cfg_option_read_result.unwrap_error())
 
         map_request_to_image_result = self.image_info_mapper.map(logger, guest_request)
         if map_request_to_image_result.is_error:
-            return Error(map_request_to_image_result.error)
-        image = map_request_to_image_result.ok
+            return Error(map_request_to_image_result.unwrap_error())
+        image = map_request_to_image_result.unwrap()
 
         self.log_acquisition_attempt(logger, session, guest_request, image=image)
 
@@ -219,9 +220,9 @@ class GCPDriver(PoolDriver):
         create_instance_cmd_result = self.run_gcloud_compute_subcommand(gcloud_create_instance_subcmd, specify_zone=True)
 
         if create_instance_cmd_result.is_error:
-            return Error(create_instance_cmd_result.error)
+            return Error(create_instance_cmd_result.unwrap_error())
 
-        created_instance_description = cast(Dict[str, Any], create_instance_cmd_result.ok)[0]
+        created_instance_description = create_instance_cmd_result.unwrap()
 
         instance_id = created_instance_description['id']
         status = created_instance_description['status'].lower()
@@ -233,7 +234,7 @@ class GCPDriver(PoolDriver):
             provisioninig_state = ProvisioningState.PENDING
 
         # GCP creates used based on the service account used to spawn the VM - patch the default accordingly.
-        image.ssh.username = self.posix_username
+        image.ssh.username = cast(str, self.posix_username)
 
         return Ok(ProvisioningProgress(
             state=provisioninig_state,
@@ -250,7 +251,7 @@ class GCPDriver(PoolDriver):
     def run_gcloud_compute_subcommand(self,
                                       gcloud_compute_subcmd: List[str],
                                       project: Optional[str] = None,
-                                      specify_zone: bool = False) -> Result[JSONType, Failure]:
+                                      specify_zone: bool = False) -> Result[Dict[Any, Any], Failure]:
         if not project:
             project = self.pool_config['project']
         zone = self.pool_config['zone']
@@ -264,9 +265,9 @@ class GCPDriver(PoolDriver):
                                            json_output=True)
 
         if command_exec_result.is_error:
-            return Error(command_exec_result.error)
+            return Error(command_exec_result.unwrap_error())
 
-        return Ok(command_exec_result.ok.json)
+        return Ok(cast(Dict[Any, Any], command_exec_result.unwrap().json))
 
     def _query_instance_info(self, guest_request: GuestRequest) -> Result[Any, Failure]:
         pool_item = GCPPoolData.unserialize(guest_request)
