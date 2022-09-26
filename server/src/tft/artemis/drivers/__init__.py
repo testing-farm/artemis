@@ -508,6 +508,15 @@ class ProvisioningProgress:
     pool_failures: List[Failure] = dataclasses.field(default_factory=list)
 
 
+class WatchdogState(enum.Enum):
+    """
+    State of the guest watchdog.
+    """
+
+    CONTINUE = 'continue'
+    COMPLETE = 'complete'
+
+
 S = TypeVar('S', bound='PoolResourcesIDs')
 
 SerializedPoolResourcesIDs = str
@@ -1504,6 +1513,21 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         raise NotImplementedError()
+
+    def guest_watchdog(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[WatchdogState, Failure]:
+        """
+        Perform any periodic tasks the driver might need to apply while the request is in use.
+
+        :param logger: logger to use for logging.
+        :param guest_request: guest request to provision for.
+        """
+
+        return Ok(WatchdogState.COMPLETE)
 
     def stop_guest(
         self,
