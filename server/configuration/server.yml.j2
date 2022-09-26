@@ -76,7 +76,7 @@ pools:
         supported-architectures:
           - x86_64
 
-      resources: {{ openstack.resources | default("{}") }}
+      resources: {{ azure.resources | default("{}") }}
   {% endif %}
 
   {% if aws is defined %}
@@ -165,7 +165,7 @@ pools:
         supported-architectures:
           - x86_64
 
-      resources: {{ openstack.resources | default("{}") }}
+      resources: {{ aws.resources | default("{}") }}
   {% endif %}
 
   {% if beaker is defined %}
@@ -188,5 +188,5 @@ pools:
         # but in general, Beaker is open
         supported-architectures: any
 
-      resources: {{ openstack.resources | default("{}") }}
+      resources: {{ beaker.resources | default("{}") }}
   {% endif %}
