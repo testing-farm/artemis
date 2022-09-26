@@ -422,6 +422,22 @@ until cancelled and reprovisioned.
 
 5+|A pattern for needle to match in environment to image mapping file.
 
+|`beaker.guest-watchdog.ssh.connect-timeout`
+|`int`
+|`ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT`
+|`15`
+|yes
+
+
+|`beaker.guest-watchdog.ssh.connect-timeout:$poolname`
+|
+|`ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT_$poolname`
+|
+|
+
+
+5+|Guest watchdog SSH timeout.
+
 |`beaker.mapping.environment-to-image.pattern-map.filepath`
 |`str`
 |`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
@@ -463,6 +479,16 @@ until cancelled and reprovisioned.
 
 
 5+|A time, in seconds, for which the guest would be initially reserved.
+
+|`beaker.reservation.extension`
+|`int`
+|`ARTEMIS_BEAKER_RESERVATION_EXTENSION`
+|`28800`
+|no
+
+
+
+5+|A time, in seconds, to extend the guest reservation every tick of a watchdog.
 
 |`broker.close-after-dispatch`
 |`bool`

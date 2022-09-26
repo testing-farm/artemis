@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import math
 import os
 import re
 import stat
@@ -26,7 +27,8 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
     PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, run_cli_tool
+    ProvisioningState, SerializedPoolResourcesIDs, WatchdogState, create_tempfile, guest_log_updater, run_cli_tool, \
+    run_remote
 
 NodeRefType = Any
 
@@ -38,6 +40,15 @@ KNOB_RESERVATION_DURATION: Knob[int] = Knob(
     envvar='ARTEMIS_BEAKER_RESERVATION_DURATION',
     cast_from_str=int,
     default=86400
+)
+
+KNOB_RESERVATION_EXTENSION: Knob[int] = Knob(
+    'beaker.reservation.extension',
+    'A time, in seconds, to extend the guest reservation every tick of a watchdog.',
+    has_db=False,
+    envvar='ARTEMIS_BEAKER_RESERVATION_EXTENSION',
+    cast_from_str=int,
+    default=8 * 60 * 60
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -58,6 +69,16 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
     default='{{ os.compose }}'
+)
+
+KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
+    'beaker.guest-watchdog.ssh.connect-timeout',
+    'Guest watchdog SSH timeout.',
+    per_pool=True,
+    has_db=True,
+    envvar='ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT',
+    cast_from_str=int,
+    default=15
 )
 
 
@@ -566,9 +587,10 @@ def _create_wow_options(
         '--prettyxml',
         '--distro', distro.id,
         '--arch', guest_request.environment.hw.arch,
-        '--task', '/distribution/dummy',
-        '--reserve',
-        '--reserve-duration', str(KNOB_RESERVATION_DURATION.value)
+        # Using reservesys task instead of --reserve, because reservesys adds extendtesttime.sh
+        # script we can use to extend existing reservation.
+        '--task', '/distribution/reservesys',
+        '--taskparam', f'RESERVETIME={str(KNOB_RESERVATION_DURATION.value)}'
     ])
 
 
@@ -1068,6 +1090,50 @@ class BeakerDriver(PoolDriver):
             job_status=job_status,
             job_results=job_results.prettify()
         ))
+
+    def guest_watchdog(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[WatchdogState, Failure]:
+        """
+        Perform any periodic tasks the driver might need to apply while the request is in use.
+
+        :param logger: logger to use for logging.
+        :param guest_request: guest request to provision for.
+        """
+
+        from ..tasks import _get_master_key
+
+        r_master_key = _get_master_key()
+
+        if r_master_key.is_error:
+            return Error(r_master_key.unwrap_error())
+
+        r_ssh_timeout = KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(session=session, pool=self)
+
+        if r_ssh_timeout.is_error:
+            return Error(r_ssh_timeout.unwrap_error())
+
+        r_output = run_remote(
+            logger,
+            guest_request,
+            ['extendtesttime.sh', str(math.ceil(KNOB_RESERVATION_EXTENSION.value / 3600))],
+            key=r_master_key.unwrap(),
+            ssh_timeout=r_ssh_timeout.unwrap(),
+            poolname=self.poolname,
+            commandname='bkr.extend',
+            cause_extractor=bkr_error_cause_extractor
+        )
+
+        if r_output.is_error:
+            return Error(Failure.from_failure(
+                'failed to extend guest reservation',
+                r_output.unwrap_error()
+            ))
+
+        return Ok(WatchdogState.CONTINUE)
 
     def can_acquire(
         self,
