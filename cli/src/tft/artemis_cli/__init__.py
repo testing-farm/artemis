@@ -7,6 +7,7 @@ import sys
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, cast
 
 import click
+import jq
 import jsonschema
 import pkg_resources
 import requests
@@ -486,12 +487,32 @@ def print_yaml(data: Any, console: Optional[rich.console.Console] = None) -> Non
 CollectionType = List[Dict[str, Any]]
 
 
+def apply_jq_filter(
+    cfg: Configuration,
+    collection: CollectionType,
+    jq_filter: Optional[str] = None
+) -> CollectionType:
+    if jq_filter is None:
+        return collection
+
+    try:
+        compiled_jq_filter = jq.compile(jq_filter) if jq_filter is not None else None
+
+    except Exception as exc:
+        cfg.logger.error(f'failed to compile jq filter: {exc}')
+
+    return cast(CollectionType, compiled_jq_filter.input(collection).all())
+
+
 def print_collection(
     cfg: Configuration,
     collection: CollectionType,
     tabulate: Callable[[CollectionType], rich.table.Table],
+    jq_filter: Optional[str] = None,
     console: Optional[rich.console.Console] = None
 ) -> None:
+    collection = apply_jq_filter(cfg, collection, jq_filter=jq_filter)
+
     if cfg.output_format == 'table':
         print_table(tabulate(collection), console=console)
 
@@ -522,6 +543,7 @@ def colorize_guest_state(state: str) -> str:
 def print_guests(
     cfg: Configuration,
     guests: CollectionType,
+    jq_filter: Optional[str] = None,
     console: Optional[rich.console.Console] = None
 ) -> None:
     def tabulate(guests: CollectionType) -> rich.table.Table:
@@ -546,7 +568,7 @@ def print_guests(
 
         return table
 
-    print_collection(cfg, guests, tabulate, console=console)
+    print_collection(cfg, guests, tabulate, jq_filter=jq_filter, console=console)
 
 
 _eventname_emojis = {
@@ -599,6 +621,7 @@ def print_events(
 def print_knobs(
     cfg: Configuration,
     knobs: CollectionType,
+    jq_filter: Optional[str] = None,
     console: Optional[rich.console.Console] = None
 ) -> None:
     def tabulate(knobs: CollectionType) -> rich.table.Table:
@@ -618,12 +641,13 @@ def print_knobs(
 
         return table
 
-    print_collection(cfg, knobs, tabulate, console=console)
+    print_collection(cfg, knobs, tabulate, jq_filter=jq_filter, console=console)
 
 
 def print_users(
     cfg: Configuration,
     users: CollectionType,
+    jq_filter: Optional[str] = None,
     console: Optional[rich.console.Console] = None
 ) -> None:
     def tabulate(users: CollectionType) -> rich.table.Table:
@@ -640,7 +664,7 @@ def print_users(
 
         return table
 
-    print_collection(cfg, users, tabulate, console=console)
+    print_collection(cfg, users, tabulate, jq_filter=jq_filter, console=console)
 
 
 def print_guest_logs(

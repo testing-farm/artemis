@@ -426,11 +426,17 @@ def cmd_cancel(cfg: Configuration, guestnames: List[str], continue_on_error: boo
     type=click.Choice(['asc', 'desc']),
     default='asc'
 )
+@click.option(
+    '--jq-filter',
+    type=str,
+    help='An optional jq-like filter applied to the list of all guest requests retrieved.'
+)
 @click.pass_obj
 def cmd_guest_list(
     cfg: Configuration,
     sort_by: str = 'ctime',
-    sort_order: str = 'asc'
+    sort_order: str = 'asc',
+    jq_filter: Optional[str] = None
 ) -> None:
     response = artemis_inspect(cfg, 'guests', '')
 
@@ -442,7 +448,7 @@ def cmd_guest_list(
         if sort_order == 'desc':
             guests.reverse()
 
-        print_guests(cfg, guests)
+        print_guests(cfg, guests, jq_filter=jq_filter)
 
     else:
         cfg.logger.unhandled_api_response(response)
@@ -742,12 +748,19 @@ def cmd_knob(cfg: Configuration) -> None:
 
 
 @cmd_knob.command(name='list', short_help='List all knobs')
+@click.option(
+    '--jq-filter',
+    type=str,
+    help='An optional jq-like filter applied to the list of all knobs retrieved.'
+)
 @click.pass_obj
-def cmd_knob_list(cfg: Configuration) -> None:
+def cmd_knob_list(cfg: Configuration, jq_filter: Optional[str] = None) -> None:
     response = artemis_inspect(cfg, 'knobs', '')
 
     if response.ok:
-        print_knobs(cfg, response.json())
+        knobs = cast(List[Dict[str, Any]], response.json())
+
+        print_knobs(cfg, knobs, jq_filter=jq_filter)
 
     else:
         cfg.logger.unhandled_api_response(response)
@@ -825,12 +838,19 @@ def cmd_token(cfg: Configuration) -> None:
 
 
 @cmd_user.command(name='list', short_help='List all users')
+@click.option(
+    '--jq-filter',
+    type=str,
+    help='An optional jq-like filter applied to the list of all users retrieved.'
+)
 @click.pass_obj
-def cmd_user_list(cfg: Configuration) -> None:
+def cmd_user_list(cfg: Configuration, jq_filter: Optional[str] = None) -> None:
     response = artemis_inspect(cfg, 'users', '')
 
     if response.ok:
-        print_users(cfg, response.json())
+        users = cast(List[Dict[str, Any]], response.json())
+
+        print_users(cfg, users, jq_filter=jq_filter)
 
     else:
         cfg.logger.unhandled_api_response(response)
