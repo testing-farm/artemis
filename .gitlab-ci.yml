@@ -158,7 +158,7 @@ pages:preview:stop:
     - echo "bye"
 
 publish_apiary:
-  image: "ruby:2.4"
+  image: "ruby:2.6"
 
   stage: deploy
   script:
