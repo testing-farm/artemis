@@ -396,6 +396,7 @@ class GuestResponse:
     ssh: GuestSSHInfo
     state: GuestState
     state_mtime: Optional[datetime.datetime]
+    mtime: datetime.datetime
     user_data: artemis_db.UserDataType
     skip_prepare_verify_ssh: Optional[bool]
     post_install_script: Optional[str]
@@ -418,6 +419,7 @@ class GuestResponse:
             ),
             state=GuestState(guest.state),
             state_mtime=guest.state_mtime,
+            mtime=guest.mtime,
             user_data=guest.user_data,
             skip_prepare_verify_ssh=guest.skip_prepare_verify_ssh,
             post_install_script=guest.post_install_script,
