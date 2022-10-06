@@ -3062,18 +3062,25 @@ def do_guest_request_prepare_finalize_post_connect(
     logger.info('post-connect preparation steps complete')
 
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
+    workspace.load_gr_pool()
 
     if workspace.result:
         return workspace.result
 
     assert workspace.gr
     assert workspace.gr.poolname
+    assert workspace.pool
 
     workspace.mark_note_poolname()
 
-    workspace.update_guest_state(
+    from .guest_request_watchdog import KNOB_DISPATCH_GUEST_REQUEST_WATCHDOG_DELAY, guest_request_watchdog
+
+    workspace.update_guest_state_and_request_task(
         GuestState.READY,
-        current_state=GuestState.PREPARING
+        guest_request_watchdog,
+        guestname,
+        current_state=GuestState.PREPARING,
+        delay=KNOB_DISPATCH_GUEST_REQUEST_WATCHDOG_DELAY.value,
     )
 
     if workspace.result:
@@ -3102,7 +3109,8 @@ def guest_request_prepare_finalize_post_connect(guestname: str) -> None:
     task_core(
         cast(DoerType, do_guest_request_prepare_finalize_post_connect),
         logger=get_guest_logger('guest-request-prepare-finalize-post-connect', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
+        session_isolation=True
     )
 
 

@@ -128,6 +128,17 @@ quicker.
 
 5+|A range, in seconds, by which can a task delay be modified before use.
 
+|`actor.dispatch-guest-request-watchdog.delay`
+|`int`
+|`ARTEMIS_ACTOR_DISPATCH_GUEST_REQUEST_WATCHDOG_DELAY`
+|`600`
+|no
+
+
+
+5+|A delay, in seconds, between successful provisioning and dispatching of
+guest request watchdog tasks.
+
 |`actor.dispatch-preparing.delay`
 |`int`
 |`ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY`
