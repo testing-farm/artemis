@@ -539,7 +539,7 @@ def print_guests(
                 guest['environment']['hw']['arch'],
                 guest['environment']['pool'],
                 colorize_guest_state(guest['state']),
-                f'{guest["ctime"]}\n{guest["state_mtime"]}\n{guest["mtime"]}',
+                f'{guest["ctime"]}\n{guest["state_mtime"]}\n{guest.get("mtime", "")}',
                 guest['address'],
                 RichYAML.from_data(guest['user_data']) if guest['user_data'] else ''
             )
