@@ -1185,6 +1185,14 @@ class BeakerDriver(PoolDriver):
         # since `has_hw_constraints` was positive, there should be constraints...
         assert constraints is not None
 
+        r_uses_network = constraints.uses_constraint(logger, 'network')
+        if r_uses_network.is_error:
+            return Error(r_uses_network.unwrap_error())
+
+        if r_uses_network.unwrap():
+            logger.info('cannot handle "network" HW constraints')
+            return Ok(False)
+
         r_filter = constraint_to_beaker_filter(constraints, self)
 
         if r_filter.is_error:

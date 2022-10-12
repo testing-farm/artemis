@@ -563,6 +563,24 @@ class OpenStackDriver(PoolDriver):
         if r_answer.unwrap() is False:
             return r_answer
 
+        # Disallow HW constraints the driver does not implement yet
+        if guest_request.environment.has_hw_constraints:
+            r_constraints = guest_request.environment.get_hw_constraints()
+
+            if r_constraints.is_error:
+                return Error(r_constraints.unwrap_error())
+
+            constraints = r_constraints.unwrap()
+            assert constraints is not None
+
+            r_uses_network = constraints.uses_constraint(logger, 'network')
+            if r_uses_network.is_error:
+                return Error(r_uses_network.unwrap_error())
+
+            if r_uses_network.unwrap():
+                logger.info('cannot handle "network" HW constraints')
+                return Ok(False)
+
         r_image = self.image_info_mapper.map_or_none(logger, guest_request)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
