@@ -152,7 +152,10 @@ class AzureDriver(PoolDriver):
                 r_delete = _delete_resource(resource['id'])
 
                 if r_delete.is_error:
-                    return Error(r_delete.unwrap_error())
+                    return Error(Failure.from_failure(
+                        'failed to terminate instance',
+                        r_delete.unwrap_error()
+                    ))
 
                 self.inc_costs(logger, AZURE_RESOURCE_TYPE[resource['type']], resource_ids.ctime)
 
