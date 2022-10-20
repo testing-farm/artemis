@@ -1065,7 +1065,7 @@ class OpenStackDriver(PoolDriver):
                     name=flavor['Name'],
                     id=flavor['ID'],
                     cpu=FlavorCpu(
-                        cores=int(flavor['VCPUs'])
+                        processors=int(flavor['VCPUs'])
                     ),
                     # memory is reported in MiB
                     memory=UNITS.Quantity(int(flavor['RAM']), UNITS.mebibytes),

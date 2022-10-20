@@ -233,7 +233,11 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #
 #  cpu:
 #      processors: 1
+#      sockets: 1
 #      cores: 2
+#      threads: 4
+#      cores-per-socket: 1
+#      threads-per-core: 1
 #      family: 6
 #      family_name: Haswell
 #      model: E
@@ -283,11 +287,17 @@ class FlavorCpu(_FlavorSubsystemContainer):
 
     CONTAINER_PREFIX = 'cpu'
 
-    #: Total number of CPUs.
+    # The total number of various CPU components in the system.
+    sockets: Optional[int] = None
+    cores: Optional[int] = None
+    threads: Optional[int] = None
+
+    # The total number of logical CPUs.
     processors: Optional[int] = None
 
-    #: Total number of CPU cores. To get number of cores per CPU, divide :py:attr:`processors` by this field.
-    cores: Optional[int] = None
+    # Ther number of various CPU components per their parent.
+    cores_per_socket: Optional[int] = None
+    threads_per_core: Optional[int] = None
 
     #: CPU family number.
     family: Optional[int] = None
@@ -1310,8 +1320,20 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
     group = And()
 
     group.constraints += [
-        Constraint.from_specification(f'cpu.{constraint_name}', str(spec[constraint_name]))
-        for constraint_name in ('processors', 'cores', 'model', 'family')
+        Constraint.from_specification(
+            f'cpu.{constraint_name.replace("-", "_")}',
+            str(spec[constraint_name])
+        )
+        for constraint_name in (
+            'processors',
+            'sockets',
+            'cores',
+            'threads',
+            'cores-per-socket',
+            'threads-per-core',
+            'model',
+            'family'
+        )
         if constraint_name in spec
     ]
 
@@ -1321,7 +1343,10 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
             str(spec[constraint_name]),
             as_quantity=False
         )
-        for constraint_name in ('model-name',)
+        for constraint_name in (
+            'family-name',
+            'model-name'
+        )
         if constraint_name in spec
     ]
 

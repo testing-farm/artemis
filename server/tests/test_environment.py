@@ -1079,6 +1079,39 @@ def test_schema_logic_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger
     assert errors == []
 
 
+def test_parse_maximal_constraint() -> None:
+    _ = parse_hw("""
+        ---
+
+        arch: "x86_64"
+        constraints:
+            boot:
+                method: bios
+            cpu:
+                sockets: 1
+                cores: 2
+                threads: 8
+                cores-per-thread: 2
+                threads-per-core: 4
+                processors: 8
+                model: 62
+                model-name: "Haswell"
+                family: 6
+                family-name: Skylake
+            disk:
+                - size: 40 GiB
+                - size: 120 GiB
+            memory: 8 GiB
+            network:
+                - type: eth
+                - type: eth
+            virtualization:
+                is-supported: true
+                is-virtualized: false
+                hypervisor: xen
+        """)
+
+
 @pytest.mark.parametrize(('hw', 'expected'), [
     (
         """

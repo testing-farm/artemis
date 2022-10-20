@@ -2089,13 +2089,20 @@ class AWSDriver(PoolDriver):
                             exc
                         ))
 
+                    vcpus = int(flavor['VCpuInfo']['DefaultVCpus'])
+                    cores = int(flavor['VCpuInfo']['DefaultCores'])
+                    threads_per_core = int(flavor['VCpuInfo']['DefaultThreadsPerCore'])
+
                     flavors.append(AWSFlavor(
                         name=flavor['InstanceType'],
                         id=flavor['InstanceType'],
                         arch=artemis_arch,
                         boot=FlavorBoot(method=boot_methods),
                         cpu=FlavorCpu(
-                            cores=int(flavor['VCpuInfo']['DefaultVCpus'])
+                            cores=cores,
+                            threads=cores * threads_per_core,
+                            processors=vcpus,
+                            threads_per_core=threads_per_core
                         ),
                         # memory is reported in MB
                         memory=UNITS.Quantity(int(flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
