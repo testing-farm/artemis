@@ -139,13 +139,18 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, cancel, guestname) \
+        final_result = cls.create(logger, db, session, cancel, guestname) \
             .entry() \
             .load_pool() \
             .call_watchdog() \
             .schedule_followup() \
             .exit() \
             .final_result
+
+        if final_result.is_error:
+            final_result.unwrap_error().fail_guest_request = False
+
+        return final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.READY, GuestState.ERROR))
