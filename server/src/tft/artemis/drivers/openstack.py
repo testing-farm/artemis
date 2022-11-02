@@ -878,14 +878,9 @@ class OpenStackDriver(PoolDriver):
             ], json_format=False, commandname='os.server-delete')
 
             if r_output.is_error:
-                # Irrecoverable failures in release-pool-resources chain shouldn't influence the guest request.
-                # The release process is decoupled, and therefore pool outages should no longer affect the request.
-                failure = r_output.unwrap_error()
-                failure.fail_guest_request = False
-
                 return Error(Failure.from_failure(
                     'failed to delete instance',
-                    failure
+                    r_output.unwrap_error()
                 ))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)

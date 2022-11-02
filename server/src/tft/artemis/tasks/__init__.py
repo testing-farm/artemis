@@ -2673,6 +2673,11 @@ def do_release_pool_resources(
     r_release = pool.release_pool_resources(logger, serialized_resource_ids)
 
     if r_release.is_error:
+        # Irrecoverable failures in release-pool-resources chain shouldn't influence the guest request.
+        # The release process is decoupled, and therefore pool outages should no longer affect the request.
+        failure = r_release.unwrap_error()
+        failure.fail_guest_request = False
+
         return workspace.handle_error(r_release, 'failed to release pool resources')
 
     return workspace.handle_success('finished-task')
