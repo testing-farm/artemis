@@ -81,9 +81,43 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
           compose: dummy-compose
         """,
         '<system><arch op="==" value="x86_64"/></system>'
-    )
+    ),
+    (
+        """
+        ---
+        hw:
+          arch: x86_64
+          constraints:
+            network:
+              - type: eth
+              - type: eth
+        os:
+          compose: dummy-compose
+        """,
+        '<and><system><arch op="==" value="x86_64"/></system><key_value key="NR_ETH" value="2"/></and>'
+    ),
+    (
+        """
+        ---
+        hw:
+          arch: x86_64
+          constraints:
+            network:
+              - type: eth
+              - type: nosuchinterface
+        os:
+          compose: dummy-compose
+        """,
+        "failure\n\n"
+        "constraint: '[network[0].type == eth, network[1].type == nosuchinterface]'\n"
+        "constraint_name: network[0].type\nmessage: only eth networks are supported for beaker constraints\n"
+        "recoverable: true\n"
+        "fail_guest_request: true"
+    ),
 ], ids=[
     'simple-arch',
+    'multiple-nics',
+    'multiple-nics-bad-interface',
 ])
 def test_environment_to_beaker_filter(
     pool: tft.artemis.drivers.beaker.BeakerDriver,
@@ -94,9 +128,12 @@ def test_environment_to_beaker_filter(
 
     r_beaker_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment, pool)
 
-    assert r_beaker_filter.is_ok
-
-    beaker_filter = r_beaker_filter.unwrap()
+    should_fail = expected.startswith('failure')
+    if not should_fail:
+        assert r_beaker_filter.is_ok
+        beaker_filter = r_beaker_filter.unwrap()
+    else:
+        beaker_filter = r_beaker_filter.unwrap_error()
 
     assert str(beaker_filter) == expected
 

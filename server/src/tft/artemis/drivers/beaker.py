@@ -187,7 +187,8 @@ def _translate_constraint_by_config(
 
 def constraint_to_beaker_filter(
     constraint: ConstraintBase,
-    pool: 'BeakerDriver'
+    pool: 'BeakerDriver',
+    constraint_siblings: Optional[List[ConstraintBase]] = None,
 ) -> Result[bs4.BeautifulSoup, Failure]:
     """
     Convert a given constraint to XML tree representing Beaker filter compatible with Beaker's ``hostRequires``
@@ -198,7 +199,7 @@ def constraint_to_beaker_filter(
         grouping_and = _new_tag('and')
 
         for child_constraint in constraint.constraints:
-            r_child_element = constraint_to_beaker_filter(child_constraint, pool)
+            r_child_element = constraint_to_beaker_filter(child_constraint, pool, constraint.constraints)
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -211,7 +212,7 @@ def constraint_to_beaker_filter(
         grouping_or = _new_tag('or')
 
         for child_constraint in constraint.constraints:
-            r_child_element = constraint_to_beaker_filter(child_constraint, pool)
+            r_child_element = constraint_to_beaker_filter(child_constraint, pool, constraint.constraints)
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -354,6 +355,19 @@ def constraint_to_beaker_filter(
                     .get('translations', [])
             )
 
+    if constraint_name.property == 'network':
+        constraint_siblings = constraint_siblings or []
+        # NOTE(ivasilev) IIUC only eth is valid type. Maybe worth revisiting later
+        if not all([cast(Constraint, net).value == "eth" for net in constraint_siblings]):
+            return Error(Failure(
+                'only eth networks are supported for beaker constraints',
+                constraint=repr(constraint_siblings),
+                constraint_name=constraint.name
+            ))
+        network = _new_tag('key_value', key="NR_ETH", value=str(len(constraint_siblings)))
+
+        return Ok(network)
+
     return Error(Failure(
         'contraint not supported by driver',
         constraint=repr(constraint),
@@ -362,6 +376,13 @@ def constraint_to_beaker_filter(
 
 
 def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, Failure]:
+    def _remove_multiples(tag_name: str, value: str) -> None:
+        # first occurence will be kept, others removed
+        for el in tree.find_all(tag_name)[1:]:
+            el.extract()
+
+    _remove_multiples('key_value', 'NR_ETH')
+
     # Conversion process produces empty `and` and `or` tags, thanks to how Beaker deals with disks without flavors.
     # The following code is a crude attempt to get rid of some of them (there may be some left, empty `or` in `and`
     # in `or`) would keep the last `or` since we run just two swipes. But that's good enough for now.
@@ -1188,10 +1209,6 @@ class BeakerDriver(PoolDriver):
         r_uses_network = constraints.uses_constraint(logger, 'network')
         if r_uses_network.is_error:
             return Error(r_uses_network.unwrap_error())
-
-        if r_uses_network.unwrap():
-            logger.info('cannot handle "network" HW constraints')
-            return Ok(False)
 
         r_filter = constraint_to_beaker_filter(constraints, self)
 
