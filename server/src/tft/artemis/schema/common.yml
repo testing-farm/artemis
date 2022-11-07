@@ -82,6 +82,22 @@ definitions:
     items:
       "$ref": "#/definitions/patch_flavor_disk"
 
+  patch_flavor_virtualization:
+    type: object
+
+    properties:
+      is-virtualized:
+        type: boolean
+
+      is-supported:
+        type: boolean
+
+      hypervisor:
+        type: string
+
+    required: []
+    additionalProperties: false
+
   patch_flavor:
     type: object
 
@@ -93,11 +109,17 @@ definitions:
         type: string
         format: regex
 
+      arch:
+        type: string
+
       cpu:
         "$ref": "#/definitions/patch_flavor_cpu"
 
       disk:
         "$ref": "#/definitions/patch_flavor_disks"
+
+      virtualization:
+        "$ref": "#/definitions/patch_flavor_virtualization"
 
     oneOf:
       - required:
