@@ -89,13 +89,13 @@ class Workspace(_Workspace):
             return
 
         # If no suitable pools found
-        if not self.ruling.allowed_pools:
+        if not self.ruling.allows_pools:
             self.result = RESCHEDULE
 
             return
 
         # At this point, all pools are equally worthy: we may very well use the first one.
-        self.new_pool = self.ruling.allowed_pools[0]
+        self.new_pool = self.ruling.allowed_rulings[0].pool
 
     @step
     def switch_to_provisioning(self) -> None:

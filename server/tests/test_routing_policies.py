@@ -30,6 +30,7 @@ from gluetool.result import Error, Ok
 import tft.artemis
 import tft.artemis.context
 import tft.artemis.db
+import tft.artemis.drivers.localhost
 import tft.artemis.routing_policies
 from tft.artemis.drivers import PoolDriver
 from tft.artemis.metrics import PoolMetrics
@@ -110,16 +111,16 @@ def mock_policies(mock_inputs: MockInputs) -> List[tft.artemis.routing_policies.
         MagicMock(
             name='policy_foo<mock>',
             policy_name='policy-foo',
-            return_value=Ok(tft.artemis.routing_policies.PolicyRuling(
-                allowed_pools=[mock_pools[0], mock_pools[1]]
-            ))
+            return_value=Ok(tft.artemis.routing_policies.PolicyRuling.from_pools([
+                mock_pools[0], mock_pools[1]
+            ]))
         ),
         MagicMock(
             name='policy_bar<mock>',
             policy_name='policy-bar',
-            return_value=Ok(tft.artemis.routing_policies.PolicyRuling(
-                allowed_pools=[mock_pools[0]]
-            ))
+            return_value=Ok(tft.artemis.routing_policies.PolicyRuling.from_pools([
+                mock_pools[0]
+            ]))
         )
     ]
 
@@ -287,7 +288,7 @@ def test_run_routing_policies(
 
 
 def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs: MockInputs) -> None:
-    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+    mock_logger, mock_session, _, mock_guest_request = mock_inputs
 
     policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
         'dummy-custom-policy',
@@ -296,7 +297,11 @@ def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs: MockI
 
     assert cast(tft.artemis.routing_policies.PolicyWrapperType, policy).policy_name == 'dummy-custom-policy'
 
-    mock_pools = cast(List[PoolDriver], [list(), list(), list()])
+    mock_pools: List[PoolDriver] = [
+        PoolDriver(mock_logger, 'pool1', {}),
+        PoolDriver(mock_logger, 'pool2', {}),
+        PoolDriver(mock_logger, 'pool3', {})
+    ]
 
     r_ruling = policy(mock_logger, mock_session, mock_pools, mock_guest_request)
 
@@ -309,16 +314,21 @@ def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs: MockI
 
 
 def test_create_preferrence_filter_by_driver_class(mock_inputs: MockInputs) -> None:
-    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+    mock_logger, mock_session, _, mock_guest_request = mock_inputs
 
     policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
         'dummy-custom-policy',
-        cast(Type[PoolDriver], list)
+        tft.artemis.drivers.localhost.LocalhostDriver
     )
 
     assert cast(tft.artemis.routing_policies.PolicyWrapperType, policy).policy_name == 'dummy-custom-policy'
 
-    mock_pools = cast(List[PoolDriver], [list(), list(), dict(), list()])
+    mock_pools: List[PoolDriver] = [
+        PoolDriver(mock_logger, 'pool1', {}),
+        PoolDriver(mock_logger, 'pool2', {}),
+        tft.artemis.drivers.localhost.LocalhostDriver(mock_logger, 'pool3', {}),
+        PoolDriver(mock_logger, 'pool4', {})
+    ]
 
     r_ruling = policy(mock_logger, mock_session, mock_pools, mock_guest_request)
 
@@ -327,7 +337,7 @@ def test_create_preferrence_filter_by_driver_class(mock_inputs: MockInputs) -> N
     ruling = r_ruling.unwrap()
 
     assert ruling.cancel is False
-    assert ruling.allowed_pools == [mock_pools[0], mock_pools[1], mock_pools[3]]
+    assert ruling.allowed_pools == [mock_pools[2]]
 
 
 def test_run_routing_policies_cancel(
@@ -884,7 +894,7 @@ def do_test_policy_use_only_when_addressed(
     assert isinstance(ruling, tft.artemis.routing_policies.PolicyRuling)
     assert ruling.cancel is False
 
-    assert [pool.poolname for pool in ruling.allowed_pools] == expected_pool_names
+    assert [pool_ruling.pool.poolname for pool_ruling in ruling.allowed_rulings] == expected_pool_names
 
 
 def test_policy_use_only_when_addressed_no_marked_pool(mock_inputs: MockInputs) -> None:

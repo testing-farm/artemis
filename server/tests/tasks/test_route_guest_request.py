@@ -94,15 +94,15 @@ def test_query_policies(
 def test_evaluate_ruling(
     workspace: Workspace
 ) -> None:
-    workspace.ruling = tft.artemis.routing_policies.PolicyRuling(allowed_pools=[
-        MagicMock(name='pool1'),
-        MagicMock(name='pool2')
+    workspace.ruling = tft.artemis.routing_policies.PolicyRuling.from_pools([
+        MagicMock(poolname='pool1'),
+        MagicMock(poolname='pool2')
     ])
 
     assert workspace.evaluate_ruling() is workspace
 
     assert workspace.result is None
-    assert workspace.new_pool is workspace.ruling.allowed_pools[0]
+    assert workspace.new_pool is workspace.ruling.allowed_rulings[0].pool
 
 
 @pytest.mark.usefixtures('_schema_actual')
@@ -113,13 +113,11 @@ def test_evaluate_ruling_cancel(
     patch(monkeypatch, workspace, 'handle_success').return_value = tft.artemis.tasks.SUCCESS
     patch(monkeypatch, workspace, 'update_guest_state')
 
-    workspace.ruling = tft.artemis.routing_policies.PolicyRuling(
-        cancel=True,
-        allowed_pools=[
-            MagicMock(name='pool1'),
-            MagicMock(name='pool2')
-        ]
-    )
+    workspace.ruling = tft.artemis.routing_policies.PolicyRuling.from_pools([
+        MagicMock(poolname='pool1'),
+        MagicMock(poolname='pool2')
+    ])
+    workspace.ruling.cancel = True
 
     assert workspace.evaluate_ruling() is workspace
 
@@ -149,13 +147,11 @@ def test_evaluate_ruling_cancel_fail_state_change(
 
     patch(monkeypatch, workspace, 'update_guest_state').side_effect = mock_update_guest_state
 
-    workspace.ruling = tft.artemis.routing_policies.PolicyRuling(
-        cancel=True,
-        allowed_pools=[
-            MagicMock(name='pool1'),
-            MagicMock(name='pool2')
-        ]
-    )
+    workspace.ruling = tft.artemis.routing_policies.PolicyRuling.from_pools([
+        MagicMock(poolname='pool1'),
+        MagicMock(poolname='pool2')
+    ])
+    workspace.ruling.cancel = True
 
     assert workspace.evaluate_ruling() is workspace
 

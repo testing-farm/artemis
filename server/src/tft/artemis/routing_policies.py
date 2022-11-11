@@ -21,19 +21,62 @@ from .metrics import PoolMetrics
 
 
 @dataclasses.dataclass(repr=False)
+class PoolPolicyRuling:
+    """
+    Container for reporting policy result for a given pool.
+    """
+
+    pool: PoolDriver
+    allowed: bool
+
+    note: Optional[str] = None
+
+    def __repr__(self) -> str:
+        return f'<PoolPolicyRuling: pool={self.pool.poolname} allowed={self.allowed} note={self.note}>'
+
+
+@dataclasses.dataclass(repr=False)
 class PolicyRuling:
     """
     Container for reporting policy result.
     """
 
-    #: List of pools allowed by this policy
-    allowed_pools: List[PoolDriver] = dataclasses.field(default_factory=list)
+    #: Policy rulings
+    pools: List[PoolPolicyRuling] = dataclasses.field(default_factory=list)
 
     #: If set, routing should cancel the guest request.
     cancel: bool = False
 
+    @classmethod
+    def from_pools(
+        self,
+        pools: List[PoolDriver],
+        predicate: Optional[Callable[[PoolDriver], PoolPolicyRuling]] = None
+    ) -> 'PolicyRuling':
+        if predicate is None:
+            predicate = lambda pool: PoolPolicyRuling(pool=pool, allowed=True)  # noqa: E731
+
+        return PolicyRuling(pools=[predicate(pool) for pool in pools])
+
+    @property
+    def allowed_rulings(self) -> List[PoolPolicyRuling]:
+        return [pool_ruling for pool_ruling in self.pools if pool_ruling.allowed]
+
+    @property
+    def allowed_pools(self) -> List[PoolDriver]:
+        return [pool_ruling.pool for pool_ruling in self.allowed_rulings]
+
+    @property
+    def allows_pools(self) -> bool:
+        return any(pool_ruling.allowed for pool_ruling in self.pools)
+
     def __repr__(self) -> str:
-        return f'<PolicyRuling: cancel={self.cancel} allowed_pools={gluetool.log.format_dict(self.allowed_pools)}>'
+        return ' '.join([
+            '<PolicyRuling:',
+            f'allowed_pools={gluetool.log.format_dict([pool.poolname for pool in self.allowed_pools])}',
+            f'cancel={self.cancel}',
+            '>'
+        ])
 
 
 PolicyReturnType = Result[PolicyRuling, Failure]
@@ -48,11 +91,17 @@ PolicyType = Callable[
 ]
 
 
+class SerializedPoolRulingHistoryItemType(TypedDict):
+    poolname: str
+    note: Optional[str]
+
+
 SerializedRulingHistoryItemType = TypedDict(
     'SerializedRulingHistoryItemType',
     {
         'policyname': str,
-        'allowed-pools': List[str],
+        'allowed-pools': List[SerializedPoolRulingHistoryItemType],
+        'disallowed-pools': List[SerializedPoolRulingHistoryItemType],
         'cancel': bool,
         'failure': Optional[Dict[str, Any]]
     }
@@ -69,15 +118,24 @@ class RulingHistoryItem(SerializableContainer):
         serialized: SerializedRulingHistoryItemType = {
             'policyname': self.policyname,
             'allowed-pools': [],
+            'disallowed-pools': [],
             'cancel': False,
             'failure': None
         }
 
         if self.ruling is not None:
-            serialized['allowed-pools'] = [
-                pool.poolname
-                for pool in self.ruling.allowed_pools
-            ]
+            for pool_ruling in self.ruling.pools:
+                if pool_ruling.allowed is True:
+                    serialized['allowed-pools'].append({
+                        'poolname': pool_ruling.pool.poolname,
+                        'note': pool_ruling.note
+                    })
+
+                else:
+                    serialized['disallowed-pools'].append({
+                        'poolname': pool_ruling.pool.poolname,
+                        'note': pool_ruling.note
+                    })
 
             serialized['cancel'] = self.ruling.cancel
 
@@ -183,7 +241,7 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
             if r_enabled.unwrap() is not True:
                 policy_logger.debug('policy disabled, skipping')
 
-                return Ok(PolicyRuling(allowed_pools=pools))
+                return Ok(PolicyRuling.from_pools(pools))
 
             r = fn(policy_logger, session, pools, guest_request)
 
@@ -300,12 +358,11 @@ def create_preferrence_filter_by_driver_class(policy_name: str, *preferred_drive
         ]
 
         if not preferred_pools:
-            return Ok(PolicyRuling(
-                allowed_pools=pools
-            ))
+            return Ok(PolicyRuling.from_pools(pools))
 
-        return Ok(PolicyRuling(
-            allowed_pools=preferred_pools
+        return Ok(PolicyRuling.from_pools(
+            pools,
+            lambda pool: PoolPolicyRuling(pool=pool, allowed=bool(pool in preferred_pools))
         ))
 
     policy.__name__ = policy_name
@@ -335,7 +392,10 @@ def policy_pool_enabled(
         if r_enabled.unwrap():
             allowed_pools.append(pool)
 
-    return Ok(PolicyRuling(allowed_pools=allowed_pools))
+    return Ok(PolicyRuling.from_pools(
+        pools,
+        lambda pool: PoolPolicyRuling(pool=pool, allowed=bool(pool in allowed_pools))
+    ))
 
 
 @policy_boilerplate
@@ -350,17 +410,12 @@ def policy_match_pool_name(
     """
 
     if guest_request.environment.pool:
-        return Ok(PolicyRuling(
-            allowed_pools=[
-                pool
-                for pool in pools
-                if pool.poolname == guest_request.environment.pool
-            ]
+        return Ok(PolicyRuling.from_pools(
+            pools,
+            lambda pool: PoolPolicyRuling(pool=pool, allowed=bool(pool.poolname == guest_request.environment.pool))
         ))
 
-    return Ok(PolicyRuling(
-        allowed_pools=pools
-    ))
+    return Ok(PolicyRuling.from_pools(pools))
 
 
 @policy_boilerplate
@@ -382,10 +437,9 @@ def policy_supports_architecture(
     pool_capabilities = r_capabilities.unwrap()
 
     return Ok(PolicyRuling(
-        allowed_pools=[
-            pool
+        pools=[
+            PoolPolicyRuling(pool=pool, allowed=capabilities.supports_arch(guest_request.environment.hw.arch))
             for pool, capabilities in pool_capabilities
-            if capabilities.supports_arch(guest_request.environment.hw.arch)
         ]
     ))
 
@@ -402,9 +456,7 @@ def policy_supports_snapshots(
     """
 
     if guest_request.environment.snapshots is not True:
-        return Ok(PolicyRuling(
-            allowed_pools=pools
-        ))
+        return Ok(PolicyRuling.from_pools(pools))
 
     r_capabilities = collect_pool_capabilities(pools)
 
@@ -414,10 +466,9 @@ def policy_supports_snapshots(
     pool_capabilities = r_capabilities.unwrap()
 
     return Ok(PolicyRuling(
-        allowed_pools=[
-            pool
+        pools=[
+            PoolPolicyRuling(pool=pool, allowed=capabilities.supports_snapshots)
             for pool, capabilities in pool_capabilities
-            if capabilities.supports_snapshots is True
         ]
     ))
 
@@ -434,9 +485,7 @@ def policy_supports_guest_logs(
     """
 
     if not guest_request.log_types:
-        return Ok(PolicyRuling(
-            allowed_pools=pools
-        ))
+        return Ok(PolicyRuling.from_pools(pools))
 
     r_capabilities = collect_pool_capabilities(pools)
 
@@ -446,10 +495,12 @@ def policy_supports_guest_logs(
     pool_capabilities = r_capabilities.unwrap()
 
     return Ok(PolicyRuling(
-        allowed_pools=[
-            pool
+        pools=[
+            PoolPolicyRuling(
+                pool=pool,
+                allowed=all(capabilities.supports_guest_log(log[0], log[1]) for log in guest_request.log_types)
+            )
             for pool, capabilities in pool_capabilities
-            if all(capabilities.supports_guest_log(log[0], log[1]) for log in guest_request.log_types)
         ]
     ))
 
@@ -468,9 +519,7 @@ def policy_supports_spot_instances(
     # If request does not insist on using spot or non-spot instance, we can easily move forward and use any
     # pool we've been given.
     if guest_request.environment.spot_instance is None:
-        return Ok(PolicyRuling(
-            allowed_pools=pools
-        ))
+        return Ok(PolicyRuling.from_pools(pools))
 
     r_capabilities = collect_pool_capabilities(pools)
 
@@ -482,10 +531,12 @@ def policy_supports_spot_instances(
     # Pick only pools whose spot instance support matches the request - a pool cannot support both kinds at the same
     # time.
     return Ok(PolicyRuling(
-        allowed_pools=[
-            pool
+        pools=[
+            PoolPolicyRuling(
+                pool=pool,
+                allowed=bool(capabilities.supports_spot_instances is guest_request.environment.spot_instance)
+            )
             for pool, capabilities in pool_capabilities
-            if capabilities.supports_spot_instances is guest_request.environment.spot_instance
         ]
     ))
 
@@ -506,9 +557,7 @@ def policy_prefer_spot_instances(
     # possibly removing the group it requests. For such environments, do nothing and let other policies
     # apply their magic.
     if guest_request.environment.spot_instance is not None:
-        return Ok(PolicyRuling(
-            allowed_pools=pools
-        ))
+        return Ok(PolicyRuling.from_pools(pools))
 
     r_capabilities = collect_pool_capabilities(pools)
 
@@ -522,12 +571,11 @@ def policy_prefer_spot_instances(
     ]
 
     if not preferred_pools:
-        return Ok(PolicyRuling(
-            allowed_pools=pools
-        ))
+        return Ok(PolicyRuling.from_pools(pools))
 
-    return Ok(PolicyRuling(
-        allowed_pools=preferred_pools
+    return Ok(PolicyRuling.from_pools(
+        pools,
+        lambda pool: PoolPolicyRuling(pool=pool, allowed=bool(pool in preferred_pools))
     ))
 
 
@@ -543,7 +591,7 @@ def policy_least_crowded(
     """
 
     if len(pools) <= 1:
-        return Ok(PolicyRuling(allowed_pools=pools))
+        return Ok(PolicyRuling.from_pools(pools))
 
     r_pool_metrics = collect_pool_metrics(pools)
 
@@ -557,10 +605,9 @@ def policy_least_crowded(
     min_usage = min(metrics.current_guest_request_count for _, metrics in pool_metrics)
 
     return Ok(PolicyRuling(
-        allowed_pools=[
-            pool
+        pools=[
+            PoolPolicyRuling(pool=pool, allowed=bool(metrics.current_guest_request_count == min_usage))
             for pool, metrics in pool_metrics
-            if metrics.current_guest_request_count == min_usage
         ]
     ))
 
@@ -577,7 +624,7 @@ def policy_most_free_addresses(
     """
 
     if len(pools) <= 1:
-        return Ok(PolicyRuling(allowed_pools=pools))
+        return Ok(PolicyRuling.from_pools(pools))
 
     r_pool_metrics = collect_pool_metrics(pools)
 
@@ -635,11 +682,12 @@ def policy_most_free_addresses(
     )
 
     # ... and allow all pools with this number of free addresses.
-    return Ok(PolicyRuling(allowed_pools=[
-        pool
-        for pool, addresses in pool_addresses.items()
-        if addresses == max_addresses
-    ]))
+    return Ok(PolicyRuling(
+        pools=[
+            PoolPolicyRuling(pool=pool, allowed=bool(addresses == max_addresses))
+            for pool, addresses in pool_addresses.items()
+        ]
+    ))
 
 
 @policy_boilerplate
@@ -663,7 +711,7 @@ def policy_one_attempt_forgiving(
     events = r_events.unwrap()
 
     if not events:
-        return Ok(PolicyRuling(allowed_pools=pools))
+        return Ok(PolicyRuling.from_pools(pools))
 
     r_time = KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session=session)
 
@@ -678,12 +726,9 @@ def policy_one_attempt_forgiving(
         if event.details and event.details.get('failure') and event.updated > threshold
     ]
 
-    return Ok(PolicyRuling(
-        allowed_pools=[
-            pool
-            for pool in pools
-            if pool.poolname not in error_pools
-        ]
+    return Ok(PolicyRuling.from_pools(
+        pools,
+        lambda pool: PoolPolicyRuling(pool=pool, allowed=bool(pool.poolname not in error_pools))
     ))
 
 
@@ -707,7 +752,7 @@ def policy_timeout_reached(
     events = r_events.unwrap()
 
     if not events:
-        return Ok(PolicyRuling(allowed_pools=pools))
+        return Ok(PolicyRuling.from_pools(pools))
 
     r_time = KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session=session)
 
@@ -721,7 +766,7 @@ def policy_timeout_reached(
     if datetime.datetime.utcnow() > validity:
         return Ok(PolicyRuling(cancel=True))
 
-    return Ok(PolicyRuling(allowed_pools=pools))
+    return Ok(PolicyRuling.from_pools(pools))
 
 
 @policy_boilerplate
@@ -737,7 +782,7 @@ def policy_enough_resources(
     """
 
     if len(pools) <= 1:
-        return Ok(PolicyRuling(allowed_pools=pools))
+        return Ok(PolicyRuling.from_pools(pools))
 
     r_pool_metrics = collect_pool_metrics(pools)
 
@@ -798,7 +843,10 @@ def policy_enough_resources(
         tablefmt='psql'
     )
 
-    return Ok(PolicyRuling(allowed_pools=allowed_pools))
+    return Ok(PolicyRuling.from_pools(
+        pools,
+        lambda pool: PoolPolicyRuling(pool=pool, allowed=bool(pool in allowed_pools))
+    ))
 
 
 @policy_boilerplate
@@ -818,10 +866,9 @@ def policy_can_acquire(
         return Error(r_answers.unwrap_error())
 
     return Ok(PolicyRuling(
-        allowed_pools=[
-            pool
+        pools=[
+            PoolPolicyRuling(pool=pool, allowed=answer)
             for pool, answer in r_answers.unwrap()
-            if answer is True
         ]
     ))
 
@@ -838,14 +885,11 @@ def policy_use_only_when_addressed(
     """
 
     if guest_request.environment.pool is not None:
-        return Ok(PolicyRuling(allowed_pools=pools))
+        return Ok(PolicyRuling.from_pools(pools))
 
-    return Ok(PolicyRuling(
-        allowed_pools=[
-            pool
-            for pool in pools
-            if pool.use_only_when_addressed is False
-        ]
+    return Ok(PolicyRuling.from_pools(
+        pools,
+        lambda pool: PoolPolicyRuling(pool=pool, allowed=not pool.use_only_when_addressed)
     ))
 
 
@@ -893,13 +937,12 @@ def run_routing_policies(
             history=_serialize_history()
         )
 
-    ruling = PolicyRuling()
-    ruling.allowed_pools = pools[:]
+    ruling = PolicyRuling.from_pools(pools)
 
     for policy in policies:
         policy_name = cast(PolicyWrapperType, policy).policy_name
 
-        r = policy(logger, session, ruling.allowed_pools, guest_request)
+        r = policy(logger, session, [pool_ruling.pool for pool_ruling in ruling.pools], guest_request)
 
         RoutingMetrics.inc_policy_called(policy_name)
 
@@ -919,11 +962,11 @@ def run_routing_policies(
 
         if policy_ruling.cancel:
             # Mark all input pools are excluded
-            map(lambda x: RoutingMetrics.inc_pool_excluded(policy_name, x.poolname), ruling.allowed_pools)
+            map(lambda x: RoutingMetrics.inc_pool_excluded(policy_name, x.pool.poolname), ruling.pools)
 
             RoutingMetrics.inc_policy_canceled(policy_name)
 
-            ruling.allowed_pools = []
+            ruling.pools = []
             ruling.cancel = True
 
             _log_history()
@@ -931,15 +974,15 @@ def run_routing_policies(
             return Ok(ruling)
 
         # Store ruling metrics before we update ruling container with results from the policy.
-        for pool in ruling.allowed_pools:
-            if pool in policy_ruling.allowed_pools:
-                RoutingMetrics.inc_pool_allowed(policy_name, pool.poolname)
+        for pool_ruling in ruling.pools:
+            if pool_ruling.allowed:
+                RoutingMetrics.inc_pool_allowed(policy_name, pool_ruling.pool.poolname)
 
             else:
-                RoutingMetrics.inc_pool_excluded(policy_name, pool.poolname)
+                RoutingMetrics.inc_pool_excluded(policy_name, pool_ruling.pool.poolname)
 
         # Now we can update our container with up-to-date results.
-        ruling.allowed_pools = policy_ruling.allowed_pools
+        ruling.pools = [pool_ruling for pool_ruling in policy_ruling.pools if pool_ruling.allowed]
 
     _log_history()
 
