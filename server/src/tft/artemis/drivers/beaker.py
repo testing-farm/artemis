@@ -1161,7 +1161,7 @@ class BeakerDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    ) -> Result[Tuple[bool, Optional[str]], Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
@@ -1177,7 +1177,7 @@ class BeakerDriver(PoolDriver):
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap() is False:
+        if r_answer.unwrap()[0] is False:
             return r_answer
 
         r_distro = self.image_info_mapper.map_or_none(logger, guest_request)
@@ -1187,14 +1187,14 @@ class BeakerDriver(PoolDriver):
         distro = r_distro.unwrap()
 
         if distro is None:
-            return Ok(False)
+            return Ok((False, 'compose not supported'))
 
         # Parent implementation does not care, but we still might: support for HW constraints is still
         # far from being complete and fully tested, therefore we should check whether we are able to
         # convert the constraints - if there are any - to a Beaker XML filter.
 
         if not guest_request.environment.has_hw_constraints:
-            return Ok(True)
+            return Ok((True, None))
 
         r_constraints = guest_request.environment.get_hw_constraints()
 
@@ -1215,7 +1215,7 @@ class BeakerDriver(PoolDriver):
         if r_filter.is_error:
             return Error(r_filter.unwrap_error())
 
-        return Ok(True)
+        return Ok((True, None))
 
     def acquire_guest(
         self,

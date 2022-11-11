@@ -1100,13 +1100,13 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    ) -> Result[Tuple[bool, Optional[str]], Failure]:
         r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap() is False:
+        if r_answer.unwrap()[0] is False:
             return r_answer
 
         # Disallow HW constraints the driver does not implement yet
@@ -1124,8 +1124,7 @@ class AWSDriver(PoolDriver):
                 return Error(r_uses_network.unwrap_error())
 
             if r_uses_network.unwrap():
-                logger.info('cannot handle "network" HW constraints')
-                return Ok(False)
+                return Ok((False, 'network HW constraint not supported'))
 
         r_image = self.image_info_mapper.map_or_none(logger, guest_request)
         if r_image.is_error:
@@ -1134,7 +1133,7 @@ class AWSDriver(PoolDriver):
         image = r_image.unwrap()
 
         if image is None:
-            return Ok(False)
+            return Ok((False, 'compose not supported'))
 
         r_type = self._env_to_instance_type_or_none(logger, session, guest_request, image)
 
@@ -1142,9 +1141,9 @@ class AWSDriver(PoolDriver):
             return Error(r_type.unwrap_error())
 
         if r_type.unwrap() is None:
-            return Ok(False)
+            return Ok((False, 'no suitable flavor found'))
 
-        return Ok(True)
+        return Ok((True, None))
 
     def map_image_name_to_image_info(
         self,

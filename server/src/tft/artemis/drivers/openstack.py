@@ -554,13 +554,13 @@ class OpenStackDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    ) -> Result[Tuple[bool, Optional[str]], Failure]:
         r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap() is False:
+        if r_answer.unwrap()[0] is False:
             return r_answer
 
         # Disallow HW constraints the driver does not implement yet
@@ -578,15 +578,14 @@ class OpenStackDriver(PoolDriver):
                 return Error(r_uses_network.unwrap_error())
 
             if r_uses_network.unwrap():
-                logger.info('cannot handle "network" HW constraints')
-                return Ok(False)
+                return Ok((False, 'network HW constraint not supported'))
 
         r_image = self.image_info_mapper.map_or_none(logger, guest_request)
         if r_image.is_error:
             return Error(r_image.unwrap_error())
 
         if r_image.unwrap() is None:
-            return Ok(False)
+            return Ok((False, 'compose not supported'))
 
         r_flavor = self._env_to_flavor(logger, session, guest_request)
 
@@ -594,9 +593,9 @@ class OpenStackDriver(PoolDriver):
             return Error(r_flavor.unwrap_error())
 
         if r_flavor.unwrap() is None:
-            return Ok(False)
+            return Ok((False, 'no suitable flavor found'))
 
-        return Ok(True)
+        return Ok((True, None))
 
     def acquire_console_url(
         self,

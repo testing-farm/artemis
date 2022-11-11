@@ -301,7 +301,7 @@ def collect_pool_can_acquire(
     session: sqlalchemy.orm.session.Session,
     pools: List[PoolDriver],
     guest_request: GuestRequest
-) -> Result[List[Tuple[PoolDriver, bool]], Failure]:
+) -> Result[List[Tuple[PoolDriver, Tuple[bool, Optional[str]]]], Failure]:
     r_answers = [
         (
             pool,
@@ -867,8 +867,8 @@ def policy_can_acquire(
 
     return Ok(PolicyRuling(
         pools=[
-            PoolPolicyRuling(pool=pool, allowed=answer)
-            for pool, answer in r_answers.unwrap()
+            PoolPolicyRuling(pool=pool, allowed=answer, note=note)
+            for pool, (answer, note) in r_answers.unwrap()
         ]
     ))
 

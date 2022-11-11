@@ -3,7 +3,7 @@
 
 import dataclasses
 import threading
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -166,7 +166,7 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    ) -> Result[Tuple[bool, Optional[str]], Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
@@ -177,10 +177,13 @@ class AzureDriver(PoolDriver):
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap() is False:
+        if r_answer.unwrap()[0] is False:
             return r_answer
 
-        return Ok(guest_request.environment.has_hw_constraints is not True)
+        if guest_request.environment.has_hw_constraints is True:
+            return Ok((False, 'HW constraints are not supported'))
+
+        return Ok((True, None))
 
     def update_guest(
         self,

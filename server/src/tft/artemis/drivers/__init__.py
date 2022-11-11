@@ -1233,7 +1233,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    ) -> Result[Tuple[bool, Optional[str]], Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy the given environment.
 
@@ -1255,7 +1255,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         capabilities = r_capabilities.unwrap()
 
         if not capabilities.supports_arch(guest_request.environment.hw.arch):
-            return Ok(False)
+            return Ok((False, 'architecture not supported'))
 
         # Check whether given HW constraints do not go against what pool can deliver.
         #
@@ -1280,9 +1280,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
                     return Error(r_uses_hostname.unwrap_error())
 
                 if r_uses_hostname.unwrap() is True:
-                    return Ok(False)
+                    return Ok((False, 'hostname HW constraint not supported'))
 
-        return Ok(True)
+        return Ok((True, None))
 
     def _map_image_name_to_image_info_by_cache(
         self,
