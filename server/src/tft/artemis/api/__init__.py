@@ -2194,6 +2194,18 @@ def create_guest_request_log(
 
     guest_logger = get_guest_logger('create-guest-request-log', logger, guestname)
 
+    with manager.db.get_session() as session:
+        artemis_db.GuestRequest.log_event_by_guestname(
+            guest_logger,
+            session,
+            guestname,
+            'guest-log-requested',
+            **{
+                'logname': logname,
+                'contenttype': contenttype
+            }
+        )
+
     r_dispatch = dispatch_task(
         guest_logger,
         update_guest_log,
