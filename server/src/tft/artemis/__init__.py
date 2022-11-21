@@ -1312,3 +1312,21 @@ def render_template(template: str, **kwargs: Any) -> Result[str, Failure]:
             template=template,
             variables=kwargs
         ))
+
+
+def template_environment(guest_request: Optional[artemis_db.GuestRequest]) -> Dict[str, Any]:
+    from .knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT
+
+    env: Dict[str, Any] = {
+        'DEPLOYMENT': KNOB_DEPLOYMENT.value,
+        'DEPLOYMENT_ENVIRONMENT': KNOB_DEPLOYMENT_ENVIRONMENT.value
+    }
+
+    if guest_request is not None:
+        env.update({
+            'GUEST_REQUEST': guest_request,
+            'GUESTNAME': guest_request.guestname,
+            'ENVIRONMENT': guest_request.environment
+        })
+
+    return env

@@ -18,7 +18,8 @@ from gluetool.log import ContextAdapter, log_xml
 from gluetool.result import Error, Ok, Result
 from typing_extensions import TypedDict
 
-from .. import Failure, SerializableContainer, log_dict_yaml, process_output_to_str
+from .. import Failure, SerializableContainer, log_dict_yaml, process_output_to_str, render_template, \
+    template_environment
 from ..cache import get_cached_set, refresh_cached_set
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -79,6 +80,16 @@ KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     envvar='ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT',
     cast_from_str=int,
     default=15
+)
+
+KNOB_JOB_WHITEBOARD_TEMPLATE: Knob[str] = Knob(
+    'beaker.job.whiteboard.template',
+    'A template for Beaker job whiteboard.',
+    has_db=False,
+    per_pool=True,
+    envvar='ARTEMIS_BEAKER_JOB_WHITEBOARD_TEMPLATE',
+    cast_from_str=str,
+    default='[artemis] [{{ DEPLOYMENT }}] {{ GUESTNAME }}'
 )
 
 
@@ -597,24 +608,6 @@ def create_beaker_filter(
     return _prune_beaker_filter(r_beaker_filter.unwrap())
 
 
-def _create_wow_options(
-    logger: gluetool.log.ContextAdapter,
-    guest_request: GuestRequest,
-    distro: PoolImageInfo
-) -> Result[List[str], Failure]:
-    return Ok([
-        'workflow-simple',
-        '--dry-run',
-        '--prettyxml',
-        '--distro', distro.id,
-        '--arch', guest_request.environment.hw.arch,
-        # Using reservesys task instead of --reserve, because reservesys adds extendtesttime.sh
-        # script we can use to extend existing reservation.
-        '--task', '/distribution/reservesys',
-        '--taskparam', f'RESERVETIME={str(KNOB_RESERVATION_DURATION.value)}'
-    ])
-
-
 class BeakerDriver(PoolDriver):
     drivername = 'beaker'
 
@@ -775,6 +768,51 @@ class BeakerDriver(PoolDriver):
             ssh=PoolImageSSHInfo()
         ))
 
+    def _create_wow_options(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        distro: PoolImageInfo
+    ) -> Result[List[str], Failure]:
+        r_whiteboard_template = KNOB_JOB_WHITEBOARD_TEMPLATE.get_value(pool=self)
+
+        if r_whiteboard_template.is_error:
+            return Error(r_whiteboard_template.unwrap_error())
+
+        r_whiteboard = render_template(
+            r_whiteboard_template.unwrap(),
+            **template_environment(guest_request=guest_request)
+        )
+
+        if r_whiteboard.is_error:
+            return Error(r_whiteboard.unwrap_error())
+
+        r_tags = self.get_guest_tags(logger, session, guest_request)
+
+        if r_tags.is_error:
+            return Error(r_tags.unwrap_error())
+
+        tags = r_tags.unwrap()
+
+        command = [
+            'workflow-simple',
+            '--dry-run',
+            '--prettyxml',
+            '--distro', distro.id,
+            '--arch', guest_request.environment.hw.arch,
+            # Using reservesys task instead of --reserve, because reservesys adds extendtesttime.sh
+            # script we can use to extend existing reservation.
+            '--task', '/distribution/reservesys',
+            '--taskparam', f'RESERVETIME={str(KNOB_RESERVATION_DURATION.value)}',
+            '--whiteboard', r_whiteboard.unwrap()
+        ]
+
+        for name, value in tags.items():
+            command += ['--taskparam', f'ARTEMIS_TAG_{name}={value}']
+
+        return Ok(command)
+
     def _create_job_xml(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -819,7 +857,7 @@ class BeakerDriver(PoolDriver):
 
         distro = r_distro.unwrap()
 
-        r_wow_options = _create_wow_options(logger, guest_request, distro)
+        r_wow_options = self._create_wow_options(logger, session, guest_request, distro)
 
         if r_wow_options.is_error:
             return Error(r_wow_options.unwrap_error())
