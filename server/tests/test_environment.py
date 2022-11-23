@@ -12,8 +12,8 @@ from gluetool.result import Result
 import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS, ConstraintBase, Environment, Flavor, FlavorBoot, FlavorCpu, FlavorNetwork, \
-    FlavorNetworks, FlavorVirtualization
+from tft.artemis.environment import UNITS, ConstraintBase, Environment, Flavor, FlavorBoot, FlavorCompatible, \
+    FlavorCpu, FlavorNetwork, FlavorNetworks, FlavorVirtualization
 
 
 @pytest.fixture(name='schema_v0_0_19')
@@ -590,6 +590,89 @@ def test_example_boot_not(logger: ContextAdapter) -> None:
     ) is False
 
 
+def test_example_compatible(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        compatible:
+          distro:
+            - rhel-8
+            - rhel-9
+        """
+    )
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            compatible=FlavorCompatible(
+                distro=['rhel-8', 'rhel-9']
+            )
+        )
+    ) is True
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            compatible=FlavorCompatible(
+                distro=['rhel-9']
+            )
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            compatible=FlavorCompatible(distro=[])
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            compatible=FlavorCompatible(
+                distro=['rhel-9', 'rhel-8']
+            )
+        )
+    ) is True
+
+
+def test_example_compatible_oneline(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        compatible:
+          distro:
+            - rhel-9
+        """
+    )
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            compatible=FlavorCompatible(
+                distro=['rhel-9']
+            )
+        )
+    ) is True
+
+
 def test_example_virtualization_is_virtualized(logger: ContextAdapter) -> None:
     constraint = parse_hw(
         """
@@ -1087,6 +1170,10 @@ def test_parse_maximal_constraint() -> None:
         constraints:
             boot:
                 method: bios
+            compatible:
+                distro:
+                    - rhel-7
+                    - rhel-8
             cpu:
                 sockets: 1
                 cores: 2

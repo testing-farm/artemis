@@ -14,6 +14,8 @@ dist
 *~
 *.pyc
 
+# User env file for the server directory
+server/configuration/env.yml
 
 # Generated configuration
 server/configuration/server.yml

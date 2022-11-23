@@ -231,6 +231,11 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #  boot:
 #      method: bios
 #
+#  compatible:
+#      distro:
+#         - rhel-8
+#         - rhel-9
+#
 #  cpu:
 #      processors: 1
 #      sockets: 1
@@ -247,7 +252,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #      - size: 40 GiB
 #      - size: 120 GiB
 #
-# network:
+#  network:
 #      - type: eth
 #      - type: eth
 
@@ -272,6 +277,19 @@ class FlavorBoot(_FlavorSubsystemContainer):
     #:    Plural is correct here, internally we hold the list of supported boot methods, because some flavors (and
     #:    images) can support more than one.
     method: List[FlavorBootMethodType] = dataclasses.field(default_factory=list)
+
+
+# Note: This class holds a list of mappings related to a HW requirement `compatible`. At this point only
+# the `distro` is used.
+@dataclasses.dataclass(repr=False)
+class FlavorCompatible(_FlavorSubsystemContainer):
+    """
+    Represents HW properties related to flavor compatible option.
+    """
+
+    CONTAINER_PREFIX = 'compatible'
+
+    distro: List[str] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass(repr=False)
@@ -513,6 +531,9 @@ class Flavor(_FlavorSubsystemContainer):
 
     #: Boot properties.
     boot: FlavorBoot = dataclasses.field(default_factory=FlavorBoot)
+
+    # Compatible properties of the flavour
+    compatible: FlavorCompatible = dataclasses.field(default_factory=FlavorCompatible)
 
     #: CPU properties.
     cpu: FlavorCpu = dataclasses.field(default_factory=FlavorCpu)
@@ -1309,6 +1330,30 @@ def _parse_virtualization(spec: SpecType) -> ConstraintBase:
     return group
 
 
+def _parse_compatible(spec: SpecType) -> ConstraintBase:
+    """
+    Parse constraints related to the compatible distro parameter.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    for distro in spec['distro']:
+
+        constraint = Constraint.from_specification('compatible.distro', distro, as_quantity=False)
+
+        constraint.change_operator(Operator.CONTAINS)
+
+        group.constraints.append(constraint)
+
+    if len(group.constraints) == 1:
+        return group.constraints[0]
+
+    return group
+
+
 def _parse_cpu(spec: SpecType) -> ConstraintBase:
     """
     Parse a cpu-related constraints.
@@ -1542,6 +1587,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
     if 'boot' in spec:
         group.constraints += [_parse_boot(spec['boot'])]
+
+    if "compatible" in spec:
+        group.constraints += [_parse_compatible(spec['compatible'])]
 
     if 'cpu' in spec:
         group.constraints += [_parse_cpu(spec['cpu'])]
