@@ -249,7 +249,14 @@ def constraint_to_beaker_filter(
     if constraint_name.property == 'cpu':
         cpu = _new_tag('cpu')
 
-        if constraint_name.child_property == 'cores':
+        if constraint_name.child_property == 'processors':
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+            processors = _new_tag('processors', op=op, value=value)
+
+            cpu.append(processors)
+
+        elif constraint_name.child_property == 'cores':
             op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             cores = _new_tag('cores', op=op, value=value)

@@ -85,6 +85,21 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
     (
         """
         ---
+
+        hw:
+          arch: x86_64
+          constraints:
+            cpu:
+              processors: 8
+
+        os:
+          compose: dummy-compose
+        """,
+        '<and><system><arch op="==" value="x86_64"/></system><cpu><processors op="==" value="8"/></cpu></and>'
+    ),
+    (
+        """
+        ---
         hw:
           arch: x86_64
           constraints:
@@ -116,6 +131,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
     ),
 ], ids=[
     'simple-arch',
+    'cpu.processors',
     'multiple-nics',
     'multiple-nics-bad-interface',
 ])
