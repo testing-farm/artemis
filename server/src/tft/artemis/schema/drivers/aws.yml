@@ -36,6 +36,10 @@ properties:
   default-region:
     type: string
 
+  expose-instance-tags-in-metadata:
+    type: boolean
+    default: false
+
   flavor-regex:
     type: string
 

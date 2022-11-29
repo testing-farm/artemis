@@ -1487,6 +1487,9 @@ class AWSDriver(PoolDriver):
             '--instance-type', instance_type.id
         ]
 
+        if self.pool_config.get('expose-instance-tags-in-metadata', False):
+            command += ['--metadata-options', 'InstanceMetadataTags=enabled']
+
         if 'subnet-id' in self.pool_config:
             command.extend(['--subnet-id', self.pool_config['subnet-id']])
 
@@ -1796,6 +1799,20 @@ class AWSDriver(PoolDriver):
                     resource_ids=taggable_resource_ids
                 )
             ))
+
+        if self.pool_config.get('expose-instance-tags-in-metadata', False):
+            r_enable_metadata = self._aws_command([
+                'ec2',
+                'modify-instance-metadata-options',
+                '--instance-id', pool_data.instance_id,
+                '--instance-metadata-tags', 'enabled'
+            ], json_output=False, commandname='aws.enable-instance-tags-in-metadata')
+
+            if r_enable_metadata.is_error:
+                return Error(Failure.from_failure(
+                    'failed to enable instance tags in metadata',
+                    r_output.unwrap_error()
+                ))
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
