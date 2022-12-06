@@ -129,11 +129,41 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         "recoverable: true\n"
         "fail_guest_request: true"
     ),
+    (
+        """
+        ---
+
+        hw:
+            arch: x86_64
+            constraints:
+                tpm:
+                    version: "2.0"
+        os:
+          compose: dummy-compose
+        """,
+        '<and><system><arch op="==" value="x86_64"/></system><key_value key="TPM" op="==" value="2.0"/></and>'
+    ),
+    (
+        """
+        ---
+
+        hw:
+            arch: x86_64
+            constraints:
+                tpm:
+                    version: ">= 2"
+        os:
+          compose: dummy-compose
+        """,
+        '<and><system><arch op="==" value="x86_64"/></system><key_value key="TPM" op="&gt;=" value="2"/></and>'
+    )
 ], ids=[
     'simple-arch',
     'cpu.processors',
     'multiple-nics',
     'multiple-nics-bad-interface',
+    'tpm-2.0',
+    'tpm-at-least-2'
 ])
 def test_environment_to_beaker_filter(
     pool: tft.artemis.drivers.beaker.BeakerDriver,

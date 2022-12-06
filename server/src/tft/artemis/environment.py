@@ -495,6 +495,17 @@ class FlavorNetworks(_FlavorSequenceContainer[FlavorNetwork]):
 
 
 @dataclasses.dataclass(repr=False)
+class FlavorTPM(_FlavorSubsystemContainer):
+    """
+    Represents HW properties related to flavor TPM support.
+    """
+
+    CONTAINER_PREFIX = 'tpm'
+
+    version: Optional[str] = None
+
+
+@dataclasses.dataclass(repr=False)
 class FlavorVirtualization(_FlavorSubsystemContainer):
     """
     Represents HW properties related to virtualization properties of a flavor.
@@ -546,6 +557,9 @@ class Flavor(_FlavorSubsystemContainer):
 
     #: Network interfaces.
     network: FlavorNetworks = dataclasses.field(default_factory=FlavorNetworks)
+
+    #: TPM support
+    tpm: FlavorTPM = dataclasses.field(default_factory=FlavorTPM)
 
     #: Virtualization properties.
     virtualization: FlavorVirtualization = dataclasses.field(default_factory=FlavorVirtualization)
@@ -1354,6 +1368,25 @@ def _parse_compatible(spec: SpecType) -> ConstraintBase:
     return group
 
 
+def _parse_tpm(spec: SpecType) -> ConstraintBase:
+    """
+    Parse constraints related to the ``tpm`` HW requirement.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    if 'version' in spec:
+        group.constraints.append(Constraint.from_specification('tpm.version', spec['version'], as_quantity=False))
+
+    if len(group.constraints) == 1:
+        return group.constraints[0]
+
+    return group
+
+
 def _parse_cpu(spec: SpecType) -> ConstraintBase:
     """
     Parse a cpu-related constraints.
@@ -1605,6 +1638,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
     if 'hostname' in spec:
         group.constraints += [Constraint.from_specification('hostname', spec['hostname'], as_quantity=False)]
+
+    if 'tpm' in spec:
+        group.constraints += [_parse_tpm(spec['tpm'])]
 
     if 'virtualization' in spec:
         group.constraints += [_parse_virtualization(spec['virtualization'])]

@@ -1192,6 +1192,8 @@ def test_parse_maximal_constraint() -> None:
             network:
                 - type: eth
                 - type: eth
+            tpm:
+                version: "2.0"
             virtualization:
                 is-supported: true
                 is-virtualized: false

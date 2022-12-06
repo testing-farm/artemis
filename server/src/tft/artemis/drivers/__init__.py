@@ -82,6 +82,12 @@ ConfigFlavorDiskExpandedSpecType = TypedDict(
 
 ConfigFlavorDiskSpecType = Union[ConfigFlavorDiskSpecificSpecType, ConfigFlavorDiskExpandedSpecType]
 
+
+#: pools[].parameters.{custom-flavors,patch-flavors}[].tpm
+class ConfigFlavorTPMSpecType(TypedDict):
+    version: Optional[str]
+
+
 #: pools[].parameters.{custom-flavors,patch-flavors}[].virtualization
 ConfigFlavorVirtualizationSpecType = TypedDict(
     'ConfigFlavorVirtualizationSpecType',
@@ -102,6 +108,7 @@ ConfigPatchFlavorSpecType = TypedDict(
         'arch': str,
         'cpu': ConfigFlavorCPUSpecType,
         'disk': List[ConfigFlavorDiskSpecType],
+        'tpm': ConfigFlavorTPMSpecType,
         'virtualization': ConfigFlavorVirtualizationSpecType
     }
 )
@@ -114,6 +121,7 @@ class ConfigCustomFlavorSpecType(TypedDict):
     arch: str
     cpu: ConfigFlavorCPUSpecType
     disk: List[ConfigFlavorDiskSpecType]
+    tpm: ConfigFlavorTPMSpecType
     virtualization: ConfigFlavorVirtualizationSpecType
 
 
@@ -672,6 +680,12 @@ def _apply_flavor_specification(
                     return Error(r_size.unwrap_error())
 
         flavor.disk = FlavorDisks(patched_disks)
+
+    if 'tpm' in flavor_spec:
+        tpm_patch = flavor_spec['tpm']
+
+        if 'version' in tpm_patch:
+            flavor.tpm.version = tpm_patch['version']
 
     if 'virtualization' in flavor_spec:
         virtualization_patch = flavor_spec['virtualization']

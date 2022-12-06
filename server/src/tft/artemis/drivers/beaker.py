@@ -352,6 +352,14 @@ def constraint_to_beaker_filter(
 
         return Ok(hostname)
 
+    if constraint_name.property == 'tpm':
+        op, value = operator_to_beaker_op(
+            constraint.operator,
+            str(constraint.value)
+        )
+
+        return Ok(_new_tag('key_value', key="TPM", op=op, value=str(constraint.value)))
+
     if constraint_name.property == 'virtualization':
         if constraint_name.child_property == 'is_virtualized':
             return _translate_constraint_by_config(
