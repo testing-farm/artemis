@@ -32,7 +32,7 @@ from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorBoot,
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
-    HookImageInfoMapper, ImageInfoMapperOptionalResultType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
+    HookImageInfoMapper, ImageInfoMapperResultType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
     PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
     guest_log_updater, run_cli_tool
 
@@ -314,22 +314,24 @@ class AWSHookImageInfoMapper(HookImageInfoMapper[AWSPoolImageInfo]):
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
-    ) -> ImageInfoMapperOptionalResultType[AWSPoolImageInfo]:
-        r_image = super().map_or_none(logger, guest_request)
+    ) -> ImageInfoMapperResultType[AWSPoolImageInfo]:
+        r_images = super().map_or_none(logger, guest_request)
 
-        if r_image.is_error:
-            return r_image
+        if r_images.is_error:
+            return r_images
 
-        image = r_image.unwrap()
-
-        if image is None:
-            return r_image
+        images = r_images.unwrap()
 
         # console/URL logs require ENA support
-        if guest_request.requests_guest_log('console', GuestLogContentType.URL) and not image.ena_support:
-            return Ok(None)
+        if guest_request.requests_guest_log('console', GuestLogContentType.URL):
+            images = list(logging_filter(
+                logger,
+                images,
+                'console requires image ENA support',
+                lambda logger, image: image.ena_support
+            ))
 
-        return r_image
+        return Ok(images)
 
 
 def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold: int) -> bool:
@@ -1126,22 +1128,39 @@ class AWSDriver(PoolDriver):
             if r_uses_network.unwrap():
                 return Ok((False, 'network HW constraint not supported'))
 
-        r_image = self.image_info_mapper.map_or_none(logger, guest_request)
-        if r_image.is_error:
-            return Error(r_image.unwrap_error())
+        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
 
-        image = r_image.unwrap()
+        images = r_images.unwrap()
 
-        if image is None:
+        if not images:
             return Ok((False, 'compose not supported'))
 
-        r_type = self._env_to_instance_type_or_none(logger, session, guest_request, image)
+        pairs: List[Tuple[AWSPoolImageInfo, Flavor]] = []
 
-        if r_type.is_error:
-            return Error(r_type.unwrap_error())
+        for image in images:
+            r_type = self._env_to_instance_type_or_none(logger, session, guest_request, image)
 
-        if r_type.unwrap() is None:
-            return Ok((False, 'no suitable flavor found'))
+            if r_type.is_error:
+                return Error(r_type.unwrap_error())
+
+            flavor = r_type.unwrap()
+
+            if flavor is None:
+                continue
+
+            pairs.append((image, flavor))
+
+        if not pairs:
+            return Ok((False, 'no suitable image/flavor combination found'))
+
+        log_dict_yaml(logger.info, 'available image/flavor combinations', [
+            {
+                'flavor': flavor.serialize(),
+                'image': image.serialize()
+            } for image, flavor in pairs
+        ])
 
         return Ok((True, None))
 
@@ -1182,7 +1201,7 @@ class AWSDriver(PoolDriver):
             suitable_flavors = list(logging_filter(
                 logger,
                 suitable_flavors,
-                'console requires ENA',
+                'console requires flavor ENA support',
                 lambda logger, flavor: flavor.ena_support in ('required', 'supported')
             ))
 
@@ -1887,19 +1906,33 @@ class AWSDriver(PoolDriver):
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
         # find out image from enviroment
-        r_image = self.image_info_mapper.map(logger, guest_request)
+        r_images = self.image_info_mapper.map(logger, guest_request)
 
-        if r_image.is_error:
-            return Error(r_image.unwrap_error())
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
 
-        image = r_image.unwrap()
+        images = r_images.unwrap()
 
-        # get instance type from environment
-        r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
-        if r_instance_type.is_error:
-            return Error(r_instance_type.unwrap_error())
+        pairs: List[Tuple[AWSPoolImageInfo, Flavor]] = []
 
-        instance_type = r_instance_type.unwrap()
+        for image in images:
+            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
+            if r_instance_type.is_error:
+                return Error(r_instance_type.unwrap_error())
+
+            pairs.append((image, r_instance_type.unwrap()))
+
+        if not pairs:
+            return Error(Failure('no suitable image/flavor combination found'))
+
+        log_dict_yaml(logger.info, 'available image/flavor combinations', [
+            {
+                'flavor': flavor.serialize(),
+                'image': image.serialize()
+            } for image, flavor in pairs
+        ])
+
+        image, instance_type = pairs[0]
 
         # If this pool provides spot instances, we start the provisioning by submitting a spot instance request.
         # After that, we request an update to be scheduled, to check progress of this spot request. If successfull,

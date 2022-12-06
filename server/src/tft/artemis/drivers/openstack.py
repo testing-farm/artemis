@@ -391,17 +391,32 @@ class OpenStackDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_flavor = self._env_to_flavor(logger, session, guest_request)
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
+        r_images = self.image_info_mapper.map(logger, guest_request)
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
 
-        flavor = r_flavor.unwrap()
+        images = r_images.unwrap()
 
-        r_image = self.image_info_mapper.map(logger, guest_request)
-        if r_image.is_error:
-            return Error(r_image.unwrap_error())
+        pairs: List[Tuple[PoolImageInfo, Flavor]] = []
 
-        image = r_image.unwrap()
+        for image in images:
+            r_flavor = self._env_to_flavor(logger, session, guest_request)
+            if r_flavor.is_error:
+                return Error(r_flavor.unwrap_error())
+
+            pairs.append((image, r_flavor.unwrap()))
+
+        if not pairs:
+            return Error(Failure('no suitable image/flavor combination found'))
+
+        log_dict_yaml(logger.info, 'available image/flavor combinations', [
+            {
+                'flavor': flavor.serialize(),
+                'image': image.serialize()
+            } for image, flavor in pairs
+        ])
+
+        image, flavor = pairs[0]
 
         self.log_acquisition_attempt(
             logger,
@@ -580,20 +595,34 @@ class OpenStackDriver(PoolDriver):
             if r_uses_network.unwrap():
                 return Ok((False, 'network HW constraint not supported'))
 
-        r_image = self.image_info_mapper.map_or_none(logger, guest_request)
-        if r_image.is_error:
-            return Error(r_image.unwrap_error())
+        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
 
-        if r_image.unwrap() is None:
+        images = r_images.unwrap()
+
+        if not images:
             return Ok((False, 'compose not supported'))
 
-        r_flavor = self._env_to_flavor(logger, session, guest_request)
+        pairs: List[Tuple[PoolImageInfo, Flavor]] = []
 
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
+        for image in images:
+            r_flavor = self._env_to_flavor(logger, session, guest_request)
 
-        if r_flavor.unwrap() is None:
-            return Ok((False, 'no suitable flavor found'))
+            if r_flavor.is_error:
+                return Error(r_flavor.unwrap_error())
+
+            pairs.append((image, r_flavor.unwrap()))
+
+        if not pairs:
+            return Ok((False, 'no suitable image/flavorcombination found'))
+
+        log_dict_yaml(logger.info, 'available image/flavor combinations', [
+            {
+                'flavor': flavor.serialize(),
+                'image': image.serialize()
+            } for image, flavor in pairs
+        ])
 
         return Ok((True, None))
 

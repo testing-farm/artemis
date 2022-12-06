@@ -857,12 +857,13 @@ class BeakerDriver(PoolDriver):
 
         beaker_filter = r_beaker_filter.unwrap()
 
-        r_distro = self.image_info_mapper.map(logger, guest_request)
+        r_distros = self.image_info_mapper.map(logger, guest_request)
 
-        if r_distro.is_error:
-            return Error(r_distro.unwrap_error())
+        if r_distros.is_error:
+            return Error(r_distros.unwrap_error())
 
-        distro = r_distro.unwrap()
+        distros = r_distros.unwrap()
+        distro = distros[0]
 
         r_wow_options = self._create_wow_options(logger, session, guest_request, distro)
 
@@ -1225,13 +1226,13 @@ class BeakerDriver(PoolDriver):
         if r_answer.unwrap()[0] is False:
             return r_answer
 
-        r_distro = self.image_info_mapper.map_or_none(logger, guest_request)
-        if r_distro.is_error:
-            return Error(r_distro.unwrap_error())
+        r_distros = self.image_info_mapper.map_or_none(logger, guest_request)
+        if r_distros.is_error:
+            return Error(r_distros.unwrap_error())
 
-        distro = r_distro.unwrap()
+        distros = r_distros.unwrap()
 
-        if distro is None:
+        if not distros:
             return Ok((False, 'compose not supported'))
 
         # Parent implementation does not care, but we still might: support for HW constraints is still

@@ -850,8 +850,7 @@ class GuestLogUpdateProgress:
 # Mapping guest requests to images
 #
 _PoolImageInfoTypeVar = TypeVar('_PoolImageInfoTypeVar', bound='PoolImageInfo')
-ImageInfoMapperOptionalResultType = Result[Optional[T], Failure]
-ImageInfoMapperResultType = Result[T, Failure]
+ImageInfoMapperResultType = Result[List[T], Failure]
 
 
 class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
@@ -866,11 +865,11 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
-    ) -> ImageInfoMapperOptionalResultType[_PoolImageInfoTypeVar]:
+    ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
         """
-        Map given guest request to an image.
+        Map given guest request to images.
 
-        :returns: image info best fitting the given request. If no such image can be found, ``None`` is returned.
+        :returns: list of images fitting the given request. If no such image can be found, an empty list is returned.
         """
 
         raise NotImplementedError()
@@ -881,26 +880,26 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
         guest_request: GuestRequest
     ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
         """
-        Map given guest request to an image.
+        Map given guest request to images.
 
-        :returns: image info best fitting the given request.
+        :returns: list of images fitting the given request.
         """
 
-        r_image = self.map_or_none(logger, guest_request)
+        r_images = self.map_or_none(logger, guest_request)
 
-        if r_image.is_error:
-            return Error(r_image.unwrap_error())
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
 
-        image = cast(_PoolImageInfoTypeVar, r_image.unwrap())
+        images = r_images.unwrap()
 
-        if image is None:
+        if not images:
             return Error(Failure(
                 'cannot map guest request to image',
                 environment=guest_request.environment,
                 recoverable=False
             ))
 
-        return Ok(image)
+        return Ok(images)
 
 
 class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
@@ -917,7 +916,7 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
-    ) -> ImageInfoMapperOptionalResultType[_PoolImageInfoTypeVar]:
+    ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
         r_engine = hook_engine(self.hook_name)
 
         if r_engine.is_error:
@@ -925,8 +924,8 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
 
         engine = r_engine.unwrap()
 
-        r_image = cast(
-            Result[Optional[_PoolImageInfoTypeVar], Failure],
+        r_images = cast(
+            Result[List[_PoolImageInfoTypeVar], Failure],
             engine.run_hook(
                 self.hook_name,
                 logger=logger,
@@ -935,10 +934,10 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
             )
         )
 
-        if r_image.is_error:
-            r_image.unwrap_error().update(environment=guest_request.environment)
+        if r_images.is_error:
+            r_images.unwrap_error().update(environment=guest_request.environment)
 
-        return r_image
+        return r_images
 
 
 class GuestLogUpdaterType(Protocol):

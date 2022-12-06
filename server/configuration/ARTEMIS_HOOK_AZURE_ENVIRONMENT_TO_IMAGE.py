@@ -7,7 +7,7 @@ import gluetool.glue
 import gluetool.log
 from gluetool.result import Error
 
-from tft.artemis.drivers import ImageInfoMapperOptionalResultType, PoolImageInfo
+from tft.artemis.drivers import ImageInfoMapperResultType, PoolImageInfo
 from tft.artemis.drivers.azure import KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH, \
     KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE, AzureDriver
 from tft.artemis.drivers.hooks import map_environment_to_image_info
@@ -19,7 +19,7 @@ def hook_AZURE_ENVIRONMENT_TO_IMAGE(
     logger: gluetool.log.ContextAdapter,
     pool: AzureDriver,
     environment: Environment,
-) -> ImageInfoMapperOptionalResultType[PoolImageInfo]:
+) -> ImageInfoMapperResultType[PoolImageInfo]:
     r_mapping_filepath = KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH.get_value(pool=pool)
 
     if r_mapping_filepath.is_error:
