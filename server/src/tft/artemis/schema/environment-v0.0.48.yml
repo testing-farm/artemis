@@ -28,7 +28,8 @@ definitions:
     properties:
       distro:
         type: array
-        items: string
+        items:
+          type: string
 
     # enforce at least one property - we don't care which one, but we don't want
     # empty `compatible`.
