@@ -3,6 +3,7 @@
 
 import textwrap
 from typing import Any, List
+from unittest.mock import MagicMock
 
 import gluetool.utils
 import pytest
@@ -40,6 +41,15 @@ def parse_hw(text: str) -> ConstraintBase:
 
 def parse_spec(text: str) -> Any:
     return gluetool.utils.from_yaml(textwrap.dedent(text))
+
+
+@pytest.fixture(name='dummy_guest_request')
+def fixture_dummy_guest_request(name: str = 'dummy_guest_request') -> MagicMock:
+    return MagicMock(
+        name=name,
+        environment=tft.artemis.environment.Environment(
+            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+            os=tft.artemis.environment.OsRequirements(compose='dummy-compose')))
 
 
 @pytest.fixture(name='pool')
@@ -1280,6 +1290,7 @@ def test_parse_maximal_constraint() -> None:
     'not NETBOOT_UEFI'
 ])
 def test_beaker_preset(
+    dummy_guest_request: MagicMock,
     logger: ContextAdapter,
     pool: tft.artemis.drivers.beaker.BeakerDriver,
     hw: str,
@@ -1304,7 +1315,7 @@ def test_beaker_preset(
 
     assert r_constraints.is_ok
 
-    r_host_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment, pool)
+    r_host_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment, dummy_guest_request, pool)
 
     if r_host_filter.is_error:
         r_host_filter.unwrap_error().handle(logger)

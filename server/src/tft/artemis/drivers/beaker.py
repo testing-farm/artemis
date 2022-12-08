@@ -190,7 +190,7 @@ def _translate_constraint_by_config(
             ))
 
     return Error(Failure(
-        'contraint not supported by driver',
+        'constraint not supported by driver',
         constraint=repr(constraint),
         constraint_name=constraint.name
     ))
@@ -198,6 +198,7 @@ def _translate_constraint_by_config(
 
 def constraint_to_beaker_filter(
     constraint: ConstraintBase,
+    guest_request: GuestRequest,
     pool: 'BeakerDriver',
     constraint_siblings: Optional[List[ConstraintBase]] = None,
 ) -> Result[bs4.BeautifulSoup, Failure]:
@@ -210,7 +211,7 @@ def constraint_to_beaker_filter(
         grouping_and = _new_tag('and')
 
         for child_constraint in constraint.constraints:
-            r_child_element = constraint_to_beaker_filter(child_constraint, pool, constraint.constraints)
+            r_child_element = constraint_to_beaker_filter(child_constraint, guest_request, pool, constraint.constraints)
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -223,7 +224,7 @@ def constraint_to_beaker_filter(
         grouping_or = _new_tag('or')
 
         for child_constraint in constraint.constraints:
-            r_child_element = constraint_to_beaker_filter(child_constraint, pool, constraint.constraints)
+            r_child_element = constraint_to_beaker_filter(child_constraint, guest_request, pool, constraint.constraints)
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -233,6 +234,7 @@ def constraint_to_beaker_filter(
         return Ok(grouping_or)
 
     constraint = cast(Constraint, constraint)
+
     constraint_name = constraint.expand_name()
 
     if constraint_name.property == 'boot':
@@ -245,6 +247,36 @@ def constraint_to_beaker_filter(
                     .get('method', {})
                     .get('translations', [])
             )
+
+    if constraint_name.property == 'compatible':
+        if constraint_name.child_property == 'distro':
+            system = _new_tag('system')
+
+            r_config_constraint = _translate_constraint_by_config(
+                constraint,
+                pool.pool_config
+                    .get('hw-constraints', {})
+                    .get('compatible', {})
+                    .get('distro', {})
+                    .get('translations', [])
+            )
+
+            if r_config_constraint.is_error:
+                return Error(r_config_constraint.unwrap_error())
+
+            config_constraint = r_config_constraint.unwrap()
+
+            rendered_tag = render_template(
+                str(config_constraint.find("compatible_with_distro")),
+                **template_environment(guest_request=guest_request)
+            )
+
+            if rendered_tag.is_error:
+                return Error(rendered_tag.unwrap_error())
+
+            system.append(bs4.BeautifulSoup(rendered_tag.unwrap(), 'xml'))
+
+            return Ok(system)
 
     if constraint_name.property == 'cpu':
         cpu = _new_tag('cpu')
@@ -286,7 +318,7 @@ def constraint_to_beaker_filter(
 
         else:
             return Error(Failure(
-                'contraint not supported by driver',
+                'constraint not supported by driver',
                 constraint=repr(constraint)
             ))
 
@@ -311,7 +343,7 @@ def constraint_to_beaker_filter(
 
         else:
             return Error(Failure(
-                'contraint not supported by driver',
+                'constraint not supported by driver',
                 constraint=repr(constraint),
                 constraint_name=constraint.name
             ))
@@ -395,7 +427,7 @@ def constraint_to_beaker_filter(
         return Ok(network)
 
     return Error(Failure(
-        'contraint not supported by driver',
+        'constraint not supported by driver',
         constraint=repr(constraint),
         constraint_name=constraint.name
     ))
@@ -419,6 +451,7 @@ def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, F
 
     _remove_empty('or')
     _remove_empty('and')
+    _remove_empty('system')
 
     def _remove_singles(tag_name: str) -> None:
         for el in tree.find_all(tag_name):
@@ -433,7 +466,8 @@ def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, F
 
 def environment_to_beaker_filter(
     environment: Environment,
-    pool: 'BeakerDriver'
+    guest_request: GuestRequest,
+    pool: 'BeakerDriver',
 ) -> Result[bs4.BeautifulSoup, Failure]:
     """
     Convert a given environment to Beaker XML tree representing Beaker filter compatible with Beaker's ``hostRequires``
@@ -457,13 +491,13 @@ def environment_to_beaker_filter(
     constraints = r_constraints.unwrap()
 
     if constraints is None:
-        r_beaker_filter = constraint_to_beaker_filter(Constraint.from_arch(environment.hw.arch), pool)
+        r_beaker_filter = constraint_to_beaker_filter(Constraint.from_arch(environment.hw.arch), guest_request, pool)
 
     else:
         r_beaker_filter = constraint_to_beaker_filter(And([
             Constraint.from_arch(environment.hw.arch),
             constraints
-        ]), pool)
+        ]), guest_request, pool)
 
     if r_beaker_filter.is_error:
         return r_beaker_filter
@@ -573,6 +607,7 @@ def merge_beaker_filters(filters: List[bs4.BeautifulSoup]) -> Result[bs4.Beautif
 
 def create_beaker_filter(
     environment: Environment,
+    guest_request: GuestRequest,
     pool: 'BeakerDriver',
     avoid_groups: List[str],
     avoid_hostnames: List[str]
@@ -589,7 +624,7 @@ def create_beaker_filter(
     beaker_filters: List[bs4.BeautifulSoup] = []
 
     if environment.has_hw_constraints:
-        r_beaker_filter = environment_to_beaker_filter(environment, pool)
+        r_beaker_filter = environment_to_beaker_filter(environment, guest_request, pool)
 
         if r_beaker_filter.is_error:
             return Error(r_beaker_filter.unwrap_error())
@@ -855,6 +890,7 @@ class BeakerDriver(PoolDriver):
 
         r_beaker_filter = create_beaker_filter(
             guest_request.environment,
+            guest_request,
             self,
             r_avoid_groups.unwrap(),
             r_avoid_hostnames.unwrap()
@@ -1264,7 +1300,7 @@ class BeakerDriver(PoolDriver):
         if r_uses_network.is_error:
             return Error(r_uses_network.unwrap_error())
 
-        r_filter = constraint_to_beaker_filter(constraints, self)
+        r_filter = constraint_to_beaker_filter(constraints, guest_request, self)
 
         if r_filter.is_error:
             return Error(r_filter.unwrap_error())

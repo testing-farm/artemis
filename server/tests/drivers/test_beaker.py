@@ -3,6 +3,7 @@
 
 import textwrap
 from typing import Any, Dict, List, Optional
+from unittest.mock import MagicMock
 
 import bs4
 import gluetool.utils
@@ -36,6 +37,15 @@ def parse_hw(text: str) -> tft.artemis.environment.ConstraintBase:
     return r_constraint.unwrap()
 
 
+@pytest.fixture(name='dummy_guest_request')
+def fixture_dummy_guest_request(name: str = 'dummy_guest_request') -> MagicMock:
+    return MagicMock(
+        name=name,
+        environment=tft.artemis.environment.Environment(
+            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+            os=tft.artemis.environment.OsRequirements(compose='dummy-compose')))
+
+
 @pytest.fixture(name='pool')
 def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDriver:
     pool_config = """
@@ -64,6 +74,28 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
               value: uefi
               element: |
                 <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
+      compatible:
+        distro:
+          translations:
+            - operator: contains
+              value: rhel-6
+              element: |
+                <compatible_with_distro arch="{{ ENVIRONMENT.hw.arch }}" osmajor="RedHatEnterpriseLinux6"/>
+
+            - operator: contains
+              value: rhel-7
+              element: |
+                <compatible_with_distro arch="{{ ENVIRONMENT.hw.arch }}" osmajor="RedHatEnterpriseLinux7"/>
+
+            - operator: contains
+              value: rhel-8
+              element: |
+                <compatible_with_distro arch="{{ ENVIRONMENT.hw.arch }}" osmajor="RedHatEnterpriseLinux8"/>
+
+            - operator: contains
+              value: rhel-9
+              element: |
+                <compatible_with_distro arch="{{ ENVIRONMENT.hw.arch }}" osmajor="RedHatEnterpriseLinux9"/>
     """
 
     return tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', parse_spec(pool_config))
@@ -156,6 +188,50 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
           compose: dummy-compose
         """,
         '<and><system><arch op="==" value="x86_64"/></system><key_value key="TPM" op="&gt;=" value="2"/></and>'
+    ),
+    (
+        """
+        ---
+        hw:
+          arch: x86_64
+          constraints:
+            compatible:
+                distro:
+                    - rhel-9
+        os:
+          compose: dummy-compose
+        """,
+        '<and>'
+        '<system><arch op="==" value="x86_64"/></system>'
+        '<system>'
+        '<compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux9"/>'
+        '</system>'
+        '</and>'
+    ),
+    (
+        """
+        ---
+        hw:
+          arch: x86_64
+          constraints:
+            compatible:
+                distro:
+                    - rhel-8
+                    - rhel-9
+        os:
+          compose: dummy-compose
+        """,
+        '<and>'
+        '<system><arch op="==" value="x86_64"/></system>'
+        '<and>'
+        '<system>'
+        '<compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux8"/>'
+        '</system>'
+        '<system>'
+        '<compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux9"/>'
+        '</system>'
+        '</and>'
+        '</and>'
     )
 ], ids=[
     'simple-arch',
@@ -163,16 +239,19 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
     'multiple-nics',
     'multiple-nics-bad-interface',
     'tpm-2.0',
-    'tpm-at-least-2'
+    'tpm-at-least-2',
+    'compatible-single',
+    'compatible-multiple',
 ])
 def test_environment_to_beaker_filter(
+    dummy_guest_request: MagicMock,
     pool: tft.artemis.drivers.beaker.BeakerDriver,
     env: str,
     expected: str
 ) -> None:
     environment = parse_env(env)
 
-    r_beaker_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment, pool)
+    r_beaker_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment, dummy_guest_request, pool)
 
     should_fail = expected.startswith('failure')
     if not should_fail:
@@ -369,6 +448,7 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
     'hostname-match'
 ])
 def test_create_beaker_filter(
+    dummy_guest_request: MagicMock,
     pool: tft.artemis.drivers.beaker.BeakerDriver,
     env: str,
     avoid_groups: List[str],
@@ -377,7 +457,13 @@ def test_create_beaker_filter(
 ) -> None:
     environment = parse_env(env)
 
-    r_filter = tft.artemis.drivers.beaker.create_beaker_filter(environment, pool, avoid_groups, avoid_hostnames)
+    r_filter = tft.artemis.drivers.beaker.create_beaker_filter(
+        environment,
+        dummy_guest_request,
+        pool,
+        avoid_groups,
+        avoid_hostnames
+    )
 
     assert r_filter.is_ok
 
