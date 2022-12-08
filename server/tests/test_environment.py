@@ -1567,7 +1567,7 @@ def test_expand_name(constraint_name: str, expected: tft.artemis.environment.Con
         # The following don't match expected type, but they are not used by any code we're going to run.
         operator=None,  # type: ignore[arg-type]
         operator_handler=None,  # type: ignore[arg-type]
-        value=None,
+        value=tft.artemis.environment.UNITS.Quantity(1, 'gibibyte'),
         raw_value=None  # type: ignore[arg-type]
     ).expand_name() == expected
 

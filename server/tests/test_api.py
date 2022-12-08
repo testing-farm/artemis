@@ -306,7 +306,7 @@ def _schema_test_db_Users(db: tft.artemis.db.DB, session: sqlalchemy.orm.session
 
     User.__table__.create(db.engine)
 
-    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+    session.commit()
 
 
 @pytest.fixture
@@ -320,7 +320,7 @@ def _schema_test_db_Users_user(session: sqlalchemy.orm.session.Session, _schema_
         admin_token=User.hash_token('dummy-user-admin-token')
     ))
 
-    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+    session.commit()
 
 
 @pytest.fixture
@@ -334,7 +334,7 @@ def _schema_test_db_Users_admin(session: sqlalchemy.orm.session.Session, _schema
         admin_token=User.hash_token('dummy-admin-admin-token')
     ))
 
-    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+    session.commit()
 
 
 def test_auth_context_verify_auth_basic_empty(

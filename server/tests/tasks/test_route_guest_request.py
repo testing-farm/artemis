@@ -212,14 +212,18 @@ def test_exit(
     workspace: Workspace,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch
 ) -> None:
-    patch(monkeypatch, tft.artemis.tasks.route_guest_request.metrics.ProvisioningMetrics, 'inc_failover')
+    patch(
+        monkeypatch,
+        tft.artemis.tasks.route_guest_request.metrics.ProvisioningMetrics,  # type: ignore[attr-defined]
+        'inc_failover'
+    )
 
     assert workspace.exit() is workspace
 
     assert workspace.result is tft.artemis.tasks.SUCCESS
     cast(
         MagicMock,
-        tft.artemis.tasks.route_guest_request.metrics.ProvisioningMetrics.inc_failover
+        tft.artemis.tasks.route_guest_request.metrics.ProvisioningMetrics.inc_failover  # type: ignore[attr-defined]
     ).assert_not_called()
 
 
@@ -231,7 +235,11 @@ def test_exit_failover(
     workspace.current_poolname = 'pool1'
     workspace.new_pool = MagicMock(name='pool2', poolname='pool2')
 
-    patch(monkeypatch, tft.artemis.tasks.route_guest_request.metrics.ProvisioningMetrics, 'inc_failover')
+    patch(
+        monkeypatch,
+        tft.artemis.tasks.route_guest_request.metrics.ProvisioningMetrics,  # type: ignore[attr-defined]
+        'inc_failover'
+    )
 
     assert workspace.exit() is workspace
 
@@ -239,7 +247,7 @@ def test_exit_failover(
 
     cast(
         MagicMock,
-        tft.artemis.tasks.route_guest_request.metrics.ProvisioningMetrics.inc_failover
+        tft.artemis.tasks.route_guest_request.metrics.ProvisioningMetrics.inc_failover  # type: ignore[attr-defined]
     ).assert_called_once_with('pool1', 'pool2')
 
     assert_log(

@@ -14,17 +14,19 @@ import enum
 import itertools
 import operator
 import re
-from typing import Any, Callable, ClassVar, Dict, Iterable, Iterator, List, NamedTuple, Optional, Sequence, Type, \
-    TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Iterable, Iterator, List, NamedTuple, Optional, \
+    Sequence, Type, TypeVar, Union, cast
 
 import gluetool.log
 import gluetool.utils
 import pint
 from gluetool.result import Error, Ok, Result
-from pint import Quantity
-from typing_extensions import Literal
+from typing_extensions import Literal, TypeAlias
 
 from . import Failure, SerializableContainer
+
+if TYPE_CHECKING:
+    from pint import Quantity  # noqa: F401
 
 #: Unit registry, used and shared by all code.
 UNITS = pint.UnitRegistry()
@@ -68,9 +70,11 @@ OperatorHandlerType = Callable[[Any, Any], bool]
 #: See https://github.com/python/mypy/issues/731 for details.
 SpecType = Any
 
-ConstraintValueType = Union[int, Quantity, str, bool]
+SizeType: TypeAlias = 'Quantity[int]'
+
+ConstraintValueType = Union[int, SizeType, str, bool]
 # Almost like the ConstraintValueType, but this one can be measured and may have units.
-MeasurableConstraintValueType = Union[int, Quantity]
+MeasurableConstraintValueType = Union[int, SizeType]
 
 
 # A type variable representing types based on our common container of flavor properties.
@@ -350,7 +354,7 @@ class FlavorDisk(_FlavorSubsystemContainer):
     CONTAINER_PREFIX = 'disk'
 
     #: Total size of the disk storage, in bytes.
-    size: Optional[Quantity] = None
+    size: Optional[SizeType] = None
 
     # TODO: move to properties of whole Disks container, or use class inheritance - we can't now because `FlavorDisks`
     # can load just one type of items.
@@ -358,8 +362,8 @@ class FlavorDisk(_FlavorSubsystemContainer):
 
     # `items`, ot `disks` - we want to generalize this, keep using generic naming.
     max_additional_items: int = 0
-    min_size: Optional[Quantity] = None
-    max_size: Optional[Quantity] = None
+    min_size: Optional[SizeType] = None
+    max_size: Optional[SizeType] = None
 
     def serialize(self) -> Dict[str, Any]:
         """
@@ -393,13 +397,13 @@ class FlavorDisk(_FlavorSubsystemContainer):
         disk = super().unserialize(serialized)
 
         if disk.size is not None:
-            disk.size = UNITS(disk.size)
+            disk.size = UNITS(serialized['size'])
 
         if disk.min_size is not None:
-            disk.min_size = UNITS(disk.min_size)
+            disk.min_size = UNITS(serialized['min_size'])
 
         if disk.max_size is not None:
-            disk.max_size = UNITS(disk.max_size)
+            disk.max_size = UNITS(serialized['max_size'])
 
         return disk
 
@@ -553,7 +557,7 @@ class Flavor(_FlavorSubsystemContainer):
     disk: FlavorDisks = dataclasses.field(default_factory=FlavorDisks)
 
     #: RAM size, in bytes.
-    memory: Optional[Quantity] = None
+    memory: Optional[SizeType] = None
 
     #: Network interfaces.
     network: FlavorNetworks = dataclasses.field(default_factory=FlavorNetworks)
@@ -603,7 +607,7 @@ class Flavor(_FlavorSubsystemContainer):
         flavor = super().unserialize(serialized)
 
         if flavor.memory is not None:
-            flavor.memory = UNITS(flavor.memory)
+            flavor.memory = UNITS(serialized['memory'])
 
         return flavor
 
@@ -1006,7 +1010,7 @@ class Constraint(ConstraintBase):
         raw_value = groups['value']
 
         if as_quantity:
-            value = UNITS(raw_value)
+            value: ConstraintValueType = UNITS(raw_value)
 
         elif as_cast is not None:
             value = as_cast(raw_value)

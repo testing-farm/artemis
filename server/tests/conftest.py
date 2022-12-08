@@ -16,7 +16,7 @@ import dramatiq
 import dramatiq.brokers.rabbitmq
 import gluetool.log
 import gluetool.utils
-import py.path
+import py.path  # type: ignore[import]
 import pytest
 import redis
 import redislite

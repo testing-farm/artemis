@@ -12,10 +12,10 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 import bs4
 import gluetool.log
 import gluetool.utils
-import pint
 import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter, log_xml
 from gluetool.result import Error, Ok, Result
+from gluetool.utils import ProcessOutput
 from typing_extensions import TypedDict
 
 from .. import Failure, SerializableContainer, log_dict_yaml, process_output_to_str, render_template, \
@@ -23,7 +23,7 @@ from .. import Failure, SerializableContainer, log_dict_yaml, process_output_to_
 from ..cache import get_cached_set, refresh_cached_set
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Operator, Or
+from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Operator, Or, SizeType
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
@@ -302,7 +302,7 @@ def constraint_to_beaker_filter(
             # `disk.size` is represented as quantity, for Beaker XML we need to convert to bytes, integer.
             op, value = operator_to_beaker_op(
                 constraint.operator,
-                str(int(cast(pint.Quantity, constraint.value).to('B').magnitude))
+                str(int(cast(SizeType, constraint.value).to('B').magnitude))
             )
 
             size = _new_tag('size', op=op, value=value)
@@ -332,7 +332,7 @@ def constraint_to_beaker_filter(
         # `memory` is represented as quantity, for Beaker XML we need to convert to mibibytes, integer.
         op, value = operator_to_beaker_op(
             constraint.operator,
-            str(int(cast(pint.Quantity, constraint.value).to('MiB').magnitude))
+            str(int(cast(SizeType, constraint.value).to('MiB').magnitude))
         )
 
         system = _new_tag('system')
@@ -1364,10 +1364,10 @@ class BeakerDriver(PoolDriver):
 
         if r_query_instances.is_error:
             failure = r_query_instances.unwrap_error()
-            command_output = failure.details.get('command_output', None)
+            command_output = cast(Optional[ProcessOutput], failure.details.get('command_output', None))
 
             if command_output and command_output.stderr \
-               and command_output.stderr.decode('utf-8').strip().lower() == 'nothing matches':
+               and command_output.stderr.strip().lower() == 'nothing matches':
                 # This is a a valid result, meaning "0 machines". Setting our "raw output" to a corresponding value
                 # instead of adding some special flag. Empty string has 0 lines, 0 machines...
                 raw_machines = ''
