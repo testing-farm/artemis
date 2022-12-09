@@ -453,11 +453,12 @@ class AzureDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_image = self.image_info_mapper.map(logger, guest_request)
-        if r_image.is_error:
-            return Error(r_image.unwrap_error())
+        r_images = self.image_info_mapper.map(logger, guest_request)
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
 
-        image = r_image.unwrap()
+        images = r_images.unwrap()
+        image = images[0]
 
         self.log_acquisition_attempt(
             logger,

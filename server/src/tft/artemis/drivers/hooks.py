@@ -7,7 +7,7 @@ Helpers for driver hooks. Common, often-used actions and primitives.
 
 import os
 import threading
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import gluetool.log
 import gluetool.utils
@@ -16,7 +16,7 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure, log_dict_yaml, render_template
 from ..environment import Environment
 from ..knobs import KNOB_CONFIG_DIRPATH, Knob
-from . import ImageInfoMapperOptionalResultType, PoolDriver, PoolImageInfo
+from . import ImageInfoMapperResultType, PoolDriver, PoolImageInfo
 
 KNOB_CACHE_PATTERN_MAPS: Knob[bool] = Knob(
     'pool.cache-pattern-maps',
@@ -85,7 +85,7 @@ def map_environment_to_imagename_by_pattern_map(
     needle_template: str,
     mapping_filename: Optional[str] = None,
     mapping_filepath: Optional[str] = None
-) -> Result[Optional[str], Failure]:
+) -> Result[List[str], Failure]:
     """
     Using a given pattern mapping file, try to map an environment to its corresponding image name.
 
@@ -129,12 +129,15 @@ def map_environment_to_imagename_by_pattern_map(
     pattern_map = r_pattern_map.unwrap()
 
     try:
-        imagename = pattern_map.match(r_needle.unwrap())
+        imagenames = pattern_map.match(r_needle.unwrap(), multiple=True)
 
     except gluetool.glue.GlueError:
-        return Ok(None)
+        return Ok([])
 
-    return Ok(imagename[0] if isinstance(imagename, list) else imagename)
+    if isinstance(imagenames, str):
+        imagenames = [imagenames]
+
+    return Ok(imagenames)
 
 
 def map_environment_to_image_info(
@@ -144,7 +147,7 @@ def map_environment_to_image_info(
     needle_template: str,
     mapping_filename: Optional[str] = None,
     mapping_filepath: Optional[str] = None
-) -> ImageInfoMapperOptionalResultType[PoolImageInfo]:
+) -> ImageInfoMapperResultType[PoolImageInfo]:
     """
     Using a given pattern mapping file, try to map a compose, as specified by a given environment, to the corresponding
     cloud-specific image info.
@@ -163,10 +166,10 @@ def map_environment_to_image_info(
         unsuccessfull.
     """
 
-    log_dict_yaml(logger.info, 'deciding image name for environment', environment.serialize())
+    log_dict_yaml(logger.info, 'deciding image names for environment', environment.serialize())
 
     try:
-        r_image_name = map_environment_to_imagename_by_pattern_map(
+        r_image_names = map_environment_to_imagename_by_pattern_map(
             logger,
             pool,
             environment,
@@ -175,35 +178,40 @@ def map_environment_to_image_info(
             mapping_filepath=mapping_filepath
         )
 
-        if r_image_name.is_error:
-            return Error(r_image_name.unwrap_error())
+        if r_image_names.is_error:
+            return Error(r_image_names.unwrap_error())
 
-        imagename = r_image_name.unwrap()
+        imagenames = r_image_names.unwrap()
 
-        if imagename is None:
-            log_dict_yaml(logger.info, 'compose not mapped to image name', {
+        if not imagenames:
+            log_dict_yaml(logger.info, 'compose not mapped to image names', {
                 'environment': environment.serialize(),
-                'image-name': imagename
+                'image-names': imagenames
             })
 
-            return Ok(None)
+            return Ok([])
 
-        log_dict_yaml(logger.info, 'compose mapped to image name', {
+        log_dict_yaml(logger.info, 'compose mapped to image names', {
             'environment': environment.serialize(),
-            'image-name': imagename
+            'image-names': imagenames
         })
 
-        r_image = pool.map_image_name_to_image_info(logger, imagename)
+        images = []
 
-        if r_image.is_error:
-            return Error(r_image.unwrap_error())
+        for imagename in imagenames:
+            r_image = pool.map_image_name_to_image_info(logger, imagename)
+
+            if r_image.is_error:
+                return Error(r_image.unwrap_error())
+
+            images.append(r_image.unwrap())
 
         log_dict_yaml(logger.info, 'compose mapped to image', {
             'environment': environment.serialize(),
-            'image': r_image.unwrap().serialize()
+            'image': images
         })
 
-        return Ok(r_image.unwrap())
+        return Ok(images)
 
     except Exception as exc:
         return Error(Failure.from_exc(

@@ -8,7 +8,7 @@ import gluetool.glue
 import gluetool.log
 from gluetool.result import Error
 
-from tft.artemis.drivers import ImageInfoMapperOptionalResultType
+from tft.artemis.drivers import ImageInfoMapperResultType
 from tft.artemis.drivers.aws import KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH, \
     KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE, AWSDriver, AWSPoolImageInfo
 from tft.artemis.drivers.hooks import map_environment_to_image_info
@@ -20,7 +20,7 @@ def hook_AWS_ENVIRONMENT_TO_IMAGE(
     logger: gluetool.log.ContextAdapter,
     pool: AWSDriver,
     environment: Environment,
-) -> ImageInfoMapperOptionalResultType[AWSPoolImageInfo]:
+) -> ImageInfoMapperResultType[AWSPoolImageInfo]:
     r_mapping_filepath = KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH.get_value(pool=pool)
 
     if r_mapping_filepath.is_error:
@@ -32,7 +32,7 @@ def hook_AWS_ENVIRONMENT_TO_IMAGE(
         return Error(r_needle_template.unwrap_error())
 
     return cast(
-        ImageInfoMapperOptionalResultType[AWSPoolImageInfo],
+        ImageInfoMapperResultType[AWSPoolImageInfo],
         map_environment_to_image_info(
             logger,
             pool,
