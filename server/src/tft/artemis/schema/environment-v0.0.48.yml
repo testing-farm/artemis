@@ -134,6 +134,17 @@ definitions:
     items:
       "$ref": "#/definitions/hw_network"
 
+  # HW requirements: `tpm` block
+  tpm:
+    type: object
+
+    properties:
+      version:
+        type: string
+
+    additionalProperties: false
+    minProperties: 1
+
   # HW requirements: `virtualization` block
   hw_virtualization:
     type: object
@@ -184,6 +195,9 @@ definitions:
       network:
         "$ref": "#/definitions/hw_networks"
 
+      tpm:
+        "$ref": "#/definitions/tpm"
+
       virtualization:
         "$ref": "#/definitions/hw_virtualization"
 
@@ -206,6 +220,7 @@ definitions:
             - "$ref": "#/definitions/hw_cpu"
             - "$ref": "#/definitions/hw_disks"
             - "$ref": "#/definitions/hw_networks"
+            - "$ref": "#/definitions/tpm"
             - "$ref": "#/definitions/hw_virtualization"
             - "$ref": "#/definitions/hw_block"
             - "$ref": "#/definitions/hw_and"
@@ -226,6 +241,7 @@ definitions:
             - "$ref": "#/definitions/hw_cpu"
             - "$ref": "#/definitions/hw_disks"
             - "$ref": "#/definitions/hw_networks"
+            - "$ref": "#/definitions/tpm"
             - "$ref": "#/definitions/hw_virtualization"
             - "$ref": "#/definitions/hw_block"
             - "$ref": "#/definitions/hw_and"
@@ -241,6 +257,7 @@ definitions:
       - "$ref": "#/definitions/hw_cpu"
       - "$ref": "#/definitions/hw_disks"
       - "$ref": "#/definitions/hw_networks"
+      - "$ref": "#/definitions/tpm"
       - "$ref": "#/definitions/hw_virtualization"
       - "$ref": "#/definitions/hw_block"
       - "$ref": "#/definitions/hw_and"
