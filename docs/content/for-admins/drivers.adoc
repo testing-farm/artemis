@@ -376,7 +376,7 @@ All fields except `name` and `name-regex` are optional, and fields not specified
 .Specification
 [source,yaml]
 ....
-patch-image:
+patch-images:
   - name: <string>
     # Or, to patch multiple images at once:
     name-regex: <pattern>
@@ -392,7 +392,7 @@ patch-image:
 .Example
 [source,yaml]
 ....
-patch-image:
+patch-images:
   # Reset the playing field: all images run SSH on port 22, and use `root` to log in.
   - name-regex: ".*"
     ssh:
