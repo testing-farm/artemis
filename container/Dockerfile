@@ -12,7 +12,7 @@
 #
 
 FROM quay.io/testing-farm/promtail:v2.2.1 as PROMTAIL_SOURCE
-FROM registry.fedoraproject.org/fedora-minimal:34
+FROM registry.fedoraproject.org/fedora-minimal:36
 
 COPY --from=PROMTAIL_SOURCE /promtail /usr/bin/
 
@@ -52,7 +52,7 @@ RUN    microdnf -y install bash \
                            openssl-devel \
                            postgresql \
                            poetry \
-                           python3.7 \
+                           python3.9 \
                            # required by `openstack`
                            which \
                            # for debugging
@@ -122,7 +122,7 @@ COPY server /APP/
 # TODO: remove once server/client Makefiles wouldn't refer to their parent directory
 COPY Makefile.lib /
 RUN    cd /APP \
-    && PYTHON=python3.7 make install-no-dev \
+    && PYTHON=python3.9 make install-no-dev \
     # Make Poetry configuration accesible to Poetry in containers
     && chmod a+rw /tmp/.config/pypoetry/config.toml
 

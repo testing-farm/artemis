@@ -18,7 +18,7 @@ packages = [
 include = ["artemis/schema"]
 
 [tool.poetry.dependencies]
-python = "~3.7.2"
+python = "~3.9.0"
 # New mypy vs. new Alembic: https://github.com/python/mypy/issues/11038 - Alembic 1.7.4 adds a workaround
 alembic = "*"
 awscli = "^1.27.24"
