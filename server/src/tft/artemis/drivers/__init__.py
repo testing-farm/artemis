@@ -22,7 +22,6 @@ import gluetool.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
-from pint import Quantity
 from typing_extensions import Literal, Protocol, TypedDict
 
 from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, process_output_to_str, render_template, \
@@ -31,7 +30,8 @@ from ..cache import get_cached_set_as_list, get_cached_set_item, refresh_cached_
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
     SnapshotRequest, SSHKey
-from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorDisk, FlavorDisks, MeasurableConstraintValueType
+from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorDisk, FlavorDisks, \
+    MeasurableConstraintValueType, SizeType
 from ..knobs import KNOB_POOL_ENABLED, Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine
@@ -575,7 +575,7 @@ def _parse_flavor_disk_size(
     field_name: str,
     value: Optional[Union[str, int]],
     disk: FlavorDisk
-) -> Result[Optional[Quantity], Failure]:
+) -> Result[Optional[SizeType], Failure]:
     if value is None:
         return Ok(None)
 

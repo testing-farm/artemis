@@ -47,7 +47,7 @@ def _schema_test_db_Counters(db: DB, session: sqlalchemy.orm.session.Session) ->
 
     Counters.__table__.create(db.engine)
 
-    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+    session.commit()
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ def _schema_test_db_Counters_1record(session: sqlalchemy.orm.session.Session, _s
 
     session.add(Counters(name='foo', count=0))
 
-    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+    session.commit()
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def _schema_test_db_Counters_2records(session: sqlalchemy.orm.session.Session, _
     session.add(Counters(name='foo', count=0))
     session.add(Counters(name='bar', count=0))
 
-    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+    session.commit()
 
 
 @pytest.fixture(name='mock_session')
@@ -594,7 +594,7 @@ def test_transaction_conflict(
             session2.execute(update1)
             session2.execute(insert1)
 
-        session2.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+        session2.commit()
 
         assert r1.success is True
 
@@ -602,7 +602,7 @@ def test_transaction_conflict(
             session3.execute(update2)
             session3.execute(insert2)
 
-        session2.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+        session2.commit()
 
         assert r2.success is False
 

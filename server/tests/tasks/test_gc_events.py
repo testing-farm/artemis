@@ -68,7 +68,7 @@ def _schema_empty(session: sqlalchemy.orm.session.Session, _schema_actual: None)
         _user_data={}
     ))
 
-    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+    session.commit()
 
 
 @pytest.fixture
@@ -109,7 +109,7 @@ def _schema_with_events(session: sqlalchemy.orm.session.Session, _schema_empty: 
         )
     )
 
-    session.commit()  # type: ignore[no-untyped-call]  # TODO: untyped commit()??
+    session.commit()
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_empty')

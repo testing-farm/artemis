@@ -14,13 +14,11 @@ from typing import Any, Dict, Generator, List, MutableSequence, Optional, Patter
 import gluetool.log
 import gluetool.utils
 import jq
-import pint
 import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter, log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
-from pint import Quantity
 from typing_extensions import Literal, TypedDict
 
 from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str
@@ -28,7 +26,7 @@ from ..cache import get_cached_set_as_list, get_cached_set_item
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorBoot, FlavorBootMethodType, FlavorCpu, \
-    FlavorVirtualization, Operator
+    FlavorVirtualization, Operator, SizeType
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
@@ -405,7 +403,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
-        size: Optional[pint.Quantity] = None,
+        size: Optional[SizeType] = None,
         volume_type: Optional[EBSVolumeTypeType] = None
     ) -> Result[APIBlockDeviceMappingType, Failure]:
         """
@@ -445,7 +443,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
-        size: Optional[pint.Quantity] = None,
+        size: Optional[SizeType] = None,
         volume_type: Optional[EBSVolumeTypeType] = None
     ) -> Result[APIBlockDeviceMappingType, Failure]:
         """
@@ -520,7 +518,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
-        size: Optional[pint.Quantity] = None,
+        size: Optional[SizeType] = None,
         volume_type: Optional[EBSVolumeTypeType] = None
     ) -> Result[None, Failure]:
         """
@@ -566,7 +564,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
-        size: Optional[pint.Quantity] = None,
+        size: Optional[SizeType] = None,
         volume_type: Optional[EBSVolumeTypeType] = None
     ) -> Result[APIBlockDeviceMappingType, Failure]:
         """
@@ -604,7 +602,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
-        size: Optional[pint.Quantity] = None,
+        size: Optional[SizeType] = None,
         volume_type: Optional[EBSVolumeTypeType] = None
     ) -> Result[APIBlockDeviceMappingType, Failure]:
         """
@@ -668,7 +666,7 @@ def _honor_constraint_disk(
         if constraint.operator in (Operator.EQ, Operator.GTE):
             r_update = mappings.update_mapping(
                 mapping,
-                size=constraint.value
+                size=cast(SizeType, constraint.value)
             )
 
             if r_update.is_error:
@@ -802,11 +800,11 @@ def setup_root_volume(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
-    default_root_disk_size: Optional[pint.Quantity] = None,
+    default_root_disk_size: Optional[SizeType] = None,
     # common volume properties
     delete_on_termination: Optional[bool] = None,
     encrypted: Optional[bool] = None,
-    size: Optional[pint.Quantity] = None,
+    size: Optional[SizeType] = None,
     volume_type: Optional[EBSVolumeTypeType] = None
 ) -> Result[BlockDeviceMappings, Failure]:
     """
@@ -854,7 +852,7 @@ def create_block_device_mappings(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
-    default_root_disk_size: Optional[Quantity] = None
+    default_root_disk_size: Optional[SizeType] = None
 ) -> Result[BlockDeviceMappings, Failure]:
     """
     Prepare block device mapping according to match requested environment, image and flavor.
@@ -1468,7 +1466,7 @@ class AWSDriver(PoolDriver):
         :param flavor: flavor providing the disk space information.
         """
 
-        default_root_disk_size: Optional[Quantity] = None
+        default_root_disk_size: Optional[SizeType] = None
 
         if 'default-root-disk-size' in self.pool_config:
             default_root_disk_size = UNITS.Quantity(self.pool_config["default-root-disk-size"], UNITS.gibibytes)

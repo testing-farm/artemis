@@ -743,7 +743,7 @@ class Failure:
                 'lineno': lineno,
             }
 
-            if line is not None:
+            if line is not None and lineno is not None:
                 # Lines are indexed from 0, but human representation starts with 1: "1st line".
                 # Hence the decrement.
                 pre_context, context_line, post_context = sentry_sdk.utils.get_lines_from_file(filename, lineno - 1)

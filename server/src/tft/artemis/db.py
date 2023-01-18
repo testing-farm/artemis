@@ -163,7 +163,7 @@ def chain_get(fn: 'SafeQueryRawGetType[T, S]') -> 'SafeQueryGetType[T, S]':
 
 
 class SafeQuery(Generic[T]):
-    def __init__(self, query: _Query) -> None:
+    def __init__(self, query: '_Query[T]') -> None:
         self.query = query
 
         self.failure: Optional[Failure] = None
@@ -172,7 +172,7 @@ class SafeQuery(Generic[T]):
     def from_session(session: sqlalchemy.orm.session.Session, klass: Type[T]) -> 'SafeQuery[T]':
         query_proxy: SafeQuery[T] = SafeQuery(
             cast(
-                Callable[[Type[T]], _Query],
+                Callable[[Type[T]], '_Query[T]'],
                 session.query
             )(klass)
         )
@@ -180,30 +180,30 @@ class SafeQuery(Generic[T]):
         return query_proxy
 
     @chain_update_va
-    def filter(self, *args: Any) -> _Query:
+    def filter(self, *args: Any) -> '_Query[T]':
         return cast(
-            Callable[..., _Query],
+            Callable[..., '_Query[T]'],
             self.query.filter
         )(*args)
 
     @chain_update_va
-    def order_by(self, *args: Any) -> _Query:
+    def order_by(self, *args: Any) -> '_Query[T]':
         return cast(
-            Callable[..., _Query],
+            Callable[..., '_Query[T]'],
             self.query.order_by
         )(*args)
 
     @chain_update_i
-    def limit(self, limit: int) -> _Query:
+    def limit(self, limit: int) -> '_Query[T]':
         return cast(
-            Callable[[Optional[int]], _Query],
+            Callable[[Optional[int]], '_Query[T]'],
             self.query.limit
         )(limit)
 
     @chain_update_i
-    def offset(self, offset: int) -> _Query:
+    def offset(self, offset: int) -> '_Query[T]':
         return cast(
-            Callable[[Optional[int]], _Query],
+            Callable[[Optional[int]], '_Query[T]'],
             self.query.offset
         )(offset)
 

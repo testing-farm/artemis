@@ -47,7 +47,6 @@ traceback: |-
     --> 22           _c()
         23
         ..................................................
-         Failure = <class 'tft.artemis.Failure'>
          _c = <function 'fixture_failure.<locals>._c' test_failure.py:18>
          _b = <function 'fixture_failure.<locals>._b' test_failure.py:15>
         ..................................................
