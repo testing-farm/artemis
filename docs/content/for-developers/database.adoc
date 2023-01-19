@@ -27,8 +27,8 @@ Alembic keeps track of these patches and their order and stores additional infor
 
 [NOTE]
 ====
-When running command below, `alembic` implicitly works with a dummy SQLite3 database named `test.db`.
-This name comes from the default value of `ARTEMIS_DB_URL` environment variable. You can always change this variable to point Alembic CLI to different database, e.g. your local PostgreSQL instance.
+Before running any `alembic` commands, the database URL needs to be specified.
+This can be done by setting the value of `ARTEMIS_DB_URL` environment variable. To use a dummy SQLite3 database named `test.db`, you can set `ARTEMIS_DB_URL=sqlite:///test.db`.
 ====
 
 === Schema revisions
