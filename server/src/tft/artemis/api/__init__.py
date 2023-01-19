@@ -716,6 +716,7 @@ class GuestRequestManager:
                 guestname=guestname,
                 environment=environment,
                 ownername=DEFAULT_GUEST_REQUEST_OWNER,
+                shelfname=None,
                 ssh_keyname=guest_request.keyname,
                 ssh_port=DEFAULT_SSH_PORT,
                 ssh_username=DEFAULT_SSH_USERNAME,

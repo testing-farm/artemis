@@ -61,6 +61,9 @@ class GuestState(enum.Enum):
     #: A pool has been assigned to fulfill the request. A starting task exists for this guest request.
     STARTING = 'starting'
 
+    #: The guest is assigned to a shelf
+    SHELVED = 'shelved'
+
 
 class GuestLogger(gluetool.log.ContextAdapter):
     """

@@ -216,6 +216,7 @@ def fixture_schema_initialized_actual(
             os=tft.artemis.environment.OsRequirements(compose='dummy-compose')
         ),
         'dummy-user',
+        None,
         'dummy-ssh-key',
         22,
         'root',

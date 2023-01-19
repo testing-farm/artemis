@@ -805,6 +805,16 @@ class TaskRequest(Base):
         return Ok(cast(Tuple[int], r.unwrap())[0])
 
 
+class GuestShelf(Base):
+    __tablename__ = 'guest_shelves'
+
+    shelfname = Column(String(250), primary_key=True, nullable=False)
+    ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
+    state = Column(Enum(GuestState), nullable=False)
+
+    guests = relationship('GuestRequest', back_populates='shelf')
+
+
 class GuestEvent(Base):
     __tablename__ = 'guest_events'
 
@@ -893,6 +903,7 @@ class GuestRequest(Base):
     guestname = Column(String(250), primary_key=True, nullable=False)
     _environment = Column(JSON(), nullable=False)
     ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
+    shelfname = Column(String(250), ForeignKey('guest_shelves.shelfname'), nullable=True)
     priorityname = Column(String(250), ForeignKey('priority_groups.name'), nullable=True)
     poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
 
@@ -972,6 +983,7 @@ class GuestRequest(Base):
     _log_types = Column(JSON(), nullable=True)
 
     owner = relationship('User', back_populates='guests')
+    shelf = relationship('GuestShelf', back_populates='guests')
     ssh_key = relationship('SSHKey', back_populates='guests')
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
@@ -982,6 +994,7 @@ class GuestRequest(Base):
         guestname: str,
         environment: 'Environment',
         ownername: str,
+        shelfname: Optional[str],
         ssh_keyname: str,
         ssh_port: int,
         ssh_username: str,
@@ -995,6 +1008,7 @@ class GuestRequest(Base):
             guestname=guestname,
             _environment=environment.serialize(),
             ownername=ownername,
+            shelfname=shelfname,
             ssh_keyname=ssh_keyname,
             ssh_port=ssh_port,
             ssh_username=ssh_username,
