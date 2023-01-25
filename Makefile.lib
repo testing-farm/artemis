@@ -6,7 +6,7 @@
 
 # Poetry does not handle "default" flavor of Python, and uses the most recent one. That's nice,
 # but we like to be in control, knowing what exactl we did install.
-DEFAULT_PYTHON ?= python3.7
+DEFAULT_PYTHON ?= python3.9
 
 ##@ -- Common targets ---------------------
 

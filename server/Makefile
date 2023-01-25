@@ -8,8 +8,14 @@ include ../Makefile.lib
 
 tests: .common-tests test-db-schema-revisions test-integration
 
+test-units: _env-info  ## Run unit tests
+	tox -e py39
+
+coverage: _env-info  ## Run tests with coverage
+	tox -e py39-coverage
+
 test-db-schema-revisions:  _env-info  ## Verify DB schema revisions
-	tox -e py37-db-schema-revisions
+	tox -e py39-db-schema-revisions
 
 INTEGRATION_POSTGRES_HOSTNAME := "localhost"
 INTEGRATION_POSTGRES_PORT := "5432"
@@ -36,11 +42,11 @@ test-integration: _env-info  ## Run tests against real services
 	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "CREATE DATABASE $(INTEGRATION_POSTGRES_DATABASE)"
 
 	# Unit tests
-	tox -e py37 -- -x --against-db-url="$(INTEGRATION_POSTGRES_URI)"
+	tox -e py39 -- -x --against-db-url="$(INTEGRATION_POSTGRES_URI)"
 
 	# DB schema upgrade/downgrade
 	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "CREATE DATABASE $(INTEGRATION_POSTGRES_DATABASE)"
-	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" tox -e py37-db-schema-revisions
+	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" tox -e py39-db-schema-revisions
 	PGPASSWORD=mysecretpassword psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U postgres -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
 
 	docker-compose down
