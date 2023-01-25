@@ -99,6 +99,11 @@ ConfigFlavorVirtualizationSpecType = TypedDict(
 )
 
 
+#: pools[].parameters.{custom-flavors,patch-flavors}[].compatible
+class ConfigFlavorCompatibleSpecType(TypedDict):
+    distro: List[str]
+
+
 #: pools[].parameters.patch-flavors[]
 ConfigPatchFlavorSpecType = TypedDict(
     'ConfigPatchFlavorSpecType',
@@ -106,6 +111,7 @@ ConfigPatchFlavorSpecType = TypedDict(
         'name': str,
         'name-regex': str,
         'arch': str,
+        'compatible': ConfigFlavorCompatibleSpecType,
         'cpu': ConfigFlavorCPUSpecType,
         'disk': List[ConfigFlavorDiskSpecType],
         'tpm': ConfigFlavorTPMSpecType,
@@ -119,6 +125,7 @@ class ConfigCustomFlavorSpecType(TypedDict):
     name: str
     base: str
     arch: str
+    compatible: ConfigFlavorCompatibleSpecType
     cpu: ConfigFlavorCPUSpecType
     disk: List[ConfigFlavorDiskSpecType]
     tpm: ConfigFlavorTPMSpecType
@@ -618,6 +625,12 @@ def _apply_flavor_specification(
 
     if 'arch' in flavor_spec:
         flavor.arch = flavor_spec['arch']
+
+    if 'compatible' in flavor_spec:
+        compatible_patch = flavor_spec['compatible']
+
+        if 'distro' in compatible_patch:
+            flavor.compatible.distro = compatible_patch['distro']
 
     if 'cpu' in flavor_spec:
         cpu_patch = flavor_spec['cpu']

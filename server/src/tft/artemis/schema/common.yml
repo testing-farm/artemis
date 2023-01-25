@@ -22,6 +22,18 @@ definitions:
 
     additionalProperties: false
 
+  patch_flavor_compatible:
+    type: object
+
+    properties:
+      distro:
+        type: array
+        items:
+          type: string
+
+    required: []
+    additionalProperties: false
+
   patch_flavor_cpu:
     type: object
 
@@ -114,6 +126,9 @@ definitions:
 
       cpu:
         "$ref": "#/definitions/patch_flavor_cpu"
+
+      compatible:
+        "$ref": "#/definitions/patch_flavor_compatible"
 
       disk:
         "$ref": "#/definitions/patch_flavor_disks"
