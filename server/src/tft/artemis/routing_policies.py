@@ -384,7 +384,7 @@ def policy_pool_enabled(
     allowed_pools = []
 
     for pool in pools:
-        r_enabled = KNOB_ROUTE_POOL_ENABLED.get_value(pool=pool, session=session)
+        r_enabled = KNOB_ROUTE_POOL_ENABLED.get_value(poolname=pool.poolname, session=session)
 
         if r_enabled.is_error:
             return Error(r_enabled.unwrap_error())

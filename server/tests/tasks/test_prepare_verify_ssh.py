@@ -61,12 +61,13 @@ def test_load_ssh_timeout(
     mockpatch(tft.artemis.tasks.prepare_verify_ssh.KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT, 'get_value') \
         .return_value = Ok(79)
 
+    assert workspace.pool is not None
     assert workspace.load_ssh_timeout() is workspace
 
     assert workspace.ssh_connect_timeout == 79
 
     cast(MagicMock, tft.artemis.tasks.prepare_verify_ssh.KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value) \
-        .assert_called_once_with(session=workspace.session, pool=workspace.pool)
+        .assert_called_once_with(session=workspace.session, poolname=workspace.pool.poolname)
 
 
 @pytest.mark.usefixtures('dummy_guest_request', 'dummy_pool')

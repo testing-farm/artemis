@@ -62,7 +62,9 @@ class Workspace(_Workspace):
 
     @step
     def load_ssh_timeout(self) -> None:
-        r = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=self.session, pool=self.pool)
+        assert self.pool
+
+        r = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=self.session, poolname=self.pool.poolname)
 
         if r.is_error:
             self.result = self.handle_error(r, 'failed to obtain SSH timeout value')

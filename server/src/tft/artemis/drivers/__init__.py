@@ -1215,7 +1215,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if all(resource_id.is_empty() for resource_id in resource_ids):
             return Ok(None)
 
-        r_delay = KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY.get_value(pool=self)
+        r_delay = KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY.get_value(poolname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())

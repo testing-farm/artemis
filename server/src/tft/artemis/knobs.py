@@ -14,7 +14,6 @@ from sqlalchemy.orm.session import Session
 
 if TYPE_CHECKING:
     from . import Failure
-    from .drivers import PoolDriver
 
 
 T = TypeVar('T')
@@ -108,17 +107,10 @@ class KnobSourceEnvPerPool(KnobSourceEnv[T]):
         self,
         *,
         poolname: Optional[str] = None,
-        pool: Optional['PoolDriver'] = None,
         **kwargs: Any
     ) -> Result[Optional[T], 'Failure']:
-        if poolname is not None:
-            pass
-
-        elif pool is not None:
-            poolname = pool.poolname
-
-        else:
-            return Error(Failure('either pool or poolname must be specified'))
+        if poolname is None:
+            return Error(Failure('poolname must be specified'))
 
         r_value = self._fetch_from_env(f'{self.envvar}_{poolname.replace("-", "_")}')
 
@@ -230,17 +222,10 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
         *,
         session: Session,
         poolname: Optional[str] = None,
-        pool: Optional['PoolDriver'] = None,
         **kwargs: Any
     ) -> Result[Optional[T], 'Failure']:
-        if poolname is not None:
-            pass
-
-        elif pool is not None:
-            poolname = pool.poolname
-
-        else:
-            return Error(Failure('either pool or poolname must be specified'))
+        if poolname is None:
+            return Error(Failure('poolname must be specified'))
 
         r_value = self._fetch_from_db(session, f'{self.knob.knobname}:{poolname}')
 

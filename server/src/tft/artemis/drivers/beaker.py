@@ -825,7 +825,7 @@ class BeakerDriver(PoolDriver):
         guest_request: GuestRequest,
         distro: PoolImageInfo
     ) -> Result[List[str], Failure]:
-        r_whiteboard_template = KNOB_JOB_WHITEBOARD_TEMPLATE.get_value(pool=self)
+        r_whiteboard_template = KNOB_JOB_WHITEBOARD_TEMPLATE.get_value(poolname=self.poolname)
 
         if r_whiteboard_template.is_error:
             return Error(r_whiteboard_template.unwrap_error())
@@ -1222,7 +1222,7 @@ class BeakerDriver(PoolDriver):
         if r_master_key.is_error:
             return Error(r_master_key.unwrap_error())
 
-        r_ssh_timeout = KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(session=session, pool=self)
+        r_ssh_timeout = KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(session=session, poolname=self.poolname)
 
         if r_ssh_timeout.is_error:
             return Error(r_ssh_timeout.unwrap_error())
