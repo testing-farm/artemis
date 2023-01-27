@@ -183,7 +183,7 @@ KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     of crashed resources.
     """,
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY',
     cast_from_str=int,
     default=0
@@ -224,7 +224,7 @@ KNOB_UPDATE_GUEST_REQUEST_TICK: Knob[int] = Knob(
     'A delay, in seconds, between two calls of `update-guest-request` task checking provisioning progress.',
     # TODO: enable DB backing, but that will require more handling in drivers if fetching this value fails.
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_UPDATE_GUEST_REQUEST_TICK',
     cast_from_str=int,
     default=30
@@ -1157,7 +1157,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         for pool_record in r_pools.unwrap():
             if enabled_only is True:
-                r_enabled = KNOB_POOL_ENABLED.get_value(session=session, poolname=pool_record.poolname)
+                r_enabled = KNOB_POOL_ENABLED.get_value(session=session, entityname=pool_record.poolname)
 
                 if r_enabled.is_error:
                     return Error(r_enabled.unwrap_error())
@@ -1215,7 +1215,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if all(resource_id.is_empty() for resource_id in resource_ids):
             return Ok(None)
 
-        r_delay = KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY.get_value(poolname=self.poolname)
+        r_delay = KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())

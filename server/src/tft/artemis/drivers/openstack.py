@@ -46,7 +46,7 @@ KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
     'openstack.console.blob.update-tick',
     'How long, in seconds, to take between updating guest console log.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK',
     cast_from_str=int,
     default=30
@@ -56,7 +56,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'openstack.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
     default='artemis-image-map-openstack.yaml'
@@ -66,7 +66,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     'openstack.mapping.environment-to-image.pattern-map.needle',
     'A pattern for needle to match in environment to image mapping file.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
     default='{{ os.compose }}'
@@ -386,7 +386,7 @@ class OpenStackDriver(PoolDriver):
             guest_request._environment
         )
 
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
@@ -659,7 +659,7 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         snapshot_request: SnapshotRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
@@ -691,7 +691,7 @@ class OpenStackDriver(PoolDriver):
         canceled: Optional[threading.Event] = None,
         start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
@@ -792,7 +792,7 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
@@ -1143,7 +1143,7 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(poolname=self.poolname)
+        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(entityname=self.poolname)
 
         if r_delay_update.is_error:
             return Error(r_delay_update.unwrap_error())
@@ -1176,7 +1176,7 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(poolname=self.poolname)
+        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(entityname=self.poolname)
 
         if r_delay_update.is_error:
             return Error(r_delay_update.unwrap_error())

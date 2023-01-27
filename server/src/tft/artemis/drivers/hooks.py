@@ -22,7 +22,7 @@ KNOB_CACHE_PATTERN_MAPS: Knob[bool] = Knob(
     'pool.cache-pattern-maps',
     'If enabled, pattern maps loaded by pools would be cached.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_CACHE_PATTERN_MAPS',
     default=True,
     cast_from_str=gluetool.utils.normalize_bool_option
@@ -116,7 +116,7 @@ def map_environment_to_imagename_by_pattern_map(
 
     logger.debug(f'using pattern map {mapping_filepath}')
 
-    r_cache_enabled = KNOB_CACHE_PATTERN_MAPS.get_value(poolname=pool.poolname)
+    r_cache_enabled = KNOB_CACHE_PATTERN_MAPS.get_value(entityname=pool.poolname)
 
     if r_cache_enabled.is_error:
         return Error(r_cache_enabled.unwrap_error().update(environment=environment))

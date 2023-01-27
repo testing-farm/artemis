@@ -187,7 +187,7 @@ KNOB_ROUTE_POOL_ENABLED: Knob[bool] = Knob(
     'route.pool.enabled',
     'If unset for a pool, the given pool is ignored by the routing.',
     has_db=True,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_ROUTE_POOL_ENABLED',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=True
@@ -384,7 +384,7 @@ def policy_pool_enabled(
     allowed_pools = []
 
     for pool in pools:
-        r_enabled = KNOB_ROUTE_POOL_ENABLED.get_value(poolname=pool.poolname, session=session)
+        r_enabled = KNOB_ROUTE_POOL_ENABLED.get_value(entityname=pool.poolname, session=session)
 
         if r_enabled.is_error:
             return Error(r_enabled.unwrap_error())

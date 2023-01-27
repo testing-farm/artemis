@@ -22,11 +22,11 @@ allows a sane starting position and provides a way to setup Artemis as needed wi
 
 [NOTE]
 ====
-Some knobs allow different values when applied to different pools. Such knobs do have one default value which is
-used when per-pool value is not specified. To modify the per-pool values special environment variable and knob names are
+Some knobs allow different values when applied to different entities. Such knobs do have one default value which is
+used when per-entity value is not specified. To modify the per-entity values special environment variable and knob names are
 necessary:
 
-* to change value for a particular pool, use `${original environment variable}_${pool name}` environment
+* to change value for a particular entity, use `${original environment variable}_${entity name}` environment
 variable. For example, `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_dummy_pool` would affect pool named `dummy-pool`.
 Note `-` being replaced with `_` - `-` is not always allowed to be part of an environment variable, therefore it is
 replaced with an underscore.
@@ -63,10 +63,10 @@ quicker.
 |`{{ knob | knob_default }}`
 |{{ 'yes' if knob | knob_editable else 'no' }}
 
-{% if knob.per_pool %}
-|`{{ knob.knobname }}:$poolname`
+{% if knob.per_entity %}
+|`{{ knob.knobname }}:$entityname`
 |
-|`{{ knob | knob_envvar }}_$poolname`
+|`{{ knob | knob_envvar }}_$entityname`
 |
 |
 {% endif %}

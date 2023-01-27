@@ -22,11 +22,11 @@ allows a sane starting position and provides a way to setup Artemis as needed wi
 
 [NOTE]
 ====
-Some knobs allow different values when applied to different pools. Such knobs do have one default value which is
-used when per-pool value is not specified. To modify the per-pool values special environment variable and knob names are
+Some knobs allow different values when applied to different entities. Such knobs do have one default value which is
+used when per-entity value is not specified. To modify the per-entity values special environment variable and knob names are
 necessary:
 
-* to change value for a particular pool, use `${original environment variable}_${pool name}` environment
+* to change value for a particular entity, use `${original environment variable}_${entity name}` environment
 variable. For example, `ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_dummy_pool` would affect pool named `dummy-pool`.
 Note `-` being replaced with `_` - `-` is not always allowed to be part of an environment variable, therefore it is
 replaced with an underscore.
@@ -196,9 +196,9 @@ and dispatching of post-acquire preparation tasks.
 |yes
 
 
-|`actor.verify-ssh.connect-timeout:$poolname`
+|`actor.verify-ssh.connect-timeout:$entityname`
 |
-|`ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_$poolname`
+|`ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT_$entityname`
 |
 |
 
@@ -343,9 +343,9 @@ for the requested action.
 |no
 
 
-|`aws.mapping.environment-to-image.pattern-map.filepath:$poolname`
+|`aws.mapping.environment-to-image.pattern-map.filepath:$entityname`
 |
-|`ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$poolname`
+|`ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$entityname`
 |
 |
 
@@ -359,9 +359,9 @@ for the requested action.
 |no
 
 
-|`aws.mapping.environment-to-image.pattern-map.needle:$poolname`
+|`aws.mapping.environment-to-image.pattern-map.needle:$entityname`
 |
-|`ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$poolname`
+|`ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$entityname`
 |
 |
 
@@ -396,9 +396,9 @@ until cancelled and reprovisioned.
 |no
 
 
-|`azure.mapping.environment-to-image.pattern-map.filepath:$poolname`
+|`azure.mapping.environment-to-image.pattern-map.filepath:$entityname`
 |
-|`ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$poolname`
+|`ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$entityname`
 |
 |
 
@@ -412,9 +412,9 @@ until cancelled and reprovisioned.
 |no
 
 
-|`azure.mapping.environment-to-image.pattern-map.needle:$poolname`
+|`azure.mapping.environment-to-image.pattern-map.needle:$entityname`
 |
-|`ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$poolname`
+|`ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$entityname`
 |
 |
 
@@ -428,9 +428,9 @@ until cancelled and reprovisioned.
 |yes
 
 
-|`beaker.guest-watchdog.ssh.connect-timeout:$poolname`
+|`beaker.guest-watchdog.ssh.connect-timeout:$entityname`
 |
-|`ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT_$poolname`
+|`ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT_$entityname`
 |
 |
 
@@ -444,9 +444,9 @@ until cancelled and reprovisioned.
 |no
 
 
-|`beaker.job.whiteboard.template:$poolname`
+|`beaker.job.whiteboard.template:$entityname`
 |
-|`ARTEMIS_BEAKER_JOB_WHITEBOARD_TEMPLATE_$poolname`
+|`ARTEMIS_BEAKER_JOB_WHITEBOARD_TEMPLATE_$entityname`
 |
 |
 
@@ -460,9 +460,9 @@ until cancelled and reprovisioned.
 |no
 
 
-|`beaker.mapping.environment-to-image.pattern-map.filepath:$poolname`
+|`beaker.mapping.environment-to-image.pattern-map.filepath:$entityname`
 |
-|`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$poolname`
+|`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$entityname`
 |
 |
 
@@ -476,9 +476,9 @@ until cancelled and reprovisioned.
 |no
 
 
-|`beaker.mapping.environment-to-image.pattern-map.needle:$poolname`
+|`beaker.mapping.environment-to-image.pattern-map.needle:$entityname`
 |
-|`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$poolname`
+|`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$entityname`
 |
 |
 
@@ -786,9 +786,9 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 |no
 
 
-|`openstack.console.blob.update-tick:$poolname`
+|`openstack.console.blob.update-tick:$entityname`
 |
-|`ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK_$poolname`
+|`ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK_$entityname`
 |
 |
 
@@ -812,9 +812,9 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 |no
 
 
-|`openstack.mapping.environment-to-image.pattern-map.filepath:$poolname`
+|`openstack.mapping.environment-to-image.pattern-map.filepath:$entityname`
 |
-|`ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$poolname`
+|`ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$entityname`
 |
 |
 
@@ -828,9 +828,9 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 |no
 
 
-|`openstack.mapping.environment-to-image.pattern-map.needle:$poolname`
+|`openstack.mapping.environment-to-image.pattern-map.needle:$entityname`
 |
-|`ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$poolname`
+|`ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$entityname`
 |
 |
 
@@ -844,9 +844,9 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 |no
 
 
-|`pool.cache-pattern-maps:$poolname`
+|`pool.cache-pattern-maps:$entityname`
 |
-|`ARTEMIS_CACHE_PATTERN_MAPS_$poolname`
+|`ARTEMIS_CACHE_PATTERN_MAPS_$entityname`
 |
 |
 
@@ -860,9 +860,9 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 |no
 
 
-|`pool.dispatch-resource-cleanup:$poolname`
+|`pool.dispatch-resource-cleanup:$entityname`
 |
-|`ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY_$poolname`
+|`ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY_$entityname`
 |
 |
 
@@ -877,9 +877,9 @@ of crashed resources.
 |yes
 
 
-|`pool.enabled:$poolname`
+|`pool.enabled:$entityname`
 |
-|`ARTEMIS_POOL_ENABLED_$poolname`
+|`ARTEMIS_POOL_ENABLED_$entityname`
 |
 |
 
@@ -893,9 +893,9 @@ of crashed resources.
 |no
 
 
-|`pool.update-guest-request-tick:$poolname`
+|`pool.update-guest-request-tick:$entityname`
 |
-|`ARTEMIS_UPDATE_GUEST_REQUEST_TICK_$poolname`
+|`ARTEMIS_UPDATE_GUEST_REQUEST_TICK_$entityname`
 |
 |
 
@@ -909,9 +909,9 @@ of crashed resources.
 |yes
 
 
-|`route.pool.enabled:$poolname`
+|`route.pool.enabled:$entityname`
 |
-|`ARTEMIS_ROUTE_POOL_ENABLED_$poolname`
+|`ARTEMIS_ROUTE_POOL_ENABLED_$entityname`
 |
 |
 

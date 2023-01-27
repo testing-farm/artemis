@@ -1208,7 +1208,7 @@ class KnobManager:
 
             for record in r_knobs.unwrap():
                 if record.knobname not in knobs:
-                    parent_knob = Knob.get_per_pool_parent(logger, record.knobname)
+                    parent_knob = Knob.get_per_entity_parent(logger, record.knobname)
 
                     if parent_knob is None:
                         raise errors.InternalServerError(
@@ -1270,7 +1270,7 @@ class KnobManager:
                     cast=knob.cast_name
                 )
 
-            parent_knob = Knob.get_per_pool_parent(logger, knobname)
+            parent_knob = Knob.get_per_entity_parent(logger, knobname)
 
             if parent_knob is None:
                 raise errors.InternalServerError(
@@ -1306,7 +1306,7 @@ class KnobManager:
                     )
 
                 # Try to find the parent knob for this one which is apparently a per-pool knob.
-                knob = Knob.get_per_pool_parent(logger, knobname)
+                knob = Knob.get_per_entity_parent(logger, knobname)
 
             if knob is None:
                 raise errors.NoSuchEntityError(logger=logger)

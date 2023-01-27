@@ -989,7 +989,7 @@ class PoolMetrics(MetricsBase):
 
         super().sync()
 
-        r_enabled = KNOB_POOL_ENABLED.get_value(session=session, poolname=self.poolname)
+        r_enabled = KNOB_POOL_ENABLED.get_value(session=session, entityname=self.poolname)
 
         if r_enabled.is_error:
             r_enabled.unwrap_error().handle(logger)
@@ -1001,7 +1001,7 @@ class PoolMetrics(MetricsBase):
         # avoid circular imports
         from .routing_policies import KNOB_ROUTE_POOL_ENABLED
 
-        r_routing_enabled = KNOB_ROUTE_POOL_ENABLED.get_value(session=session, poolname=self.poolname)
+        r_routing_enabled = KNOB_ROUTE_POOL_ENABLED.get_value(session=session, entityname=self.poolname)
 
         # TODO: sync should return Result
         if r_routing_enabled.is_error:

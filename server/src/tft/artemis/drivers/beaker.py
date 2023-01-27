@@ -56,7 +56,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'beaker.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
     default='artemis-image-map-beaker.yaml'
@@ -66,7 +66,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     'beaker.mapping.environment-to-image.pattern-map.needle',
     'A pattern for needle to match in environment to image mapping file.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
     default='{{ os.compose }}'
@@ -75,7 +75,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     'beaker.guest-watchdog.ssh.connect-timeout',
     'Guest watchdog SSH timeout.',
-    per_pool=True,
+    per_entity=True,
     has_db=True,
     envvar='ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT',
     cast_from_str=int,
@@ -86,7 +86,7 @@ KNOB_JOB_WHITEBOARD_TEMPLATE: Knob[str] = Knob(
     'beaker.job.whiteboard.template',
     'A template for Beaker job whiteboard.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_BEAKER_JOB_WHITEBOARD_TEMPLATE',
     cast_from_str=str,
     default='[artemis] [{{ DEPLOYMENT }}] {{ GUESTNAME }}'
@@ -831,7 +831,7 @@ class BeakerDriver(PoolDriver):
         guest_request: GuestRequest,
         distro: PoolImageInfo
     ) -> Result[List[str], Failure]:
-        r_whiteboard_template = KNOB_JOB_WHITEBOARD_TEMPLATE.get_value(poolname=self.poolname)
+        r_whiteboard_template = KNOB_JOB_WHITEBOARD_TEMPLATE.get_value(entityname=self.poolname)
 
         if r_whiteboard_template.is_error:
             return Error(r_whiteboard_template.unwrap_error())
@@ -1144,7 +1144,7 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with guest, or specification of error.
         """
 
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
@@ -1228,7 +1228,7 @@ class BeakerDriver(PoolDriver):
         if r_master_key.is_error:
             return Error(r_master_key.unwrap_error())
 
-        r_ssh_timeout = KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(session=session, poolname=self.poolname)
+        r_ssh_timeout = KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(session=session, entityname=self.poolname)
 
         if r_ssh_timeout.is_error:
             return Error(r_ssh_timeout.unwrap_error())
@@ -1336,7 +1336,7 @@ class BeakerDriver(PoolDriver):
 
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())

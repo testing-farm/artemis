@@ -89,14 +89,14 @@ class KnobSourceEnvGlobal(KnobSourceEnv[T]):
         return self._fetch_from_env(self.envvar)
 
 
-class KnobSourceEnvPerPool(KnobSourceEnv[T]):
+class KnobSourceEnvPerEntity(KnobSourceEnv[T]):
     """
     Read knob value from an environment variable.
 
-    When the parent knob is enabled to provide pool-specific values (via ``per_pool=True``),
-    then the environment variable is tweaked to allow per-pool setup:
+    When the parent knob is enabled to provide entity-specific values (via ``per_entity=True``),
+    then the environment variable is tweaked to allow per-entity setup:
 
-    * ``${original envvar}_${poolname}``
+    * ``${original envvar}_${entityname}``
     * ``${original envvar}``
 
     :param envvar: name of the environment variable.
@@ -106,13 +106,13 @@ class KnobSourceEnvPerPool(KnobSourceEnv[T]):
     def get_value(
         self,
         *,
-        poolname: Optional[str] = None,
+        entityname: Optional[str] = None,
         **kwargs: Any
     ) -> Result[Optional[T], 'Failure']:
-        if poolname is None:
-            return Error(Failure('poolname must be specified'))
+        if entityname is None:
+            return Error(Failure('entityname must be specified'))
 
-        r_value = self._fetch_from_env(f'{self.envvar}_{poolname.replace("-", "_")}')
+        r_value = self._fetch_from_env(f'{self.envvar}_{entityname.replace("-", "_")}')
 
         if r_value.is_error:
             return r_value
@@ -206,14 +206,14 @@ class KnobSourceDBGlobal(KnobSourceDB[T]):
         return self._fetch_from_db(session, self.knob.knobname)
 
 
-class KnobSourceDBPerPool(KnobSourceDB[T]):
+class KnobSourceDBPerEntity(KnobSourceDB[T]):
     """
     Read knob value from a database.
 
-    When the parent knob is enabled to provide pool-specific values (via ``per_pool=True``),
+    When the parent knob is enabled to provide entity-specific values (via ``per_entity=True``),
     then a special knob names are searched in the database instead of the original one:
 
-    * ``${original knob name}:${poolname}``
+    * ``${original knob name}:${entityname}``
     * ``${original knob name}``
     """
 
@@ -221,13 +221,13 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
         self,
         *,
         session: Session,
-        poolname: Optional[str] = None,
+        entityname: Optional[str] = None,
         **kwargs: Any
     ) -> Result[Optional[T], 'Failure']:
-        if poolname is None:
-            return Error(Failure('poolname must be specified'))
+        if entityname is None:
+            return Error(Failure('entityname must be specified'))
 
-        r_value = self._fetch_from_db(session, f'{self.knob.knobname}:{poolname}')
+        r_value = self._fetch_from_db(session, f'{self.knob.knobname}:{entityname}')
 
         if r_value.is_error:
             return r_value
@@ -278,8 +278,8 @@ class Knob(Generic[T]):
            # This knob is not backed by a database.
            has_db=False,
 
-           # This knob does not support pool-specific values.
-           per_pool=False,
+           # This knob does not support entity-specific values.
+           per_entity=False,
 
            # This knob gets its value from the following environment variable.
            envvar='ARTEMIS_LOG_JSON',
@@ -311,7 +311,7 @@ class Knob(Generic[T]):
 
     :param knobname: name of the knob. It is used for presentation and as a key when the database is involved.
     :param has_db: if set, the value may also be stored in the database.
-    :param per_pool: if set, the knob may provide pool-specific values.
+    :param per_entity: if set, the knob may provide entity-specific values.
     :param envvar: if set, it is the name of the environment variable providing the value.
     :param default: if set, it is used as a default value.
     :param default_label: if provided, it is used in documentation instead of the actual default value.
@@ -327,7 +327,7 @@ class Knob(Generic[T]):
     #: Collect all known ``Knob`` instances that are backed by the DB.
     DB_BACKED_KNOBS: Dict[str, 'Knob[Any]'] = {}
 
-    #: List of patterns matching knob names that belong to knobs with per-pool capability. These names cannot be
+    #: List of patterns matching knob names that belong to knobs with per-entity capability. These names cannot be
     #: used for normal knobs.
     RESERVED_PATTERNS: List[Pattern[str]] = [
         re.compile(r'^([a-z\-.]+):.+$')
@@ -338,7 +338,7 @@ class Knob(Generic[T]):
         knobname: str,
         help: str,
         has_db: bool = True,
-        per_pool: bool = False,
+        per_entity: bool = False,
         envvar: Optional[str] = None,
         default: Optional[T] = None,
         default_label: Optional[str] = None,
@@ -349,7 +349,7 @@ class Knob(Generic[T]):
 
         self._sources: List[KnobSource[T]] = []
 
-        self.per_pool = per_pool
+        self.per_entity = per_entity
 
         self.cast_from_str = cast_from_str
 
@@ -361,13 +361,13 @@ class Knob(Generic[T]):
             if not cast_from_str:
                 raise KnobError(self, 'has_db requested but no cast_from_str.')
 
-            if per_pool:
-                self._sources.append(KnobSourceDBPerPool(self))
+            if per_entity:
+                self._sources.append(KnobSourceDBPerEntity(self))
 
-                Knob.ALL_KNOBS[f'{knobname}:$poolname'] = self
+                Knob.ALL_KNOBS[f'{knobname}:$entityname'] = self
 
                 Knob.DB_BACKED_KNOBS[knobname] = self
-                Knob.DB_BACKED_KNOBS[f'{knobname}:$poolname'] = self
+                Knob.DB_BACKED_KNOBS[f'{knobname}:$entityname'] = self
 
             else:
                 self._sources.append(KnobSourceDBGlobal(self))
@@ -378,8 +378,8 @@ class Knob(Generic[T]):
             if not cast_from_str:
                 raise KnobError(self, 'envvar requested but no cast_from_str.')
 
-            if per_pool:
-                self._sources.append(KnobSourceEnvPerPool(self, envvar))
+            if per_entity:
+                self._sources.append(KnobSourceEnvPerEntity(self, envvar))
 
             else:
                 self._sources.append(KnobSourceEnvGlobal(self, envvar))
@@ -401,11 +401,11 @@ class Knob(Generic[T]):
         # If the knob *is* backed by a database, it may still have other sources - if that's the case,
         # we can deduce so called "static" value. This would be a value used when there's no record
         # in DB for this knob, and we can use it when listing knobs as its current value, until overwritten
-        # by a DB record. We must skip sources that deal with DB or per-pool-capable sources - these
-        # are dynamic, their output depends on inputs (like pool name...).
+        # by a DB record. We must skip sources that deal with DB or per-entity-capable sources - these
+        # are dynamic, their output depends on inputs (like entity name...).
 
-        def _get_static_value(skip_db: bool = False, skip_per_pool: bool = False) -> T:
-            value, failure = self._get_value(skip_db=skip_db, skip_per_pool=skip_per_pool)
+        def _get_static_value(skip_db: bool = False, skip_per_entity: bool = False) -> T:
+            value, failure = self._get_value(skip_db=skip_db, skip_per_entity=skip_per_entity)
 
             # If we fail to get value from envvar/default sources, then something is wrong. Maybe there's
             # just the envvar source, no default one, and environment variable is not set? In any case,
@@ -420,17 +420,17 @@ class Knob(Generic[T]):
             return value
 
         if len(self._sources) > 1:
-            self.static_value: T = _get_static_value(skip_db=True, skip_per_pool=True)
+            self.static_value: T = _get_static_value(skip_db=True, skip_per_entity=True)
 
-        if not has_db and not per_pool:
+        if not has_db and not per_entity:
             self.value: T = _get_static_value()
             self.static_value = self.value
 
     def __repr__(self) -> str:
         traits: List[str] = []
 
-        if self.per_pool:
-            traits += ['per-pool=yes']
+        if self.per_entity:
+            traits += ['per-entity=yes']
 
         if self.cast_from_str:
             traits += [f'cast-from-str={self.cast_from_str.__name__}']
@@ -442,7 +442,7 @@ class Knob(Generic[T]):
     def _get_value(
         self,
         skip_db: bool = False,
-        skip_per_pool: bool = False,
+        skip_per_entity: bool = False,
         **kwargs: Any
     ) -> Tuple[Optional[T], Optional['Failure']]:
         """
@@ -456,7 +456,7 @@ class Knob(Generic[T]):
             if skip_db and isinstance(source, KnobSourceDB):
                 continue
 
-            if skip_per_pool and isinstance(source, (KnobSourceEnvPerPool, KnobSourceDBPerPool)):
+            if skip_per_entity and isinstance(source, (KnobSourceEnvPerEntity, KnobSourceDBPerEntity)):
                 continue
 
             r = source.get_value(**kwargs)
@@ -511,13 +511,13 @@ class Knob(Generic[T]):
         return self.cast_from_str.__name__
 
     @staticmethod
-    def get_per_pool_parent(logger: gluetool.log.ContextAdapter, knobname: str) -> Optional['Knob[Any]']:
+    def get_per_entity_parent(logger: gluetool.log.ContextAdapter, knobname: str) -> Optional['Knob[Any]']:
         """
-        For a given knobname - which belongs to a knob with per-pool capability - find its "parent" knob.
+        For a given knobname - which belongs to a knob with per-entity capability - find its "parent" knob.
 
-        Per-pool knobs don't have 1:1 mapping between a Python :py:class:`Knob` instance and its DB record.
+        Per-entity knobs don't have 1:1 mapping between a Python :py:class:`Knob` instance and its DB record.
         But the "parent" knob, the one actually declared somewhere in the source, can be found by name
-        after stripping the pool name from the given knob name.
+        after stripping the entity name from the given knob name.
         """
 
         for pattern in Knob.RESERVED_PATTERNS:
@@ -689,7 +689,7 @@ KNOB_POOL_ENABLED: Knob[bool] = Knob(
     'pool.enabled',
     'If unset for a pool, the given pool is ignored by Artemis in general.',
     has_db=True,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_POOL_ENABLED',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=True
@@ -699,7 +699,7 @@ KNOB_WORKER_PROCESS_METRICS_ENABLED: Knob[bool] = Knob(
     'worker.metrics.process.enabled',
     'If enabled, various metrics related to worker processes would be collected.',
     has_db=False,
-    per_pool=False,
+    per_entity=False,
     envvar='ARTEMIS_WORKER_PROCESS_METRICS_ENABLED',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=True
@@ -709,7 +709,7 @@ KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK: Knob[int] = Knob(
     'worker.metrics.process.update-tick',
     'How often, in seconds, should workers update their process metrics cache.',
     has_db=False,
-    per_pool=False,
+    per_entity=False,
     envvar='ARTEMIS_WORKER_PROCESS_METRICS_UPDATE_TICK',
     cast_from_str=int,
     default=60
@@ -719,7 +719,7 @@ KNOB_WORKER_PROCESS_METRICS_TTL: Knob[int] = Knob(
     'worker.metrics.process.ttl',
     'How long, in seconds, should worker process metrics remain in cache.',
     has_db=False,
-    per_pool=False,
+    per_entity=False,
     envvar='ARTEMIS_WORKER_PROCESS_METRICS_TTL',
     cast_from_str=int,
     default=120
@@ -729,7 +729,7 @@ KNOB_WORKER_TRAFFIC_METRICS_ENABLED: Knob[bool] = Knob(
     'worker.metrics.traffic.enabled',
     'If enabled, various metrics related to tasks and requests would be collected.',
     has_db=False,
-    per_pool=False,
+    per_entity=False,
     envvar='ARTEMIS_WORKER_TRAFFIC_METRICS_ENABLED',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=True
@@ -739,7 +739,7 @@ KNOB_WORKER_TRAFFIC_METRICS_TTL: Knob[int] = Knob(
     'worker.metrics.traffic.ttl',
     'How long, in seconds, should worker traffic metrics remain in cache.',
     has_db=False,
-    per_pool=False,
+    per_entity=False,
     envvar='ARTEMIS_WORKER_TRAFFIC_METRICS_TTL',
     cast_from_str=int,
     # The value should be comparable to how long tasks can take, which depends on resources available to workers.

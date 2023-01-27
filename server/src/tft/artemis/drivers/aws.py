@@ -241,7 +241,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'aws.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
     default='artemis-image-map-aws.yaml'
@@ -251,7 +251,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     'aws.mapping.environment-to-image.pattern-map.needle',
     'A pattern for needle to match in environment to image mapping file.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
     default='{{ os.compose }}'
@@ -1487,7 +1487,7 @@ class AWSDriver(PoolDriver):
         instance_type: Flavor,
         image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
@@ -1568,7 +1568,7 @@ class AWSDriver(PoolDriver):
         instance_type: Flavor,
         image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
@@ -1659,7 +1659,7 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
@@ -1730,7 +1730,7 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())

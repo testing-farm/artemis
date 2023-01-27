@@ -2935,7 +2935,10 @@ def do_prepare_post_install_script(
     if r_master_key.is_error:
         return workspace.handle_error(r_master_key, 'failed to fetch master key')
 
-    r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=session, poolname=workspace.pool.poolname)
+    r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(
+        session=session,
+        entityname=workspace.pool.poolname
+    )
 
     if r_ssh_timeout.is_error:
         return workspace.handle_error(r_ssh_timeout, 'failed to obtain ssh timeout value')

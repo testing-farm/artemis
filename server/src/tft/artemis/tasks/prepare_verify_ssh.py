@@ -28,7 +28,7 @@ from . import get_guest_logger, step, task, task_core
 KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     'actor.verify-ssh.connect-timeout',
     'Prepare stage SSH timeout.',
-    per_pool=True,
+    per_entity=True,
     has_db=True,
     envvar='ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT',
     cast_from_str=int,
@@ -64,7 +64,7 @@ class Workspace(_Workspace):
     def load_ssh_timeout(self) -> None:
         assert self.pool
 
-        r = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=self.session, poolname=self.pool.poolname)
+        r = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=self.session, entityname=self.pool.poolname)
 
         if r.is_error:
             self.result = self.handle_error(r, 'failed to obtain SSH timeout value')
