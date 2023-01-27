@@ -1425,7 +1425,7 @@ class AWSDriver(PoolDriver):
         try:
             current_price = float(prices[0]['SpotPrice'])
 
-        except KeyError:
+        except (KeyError, IndexError):
             PoolMetrics.inc_error(self.poolname, 'spot-price-not-detected')
 
             return Error(Failure('failed to detect spot price'))
