@@ -12,8 +12,7 @@ sources:
 
 1. (optional) the database. Can be changed in runtine with `artemis-cli knob` command.
 2. the environment variable. Cannot be changed in runtime, only when components starts.
-3. (optional) the given "actual" value, e.g. by a configuration file. Cannot be changed in runtime.
-4. the default value. Cannot be changed because it is part of the source code.
+3. the default value. Cannot be changed because it is part of the source code.
 
 [NOTE]
 ====

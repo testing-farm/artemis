@@ -240,25 +240,6 @@ class KnobSourceDBPerPool(KnobSourceDB[T]):
         return self._fetch_from_db(session, self.knob.knobname)
 
 
-class KnobSourceActual(KnobSource[T]):
-    """
-    Use value as-is.
-    """
-
-    def __init__(self, knob: 'Knob[T]', value: T) -> None:
-        super().__init__(knob)
-
-        self.value = value
-
-    def get_value(self, **kwargs: Any) -> Result[Optional[T], 'Failure']:
-        return Ok(self.value)
-
-    def to_repr(self) -> List[str]:
-        return [
-            f'actual="{self.value}"'
-        ]
-
-
 class KnobError(ValueError):
     def __init__(self, knob: 'Knob[T]', message: str, failure: Optional['Failure'] = None) -> None:
         super().__init__(f'Badly configured knob: {message}')
@@ -283,8 +264,7 @@ class Knob(Generic[T]):
 
     1. the database, if the knob declaration specifies the database may be used.
     2. the environment variable.
-    3. the given "actual" value, prossibly originating from a config file.
-    4. the default value.
+    3. the default value.
 
     A typical knob may look like this:
 
@@ -303,12 +283,6 @@ class Knob(Generic[T]):
 
            # This knob gets its value from the following environment variable.
            envvar='ARTEMIS_LOG_JSON',
-
-           # This knob gets its value when created. Note that this is *very* similar to the default value,
-           # but the default value should stand out as the default, while this parameter represents e.g.
-           # value read from a configuration file, and as such may be left unspecified - then the default
-           # would be used.
-           actual=a_yaml_config_file['logging']['json'],
 
            # The default value - note that it is properly typed.
            default=True,
@@ -339,7 +313,6 @@ class Knob(Generic[T]):
     :param has_db: if set, the value may also be stored in the database.
     :param per_pool: if set, the knob may provide pool-specific values.
     :param envvar: if set, it is the name of the environment variable providing the value.
-    :param actual: if set, it is the currently known value, e.g. provided by a config file.
     :param default: if set, it is used as a default value.
     :param default_label: if provided, it is used in documentation instead of the actual default value.
         Since the default value expression is evaluated during import, the actual value may be pointless
@@ -367,7 +340,6 @@ class Knob(Generic[T]):
         has_db: bool = True,
         per_pool: bool = False,
         envvar: Optional[str] = None,
-        actual: Optional[T] = None,
         default: Optional[T] = None,
         default_label: Optional[str] = None,
         cast_from_str: Optional[Callable[[str], T]] = None
@@ -412,22 +384,19 @@ class Knob(Generic[T]):
             else:
                 self._sources.append(KnobSourceEnvGlobal(self, envvar))
 
-        if actual is not None:
-            self._sources.append(KnobSourceActual(self, actual))
-
         if default is not None:
             self._sources.append(KnobSourceDefault(self, default, default_label=default_label))
 
         if not self._sources:
             raise KnobError(
                 self,
-                'no source specified - no DB, envvar, actual nor default value.'
+                'no source specified - no DB, envvar or default value.'
             )
 
         # If the knob isn't backed by a database, it should be possible to deduce its value *now*,
-        # as it depends on envvar, actual or default value. For such knobs, we provide a shortcut,
-        # easy-to-use `value` attribute - no `Result`, no `unwrap()` - given the possible sources,
-        # it should never fail to get a value from such sources.
+        # as it depends on envvar or default value. For such knobs, we provide a shortcut, easy-to-use
+        # `value` attribute - no `Result`, no `unwrap()` - given the possible sources, it should never
+        # fail to get a value from such sources.
         #
         # If the knob *is* backed by a database, it may still have other sources - if that's the case,
         # we can deduce so called "static" value. This would be a value used when there's no record
@@ -444,7 +413,7 @@ class Knob(Generic[T]):
             if value is None:
                 raise KnobError(
                     self,
-                    'no DB, yet other sources do not provide value! To fix, add an envvar, actual or default value.',
+                    'no DB, yet other sources do not provide value! To fix, add an envvar or default value.',
                     failure=failure
                 )
 
