@@ -12,7 +12,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "~3.7"
+python = "~3.9.0"
 requests = "*"
 click = "*"
 jq = "*"
@@ -31,7 +31,8 @@ rich = "*"
 # Install `toml` extra to allow parsing pyproject.toml - no need for special config file for coverage.
 coverage = { version = "*", extras = ["toml"] }
 darglint = "*"
-flake8 = "*"
+# flake8 5 introduced a bug https://github.com/tholo/pytest-flake8/issues/87
+flake8 = "<5.0.0"
 flake8-docstrings = "*"
 flake8-use-fstring = "*"
 isort = "*"

@@ -711,11 +711,11 @@ Feel free to quit anytime, nothing is saved until the very last step.
     tmp_config_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
 
     with tmp_config_file:
-        print("""---
+        print(f"""---
 
 artemis_api_url: {artemis_api_url}
 artemis_api_version: {artemis_api_version}
-""".format(**locals()), file=tmp_config_file)
+""", file=tmp_config_file)
 
         tmp_config_file.flush()
 

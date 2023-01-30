@@ -1,4 +1,4 @@
-DEFAULT_PYTHON ?= python3.7
+DEFAULT_PYTHON ?= python3.9
 
 include ../Makefile.lib
 
@@ -7,4 +7,4 @@ include ../Makefile.lib
 ##@ -- CLI targets ------------------------
 
 test-units: _env-info  ## Run unit tests
-	tox -e py37
+	tox -e py39
