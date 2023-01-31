@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import tempfile
 import threading
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
@@ -63,6 +64,98 @@ class AzurePoolResourcesIDs(PoolResourcesIDs):
     assorted_resource_ids: Optional[List[Dict[str, str]]] = None
 
 
+class AzureSession:
+    """
+    A representation of a authenticated Azure session.
+
+    Because it's not possible to pass credentials to distinct ``az`` commands,
+    one needs to authenticate (``az login``), and then all future commands
+    share credentials ``az`` stores in a configuration directory.
+
+    This class uses ``AZURE_CONFIG_DIR`` to store credentials in a dedicated
+    directory, all commands executed by the session would then share these
+    credentials, which in turn enables concurrent use of ``az`` for different
+    pools and guest requests.
+    """
+
+    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'AzureDriver') -> None:
+        self.pool = pool
+
+        # Create a temporary directory to serve as az' config directory.
+        self.session_directory = tempfile.TemporaryDirectory(prefix=f'azure-{self.pool.poolname}')
+
+        # Log into the tenant, and since we cannot raise an exception, save the result.
+        # If we fail, any call to `run_az()` would return this saved result.
+        self._login_result = self._login(logger)
+
+    def __enter__(self) -> 'AzureSession':
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        if self.session_directory is not None:
+            self.session_directory.cleanup()
+
+    def _run_cmd(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: List[str],
+        json_format: bool = True,
+        commandname: Optional[str] = None
+    ) -> Result[Union[JSONType, str], Failure]:
+        r_run = run_cli_tool(
+            logger,
+            ['az'] + options,
+            env={
+                'AZURE_CONFIG_DIR': str(self.session_directory)
+            },
+            json_output=json_format,
+            command_scrubber=lambda cmd: (['azure'] + options),
+            poolname=self.pool.poolname,
+            commandname=commandname,
+            cause_extractor=awscli_error_cause_extractor
+        )
+
+        if r_run.is_error:
+            return Error(r_run.unwrap_error())
+
+        if json_format:
+            return Ok(r_run.unwrap().json)
+
+        return Ok(r_run.unwrap().stdout)
+
+    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
+        if self.pool.pool_config['username'] and self.pool.pool_config['password']:
+            r_login = self._run_cmd(
+                logger,
+                [
+                    'login',
+                    '--username', self.pool.pool_config['username'],
+                    '--password', self.pool.pool_config['password']
+                ],
+                commandname='az.login'
+            )
+
+            if r_login.is_error:
+                return Error(Failure.from_failure(
+                    'failed to log into tenant',
+                    r_login.unwrap_error()
+                ))
+
+        return Ok(None)
+
+    def run_az(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: List[str],
+        json_format: bool = True,
+        commandname: Optional[str] = None
+    ) -> Result[Union[JSONType, str], Failure]:
+        if self._login_result is not None and self._login_result.is_error:
+            return Error(self._login_result.unwrap_error())
+
+        return self._run_cmd(logger, options, json_format, commandname=commandname)
+
+
 class AzureDriver(PoolDriver):
     drivername = 'azure'
 
@@ -105,10 +198,12 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         imagename: str
     ) -> Result[PoolImageInfo, Failure]:
-        r_images_show = self._run_cmd_with_auth(
-            ['vm', 'image', 'show', '--urn', imagename],
-            commandname='az.vm-image-show'
-        )
+        with AzureSession(logger, self) as session:
+            r_images_show = session.run_az(
+                logger,
+                ['vm', 'image', 'show', '--urn', imagename],
+                commandname='az.vm-image-show'
+            )
 
         if r_images_show.is_error:
             return Error(Failure.from_failure(
@@ -137,8 +232,13 @@ class AzureDriver(PoolDriver):
         resource_ids = AzurePoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         def _delete_resource(res_id: str) -> Any:
-            options = ['resource', 'delete', '--ids', res_id]
-            return self._run_cmd_with_auth(options, json_format=False, commandname='az.resource-delete')
+            with AzureSession(logger, self) as session:
+                return session.run_az(
+                    logger,
+                    ['resource', 'delete', '--ids', res_id],
+                    json_format=False,
+                    commandname='az.resource-delete'
+                )
 
         if resource_ids.instance_id is not None:
             r_delete = _delete_resource(resource_ids.instance_id)
@@ -199,7 +299,7 @@ class AzureDriver(PoolDriver):
         address would schedule yet another call to this method in the future.
         """
 
-        r_output = self._show_guest(guest_request)
+        r_output = self._show_guest(logger, guest_request)
 
         if r_output.is_error:
             return Error(Failure('no such guest'))
@@ -246,17 +346,22 @@ class AzureDriver(PoolDriver):
 
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
-        cmd = ['resource', 'list', '--tag', f'uid={pool_data.instance_name}']
-        resources_by_tag = self._run_cmd_with_auth(cmd, commandname='az.resource-list').unwrap()
+        with AzureSession(logger, self) as session:
+            r_tagged_resources = session.run_az(
+                logger,
+                ['resource', 'list', '--tag', f'uid={pool_data.instance_name}'],
+                commandname='az.resource-list'
+            )
 
-        def _delete_resource(res_id: str) -> Any:
-            options = ['resource', 'delete', '--ids', res_id]
-            return self._run_cmd_with_auth(options, json_format=False, commandname='az.resource-delete')
+        if r_tagged_resources.is_error:
+            return Error(r_tagged_resources.unwrap_error())
+
+        tagged_resources = r_tagged_resources.unwrap()
 
         # delete vm first, resources second
         assorted_resource_ids = [
             res
-            for res in cast(List[Dict[str, str]], resources_by_tag)
+            for res in cast(List[Dict[str, str]], tagged_resources)
             if res['type'] != 'Microsoft.Compute/virtualMachines'
         ]
 
@@ -368,72 +473,16 @@ class AzureDriver(PoolDriver):
             guest_request,
             cancelled)
 
-    def _run_cmd(
-        self,
-        options: List[str],
-        json_format: bool = True,
-        commandname: Optional[str] = None
-    ) -> Result[Union[JSONType, str], Failure]:
-        r_run = run_cli_tool(
-            self.logger,
-            ['az'] + options,
-            json_output=json_format,
-            command_scrubber=lambda cmd: (['azure'] + options),
-            poolname=self.poolname,
-            commandname=commandname,
-            cause_extractor=awscli_error_cause_extractor
-        )
-
-        if r_run.is_error:
-            return Error(r_run.unwrap_error())
-
-        if json_format:
-            return Ok(r_run.unwrap().json)
-
-        return Ok(r_run.unwrap().stdout)
-
-    def _run_cmd_with_auth(
-        self,
-        options: List[str],
-        json_format: bool = True,
-        with_login: bool = True,
-        commandname: Optional[str] = None
-    ) -> Result[Union[JSONType, str], Failure]:
-        if with_login:
-            login_output = self._login()
-
-            if login_output.is_error:
-                return Error(login_output.unwrap_error())
-
-        return self._run_cmd(options, json_format, commandname=commandname)
-
-    def _login(self) -> Result[None, Failure]:
-        # login if credentials have been passed -> try to login
-        if self.pool_config['username'] and self.pool_config['password']:
-            login_output = self._run_cmd([
-                'login',
-                '--username', self.pool_config['username'],
-                '--password', self.pool_config['password']
-            ], commandname='az.login')
-
-            if login_output.is_error:
-                return Error(Failure.from_failure(
-                    'failed to log into tenant',
-                    login_output.unwrap_error()
-                ))
-
-        return Ok(None)
-
     def _show_guest(
         self,
+        logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[Any, Failure]:
-        r_output = self._run_cmd_with_auth([
-            'vm',
-            'show',
-            '-d',
-            '--ids', AzurePoolData.unserialize(guest_request).instance_id
-        ], commandname='az.vm-show')
+        with AzureSession(logger, self) as session:
+            r_output = session.run_az(
+                logger,
+                ['vm', 'show', '-d', '--ids', AzurePoolData.unserialize(guest_request).instance_id],
+                commandname='az.vm-show')
 
         if r_output.is_error:
             return Error(Failure.from_failure(
@@ -515,7 +564,12 @@ class AzureDriver(PoolDriver):
                     for tag, value in tags.items()
                 ]
 
-            return self._run_cmd_with_auth(az_options, commandname='az.vm-create')
+            with AzureSession(logger, self) as session:
+                return session.run_az(
+                    logger,
+                    az_options,
+                    commandname='az.vm-create'
+                )
 
         if guest_request.post_install_script:
             # user has specified custom script to execute, contents stored as post_install_script
