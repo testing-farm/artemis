@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import os
 import tempfile
 import threading
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import gluetool.log
+import gluetool.utils
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
@@ -102,12 +104,15 @@ class AzureSession:
         json_format: bool = True,
         commandname: Optional[str] = None
     ) -> Result[Union[JSONType, str], Failure]:
+        environ = {
+            **os.environ,
+            'AZURE_CONFIG_DIR': self.session_directory.name
+        }
+
         r_run = run_cli_tool(
             logger,
             ['az'] + options,
-            env={
-                'AZURE_CONFIG_DIR': str(self.session_directory)
-            },
+            env=environ,
             json_output=json_format,
             command_scrubber=lambda cmd: (['azure'] + options),
             poolname=self.pool.poolname,
@@ -283,6 +288,15 @@ class AzureDriver(PoolDriver):
 
         if guest_request.environment.has_hw_constraints is True:
             return Ok((False, 'HW constraints are not supported'))
+
+        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
+
+        images = r_images.unwrap()
+
+        if not images:
+            return Ok((False, 'compose not supported'))
 
         return Ok((True, None))
 
