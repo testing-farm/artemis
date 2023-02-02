@@ -554,7 +554,7 @@ def print_guests(
         table = rich.table.Table()
 
         for header in [
-            'Guestname', 'Compose', 'Arch', 'Pool', 'State', 'CTime / SMTime / MTime', 'Address', 'User Data'
+            'Guestname', 'Compose', 'Arch', 'Pool', 'State', 'CTime / SMTime / MTime', 'Address', 'User Data', 'Shelf'
         ]:
             table.add_column(header, no_wrap=(header == 'Guestname'))
 
@@ -567,12 +567,35 @@ def print_guests(
                 colorize_guest_state(guest['state']),
                 f'{guest["ctime"]}\n{guest["state_mtime"]}\n{guest.get("mtime", "")}',
                 guest['address'],
-                RichYAML.from_data(guest['user_data']) if guest['user_data'] else ''
+                RichYAML.from_data(guest['user_data']) if guest['user_data'] else '',
+                guest['shelf']
             )
 
         return table
 
     print_collection(cfg, guests, tabulate, jq_filter=jq_filter, console=console)
+
+
+def print_shelves(
+    cfg: Configuration,
+    shelves: CollectionType,
+    jq_filter: Optional[str] = None,
+    console: Optional[rich.console.Console] = None
+) -> None:
+    def tabulate(guests: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
+
+        for header in [
+            'Shelfname'
+        ]:
+            table.add_column(header, no_wrap=(header == 'Shelfname'))
+
+        for shelf in shelves:
+            table.add_row(shelf['shelfname'])
+
+        return table
+
+    print_collection(cfg, shelves, tabulate, jq_filter=jq_filter, console=console)
 
 
 _eventname_emojis = {
