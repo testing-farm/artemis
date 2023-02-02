@@ -23,8 +23,8 @@ from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
                Configuration, artemis_create, artemis_delete, artemis_inspect,
                artemis_update, confirm, fetch_artemis, load_yaml, print_events,
                print_guest_logs, print_guests, print_json, print_knobs,
-               print_table, print_tasks, print_users, print_yaml,
-               validate_struct)
+               print_shelves, print_table, print_tasks, print_users,
+               print_yaml, validate_struct)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000
@@ -177,6 +177,7 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--arch', required=True, help='architecture')
 @click.option('--hw-constraints', required=False, default=None, help='Optional HW constraints.')
 @click.option('--kickstart', required=False, default=None, help='Optional Kickstart specification.')
+@click.option('--shelf', required=False, default=None, help='Shelf to use to serve the request')
 @click.option('--compose', required=True, help='compose id')
 @click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
@@ -203,6 +204,7 @@ def cmd_guest_create(
         arch: Optional[str] = None,
         hw_constraints: Optional[str] = None,
         kickstart: Optional[str] = None,
+        shelf: Optional[str] = None,
         compose: Optional[str] = None,
         pool: Optional[str] = None,
         snapshots: Optional[bool] = None,
@@ -220,6 +222,7 @@ def cmd_guest_create(
 
     data: Dict[str, Any] = {
         'environment': environment,
+        'shelfname': shelf,
         'keyname': keyname,
         'priority_group': 'default-priority',
         'user_data': {}
@@ -424,7 +427,7 @@ def cmd_cancel(cfg: Configuration, guestnames: List[str], continue_on_error: boo
             cfg.logger.error(f'guest {guestname} not found', exit=not continue_on_error)
 
         elif response.status_code == 409:
-            cfg.logger.warning(f'guest {guestname} owns snapshots, remove them first')
+            cfg.logger.warning(f'guest {guestname} is shelved or owns snapshots, remove them first')
 
         else:
             cfg.logger.unhandled_api_response(response, exit=not continue_on_error)
@@ -838,6 +841,115 @@ def cmd_knob_delete(
 
     else:
         cfg.logger.unhandled_api_response(response)
+
+
+@cli_root.group(name='shelf', short_help='Guest shelves management commands')
+@click.pass_obj
+def cmd_shelf(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_shelf.command(name='create', short_help='Create a new shelf')
+@click.argument('shelfname', required=True, type=str)
+def cmd_shelf_create(
+    cfg: Configuration,
+    shelfname: str,
+) -> None:
+    response = artemis_create(cfg, f'shelves/{shelfname}', {})
+
+    if response.ok:
+        print_shelves(cfg, [response.json()])
+
+    else:
+        cfg.logger.unhandled_api_response(response)
+
+
+@cmd_shelf.command(name='inspect', short_help='Inspect guest shelf')
+@click.argument('shelfname', required=True, type=str)
+def cmd_shelf_inspect(cfg: Configuration, shelfname: str) -> None:
+    response = artemis_inspect(cfg, 'shelves', shelfname)
+
+    if response.ok:
+        print_shelves(cfg, [response.json()])
+
+    else:
+        cfg.logger.unhandled_api_response(response)
+
+
+@cmd_shelf.command(name='delete', short_help='Remove a guest shelf and release all shelved guests')
+@click.argument('shelfname', required=True, type=str)
+def cmd_shelf_delete(cfg: Configuration, shelfname: str) -> None:
+    response = artemis_delete(cfg, 'shelves', shelfname)
+
+    if response.ok:
+        cfg.logger.success(f'shelf {shelfname} was deleted')
+
+    elif response.status_code == 404:
+        cfg.logger.error(f'shelf {shelfname} not found')
+
+    else:
+        cfg.logger.unhandled_api_response(response)
+
+
+@cmd_shelf.command(name='list', short_help='List available shelves')
+@click.option(
+    '--sort-by',
+    type=click.Choice(['shelfname']),
+    default='shelfname'
+)
+@click.option(
+    '--sort-order',
+    type=click.Choice(['asc', 'desc']),
+    default='asc'
+)
+@click.option(
+    '--jq-filter',
+    type=str,
+    help='An optional jq-like filter applied to the list of all shelves retrieved.'
+)
+@click.pass_obj
+def cmd_shelf_list(
+    cfg: Configuration,
+    sort_by: str = 'shelfname',
+    sort_order: str = 'asc',
+    jq_filter: Optional[str] = None
+) -> None:
+    response = artemis_inspect(cfg, 'shelves', '')
+
+    if response.ok:
+        shelves = cast(List[Dict[str, Any]], response.json())
+
+        shelves.sort(key=lambda x: cast(str, x[sort_by]))
+
+        if sort_order == 'desc':
+            shelves.reverse()
+
+        print_shelves(cfg, shelves, jq_filter=jq_filter)
+
+    else:
+        cfg.logger.unhandled_api_response(response)
+
+
+@cmd_shelf.command(name='cancel_guest', short_help='Cancel shelved guest(s)')
+@click.option(
+    '--continue-on-error/--no-continue-on-error',
+    default=False,
+    help='When set, errors would be logged but CLI would continue with next guest request in the list'
+)
+@click.argument('guestnames', metavar='ID...', default=None, nargs=-1,)
+@click.pass_obj
+def cmd_cancel_shelved_guest(cfg: Configuration, guestnames: List[str], continue_on_error: bool = False) -> None:
+    for guestname in guestnames:
+        response = artemis_delete(cfg, 'shelves/guests', guestname)
+
+        if response.ok:
+            cfg.logger.success(f'guest {guestname} has been cancelled')
+
+        elif response.status_code == 404:
+            cfg.logger.error(f'shelved guest {guestname} not found', exit=not continue_on_error)
+
+        else:
+            cfg.logger.unhandled_api_response(response, exit=not continue_on_error)
 
 
 @cli_root.group(name='user', short_help='User management commands')
