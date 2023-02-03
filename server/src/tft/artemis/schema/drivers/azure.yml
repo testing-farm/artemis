@@ -32,6 +32,11 @@ properties:
   username:
     type: string
 
+  ssh-options:
+    type: array
+    items:
+      type: string
+
 additionalProperties: false
 
 required:

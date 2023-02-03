@@ -106,6 +106,7 @@ def test_ping(
         workspace.gr,
         key=workspace.master_key,
         ssh_timeout=workspace.ssh_connect_timeout,
+        ssh_options=workspace.pool.ssh_options,
         poolname=workspace.pool.poolname,
         commandname='prepare-verify-ssh.shell-ping',
         cause_extractor=workspace.pool.cli_error_cause_extractor
@@ -134,6 +135,7 @@ def test_ping_error(
         workspace.gr,
         key=workspace.master_key,
         ssh_timeout=workspace.ssh_connect_timeout,
+        ssh_options=workspace.pool.ssh_options,
         poolname=workspace.pool.poolname,
         commandname='prepare-verify-ssh.shell-ping',
         cause_extractor=workspace.pool.cli_error_cause_extractor

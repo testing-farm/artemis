@@ -1178,6 +1178,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return f'<{self.__class__.__name__}: {self.poolname}>'
 
     @property
+    def ssh_options(self) -> List[str]:
+        return self.pool_config.get('ssh-options', [])
+
+    @property
     def image_info_mapper(self) -> ImageInfoMapper[PoolImageInfo]:
         """
         Returns a guest request to image info mapper for this pool.
@@ -2452,6 +2456,7 @@ def run_remote(
     *,
     key: SSHKey,
     ssh_timeout: int,
+    ssh_options: Optional[List[str]] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
@@ -2460,22 +2465,27 @@ def run_remote(
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
 
+    ssh_options = ssh_options or []
+
     with create_tempfile(file_contents=key.private) as private_key_filepath:
+        ssh_command = [
+            'ssh',
+            '-i', private_key_filepath,
+            '-o', 'UserKnownHostsFile=/dev/null',
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', f'ConnectTimeout={ssh_timeout}'
+        ] + ssh_options + [
+            '-l', guest_request.ssh_username,
+            '-p', str(guest_request.ssh_port),
+            guest_request.address,
+            # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
+            # parameters. Therefore joining it into a single string here, instead of bothering the caller.
+            command_join(command)
+        ]
+
         return run_cli_tool(
             logger,
-            [
-                'ssh',
-                '-i', private_key_filepath,
-                '-o', 'UserKnownHostsFile=/dev/null',
-                '-o', 'StrictHostKeyChecking=no',
-                '-o', f'ConnectTimeout={ssh_timeout}',
-                '-l', guest_request.ssh_username,
-                '-p', str(guest_request.ssh_port),
-                guest_request.address,
-                # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
-                # parameters. Therefore joining it into a single string here, instead of bothering the caller.
-                command_join(command)
-            ],
+            ssh_command,
             poolname=poolname,
             commandname=commandname,
             cause_extractor=cause_extractor
@@ -2490,6 +2500,7 @@ def copy_to_remote(
     *,
     key: SSHKey,
     ssh_timeout: int,
+    ssh_options: Optional[List[str]] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
@@ -2498,19 +2509,24 @@ def copy_to_remote(
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
 
+    ssh_options = ssh_options or []
+
     with create_tempfile(file_contents=key.private) as private_key_filepath:
+        scp_command = [
+            'scp',
+            '-i', private_key_filepath,
+            '-o', 'UserKnownHostsFile=/dev/null',
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', f'ConnectTimeout={ssh_timeout}'
+        ] + ssh_options + [
+            '-P', str(guest_request.ssh_port),
+            src,
+            f'{guest_request.ssh_username}@{guest_request.address}:{dst}',
+        ]
+
         return run_cli_tool(
             logger,
-            [
-                'scp',
-                '-i', private_key_filepath,
-                '-o', 'UserKnownHostsFile=/dev/null',
-                '-o', 'StrictHostKeyChecking=no',
-                '-o', f'ConnectTimeout={ssh_timeout}',
-                '-P', str(guest_request.ssh_port),
-                src,
-                f'{guest_request.ssh_username}@{guest_request.address}:{dst}',
-            ],
+            scp_command,
             poolname=poolname,
             commandname=commandname,
             cause_extractor=cause_extractor
@@ -2525,6 +2541,7 @@ def copy_from_remote(
     *,
     key: SSHKey,
     ssh_timeout: int,
+    ssh_options: Optional[List[str]] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
@@ -2533,19 +2550,24 @@ def copy_from_remote(
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
 
+    ssh_options = ssh_options or []
+
     with create_tempfile(file_contents=key.private) as private_key_filepath:
+        scp_command = [
+            'scp',
+            '-i', private_key_filepath,
+            '-o', 'UserKnownHostsFile=/dev/null',
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', f'ConnectTimeout={ssh_timeout}'
+        ] + ssh_options + [
+            '-P', str(guest_request.ssh_port),
+            f'{guest_request.ssh_username}@{guest_request.address}:{src}',
+            dst
+        ]
+
         return run_cli_tool(
             logger,
-            [
-                'scp',
-                '-i', private_key_filepath,
-                '-o', 'UserKnownHostsFile=/dev/null',
-                '-o', 'StrictHostKeyChecking=no',
-                '-o', f'ConnectTimeout={ssh_timeout}',
-                '-P', str(guest_request.ssh_port),
-                f'{guest_request.ssh_username}@{guest_request.address}:{src}',
-                dst
-            ],
+            scp_command,
             poolname=poolname,
             commandname=commandname,
             cause_extractor=cause_extractor
@@ -2558,6 +2580,7 @@ def ping_shell_remote(
     *,
     key: SSHKey,
     ssh_timeout: int,
+    ssh_options: Optional[List[str]] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
@@ -2580,6 +2603,7 @@ def ping_shell_remote(
         ['bash', '-c', 'echo ping'],
         key=key,
         ssh_timeout=ssh_timeout,
+        ssh_options=ssh_options,
         poolname=poolname,
         commandname=commandname,
         cause_extractor=cause_extractor

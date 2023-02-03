@@ -2946,6 +2946,7 @@ def do_prepare_post_install_script(
             POST_INSTALL_SCRIPT_REMOTE_FILEPATH,
             key=r_master_key.unwrap(),
             ssh_timeout=r_ssh_timeout.unwrap(),
+            ssh_options=workspace.pool.ssh_options,
             poolname=workspace.pool.poolname,
             commandname='prepare-post-install-script.copy-to-remote',
             cause_extractor=workspace.pool.cli_error_cause_extractor

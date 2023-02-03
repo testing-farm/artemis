@@ -379,6 +379,10 @@ properties:
 
                   required: []
 
+            ssh-options:
+              type: array
+              items:
+                type: string
 
           required:
             - capabilities
