@@ -97,6 +97,11 @@ properties:
 
     required: []
 
+  ssh-options:
+    type: array
+    items:
+      type: string
+
 additionalProperties: false
 
 required: []

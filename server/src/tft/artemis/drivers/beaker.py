@@ -1233,6 +1233,7 @@ class BeakerDriver(PoolDriver):
             ['extendtesttime.sh', str(math.ceil(KNOB_RESERVATION_EXTENSION.value / 3600))],
             key=r_master_key.unwrap(),
             ssh_timeout=r_ssh_timeout.unwrap(),
+            ssh_options=self.ssh_options,
             poolname=self.poolname,
             commandname='bkr.extend',
             cause_extractor=bkr_error_cause_extractor

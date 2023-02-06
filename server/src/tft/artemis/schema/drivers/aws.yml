@@ -89,6 +89,11 @@ properties:
   use-spot-request:
     type: boolean
 
+  ssh-options:
+    type: array
+    items:
+      type: string
+
 additionalProperties: false
 
 required:

@@ -81,6 +81,7 @@ class Workspace(_Workspace):
             self.gr,
             key=self.master_key,
             ssh_timeout=self.ssh_connect_timeout,
+            ssh_options=self.pool.ssh_options,
             poolname=self.pool.poolname,
             commandname='prepare-verify-ssh.shell-ping',
             cause_extractor=self.pool.cli_error_cause_extractor
