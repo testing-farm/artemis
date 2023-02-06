@@ -35,6 +35,7 @@ ENV PATH="/tmp/.poetry/bin:$PATH"
 # Prepare virtual environment and install all required dependencies
 #
 RUN    microdnf -y install bash \
+                           crypto-policies-scripts \
                            curl \
                            gcc \
                            g++ \
@@ -59,6 +60,7 @@ RUN    microdnf -y install bash \
                            lsof \
                            procps-ng \
                            net-tools \
+    && update-crypto-policies --set LEGACY \
     && microdnf clean all \
     && rm -rf /var/cache/dnf \
     && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
