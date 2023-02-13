@@ -93,6 +93,34 @@ class GuestLogger(gluetool.log.ContextAdapter):
         return cast(str, self._contexts['guest_name'][1])
 
 
+class ShelfLogger(gluetool.log.ContextAdapter):
+    """
+    Logger adapter which adds the given guest shelf name to context.
+    """
+
+    def __init__(self, logger: gluetool.log.ContextAdapter, shelfname: str) -> None:
+        """
+        Logger adapter which adds a given guest shelf name to context.
+
+        :param logger: logger to extend.
+        :param shelfname: guest shelf name to add.
+        """
+
+        super().__init__(logger, {
+            'ctx_shelf_name': (12, shelfname)
+        })
+
+    @property
+    def shelfname(self) -> str:
+        """
+        Return shelf name tracked by the logger.
+
+        :returns: name of the shelf to propagate into logging context.
+        """
+
+        return cast(str, self._contexts['shelf_name'][1])
+
+
 class SnapshotLogger(gluetool.log.ContextAdapter):
     """
     Logger adapter which adds a given snapshot request name to context.

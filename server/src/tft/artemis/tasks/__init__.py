@@ -30,7 +30,7 @@ from typing_extensions import Protocol, TypedDict
 
 from .. import Failure, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, safe_call
 from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
-from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SafeQuery, \
+from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, SafeQuery, \
     SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change, upsert
 from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
 from ..drivers import aws as aws_driver
@@ -39,7 +39,7 @@ from ..drivers import beaker as beaker_driver
 from ..drivers import localhost as localhost_driver
 from ..drivers import openstack as openstack_driver
 from ..drivers import rest as rest_driver
-from ..guest import GuestLogger, GuestState, SnapshotLogger
+from ..guest import GuestLogger, GuestState, ShelfLogger, SnapshotLogger
 from ..knobs import Knob
 from ..profile import Profiler
 from ..script import hook_engine
@@ -1608,6 +1608,17 @@ def get_guest_logger(
     )
 
 
+def get_shelf_logger(
+    task_name: str,
+    logger: gluetool.log.ContextAdapter,
+    shelfname: str,
+) -> TaskLogger:
+    return TaskLogger(
+        ShelfLogger(logger, shelfname),
+        task_name
+    )
+
+
 def get_snapshot_logger(
     task_name: str,
     logger: gluetool.log.ContextAdapter,
@@ -1678,6 +1689,7 @@ class Workspace:
 
         self.gr: Optional[GuestRequest] = None
         self.sr: Optional[SnapshotRequest] = None
+        self.shelf: Optional[GuestShelf] = None
         self.ssh_key: Optional[SSHKey] = None
         self.pool: Optional[PoolDriver] = None
         self.guest_events: Optional[List[GuestEvent]] = None
@@ -1803,6 +1815,51 @@ class Workspace:
             return
 
         self.gr = gr
+
+    def load_shelf(self, shelfname: str, state: Optional[GuestState] = None) -> None:
+        """
+        Load a shelf from a database, as long as it is in a given state.
+
+        **OUTCOMES:**
+
+          * ``SUCCESS`` if shelf doesn't exist or it isn't in a given state
+          * ``RESCHEDULE`` if cancel was requested
+          * ``FAIL`` otherwise
+
+        **SETS:**
+
+          * ``shelfname``
+          * ``shelf``
+        """
+
+        if self.result:
+            return
+
+        self.shelfname = shelfname
+
+        query = SafeQuery.from_session(self.session, GuestShelf) \
+            .filter(GuestShelf.shelfname == shelfname)
+
+        if state is not None:
+            query = query.filter(GuestShelf.state == state)
+
+        r = query.one_or_none()
+
+        if r.is_error:
+            self.result = self.handle_error(r, 'failed to load shelf')
+            return
+
+        shelf = r.unwrap()
+
+        if not shelf:
+            self.result = SUCCESS
+            return
+
+        if _cancel_task_if(self.logger, self.cancel):
+            self.result = RESCHEDULE
+            return
+
+        self.shelf = shelf
 
     def load_snapshot_request(self, snapshotname: str, state: GuestState) -> None:
         """
