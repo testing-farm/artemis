@@ -124,6 +124,10 @@ COPY server /APP/
 # TODO: remove once server/client Makefiles wouldn't refer to their parent directory
 COPY Makefile.lib /
 RUN    cd /APP \
+    # New parallel installer does not seem to work correctly, way too many crashes
+    # when plenty of packages are needed.
+    && poetry config experimental.new-installer false \
+    && poetry config installer.parallel false \
     && PYTHON=python3.9 make install-no-dev \
     # Make Poetry configuration accesible to Poetry in containers
     && chmod a+rw /tmp/.config/pypoetry/config.toml
