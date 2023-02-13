@@ -23,12 +23,12 @@ _env-info:
 install: _env-info  ## Install component and development tools
 	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
 	poetry env info $$POETRY_ADDOPTS
-	poetry install -v --remove-untracked $$POETRY_ADDOPTS
+	poetry install -v --remove-untracked -E full $$POETRY_ADDOPTS
 
 install-no-dev: _env-info  ## Install component alone, no development tools
 	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
 	poetry env info $$POETRY_ADDOPTS
-	poetry install -v --no-dev --remove-untracked $$POETRY_ADDOPTS
+	poetry install -v --no-dev --remove-untracked -E full $$POETRY_ADDOPTS
 
 ##@ Tests
 

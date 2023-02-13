@@ -54,6 +54,9 @@ types-requests = "*"
 types-setuptools = "*"
 types-urllib3 = "*"
 
+[tool.poetry.extras]
+full = []
+
 [tool.poetry.scripts]
 artemis-cli = "tft.artemis_cli.artemis_cli:cli_root"
 
