@@ -1410,7 +1410,7 @@ class BeakerDriver(PoolDriver):
             command_output = cast(Optional[ProcessOutput], failure.details.get('command_output', None))
 
             if command_output and command_output.stderr \
-               and command_output.stderr.strip().lower() == 'nothing matches':
+               and 'nothing matches' in command_output.stderr.strip().lower():
                 # This is a a valid result, meaning "0 machines". Setting our "raw output" to a corresponding value
                 # instead of adding some special flag. Empty string has 0 lines, 0 machines...
                 raw_machines = ''
