@@ -674,17 +674,6 @@ class BeakerDriver(PoolDriver):
     ) -> None:
         super().__init__(logger, poolname, pool_config)
 
-        # Prepare `bkr` command with options we can already deduce.
-        self._bkr_command = [
-            'bkr'
-        ]
-
-        if self.pool_config.get('username') and self.pool_config.get('password'):
-            self._bkr_command += [
-                '--username', self.pool_config['username'],
-                '--password', self.pool_config['password']
-            ]
-
         self.avoid_groups_hostnames_cache_key = self.POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY.format(self.poolname)  # noqa: FS002,E501
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
@@ -732,9 +721,25 @@ class BeakerDriver(PoolDriver):
             describing the problem.
         """
 
+        bkr_command: List[str] = [
+            'bkr'
+        ]
+
+        # Subcommand is the first item of `options`...
+        bkr_command += [options[0]]
+
+        if self.pool_config.get('username') and self.pool_config.get('password'):
+            bkr_command += [
+                '--username', self.pool_config['username'],
+                '--password', self.pool_config['password']
+            ]
+
+        # ... and the rest are its options.
+        bkr_command += options[1:]
+
         r_run = run_cli_tool(
             logger,
-            self._bkr_command + options,
+            bkr_command,
             json_output=False,
             command_scrubber=lambda cmd: (['bkr'] + options),
             poolname=self.poolname,
