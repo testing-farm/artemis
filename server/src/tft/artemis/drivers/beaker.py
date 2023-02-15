@@ -736,6 +736,7 @@ class BeakerDriver(PoolDriver):
             logger,
             self._bkr_command + options,
             json_output=False,
+            command_scrubber=lambda cmd: (['bkr'] + options),
             poolname=self.poolname,
             commandname=commandname,
             cause_extractor=bkr_error_cause_extractor
