@@ -21,9 +21,9 @@ include = ["artemis/schema"]
 python = "~3.9.0"
 # New mypy vs. new Alembic: https://github.com/python/mypy/issues/11038 - Alembic 1.7.4 adds a workaround
 alembic = "*"
-awscli = "^1.27.24"
-azure-cli = "*"
-beaker-client = "*"
+awscli = { version = "^1.27.24", optional = true }
+azure-cli = { version = "*", optional = true }
+beaker-client = { version = "*", optional = true }
 # BeautifulSoup could be updated but it's pinned by gluetool to an older version...
 # beautifulsoup4 = "^4.9.3"
 click = "*"
@@ -39,7 +39,7 @@ Pint = "*"
 prometheus-client = "^0.12.0"
 pyinstrument = "*"
 psycopg2 = "*"
-python-openstackclient = "*"
+python-openstackclient = { version = "*", optional = true }
 # See https://github.com/python-poetry/poetry/issues/4402
 sqlalchemy = ">=1.4,<1.4.23"
 sqlalchemy-utils = "*"
@@ -49,6 +49,9 @@ periodiq = "*"
 redis = "*"
 jsonschema = "*"
 sentry-sdk = "*"
+
+[tool.poetry.extras]
+full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient" ]
 
 [tool.poetry.dev-dependencies]
 # All development dependencies are left unpinned, untill we run into troubles with a particular version.

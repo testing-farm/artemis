@@ -3,7 +3,7 @@ name = "adal"
 version = "1.2.7"
 description = "Note: This library is already replaced by MSAL Python, available here: https://pypi.org/project/msal/ .ADAL Python remains available here as a legacy. The ADAL for Python library makes it easy for python application to authenticate to Azure Active Directory (AAD) in order to access AAD protected web resources."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -40,7 +40,7 @@ name = "antlr4-python3-runtime"
 version = "4.11.1"
 description = "ANTLR 4.11.1 runtime for Python 3"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -48,7 +48,7 @@ name = "appdirs"
 version = "1.4.4"
 description = "A small Python module for determining appropriate platform-specific dirs, e.g. a \"user data dir\"."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -56,7 +56,7 @@ name = "applicationinsights"
 version = "0.11.7"
 description = "This project extends the Application Insights API surface to support Python."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -64,7 +64,7 @@ name = "argcomplete"
 version = "2.0.0"
 description = "Bash tab completion for argparse"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.extras]
@@ -97,7 +97,7 @@ name = "autopage"
 version = "0.5.1"
 description = "A library to provide automatic paging for console output"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [[package]]
@@ -105,7 +105,7 @@ name = "awscli"
 version = "1.27.24"
 description = "Universal Command Line Environment for AWS."
 category = "main"
-optional = false
+optional = true
 python-versions = ">= 3.7"
 
 [package.dependencies]
@@ -121,7 +121,7 @@ name = "azure-batch"
 version = "6.0.0"
 description = "Microsoft Azure Batch Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -134,7 +134,7 @@ name = "azure-cli"
 version = "2.0.67"
 description = "Microsoft Azure Command-Line Tools"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -206,7 +206,7 @@ name = "azure-cli-acr"
 version = "2.2.9"
 description = "Microsoft Azure Command-Line Tools ACR Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -221,7 +221,7 @@ name = "azure-cli-acs"
 version = "2.4.4"
 description = "Microsoft Azure Command-Line Tools ACS Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -242,7 +242,7 @@ name = "azure-cli-advisor"
 version = "2.0.1"
 description = "Microsoft Azure Command-Line Tools Advisor Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -255,7 +255,7 @@ name = "azure-cli-ams"
 version = "0.4.7"
 description = "Microsoft Azure Command-Line Tools AMS Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -269,7 +269,7 @@ name = "azure-cli-appservice"
 version = "0.2.21"
 description = "Microsoft Azure Command-Line Tools AppService Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -293,7 +293,7 @@ name = "azure-cli-backup"
 version = "1.2.5"
 description = "Microsoft Azure Command-Line Tools Recovery Services Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -307,7 +307,7 @@ name = "azure-cli-batch"
 version = "4.0.3"
 description = "Microsoft Azure Command-Line Tools Batch Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -322,7 +322,7 @@ name = "azure-cli-batchai"
 version = "0.4.10"
 description = "Microsoft Azure Batch AI Client Command-Line Tools"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -339,7 +339,7 @@ name = "azure-cli-billing"
 version = "0.2.2"
 description = "Microsoft Azure Command-Line Tools Billing Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -352,7 +352,7 @@ name = "azure-cli-botservice"
 version = "0.2.2"
 description = "Microsoft Azure Command-Line Tools Bot Services Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -368,7 +368,7 @@ name = "azure-cli-cdn"
 version = "0.2.4"
 description = "Microsoft Azure Command-Line Tools Content Delivery Network (CDN) Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -381,7 +381,7 @@ name = "azure-cli-cloud"
 version = "2.1.1"
 description = "Microsoft Azure Command-Line Tools Cloud Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -393,7 +393,7 @@ name = "azure-cli-cognitiveservices"
 version = "0.2.6"
 description = "Microsoft Azure Command-Line Tools Cognitive Services Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -406,7 +406,7 @@ name = "azure-cli-command-modules-nspkg"
 version = "2.0.2"
 description = "Microsoft Azure CLI Command Modules Namespace Package"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -417,7 +417,7 @@ name = "azure-cli-configure"
 version = "2.0.24"
 description = "Microsoft Azure Command-Line Tools Configure Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -429,7 +429,7 @@ name = "azure-cli-consumption"
 version = "0.4.4"
 description = "Microsoft Azure Command-Line Tools Consumption Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -442,7 +442,7 @@ name = "azure-cli-container"
 version = "0.3.18"
 description = "Microsoft Azure Command-Line Tools container Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -461,7 +461,7 @@ name = "azure-cli-core"
 version = "2.0.67"
 description = "Microsoft Azure Command-Line Tools Core Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -493,7 +493,7 @@ name = "azure-cli-cosmosdb"
 version = "0.2.11"
 description = "Microsoft Azure Command-Line Tools Cosmos DB Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -507,7 +507,7 @@ name = "azure-cli-deploymentmanager"
 version = "0.1.1"
 description = "Microsoft Azure Command-Line Tools Deployment Manager Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -520,7 +520,7 @@ name = "azure-cli-dla"
 version = "0.2.6"
 description = "Microsoft Azure Command-Line Tools Data Lake Analytics Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -534,7 +534,7 @@ name = "azure-cli-dls"
 version = "0.1.10"
 description = "Microsoft Azure Command-Line Tools Data Lake Store Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -548,7 +548,7 @@ name = "azure-cli-dms"
 version = "0.1.4"
 description = "Microsoft Azure Command-Line Tools for the Data Migration Service (DMS) Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -562,7 +562,7 @@ name = "azure-cli-eventgrid"
 version = "0.2.4"
 description = "Microsoft Azure Command-Line Tools EventGrid Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -576,7 +576,7 @@ name = "azure-cli-eventhubs"
 version = "0.3.7"
 description = "Microsoft Azure Command-Line Tools Event Hubs Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -590,7 +590,7 @@ name = "azure-cli-extension"
 version = "0.2.5"
 description = "Microsoft Azure Command-Line Tools Extension Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -602,7 +602,7 @@ name = "azure-cli-feedback"
 version = "2.2.1"
 description = "Microsoft Azure Command-Line Tools Feedback Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -614,7 +614,7 @@ name = "azure-cli-find"
 version = "0.3.4"
 description = "Intelligent querying for CLI Example information."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -626,7 +626,7 @@ name = "azure-cli-hdinsight"
 version = "0.3.5"
 description = "Microsoft Azure Command-Line Tools HDInsight Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -641,7 +641,7 @@ name = "azure-cli-interactive"
 version = "0.4.5"
 description = "Microsoft Azure Command-Line Interactive Shell"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -654,7 +654,7 @@ name = "azure-cli-iot"
 version = "0.3.11"
 description = "Microsoft Azure Command-Line Tools IoT Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -669,7 +669,7 @@ name = "azure-cli-iotcentral"
 version = "0.1.7"
 description = "Microsoft Azure Command-Line Tools IoT Central Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -682,7 +682,7 @@ name = "azure-cli-keyvault"
 version = "2.2.16"
 description = "Microsoft Azure Command-Line Tools Keyvault Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -698,7 +698,7 @@ name = "azure-cli-kusto"
 version = "0.2.3"
 description = "Microsoft Azure Command-Line Tools KUSTO Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -712,7 +712,7 @@ name = "azure-cli-lab"
 version = "0.1.8"
 description = "Microsoft Azure Command-Line Tools DevTestLabs Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -726,7 +726,7 @@ name = "azure-cli-maps"
 version = "0.3.5"
 description = "Microsoft Azure Command-Line Tools Maps Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -739,7 +739,7 @@ name = "azure-cli-monitor"
 version = "0.2.15"
 description = "Microsoft Azure Command-Line Tools Monitor Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -752,7 +752,7 @@ name = "azure-cli-natgateway"
 version = "0.1.1"
 description = "Microsoft Azure Command-Line Tools NatGateway Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -765,7 +765,7 @@ name = "azure-cli-network"
 version = "2.5.2"
 description = "Microsoft Azure Command-Line Tools Network Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -780,7 +780,7 @@ name = "azure-cli-nspkg"
 version = "3.0.3"
 description = "Microsoft Azure CLI Namespace Package"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -791,7 +791,7 @@ name = "azure-cli-policyinsights"
 version = "0.1.4"
 description = "Microsoft Azure Command-Line Tools Policy Insights Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -804,7 +804,7 @@ name = "azure-cli-privatedns"
 version = "1.0.2"
 description = "Microsoft Azure Command-Line Tools Network PrivateDns Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -818,7 +818,7 @@ name = "azure-cli-profile"
 version = "2.1.5"
 description = "Microsoft Azure Command-Line Tools Profile Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -830,7 +830,7 @@ name = "azure-cli-rdbms"
 version = "0.3.12"
 description = "Microsoft Azure Command-Line Tools MySQL and PostgreSQL Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -844,7 +844,7 @@ name = "azure-cli-redis"
 version = "0.4.4"
 description = "Microsoft Azure Command-Line Tools Redis Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -857,7 +857,7 @@ name = "azure-cli-relay"
 version = "0.1.5"
 description = "Microsoft Azure Command-Line Tools Relay Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -871,7 +871,7 @@ name = "azure-cli-reservations"
 version = "0.4.3"
 description = "Microsoft Azure Command-Line Tools Reservations Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -884,7 +884,7 @@ name = "azure-cli-resource"
 version = "2.1.16"
 description = "Microsoft Azure Command-Line Tools Resource Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -898,7 +898,7 @@ name = "azure-cli-role"
 version = "2.6.4"
 description = "Microsoft Azure Command-Line Tools Role Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -915,7 +915,7 @@ name = "azure-cli-search"
 version = "0.1.2"
 description = "Microsoft Azure Command-Line Tools Search Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -928,7 +928,7 @@ name = "azure-cli-security"
 version = "0.1.2"
 description = "Microsoft Azure Command-Line Tools Azure Security Center"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -941,7 +941,7 @@ name = "azure-cli-servicebus"
 version = "0.3.6"
 description = "Microsoft Azure Command-Line Tools Service Bus Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -955,7 +955,7 @@ name = "azure-cli-servicefabric"
 version = "0.1.20"
 description = "Microsoft Azure Service Fabric Command-Line Tools"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -975,7 +975,7 @@ name = "azure-cli-signalr"
 version = "1.0.1"
 description = "Microsoft Azure Command-Line Tools SignalR Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -988,7 +988,7 @@ name = "azure-cli-sql"
 version = "2.2.5"
 description = "Microsoft Azure Command-Line Tools SQL Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1003,7 +1003,7 @@ name = "azure-cli-sqlvm"
 version = "0.2.0"
 description = "Microsoft Azure Command-Line Tools SQL virtual machine Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1016,7 +1016,7 @@ name = "azure-cli-storage"
 version = "2.4.3"
 description = "Microsoft Azure Command-Line Tools Storage Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1030,7 +1030,7 @@ name = "azure-cli-telemetry"
 version = "1.0.2"
 description = "Microsoft Azure CLI Telemetry Package"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1043,7 +1043,7 @@ name = "azure-cli-vm"
 version = "2.2.23"
 description = "Microsoft Azure Command-Line Tools VM Command Module"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1064,7 +1064,7 @@ name = "azure-common"
 version = "1.1.28"
 description = "Microsoft Azure Client Library for Python (Common)"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -1072,7 +1072,7 @@ name = "azure-core"
 version = "1.22.1"
 description = "Microsoft Azure Core Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -1084,7 +1084,7 @@ name = "azure-cosmos"
 version = "4.2.0"
 description = "Microsoft Azure Cosmos Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1096,7 +1096,7 @@ name = "azure-datalake-store"
 version = "0.0.39"
 description = "Azure Data Lake Store Filesystem Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1110,7 +1110,7 @@ name = "azure-functions-devops-build"
 version = "0.0.22"
 description = "Python package for integrating Azure Functions with Azure DevOps. Specifically made for the Azure CLI"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1123,7 +1123,7 @@ name = "azure-graphrbac"
 version = "0.60.0"
 description = "Microsoft Azure Graph RBAC Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1136,7 +1136,7 @@ name = "azure-keyvault"
 version = "1.1.0"
 description = "Microsoft Azure Key Vault Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1152,7 +1152,7 @@ name = "azure-mgmt-advisor"
 version = "2.0.1"
 description = "Microsoft Azure Advisor Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1165,7 +1165,7 @@ name = "azure-mgmt-applicationinsights"
 version = "0.1.1"
 description = "Microsoft Azure Application Insights Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1178,7 +1178,7 @@ name = "azure-mgmt-authorization"
 version = "0.50.0"
 description = "Microsoft Azure Authorization Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1191,7 +1191,7 @@ name = "azure-mgmt-batch"
 version = "6.0.0"
 description = "Microsoft Azure Batch Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1204,7 +1204,7 @@ name = "azure-mgmt-batchai"
 version = "2.0.0"
 description = "Microsoft Azure Batch AI Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1217,7 +1217,7 @@ name = "azure-mgmt-billing"
 version = "0.2.0"
 description = "Microsoft Azure Billing Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1230,7 +1230,7 @@ name = "azure-mgmt-botservice"
 version = "1.0.0"
 description = "Microsoft Azure Bot Service Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1243,7 +1243,7 @@ name = "azure-mgmt-cdn"
 version = "3.1.0"
 description = "Microsoft Azure CDN Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1256,7 +1256,7 @@ name = "azure-mgmt-cognitiveservices"
 version = "3.0.0"
 description = "Microsoft Azure Cognitive Services Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1269,7 +1269,7 @@ name = "azure-mgmt-compute"
 version = "5.0.0"
 description = "Microsoft Azure Compute Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1282,7 +1282,7 @@ name = "azure-mgmt-consumption"
 version = "2.0.0"
 description = "Microsoft Azure Consumption Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1295,7 +1295,7 @@ name = "azure-mgmt-containerinstance"
 version = "1.4.0"
 description = "Microsoft Azure Container Instance Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1308,7 +1308,7 @@ name = "azure-mgmt-containerregistry"
 version = "2.8.0"
 description = "Microsoft Azure Container Registry Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1321,7 +1321,7 @@ name = "azure-mgmt-containerservice"
 version = "5.2.0"
 description = "Microsoft Azure Container Service Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1334,7 +1334,7 @@ name = "azure-mgmt-core"
 version = "1.3.0"
 description = "Microsoft Azure Management Core Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1345,7 +1345,7 @@ name = "azure-mgmt-cosmosdb"
 version = "0.6.1"
 description = "Microsoft Azure Cosmos DB Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1358,7 +1358,7 @@ name = "azure-mgmt-datalake-analytics"
 version = "0.2.1"
 description = "Microsoft Azure Data Lake Analytics Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1371,7 +1371,7 @@ name = "azure-mgmt-datalake-nspkg"
 version = "3.0.1"
 description = "Microsoft Azure Data Lake Management Namespace Package [Internal]"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1382,7 +1382,7 @@ name = "azure-mgmt-datalake-store"
 version = "0.5.0"
 description = "Microsoft Azure Data Lake Store Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1395,7 +1395,7 @@ name = "azure-mgmt-datamigration"
 version = "0.1.0"
 description = "Microsoft Azure Data Migration Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1408,7 +1408,7 @@ name = "azure-mgmt-deploymentmanager"
 version = "1.0.0"
 description = "Microsoft Azure Deployment Manager Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1421,7 +1421,7 @@ name = "azure-mgmt-devtestlabs"
 version = "2.2.0"
 description = "Microsoft Azure DevTestLabs Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1434,7 +1434,7 @@ name = "azure-mgmt-dns"
 version = "2.1.0"
 description = "Microsoft Azure DNS Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1448,7 +1448,7 @@ name = "azure-mgmt-eventgrid"
 version = "2.2.0"
 description = "Microsoft Azure EventGrid Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1461,7 +1461,7 @@ name = "azure-mgmt-eventhub"
 version = "2.6.0"
 description = "Microsoft Azure EventHub Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1474,7 +1474,7 @@ name = "azure-mgmt-hdinsight"
 version = "0.2.1"
 description = "Microsoft Azure HDInsight Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1487,7 +1487,7 @@ name = "azure-mgmt-imagebuilder"
 version = "0.2.1"
 description = "Microsoft Azure Image Builder Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1500,7 +1500,7 @@ name = "azure-mgmt-iotcentral"
 version = "1.0.0"
 description = "Microsoft Azure IoTCentral Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1513,7 +1513,7 @@ name = "azure-mgmt-iothub"
 version = "0.8.2"
 description = "Microsoft Azure IoTHub Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1526,7 +1526,7 @@ name = "azure-mgmt-iothubprovisioningservices"
 version = "0.2.0"
 description = "Microsoft Azure IoTHub Provisioning Services Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1539,7 +1539,7 @@ name = "azure-mgmt-keyvault"
 version = "1.1.0"
 description = "Microsoft Azure Key Vault Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1553,7 +1553,7 @@ name = "azure-mgmt-kusto"
 version = "0.3.0"
 description = "Microsoft Azure Kusto Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1566,7 +1566,7 @@ name = "azure-mgmt-loganalytics"
 version = "0.2.0"
 description = "Microsoft Azure Log Analytics Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1579,7 +1579,7 @@ name = "azure-mgmt-managementgroups"
 version = "0.1.0"
 description = "Microsoft Azure Management Groups Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1592,7 +1592,7 @@ name = "azure-mgmt-maps"
 version = "0.1.0"
 description = "Microsoft Azure Maps Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1605,7 +1605,7 @@ name = "azure-mgmt-marketplaceordering"
 version = "0.1.0"
 description = "Microsoft Azure Market Place Ordering Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1618,7 +1618,7 @@ name = "azure-mgmt-media"
 version = "1.1.1"
 description = "Microsoft Azure Media Services Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1631,7 +1631,7 @@ name = "azure-mgmt-monitor"
 version = "0.5.2"
 description = "Microsoft Azure Monitor Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1644,7 +1644,7 @@ name = "azure-mgmt-msi"
 version = "0.2.0"
 description = "Microsoft Azure MSI Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1657,7 +1657,7 @@ name = "azure-mgmt-network"
 version = "3.0.0"
 description = "Microsoft Azure Network Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1670,7 +1670,7 @@ name = "azure-mgmt-nspkg"
 version = "3.0.2"
 description = "Microsoft Azure Resource Management Namespace Package [Internal]"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1681,7 +1681,7 @@ name = "azure-mgmt-policyinsights"
 version = "0.3.1"
 description = "Microsoft Azure Policy Insights Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1694,7 +1694,7 @@ name = "azure-mgmt-privatedns"
 version = "0.1.0"
 description = "Microsoft Azure DNS Private Zones Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1707,7 +1707,7 @@ name = "azure-mgmt-rdbms"
 version = "1.8.0"
 description = "Microsoft Azure RDBMS Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1720,7 +1720,7 @@ name = "azure-mgmt-recoveryservices"
 version = "0.1.1"
 description = "Microsoft Azure Recovery Services Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1733,7 +1733,7 @@ name = "azure-mgmt-recoveryservicesbackup"
 version = "0.1.2"
 description = "Microsoft Azure Recovery Services Backup Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1746,7 +1746,7 @@ name = "azure-mgmt-redis"
 version = "6.0.0"
 description = "Microsoft Azure Redis Cache Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1759,7 +1759,7 @@ name = "azure-mgmt-relay"
 version = "0.1.0"
 description = "Microsoft Azure Relay Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1772,7 +1772,7 @@ name = "azure-mgmt-reservations"
 version = "0.3.1"
 description = "Microsoft Azure Reservations Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1785,7 +1785,7 @@ name = "azure-mgmt-resource"
 version = "2.1.0"
 description = "Microsoft Azure Resource Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1798,7 +1798,7 @@ name = "azure-mgmt-search"
 version = "2.0.0"
 description = "Microsoft Azure Search Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1811,7 +1811,7 @@ name = "azure-mgmt-security"
 version = "0.1.0"
 description = "Microsoft Azure Secutiry Center Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1824,7 +1824,7 @@ name = "azure-mgmt-servicebus"
 version = "0.6.0"
 description = "Microsoft Azure Service Bus Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1837,7 +1837,7 @@ name = "azure-mgmt-servicefabric"
 version = "0.2.0"
 description = "Microsoft Azure Service Fabric Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1851,7 +1851,7 @@ name = "azure-mgmt-signalr"
 version = "0.1.1"
 description = "Microsoft Azure SignalR Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1865,7 +1865,7 @@ name = "azure-mgmt-sql"
 version = "0.12.0"
 description = "Microsoft Azure SQL Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1878,7 +1878,7 @@ name = "azure-mgmt-sqlvirtualmachine"
 version = "0.3.0"
 description = "Microsoft Azure SQL Virtual Machine Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1891,7 +1891,7 @@ name = "azure-mgmt-storage"
 version = "3.3.0"
 description = "Microsoft Azure Storage Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1904,7 +1904,7 @@ name = "azure-mgmt-trafficmanager"
 version = "0.51.0"
 description = "Microsoft Azure Traffic Manager Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1917,7 +1917,7 @@ name = "azure-mgmt-web"
 version = "0.42.0"
 description = "Microsoft Azure Web Apps Management Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1930,7 +1930,7 @@ name = "azure-multiapi-storage"
 version = "0.2.3"
 description = "Microsoft Azure Storage Client Library for Python with multi API version support."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1945,7 +1945,7 @@ name = "azure-nspkg"
 version = "3.0.2"
 description = "Microsoft Azure Namespace Package [Internal]"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -1953,7 +1953,7 @@ name = "azure-storage-blob"
 version = "1.3.1"
 description = "Microsoft Azure Storage Blob Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1966,7 +1966,7 @@ name = "azure-storage-common"
 version = "1.4.2"
 description = "Microsoft Azure Storage Common Client Library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1980,7 +1980,7 @@ name = "azure-storage-nspkg"
 version = "3.1.0"
 description = "Microsoft Azure Storage Namespace Package [Internal]"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2002,7 +2002,7 @@ name = "bcrypt"
 version = "4.0.1"
 description = "Modern password hashing for your software and your servers"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.extras]
@@ -2014,7 +2014,7 @@ name = "beaker-client"
 version = "28.3"
 description = "Command-line client for interacting with Beaker"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2031,7 +2031,7 @@ name = "beaker-common"
 version = "28.3"
 description = "Common components for Beaker packages"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -2054,7 +2054,7 @@ name = "botocore"
 version = "1.29.24"
 description = "Low-level, data-driven core of boto 3."
 category = "main"
-optional = false
+optional = true
 python-versions = ">= 3.7"
 
 [package.dependencies]
@@ -2078,7 +2078,7 @@ name = "cffi"
 version = "1.15.1"
 description = "Foreign Function Interface for Python calling C code."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2127,7 +2127,7 @@ name = "cliff"
 version = "3.10.1"
 description = "Command Line Interface Formulation Framework"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2144,7 +2144,7 @@ name = "cmd2"
 version = "2.4.2"
 description = "cmd2 - quickly build feature-rich and user-friendly interactive command line applications in Python"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2197,7 +2197,7 @@ name = "cryptography"
 version = "38.0.4"
 description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2224,7 +2224,7 @@ name = "debtcollector"
 version = "2.5.0"
 description = "A collection of Python deprecation patterns and strategies that help you collect your technical debt in a non-destructive manner."
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2235,7 +2235,7 @@ name = "decorator"
 version = "5.1.1"
 description = "Decorators for Humans"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.5"
 
 [[package]]
@@ -2259,7 +2259,7 @@ name = "dogpile.cache"
 version = "1.1.8"
 description = "A caching front-end based on the Dogpile lock."
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2303,7 +2303,7 @@ name = "fabric"
 version = "3.0.0"
 description = "High level SSH command execution"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2413,7 +2413,7 @@ name = "gssapi"
 version = "1.8.2"
 description = "Python GSSAPI Wrapper"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.7"
 
 [package.dependencies]
@@ -2438,7 +2438,7 @@ name = "humanfriendly"
 version = "10.0"
 description = "Human friendly output for text interfaces using Python"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [package.dependencies]
@@ -2492,7 +2492,7 @@ name = "invoke"
 version = "2.0.0"
 description = "Pythonic task execution"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [[package]]
@@ -2500,7 +2500,7 @@ name = "iso8601"
 version = "1.1.0"
 description = "Simple module to parse ISO 8601 dates"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6.2,<4.0"
 
 [[package]]
@@ -2508,7 +2508,7 @@ name = "isodate"
 version = "0.6.1"
 description = "An ISO 8601 date/time/duration parser and formatter"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2562,7 +2562,7 @@ name = "jmespath"
 version = "1.0.1"
 description = "JSON Matching Expressions"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.7"
 
 [[package]]
@@ -2578,7 +2578,7 @@ name = "jsonpatch"
 version = "1.32"
 description = "Apply JSON-Patches (RFC 6902)"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [package.dependencies]
@@ -2589,7 +2589,7 @@ name = "jsonpointer"
 version = "2.3"
 description = "Identify specific nodes in a JSON document (RFC 6901)"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
@@ -2613,7 +2613,7 @@ name = "keystoneauth1"
 version = "5.1.0"
 description = "Authentication Library for OpenStack Identity"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2636,7 +2636,7 @@ name = "knack"
 version = "0.6.3"
 description = "A Command-Line Interface framework"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2731,7 +2731,7 @@ name = "msgpack"
 version = "1.0.4"
 description = "MessagePack serializer"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -2739,7 +2739,7 @@ name = "msrest"
 version = "0.6.21"
 description = "AutoRest swagger generator Python client runtime."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2756,7 +2756,7 @@ name = "msrestazure"
 version = "0.6.4"
 description = "AutoRest swagger generator Python client runtime. Azure-specific module."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2769,7 +2769,7 @@ name = "munch"
 version = "2.5.0"
 description = "A dot-accessible dictionary (a la JavaScript objects)"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2811,7 +2811,7 @@ name = "netaddr"
 version = "0.8.0"
 description = "A network address manipulation library for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -2819,7 +2819,7 @@ name = "netifaces"
 version = "0.11.0"
 description = "Portable network interface information."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -2835,7 +2835,7 @@ name = "oauthlib"
 version = "3.2.2"
 description = "A generic, spec-compliant, thorough implementation of the OAuth request-signing logic"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.extras]
@@ -2848,7 +2848,7 @@ name = "openstacksdk"
 version = "0.103.0"
 description = "An SDK for building applications to work with OpenStack"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2872,7 +2872,7 @@ name = "os-service-types"
 version = "1.7.0"
 description = "Python library for consuming OpenStack sevice-types-authority data"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2883,7 +2883,7 @@ name = "osc-lib"
 version = "2.6.2"
 description = "OpenStackClient Library"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2901,7 +2901,7 @@ name = "oslo.config"
 version = "8.8.0"
 description = "Oslo Configuration API"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2922,7 +2922,7 @@ name = "oslo.i18n"
 version = "5.1.0"
 description = "Oslo i18n library"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2933,7 +2933,7 @@ name = "oslo.serialization"
 version = "4.3.0"
 description = "Oslo Serialization library"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2947,7 +2947,7 @@ name = "oslo.utils"
 version = "4.13.0"
 description = "Oslo Utility library"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -2977,7 +2977,7 @@ name = "paramiko"
 version = "2.12.0"
 description = "SSH2 protocol library"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -2997,7 +2997,7 @@ name = "pbr"
 version = "5.11.0"
 description = "Python Build Reasonableness"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=2.6"
 
 [[package]]
@@ -3082,7 +3082,7 @@ name = "portalocker"
 version = "1.2.1"
 description = "Wraps the portalocker recipe for easy usage"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -3121,7 +3121,7 @@ name = "prettytable"
 version = "3.5.0"
 description = "A simple Python library for easily displaying tabular data in a visually appealing ASCII table format"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.7"
 
 [package.dependencies]
@@ -3146,7 +3146,7 @@ name = "prompt-toolkit"
 version = "1.0.18"
 description = "Library for building powerful interactive command lines in Python"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -3177,7 +3177,7 @@ name = "pyasn1"
 version = "0.4.8"
 description = "ASN.1 types and codecs"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -3193,7 +3193,7 @@ name = "pycparser"
 version = "2.21"
 description = "C parser in Python"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
@@ -3245,7 +3245,7 @@ name = "pyjwt"
 version = "2.6.0"
 description = "JSON Web Token implementation in Python"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.7"
 
 [package.extras]
@@ -3259,7 +3259,7 @@ name = "pynacl"
 version = "1.5.0"
 description = "Python binding to the Networking and Cryptography (NaCl) library"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -3274,7 +3274,7 @@ name = "pyopenssl"
 version = "23.0.0"
 description = "Python wrapper module around the OpenSSL library"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -3300,7 +3300,7 @@ name = "pyperclip"
 version = "1.8.2"
 description = "A cross-platform clipboard module for Python. (Only handles plain text for now.)"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -3308,7 +3308,7 @@ name = "pypiwin32"
 version = "223"
 description = ""
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -3319,7 +3319,7 @@ name = "pyreadline3"
 version = "3.4.1"
 description = "A python implementation of GNU readline."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -3394,7 +3394,7 @@ name = "python-cinderclient"
 version = "8.3.0"
 description = "OpenStack Block Storage API Client Library"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -3423,7 +3423,7 @@ name = "python-keystoneclient"
 version = "4.5.0"
 description = "Client Library for OpenStack Identity"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -3444,7 +3444,7 @@ name = "python-novaclient"
 version = "17.7.0"
 description = "Client library for OpenStack Compute API"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -3462,7 +3462,7 @@ name = "python-openstackclient"
 version = "5.8.0"
 description = "OpenStack Command-line Client"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -3499,7 +3499,7 @@ name = "pywin32"
 version = "305"
 description = "Python for Window Extensions"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -3572,7 +3572,7 @@ name = "requests-oauthlib"
 version = "1.3.1"
 description = "OAuthlib authentication support for Requests."
 category = "main"
-optional = false
+optional = true
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [package.dependencies]
@@ -3598,7 +3598,7 @@ name = "requestsexceptions"
 version = "1.4.0"
 description = "Import exceptions from potentially bundled packages in requests."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -3606,7 +3606,7 @@ name = "rfc3986"
 version = "2.0.0"
 description = "Validating URI References per RFC 3986"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.7"
 
 [package.extras]
@@ -3617,7 +3617,7 @@ name = "rsa"
 version = "4.7.2"
 description = "Pure-Python RSA implementation"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.5, <4"
 
 [package.dependencies]
@@ -3651,7 +3651,7 @@ name = "s3transfer"
 version = "0.6.0"
 description = "An Amazon S3 Transfer Manager"
 category = "main"
-optional = false
+optional = true
 python-versions = ">= 3.7"
 
 [package.dependencies]
@@ -3665,7 +3665,7 @@ name = "scp"
 version = "0.14.5"
 description = "scp module for paramiko"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -3709,7 +3709,7 @@ name = "simplejson"
 version = "3.18.0"
 description = "Simple, fast, extensible JSON encoder/decoder for Python"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=2.5, !=3.0.*, !=3.1.*, !=3.2.*"
 
 [[package]]
@@ -3833,7 +3833,7 @@ name = "sshtunnel"
 version = "0.4.0"
 description = "Pure python SSH tunnels"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -3857,7 +3857,7 @@ name = "stevedore"
 version = "3.5.2"
 description = "Manage dynamic plugins for Python applications"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -3951,7 +3951,7 @@ name = "urllib3-secure-extra"
 version = "0.1.0"
 description = "Marker library to detect whether urllib3 was installed with the deprecated [secure] extra"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -3988,7 +3988,7 @@ name = "vsts"
 version = "0.1.25"
 description = "Python wrapper around the VSTS APIs"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -3999,7 +3999,7 @@ name = "vsts-cd-manager"
 version = "1.0.2"
 description = "Python wrapper around some of the VSTS APIs"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -4011,7 +4011,7 @@ name = "wcwidth"
 version = "0.2.5"
 description = "Measures the displayed width of unicode strings in a terminal"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -4019,7 +4019,7 @@ name = "websocket-client"
 version = "1.5.0"
 description = "WebSocket client for Python with low level API options"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.7"
 
 [package.extras]
@@ -4032,7 +4032,7 @@ name = "wrapt"
 version = "1.14.1"
 description = "Module for decorators, wrappers and monkey patching."
 category = "main"
-optional = false
+optional = true
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,>=2.7"
 
 [[package]]
@@ -4040,7 +4040,7 @@ name = "xmltodict"
 version = "0.13.0"
 description = "Makes working with XML feel like you are working with JSON"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.4"
 
 [[package]]
@@ -4055,10 +4055,13 @@ python-versions = ">=3.7"
 docs = ["furo", "jaraco.packaging (>=9)", "jaraco.tidelift (>=1.4)", "rst.linker (>=1.9)", "sphinx (>=3.5)"]
 testing = ["flake8 (<5)", "func-timeout", "jaraco.functools", "jaraco.itertools", "more-itertools", "pytest (>=6)", "pytest-black (>=0.3.7)", "pytest-checkdocs (>=2.4)", "pytest-cov", "pytest-enabler (>=1.3)", "pytest-flake8", "pytest-mypy (>=0.9.1)"]
 
+[extras]
+full = ["awscli", "azure-cli", "beaker-client", "python-openstackclient"]
+
 [metadata]
 lock-version = "1.1"
 python-versions = "~3.9.0"
-content-hash = "c984073646b26fcc7fb328fa44cc497fa7658c87edb469594736c33dd50204f0"
+content-hash = "1cc7b32969fb855fd01bf146752482b8f95dc318a20662aa8cf7c35ec236063f"
 
 [metadata.files]
 adal = [
