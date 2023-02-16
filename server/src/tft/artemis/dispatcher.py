@@ -22,6 +22,7 @@ from .tasks import release_snapshot_request  # noqa: F401, isort:skip
 from .tasks import restore_snapshot_request  # noqa: F401, isort:skip
 from .tasks import route_guest_request  # noqa: F401, isort:skip
 from .tasks import guest_request_watchdog  # noqa: F401, isort:skip
+from .tasks import remove_shelf  # noqa: F401, isort:skip
 
 
 def _dispatch_snapshot_request(
