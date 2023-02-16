@@ -38,6 +38,7 @@ from ..drivers import azure as azure_driver
 from ..drivers import beaker as beaker_driver
 from ..drivers import localhost as localhost_driver
 from ..drivers import openstack as openstack_driver
+from ..drivers import rest as rest_driver
 from ..guest import GuestLogger, GuestState, SnapshotLogger
 from ..knobs import Knob
 from ..profile import Profiler
@@ -313,6 +314,7 @@ POOL_DRIVERS = {
     'beaker': beaker_driver.BeakerDriver,
     'localhost': localhost_driver.LocalhostDriver,
     'openstack': openstack_driver.OpenStackDriver,
+    'rest': rest_driver.RestDriver,
     'azure': azure_driver.AzureDriver,
 }
 
