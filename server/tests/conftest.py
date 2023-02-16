@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import contextvars
+import datetime
+import json
 import logging
 import os
 from typing import Any, Callable, Generator, Optional, cast
@@ -209,6 +211,12 @@ def fixture_schema_initialized_actual(
         _parameters={}
     ))
 
+    session.execute(sqlalchemy.insert(tft.artemis.db.GuestShelf.__table__).values(
+        shelfname='dummy-shelf',
+        ownername='dummy-user',
+        state=tft.artemis.guest.GuestState.READY
+    ))
+
     session.execute(tft.artemis.db.GuestRequest.create_query(
         'dummy-guest',
         tft.artemis.environment.Environment(
@@ -228,6 +236,52 @@ def fixture_schema_initialized_actual(
         [],
         None,
         None
+    ))
+
+    session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest.__table__).values(
+        guestname='dummy-guest-with-shelf',
+        _environment=tft.artemis.environment.Environment(
+            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+            kickstart=tft.artemis.environment.Kickstart()
+        ).serialize(),
+        ownername='dummy-user',
+        shelfname='dummy-shelf',
+        ssh_keyname='dummy-ssh-key',
+        ssh_port=22,
+        ssh_username='root',
+        priorityname=None,
+        _user_data={},
+        skip_prepare_verify_ssh=False,
+        post_install_script=None,
+        _log_types=[],
+        state=tft.artemis.guest.GuestState.READY,
+        state_mtime=datetime.datetime.utcnow(),
+        poolname='dummy-pool',
+        pool_data=json.dumps({})
+    ))
+
+    session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest.__table__).values(
+        guestname='dummy-shelved-guest',
+        _environment=tft.artemis.environment.Environment(
+            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+            kickstart=tft.artemis.environment.Kickstart()
+        ).serialize(),
+        ownername='dummy-user',
+        shelfname='dummy-shelf',
+        ssh_keyname='dummy-ssh-key',
+        ssh_port=22,
+        ssh_username='root',
+        priorityname=None,
+        _user_data={},
+        skip_prepare_verify_ssh=False,
+        post_install_script=None,
+        _log_types=[],
+        state=tft.artemis.guest.GuestState.SHELVED,
+        state_mtime=datetime.datetime.utcnow(),
+        poolname='dummy-pool',
+        pool_data=json.dumps({})
     ))
 
 

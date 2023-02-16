@@ -424,7 +424,7 @@ task-request:
 
         guests = [guest for guest in r_guests.unwrap()]
 
-        assert len(guests) == 1
+        assert len(guests) == 3
 
         guest = guests[0]
 
@@ -504,7 +504,7 @@ def test_update_guest_state_and_request_task_no_such_guest(
 
         guests = [guest for guest in r_guests.unwrap()]
 
-        assert len(guests) == 1
+        assert len(guests) == 3
 
         guest = guests[0]
 
