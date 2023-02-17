@@ -392,6 +392,23 @@ properties:
         - driver
         - parameters
 
+  shelves:
+    type: array
+
+    items:
+      type: object
+
+      properties:
+        name:
+          type: string
+
+        owner:
+          type: string
+
+      required:
+        - name
+        - owner
+
 additionalProperties: false
 
 required:

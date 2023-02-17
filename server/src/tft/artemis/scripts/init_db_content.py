@@ -10,8 +10,9 @@ import gluetool.log
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure, get_config, get_db, get_logger, load_validation_schema, validate_data
-from ..db import DB, GuestTag, Pool, PriorityGroup, SSHKey, User, UserRoles, upsert
+from ..db import DB, GuestShelf, GuestTag, Pool, PriorityGroup, SSHKey, User, UserRoles, upsert
 from ..drivers import GuestTagsType
+from ..guest import GuestState
 
 
 def validate_config(
@@ -249,6 +250,26 @@ def config_to_db(
                 role = UserRoles.USER
 
             _add_user(username, role)
+
+        for shelf_config in server_config.get('shelves', []):
+            shelfname = shelf_config['name']
+
+            logger.info(f'  Adding shelf "{shelfname}"')
+
+            r = upsert(
+                logger,
+                session,
+                GuestShelf,
+                {
+                    GuestShelf.shelfname: shelfname
+                },
+                insert_data={
+                    GuestShelf.ownername: shelf_config['owner'],
+                    GuestShelf.state: GuestState.READY
+                }
+            )
+
+            assert r.is_ok and r.unwrap() is True, 'Failed to initialize shelf record'
 
         for key_config in server_config.get('ssh-keys', []):
             logger.info(f'Adding SSH key "{key_config["name"]}", owner by {key_config["owner"]}')
