@@ -434,9 +434,9 @@ def constraint_to_beaker_filter(
 
 
 def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, Failure]:
-    def _remove_multiples(tag_name: str, value: str) -> None:
+    def _remove_multiples(tag_name: str, key: str) -> None:
         # first occurence will be kept, others removed
-        for el in tree.find_all(tag_name)[1:]:
+        for el in tree.find_all(tag_name, key=key)[1:]:
             el.extract()
 
     _remove_multiples('key_value', 'NR_ETH')
