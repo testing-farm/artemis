@@ -11,6 +11,7 @@ import pytest
 from gluetool.log import ContextAdapter
 from gluetool.result import Ok
 
+import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
 
@@ -96,6 +97,65 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
               value: rhel-9
               element: |
                 <compatible_with_distro arch="{{ ENVIRONMENT.hw.arch }}" osmajor="RedHatEnterpriseLinux9"/>
+      virtualization:
+        is_virtualized:
+          translations:
+              - operator: '=='
+                value: false
+                element: '<system><hypervisor op="==" value="" /></system>'
+
+              - operator: '=='
+                value: true
+                element: '<system><hypervisor op="!=" value="" /></system>'
+        hypervisor:
+          translations:
+              - operator: '=='
+                value: kvm
+                element: '<system><hypervisor op="==" value="KVM" /></system>'
+
+              - operator: '!='
+                value: kvm
+                element: '<system><hypervisor op="!=" value="KVM" /></system>'
+
+              - operator: '=='
+                value: xen
+                element: '<system><hypervisor op="==" value="XEN" /></system>'
+
+              - operator: '!='
+                value: xen
+                element: '<system><hypervisor op="!=" value="XEN" /></system>'
+
+              - operator: '=='
+                value: powerkvm
+                element: '<system><hypervisor op="==" value="PowerKVM" /></system>'
+
+              - operator: '!='
+                value: powerkvm
+                element: '<system><hypervisor op="!=" value="PowerKVM" /></system>'
+
+              - operator: '=='
+                value: powervm
+                element: '<system><hypervisor op="==" value="PowerVM" /></system>'
+
+              - operator: '!='
+                value: powervm
+                element: '<system><hypervisor op="!=" value="PowerVM" /></system>'
+
+              - operator: '=='
+                value: hyperv
+                element: '<system><hypervisor op="==" value="HyperV" /></system>'
+
+              - operator: '!='
+                value: hyperv
+                element: '<system><hypervisor op="!=" value="HyperV" /></system>'
+
+              - operator: '=='
+                value: vmware
+                element: '<system><hypervisor op="==" value="VMWare" /></system>'
+
+              - operator: '!='
+                value: vmware
+                element: '<system><hypervisor op="!=" value="VMWare" /></system>'
     """
 
     return tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', parse_spec(pool_config))
@@ -112,7 +172,11 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         os:
           compose: dummy-compose
         """,
-        '<system><arch op="==" value="x86_64"/></system>'
+        """
+        <system>
+         <arch op="==" value="x86_64"/>
+        </system>
+        """
     ),
     (
         """
@@ -127,7 +191,16 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         os:
           compose: dummy-compose
         """,
-        '<and><system><arch op="==" value="x86_64"/></system><cpu><processors op="==" value="8"/></cpu></and>'
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <cpu>
+          <processors op="==" value="8"/>
+         </cpu>
+        </and>
+        """
     ),
     (
         """
@@ -141,7 +214,14 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         os:
           compose: dummy-compose
         """,
-        '<and><system><arch op="==" value="x86_64"/></system><key_value key="NR_ETH" value="2"/></and>'
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <key_value key="NR_ETH" value="2"/>
+        </and>
+        """
     ),
     (
         """
@@ -173,7 +253,14 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         os:
           compose: dummy-compose
         """,
-        '<and><system><arch op="==" value="x86_64"/></system><key_value key="TPM" op="==" value="2.0"/></and>'
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <key_value key="TPM" op="==" value="2.0"/>
+        </and>
+        """
     ),
     (
         """
@@ -187,7 +274,14 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         os:
           compose: dummy-compose
         """,
-        '<and><system><arch op="==" value="x86_64"/></system><key_value key="TPM" op="&gt;=" value="2"/></and>'
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <key_value key="TPM" op="&gt;=" value="2"/>
+        </and>
+        """
     ),
     (
         """
@@ -201,12 +295,16 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         os:
           compose: dummy-compose
         """,
-        '<and>'
-        '<system><arch op="==" value="x86_64"/></system>'
-        '<system>'
-        '<compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux9"/>'
-        '</system>'
-        '</and>'
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <system>
+          <compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux9"/>
+         </system>
+        </and>
+        """
     ),
     (
         """
@@ -221,17 +319,142 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         os:
           compose: dummy-compose
         """,
-        '<and>'
-        '<system><arch op="==" value="x86_64"/></system>'
-        '<and>'
-        '<system>'
-        '<compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux8"/>'
-        '</system>'
-        '<system>'
-        '<compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux9"/>'
-        '</system>'
-        '</and>'
-        '</and>'
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <and>
+          <system>
+           <compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux8"/>
+          </system>
+          <system>
+           <compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux9"/>
+          </system>
+         </and>
+        </and>
+        """
+    ),
+    (
+        """
+        ---
+        hw:
+          arch: x86_64
+          constraints:
+            boot:
+              method: bios
+            network:
+              - type: eth
+              - type: eth
+        os:
+          compose: dummy-compose
+        """,
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <and>
+          <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
+          <key_value key="NR_ETH" value="2"/>
+         </and>
+        </and>
+        """
+    ),
+    (
+        """
+        hw:
+            arch: "x86_64"
+            constraints:
+                boot:
+                    method: bios
+                compatible:
+                    distro:
+                        - rhel-7
+                        - rhel-8
+                cpu:
+                    # sockets: 1
+                    cores: 2
+                    # threads: 8
+                    cores-per-thread: 2
+                    # threads-per-core: 4
+                    processors: 8
+                    model: 62
+                    model-name: "Haswell"
+                    family: 6
+                    # family-name: Skylake
+                disk:
+                    - size: 40 GiB
+                    - size: 120 GiB
+                memory: 8 GiB
+                network:
+                    - type: eth
+                    - type: eth
+                tpm:
+                    version: "2.0"
+                virtualization:
+                    # is-supported: true
+                    is-virtualized: false
+                    hypervisor: xen
+        os:
+          compose: dummy-compose
+        """,
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <and>
+          <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
+          <and>
+           <system>
+            <compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux7"/>
+           </system>
+           <system>
+            <compatible_with_distro arch="x86_64" osmajor="RedHatEnterpriseLinux8"/>
+           </system>
+          </and>
+          <and>
+           <cpu>
+            <processors op="==" value="8"/>
+           </cpu>
+           <cpu>
+            <cores op="==" value="2"/>
+           </cpu>
+           <cpu>
+            <model op="==" value="62"/>
+           </cpu>
+           <cpu>
+            <family op="==" value="6"/>
+           </cpu>
+           <cpu>
+            <model_name op="==" value="Haswell"/>
+           </cpu>
+          </and>
+          <system>
+           <memory op="==" value="8192"/>
+          </system>
+          <and>
+           <disk>
+            <size op="==" value="42949672960"/>
+           </disk>
+           <disk>
+            <size op="==" value="128849018880"/>
+           </disk>
+          </and>
+          <key_value key="NR_ETH" value="2"/>
+          <key_value key="TPM" op="==" value="2.0"/>
+          <and>
+           <system>
+            <hypervisor op="==" value=""/>
+           </system>
+           <system>
+            <hypervisor op="==" value="XEN"/>
+           </system>
+          </and>
+         </and>
+        </and>
+        """
     )
 ], ids=[
     'simple-arch',
@@ -242,6 +465,8 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
     'tpm-at-least-2',
     'compatible-single',
     'compatible-multiple',
+    'multiple-nics-and-bios',
+    'maximal-constraint'
 ])
 def test_environment_to_beaker_filter(
     dummy_guest_request: MagicMock,
@@ -260,7 +485,11 @@ def test_environment_to_beaker_filter(
     else:
         beaker_filter = r_beaker_filter.unwrap_error()
 
-    assert str(beaker_filter) == expected
+    if isinstance(beaker_filter, tft.artemis.Failure):
+        assert str(beaker_filter) == expected
+
+    else:
+        assert beaker_filter.prettify() == textwrap.dedent(expected).strip()
 
 
 @pytest.mark.parametrize(('avoid_groups', 'expected'), [
@@ -390,7 +619,16 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
         """,
         [],
         [],
-        '<and><system><arch op="==" value="x86_64"/></system><system><memory op="&gt;=" value="8192"/></system></and>'
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <system>
+          <memory op="&gt;=" value="8192"/>
+         </system>
+        </and>
+        """
     ),
     (
         """
@@ -406,7 +644,20 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
         """,
         ['dummy-group-1', 'dummy-group-2'],
         ['dummy-hostname-1', 'dummy-hostname-2'],
-        '<and><system><arch op="==" value="x86_64"/></system><system><memory op="&gt;=" value="8192"/></system><group op="!=" value="dummy-group-1"/><group op="!=" value="dummy-group-2"/><hostname op="!=" value="dummy-hostname-1"/><hostname op="!=" value="dummy-hostname-2"/></and>'  # noqa: E501
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <system>
+          <memory op="&gt;=" value="8192"/>
+         </system>
+         <group op="!=" value="dummy-group-1"/>
+         <group op="!=" value="dummy-group-2"/>
+         <hostname op="!=" value="dummy-hostname-1"/>
+         <hostname op="!=" value="dummy-hostname-2"/>
+        </and>
+        """
     ),
     (
         """
@@ -422,7 +673,14 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
         """,
         [],
         [],
-        '<and><system><arch op="==" value="x86_64"/></system><hostname op="==" value="dummy.host.com"/></and>'
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <hostname op="==" value="dummy.host.com"/>
+        </and>
+        """
     ),
     (
         """
@@ -438,7 +696,14 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
         """,
         [],
         [],
-        '<and><system><arch op="==" value="x86_64"/></system><hostname op="like" value="dummy.%.com"/></and>'
+        """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <hostname op="like" value="dummy.%.com"/>
+        </and>
+        """
     )
 ], ids=[
     'simple-arch',
@@ -473,7 +738,9 @@ def test_create_beaker_filter(
         assert filter is expected
 
     else:
-        assert str(filter) == expected
+        assert expected
+
+        assert filter.prettify() == textwrap.dedent(expected).strip()
 
 
 @pytest.mark.parametrize(('pool_config', 'expected'), [
