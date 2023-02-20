@@ -189,6 +189,32 @@ and dispatching of post-acquire preparation tasks.
 
 5+|When to run pool image info refresh task, as a Cron-like specification.
 
+|`actor.shelved-guest-watchdog.connect-timeout`
+|`int`
+|`ARTEMIS_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT`
+|`15`
+|yes
+
+
+|`actor.shelved-guest-watchdog.connect-timeout:$entityname`
+|
+|`ARTEMIS_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT_$entityname`
+|
+|
+
+
+5+|Shelved guest watchdog SSH connection timeout.
+
+|`actor.shelved-guest-watchdog.dispatch.delay`
+|`int`
+|`ARTEMIS_ACTOR_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD`
+|`600`
+|no
+
+
+
+5+|A delay, in seconds, between watchdog runs.
+
 |`actor.verify-ssh.connect-timeout`
 |`int`
 |`ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT`
