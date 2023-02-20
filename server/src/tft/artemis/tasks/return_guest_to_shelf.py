@@ -113,6 +113,8 @@ class Workspace(_Workspace):
 
         assert self.gr
 
+        from .shelved_guest_watchdog import shelved_guest_watchdog
+
         if self.shelf is None:
             return
 
@@ -128,7 +130,13 @@ class Workspace(_Workspace):
             return
 
         # TODO: Dispatch WDOG task to verify the guest is reachable while shelved
-        self.update_guest_state(GuestState.SHELVED, current_state=GuestState.CONDEMNED)
+        # Switch state to SHELVED and dispatch a watchdog task
+        self.update_guest_state_and_request_task(
+            GuestState.SHELVED,
+            shelved_guest_watchdog,
+            self.guestname,
+            current_state=GuestState.CONDEMNED
+        )
 
         self.result = self.handle_success('finished-task')
 
