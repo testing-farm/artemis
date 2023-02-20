@@ -200,7 +200,7 @@ def test_return_guest(
     guest_counts: Optional[Tuple[int, ...]],
     is_shelved: bool
 ) -> None:
-    mock_update_guest_state = mockpatch(workspace, 'update_guest_state')
+    mock_update_guest_state_and_request_task = mockpatch(workspace, 'update_guest_state_and_request_task')
 
     workspace.gr = guest_request
     workspace.shelf = shelf
@@ -210,8 +210,10 @@ def test_return_guest(
     assert workspace.return_guest() is workspace
 
     if is_shelved:
-        mock_update_guest_state.assert_called_once_with(
+        mock_update_guest_state_and_request_task.assert_called_once_with(
             tft.artemis.guest.GuestState.SHELVED,
+            tft.artemis.tasks.shelved_guest_watchdog.shelved_guest_watchdog,
+            'dummy-guest',
             current_state=tft.artemis.guest.GuestState.CONDEMNED
         )
 
@@ -219,7 +221,7 @@ def test_return_guest(
     else:
         assert workspace.result is None
 
-        mock_update_guest_state.assert_not_called()
+        mock_update_guest_state_and_request_task.assert_not_called()
 
 
 def test_dispatch_release(
