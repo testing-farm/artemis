@@ -228,6 +228,13 @@ class SafeQuery(Generic[T]):
             self.query.all
         )()
 
+    @chain_get
+    def count(self) -> int:
+        return cast(
+            Callable[[], int],
+            self.query.count
+        )()
+
 
 def stringify_query(session: sqlalchemy.orm.session.Session, query: Any) -> str:
     """
