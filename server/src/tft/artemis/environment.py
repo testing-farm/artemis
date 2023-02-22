@@ -51,7 +51,7 @@ S = TypeVar('S')
 
 #: Regular expression to match and split the value part of the key:value mapping. This value bundles together the
 #: operator, the actual value of the constraint, and units.
-VALUE_PATTERN = re.compile(r'^(?P<operator>==|!=|=~|=|>=|>|<=|<|contains)?\s*(?P<value>.+?)\s*$')
+VALUE_PATTERN = re.compile(r'^(?P<operator>==|!=|~|!~|=~|=|>=|>|<=|<|contains|(?:not contains))?\s*(?P<value>.+?)\s*$')
 
 PROPERTY_PATTERN = re.compile(r'(?P<property_name>[a-z_]+)(?:\[(?P<index>[+-]?\d+)\])?')
 PROPERTY_EXPAND_PATTERN = re.compile(
@@ -623,7 +623,8 @@ class Operator(enum.Enum):
     GTE = '>='
     LT = '<'
     LTE = '<='
-    MATCH = '=~'
+    MATCH = '~'
+    NOTMATCH = '!~'
     CONTAINS = 'contains'
     NOTCONTAINS = 'not contains'
 
@@ -638,6 +639,18 @@ def match(text: str, pattern: str) -> bool:
     """
 
     return re.match(pattern, text) is not None
+
+
+def notmatch(text: str, pattern: str) -> bool:
+    """
+    Match a text against a given regular expression.
+
+    :param text: string to examine.
+    :param pattern: regular expression.
+    :returns: ``True`` if pattern does not matche the string.
+    """
+
+    return re.match(pattern, text) is None
 
 
 def notcontains(haystack: List[str], needle: str) -> bool:
@@ -664,9 +677,12 @@ OPERATOR_SIGN_TO_OPERATOR = {
     '>=': Operator.GTE,
     '<': Operator.LT,
     '<=': Operator.LTE,
-    '=~': Operator.MATCH,
+    '~': Operator.MATCH,
+    '!~': Operator.NOTMATCH,
     'contains': Operator.CONTAINS,
-    'not contains': Operator.NOTCONTAINS
+    'not contains': Operator.NOTCONTAINS,
+    # Legacy operators
+    '=~': Operator.MATCH
 }
 
 
@@ -678,6 +694,7 @@ OPERATOR_TO_HANDLER: Dict[Operator, OperatorHandlerType] = {
     Operator.LT: operator.lt,
     Operator.LTE: operator.le,
     Operator.MATCH: match,
+    Operator.NOTMATCH: notmatch,
     Operator.CONTAINS: operator.contains,
     Operator.NOTCONTAINS: notcontains
 }

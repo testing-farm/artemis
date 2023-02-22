@@ -689,7 +689,7 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
         hw:
           arch: x86_64
           constraints:
-            hostname: '=~ dummy..*.com'
+            hostname: '~ dummy..*.com'
 
         os:
           compose: dummy-compose

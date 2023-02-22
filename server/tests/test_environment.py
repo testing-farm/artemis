@@ -13,8 +13,8 @@ from gluetool.result import Result
 import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS, ConstraintBase, Environment, Flavor, FlavorBoot, FlavorCompatible, \
-    FlavorCpu, FlavorNetwork, FlavorNetworks, FlavorVirtualization
+from tft.artemis.environment import UNITS, Constraint, ConstraintBase, Environment, Flavor, FlavorBoot, \
+    FlavorCompatible, FlavorCpu, FlavorNetwork, FlavorNetworks, FlavorVirtualization, Operator
 
 
 @pytest.fixture(name='schema_v0_0_19')
@@ -952,7 +952,7 @@ def test_example_regex(logger: ContextAdapter) -> None:
         ---
 
         cpu:
-            model-name: "=~ .*AMD.*"
+            model-name: "~ .*AMD.*"
         """
     )
 
@@ -1233,7 +1233,7 @@ def test_parse_maximal_constraint() -> None:
         arch: "ppc64"
         constraints:
             cpu:
-              model-name: "=~ .*PPC970.*"
+              model-name: "~ .*PPC970.*"
         """,
         '<and><system><arch op="==" value="ppc64"/></system><cpu><model_name op="like" value="%PPC970%"/></cpu></and>'
     ),
@@ -1648,3 +1648,41 @@ def test_uses_constraint(
 
     assert r.is_ok
     assert r.unwrap() is expected
+
+
+@pytest.mark.parametrize(('raw_operator', 'operator'), [
+    ('', Operator.EQ),
+    ('= ', Operator.EQ),
+    ('!= ', Operator.NEQ),
+    ('>', Operator.GT),
+    ('>=', Operator.GTE),
+    ('<', Operator.LT),
+    ('<=', Operator.LTE),
+    ('~ ', Operator.MATCH),
+    ('!~ ', Operator.NOTMATCH),
+    ('contains ', Operator.CONTAINS),
+    ('not contains ', Operator.NOTCONTAINS),
+    ('=~ ', Operator.MATCH)
+], ids=[
+    'implicit-eq',
+    'eq',
+    'neq',
+    'gt',
+    'gte',
+    'lt',
+    'lte',
+    'match',
+    'not-match',
+    'contains',
+    'not-contains',
+    'legacy-match'
+])
+def test_operator_parsing(
+    logger: ContextAdapter,
+    raw_operator: str,
+    operator: Operator
+) -> None:
+    constraint = Constraint.from_specification('memory', f'{raw_operator}1 GiB')
+
+    assert constraint.operator == operator
+    assert constraint.value == UNITS('1 GiB')
