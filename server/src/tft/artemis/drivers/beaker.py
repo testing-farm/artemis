@@ -173,14 +173,28 @@ def operator_to_beaker_op(operator: Operator, value: str) -> Tuple[str, str]:
 
 def _translate_constraint_by_config(
     constraint: Constraint,
+    guest_request: GuestRequest,
     translations: List[ConstraintTranslationConfigType]
 ) -> Result[bs4.BeautifulSoup, Failure]:
     for translation in translations:
         if translation['operator'] != constraint.operator.value or translation['value'] != constraint.value:
             continue
 
+        r_rendered_raw_element = render_template(
+            translation['element'],
+            **template_environment(guest_request=guest_request)
+        )
+
+        if r_rendered_raw_element.is_error:
+            return Error(Failure.from_failure(
+                'failed to render constraint XML',
+                r_rendered_raw_element.unwrap_error(),
+                constraint=repr(constraint),
+                constraint_name=constraint.name
+            ))
+
         try:
-            return Ok(bs4.BeautifulSoup(translation['element'], 'xml'))
+            return Ok(bs4.BeautifulSoup(r_rendered_raw_element.unwrap(), 'xml'))
 
         except Exception as exc:
             return Error(Failure.from_exc(
@@ -241,6 +255,7 @@ def constraint_to_beaker_filter(
         if constraint_name.child_property == 'method':
             return _translate_constraint_by_config(
                 constraint,
+                guest_request,
                 pool.pool_config
                     .get('hw-constraints', {})
                     .get('boot', {})
@@ -254,6 +269,7 @@ def constraint_to_beaker_filter(
 
             r_config_constraint = _translate_constraint_by_config(
                 constraint,
+                guest_request,
                 pool.pool_config
                     .get('hw-constraints', {})
                     .get('compatible', {})
@@ -264,17 +280,7 @@ def constraint_to_beaker_filter(
             if r_config_constraint.is_error:
                 return Error(r_config_constraint.unwrap_error())
 
-            config_constraint = r_config_constraint.unwrap()
-
-            rendered_tag = render_template(
-                str(config_constraint.find("compatible_with_distro")),
-                **template_environment(guest_request=guest_request)
-            )
-
-            if rendered_tag.is_error:
-                return Error(rendered_tag.unwrap_error())
-
-            system.append(bs4.BeautifulSoup(rendered_tag.unwrap(), 'xml'))
+            system.append(r_config_constraint.unwrap())
 
             return Ok(system)
 
@@ -396,6 +402,7 @@ def constraint_to_beaker_filter(
         if constraint_name.child_property == 'is_virtualized':
             return _translate_constraint_by_config(
                 constraint,
+                guest_request,
                 pool.pool_config
                     .get('hw-constraints', {})
                     .get('virtualization', {})
@@ -406,6 +413,7 @@ def constraint_to_beaker_filter(
         if constraint_name.child_property == 'hypervisor':
             return _translate_constraint_by_config(
                 constraint,
+                guest_request,
                 pool.pool_config
                     .get('hw-constraints', {})
                     .get('virtualization', {})
