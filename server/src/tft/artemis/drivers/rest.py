@@ -15,8 +15,8 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure
 from ..db import GuestRequest
 from ..metrics import PoolResourcesMetrics
-from . import PoolData, PoolDriver, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolData, PoolDriver, PoolResourcesIDs, ProvisioningProgress, \
+    ProvisioningState, SerializedPoolResourcesIDs
 
 
 @dataclasses.dataclass
@@ -194,6 +194,11 @@ class RestDriver(PoolDriver):
             "address": optional[string]
            }
         '''
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error())
+
         pool_data = RestPoolData.unserialize(guest_request)
 
         payload = {
@@ -219,6 +224,7 @@ class RestDriver(PoolDriver):
             state=state,
             pool_data=pool_data,
             address=address,
+            delay_update=r_delay.unwrap(),
         ))
 
     def release_guest(
