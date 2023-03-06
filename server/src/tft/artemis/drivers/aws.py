@@ -32,7 +32,7 @@ from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, R
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
     HookImageInfoMapper, ImageInfoMapperResultType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
     PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
-    guest_log_updater, run_cli_tool
+    WatchdogState, guest_log_updater, run_cli_tool
 
 #
 # Custom typing types
@@ -1854,6 +1854,65 @@ class AWSDriver(PoolDriver):
             return self._do_update_spot_instance(logger, guest_request)
 
         return self._do_update_instance(logger, session, guest_request)
+
+    def guest_watchdog(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[WatchdogState, Failure]:
+        """
+        Perform any periodic tasks the driver might need to apply while the request is in use.
+
+        :param logger: logger to use for logging.
+        :param guest_request: guest request to provision for.
+        """
+        spot_instance_id = AWSPoolData.unserialize(guest_request).spot_instance_id
+        if spot_instance_id is None:
+            # We are dealing with a non-spot instance that can't be terminated on demand by AWS
+            return Ok(WatchdogState.COMPLETE)
+
+        # Query specifically the state of the spot instance request to get more detailed data
+        r_spot_instance = self._describe_spot_instance(guest_request)
+        if r_spot_instance.is_error:
+            return Error(r_spot_instance.unwrap_error())
+
+        spot_instance = r_spot_instance.unwrap()
+        status = spot_instance['Status']['Code']
+        state = spot_instance['State']
+
+        if state in ('open', 'active'):
+            # Guest is fine, nothing to report (yet?)
+            return Ok(WatchdogState.CONTINUE)
+
+        if state == 'cancelled' and status in ('instance-terminated-by-user',):
+            # This should be the expected final state of normal provisioning.
+            return Ok(WatchdogState.COMPLETE)
+
+        if status == 'instance-terminated-no-capacity':
+            PoolMetrics.inc_error(self.poolname, 'spot-instance-terminated-no-capacity')
+        else:
+            # All other transitions go here, including weird unexpected ones like
+            # cancelled / request-canceled-and-instance-running)
+            PoolMetrics.inc_error(self.poolname, 'spot-instance-terminated-unexpectedly')
+
+        msg = 'spot instance terminated prematurely'
+        guest_request.log_error_event(
+            logger,
+            session,
+            msg,
+            Failure(
+                msg,
+                guestname=guest_request.guestname,
+                spot_instance_id=spot_instance_id,
+                spot_instance_state=state,
+                spot_instance_status=status,
+                spot_instance_error=spot_instance['Status']['Message'],
+            )
+        )
+
+        # Nothing else to watch here, termination reported, we're done
+        return Ok(WatchdogState.COMPLETE)
 
     def _tag_resources(
         self,
