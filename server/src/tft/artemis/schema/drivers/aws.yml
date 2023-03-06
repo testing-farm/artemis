@@ -89,6 +89,10 @@ properties:
   use-spot-request:
     type: boolean
 
+  use-public-ip:
+    type: boolean
+    default: false
+
   ssh-options:
     type: array
     items:

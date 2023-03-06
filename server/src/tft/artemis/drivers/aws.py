@@ -1831,10 +1831,14 @@ class AWSDriver(PoolDriver):
                     r_output.unwrap_error()
                 ))
 
+        address = instance['PrivateIpAddress']
+        if normalize_bool_option(self.pool_config.get('use-public-ip', False)):
+            address = instance['PublicIpAddress']
+
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
             pool_data=pool_data,
-            address=instance['PrivateIpAddress']
+            address=address
         ))
 
     def update_guest(

@@ -62,3 +62,13 @@ image-owners:
 ====
 Once you opt in and use `image-owners` option, the list would be used **instead** of the default one, with `self` only. Therefore if you do wish to keep `self` in play, you need to make it one of the items of the `image-owners` list, as shown in the example above.
 ====
+
+=== Expose Public IP address
+
+By default, Artemis will expose the private IP address of the instance. In case you want to rather expose the public IP, use the `use-public-ip` setting in the pool configuration.
+
+.Example
+[source,yaml]
+....
+use-public-ip: true
+....
