@@ -1479,6 +1479,25 @@ class AWSDriver(PoolDriver):
             default_root_disk_size=default_root_disk_size
         )
 
+    def _create_user_data(
+        self,
+        logger: ContextAdapter,
+        guest_request: GuestRequest,
+    ) -> str:
+        # NOTE(ivasilev) Encoding is needed as base62.b64encode() requires bytes object per py3 specification,
+        # and decoding is getting us the expected str back.
+
+        if guest_request.post_install_script:
+            return base64.b64encode(guest_request.post_install_script.encode('utf-8')).decode('utf-8')
+
+        post_install_script_filepath = cast(Optional[str], self.pool_config.get('post-install-script'))
+
+        if post_install_script_filepath:
+            with open(post_install_script_filepath) as f:
+                return base64.b64encode(f.read().encode('utf8')).decode('utf-8')
+
+        return ''
+
     def _request_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1522,6 +1541,14 @@ class AWSDriver(PoolDriver):
             '--block-device-mappings',
             r_block_device_mappings.unwrap().serialize_to_json()
         ])
+
+        user_data = self._create_user_data(logger, guest_request)
+
+        if user_data:
+            command.extend([
+                '--user-data',
+                user_data
+            ])
 
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
@@ -1586,19 +1613,6 @@ class AWSDriver(PoolDriver):
 
         spot_price = r_price.unwrap()
 
-        if guest_request.post_install_script:
-            # NOTE(ivasilev) Encoding is needed as base62.b64encode() requires bytes object per py3 specification,
-            # and decoding is getting us the expected str back.
-            user_data = base64.b64encode(guest_request.post_install_script.encode('utf-8')).decode('utf-8')
-        else:
-            post_install_script_file = self.pool_config.get('post-install-script')
-            if post_install_script_file:
-                # path to a post-install-script is defined in the pool and isn't a default empty string
-                with open(post_install_script_file) as f:
-                    user_data = base64.b64encode(f.read().encode('utf8')).decode('utf-8')
-            else:
-                user_data = ""
-
         r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
 
         if r_block_device_mappings.is_error:
@@ -1611,7 +1625,7 @@ class AWSDriver(PoolDriver):
             availability_zone=self.pool_config['availability-zone'],
             subnet_id=self.pool_config['subnet-id'],
             security_group=self.pool_config['security-group'],
-            user_data=user_data,
+            user_data=self._create_user_data(logger, guest_request),
             block_device_mappings=r_block_device_mappings.unwrap().serialize()
         )
 
