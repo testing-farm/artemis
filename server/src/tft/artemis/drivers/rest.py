@@ -1,7 +1,9 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import base64
 import dataclasses
+import json
 import threading
 from typing import Any, Dict, Optional, Tuple
 
@@ -84,11 +86,11 @@ class RestDriver(PoolDriver):
             return r_answer
 
         payload = {
-            "environment": guest_request._environment,
+            "environment": base64.b64encode(json.dumps(guest_request._environment).encode()),
         }
 
         try:
-            response = requests.get(f"{self.url}/guests", json=payload)
+            response = requests.get(f"{self.url}/guests", params=payload)
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc(
