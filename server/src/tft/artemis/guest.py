@@ -22,6 +22,9 @@ class GuestState(enum.Enum):
     #: being picked up be the router.
     PENDING = 'pending'
 
+    #: Cache (if specified) is being searched for a matching guest
+    SHELF_LOOKUP = 'shelf-lookup'
+
     #: Guest request is being evaluated. A router task exists for this guest request.
     ROUTING = 'routing'
 
