@@ -695,6 +695,16 @@ KNOB_POOL_ENABLED: Knob[bool] = Knob(
     default=True
 )
 
+KNOB_SHELF_MAX_GUESTS: Knob[int] = Knob(
+    'shelf.max-guests',
+    'Maximum number of guests present on a shelf.',
+    has_db=True,
+    per_entity=True,
+    envvar='ARTEMIS_SHELF_MAX_GUESTS',
+    cast_from_str=int,
+    default=10
+)
+
 KNOB_WORKER_PROCESS_METRICS_ENABLED: Knob[bool] = Knob(
     'worker.metrics.process.enabled',
     'If enabled, various metrics related to worker processes would be collected.',
