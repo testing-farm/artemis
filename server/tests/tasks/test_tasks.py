@@ -373,8 +373,8 @@ def test_update_guest_state_and_request_task(
 
     assert workspace.result is None
 
-    assert_log(caplog, message=SEARCH(r'state switch: shelf-lookup => routing'), levelno=logging.INFO)
-    assert_log(caplog, message=SEARCH(r'state switch: shelf-lookup => routing: succeeded'), levelno=logging.INFO)
+    assert_log(caplog, message=SEARCH(r'state switch: shelf-lookup => routing'), levelno=logging.WARN)
+    assert_log(caplog, message=SEARCH(r'state switch: shelf-lookup => routing: succeeded'), levelno=logging.WARN)
     assert_log(
         caplog,
         message="""requested task #1:
