@@ -1001,6 +1001,22 @@ for said guest request again.
 
 5+|Sentry DSN.
 
+|`shelf.max-guests`
+|`int`
+|`ARTEMIS_SHELF_MAX_GUESTS`
+|`10`
+|yes
+
+
+|`shelf.max-guests:$entityname`
+|
+|`ARTEMIS_SHELF_MAX_GUESTS_$entityname`
+|
+|
+
+
+5+|Maximum number of guests present on a shelf.
+
 |`template.delimiters.variable`
 |`str`
 |`ARTEMIS_TEMPLATE_VARIABLE_DELIMITERS`
