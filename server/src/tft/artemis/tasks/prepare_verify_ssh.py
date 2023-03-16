@@ -156,7 +156,7 @@ class Workspace(_Workspace):
             .final_result
 
 
-@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
+@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.SHELF_LOOKUP))
 def prepare_verify_ssh(guestname: str) -> None:
     """
     Verify guest's SSH connection is up and ready.

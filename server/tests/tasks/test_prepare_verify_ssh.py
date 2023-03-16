@@ -191,7 +191,7 @@ def test_task(
 
     assert isinstance(tail_handler, tft.artemis.tasks.ProvisioningTailHandler)
     assert tail_handler.current_state == tft.artemis.guest.GuestState.PREPARING
-    assert tail_handler.new_state == tft.artemis.guest.GuestState.ROUTING
+    assert tail_handler.new_state == tft.artemis.guest.GuestState.SHELF_LOOKUP
 
     tft.artemis.tasks.prepare_verify_ssh.prepare_verify_ssh('dummy-guest')
 

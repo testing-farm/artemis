@@ -1035,7 +1035,7 @@ class GuestRequest(Base):
                 }
                 for log in log_types
             ],
-            state=GuestState.ROUTING,
+            state=GuestState.SHELF_LOOKUP,
             state_mtime=datetime.datetime.utcnow(),
             poolname=None,
             pool_data=json.dumps({}),

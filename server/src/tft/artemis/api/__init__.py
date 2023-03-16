@@ -652,7 +652,7 @@ class GuestRequestManager:
         environment_schema: JSONSchemaType
     ) -> GuestResponse:
         from ..tasks import get_guest_logger
-        from ..tasks.route_guest_request import route_guest_request
+        from ..tasks.guest_shelf_lookup import guest_shelf_lookup
 
         guestname = str(uuid.uuid4())
 
@@ -794,7 +794,7 @@ class GuestRequestManager:
                 }
             )
 
-            r_task = artemis_db.TaskRequest.create(guest_logger, session, route_guest_request, guestname)
+            r_task = artemis_db.TaskRequest.create(guest_logger, session, guest_shelf_lookup, guestname)
 
             if r_task.is_error:
                 raise errors.InternalServerError(
@@ -809,7 +809,7 @@ class GuestRequestManager:
             log_dict_yaml(
                 guest_logger.info,
                 f'requested task #{task_request_id}',
-                TaskCall.from_call(route_guest_request, guestname, task_request_id=task_request_id).serialize()
+                TaskCall.from_call(guest_shelf_lookup, guestname, task_request_id=task_request_id).serialize()
             )
 
             # Everything went well, update our accounting.
