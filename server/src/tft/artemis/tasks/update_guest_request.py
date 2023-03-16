@@ -239,7 +239,7 @@ class Workspace(_Workspace):
             .final_result
 
 
-@task(tail_handler=ProvisioningTailHandler(GuestState.PROMISED, GuestState.ROUTING))
+@task(tail_handler=ProvisioningTailHandler(GuestState.PROMISED, GuestState.SHELF_LOOKUP))
 def update_guest_request(guestname: str) -> None:
     """
     Update guest request provisioning progress.

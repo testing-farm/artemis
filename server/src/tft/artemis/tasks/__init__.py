@@ -2651,7 +2651,11 @@ class ProvisioningTailHandler(TailHandler):
             current_pool_data=workspace.gr.pool_data
         )
 
-        if self.new_state == GuestState.ROUTING:
+        if self.new_state == GuestState.SHELF_LOOKUP:
+            from .guest_shelf_lookup import guest_shelf_lookup
+
+            workspace.dispatch_task(guest_shelf_lookup, guestname)
+        elif self.new_state == GuestState.ROUTING:
             from .route_guest_request import route_guest_request
 
             workspace.dispatch_task(route_guest_request, guestname)
@@ -3078,7 +3082,7 @@ def do_prepare_post_install_script(
     return workspace.handle_success('finished-task')
 
 
-@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
+@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.SHELF_LOOKUP))
 def prepare_post_install_script(guestname: str) -> None:
     task_core(
         cast(DoerType, do_prepare_post_install_script),
@@ -3151,7 +3155,7 @@ def do_guest_request_prepare_finalize_pre_connect(
     return workspace.handle_success('finished-task')
 
 
-@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
+@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.SHELF_LOOKUP))
 def guest_request_prepare_finalize_pre_connect(guestname: str) -> None:
     task_core(
         cast(DoerType, do_guest_request_prepare_finalize_pre_connect),
@@ -3216,7 +3220,7 @@ def do_guest_request_prepare_finalize_post_connect(
     return workspace.handle_success('finished-task')
 
 
-@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ROUTING))
+@task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.SHELF_LOOKUP))
 def guest_request_prepare_finalize_post_connect(guestname: str) -> None:
     task_core(
         cast(DoerType, do_guest_request_prepare_finalize_post_connect),
@@ -3355,7 +3359,7 @@ def do_acquire_guest_request(
         if workspace.result:
             return workspace.result
 
-        if ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.ROUTING).handle_tail(
+        if ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.SHELF_LOOKUP).handle_tail(
             logger,
             db,
             session,
@@ -3399,7 +3403,7 @@ def do_acquire_guest_request(
     return workspace.handle_success('finished-task')
 
 
-@task(tail_handler=ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.ROUTING))
+@task(tail_handler=ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.SHELF_LOOKUP))
 def acquire_guest_request(guestname: str, poolname: str) -> None:
     task_core(
         cast(DoerType, do_acquire_guest_request),

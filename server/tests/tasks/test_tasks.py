@@ -364,29 +364,23 @@ def test_update_guest_state_and_request_task(
     mockpatch: MockPatcher
 ) -> None:
     assert workspace.update_guest_state_and_request_task(
-        tft.artemis.guest.GuestState.PROVISIONING,
-        tft.artemis.tasks.acquire_guest_request,
+        tft.artemis.guest.GuestState.ROUTING,
+        tft.artemis.tasks.route_guest_request.route_guest_request,
         'dummy-guest',
-        'dummy-pool',
         delay=79,
-        current_state=tft.artemis.guest.GuestState.ROUTING,
-        set_values={
-            'poolname': 'dummy-pool'
-        },
-        poolname='dummy-pool'
+        current_state=tft.artemis.guest.GuestState.SHELF_LOOKUP,
     ) is workspace
 
     assert workspace.result is None
 
-    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.WARN)
-    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning: succeeded'), levelno=logging.WARN)
+    assert_log(caplog, message=SEARCH(r'state switch: shelf-lookup => routing'), levelno=logging.INFO)
+    assert_log(caplog, message=SEARCH(r'state switch: shelf-lookup => routing: succeeded'), levelno=logging.INFO)
     assert_log(
         caplog,
         message="""requested task #1:
-actor: acquire_guest_request
+actor: route_guest_request
 args:
     guestname: dummy-guest
-    poolname: dummy-pool
 delay: 79
 message:
     id:
@@ -412,8 +406,8 @@ task-request:
         task = tasks[0]
 
         assert task.id == 1
-        assert task.taskname == 'acquire_guest_request'
-        assert task.arguments == ['dummy-guest', 'dummy-pool']
+        assert task.taskname == 'route_guest_request'
+        assert task.arguments == ['dummy-guest']
         assert task.delay == 79
 
         r_guests = tft.artemis.db.SafeQuery \
@@ -428,8 +422,7 @@ task-request:
 
         guest = guests[0]
 
-        assert guest.poolname == 'dummy-pool'
-        assert guest.state == tft.artemis.guest.GuestState.PROVISIONING  # type: ignore[comparison-overlap]
+        assert guest.state == tft.artemis.guest.GuestState.ROUTING  # type: ignore[comparison-overlap]
 
 
 @pytest.mark.usefixtures('_schema_initialized_actual')
@@ -509,4 +502,4 @@ def test_update_guest_state_and_request_task_no_such_guest(
         guest = guests[0]
 
         assert guest.poolname is None
-        assert guest.state == tft.artemis.guest.GuestState.ROUTING  # type: ignore[comparison-overlap]
+        assert guest.state == tft.artemis.guest.GuestState.SHELF_LOOKUP  # type: ignore[comparison-overlap]
