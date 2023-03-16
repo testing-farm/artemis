@@ -852,6 +852,7 @@ class GuestRequestManager:
     ) -> None:
         from ..tasks import get_guest_logger
         from ..tasks.release_guest_request import release_guest_request
+        from ..tasks.return_guest_to_shelf import return_guest_to_shelf
 
         failure_details = {
             'guestname': guestname
@@ -859,7 +860,7 @@ class GuestRequestManager:
 
         guest_logger = get_guest_logger('delete-guest-request', logger, guestname)
 
-        with self.db.get_session() as session:
+        with self.db.get_session(transactional=True) as session:
             gr_query = artemis_db.SafeQuery \
                 .from_session(session, artemis_db.GuestRequest) \
                 .filter(artemis_db.GuestRequest.guestname == guestname)
@@ -885,52 +886,63 @@ class GuestRequestManager:
                     failure_details=failure_details
                 )
 
-            if guest_request.state != GuestState.CONDEMNED:  # type: ignore[comparison-overlap]
-                snapshot_count_subquery = session.query(
-                    sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
-                ).filter(
-                    artemis_db.SnapshotRequest.guestname == guestname
-                ).subquery('t')
+            guest_delete_task = (
+                return_guest_to_shelf
+                if guest_request.state == GuestState.READY  # type: ignore[comparison-overlap]
+                else release_guest_request
+            )
 
-                query = sqlalchemy \
-                    .update(artemis_db.GuestRequest.__table__) \
-                    .where(artemis_db.GuestRequest.guestname == guestname) \
-                    .where(snapshot_count_subquery.c.snapshot_count == 0) \
-                    .values(state=GuestState.CONDEMNED)
+            if guest_request.state == GuestState.CONDEMNED:  # type: ignore[comparison-overlap]
+                raise errors.ConflictError(
+                    logger=guest_logger,
+                    failure_details=failure_details
+                )
 
-                r_state = artemis_db.execute_db_statement(guest_logger, session, query)
+            snapshot_count_subquery = session.query(
+                sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
+            ).filter(
+                artemis_db.SnapshotRequest.guestname == guestname
+            ).subquery('t')
 
-                # The query can miss either with existing snapshots, or when the guest request has been
-                # removed from DB already. The "gone already" situation could be better expressed by
-                # returning "404 Not Found", but we can't tell which of these two situations caused the
-                # change to go vain, therefore returning general "409 Conflict", expressing our believe
-                # user should resolve the conflict and try again.
-                if r_state.is_error:
-                    failure = r_state.unwrap_error()
+            query = sqlalchemy \
+                .update(artemis_db.GuestRequest.__table__) \
+                .where(artemis_db.GuestRequest.guestname == guestname) \
+                .where(snapshot_count_subquery.c.snapshot_count == 0) \
+                .values(state=GuestState.CONDEMNED)
 
-                    if failure.details.get('serialization_failure', False):
-                        raise errors.ConflictError(
-                            logger=guest_logger,
-                            caused_by=failure,
-                            failure_details=failure_details
-                        )
+            r_state = artemis_db.execute_db_statement(guest_logger, session, query)
 
-                    raise errors.InternalServerError(
+            # The query can miss either with existing snapshots, or when the guest request has been
+            # removed from DB already. The "gone already" situation could be better expressed by
+            # returning "404 Not Found", but we can't tell which of these two situations caused the
+            # change to go vain, therefore returning general "409 Conflict", expressing our believe
+            # user should resolve the conflict and try again.
+            if r_state.is_error:
+                failure = r_state.unwrap_error()
+
+                if failure.details.get('serialization_failure', False):
+                    raise errors.ConflictError(
                         logger=guest_logger,
                         caused_by=failure,
                         failure_details=failure_details
                     )
 
-                artemis_db.GuestRequest.log_event_by_guestname(
-                    guest_logger,
-                    session,
-                    guestname,
-                    'condemned'
+                raise errors.InternalServerError(
+                    logger=guest_logger,
+                    caused_by=failure,
+                    failure_details=failure_details
                 )
 
-                guest_logger.info('condemned')
+            artemis_db.GuestRequest.log_event_by_guestname(
+                guest_logger,
+                session,
+                guestname,
+                'condemned'
+            )
 
-            r_task = artemis_db.TaskRequest.create(guest_logger, session, release_guest_request, guestname)
+            guest_logger.info('condemned')
+
+            r_task = artemis_db.TaskRequest.create(guest_logger, session, guest_delete_task, guestname)
 
             if r_task.is_error:
                 raise errors.InternalServerError(
@@ -944,7 +956,7 @@ class GuestRequestManager:
             log_dict_yaml(
                 guest_logger.info,
                 f'requested task #{task_request_id}',
-                TaskCall.from_call(release_guest_request, guestname, task_request_id=task_request_id).serialize()
+                TaskCall.from_call(return_guest_to_shelf, guestname, task_request_id=task_request_id).serialize()
             )
 
     def acquire_guest_console_url(
