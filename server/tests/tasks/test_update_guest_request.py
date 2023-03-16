@@ -468,7 +468,7 @@ def test_task(
 
     assert isinstance(tail_handler, tft.artemis.tasks.ProvisioningTailHandler)
     assert tail_handler.current_state == tft.artemis.guest.GuestState.PROMISED
-    assert tail_handler.new_state == tft.artemis.guest.GuestState.ROUTING
+    assert tail_handler.new_state == tft.artemis.guest.GuestState.SHELF_LOOKUP
 
     tft.artemis.tasks.update_guest_request.update_guest_request('dummy-guest')
 
