@@ -332,6 +332,17 @@ class AWSHookImageInfoMapper(HookImageInfoMapper[AWSPoolImageInfo]):
         return Ok(images)
 
 
+def _base64_encode(data: str) -> str:
+    """
+    Encode a given string into Base64.
+
+    Since standard library's :py:mod:`base64` works with bytes, we need to encode and decode
+    the given string properly, therefore a helper to save us from errors by repetition.
+    """
+
+    return base64.b64encode(data.encode('utf-8')).decode('utf-8')
+
+
 def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold: int) -> bool:
     try:
         parsed_timestamp = datetime.datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
@@ -1479,6 +1490,22 @@ class AWSDriver(PoolDriver):
             default_root_disk_size=default_root_disk_size
         )
 
+    def _create_user_data(
+        self,
+        logger: ContextAdapter,
+        guest_request: GuestRequest,
+    ) -> Optional[str]:
+        if guest_request.post_install_script:
+            return guest_request.post_install_script
+
+        post_install_script_filepath = cast(Optional[str], self.pool_config.get('post-install-script'))
+
+        if post_install_script_filepath:
+            with open(post_install_script_filepath) as f:
+                return f.read()
+
+        return None
+
     def _request_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1522,6 +1549,14 @@ class AWSDriver(PoolDriver):
             '--block-device-mappings',
             r_block_device_mappings.unwrap().serialize_to_json()
         ])
+
+        user_data = self._create_user_data(logger, guest_request)
+
+        if user_data:
+            command.extend([
+                '--user-data',
+                user_data
+            ])
 
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
@@ -1586,23 +1621,12 @@ class AWSDriver(PoolDriver):
 
         spot_price = r_price.unwrap()
 
-        if guest_request.post_install_script:
-            # NOTE(ivasilev) Encoding is needed as base62.b64encode() requires bytes object per py3 specification,
-            # and decoding is getting us the expected str back.
-            user_data = base64.b64encode(guest_request.post_install_script.encode('utf-8')).decode('utf-8')
-        else:
-            post_install_script_file = self.pool_config.get('post-install-script')
-            if post_install_script_file:
-                # path to a post-install-script is defined in the pool and isn't a default empty string
-                with open(post_install_script_file) as f:
-                    user_data = base64.b64encode(f.read().encode('utf8')).decode('utf-8')
-            else:
-                user_data = ""
-
         r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
 
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
+
+        user_data = self._create_user_data(logger, guest_request)
 
         specification = AWS_INSTANCE_SPECIFICATION.render(
             ami_id=image.id,
@@ -1611,7 +1635,7 @@ class AWSDriver(PoolDriver):
             availability_zone=self.pool_config['availability-zone'],
             subnet_id=self.pool_config['subnet-id'],
             security_group=self.pool_config['security-group'],
-            user_data=user_data,
+            user_data=_base64_encode(user_data) if user_data else '',
             block_device_mappings=r_block_device_mappings.unwrap().serialize()
         )
 
