@@ -378,8 +378,8 @@ def test_update_guest_state_and_request_task(
 
     assert workspace.result is None
 
-    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.INFO)
-    assert_log(caplog, message=SEARCH(r'state switched routing => provisioning'), levelno=logging.INFO)
+    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.WARN)
+    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning: succeeded'), levelno=logging.WARN)
     assert_log(
         caplog,
         message="""requested task #1:
@@ -477,7 +477,7 @@ def test_update_guest_state_and_request_task_no_such_guest(
     assert failure.caused_by.details['expected_affected_rows'] == 1
     assert failure.caused_by.details['statement'].startswith('UPDATE')
 
-    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.INFO)
+    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.WARN)
     # assert_log(caplog, message=SEARCH(r'state switched routing => provisioning'), levelno=logging.INFO)
     # assert_log(
     #    caplog,

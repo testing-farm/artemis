@@ -2365,7 +2365,7 @@ class Workspace:
 
             return self
 
-        self.logger.info(f'state switch: {current_state_label} => {new_state.value}')
+        self.logger.warning(f'state switch: {current_state_label} => {new_state.value}')
 
         r_state_update_query = _guest_state_update_query(
             guestname=self.guestname,
@@ -2390,11 +2390,21 @@ class Workspace:
 
         task_request_id = r_task.unwrap()
 
-        self.logger.info(f'state switched {current_state_label} => {new_state.value}')
+        self.logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')
+
         log_dict_yaml(
             self.logger.info,
             f'requested task #{task_request_id}',
             TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
+        )
+
+        GuestRequest.log_event_by_guestname(
+            self.logger,
+            self.session,
+            self.guestname,
+            'state-changed',
+            new_state=new_state.value,
+            current_state=current_state_label
         )
 
         return self
