@@ -1494,6 +1494,79 @@ def _update_guest_state(
     return Ok(True)
 
 
+def _update_guest_state_and_request_task(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    guestname: str,
+    new_state: GuestState,
+    task: Actor,
+    *task_arguments: ActorArgumentType,
+    current_state: Optional[GuestState] = None,
+    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+    current_pool_data: Optional[str] = None,
+    delay: Optional[int] = None,
+    **details: Any
+) -> Result[bool, Failure]:
+    current_state_label = current_state.value if current_state is not None else '<ignored>'
+
+    def handle_error(r: Result[Any, Any], message: str) -> Result[bool, Failure]:
+        assert r.is_error
+
+        return Error(
+            Failure.from_failure(
+                message,
+                r.unwrap_error(),
+                current_state=current_state_label,
+                new_state=new_state.value,
+                task_name=task.actor_name,
+                task_args=task_arguments
+            ).update(**details)
+        )
+
+    logger.warning(f'state switch: {current_state_label} => {new_state.value}')
+
+    r_state_update_query = _guest_state_update_query(
+        guestname=guestname,
+        new_state=new_state,
+        current_state=current_state,
+        set_values=set_values,
+        current_pool_data=current_pool_data
+    )
+
+    if r_state_update_query.is_error:
+        return handle_error(r_state_update_query, 'failed to create state update query')
+
+    r_update = execute_db_statement(logger, session, r_state_update_query.unwrap())
+
+    if r_update.is_error:
+        return handle_error(r_update, 'failed to switch guest state')
+
+    r_task = TaskRequest.create(logger, session, task, *task_arguments, delay=delay)
+
+    if r_task.is_error:
+        return handle_error(r_task, 'failed to add task request')
+
+    task_request_id = r_task.unwrap()
+
+    logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')
+    log_dict_yaml(
+        logger.info,
+        f'requested task #{task_request_id}',
+        TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
+    )
+
+    GuestRequest.log_event_by_guestname(
+        logger,
+        session,
+        guestname,
+        'state-changed',
+        new_state=new_state.value,
+        current_state=current_state_label
+    )
+
+    return Ok(True)
+
+
 def _update_snapshot_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -2346,66 +2419,27 @@ class Workspace:
 
         assert self.guestname
 
-        current_state_label = current_state.value if current_state is not None else '<ignored>'
-
-        def handle_error(r: Result[Any, Any], message: str) -> WorkspaceBound:
-            assert r.is_error
-
-            self.result = self.handle_failure(
-                Failure.from_failure(
-                    message,
-                    r.unwrap_error(),
-                    current_state=current_state_label,
-                    new_state=new_state.value,
-                    task_name=task.actor_name,
-                    task_args=task_arguments
-                ).update(**details),
-                message
-            )
-
-            return self
-
-        self.logger.warning(f'state switch: {current_state_label} => {new_state.value}')
-
-        r_state_update_query = _guest_state_update_query(
-            guestname=self.guestname,
-            new_state=new_state,
-            current_state=current_state,
-            set_values=set_values,
-            current_pool_data=current_pool_data
-        )
-
-        if r_state_update_query.is_error:
-            return handle_error(r_state_update_query, 'failed to create state update query')
-
-        r_update = execute_db_statement(self.logger, self.session, r_state_update_query.unwrap())
-
-        if r_update.is_error:
-            return handle_error(r_update, 'failed to switch guest state')
-
-        r_task = TaskRequest.create(self.logger, self.session, task, *task_arguments, delay=delay)
-
-        if r_task.is_error:
-            return handle_error(r_task, 'failed to add task request')
-
-        task_request_id = r_task.unwrap()
-
-        self.logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')
-
-        log_dict_yaml(
-            self.logger.info,
-            f'requested task #{task_request_id}',
-            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
-        )
-
-        GuestRequest.log_event_by_guestname(
+        r = _update_guest_state_and_request_task(
             self.logger,
             self.session,
             self.guestname,
-            'state-changed',
-            new_state=new_state.value,
-            current_state=current_state_label
+            new_state,
+            task,
+            *task_arguments,
+            current_state=current_state,
+            set_values=set_values,
+            current_pool_data=current_pool_data,
+            delay=delay,
+            **details
         )
+
+        if r.is_error:
+            self.result = self.handle_error(r, 'failed to update guest state and dispatch task')
+            return self
+
+        if not r.unwrap():
+            self.result = self.handle_failure(Failure('foo'), 'failed to update guest state and dispatch task')
+            return self
 
         return self
 
