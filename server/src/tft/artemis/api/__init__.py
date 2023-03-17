@@ -166,7 +166,7 @@ def _validate_environment(
 
         raise errors.BadRequestError(
             response={
-                'message': 'Bad request',
+                'message': 'Environment failed validation',
                 'errors': validation_errors
             },
             logger=logger,
@@ -636,8 +636,11 @@ class GuestRequestManager:
 
         failure_details = {
             'guestname': guestname,
-            'keyname': guest_request.keyname,
-            'raw_environment': guest_request.environment
+            'raw_keyname': guest_request.keyname,
+            'raw_environment': guest_request.environment,
+            'raw_user_data': guest_request.user_data,
+            'raw_post_install_script': guest_request.post_install_script,
+            'raw_log_types': guest_request.log_types
         }
 
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)

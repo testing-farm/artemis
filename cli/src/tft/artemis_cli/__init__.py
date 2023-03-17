@@ -344,11 +344,15 @@ def fetch_artemis(
         logger.error(f"""
 Failed to communicate with Artemis API Server, responded with code {res.status_code}: {res.reason}'
 
-Request:
+Request: {res.request.url}
 
-  {res.request.url}
+{str(RichYAML.from_data(request_kwargs).text).strip()}
 
-  {request_kwargs}
+Response: {res.status_code} {res.reason}
+
+{str(RichYAML.from_data(dict(res.headers)).text).strip()}
+
+{str(RichYAML.from_data(res.json()).text).strip()}
 """)
 
     if cfg.authentication_method == 'basic':
