@@ -40,7 +40,7 @@ test-units: _env-info  ## Run unit tests
 	tox -e py37
 
 test-pre-commit: install  ## Run pre-commit checks
-	git ls-files -- . | xargs -n200 poetry run pre-commit run --files
+	git ls-files -- . | xargs -n200 poetry run pre-commit run --show-diff-on-failure --files
 
 coverage: _env-info  ## Run tests with coverage
 	tox -e py37-coverage
