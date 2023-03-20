@@ -709,7 +709,7 @@ class GuestRequestManager:
                 if r_pool.is_error:
                     raise errors.InternalServerError(
                         logger=guest_logger,
-                        caused_by=r_key.unwrap_error(),
+                        caused_by=r_pool.unwrap_error(),
                         failure_details=failure_details
                     )
 
