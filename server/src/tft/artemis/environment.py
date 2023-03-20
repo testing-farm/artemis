@@ -1774,6 +1774,65 @@ class OsRequirements(SerializableContainer):
 
 
 @dataclasses.dataclass(repr=False)
+class Kickstart(SerializableContainer):
+    """
+    Represents a Kickstart file structure.
+    """
+
+    #: Main body of a kickstart file.
+    script: Optional[str]
+
+    #: Pre installation part, corresponding to `%pre` in ks file.
+    pre_install: Optional[str]
+
+    #: Post installation part, corresponding to `%post` in ks file.
+    post_install: Optional[str]
+
+    #: Specified metadata can change the interpretation of the ks file.
+    metadata: Optional[str]
+
+    #: Options to be passed to the kernel command line when the installer is booted.
+    kernel_options: Optional[str]
+
+    #: Options to be passed to the kernel command line after the installation.
+    kernel_options_post: Optional[str]
+
+    def __init__(self, **kwargs: Optional[str]) -> None:
+        """Handle the special naming in API scheme.
+
+        Parameters naming in the API scheme contains `-` symbols, thus we need a custom constructor method to
+        handle such a case.
+
+        :param **kwargs: keyword arguments representing kickstart sections.
+        """
+
+        self.script: Optional[str] = kwargs.get('script', None)
+        self.pre_install: Optional[str] = kwargs.get('pre-install', None)
+        self.post_install: Optional[str] = kwargs.get('post-install', None)
+        self.metadata: Optional[str] = kwargs.get('metadata', None)
+        self.kernel_options: Optional[str] = kwargs.get('kernel-options', None)
+        self.kernel_options_post: Optional[str] = kwargs.get('kernel-options-post', None)
+
+    def serialize(self) -> Dict[str, Any]:
+        """Ensure that the parameters are saved with dashes to the database.
+
+        We need to represent the data in the database with the same naming as in the API scheme.
+        By overriding the serialization method the parameters are saved with dashes instead of the underscore.
+
+        :returns: serialized Kickstart container.
+        """
+
+        return{
+            'script': self.script,
+            'pre-install': self.pre_install,
+            'post-install': self.post_install,
+            'metadata': self.metadata,
+            'kernel-options': self.kernel_options,
+            'kernel-options-post': self.kernel_options_post,
+        }
+
+
+@dataclasses.dataclass(repr=False)
 class Environment(SerializableContainer):
     """
     Represents an environment and its dimensions.
@@ -1785,6 +1844,7 @@ class Environment(SerializableContainer):
 
     hw: HWRequirements
     os: OsRequirements
+    kickstart: Kickstart
     pool: Optional[str] = None
     snapshots: bool = False
 
@@ -1816,3 +1876,13 @@ class Environment(SerializableContainer):
             Result[Optional[ConstraintBase], 'Failure'],
             constraints_from_environment_requirements(self.hw.constraints)
         )
+
+    @property
+    def has_ks_specification(self) -> bool:
+        """
+        Check whether the environment contains any Kickstart specification.
+
+        :returns: ``True`` if environment contains any Kickstart specification, ``False`` otherwise.
+        """
+
+        return any(dataclasses.asdict(self.kickstart).values())

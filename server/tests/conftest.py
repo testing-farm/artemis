@@ -213,7 +213,8 @@ def fixture_schema_initialized_actual(
         'dummy-guest',
         tft.artemis.environment.Environment(
             hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-            os=tft.artemis.environment.OsRequirements(compose='dummy-compose')
+            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+            kickstart=tft.artemis.environment.Kickstart()
         ),
         'dummy-user',
         None,

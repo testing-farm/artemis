@@ -406,6 +406,7 @@ def do_test_policy_match_pool_name(
     mock_guest_request.environment = tft.artemis.environment.Environment(
         hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
         os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+        kickstart=tft.artemis.environment.Kickstart(),
         pool=pool_name
     )
 
@@ -466,6 +467,7 @@ def do_test_policy_supports_architecture(
     mock_guest_request.environment = tft.artemis.environment.Environment(
         hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
         os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+        kickstart=tft.artemis.environment.Kickstart(),
         snapshots=False
     )
 
@@ -532,6 +534,7 @@ def do_test_policy_supports_snapshots(
     mock_guest_request.environment = tft.artemis.environment.Environment(
         hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
         os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+        kickstart=tft.artemis.environment.Kickstart(),
         snapshots=require_snapshots
     )
 

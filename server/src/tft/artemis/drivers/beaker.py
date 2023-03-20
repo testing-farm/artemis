@@ -23,7 +23,7 @@ from .. import Failure, SerializableContainer, log_dict_yaml, process_output_to_
 from ..cache import get_cached_set, refresh_cached_set
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Operator, Or, SizeType
+from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Kickstart, Operator, Or, SizeType
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
@@ -686,6 +686,7 @@ class BeakerDriver(PoolDriver):
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = True
+        capabilities.supports_kickstart = True
         capabilities.supported_guest_logs = [
             ('console', GuestLogContentType.URL),
             ('console.log', GuestLogContentType.URL),
@@ -832,6 +833,35 @@ class BeakerDriver(PoolDriver):
             ssh=PoolImageSSHInfo()
         ))
 
+    def _create_bkr_kickstart_options(
+            self,
+            kickstart: Kickstart,
+    ) -> List[str]:
+        options = []
+
+        if kickstart.kernel_options is not None:
+            options += ['--kernel-options', kickstart.kernel_options.strip()]
+
+        if kickstart.kernel_options_post is not None:
+            options += ['--kernel-options-post', kickstart.kernel_options_post.strip()]
+
+        if kickstart.metadata is not None:
+            options += ['--ks-meta', kickstart.metadata.strip()]
+
+        if kickstart.script is not None:
+            for line in kickstart.script.splitlines():
+                options += ['--ks-append', line.strip()]
+
+        if kickstart.pre_install is not None:
+            for line in kickstart.pre_install.splitlines():
+                options += ['--ks-append', line.strip()]
+
+        if kickstart.post_install is not None:
+            for line in kickstart.post_install.splitlines():
+                options += ['--ks-append', line.strip()]
+
+        return options
+
     def _create_wow_options(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -874,6 +904,9 @@ class BeakerDriver(PoolDriver):
 
         for name, value in tags.items():
             command += ['--taskparam', f'ARTEMIS_TAG_{name}={value}']
+
+        if guest_request.environment.has_ks_specification:
+            command += self._create_bkr_kickstart_options(guest_request.environment.kickstart)
 
         return Ok(command)
 

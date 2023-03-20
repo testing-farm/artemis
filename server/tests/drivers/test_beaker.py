@@ -44,7 +44,8 @@ def fixture_dummy_guest_request(name: str = 'dummy_guest_request') -> MagicMock:
         name=name,
         environment=tft.artemis.environment.Environment(
             hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-            os=tft.artemis.environment.OsRequirements(compose='dummy-compose')))
+            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+            kickstart=tft.artemis.environment.Kickstart()))
 
 
 @pytest.fixture(name='pool')
@@ -171,6 +172,8 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
 
         os:
           compose: dummy-compose
+
+        kickstart: {}
         """,
         """
         <system>
@@ -190,6 +193,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
 
         os:
           compose: dummy-compose
+        kickstart: {}
         """,
         """
         <and>
@@ -213,6 +217,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
               - type: eth
         os:
           compose: dummy-compose
+        kickstart: {}
         """,
         """
         <and>
@@ -234,6 +239,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
               - type: nosuchinterface
         os:
           compose: dummy-compose
+        kickstart: {}
         """,
         "failure\n\n"
         "constraint: '[network[0].type == eth, network[1].type == nosuchinterface]'\n"
@@ -252,6 +258,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                     version: "2.0"
         os:
           compose: dummy-compose
+        kickstart: {}
         """,
         """
         <and>
@@ -273,6 +280,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                     version: ">= 2"
         os:
           compose: dummy-compose
+        kickstart: {}
         """,
         """
         <and>
@@ -294,6 +302,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                     - rhel-9
         os:
           compose: dummy-compose
+        kickstart: {}
         """,
         """
         <and>
@@ -318,6 +327,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                     - rhel-9
         os:
           compose: dummy-compose
+        kickstart: {}
         """,
         """
         <and>
@@ -348,6 +358,8 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
               - type: eth
         os:
           compose: dummy-compose
+
+        kickstart: {}
         """,
         """
         <and>
@@ -398,6 +410,8 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                     hypervisor: xen
         os:
           compose: dummy-compose
+
+        kickstart: {}
         """,
         """
         <and>
@@ -600,6 +614,8 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
 
         os:
           compose: dummy-compose
+
+        kickstart: {}
         """,
         [],
         [],
@@ -616,6 +632,8 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
 
         os:
           compose: dummy-compose
+
+        kickstart: {}
         """,
         [],
         [],
@@ -641,6 +659,8 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
 
         os:
           compose: dummy-compose
+
+        kickstart: {}
         """,
         ['dummy-group-1', 'dummy-group-2'],
         ['dummy-hostname-1', 'dummy-hostname-2'],
@@ -670,6 +690,8 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
 
         os:
           compose: dummy-compose
+
+        kickstart: {}
         """,
         [],
         [],
@@ -693,6 +715,8 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
 
         os:
           compose: dummy-compose
+
+        kickstart: {}
         """,
         [],
         [],
@@ -805,3 +829,58 @@ def test_avoid_hostnames(
 
     assert r_avoid_hostnames.is_ok
     assert r_avoid_hostnames.unwrap() == expected
+
+
+@pytest.mark.parametrize(('env', 'expected'), [
+    (
+        """
+        ---
+
+        hw:
+          arch: x86_64
+
+        os:
+          compose: dummy-compose
+
+        kickstart:
+          kernel-options: "ksdevice=eth1"
+          kernel-options-post: quiet
+          script: |
+            lang en_US.UTF-8
+            keyboard us
+          metadata: |
+            "no-autopart harness=restraint"
+          pre-install: |
+            %pre --log=/tmp/kickstart_pre.log
+            echo "Pre-install ks script"
+            %end
+          post-install: |
+            %post --nochroot
+            umount --recursive /mnt/sysimage
+            %end
+        """,
+        ['--kernel-options', 'ksdevice=eth1',
+         '--kernel-options-post', 'quiet',
+         '--ks-meta', '"no-autopart harness=restraint"',
+         '--ks-append', 'lang en_US.UTF-8',
+         '--ks-append', 'keyboard us',
+         '--ks-append', '%pre --log=/tmp/kickstart_pre.log',
+         '--ks-append', 'echo \"Pre-install ks script\"',
+         '--ks-append', '%end',
+         '--ks-append', '%post --nochroot',
+         '--ks-append', 'umount --recursive /mnt/sysimage',
+         '--ks-append', '%end']
+    )
+], ids=[
+    'full-ks',
+])
+def test_bkr_ks_options(
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+    env: str,
+    expected: List[str]
+) -> None:
+    environment = parse_env(env)
+
+    r_wow_options = tft.artemis.drivers.beaker.BeakerDriver._create_bkr_kickstart_options(pool, environment.kickstart)
+
+    assert r_wow_options == expected

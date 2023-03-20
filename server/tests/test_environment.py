@@ -26,6 +26,15 @@ def fixture_schema_v0_0_19() -> tft.artemis.JSONSchemaType:
     return r_schema.unwrap()
 
 
+@pytest.fixture(name='kickstart_schema')
+def fixture_kickstart_schema() -> tft.artemis.JSONSchemaType:
+    r_schema = tft.artemis.load_validation_schema('environment-v0.0.53.yml')
+
+    assert r_schema.is_ok
+
+    return r_schema.unwrap()
+
+
 def parse_hw(text: str) -> ConstraintBase:
     r_constraint = tft.artemis.environment.constraints_from_environment_requirements(
         gluetool.utils.from_yaml(textwrap.dedent(text))
@@ -49,7 +58,8 @@ def fixture_dummy_guest_request(name: str = 'dummy_guest_request') -> MagicMock:
         name=name,
         environment=tft.artemis.environment.Environment(
             hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-            os=tft.artemis.environment.OsRequirements(compose='dummy-compose')))
+            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+            kickstart=tft.artemis.environment.Kickstart()))
 
 
 @pytest.fixture(name='pool')
@@ -1304,6 +1314,8 @@ def test_beaker_preset(
 
         os:
           compose: dummy-compose
+
+        kickstart: {}
         """
     )
 
@@ -1686,3 +1698,65 @@ def test_operator_parsing(
 
     assert constraint.operator == operator
     assert constraint.value == UNITS('1 GiB')
+
+
+def test_kickstart_schema(kickstart_schema: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
+    spec = parse_spec(
+        """
+        ---
+
+        hw:
+          arch: x86_64
+
+        os:
+          compose: dummy-compose
+
+        kickstart:
+          pre-install: |
+            %pre --log=/tmp/kickstart_pre.log
+            echo "Pre-install ks script"
+            %end
+          post-install: |
+            %post --nochroot
+            umount --recursive /mnt/sysimage
+            %end
+          script: |
+            lang en_US.UTF-8
+            keyboard us
+            part /boot --fstype="ext4" --size=512
+            part swap --size=4096
+            part / --fstype="xfs" --size=1024 --mkfsoptions="-m crc=0 -n ftype=0" --grow
+          metadata: |
+            "no_autopart harness=restraint"
+          kernel-options: "ksdevice=eth1"
+          kernel-options-post: "quiet"
+        """
+    )
+
+    expected_serialization = {
+        'hw': {'arch': 'x86_64', 'constraints': None},
+        'kickstart': {
+            'kernel-options': 'ksdevice=eth1',
+            'kernel-options-post': 'quiet',
+            'metadata': '"no_autopart harness=restraint"\n',
+            'post-install': '%post --nochroot\numount --recursive /mnt/sysimage\n%end\n',
+            'pre-install': '%pre --log=/tmp/kickstart_pre.log\necho "Pre-install ks script"\n%end\n',
+            'script': 'lang en_US.UTF-8\nkeyboard us\npart /boot --fstype="ext4" --size=512\npart swap --size=4096\npart / --fstype="xfs" --size=1024 --mkfsoptions="-m crc=0 -n ftype=0" --grow\n'  # noqa: E501
+        },
+        'os': {'compose': 'dummy-compose'},
+        'pool': None,
+        'snapshots': False,
+        'spot_instance': None,
+    }
+
+    r_validation = tft.artemis.validate_data(spec, kickstart_schema)
+
+    assert r_validation.is_ok
+
+    errors = r_validation.unwrap()
+
+    assert errors == []
+
+    environment = Environment.unserialize(spec)
+
+    assert environment.serialize() == expected_serialization

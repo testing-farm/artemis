@@ -44,6 +44,7 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('kickstart', '0.0.53'),
         ('hw-constraints-boot-method', '0.0.32'),
         ('hw-constraints-network', '0.0.28'),
         # Dummy version - we can't actually check the constraints to assure this. That could change if we could verify
@@ -175,6 +176,7 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--priority-group', help='name of priority group')
 @click.option('--arch', required=True, help='architecture')
 @click.option('--hw-constraints', required=False, default=None, help='Optional HW constraints.')
+@click.option('--kickstart', required=False, default=None, help='Optional Kickstart specification.')
 @click.option('--compose', required=True, help='compose id')
 @click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
@@ -200,6 +202,7 @@ def cmd_guest_create(
         keyname: Optional[str] = None,
         arch: Optional[str] = None,
         hw_constraints: Optional[str] = None,
+        kickstart: Optional[str] = None,
         compose: Optional[str] = None,
         pool: Optional[str] = None,
         snapshots: Optional[bool] = None,
@@ -251,6 +254,18 @@ def cmd_guest_create(
 
     if cfg.artemis_api_version < API_FEATURE_VERSIONS['arch-under-hw']:
         environment['arch'] = arch
+
+    if cfg.artemis_api_version >= API_FEATURE_VERSIONS['kickstart']:
+        environment['kickstart'] = {}
+
+        if kickstart:
+            try:
+                environment['kickstart'] = json.loads(kickstart)
+            except Exception as exc:
+                cfg.logger.error(f'failed to parse kickstart data: {exc}')
+
+    elif kickstart is not None:
+        cfg.logger.error(f'--kickstart is supported with API {API_FEATURE_VERSIONS["kickstart"]} and newer')
 
     if user_data is not None:
         try:
