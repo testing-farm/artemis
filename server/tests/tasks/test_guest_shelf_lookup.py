@@ -249,6 +249,8 @@ def test_shelf_miss(
 def test_exit(
     workspace: Workspace
 ) -> None:
+    workspace.gr = MagicMock(spec=tft.artemis.db.GuestRequest)
+
     assert workspace.exit() is workspace
 
     assert workspace.result is tft.artemis.tasks.SUCCESS
