@@ -42,7 +42,7 @@ from .cache import dec_cache_field, dec_cache_value, get_cache_value, inc_cache_
     iter_cache_fields, iter_cache_keys, set_cache_value
 from .context import DATABASE, SESSION, with_context
 from .guest import GuestState
-from .knobs import KNOB_POOL_ENABLED, KNOB_WORKER_PROCESS_METRICS_TTL
+from .knobs import KNOB_POOL_ENABLED, KNOB_SHELF_MAX_GUESTS, KNOB_WORKER_PROCESS_METRICS_TTL
 
 if TYPE_CHECKING:
     from .drivers import CLIErrorCauses
@@ -1918,6 +1918,212 @@ class RoutingMetrics(MetricsBase):
             self.OVERALL_POLICY_RULINGS_COUNT \
                 .labels(policy=policy_name, pool=pool_name, allowed=allowed) \
                 ._value.set(count)
+
+
+@dataclasses.dataclass
+class ShelfMetrics(MetricsBase):
+    """
+    Metrics of a particular shelf.
+    """
+
+    _KEY_HITS = 'metrics.shelf.{shelfname}.hits'  # noqa: FS003
+    _KEY_MISSES = 'metrics.shelf.{shelfname}.misses'  # noqa: FS003
+    _KEY_REMOVALS = 'metrics.shelf.{shelfname}.removals'  # noqa: FS003
+    _KEY_FORCED_REMOVALS = 'metrics.shelf.{shelfname}.forced-removals'  # noqa: FS003
+    _KEY_DEAD = 'metrics.shelf.{shelfname}.dead'  # noqa: FS003
+
+    shelfname: str
+
+    current_guest_count: int
+    size: int
+    hit_count: Optional[float]
+    miss_count: Optional[float]
+    removals: Optional[float]
+    forced_removals: Optional[float]
+    dead_guest_count: Optional[float]
+
+    def __init__(self, shelfname: str) -> None:
+        """
+        Metrics of a particular shelf.
+
+        :param shelfname: name of the shelf for which metrics are being tracked.
+        """
+
+        self.key_hits = self._KEY_HITS.format(shelfname=shelfname)  # noqa: FS002
+        self.key_misses = self._KEY_MISSES.format(shelfname=shelfname)  # noqa: FS002
+        self.key_removals = self._KEY_REMOVALS.format(shelfname=shelfname)  # noqa: FS002
+        self.key_forced_removals = self._KEY_FORCED_REMOVALS.format(shelfname=shelfname)  # noqa: FS002
+        self.key_dead = self._KEY_DEAD.format(shelfname=shelfname)  # noqa: FS002
+
+        self.shelfname = shelfname
+
+    @classmethod
+    @with_context
+    def inc_hits(
+        cls,
+        shelfname: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase the counter for the given shelf hits by 1.
+
+        :param shelfname: name of the shelf.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(logger, cache, cls._KEY_HITS.format(shelfname=shelfname))  # noqa: FS002
+        return Ok(None)
+
+    @classmethod
+    @with_context
+    def inc_misses(
+        cls,
+        shelfname: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase the counter for the given shelf misses by 1.
+
+        :param shelfname: name of the shelf.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(logger, cache, cls._KEY_MISSES.format(shelfname=shelfname))  # noqa: FS002
+        return Ok(None)
+
+    @classmethod
+    @with_context
+    def inc_removals(
+        cls,
+        shelfname: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase the counter for the number of guests removed from the given shelf by 1.
+
+        :param shelfname: name of the shelf.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(logger, cache, cls._KEY_REMOVALS.format(shelfname=shelfname))  # noqa: FS002
+        return Ok(None)
+
+    @classmethod
+    @with_context
+    def inc_forced_removals(
+        cls,
+        shelfname: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase the counter for the number of guests forcefully released from the given shelf by 1.
+
+        :param shelfname: name of the shelf.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(logger, cache, cls._KEY_FORCED_REMOVALS.format(shelfname=shelfname))  # noqa: FS002
+        return Ok(None)
+
+    @classmethod
+    @with_context
+    def inc_dead(
+        cls,
+        shelfname: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase the counter for dead guests in the given shelf by 1.
+
+        :param shelfname: name of the shelf.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(logger, cache, cls._KEY_DEAD.format(shelfname=shelfname))  # noqa: FS002
+        return Ok(None)
+
+    @with_context
+    def sync(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        cache: redis.Redis
+    ) -> None:
+        """
+        Load values from the storage and update this container with up-to-date values.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param cache: cache instance to use for cache access.
+        """
+
+        super().sync()
+
+        r_shelf_size = KNOB_SHELF_MAX_GUESTS.get_value(session=session, entityname=self.shelfname)
+
+        if r_shelf_size.is_error:
+            r_shelf_size.unwrap_error().handle(logger)
+            return
+
+        r_current_guest_count = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest) \
+            .filter(artemis_db.GuestRequest.shelfname == self.shelfname) \
+            .count()
+
+        if r_current_guest_count.is_error:
+            r_current_guest_count.unwrap_error().handle(logger)
+            return
+
+        self.current_guest_count = r_current_guest_count.unwrap()
+
+        hits = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self.key_hits)
+
+        self.hits = hits if hits is None else float(hits)
+
+        misses = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self.key_misses)
+
+        self.misses = misses if misses is None else float(misses)
+
+        removals = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self.key_removals)
+
+        self.removals = removals if removals is None else float(removals)
+
+        forced_removals = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self.key_forced_removals)
+
+        self.forced_removals = forced_removals if forced_removals is None else float(forced_removals)
+
+        dead = cast(
+            Callable[[str], Optional[bytes]],
+            cache.get
+        )(self.key_dead)
+
+        self.dead = dead if dead is None else float(dead)
 
 
 @dataclasses.dataclass

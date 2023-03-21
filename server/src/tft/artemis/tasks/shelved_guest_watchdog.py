@@ -19,6 +19,7 @@ import sqlalchemy.orm.session
 from ..drivers import ping_shell_remote
 from ..guest import GuestState
 from ..knobs import Knob
+from ..metrics import ShelfMetrics
 from . import _ROOT_LOGGER, DoerReturnType, DoerType, ProvisioningTailHandler
 from . import Workspace as _Workspace
 from . import get_guest_logger, step, task, task_core
@@ -127,10 +128,11 @@ class Workspace(_Workspace):
         """
 
         if self.guest_ping_result.is_error:
-            # TODO: Collect metrics on dead guests
             from .release_guest_request import release_guest_request
 
             assert self.gr
+
+            ShelfMetrics.inc_dead(self.gr.shelfname)
 
             self.update_guest_state_and_request_task(
                 GuestState.CONDEMNED,
@@ -138,6 +140,8 @@ class Workspace(_Workspace):
                 self.guestname,
                 current_state=GuestState.SHELVED
             )
+
+            ShelfMetrics.inc_removals(self.gr.shelfname)
 
             self.result = self.handle_error(self.guest_ping_result, 'ping failed')
 
