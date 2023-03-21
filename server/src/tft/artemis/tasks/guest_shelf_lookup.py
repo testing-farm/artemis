@@ -20,6 +20,7 @@ import sqlalchemy.orm.session
 
 from ..db import DB, GuestRequest, SafeQuery, safe_db_change
 from ..guest import GuestState
+from ..metrics import ShelfMetrics
 from . import _ROOT_LOGGER, DoerReturnType, DoerType, ProvisioningTailHandler
 from . import Workspace as _Workspace
 from . import get_guest_logger, guest_request_prepare_finalize_pre_connect, step, task, task_core
@@ -89,6 +90,8 @@ class Workspace(_Workspace):
                     and self.gr.post_install_script == guest.post_install_script:
                 self.selected_guest = guest
 
+                ShelfMetrics.inc_hits(self.selected_guest.shelfname)
+
     @step
     def use_guest(self) -> None:
         """
@@ -129,6 +132,8 @@ class Workspace(_Workspace):
             self.result = self.handle_error(r_delete, 'failed to remove the original guest request record')
             return
 
+        ShelfMetrics.inc_removals(self.selected_guest.shelfname)
+
         self.result = self.handle_success('finished-task')
 
     @step
@@ -149,6 +154,11 @@ class Workspace(_Workspace):
         """
         Wrap up the shelf lookup process by updating metrics & final logging.
         """
+
+        assert self.gr
+
+        if self.gr.shelfname:
+            ShelfMetrics.inc_misses(self.gr.shelfname)
 
         self.result = self.handle_success('finished-task')
 
