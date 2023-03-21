@@ -912,6 +912,11 @@ class GuestRequest(Base):
         # avoid circular imports
         from .environment import Environment
 
+        # v0.0.53: added Kickstart specification. For backward compatibility,
+        # add `kickstart` key if it's missing.
+        if 'kickstart' not in self._environment:
+            self._environment['kickstart'] = {}  # type: ignore[call-overload]
+
         return Environment.unserialize(cast(Dict[str, Any], self._environment))
 
     # This is tricky:
