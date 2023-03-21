@@ -1084,10 +1084,15 @@ class GuestShelfManager:
         auth: AuthContext,
         logger: gluetool.log.ContextAdapter
     ) -> Tuple[str, None]:
-        if not manager.get_by_guestname(guestname):
+        guest = manager.get_by_guestname(guestname)
+
+        if not guest:
             raise errors.NoSuchEntityError(request=request)
 
         manager.delete_by_guestname(guestname, logger, state=GuestState.SHELVED)
+
+        metrics.ShelfMetrics.inc_forced_removals(guest.shelf)
+        metrics.ShelfMetrics.inc_removals(guest.shelf)
 
         return HTTP_204, None
 
