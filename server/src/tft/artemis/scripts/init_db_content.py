@@ -266,7 +266,9 @@ def config_to_db(
                 insert_data={
                     GuestShelf.ownername: shelf_config['owner'],
                     GuestShelf.state: GuestState.READY
-                }
+                },
+                # TODO: `ON CONFLICT DO NOTHING` UPSERT makes the mess out of expected rows, both 0 and 1 are valid.
+                expected_records=(0, 1)
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize shelf record'
