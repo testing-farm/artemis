@@ -399,6 +399,17 @@ def constraint_to_beaker_filter(
         return Ok(_new_tag('key_value', key="TPM", op=op, value=str(constraint.value)))
 
     if constraint_name.property == 'virtualization':
+        if constraint_name.child_property == 'is_supported':
+            return _translate_constraint_by_config(
+                constraint,
+                guest_request,
+                pool.pool_config
+                    .get('hw-constraints', {})
+                    .get('virtualization', {})
+                    .get('is_supported', {})
+                    .get('translations', [])
+            )
+
         if constraint_name.child_property == 'is_virtualized':
             return _translate_constraint_by_config(
                 constraint,

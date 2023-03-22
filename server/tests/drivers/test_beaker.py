@@ -99,6 +99,15 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
               element: |
                 <compatible_with_distro arch="{{ ENVIRONMENT.hw.arch }}" osmajor="RedHatEnterpriseLinux9"/>
       virtualization:
+        is_supported:
+          translations:
+              - operator: '=='
+                value: false
+                element: '<not><and><key_value key="HVM" op="=" value="1"/><system_type value="Machine"/></and></not>'
+
+              - operator: '=='
+                value: true
+                element: '<and><key_value key="HVM" op="=" value="1"/><system_type value="Machine"/></and>'
         is_virtualized:
           translations:
               - operator: '=='
@@ -405,7 +414,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                 tpm:
                     version: "2.0"
                 virtualization:
-                    # is-supported: true
+                    is-supported: true
                     is-virtualized: false
                     hypervisor: xen
         os:
@@ -462,6 +471,10 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
            <system>
             <hypervisor op="==" value=""/>
            </system>
+           <and>
+            <key_value key="HVM" op="=" value="1"/>
+            <system_type value="Machine"/>
+           </and>
            <system>
             <hypervisor op="==" value="XEN"/>
            </system>
