@@ -24,16 +24,30 @@ from . import _ROOT_LOGGER, DoerReturnType, DoerType, ProvisioningTailHandler
 from . import Workspace as _Workspace
 from . import get_guest_logger, step, task, task_core
 
-KNOB_DISPATCH_GUEST_REQUEST_WATCHDOG_DELAY: Knob[int] = Knob(
-    'actor.dispatch-guest-request-watchdog.delay',
+KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY: Knob[int] = Knob(
+    'actor.guest-request-watchdog.dispatch.delay',
     """
     A delay, in seconds, between successful provisioning and dispatching of
     guest request watchdog tasks.
     """,
-    has_db=False,
-    envvar='ARTEMIS_ACTOR_DISPATCH_GUEST_REQUEST_WATCHDOG_DELAY',
+    has_db=True,
+    per_entity=True,
+    envvar='ARTEMIS_ACTOR_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY',
     cast_from_str=int,
     default=600
+)
+
+
+KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD: Knob[int] = Knob(
+    'actor.guest-request-watchdog.dispatch.period',
+    """
+    A delay, in seconds, after which new guest request watchdog task is scheduled.
+    """,
+    has_db=True,
+    per_entity=True,
+    envvar='ARTEMIS_ACTOR_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD',
+    cast_from_str=int,
+    default=3600
 )
 
 
@@ -82,10 +96,21 @@ class Workspace(_Workspace):
         if self.watchdog_state != WatchdogState.CONTINUE:
             return
 
+        assert self.pool
+
+        r = KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD.get_value(
+            entityname=self.pool.poolname,
+            session=self.session
+        )
+
+        if r.is_error:
+            self.result = self.handle_error(r, 'failed to fetch pool watchdog dispatch period')
+            return
+
         self.dispatch_task(
             guest_request_watchdog,
             self.guestname,
-            delay=KNOB_DISPATCH_GUEST_REQUEST_WATCHDOG_DELAY.value
+            delay=r.unwrap()
         )
 
     @step
