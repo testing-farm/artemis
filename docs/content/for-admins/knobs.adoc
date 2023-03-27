@@ -127,17 +127,6 @@ quicker.
 
 5+|A range, in seconds, by which can a task delay be modified before use.
 
-|`actor.dispatch-guest-request-watchdog.delay`
-|`int`
-|`ARTEMIS_ACTOR_DISPATCH_GUEST_REQUEST_WATCHDOG_DELAY`
-|`600`
-|no
-
-
-
-5+|A delay, in seconds, between successful provisioning and dispatching of
-guest request watchdog tasks.
-
 |`actor.dispatch-preparing.delay`
 |`int`
 |`ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY`
@@ -148,6 +137,39 @@ guest request watchdog tasks.
 
 5+|A delay, in second, between successful acquire of a cloud instance
 and dispatching of post-acquire preparation tasks.
+
+|`actor.guest-request-watchdog.dispatch.delay`
+|`int`
+|`ARTEMIS_ACTOR_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY`
+|`600`
+|yes
+
+
+|`actor.guest-request-watchdog.dispatch.delay:$entityname`
+|
+|`ARTEMIS_ACTOR_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY_$entityname`
+|
+|
+
+
+5+|A delay, in seconds, between successful provisioning and dispatching of
+guest request watchdog tasks.
+
+|`actor.guest-request-watchdog.dispatch.period`
+|`int`
+|`ARTEMIS_ACTOR_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD`
+|`3600`
+|yes
+
+
+|`actor.guest-request-watchdog.dispatch.period:$entityname`
+|
+|`ARTEMIS_ACTOR_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD_$entityname`
+|
+|
+
+
+5+|A delay, in seconds, after which new guest request watchdog task is scheduled.
 
 |`actor.refresh-pool-avoid-groups-hostnames.schedule`
 |`str`
