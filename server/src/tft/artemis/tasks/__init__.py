@@ -794,6 +794,7 @@ def resolve_actor(actorname: str) -> Result[Actor, Failure]:
     from . import return_guest_to_shelf  # noqa: F401, isort:skip
     from . import shelved_guest_watchdog  # noqa: F401, isort:skip
     from . import remove_shelf  # noqa: F401, isort:skip
+    from . import preprovision  # noqa: F401, isort:skip
 
     try:
         actor = BROKER.get_actor(actorname)

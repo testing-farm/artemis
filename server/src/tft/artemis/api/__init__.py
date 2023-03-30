@@ -153,13 +153,29 @@ OPENAPI_METADATA = molten.openapi.documents.Metadata(  # type: ignore[call-arg]
 )
 
 
+def _environment_compat(
+    environment: Dict[str, Optional[Any]]
+) -> Dict[str, Optional[Any]]:
+    # COMPAT: v0.0.17, v0.0.18: `environment.arch` belongs to `environment.hw.arch`
+    if 'arch' in environment:
+        environment['hw'] = {
+            'arch': environment.pop('arch')
+        }
+
+    # COMPAT: v0.0.53+: `kickstart` is now mandatory by implementation, yet older APIs
+    # do not know about it.
+    if 'kickstart' not in environment:
+        environment['kickstart'] = {}
+
+    return environment
+
+
 def _validate_environment(
     logger: gluetool.log.ContextAdapter,
-    environment: Any,
+    environment: Dict[str, Optional[Any]],
     schema: JSONSchemaType,
     failure_details: FailureDetailsType
-) -> Environment:
-
+) -> Dict[str, Optional[Any]]:
     r_validation = validate_data(environment, schema)
 
     if r_validation.is_error:
@@ -183,11 +199,14 @@ def _validate_environment(
             failure_details=failure_details
         )
 
-    # COMPAT: v0.0.53+: `kickstart` is now mandatory by implementation, yet older APIs
-    # do not know about it.
-    if 'kickstart' not in environment:
-        environment['kickstart'] = {}
+    return _environment_compat(environment)
 
+
+def _parse_environment(
+    logger: gluetool.log.ContextAdapter,
+    environment: Dict[str, Optional[Any]],
+    failure_details: FailureDetailsType
+) -> Environment:
     try:
         return Environment.unserialize(environment)
 
@@ -200,6 +219,115 @@ def _validate_environment(
             caused_by=Failure.from_exc('failed to parse environment', exc),
             failure_details=failure_details
         )
+
+
+def _parse_log_types(
+    logger: gluetool.log.ContextAdapter,
+    log_types: Optional[List[Any]],
+    failure_details: FailureDetailsType
+) -> List[Tuple[str, artemis_db.GuestLogContentType]]:
+    parsed_log_types: List[Tuple[str, artemis_db.GuestLogContentType]] = []
+
+    if log_types:
+        try:
+            parsed_log_types = [
+                (logtype, artemis_db.GuestLogContentType(contenttype))
+                for (logtype, contenttype) in log_types
+            ]
+        except Exception as exc:
+            raise errors.BadRequestError(
+                message='Got an unsupported log type',
+                logger=logger,
+                caused_by=Failure.from_exc('cannot convert log type to GuestLogContentType object', exc),
+                failure_details=failure_details
+            )
+
+    return parsed_log_types
+
+
+def _validate_guest_request(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    guest_request: 'GuestRequest',
+    ownername: str,
+    environment_schema: JSONSchemaType,
+    failure_details: FailureDetailsType
+) -> 'GuestRequest':
+    SESSION.set(session)
+
+    guest_request.environment = _validate_environment(
+        logger,
+        guest_request.environment,
+        environment_schema,
+        failure_details
+    )
+
+    environment = _parse_environment(logger, guest_request.environment, failure_details)
+
+    # Validate log_types
+    _parse_log_types(logger, guest_request.log_types, failure_details)
+
+    # Check whether key exists - still open to race condition, but the window is quite short,
+    # and don't rely on this test when we actually create request. All we need here is a better
+    # error message for user when they enter invalid key name.
+    r_key = _get_ssh_key(ownername, guest_request.keyname)
+
+    if r_key.is_error:
+        raise errors.InternalServerError(
+            logger=logger,
+            caused_by=r_key.unwrap_error(),
+            failure_details=failure_details
+        )
+
+    if r_key.unwrap() is None:
+        raise errors.BadRequestError(
+            message='No such SSH key exists',
+            logger=logger,
+            failure_details=failure_details
+        )
+
+    # Check whether pool exists - still open to race condition, but the window is quite short,
+    # and we don't rely on this test when we actually create request. All we need here is a better
+    # error message for user when they enter invalid pool name.
+    if environment.pool is not None:
+        r_pool = PoolDriver.load_or_none(logger, session, environment.pool)
+
+        if r_pool.is_error:
+            raise errors.InternalServerError(
+                logger=logger,
+                caused_by=r_pool.unwrap_error(),
+                failure_details=failure_details
+            )
+
+        if r_pool.unwrap() is None:
+            raise errors.BadRequestError(
+                message='No such pool exists',
+                logger=logger,
+                failure_details=failure_details
+            )
+
+    # Validate the requested shelf is ready and can be used to serve guests.
+    if guest_request.shelfname is not None:
+        r_shelf = artemis_db.SafeQuery.from_session(session, artemis_db.GuestShelf) \
+            .filter(artemis_db.GuestShelf.shelfname == guest_request.shelfname) \
+            .filter(artemis_db.GuestShelf.state == GuestState.READY) \
+            .one_or_none()
+
+        if r_shelf.is_error:
+            raise errors.InternalServerError(
+                logger=logger,
+                caused_by=r_shelf.unwrap_error(),
+                failure_details=failure_details
+            )
+
+        if r_shelf.unwrap() is None:
+            raise errors.BadRequestError(
+                message='No such shelf exists',
+                logger=logger,
+                failure_details=failure_details
+            )
+
+    return guest_request
 
 
 class JSONRenderer(molten.JSONRenderer):
@@ -372,6 +500,7 @@ def perform_safe_db_change(
 
 
 @molten.schema
+@dataclasses.dataclass
 class GuestRequest:
     keyname: str
     environment: Dict[str, Optional[Any]]
@@ -496,6 +625,12 @@ class GuestShelfResponse:
             shelfname=shelf.shelfname,
             owner=shelf.ownername
         )
+
+
+@molten.schema
+class PreprovisioningRequest:
+    count: int
+    guest: GuestRequest
 
 
 @molten.schema
@@ -686,96 +821,24 @@ class GuestRequestManager:
 
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
-        # Validate given environment specification
-        environment = _validate_environment(
-            guest_logger,
-            guest_request.environment,
-            environment_schema,
-            failure_details
-        )
-
-        # COMPAT: v0.0.17, v0.0.18: `environment.arch` belongs to `environment.hw.arch`
-        if 'arch' in guest_request.environment:
-            guest_request.environment['hw'] = {
-                'arch': guest_request.environment.pop('arch')
-            }
-
-        # Validate log_types
-        log_types: List[Tuple[str, artemis_db.GuestLogContentType]] = []
-        if guest_request.log_types:
-            try:
-                log_types = [(logtype, artemis_db.GuestLogContentType(contenttype))
-                             for (logtype, contenttype) in guest_request.log_types]
-            except Exception as exc:
-                raise errors.BadRequestError(
-                    message='Got an unsupported log type',
-                    logger=logger,
-                    caused_by=Failure.from_exc('cannot convert log type to GuestLogContentType object', exc),
-                    failure_details=failure_details
-                )
-
         with self.db.get_session(transactional=True) as session:
             SESSION.set(session)
 
-            # Check whether key exists - still open to race condition, but the window is quite short,
-            # and don't rely on this test when we actually create request. All we need here is a better
-            # error message for user when they enter invalid key name.
-            r_key = _get_ssh_key(ownername, guest_request.keyname)
+            # Validate guest request
+            guest_request = _validate_guest_request(
+                guest_logger,
+                session,
+                guest_request,
+                ownername,
+                environment_schema,
+                failure_details
+            )
 
-            if r_key.is_error:
-                raise errors.InternalServerError(
-                    logger=guest_logger,
-                    caused_by=r_key.unwrap_error(),
-                    failure_details=failure_details
-                )
-
-            if r_key.unwrap() is None:
-                raise errors.BadRequestError(
-                    message='No such SSH key exists',
-                    logger=guest_logger,
-                    failure_details=failure_details
-                )
-
-            # Check whether pool exists - still open to race condition, but the window is quite short,
-            # and we don't rely on this test when we actually create request. All we need here is a better
-            # error message for user when they enter invalid pool name.
-            if environment.pool is not None:
-                r_pool = PoolDriver.load_or_none(guest_logger, session, environment.pool)
-
-                if r_pool.is_error:
-                    raise errors.InternalServerError(
-                        logger=guest_logger,
-                        caused_by=r_pool.unwrap_error(),
-                        failure_details=failure_details
-                    )
-
-                if r_pool.unwrap() is None:
-                    raise errors.BadRequestError(
-                        message='No such pool exists',
-                        logger=guest_logger,
-                        failure_details=failure_details
-                    )
-
-            # Validate the requested shelf is ready and can be used to serve guests.
-            if guest_request.shelfname is not None:
-                r_shelf = artemis_db.SafeQuery.from_session(session, artemis_db.GuestShelf) \
-                    .filter(artemis_db.GuestShelf.shelfname == guest_request.shelfname) \
-                    .filter(artemis_db.GuestShelf.state == GuestState.READY) \
-                    .one_or_none()
-
-                if r_shelf.is_error:
-                    raise errors.InternalServerError(
-                        logger=guest_logger,
-                        caused_by=r_shelf.unwrap_error(),
-                        failure_details=failure_details
-                    )
-
-                if r_shelf.unwrap() is None:
-                    raise errors.BadRequestError(
-                        message='No such shelf exists',
-                        logger=guest_logger,
-                        failure_details=failure_details
-                    )
+            environment = _parse_environment(
+                guest_logger,
+                guest_request.environment,
+                failure_details
+            )
 
             create_guest_stmt = artemis_db.GuestRequest.create_query(
                 guestname=guestname,
@@ -790,7 +853,7 @@ class GuestRequestManager:
                 bypass_shelf_lookup=guest_request.bypass_shelf_lookup,
                 skip_prepare_verify_ssh=guest_request.skip_prepare_verify_ssh,
                 post_install_script=guest_request.post_install_script,
-                log_types=log_types,
+                log_types=_parse_log_types(logger, guest_request.log_types, failure_details),
                 watchdog_dispatch_delay=guest_request.watchdog_dispatch_delay,
                 watchdog_period_delay=guest_request.watchdog_period_delay,
                 on_ready=[]
@@ -1264,6 +1327,68 @@ class GuestShelfManager:
                 logger.info,
                 f'requested task #{task_request_id}',
                 TaskCall.from_call(remove_shelf, shelfname, task_request_id=task_request_id).serialize()
+            )
+
+    def preprovision(
+        self,
+        shelfname: str,
+        preprovisioning_request: PreprovisioningRequest,
+        ownername: str,
+        logger: gluetool.log.ContextAdapter,
+        environment_schema: JSONSchemaType
+    ) -> None:
+        from ..tasks.preprovision import preprovision
+
+        failure_details = {
+            'shelfname': shelfname,
+            'raw_keyname': preprovisioning_request.guest.keyname,
+            'raw_environment': preprovisioning_request.guest.environment,
+            'raw_shelfname': preprovisioning_request.guest.shelfname,
+            'raw_user_data': preprovisioning_request.guest.user_data,
+            'raw_post_install_script': preprovisioning_request.guest.post_install_script,
+            'raw_log_types': preprovisioning_request.guest.log_types
+        }
+
+        with self.db.get_session() as session:
+            preprovisioning_request.guest = _validate_guest_request(
+                logger,
+                session,
+                preprovisioning_request.guest,
+                ownername,
+                environment_schema,
+                failure_details
+            )
+
+            guest_template = json.dumps(dataclasses.asdict(preprovisioning_request.guest))
+
+            r_task = artemis_db.TaskRequest.create(
+                logger,
+                session,
+                preprovision,
+                shelfname,
+                guest_template,
+                str(preprovisioning_request.count)
+            )
+
+            if r_task.is_error:
+                raise errors.InternalServerError(
+                    logger=logger,
+                    caused_by=r_task.unwrap_error(),
+                    failure_details=failure_details
+                )
+
+            task_request_id = r_task.unwrap()
+
+            log_dict_yaml(
+                logger.info,
+                f'requested task #{task_request_id}',
+                TaskCall.from_call(
+                    preprovision,
+                    shelfname,
+                    guest_template,
+                    str(preprovisioning_request.count),
+                    task_request_id=task_request_id
+                ).serialize()
             )
 
 
@@ -2418,6 +2543,34 @@ def delete_guest(
     return HTTP_204, None
 
 
+def preprovision_v0_0_56(
+    shelfname: str,
+    preprovisioning_request: PreprovisioningRequest,
+    manager: GuestShelfManager,
+    auth: AuthContext,
+    logger: gluetool.log.ContextAdapter
+) -> Tuple[str, None]:
+    # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
+    # and we got so far means user must be authenticated.
+    if auth.is_authentication_enabled and auth.is_authenticated:
+        assert auth.username
+
+        ownername = auth.username
+
+    else:
+        ownername = DEFAULT_GUEST_REQUEST_OWNER
+
+    manager.preprovision(
+        shelfname,
+        preprovisioning_request,
+        ownername,
+        logger,
+        ENVIRONMENT_SCHEMAS['v0.0.56']
+    )
+
+    return HTTP_202, None
+
+
 def get_events(
         request: Request,
         manager: GuestEventManager,
@@ -2807,6 +2960,7 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
 
 # NEW: added User watchdog delay
 # NEW: guest shelf management
+# NEW: preprovisioning
 @route_generator
 def generate_routes_v0_0_56(
     create_route: CreateRouteCallbackType,
@@ -2833,6 +2987,7 @@ def generate_routes_v0_0_56(
             create_route('/{shelfname}', GuestShelfManager.entry_get_shelf, method='GET'),  # noqa: FS003
             create_route('/{shelfname}', GuestShelfManager.entry_create_shelf, method='POST'),  # noqa: FS003
             create_route('/{shelfname}', GuestShelfManager.entry_delete_shelf, method='DELETE'),  # noqa: FS003
+            create_route('/{shelfname}/preprovision', preprovision_v0_0_56, method='POST'),  # noqa: FS003,E501
             create_route('/guests/{guestname}', GuestShelfManager.entry_delete_shelved_guest, method='DELETE'),  # noqa: FS003,E501
         ]),
         Include('/knobs', [
@@ -3719,6 +3874,7 @@ def generate_routes_v0_0_17(
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
     # NEW: added user defined watchdog delays
     # NEW: guest shelf management
+    # NEW: preprovisioning
     ('v0.0.56', generate_routes_v0_0_56, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
