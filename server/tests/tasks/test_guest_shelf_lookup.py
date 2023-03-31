@@ -49,19 +49,21 @@ def test_entry(workspace: Workspace, mockpatch: MockPatcher) -> None:
     )
 
 
-@pytest.mark.parametrize('shelfname, guests_expected', [
-    ('dummy-shelf', ['dummy-shelved-guest']),
-    (None, [])
+@pytest.mark.parametrize('shelfname, bypass_shelf_lookup, guests_expected', [
+    ('dummy-shelf', False, ['dummy-shelved-guest']),
+    (None, False, []),
+    ('dummy-shelf', True, [])
 ])
 @pytest.mark.usefixtures('_schema_initialized_actual')
 def test_shelf_query(
     workspace: Workspace,
     shelfname: str,
+    bypass_shelf_lookup: bool,
     guests_expected: List[str]
 ) -> None:
     workspace.gr = cast(
         tft.artemis.db.GuestRequest,
-        MagicMock(guestname='mock_guest_request', shelfname=shelfname)
+        MagicMock(guestname='mock_guest_request', shelfname=shelfname, bypass_shelf_lookup=bypass_shelf_lookup)
     )
 
     assert workspace.shelf_query() is workspace

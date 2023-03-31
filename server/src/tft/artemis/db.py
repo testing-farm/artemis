@@ -992,6 +992,9 @@ class GuestRequest(Base):
     def user_data(self) -> UserDataType:
         return cast(UserDataType, self._user_data)
 
+    #: If set, the shelf will be bypassed during provisioning ensuring a completely new guest is provisioned.
+    bypass_shelf_lookup = Column(Boolean(), nullable=False, server_default='false')
+
     #: If set, the provisioning will skip preparation steps and assume the guest is reachable as soon as it becomes
     #: active.
     skip_prepare_verify_ssh = Column(Boolean(), nullable=False, server_default='false')
@@ -1028,6 +1031,7 @@ class GuestRequest(Base):
         ssh_username: str,
         priorityname: Optional[str],
         user_data: Optional[UserDataType],
+        bypass_shelf_lookup: bool,
         skip_prepare_verify_ssh: bool,
         post_install_script: Optional[str],
         log_types: List[Tuple[str, GuestLogContentType]],
@@ -1044,6 +1048,7 @@ class GuestRequest(Base):
             ssh_username=ssh_username,
             priorityname=priorityname,
             _user_data=user_data,
+            bypass_shelf_lookup=bypass_shelf_lookup,
             skip_prepare_verify_ssh=skip_prepare_verify_ssh,
             post_install_script=post_install_script,
             watchdog_dispatch_delay=watchdog_dispatch_delay,
