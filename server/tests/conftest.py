@@ -232,6 +232,7 @@ def fixture_schema_initialized_actual(
         None,
         None,
         False,
+        False,
         None,
         [],
         None,

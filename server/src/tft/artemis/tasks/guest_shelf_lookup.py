@@ -58,6 +58,10 @@ class Workspace(_Workspace):
         # Access shelf, and try to choose a guest
         assert self.gr
 
+        if self.gr.bypass_shelf_lookup is True:
+            self.shelved_guests = []
+            return
+
         r_guests = SafeQuery.from_session(self.session, GuestRequest) \
             .filter(GuestRequest.shelfname == self.gr.shelfname) \
             .filter(GuestRequest.state == GuestState.SHELVED) \

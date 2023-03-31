@@ -384,6 +384,7 @@ class GuestRequest:
     log_types: Optional[List[Any]]
     watchdog_dispatch_delay: Optional[int]
     watchdog_period_delay: Optional[int]
+    bypass_shelf_lookup: bool = False
     skip_prepare_verify_ssh: bool = False
 
 
@@ -786,6 +787,7 @@ class GuestRequestManager:
                 ssh_username=DEFAULT_SSH_USERNAME,
                 priorityname=guest_request.priority_group,
                 user_data=guest_request.user_data,
+                bypass_shelf_lookup=guest_request.bypass_shelf_lookup,
                 skip_prepare_verify_ssh=guest_request.skip_prepare_verify_ssh,
                 post_install_script=guest_request.post_install_script,
                 log_types=log_types,
