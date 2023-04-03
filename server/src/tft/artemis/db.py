@@ -821,6 +821,18 @@ class GuestShelf(Base):
 
     guests = relationship('GuestRequest', back_populates='shelf')
 
+    @classmethod
+    def create_query(
+        cls,
+        shelfname: str,
+        ownername: str
+    ) -> sqlalchemy.insert:
+        return sqlalchemy.insert(cls.__table__).values(
+            shelfname=shelfname,
+            ownername=ownername,
+            state=GuestState.READY
+        )
+
 
 class GuestEvent(Base):
     __tablename__ = 'guest_events'

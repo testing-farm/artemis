@@ -1157,10 +1157,7 @@ class GuestShelfManager:
             perform_safe_db_change(
                 logger,
                 session,
-                sqlalchemy.insert(artemis_db.GuestShelf.__table__).values(
-                    shelfname=shelfname,
-                    ownername=ownername
-                ),
+                artemis_db.GuestShelf.create_query(shelfname, ownername),
                 conflict_error=errors.InternalServerError,
                 failure_details=failure_details
             )
