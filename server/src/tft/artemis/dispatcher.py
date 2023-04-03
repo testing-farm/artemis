@@ -24,6 +24,7 @@ from .tasks import route_guest_request  # noqa: F401, isort:skip
 from .tasks import guest_request_watchdog  # noqa: F401, isort:skip
 from .tasks import guest_shelf_lookup  # noqa: F401, isort:skip
 from .tasks import return_guest_to_shelf  # noqa: F401, isort:skip
+from .tasks import shelved_guest_watchdog  # noqa: F401, isort:skip
 from .tasks import remove_shelf  # noqa: F401, isort:skip
 
 
