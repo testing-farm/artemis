@@ -6,26 +6,17 @@ import time
 import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
-from dramatiq.errors import ActorNotFound
 
 from . import Failure, get_db, get_logger
 from .db import SafeQuery, SnapshotRequest, TaskRequest, execute_db_statement
 from .guest import GuestState
-from .tasks import BROKER, TaskLogger, _update_snapshot_state, dispatch_task, get_snapshot_logger
+from .tasks import TaskLogger, _update_snapshot_state, dispatch_task, get_snapshot_logger, resolve_actor
 
 # Some tasks may seem to be unused, but they *must* be imported and known to broker
 # for transactional outbox to work correctly.
-from .tasks import acquire_guest_request  # noqa: F401, isort:skip
 from .tasks import route_snapshot_request  # noqa: F401, isort:skip
-from .tasks import release_guest_request  # noqa: F401, isort:skip
 from .tasks import release_snapshot_request  # noqa: F401, isort:skip
 from .tasks import restore_snapshot_request  # noqa: F401, isort:skip
-from .tasks import route_guest_request  # noqa: F401, isort:skip
-from .tasks import guest_request_watchdog  # noqa: F401, isort:skip
-from .tasks import guest_shelf_lookup  # noqa: F401, isort:skip
-from .tasks import return_guest_to_shelf  # noqa: F401, isort:skip
-from .tasks import shelved_guest_watchdog  # noqa: F401, isort:skip
-from .tasks import remove_shelf  # noqa: F401, isort:skip
 
 
 def _dispatch_snapshot_request(
@@ -116,15 +107,14 @@ def handle_task_request(
 
         logger.finished()
 
-    try:
-        actor = BROKER.get_actor(task_request.taskname)
+    r_actor = resolve_actor(task_request.taskname)
 
-    except ActorNotFound as exc:
-        return _log_failure(Failure.from_exc('failed to find task', exc), 'failed to find task')
+    if r_actor.is_error:
+        return _log_failure(r_actor.unwrap_error(), 'failed to find task')
 
     r_dispatch = dispatch_task(
         logger,
-        actor,
+        r_actor.unwrap(),
         *task_arguments,
         delay=task_request.delay,
         task_request_id=task_request.id

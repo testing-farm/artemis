@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union, c
 import dramatiq
 import dramatiq.broker
 import dramatiq.common
+import dramatiq.errors
 import gluetool.log
 import gluetool.utils
 import periodiq
@@ -781,6 +782,26 @@ def actor_kwargs(
         kwargs['periodic'] = periodic
 
     return kwargs
+
+
+def resolve_actor(actorname: str) -> Result[Actor, Failure]:
+    # Some tasks may seem to be unused, but they *must* be imported and known to broker
+    # for transactional outbox to work correctly.
+    from . import release_guest_request  # noqa: F401, isort:skip
+    from . import route_guest_request  # noqa: F401, isort:skip
+    from . import guest_request_watchdog  # noqa: F401, isort:skip
+    from . import guest_shelf_lookup  # noqa: F401, isort:skip
+    from . import return_guest_to_shelf  # noqa: F401, isort:skip
+    from . import shelved_guest_watchdog  # noqa: F401, isort:skip
+    from . import remove_shelf  # noqa: F401, isort:skip
+
+    try:
+        actor = BROKER.get_actor(actorname)
+
+    except dramatiq.errors.ActorNotFound as exc:
+        return Error(Failure.from_exc('failed to find task', exc))
+
+    return Ok(actor)
 
 
 #: Type variable representing :py:class:_Workspace and its child classes.
@@ -2348,7 +2369,7 @@ class Workspace:
         r = dispatch_task(logger, task, *args, delay=delay)
 
         if r.is_error:
-            self.result = self.handle_error(r, 'failed to dispatch update task', logger=logger)
+            self.result = self.handle_error(r, 'failed to dispatch task', logger=logger)
             return
 
     def dispatch_group(
@@ -3260,6 +3281,18 @@ def do_guest_request_prepare_finalize_post_connect(
 
     # update metrics counter for successfully provisioned guest requests
     metrics.ProvisioningMetrics.inc_success(workspace.gr.poolname)
+
+    # Dispatch a followup task if specified.
+    for taskname, arguments in workspace.gr.on_ready:
+        r_actor = resolve_actor(taskname)
+
+        if r_actor.is_error:
+            return workspace.handle_error(r_actor, 'failed to find task')
+
+        workspace.request_task(r_actor.unwrap(), guestname, *arguments)
+
+        if workspace.result:
+            return workspace.result
 
     return workspace.handle_success('finished-task')
 
