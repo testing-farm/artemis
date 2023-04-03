@@ -851,6 +851,7 @@ def cmd_shelf(cfg: Configuration) -> None:
 
 @cmd_shelf.command(name='create', short_help='Create a new shelf')
 @click.argument('shelfname', required=True, type=str)
+@click.pass_obj
 def cmd_shelf_create(
     cfg: Configuration,
     shelfname: str,
@@ -866,6 +867,7 @@ def cmd_shelf_create(
 
 @cmd_shelf.command(name='inspect', short_help='Inspect guest shelf')
 @click.argument('shelfname', required=True, type=str)
+@click.pass_obj
 def cmd_shelf_inspect(cfg: Configuration, shelfname: str) -> None:
     response = artemis_inspect(cfg, 'shelves', shelfname)
 
@@ -878,6 +880,7 @@ def cmd_shelf_inspect(cfg: Configuration, shelfname: str) -> None:
 
 @cmd_shelf.command(name='delete', short_help='Remove a guest shelf and release all shelved guests')
 @click.argument('shelfname', required=True, type=str)
+@click.pass_obj
 def cmd_shelf_delete(cfg: Configuration, shelfname: str) -> None:
     response = artemis_delete(cfg, 'shelves', shelfname)
 
