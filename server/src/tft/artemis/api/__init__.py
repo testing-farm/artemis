@@ -792,7 +792,8 @@ class GuestRequestManager:
                 post_install_script=guest_request.post_install_script,
                 log_types=log_types,
                 watchdog_dispatch_delay=guest_request.watchdog_dispatch_delay,
-                watchdog_period_delay=guest_request.watchdog_period_delay
+                watchdog_period_delay=guest_request.watchdog_period_delay,
+                on_ready=[]
             )
 
             r_create = artemis_db.execute_db_statement(guest_logger, session, create_guest_stmt)

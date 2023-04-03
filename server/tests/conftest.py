@@ -236,7 +236,8 @@ def fixture_schema_initialized_actual(
         None,
         [],
         None,
-        None
+        None,
+        []
     ))
 
     session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest.__table__).values(
@@ -259,7 +260,8 @@ def fixture_schema_initialized_actual(
         state=tft.artemis.guest.GuestState.READY,
         state_mtime=datetime.datetime.utcnow(),
         poolname='dummy-pool',
-        pool_data=json.dumps({})
+        pool_data=json.dumps({}),
+        _on_ready=[]
     ))
 
     session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest.__table__).values(
@@ -282,7 +284,8 @@ def fixture_schema_initialized_actual(
         state=tft.artemis.guest.GuestState.SHELVED,
         state_mtime=datetime.datetime.utcnow(),
         poolname='dummy-pool',
-        pool_data=json.dumps({})
+        pool_data=json.dumps({}),
+        _on_ready=None
     ))
 
 

@@ -1013,6 +1013,9 @@ class GuestRequest(Base):
     # Log types specifically to be supported as requested by the user (colon-separated string of logtype:contenttype)
     _log_types = Column(JSON(), nullable=True)
 
+    # Tasks to be dispatched upon guest reaching ready state (list of tuples of taskname, args)
+    _on_ready = Column(JSON())
+
     owner = relationship('User', back_populates='guests')
     shelf = relationship('GuestShelf', back_populates='guests')
     ssh_key = relationship('SSHKey', back_populates='guests')
@@ -1036,7 +1039,8 @@ class GuestRequest(Base):
         post_install_script: Optional[str],
         log_types: List[Tuple[str, GuestLogContentType]],
         watchdog_dispatch_delay: Optional[int],
-        watchdog_period_delay: Optional[int]
+        watchdog_period_delay: Optional[int],
+        on_ready: Optional[List[Tuple['Actor', List['ActorArgumentType']]]]
     ) -> sqlalchemy.insert:
         return sqlalchemy.insert(cls.__table__).values(
             guestname=guestname,
@@ -1064,6 +1068,7 @@ class GuestRequest(Base):
             state_mtime=datetime.datetime.utcnow(),
             poolname=None,
             pool_data=json.dumps({}),
+            _on_ready=[(actor.actor_name, args) for actor, args in on_ready] if on_ready is not None else on_ready,
         )
 
     @classmethod
@@ -1306,6 +1311,15 @@ class GuestRequest(Base):
 
     def requests_guest_log(self, logname: str, contenttype: GuestLogContentType) -> bool:
         return (logname, contenttype) in self.log_types
+
+    @property
+    def on_ready(self) -> List[Tuple[str, List['ActorArgumentType']]]:
+        if not self._on_ready:
+            return []
+
+        on_ready = cast(List[List[Any]], self._on_ready)
+
+        return [(cast(str, actorname), cast(List['ActorArgumentType'], args)) for actorname, args in on_ready]
 
 
 class GuestLog(Base):
