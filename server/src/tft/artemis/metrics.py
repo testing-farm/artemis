@@ -1957,6 +1957,16 @@ class ShelfMetrics(MetricsBase):
 
         self.shelfname = shelfname
 
+        self.current_guest_count = 0
+        self.size = 0
+        self.hit_count = None
+        self.miss_count = None
+        self.removals = None
+        self.forced_removals = None
+        self.dead_guest_count = None
+
+        self.__post_init__()
+
     @classmethod
     @with_context
     def inc_hits(
@@ -2123,7 +2133,137 @@ class ShelfMetrics(MetricsBase):
             cache.get
         )(self.key_dead)
 
-        self.dead = dead if dead is None else float(dead)
+        self.dead_guest_count = dead if dead is None else float(dead)
+
+
+@dataclasses.dataclass
+class ShelvesMetrics(MetricsBase):
+    """
+    General metrics shared by shelves, and per-shelf metrics.
+    """
+
+    shelves: Dict[str, ShelfMetrics] = dataclasses.field(default_factory=dict)
+
+    @with_context
+    def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+        """
+        Load values from the storage and update this container with up-to-date values.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        """
+
+        super().sync()
+
+        r_shelves = artemis_db.SafeQuery \
+            .from_session(session, artemis_db.GuestShelf) \
+            .all()
+
+        if r_shelves.is_error:
+            r_shelves.unwrap_error().handle(logger)
+
+            self.shelves = {}
+
+        else:
+            self.shelves = {
+                shelf.shelfname: ShelfMetrics(shelf.shelfname)
+                for shelf in r_shelves.unwrap()
+            }
+
+        for metrics in self.shelves.values():
+            metrics.sync()
+
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Register instances of Prometheus metrics with the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
+        super().register_with_prometheus(registry)
+
+        self.CURRENT_GUEST_REQUEST_COUNT = Gauge(
+            'shelf_current_guest_request_count',
+            'Current number of guest requests being stored, per shelf.',
+            ['shelfname'],
+            registry=registry
+        )
+
+        self.SIZE = Gauge(
+            'shelf_size',
+            'Size of shelves, per shelf.',
+            ['shelfname'],
+            registry=registry
+        )
+
+        self.HIT_COUNT = Counter(
+            'shelf_hit_count',
+            'Number of guests retrieved from a shelf, per shelf.',
+            ['shelfname'],
+            registry=registry
+        )
+
+        self.MISS_COUNT = Counter(
+            'miss_count',
+            'Number of guests not retrieved from a shelf, per shelf.',
+            ['shelfname'],
+            registry=registry
+        )
+
+        self.REMOVALS = Counter(
+            'shelf_removals',
+            'Number of guests removed a shelf, per shelf.',
+            ['shelfname'],
+            registry=registry
+        )
+
+        self.FORCED_REMOVALS = Counter(
+            'shelf_forced_removals',
+            'Number of guests forcefully removed from a shelf, per shelf.',
+            ['shelfname'],
+            registry=registry
+        )
+
+        self.DEAD_GUEST_COUNT = Counter(
+            'shelf_dead_guest_request_count',
+            'Number of dead guests removed from a shelf, per shelf.',
+            ['shelfname'],
+            registry=registry
+        )
+
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
+
+        super().update_prometheus()
+
+        reset_counters(self.CURRENT_GUEST_REQUEST_COUNT)
+        reset_counters(self.SIZE)
+
+        for shelfname, shelf_metrics in self.shelves.items():
+            self.CURRENT_GUEST_REQUEST_COUNT.labels(shelfname=shelfname).set(shelf_metrics.current_guest_count)
+            self.SIZE.labels(shelfname=shelfname).set(shelf_metrics.size)
+
+            self.HIT_COUNT \
+                .labels(shelfname=shelfname) \
+                .set(shelf_metrics.hit_count if shelf_metrics.hit_count is not None else float('NaN'))
+
+            self.MISS_COUNT \
+                .labels(shelfname=shelfname) \
+                .set(shelf_metrics.miss_count if shelf_metrics.miss_count is not None else float('NaN'))
+
+            self.REMOVALS \
+                .labels(shelfname=shelfname) \
+                .set(shelf_metrics.removals if shelf_metrics.removals is not None else float('NaN'))
+
+            self.FORCED_REMOVALS \
+                .labels(shelfname=shelfname) \
+                .set(shelf_metrics.forced_removals if shelf_metrics.forced_removals is not None else float('NaN'))
+
+            self.DEAD_GUEST_COUNT \
+                .labels(shelfname=shelfname) \
+                .set(shelf_metrics.dead_guest_count if shelf_metrics.dead_guest_count is not None else float('NaN'))
 
 
 @dataclasses.dataclass
@@ -2966,6 +3106,7 @@ class Metrics(MetricsBase):
     provisioning: ProvisioningMetrics = ProvisioningMetrics()
     routing: RoutingMetrics = RoutingMetrics()
     tasks: TaskMetrics = TaskMetrics()
+    shelves: ShelvesMetrics = ShelvesMetrics()
     api: APIMetrics = APIMetrics()
     workers: WorkerMetrics = WorkerMetrics()
 
