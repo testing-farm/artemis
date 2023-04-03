@@ -1090,7 +1090,7 @@ class GuestShelfManager:
 
     @staticmethod
     def entry_delete_shelved_guest(
-        manager: 'GuestRequestManager',
+        manager: GuestRequestManager,
         guestname: str,
         request: Request,
         auth: AuthContext,
