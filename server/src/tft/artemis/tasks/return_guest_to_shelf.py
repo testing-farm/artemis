@@ -34,6 +34,7 @@ class Workspace(_Workspace):
 
     shelf: Optional[GuestShelf]
     shelved_count: int
+    current_state: GuestState
 
     @step
     def entry(self) -> None:
@@ -41,11 +42,12 @@ class Workspace(_Workspace):
         Begin the process with nice logging and loading request data.
         """
 
+        assert self.current_state
         assert self.guestname
 
         self.handle_success('entered-task')
 
-        self.load_guest_request(self.guestname, state=GuestState.CONDEMNED)
+        self.load_guest_request(self.guestname, state=self.current_state)
 
     @step
     def load_valid_shelf(self) -> None:
@@ -111,6 +113,7 @@ class Workspace(_Workspace):
         Return the guest to a shelf if possible.
         """
 
+        assert self.current_state
         assert self.gr
 
         from .shelved_guest_watchdog import shelved_guest_watchdog
@@ -135,7 +138,7 @@ class Workspace(_Workspace):
             GuestState.SHELVED,
             shelved_guest_watchdog,
             self.guestname,
-            current_state=GuestState.CONDEMNED
+            current_state=self.current_state
         )
 
         self.result = self.handle_success('finished-task')
@@ -148,7 +151,15 @@ class Workspace(_Workspace):
 
         from .release_guest_request import release_guest_request
 
-        self.dispatch_task(release_guest_request, self.guestname)
+        if self.current_state == GuestState.CONDEMNED:
+            self.request_task(release_guest_request, self.guestname)
+        else:
+            self.update_guest_state_and_request_task(
+                GuestState.CONDEMNED,
+                release_guest_request,
+                self.guestname,
+                current_state=self.current_state
+            )
 
     @step
     def exit(self) -> None:
@@ -164,9 +175,14 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
-        guestname: str
+        guestname: str,
+        current_state: GuestState
     ) -> 'Workspace':
-        return Workspace(logger, session, cancel, guestname=guestname, task=cls.TASKNAME)
+        workspace = Workspace(logger, session, cancel, guestname=guestname, task=cls.TASKNAME)
+
+        workspace.current_state = current_state
+
+        return workspace
 
     @classmethod
     def return_guest_to_shelf(
@@ -175,7 +191,8 @@ class Workspace(_Workspace):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
-        guestname: str
+        guestname: str,
+        current_state: str
     ) -> DoerReturnType:
         """
         Try to return the guest to a shelf. Otherwise dispatch guest release.
@@ -190,10 +207,12 @@ class Workspace(_Workspace):
         :param session: DB session to use for DB access.
         :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param guestname: name of the request to process.
+        :param current_state: current state of the guest request to be shelved.
         :returns: task result.
         """
 
-        return cls.create(logger, session, cancel, guestname) \
+        return cls \
+            .create(logger, session, cancel, guestname, GuestState(current_state)) \
             .entry() \
             .load_valid_shelf() \
             .load_shelved_count() \
@@ -205,7 +224,7 @@ class Workspace(_Workspace):
 
 
 @task()
-def return_guest_to_shelf(guestname: str) -> None:
+def return_guest_to_shelf(guestname: str, current_state: str) -> None:
     """
     Return the guest back to shelf (if specified).
 
@@ -215,5 +234,5 @@ def return_guest_to_shelf(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.return_guest_to_shelf),
         logger=get_guest_logger('return-guest-to-shelf', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,),
+        doer_args=(guestname, current_state),
     )
