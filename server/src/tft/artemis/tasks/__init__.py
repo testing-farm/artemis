@@ -1378,6 +1378,35 @@ def dispatch_sequence(
     return Ok(None)
 
 
+def _request_task(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    task: Actor,
+    *task_arguments: ActorArgumentType,
+    delay: Optional[int]
+) -> Result[bool, Failure]:
+
+    r_task = TaskRequest.create(logger, session, task, *task_arguments, delay=delay)
+
+    if r_task.is_error:
+        return Error(Failure.from_failure(
+            'failed to add task request',
+            r_task.unwrap_error(),
+            task_name=task.actor_name,
+            task_args=task_arguments
+        ))
+
+    task_request_id = r_task.unwrap()
+
+    log_dict_yaml(
+        logger.info,
+        f'requested task #{task_request_id}',
+        TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
+    )
+
+    return Ok(True)
+
+
 def _guest_state_update_query(
     guestname: str,
     new_state: GuestState,
@@ -1541,19 +1570,12 @@ def _update_guest_state_and_request_task(
     if r_update.is_error:
         return handle_error(r_update, 'failed to switch guest state')
 
-    r_task = TaskRequest.create(logger, session, task, *task_arguments, delay=delay)
+    r_task = _request_task(logger, session, task, *task_arguments, delay=delay)
 
     if r_task.is_error:
         return handle_error(r_task, 'failed to add task request')
 
-    task_request_id = r_task.unwrap()
-
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')
-    log_dict_yaml(
-        logger.info,
-        f'requested task #{task_request_id}',
-        TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
-    )
 
     GuestRequest.log_event_by_guestname(
         logger,
@@ -2343,6 +2365,13 @@ class Workspace:
 
         if r.is_error:
             self.result = self.handle_error(r, 'failed to dispatch group')
+            return
+
+    def request_task(self, task: Actor, *task_arguments: ActorArgumentType, delay: Optional[int] = None) -> None:
+        r_task = _request_task(self.logger, self.session, task, *task_arguments, delay=delay)
+
+        if r_task.is_error:
+            self.result = self.handle_error(r_task, 'failed to create task request')
             return
 
     def run_hook(self, hook_name: str, **kwargs: Any) -> Any:
