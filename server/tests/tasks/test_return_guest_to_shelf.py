@@ -3,7 +3,7 @@
 
 import threading
 from typing import Optional, Tuple, cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import gluetool.log
 import pytest
@@ -23,7 +23,13 @@ def fixture_workspace(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session
 ) -> Workspace:
-    return Workspace.create(logger, session, threading.Event(), 'dummy-guest')
+    return Workspace.create(
+        logger,
+        session,
+        threading.Event(),
+        'dummy-guest',
+        tft.artemis.guest.GuestState.CONDEMNED
+    )
 
 
 def test_entry(workspace: Workspace, mockpatch: MockPatcher) -> None:
@@ -224,18 +230,41 @@ def test_return_guest(
         mock_update_guest_state_and_request_task.assert_not_called()
 
 
+@pytest.mark.parametrize('current_state,update_state', [
+    (tft.artemis.guest.GuestState.CONDEMNED, False),
+    (tft.artemis.guest.GuestState.READY, True)
+])
 def test_dispatch_release(
     workspace: Workspace,
+    current_state: tft.artemis.guest.GuestState,
+    update_state: bool,
     mockpatch: MockPatcher
 ) -> None:
-    mockpatch(workspace, 'dispatch_task')
+    mock_request_task = mockpatch(workspace, 'request_task')
+    mock_update_guest_state_and_request_task = mockpatch(workspace, 'update_guest_state_and_request_task')
+
+    workspace.current_state = current_state
+
+    if update_state:
+        executed, skipped = mock_update_guest_state_and_request_task, mock_request_task
+        expected_call = call(
+            tft.artemis.guest.GuestState.CONDEMNED,
+            tft.artemis.tasks.release_guest_request.release_guest_request,
+            workspace.guestname,
+            current_state=current_state
+        )
+    else:
+        executed, skipped = mock_request_task, mock_update_guest_state_and_request_task
+        expected_call = call(
+            tft.artemis.tasks.release_guest_request.release_guest_request,
+            workspace.guestname
+        )
 
     assert workspace.dispatch_release() is workspace
 
-    cast(MagicMock, workspace.dispatch_task).assert_called_once_with(
-        tft.artemis.tasks.release_guest_request.release_guest_request,
-        'dummy-guest'
-    )
+    assert executed.call_count == 1
+    executed.assert_has_calls([expected_call])
+    skipped.assert_not_called()
 
     assert workspace.result is None
 
@@ -256,7 +285,14 @@ def test_doer(
 ) -> None:
     mockpatch(Workspace, 'entry')
 
-    result = Workspace.return_guest_to_shelf(logger, db, session, threading.Event(), 'dummy-guest')
+    result = Workspace.return_guest_to_shelf(
+        logger,
+        db,
+        session,
+        threading.Event(),
+        'dummy-guest',
+        tft.artemis.guest.GuestState.CONDEMNED.value
+    )
 
     # Read the full name of the the final mock, we can easily compare it and prove the sequence of calls.
     # The method is not part of the public API, it's used by `_repr__()`, therefore it's risky, but let's see.
@@ -280,12 +316,16 @@ def test_task(
 
     assert tft.artemis.tasks.return_guest_to_shelf.return_guest_to_shelf.options['tail_handler'] is None
 
-    tft.artemis.tasks.return_guest_to_shelf.return_guest_to_shelf('dummy-guest')
+    tft.artemis.tasks.return_guest_to_shelf.return_guest_to_shelf(
+        'dummy-guest',
+        tft.artemis.guest.GuestState.CONDEMNED.value
+    )
 
     assert_task_core_call(
         mock_task_core,
         'return-guest-to-shelf',
         cast(tft.artemis.tasks.DoerType, Workspace.return_guest_to_shelf),
         'dummy-guest',
+        tft.artemis.guest.GuestState.CONDEMNED.value,
         test_guest_logger='dummy-guest'
     )

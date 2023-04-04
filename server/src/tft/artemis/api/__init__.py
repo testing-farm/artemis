@@ -908,11 +908,12 @@ class GuestRequestManager:
                     failure_details=failure_details
                 )
 
-            guest_delete_task = (
-                return_guest_to_shelf
-                if guest_request.state == GuestState.READY  # type: ignore[comparison-overlap]
-                else release_guest_request
-            )
+            guest_delete_task = release_guest_request
+            extra_actor_args = []
+
+            if guest_request.state == GuestState.READY:  # type: ignore[comparison-overlap]
+                guest_delete_task = return_guest_to_shelf
+                extra_actor_args = [GuestState.CONDEMNED.value]
 
             if guest_request.state == GuestState.CONDEMNED:  # type: ignore[comparison-overlap]
                 raise errors.ConflictError(
@@ -964,7 +965,13 @@ class GuestRequestManager:
 
             guest_logger.info('condemned')
 
-            r_task = artemis_db.TaskRequest.create(guest_logger, session, guest_delete_task, guestname)
+            r_task = artemis_db.TaskRequest.create(
+                guest_logger,
+                session,
+                guest_delete_task,
+                guestname,
+                *extra_actor_args
+            )
 
             if r_task.is_error:
                 raise errors.InternalServerError(
@@ -978,7 +985,12 @@ class GuestRequestManager:
             log_dict_yaml(
                 guest_logger.info,
                 f'requested task #{task_request_id}',
-                TaskCall.from_call(return_guest_to_shelf, guestname, task_request_id=task_request_id).serialize()
+                TaskCall.from_call(
+                    guest_delete_task,
+                    guestname,
+                    task_request_id=task_request_id,
+                    *extra_actor_args
+                ).serialize()
             )
 
     def acquire_guest_console_url(
