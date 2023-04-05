@@ -77,7 +77,10 @@ def test_api_about(api_client: molten.testing.TestClient) -> None:
         'image_digest': None,
         'image_url': None,
         'artemis_deployment': 'undefined-deployment',
-        'artemis_deployment_environment': 'undefined-deployment-environment'
+        'artemis_deployment_environment': 'undefined-deployment-environment',
+        'api_versions': [
+            version for version, _, _ in tft.artemis.api.API_MILESTONES
+        ]
     }
 
 

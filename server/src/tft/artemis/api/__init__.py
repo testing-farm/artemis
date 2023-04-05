@@ -522,6 +522,7 @@ class AboutResponse:
     image_url: Optional[str]
     artemis_deployment: Optional[str]
     artemis_deployment_environment: Optional[str]
+    api_versions: List[str]
 
 
 @dataclasses.dataclass
@@ -2283,7 +2284,11 @@ def get_about(request: Request) -> AboutResponse:
         image_digest=os.getenv('ARTEMIS_IMAGE_DIGEST'),
         image_url=os.getenv('ARTEMIS_IMAGE_URL'),
         artemis_deployment=KNOB_DEPLOYMENT.value,
-        artemis_deployment_environment=KNOB_DEPLOYMENT_ENVIRONMENT.value
+        artemis_deployment_environment=KNOB_DEPLOYMENT_ENVIRONMENT.value,
+        api_versions=[
+            version
+            for version, _, _ in API_MILESTONES
+        ]
     )
 
 
