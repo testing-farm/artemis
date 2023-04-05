@@ -16,6 +16,7 @@ from typing import cast
 import gluetool.log
 import sqlalchemy.orm.session
 
+from ..db import DB
 from ..drivers import ping_shell_remote
 from ..guest import GuestState
 from ..knobs import Knob
@@ -192,6 +193,7 @@ class Workspace(_Workspace):
     def shelved_guest_watchdog(
         cls,
         logger: gluetool.log.ContextAdapter,
+        db: DB,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
         guestname: str
