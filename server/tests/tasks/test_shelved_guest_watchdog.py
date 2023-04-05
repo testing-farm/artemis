@@ -170,11 +170,12 @@ def test_exit(
 def test_doer(
     mockpatch: MockPatcher,
     logger: gluetool.log.ContextAdapter,
+    db: tft.artemis.db.DB,
     session: sqlalchemy.orm.session.Session
 ) -> None:
     mockpatch(Workspace, 'entry')
 
-    result = Workspace.shelved_guest_watchdog(logger, session, threading.Event(), 'dummy-guest')
+    result = Workspace.shelved_guest_watchdog(logger, db, session, threading.Event(), 'dummy-guest')
 
     # Read the full name of the the final mock, we can easily compare it and prove the sequence of calls.
     # The method is not part of the public API, it's used by `_repr__()`, therefore it's risky, but let's see.
