@@ -108,6 +108,7 @@ def bkr_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> BkrErrorC
         return BkrErrorCauses.NONE
 
     stderr = process_output_to_str(output, stream='stderr')
+    stderr = stderr.strip() if stderr is not None else None
 
     if stderr is None:
         return BkrErrorCauses.NONE
