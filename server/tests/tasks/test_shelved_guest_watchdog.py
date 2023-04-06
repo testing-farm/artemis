@@ -183,6 +183,7 @@ def test_doer(
         'entry<M>()',
         'end_if_ssh_disabled()',
         'load_ssh_timeout()',
+        'load_master_ssh_key()',
         'run_watchdog()',
         'dispatch_release()',
         'schedule_followup()',
