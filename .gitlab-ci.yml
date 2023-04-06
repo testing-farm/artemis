@@ -35,7 +35,7 @@ tests:
 
 container:
   stage: deploy
-  image: quay.io/buildah/stable:latest
+  image: quay.io/buildah/stable:v1.29.0
   variables:
     IMAGE_REF: $IMAGE:$CI_COMMIT_REF_NAME
     IMAGE_SHA: $IMAGE:$CI_COMMIT_SHORT_SHA
