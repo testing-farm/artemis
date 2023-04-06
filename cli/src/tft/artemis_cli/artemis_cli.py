@@ -958,7 +958,13 @@ def cmd_shelf_list(
         cfg.logger.unhandled_api_response(response)
 
 
-@cmd_shelf.command(name='cancel_guest', short_help='Cancel shelved guest(s)')
+@cmd_shelf.group(name='guest', short_help='Guest related commands')
+@click.pass_obj
+def cmd_shelf_guest(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_shelf_guest.command(name='cancel', short_help='Cancel shelved guests')
 @click.option(
     '--continue-on-error/--no-continue-on-error',
     default=False,
