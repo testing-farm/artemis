@@ -88,7 +88,10 @@ class Workspace(_Workspace):
 
         assert self.pool
 
-        r = KNOB_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(session=self.session, poolname=self.pool.poolname)
+        r = KNOB_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(
+            session=self.session,
+            entityname=self.pool.poolname
+        )
 
         if r.is_error:
             self.result = self.handle_error(r, 'failed to obtain SSH timeout value')
@@ -218,6 +221,7 @@ class Workspace(_Workspace):
             .entry() \
             .end_if_ssh_disabled() \
             .load_ssh_timeout() \
+            .load_master_ssh_key() \
             .run_watchdog() \
             .dispatch_release() \
             .schedule_followup() \
