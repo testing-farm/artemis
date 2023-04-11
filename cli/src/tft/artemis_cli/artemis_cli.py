@@ -44,6 +44,7 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('watchdog-delay', '0.0.56'),
         ('fixed-hw-validation', '0.0.55'),
         ('kickstart', '0.0.53'),
         ('hw-constraints-boot-method', '0.0.32'),
@@ -197,6 +198,18 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
 @click.option('--log-types', '-l', default=None, metavar='logname:contenttype',
               help='Types of logs that guest should support', type=click.Choice(ALLOWED_LOG_TYPES), multiple=True)
+@click.option(
+    '--watchdog-dispatch-delay',
+    type=int,
+    default=None,
+    help='Watchdog dispatch delay in seconds'
+)
+@click.option(
+    '--watchdog-period-delay',
+    type=int,
+    default=None,
+    help='Watchdog dispatch period in seconds'
+)
 @click.pass_obj
 def cmd_guest_create(
         cfg: Configuration,
@@ -213,7 +226,9 @@ def cmd_guest_create(
         skip_prepare_verify_ssh: bool = False,
         user_data: Optional[str] = None,
         wait: Optional[bool] = None,
-        log_types: Optional[List[str]] = None
+        log_types: Optional[List[str]] = None,
+        watchdog_dispatch_delay: Optional[int] = None,
+        watchdog_period_delay: Optional[int] = None
 ) -> None:
     assert cfg.artemis_api_version is not None
 
@@ -237,6 +252,14 @@ def cmd_guest_create(
 
     elif skip_prepare_verify_ssh is True:
         cfg.logger.error('--skip-prepare-verify-ssh is supported with API v0.0.24 and newer')
+
+    if cfg.artemis_api_version >= API_FEATURE_VERSIONS['watchdog-delay']:
+        data['watchdog_dispatch_delay'] = watchdog_dispatch_delay
+        data['watchdog_period_delay'] = watchdog_period_delay
+
+    elif watchdog_dispatch_delay is not None or watchdog_period_delay is not None:
+        cfg.logger.error(
+            f'custom watchdog delays are available with API {API_FEATURE_VERSIONS["watchdog-delay"]} and newer')
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['hw-constraints']:
         environment['hw'] = {

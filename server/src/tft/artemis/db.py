@@ -980,6 +980,10 @@ class GuestRequest(Base):
     # Contents of a script to be run when the guest becomes active
     post_install_script = Column(Text(), nullable=True)
 
+    # User specified watchdog delay
+    watchdog_dispatch_delay = Column(Integer(), nullable=True)
+    watchdog_period_delay = Column(Integer(), nullable=True)
+
     # Console url if it was requested by the user
     console_url = Column(String(250), nullable=True)
     console_url_expires = Column(DateTime(), nullable=True)
@@ -1007,7 +1011,9 @@ class GuestRequest(Base):
         user_data: Optional[UserDataType],
         skip_prepare_verify_ssh: bool,
         post_install_script: Optional[str],
-        log_types: List[Tuple[str, GuestLogContentType]]
+        log_types: List[Tuple[str, GuestLogContentType]],
+        watchdog_dispatch_delay: Optional[int],
+        watchdog_period_delay: Optional[int]
     ) -> sqlalchemy.insert:
         return sqlalchemy.insert(cls.__table__).values(
             guestname=guestname,
@@ -1021,6 +1027,8 @@ class GuestRequest(Base):
             _user_data=user_data,
             skip_prepare_verify_ssh=skip_prepare_verify_ssh,
             post_install_script=post_install_script,
+            watchdog_dispatch_delay=watchdog_dispatch_delay,
+            watchdog_period_delay=watchdog_period_delay,
             _log_types=[
                 {
                     'logtype': log[0],

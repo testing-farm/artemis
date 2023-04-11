@@ -98,19 +98,27 @@ class Workspace(_Workspace):
 
         assert self.pool
 
-        r = KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD.get_value(
-            entityname=self.pool.poolname,
-            session=self.session
-        )
+        assert self.gr
 
-        if r.is_error:
-            self.result = self.handle_error(r, 'failed to fetch pool watchdog dispatch period')
-            return
+        # Set the custom watchdog period delay if set by the user
+        if self.gr.watchdog_period_delay is not None:
+            delay = self.gr.watchdog_period_delay
+        else:
+            r = KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD.get_value(
+                entityname=self.pool.poolname,
+                session=self.session
+            )
+
+            if r.is_error:
+                self.result = self.handle_error(r, 'failed to fetch pool watchdog dispatch period')
+                return
+
+            delay = r.unwrap()
 
         self.dispatch_task(
             guest_request_watchdog,
             self.guestname,
-            delay=r.unwrap()
+            delay=delay
         )
 
     @step

@@ -3153,20 +3153,27 @@ def do_guest_request_prepare_finalize_post_connect(
 
     from .guest_request_watchdog import KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY, guest_request_watchdog
 
-    r_guest_watchdog_dispatch_delay = KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY.get_value(
-        entityname=workspace.pool.poolname,
-        session=session
-    )
+    # Set the custom watchdog dispatch delay if set by the user
+    if workspace.gr.watchdog_dispatch_delay is not None:
+        delay = workspace.gr.watchdog_dispatch_delay
+    else:
+        r_guest_watchdog_dispatch_delay = KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY.get_value(
+            entityname=workspace.pool.poolname,
+            session=session
+        )
 
-    if r_guest_watchdog_dispatch_delay.is_error:
-        return workspace.handle_error(r_guest_watchdog_dispatch_delay, 'failed to fetch pool watchdog dispatch delay')
+        if r_guest_watchdog_dispatch_delay.is_error:
+            return workspace.handle_error(
+                r_guest_watchdog_dispatch_delay, 'failed to fetch pool watchdog dispatch delay')
+
+        delay = r_guest_watchdog_dispatch_delay.unwrap()
 
     workspace.update_guest_state_and_request_task(
         GuestState.READY,
         guest_request_watchdog,
         guestname,
         current_state=GuestState.PREPARING,
-        delay=r_guest_watchdog_dispatch_delay.unwrap(),
+        delay=delay,
     )
 
     if workspace.result:
