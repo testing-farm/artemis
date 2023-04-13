@@ -3,7 +3,7 @@
 
 import base64
 import re
-from typing import Any, Callable, List, Pattern, Tuple, cast
+from typing import Any, Callable, Dict, List, Pattern, Tuple, cast
 from unittest.mock import MagicMock
 
 import _pytest.monkeypatch
@@ -19,6 +19,7 @@ import tft.artemis.db
 from tft.artemis import __VERSION__
 from tft.artemis.api import CURRENT_MILESTONE_VERSION
 from tft.artemis.api.middleware import AuthContext, rewrite_request_path
+from tft.artemis.environment import Environment, HWRequirements, Kickstart, OsRequirements
 
 from . import MockPatcher
 
@@ -758,3 +759,87 @@ def test_auth_middleware_full(
     assert auth_context.user is None
 
     assert len(cast(MagicMock, auth_context.inject).mock_calls) == 2
+
+
+@pytest.fixture(name='schemas')
+def fixture_schemas(logger: gluetool.log.ContextAdapter) -> Dict[str, tft.artemis.JSONSchemaType]:
+    r_routes = tft.artemis.api.collect_routes(logger, tft.artemis.api.OPENAPI_METADATA)
+
+    assert r_routes.is_ok
+
+    _, schemas = r_routes.unwrap()
+
+    return schemas
+
+
+@pytest.mark.parametrize(
+    ('environment', 'schema_version', 'valid'),
+    [
+        (
+            Environment(
+                hw=HWRequirements(arch='x86_64'),
+                os=OsRequirements(compose='foo'),
+                kickstart=Kickstart()
+            ),
+            'v0.0.55',
+            True
+        ),
+        (
+            Environment(
+                hw=HWRequirements(
+                    arch='x86_64',
+                    constraints={
+                        'tpm': {
+                            'version': 2
+                        }
+                    }
+                ),
+                os=OsRequirements(compose='foo'),
+                kickstart=Kickstart()
+            ),
+            'v0.0.55',
+            False
+        ),
+        (
+            Environment(
+                hw=HWRequirements(
+                    arch='x86_64',
+                    constraints={
+                        'tpm': {
+                            'version': '2'
+                        }
+                    }
+                ),
+                os=OsRequirements(compose='foo'),
+                kickstart=Kickstart()
+            ),
+            'v0.0.55',
+            True
+        )
+    ]
+)
+def test_validate_environment(
+    environment: Environment,
+    schema_version: str,
+    valid: bool,
+    logger: gluetool.log.ContextAdapter,
+    schemas: Dict[str, tft.artemis.JSONSchemaType]
+) -> None:
+    schema = schemas[schema_version]
+
+    if valid:
+        tft.artemis.api._validate_environment(
+            logger,
+            environment.serialize(),
+            schema,
+            {}
+        )
+
+    else:
+        with pytest.raises(tft.artemis.api.errors.BadRequestError):
+            tft.artemis.api._validate_environment(
+                logger,
+                environment.serialize(),
+                schema,
+                {}
+            )
