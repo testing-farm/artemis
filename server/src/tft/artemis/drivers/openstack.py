@@ -607,15 +607,20 @@ class OpenStackDriver(PoolDriver):
         pairs: List[Tuple[PoolImageInfo, Flavor]] = []
 
         for image in images:
-            r_flavor = self._env_to_flavor(logger, session, guest_request)
+            r_flavor = self._env_to_flavor_or_none(logger, session, guest_request)
 
             if r_flavor.is_error:
                 return Error(r_flavor.unwrap_error())
 
-            pairs.append((image, r_flavor.unwrap()))
+            flavor = r_flavor.unwrap()
+
+            if flavor is None:
+                continue
+
+            pairs.append((image, flavor))
 
         if not pairs:
-            return Ok((False, 'no suitable image/flavorcombination found'))
+            return Ok((False, 'no suitable image/flavor combination found'))
 
         log_dict_yaml(logger.info, 'available image/flavor combinations', [
             {
