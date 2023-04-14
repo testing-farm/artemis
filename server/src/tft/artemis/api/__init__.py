@@ -27,7 +27,7 @@ import redis
 import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.orm.exc
-from gluetool.result import Ok
+from gluetool.result import Error, Ok, Result
 from molten import HTTP_200, HTTP_201, HTTP_202, HTTP_204, Include, Request, Response, Route
 from molten.app import BaseApp
 # from molten.contrib.prometheus import prometheus_middleware
@@ -144,12 +144,22 @@ METRICS_LOCK = threading.Lock()
 ENVIRONMENT_SCHEMAS: Dict[str, JSONSchemaType] = {}
 
 
+# Type checking this call is hard, mypy complains about unexpected keyword arguments, and refactoring
+# didn't help at all, just yielded another kind of errors.
+OPENAPI_METADATA = molten.openapi.documents.Metadata(  # type: ignore[call-arg]
+    title='Artemis API',
+    description='Artemis provisioning system API.',
+    version=__VERSION__
+)
+
+
 def _validate_environment(
     logger: gluetool.log.ContextAdapter,
     environment: Any,
     schema: JSONSchemaType,
     failure_details: FailureDetailsType
 ) -> Environment:
+
     r_validation = validate_data(environment, schema)
 
     if r_validation.is_error:
@@ -1760,6 +1770,26 @@ def get_guest_requests(manager: GuestRequestManager, request: Request) -> Tuple[
     return HTTP_200, manager.get_guest_requests()
 
 
+def create_guest_request_v0_0_55(
+    guest_request: GuestRequest,
+    manager: GuestRequestManager,
+    request: Request,
+    auth: AuthContext,
+    logger: gluetool.log.ContextAdapter
+) -> Tuple[str, GuestResponse]:
+    # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
+    # and we got so far means user must be authenticated.
+    if auth.is_authentication_enabled and auth.is_authenticated:
+        assert auth.username
+
+        ownername = auth.username
+
+    else:
+        ownername = DEFAULT_GUEST_REQUEST_OWNER
+
+    return HTTP_201, manager.create(guest_request, ownername, logger, ENVIRONMENT_SCHEMAS['v0.0.55'])
+
+
 def create_guest_request_v0_0_53(
     guest_request: GuestRequest,
     manager: GuestRequestManager,
@@ -2448,6 +2478,61 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
         ]
 
     return wrapper
+
+
+# NEW: no change, fixes issues with validation
+@route_generator
+def generate_routes_v0_0_55(
+    create_route: CreateRouteCallbackType,
+    name_prefix: str,
+    metadata: Any
+) -> List[Union[Route, Include]]:
+    return [
+        Include('/guests', [
+            create_route('/', get_guest_requests, method='GET'),
+            create_route('/', create_guest_request_v0_0_55, method='POST'),
+            create_route('/{guestname}', get_guest_request),  # noqa: FS003
+            create_route('/{guestname}', delete_guest, method='DELETE'),  # noqa: FS003
+            create_route('/events', get_events),
+            create_route('/{guestname}/events', get_guest_events),  # noqa: FS003
+            create_route('/{guestname}/snapshots', create_snapshot_request, method='POST'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', get_snapshot_request, method='GET'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}', delete_snapshot, method='DELETE'),  # noqa: FS003
+            create_route('/{guestname}/snapshots/{snapshotname}/restore', restore_snapshot_request, method='POST'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', get_guest_request_log, method='GET'),  # noqa: FS003,E501
+            create_route('/{guestname}/logs/{logname}/{contenttype}', create_guest_request_log, method='POST')  # noqa: FS003,E501
+        ]),
+        Include('/knobs', [
+            create_route('/', KnobManager.entry_get_knobs, method='GET'),
+            create_route('/{knobname}', KnobManager.entry_get_knob, method='GET'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_set_knob, method='PUT'),  # noqa: FS003
+            create_route('/{knobname}', KnobManager.entry_delete_knob, method='DELETE')  # noqa: FS003
+        ]),
+        Include('/users', [
+            create_route('/', UserManager.entry_get_users, method='GET'),
+            create_route('/{username}', UserManager.entry_get_user, method='GET'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_create_user, method='POST'),  # noqa: FS003
+            create_route('/{username}', UserManager.entry_delete_user, method='DELETE'),  # noqa: FS003
+            create_route('/{username}/tokens/{tokentype}/reset', UserManager.entry_reset_token, method='POST')  # noqa: FS003,E501
+        ]),
+        create_route('/metrics', get_metrics),
+        create_route('/about', get_about),
+        Include('/_cache', [
+            Include('/pools/{poolname}', [  # noqa: FS003
+                create_route('/image-info', CacheManager.entry_pool_image_info),
+                create_route('/flavor-info', CacheManager.entry_pool_flavor_info),
+                create_route('/image-info', CacheManager.entry_refresh_pool_image_info, method='POST'),
+                create_route('/flavor-info', CacheManager.entry_refresh_pool_flavor_info, method='POST')
+            ])
+        ]),
+        Include('/_status', [
+            Include('/workers', [
+                create_route('/traffic', StatusManager.entry_workers_traffic)
+            ])
+        ]),
+        create_route('/_docs', OpenAPIUIHandler(schema_route_name=f'{name_prefix}OpenAPIUIHandler')),
+        create_route('/_schema', OpenAPIHandler(metadata=metadata))
+    ]
 
 
 # NEW: added Kickstart specfication
@@ -3244,8 +3329,8 @@ def generate_routes_v0_0_17(
 #: API versions. Based on this list, routes are created with proper endpoints, and possibly redirected
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
-    # NEW: added Kickstart specification
-    ('v0.0.53', generate_routes_v0_0_53, [
+    # NEW: no change, fixes issues with validation
+    ('v0.0.55', generate_routes_v0_0_55, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
         'current',
@@ -3254,6 +3339,8 @@ API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
         # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
         'toplevel'
     ]),
+    # NEW: added Kickstart specification
+    ('v0.0.53', generate_routes_v0_0_53, []),
     # NEW: added compatible HW constraint
     ('v0.0.48', generate_routes_v0_0_48, []),
     # NEW: added missing cpu.processors constraint
@@ -3288,6 +3375,70 @@ API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
 ]
 
 CURRENT_MILESTONE_VERSION = API_MILESTONES[0][0]
+
+
+def collect_routes(
+    logger: gluetool.log.ContextAdapter,
+    metadata: molten.openapi.documents.Metadata
+) -> Result[Tuple[List[Union[Route, Include]], Dict[str, JSONSchemaType]], Failure]:
+    """
+    Collect all available routes and API endpoints
+
+    API provides following structure:
+
+    * /current/<endpoints> - the most up-to-date API
+    * /$VERSION/<endpoints> - API implementation correspoding to the given version
+    * /<endpoints> - the same as `current` but deprecated - it will be removed once all clients
+      switch to version-prefixed endpoints.
+    """
+
+    routes: List[Union[Route, Include]] = []
+    environment_schemas: Dict[str, JSONSchemaType] = {}
+
+    for milestone_version, routes_generator, compatible_versions in API_MILESTONES:
+        # Preload environment schema.
+        r_schema = load_validation_schema(f'environment-{milestone_version}.yml')
+
+        if r_schema.is_error:
+            return Error(r_schema.unwrap_error())
+
+        environment_schemas[milestone_version] = r_schema.unwrap()
+
+        # Create the base API endpoints of this version.
+        logger.info(f'API: /{milestone_version}')
+
+        routes += routes_generator(
+            f'/{milestone_version}',
+            f'{milestone_version}_',
+            metadata
+        )
+
+        # Then create all compatible versions
+        for compatible_version in compatible_versions:
+            # If this version is the "current" version, make its environment schema available under `current` key.
+            if compatible_version == 'current':
+                environment_schemas['current'] = environment_schemas[milestone_version]
+
+            # "toplevel" is a pseudo-version, similar to "current" - it's backed by "current", and its endpoints
+            # have no version prefix. Once all clients lear to use versioned API, we will drop this dog-leg.
+            if compatible_version == 'toplevel':
+                logger.info(f'API: / => /{milestone_version}')
+
+                endpoint_root = ''
+
+            else:
+                logger.info(f'API: /{compatible_version} => /{milestone_version}')
+
+                endpoint_root = f'/{compatible_version}'
+
+            routes += routes_generator(
+                endpoint_root,
+                f'legacy_{compatible_version}_',
+                metadata,
+                redirect_to_prefix=f'/{milestone_version}'
+            )
+
+    return Ok((routes, environment_schemas))
 
 
 def run_app() -> molten.app.App:
@@ -3349,69 +3500,17 @@ def run_app() -> molten.app.App:
         prometheus_middleware
     ]
 
-    # Type checking this call is hard, mypy complains about unexpected keyword arguments, and refactoring
-    # didn't help at all, just yielded another kind of errors.
-    metadata = molten.openapi.documents.Metadata(  # type: ignore[call-arg]
-        title='Artemis API',
-        description='Artemis provisioning system API.',
-        version=__VERSION__
-    )
+    r_routes = collect_routes(logger, OPENAPI_METADATA)
 
-    #
-    # Current routes and API endpoints
-    #
-    # API provides following structure:
-    #
-    # * /current/<endpoints> - the most up-to-date API
-    # * /$VERSION/<endpoints> - API implementation correspoding to the given version
-    # * /<endpoints> - the same as `current` but deprecated - it will be removed once all clients switch
-    # to version-prefixed endpoints.
-    routes: List[Union[Route, Include]] = []
+    if r_routes.is_error:
+        r_routes.unwrap_error().handle(logger)
 
-    for milestone_version, routes_generator, compatible_versions in API_MILESTONES:
-        # Preload environment schema.
-        r_schema = load_validation_schema(f'environment-{milestone_version}.yml')
+        sys.exit(1)
 
-        if r_schema.is_error:
-            r_schema.unwrap_error().handle(logger)
+    routes, environment_schemas = r_routes.unwrap()
 
-            sys.exit(1)
-
-        ENVIRONMENT_SCHEMAS[milestone_version] = r_schema.unwrap()
-
-        # Create the base API endpoints of this version.
-        logger.info(f'API: /{milestone_version}')
-
-        routes += routes_generator(
-            f'/{milestone_version}',
-            f'{milestone_version}_',
-            metadata
-        )
-
-        # Then create all compatible versions
-        for compatible_version in compatible_versions:
-            # If this version is the "current" version, make its environment schema available under `current` key.
-            if compatible_version == 'current':
-                ENVIRONMENT_SCHEMAS['current'] = ENVIRONMENT_SCHEMAS[milestone_version]
-
-            # "toplevel" is a pseudo-version, similar to "current" - it's backed by "current", and its endpoints
-            # have no version prefix. Once all clients lear to use versioned API, we will drop this dog-leg.
-            if compatible_version == 'toplevel':
-                logger.info(f'API: / => /{milestone_version}')
-
-                endpoint_root = ''
-
-            else:
-                logger.info(f'API: /{compatible_version} => /{milestone_version}')
-
-                endpoint_root = f'/{compatible_version}'
-
-            routes += routes_generator(
-                endpoint_root,
-                f'legacy_{compatible_version}_',
-                metadata,
-                redirect_to_prefix=f'/{milestone_version}'
-            )
+    global ENVIRONMENT_SCHEMAS
+    ENVIRONMENT_SCHEMAS.update(environment_schemas)
 
     def log_routes() -> None:
         extracted_routes = []
