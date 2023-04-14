@@ -94,6 +94,9 @@ def os_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> OsErrorCau
     stdout = process_output_to_str(output, stream='stdout')
     stderr = process_output_to_str(output, stream='stderr')
 
+    stdout = stdout.strip() if stdout is not None else None
+    stderr = stderr.strip() if stderr is not None else None
+
     for cause, pattern in CLI_ERROR_PATTERNS.items():
         if stdout and pattern.match(stdout):
             return cause
