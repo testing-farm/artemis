@@ -44,6 +44,7 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('fixed-hw-validation', '0.0.55'),
         ('kickstart', '0.0.53'),
         ('hw-constraints-boot-method', '0.0.32'),
         ('hw-constraints-network', '0.0.28'),
