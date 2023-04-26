@@ -133,7 +133,15 @@ class Workspace(_Workspace):
 
         # If new pool has been chosen, log failover.
         if self.current_poolname and self.new_pool and self.new_pool.poolname != self.current_poolname:
-            self.logger.warning(f'failover: switched {self.current_poolname} => {self.new_pool.poolname}')
+            assert self.gr
+
+            self.gr.log_event(
+                self.logger,
+                self.session,
+                'routing-failover',
+                current_pool=self.current_poolname,
+                new_pool=self.new_pool.poolname
+            )
 
             metrics.ProvisioningMetrics.inc_failover(self.current_poolname, self.new_pool.poolname)
 

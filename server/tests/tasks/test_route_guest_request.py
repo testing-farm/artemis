@@ -1,7 +1,6 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import logging
 import threading
 from typing import Any, Optional, cast
 from unittest.mock import MagicMock
@@ -22,7 +21,7 @@ import tft.artemis.tasks
 import tft.artemis.tasks.route_guest_request
 from tft.artemis.tasks.route_guest_request import Workspace
 
-from .. import MockPatcher, assert_log
+from .. import MockPatcher
 from . import assert_task_core_call
 
 
@@ -234,6 +233,7 @@ def test_exit_failover(
 ) -> None:
     workspace.current_poolname = 'pool1'
     workspace.new_pool = MagicMock(name='pool2', poolname='pool2')
+    workspace.gr = MagicMock(name='workspace.gr<mock>')
 
     patch(
         monkeypatch,
@@ -247,14 +247,19 @@ def test_exit_failover(
 
     cast(
         MagicMock,
+        workspace.gr.log_event
+    ).assert_called_once_with(
+        workspace.logger,
+        workspace.session,
+        'routing-failover',
+        current_pool='pool1',
+        new_pool='pool2'
+    )
+
+    cast(
+        MagicMock,
         tft.artemis.tasks.route_guest_request.metrics.ProvisioningMetrics.inc_failover  # type: ignore[attr-defined]
     ).assert_called_once_with('pool1', 'pool2')
-
-    assert_log(
-        caplog,
-        message='failover: switched pool1 => pool2',
-        levelno=logging.WARNING
-    )
 
 
 def test_doer(
