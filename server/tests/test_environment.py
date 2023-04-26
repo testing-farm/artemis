@@ -1100,6 +1100,58 @@ def test_clueless_flavor(logger: ContextAdapter) -> None:
     ) is False
 
 
+def test_missing_hw_constraints(logger: ContextAdapter) -> None:
+    spec = parse_spec(
+        """
+        ---
+
+        hw:
+          arch: x86_64
+          constraints:
+
+        os:
+          compose: dummy-compose
+
+        kickstart: {}
+        """
+    )
+
+    environment = Environment.unserialize(spec)
+
+    assert environment.has_hw_constraints is False
+
+    r_constraints = environment.get_hw_constraints()
+
+    assert r_constraints.is_ok
+    assert r_constraints.unwrap() is None
+
+
+def test_empty_hw_constraints(logger: ContextAdapter) -> None:
+    spec = parse_spec(
+        """
+        ---
+
+        hw:
+          arch: x86_64
+          constraints: {}
+
+        os:
+          compose: dummy-compose
+
+        kickstart: {}
+        """
+    )
+
+    environment = Environment.unserialize(spec)
+
+    assert environment.has_hw_constraints is False
+
+    r_constraints = environment.get_hw_constraints()
+
+    assert r_constraints.is_ok
+    assert r_constraints.unwrap() is None
+
+
 def test_schema_no_constraints_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
     spec = parse_spec(
         """

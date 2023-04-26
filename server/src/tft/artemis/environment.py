@@ -1860,7 +1860,7 @@ class Environment(SerializableContainer):
         :returns: ``True`` if environment contains HW constraints, ``False`` otherwise.
         """
 
-        return self.hw.constraints is not None
+        return self.hw.constraints is not None and self.hw.constraints != {}
 
     def get_hw_constraints(self) -> Result[Optional[ConstraintBase], 'Failure']:
         """
@@ -1869,7 +1869,7 @@ class Environment(SerializableContainer):
         :returns: HW constraints when the environment contains any, ``None`` otherwise.
         """
 
-        if self.hw.constraints is None:
+        if not self.has_hw_constraints:
             return Ok(None)
 
         return cast(
