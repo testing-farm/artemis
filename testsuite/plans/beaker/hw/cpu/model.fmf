@@ -1,0 +1,19 @@
+/62:
+  discover+:
+    test:
+      - hw/cpu/model/62
+
+  provision+:
+    hardware:
+      cpu:
+        model: 62
+
+/63:
+  discover+:
+    test:
+      - hw/cpu/model/63
+
+  provision+:
+    hardware:
+      cpu:
+        model: 63

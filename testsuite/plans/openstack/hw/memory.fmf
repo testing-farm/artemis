@@ -1,0 +1,9 @@
+/16GiB:
+  discover+:
+    test:
+      - hw/memory/size/16GiB
+
+  provision+:
+    arch: x86_64
+    hardware:
+      memory: ">= 16 GiB"

@@ -1,0 +1,18 @@
+/aarch64:
+  discover+:
+    test:
+      - hw/arch/aarch64
+
+  provision+:
+    arch: aarch64
+
+    # TODO: should not be needed once aarch64 is available in general pools
+    pool: "${ARTEMIS_AWS_POOLNAME_AARCH64}"
+
+/x86_64:
+  discover+:
+    test:
+      - hw/arch/x86_64
+
+  provision+:
+    arch: x86_64

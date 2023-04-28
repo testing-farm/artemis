@@ -1,0 +1,5 @@
+test: ./test.sh
+
+/sheep:
+    environment+:
+        EXPECTED: "sheep-[[:digit:]]{1,2}"

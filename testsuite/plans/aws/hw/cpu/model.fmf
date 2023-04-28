@@ -1,0 +1,33 @@
+/1:
+  discover+:
+    test:
+      - "hw/cpu/model/1$"
+
+  provision+:
+    arch: aarch64
+    hardware:
+      cpu:
+        model: 1
+
+    # TODO: should not be needed once aarch64 is available in general pools
+    pool: "${ARTEMIS_AWS_POOLNAME_AARCH64}"
+
+/62:
+  discover+:
+    test:
+      - hw/cpu/model/62
+
+  provision+:
+    hardware:
+      cpu:
+        model: 62
+
+/63:
+  discover+:
+    test:
+      - hw/cpu/model/63
+
+  provision+:
+    hardware:
+      cpu:
+        model: 63

@@ -1,0 +1,9 @@
+/Xeon:
+  discover+:
+    test:
+      - hw/cpu/model-name/Xeon
+
+  provision+:
+    hardware:
+      cpu:
+        model-name: "=~ Intel\\(R\\) Xeon\\(R\\) .+"

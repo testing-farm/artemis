@@ -1,0 +1,9 @@
+test: ./test.sh
+
+/basic:
+  environment+:
+    KICKSTART: "basic"
+
+/partitioning:
+  environment+:
+    KICKSTART: "partitioning"

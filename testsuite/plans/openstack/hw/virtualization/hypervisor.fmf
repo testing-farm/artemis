@@ -1,0 +1,13 @@
+/kvm:
+  discover+:
+    test:
+      - hw/virtualization/hypervisor/kvm
+
+  provision+:
+    hardware:
+      virtualization:
+        hypervisor: "kvm"
+
+/kvm/x86_64:
+  provision+:
+    arch: x86_64

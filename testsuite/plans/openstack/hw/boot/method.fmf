@@ -1,0 +1,26 @@
+/x86_64:
+  provision+:
+    arch: x86_64
+
+/x86_64/bios:
+  provision+:
+    hardware:
+      boot:
+        method: bios
+
+  discover+:
+    test:
+      - hw/boot/method/bios
+
+/x86_64/uefi:
+  tag:
+    - pending
+
+  provision+:
+    hardware:
+      boot:
+        method: uefi
+
+  discover+:
+    test:
+      - hw/boot/method/uefi

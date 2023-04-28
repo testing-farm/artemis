@@ -1,0 +1,31 @@
+/aarch64:
+  discover+:
+    test:
+      - hw/arch/aarch64
+
+  provision+:
+    arch: aarch64
+
+/ppc64le:
+  discover+:
+    test:
+      - hw/arch/ppc64le
+
+  provision+:
+    arch: ppc64le
+
+/s390x:
+  discover+:
+    test:
+      - hw/arch/s390x
+
+  provision+:
+    arch: s390x
+
+/x86_64:
+  discover+:
+    test:
+      - hw/arch/x86_64
+
+  provision+:
+    arch: x86_64

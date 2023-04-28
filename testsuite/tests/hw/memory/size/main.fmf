@@ -1,0 +1,12 @@
+test: ./test.sh
+
+require:
+  - dmidecode
+
+/default:
+    environment+:
+        EXPECTED: "2 GB"
+
+/16GiB:
+    environment+:
+        EXPECTED: "16 GB"

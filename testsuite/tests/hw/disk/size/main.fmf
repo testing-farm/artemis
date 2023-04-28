@@ -1,0 +1,26 @@
+test: ./test.sh
+
+/root/20GiB:
+    environment+:
+        EXPECTED_DEVICE: "(xvda|nvme0n1)"
+        EXPECTED_SIZE: "20 GiB"
+
+/root/40GiB:
+    environment+:
+        EXPECTED_DEVICE: "(xvda|nvme0n1)"
+        EXPECTED_SIZE: "40 GiB"
+
+/root/120GiB:
+    environment+:
+        EXPECTED_DEVICE: "(xvda|nvme0n1)"
+        EXPECTED_SIZE: "120 GiB"
+
+/extra1/256GiB:
+    environment+:
+        EXPECTED_DEVICE: "xvdf"
+        EXPECTED_SIZE: "256 GiB"
+
+/extra2/512GiB:
+    environment+:
+        EXPECTED_DEVICE: "xvdg"
+        EXPECTED_SIZE: "512 GiB"

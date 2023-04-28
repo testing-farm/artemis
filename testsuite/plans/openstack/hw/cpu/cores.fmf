@@ -1,0 +1,11 @@
+/16:
+  enabled: false
+
+  discover+:
+    test:
+      - hw/cpu/cores/8
+
+  provision+:
+    hardware:
+      cpu:
+        cores: "8"

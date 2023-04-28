@@ -1,0 +1,2 @@
+provision+:
+  pool: "${ARTEMIS_OPENSTACK_POOLNAME}"

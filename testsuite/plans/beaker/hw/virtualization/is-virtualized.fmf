@@ -1,0 +1,51 @@
+/yes:
+  discover+:
+    test:
+      - hw/virtualization/is-virtualized/yes
+
+  provision+:
+    hardware:
+      virtualization:
+        is-virtualized: true
+
+/yes/aarch64:
+  provision+:
+    arch: aarch64
+
+/yes/ppc64le:
+  provision+:
+    arch: ppc64le
+
+/yes/s390x:
+  provision+:
+    arch: s390x
+
+/yes/x86_64:
+  provision+:
+    arch: x86_64
+
+/no:
+  discover+:
+    test:
+      - hw/virtualization/is-virtualized/no
+
+  provision+:
+    hardware:
+      virtualization:
+        is-virtualized: false
+
+/no/aarch64:
+  provision+:
+    arch: aarch64
+
+/no/ppc64le:
+  provision+:
+    arch: ppc64le
+
+/no/s390x:
+  provision+:
+    arch: s390x
+
+/no/x86_64:
+  provision+:
+    arch: x86_64

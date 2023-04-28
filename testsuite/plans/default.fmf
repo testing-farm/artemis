@@ -1,0 +1,12 @@
+discover:
+  how: fmf
+  test:
+    - hw/arch/x86_64
+    - hw/memory/size/default
+    - hw/disk/size/root/40GiB
+
+provision:
+  how: artemis
+  api-url: "${ARTEMIS_API_URL}"
+  image: "${ARTEMIS_COMPOSE}"
+  keyname: "${ARTEMIS_KEYNAME}"

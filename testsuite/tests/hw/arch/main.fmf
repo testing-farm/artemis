@@ -1,0 +1,17 @@
+test: ./test.sh
+
+/aarch64:
+    environment+:
+        EXPECTED: "aarch64"
+
+/ppc64le:
+    environment+:
+        EXPECTED: "ppc64le"
+
+/s390x:
+    environment+:
+        EXPECTED: "s390x"
+
+/x86_64:
+    environment+:
+        EXPECTED: "x86_64"

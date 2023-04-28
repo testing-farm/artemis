@@ -1,0 +1,9 @@
+/x86_64:
+  enabled: false
+
+  discover+:
+    test:
+      - hw/arch/x86_64
+
+  provision+:
+    arch: x86_64

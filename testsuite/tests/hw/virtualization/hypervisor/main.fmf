@@ -1,0 +1,16 @@
+test: ./test.sh
+
+/kvm:
+    environment+:
+        EXPECTED: "KVM"
+
+/nitro:
+    # TODO: nitro is based on KVM, and reports as KVM...
+    enabled: false
+
+    environment+:
+        EXPECTED: "Nitro"
+
+/xen:
+    environment+:
+        EXPECTED: "Xen"

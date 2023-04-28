@@ -1,0 +1,9 @@
+test: ./test.sh
+
+/1:
+    environment+:
+        EXPECTED: "1"
+
+/2:
+    environment+:
+        EXPECTED: "2"

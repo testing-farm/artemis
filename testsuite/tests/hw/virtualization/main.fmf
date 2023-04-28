@@ -1,0 +1,11 @@
+require:
+  - virt-what
+
+adjust:
+  - when: arch == s390x
+    require+:
+      - lshw
+
+  - when: arch != s390x
+    require+:
+      - dmidecode

@@ -1,0 +1,32 @@
+/no:
+  discover+:
+    test:
+      - hw/virtualization/is-supported/no
+
+  provision+:
+    hardware:
+      virtualization:
+        is-supported: false
+
+/no/x86_64:
+  enabled: false
+
+  tag:
+    - pending
+
+  provision+:
+    arch: x86_64
+
+/yes:
+  discover+:
+    test:
+      - hw/virtualization/is-supported/yes
+
+  provision+:
+    hardware:
+      virtualization:
+        is-supported: true
+
+/yes/x86_64:
+  provision+:
+    arch: x86_64

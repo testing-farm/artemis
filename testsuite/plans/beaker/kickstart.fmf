@@ -1,0 +1,58 @@
+
+/basic:
+  provision+:
+    kickstart:
+      script: |
+        user --name=ksuser --shell=/bin/bash --homedir=/home/ksuser_homedir
+        %packages
+        bind-utils
+        %end
+      post-install: |
+        %post --log=/var/log/kickstart_post.log
+        echo "post-install script output"
+        df -Th
+        %end
+  discover+:
+    test:
+      - kickstart/basic
+  /aarch64:
+    provision+:
+      arch: aarch64
+  /ppc64le:
+    provision+:
+      arch: ppc64le
+  /s390x:
+    provision+:
+      arch: s390x
+  /x86_64:
+    provision+:
+      arch: x86_64
+
+/partitioning:
+  provision+:
+    kickstart:
+      metadata: no_autopart
+      script: |
+        zerombr
+        clearpart --all
+        reqpart
+        part /boot --fstype=ext4 --size=512
+        part / --fstype=ext4 --size=4096 --grow
+        part /test --fstype=xfs --size=1024
+        part swap --size=2048
+  discover+:
+    test:
+      - kickstart/partitioning
+
+  /aarch64:
+    provision+:
+      arch: aarch64
+  /ppc64le:
+    provision+:
+      arch: ppc64le
+  /s390x:
+    provision+:
+      arch: s390x
+  /x86_64:
+    provision+:
+      arch: x86_64

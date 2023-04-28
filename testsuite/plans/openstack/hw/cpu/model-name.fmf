@@ -1,0 +1,11 @@
+/Xeon:  # https://en.wikichip.org/wiki/intel/cpuid
+  enabled: false
+
+  discover+:
+    test:
+      - hw/cpu/model-name/Xeon
+
+  provision+:
+    hardware:
+      cpu:
+        model-name: "=~ Intel Xeon Processor"

@@ -1,0 +1,7 @@
+discover+:
+  test:
+    - hw/hostname/sheep
+
+provision+:
+  hardware:
+    hostname: "=~ sheep.+"

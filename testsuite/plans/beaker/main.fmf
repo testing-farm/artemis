@@ -1,0 +1,3 @@
+provision+:
+  pool: "${ARTEMIS_BEAKER_POOLNAME}"
+  provision-timeout: 3600

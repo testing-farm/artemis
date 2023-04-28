@@ -1,0 +1,47 @@
+# Official documentation: https://access.redhat.com/articles/rhel-limits
+#
+#
+# The following represents the IBM Z CPUs and their
+# machine type number (for s390x).
+# Reference:
+#   https://www.ibm.com/support/pages/linux-ibm-z-tested-platforms
+#   https://docs.google.com/spreadsheets/d/10xje4Gg8f4Sa1UHxS4NOzy6IO_uafRHP-eiY409NvXg/edit#gid=466419061
+#
+#   microprocessor | machine type number
+#       z13        |    2964
+#       z13s       |    2965
+#       z14        |    3906
+#       z14 ZRE1   |    3907
+#       z15        |    8561
+#       z16        |    3931
+#
+#
+# Reference for the ppce64 PowerN version:
+#   https://www.ibm.com/docs/en/linux-on-systems?topic=servers-linux-power-overview
+#
+# Reference for the x86_64 microarchitecture level:
+#   https://developers.redhat.com/blog/2021/01/05/building-red-hat-enterprise-linux-9-for-the-x86-64-v2-microarchitecture-level#%60
+#
+
+test: ./test.sh
+
+/el7:
+    environment+:
+        EXP_S390x: "2964 2965 3906 3907 8561 3931"
+        EXP_PPC64LE: "POWER7 POWER8 POWER9"
+        EXP_x86_64: ""
+        EXP_AARCH_64: ""
+
+/el8:
+    environment+:
+        EXP_S390x: "2964 2965 3906 3907 8561 3931"
+        EXP_PPC64LE: "POWER8 POWER9 POWER10"
+        EXP_x86_64: ""
+        EXP_AARCH_64: ""
+
+/el9:
+    environment+:
+        EXP_S390x: "3906 3907 8561 3931"
+        EXP_PPC64LE: "POWER9 POWER10"
+        EXP_x86_64: "x86-64-v2"
+        EXP_AARCH_64: ""
