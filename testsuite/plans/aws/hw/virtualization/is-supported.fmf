@@ -1,0 +1,51 @@
+/yes:
+  enabled: false
+
+  tag:
+    - pending
+
+  discover+:
+    test:
+      - hw/virtualization/is-supported/yes
+
+  provision+:
+    hardware:
+      virtualization:
+        is-supported: true
+
+/yes/aarch64:
+  provision+:
+    arch: aarch64
+
+    # TODO: should not be needed once aarch64 is available in general pools
+    pool: "${ARTEMIS_AWS_POOLNAME_AARCH64}"
+
+/yes/x86_64:
+  provision+:
+    arch: x86_64
+
+/no:
+  discover+:
+    test:
+      - hw/virtualization/is-supported/no
+
+  provision+:
+    hardware:
+      virtualization:
+        is-supported: false
+
+/no/aarch64:
+  enabled: false
+
+  tag:
+    - pending
+
+  provision+:
+    arch: aarch64
+
+    # TODO: should not be needed once aarch64 is available in general pools
+    pool: "${ARTEMIS_AWS_POOLNAME_AARCH64}"
+
+/no/x86_64:
+  provision+:
+    arch: x86_64

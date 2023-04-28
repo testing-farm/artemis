@@ -1,0 +1,2 @@
+provision+:
+  pool: "${ARTEMIS_AWS_POOLNAME_X86_64}"

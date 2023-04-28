@@ -1,0 +1,2 @@
+provision+:
+  pool: "${ARTEMIS_AZURE_POOLNAME}"

@@ -1,0 +1,17 @@
+test: ./test.sh
+
+require+:
+  - jq
+  - util-linux
+
+/Xeon:
+    environment+:
+        EXPECTED: "Intel\\(R\\) Xeon\\(R\\)"
+
+/Graviton2:
+    environment+:
+        EXPECTED: "AWS Graviton2"
+
+/Graviton3:
+    environment+:
+        EXPECTED: "AWS Graviton3"

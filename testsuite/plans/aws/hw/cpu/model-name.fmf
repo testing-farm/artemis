@@ -1,0 +1,37 @@
+/Xeon:
+  discover+:
+    test:
+      - hw/cpu/model-name/Xeon
+
+  provision+:
+    hardware:
+      cpu:
+        model-name: "=~ Intel\\(R\\) Xeon\\(R\\)"
+
+/Graviton2:
+  discover+:
+    test:
+      - hw/cpu/model-name/Graviton2
+
+  provision+:
+    arch: aarch64
+    hardware:
+      cpu:
+        model-name: "AWS Graviton2"
+
+    # TODO: should not be needed once aarch64 is available in general pools
+    pool: "${ARTEMIS_AWS_POOLNAME_AARCH64}"
+
+/Graviton3:
+  discover+:
+    test:
+      - hw/cpu/model-name/Graviton3
+
+  provision+:
+    arch: aarch64
+    hardware:
+      cpu:
+        model-name: "AWS Graviton3"
+
+    # TODO: should not be needed once aarch64 is available in general pools
+    pool: "${ARTEMIS_AWS_POOLNAME_AARCH64}"

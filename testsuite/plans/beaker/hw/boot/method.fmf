@@ -1,0 +1,101 @@
+/aarch64:
+  provision+:
+    arch: aarch64
+
+/aarch64/bios:
+  provision+:
+    hardware:
+      boot:
+        method: bios
+
+  discover+:
+    test:
+      - hw/boot/method/bios
+
+/aarch64/uefi:
+  enabled: false
+
+  provision+:
+    hardware:
+      boot:
+        method: uefi
+
+  discover+:
+    test:
+      - hw/boot/method/uefi
+
+/ppc64le:
+  provision+:
+    arch: ppc64le
+
+/ppc64le/bios:
+  provision+:
+    hardware:
+      boot:
+        method: bios
+
+  discover+:
+    test:
+      - hw/boot/method/bios
+
+/ppc64le/uefi:
+  enabled: false
+
+  provision+:
+    hardware:
+      boot:
+        method: uefi
+
+  discover+:
+    test:
+      - hw/boot/method/uefi
+
+/s390x:
+  provision+:
+    arch: s390x
+
+/s390x/bios:
+  provision+:
+    hardware:
+      boot:
+        method: bios
+
+  discover+:
+    test:
+      - hw/boot/method/bios
+
+/s390x/uefi:
+  enabled: false
+
+  provision+:
+    hardware:
+      boot:
+        method: uefi
+
+  discover+:
+    test:
+      - hw/boot/method/uefi
+
+/x86_64:
+  provision+:
+    arch: x86_64
+
+/x86_64/bios:
+  provision+:
+    hardware:
+      boot:
+        method: bios
+
+  discover+:
+    test:
+      - hw/boot/method/bios
+
+/x86_64/uefi:
+  provision+:
+    hardware:
+      boot:
+        method: uefi
+
+  discover+:
+    test:
+      - hw/boot/method/uefi

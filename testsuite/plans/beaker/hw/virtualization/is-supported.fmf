@@ -1,0 +1,81 @@
+/yes:
+  discover+:
+    test:
+      - hw/virtualization/is-supported/yes
+
+  provision+:
+    hardware:
+      virtualization:
+        is-supported: true
+
+/yes/aarch64:
+  enabled: false
+
+  tag:
+    - pending
+
+  provision+:
+    arch: aarch64
+
+/yes/ppc64le:
+  enabled: false
+
+  tag:
+    - pending
+
+  provision+:
+    arch: ppc64le
+
+/yes/s390x:
+  enabled: false
+
+  tag:
+    - pending
+
+  provision+:
+    arch: s390x
+
+/yes/x86_64:
+  provision+:
+    arch: x86_64
+
+/no:
+  discover+:
+    test:
+      - hw/virtualization/is-supported/no
+
+  provision+:
+    hardware:
+      virtualization:
+        is-supported: false
+
+/no/aarch64:
+  enabled: false
+
+  tag:
+    - pending
+
+  provision+:
+    arch: aarch64
+
+/no/ppc64le:
+  enabled: false
+
+  tag:
+    - pending
+
+  provision+:
+    arch: ppc64le
+
+/no/s390x:
+  enabled: false
+
+  tag:
+    - pending
+
+  provision+:
+    arch: s390x
+
+/no/x86_64:
+  provision+:
+    arch: x86_64

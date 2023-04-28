@@ -1,0 +1,9 @@
+/6:  # https://en.wikichip.org/wiki/intel/cpuid
+  discover+:
+    test:
+      - hw/cpu/family/6
+
+  provision+:
+    hardware:
+      cpu:
+        family: 6

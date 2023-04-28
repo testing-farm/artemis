@@ -1,0 +1,21 @@
+test: ./test.sh
+
+require+:
+  - jq
+  - util-linux
+
+/1:
+    environment+:
+        EXPECTED: "1"
+
+/62:
+    environment+:
+        EXPECTED: "62"
+
+/63:
+    environment+:
+        EXPECTED: "63"
+
+/134:
+    environment+:
+        EXPECTED: "134"

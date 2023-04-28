@@ -1,0 +1,9 @@
+test: ./test.sh
+
+/Haswell:
+    environment+:
+        EXPECTED: "haswell"
+
+/Skylake:
+    environment+:
+        EXPECTED: "skylake"

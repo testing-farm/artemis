@@ -1,0 +1,9 @@
+/8:
+  discover+:
+    test:
+      - hw/cpu/processors/8
+
+  provision+:
+    hardware:
+      cpu:
+        processors: "8"

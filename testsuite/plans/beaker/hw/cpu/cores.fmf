@@ -1,0 +1,9 @@
+/8:
+  discover+:
+    test:
+      - hw/cpu/cores/16
+
+  provision+:
+    hardware:
+      cpu:
+        cores: "16"

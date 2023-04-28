@@ -1,0 +1,12 @@
+/2:
+  enabled: false
+
+  discover+:
+    test:
+      - hw/tpm/2
+
+  provision+:
+    arch: x86_64
+    hardware:
+        tpm:
+            version: "2"

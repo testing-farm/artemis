@@ -1,0 +1,37 @@
+/nitro:
+  discover+:
+    test:
+      - hw/virtualization/hypervisor/nitro
+
+  provision+:
+    hardware:
+      virtualization:
+        hypervisor: "nitro"
+
+/nitro/aarch64:
+  provision+:
+    arch: aarch64
+
+    # TODO: should not be needed once aarch64 is available in general pools
+    pool: "${ARTEMIS_AWS_POOLNAME_AARCH64}"
+
+/nitro/x86_64:
+  # NOT SUPPORTED YET
+  enabled: false
+
+  provision+:
+    arch: x86_64
+
+/xen:
+  discover+:
+    test:
+      - hw/virtualization/hypervisor/xen
+
+  provision+:
+    hardware:
+      virtualization:
+        hypervisor: "xen"
+
+/xen/x86_64:
+  provision+:
+    arch: x86_64

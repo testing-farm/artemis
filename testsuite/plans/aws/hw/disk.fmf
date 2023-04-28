@@ -1,0 +1,23 @@
+/large-root:
+  discover+:
+    test:
+      - hw/disk/size/root/120GiB
+
+  provision+:
+    hardware:
+      disk:
+        - size: "120 GiB"
+
+/extra-disks:
+  discover+:
+    test:
+      - hw/disk/size/root/120GiB
+      - hw/disk/size/extra1/256GiB
+      - hw/disk/size/extra2/512GiB
+
+  provision+:
+    hardware:
+      disk:
+        - size: "120 GiB"
+        - size: "256 GiB"
+        - size: "512 GiB"

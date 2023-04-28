@@ -1,0 +1,9 @@
+test: ./test.sh
+
+/yes:
+    environment+:
+        EXPECTED: "yes"
+
+/no:
+    environment+:
+        EXPECTED: "no"

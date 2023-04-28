@@ -1,0 +1,22 @@
+test: ./test.sh
+require:
+  - libvirt
+  - libvirt-client
+  - libvirt-daemon
+
+adjust:
+  - when: arch == s390x
+    require+:
+      - lshw
+
+  - when: arch != s390x
+    require+:
+      - dmidecode
+
+/yes:
+    environment+:
+        EXPECTED: "yes"
+
+/no:
+    environment+:
+        EXPECTED: "no"

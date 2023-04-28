@@ -1,0 +1,13 @@
+/yes:
+  discover+:
+    test:
+      - hw/virtualization/is-virtualized/yes
+
+  provision+:
+    hardware:
+      virtualization:
+        is-virtualized: true
+
+/yes/x86_64:
+  provision+:
+    arch: x86_64

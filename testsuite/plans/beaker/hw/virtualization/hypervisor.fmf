@@ -1,0 +1,132 @@
+/kvm:
+  discover+:
+    test:
+      - hw/virtualization/hypervisor/kvm
+
+  provision+:
+    hardware:
+      virtualization:
+        hypervisor: "kvm"
+
+/kvm/aarch64:
+  provision+:
+    arch: aarch64
+
+/kvm/ppc64:
+  provision+:
+    arch: ppc64
+
+/kvm/ppc64le:
+  provision+:
+    arch: ppc64le
+
+/kvm/s390x:
+  provision+:
+    arch: s390x
+
+/kvm/x86_64:
+  provision+:
+    arch: x86_64
+
+/powerkvm:
+  discover+:
+    test:
+      - hw/virtualization/hypervisor/powerkvm
+
+  provision+:
+    hardware:
+      virtualization:
+        hypervisor: "powerkvm"
+
+/powerkvm/ppc64:
+  provision+:
+    arch: ppc64
+
+/powerkvm/ppc64le:
+  provision+:
+    arch: ppc64le
+
+/powervm:
+  discover+:
+    test:
+      - hw/virtualization/hypervisor/powervm
+
+  provision+:
+    hardware:
+      virtualization:
+        hypervisor: "powervm"
+
+/powervm/ppc64:
+  provision+:
+    arch: ppc64
+
+/powervm/ppc64le:
+  provision+:
+    arch: ppc64le
+
+/hyperv:
+  # Probably not enough available machines
+  enabled: false
+
+  discover+:
+    test:
+      - hw/virtualization/hypervisor/hyperv
+
+  provision+:
+    hardware:
+      virtualization:
+        hypervisor: "hyperv"
+
+/hyperv/x86_64:
+  provision+:
+    arch: x86_64
+
+/vmware:
+  # Probably not enough available machines
+  enabled: false
+
+  discover+:
+    test:
+      - hw/virtualization/hypervisor/vmware
+
+  provision+:
+    hardware:
+      virtualization:
+        hypervisor: "vmware"
+
+/vmware/x86_64:
+  provision+:
+    arch: x86_64
+
+/xen:
+  # Probably not enough available machines
+  enabled: false
+
+  discover+:
+    test:
+      - hw/virtualization/hypervisor/xen
+
+  provision+:
+    hardware:
+      virtualization:
+        hypervisor: "xen"
+
+/xen/aarch64:
+  provision+:
+    arch: aarch64
+
+/xen/ppc64:
+  provision+:
+    arch: ppc64
+
+/xen/ppc64le:
+  provision+:
+    arch: ppc64le
+
+/xen/s390x:
+  provision+:
+    arch: s390x
+
+/xen/x86_64:
+  provision+:
+    arch: x86_64

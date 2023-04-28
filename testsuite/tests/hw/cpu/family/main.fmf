@@ -1,0 +1,9 @@
+test: ./test.sh
+
+require+:
+  - jq
+  - util-linux
+
+/6:
+    environment+:
+        EXPECTED: "6"

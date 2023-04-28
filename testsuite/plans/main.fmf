@@ -1,0 +1,15 @@
+discover:
+  how: fmf
+
+provision:
+  how: artemis
+  api-url: "${ARTEMIS_API_URL}"
+  api-version: "${ARTEMIS_API_VERSION}"
+  image: "${ARTEMIS_COMPOSE}"
+  keyname: "${ARTEMIS_KEYNAME}"
+
+  # user-data:
+  #   ServiceName: Testing-Farm-Internal
+
+execute:
+  how: tmt

@@ -1,0 +1,11 @@
+/Haswell:  # https://en.wikichip.org/wiki/intel/cpuid
+  enabled: false
+
+  discover+:
+    test:
+      - hw/cpu/family-name/Haswell
+
+  provision+:
+    hardware:
+      cpu:
+        family-name: Haswell

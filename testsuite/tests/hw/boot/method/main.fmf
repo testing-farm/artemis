@@ -1,0 +1,9 @@
+test: ./test.sh
+
+/uefi:
+    environment+:
+        EXPECTED_METHOD: uefi
+
+/bios:
+    environment+:
+        EXPECTED_METHOD: bios

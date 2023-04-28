@@ -1,0 +1,9 @@
+/134:
+  discover+:
+    test:
+      - hw/cpu/model/134
+
+  provision+:
+    hardware:
+      cpu:
+        model: 134
