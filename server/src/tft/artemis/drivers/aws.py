@@ -2321,6 +2321,11 @@ class AWSDriver(PoolDriver):
                 resources.usage.cores += flavor.cpu.cores or 0
                 resources.usage.memory += flavor.memory.to('bytes').magnitude if flavor.memory is not None else 0
 
+                if flavor.name not in resources.usage.flavors:
+                    resources.usage.flavors[flavor.name] = 0
+
+                resources.usage.flavors[flavor.name] += 1
+
         except Exception as exc:
             return Error(Failure.from_exc(
                 'failed to parse AWS output',

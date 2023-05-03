@@ -423,6 +423,11 @@ class PoolResources(MetricsBase):
     Network resources, i.e. number of addresses and other network-related metrics.
     """
 
+    flavors: Dict[str, int] = dataclasses.field(default_factory=dict)
+    """
+    Flavor usage.
+    """
+
     updated_timestamp: Optional[float] = None
     """
     Time when these metrics were updated, as UNIX timestamp.
@@ -449,6 +454,7 @@ class PoolResources(MetricsBase):
         self.diskspace = None
         self.snapshots = None
         self.networks = {}
+        self.flavors = {}
 
         self.updated_timestamp = None
 
@@ -1309,6 +1315,13 @@ class PoolsMetrics(MetricsBase):
 
         self.POOL_RESOURCES_NETWORK_ADDRESSES = _create_network_resource_metric('addresses')
 
+        self.POOL_RESOURCES_FLAVORS = Gauge(
+            'pool_resources_flavors',
+            'Limits and usage of pool flavors',
+            ['pool', 'dimension', 'flavor'],
+            registry=registry
+        )
+
         self.POOL_RESOURCES_UPDATED_TIMESTAMP = _create_pool_resource_metric('updated_timestamp')
 
         self.POOL_IMAGE_INFO_COUNT = Gauge(
@@ -1420,6 +1433,16 @@ class PoolsMetrics(MetricsBase):
                 self.POOL_RESOURCES_NETWORK_ADDRESSES \
                     .labels(pool=poolname, dimension='usage', network=network_name) \
                     .set(network_metrics.addresses if network_metrics.addresses is not None else float('NaN'))
+
+            for flavorname, count in pool_metrics.resources.limits.flavors.items():
+                self.POOL_RESOURCES_FLAVORS \
+                    .labels(pool=poolname, dimension='limit', flavor=flavorname) \
+                    .set(count)
+
+            for flavorname, count in pool_metrics.resources.usage.flavors.items():
+                self.POOL_RESOURCES_FLAVORS \
+                    .labels(pool=poolname, dimension='usage', flavor=flavorname) \
+                    .set(count)
 
             self.POOL_RESOURCES_UPDATED_TIMESTAMP \
                 .labels(pool=poolname, dimension='limit') \

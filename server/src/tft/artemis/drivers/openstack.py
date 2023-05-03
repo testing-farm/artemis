@@ -1024,6 +1024,26 @@ class OpenStackDriver(PoolDriver):
             resources.usage.networks[network_name] = PoolNetworkResources(addresses=int(network['Used IPs']))
             resources.limits.networks[network_name] = PoolNetworkResources(addresses=int(network['Total IPs']))
 
+        r_servers = self._run_os([
+            'server',
+            'list',
+            '--user', self.pool_config['username']
+        ], json_format=True, commandname='os.server-list')
+
+        if r_servers.is_error:
+            return Error(Failure.from_failure(
+                'failed to fetch server list',
+                r_servers.unwrap_error()
+            ))
+
+        for server in cast(List[Dict[str, str]], r_servers.unwrap()):
+            flavorname = server['Flavor']
+
+            if flavorname not in resources.usage.flavors:
+                resources.usage.flavors[flavorname] = 0
+
+            resources.usage.flavors[flavorname] += 1
+
         return Ok(resources)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
