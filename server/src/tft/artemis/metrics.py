@@ -2270,22 +2270,24 @@ class ShelvesMetrics(MetricsBase):
 
             self.HIT_COUNT \
                 .labels(shelfname=shelfname) \
-                .set(shelf_metrics.hit_count if shelf_metrics.hit_count is not None else float('NaN'))
+                ._value.set(shelf_metrics.hit_count if shelf_metrics.hit_count is not None else float('NaN'))
 
             self.MISS_COUNT \
                 .labels(shelfname=shelfname) \
-                .set(shelf_metrics.miss_count if shelf_metrics.miss_count is not None else float('NaN'))
+                ._value.set(shelf_metrics.miss_count if shelf_metrics.miss_count is not None else float('NaN'))
 
             self.REMOVALS \
                 .labels(shelfname=shelfname) \
-                .set(shelf_metrics.removals if shelf_metrics.removals is not None else float('NaN'))
+                ._value.set(shelf_metrics.removals if shelf_metrics.removals is not None else float('NaN'))
 
             self.FORCED_REMOVALS \
                 .labels(shelfname=shelfname) \
+                ._value \
                 .set(shelf_metrics.forced_removals if shelf_metrics.forced_removals is not None else float('NaN'))
 
             self.DEAD_GUEST_COUNT \
                 .labels(shelfname=shelfname) \
+                ._value \
                 .set(shelf_metrics.dead_guest_count if shelf_metrics.dead_guest_count is not None else float('NaN'))
 
 
