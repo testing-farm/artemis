@@ -2282,11 +2282,13 @@ class ShelvesMetrics(MetricsBase):
 
             self.FORCED_REMOVALS \
                 .labels(shelfname=shelfname) \
-                ._value.set(shelf_metrics.forced_removals if shelf_metrics.forced_removals is not None else float('NaN'))
+                ._value \
+                .set(shelf_metrics.forced_removals if shelf_metrics.forced_removals is not None else float('NaN'))
 
             self.DEAD_GUEST_COUNT \
                 .labels(shelfname=shelfname) \
-                ._value.set(shelf_metrics.dead_guest_count if shelf_metrics.dead_guest_count is not None else float('NaN'))
+                ._value \
+                .set(shelf_metrics.dead_guest_count if shelf_metrics.dead_guest_count is not None else float('NaN'))
 
 
 @dataclasses.dataclass
