@@ -174,65 +174,25 @@ def cmd_guest(cfg: Configuration) -> None:
     pass
 
 
-@cmd_guest.command(name='create', short_help='Create provisioning request')
-@click.option('--keyname', required=True, help='name of ssh key')
-@click.option('--priority-group', help='name of priority group')
-@click.option('--arch', required=True, help='architecture')
-@click.option('--hw-constraints', required=False, default=None, help='Optional HW constraints.')
-@click.option('--kickstart', required=False, default=None, help='Optional Kickstart specification.')
-@click.option('--shelf', required=False, default=None, help='Shelf to use to serve the request')
-@click.option('--compose', required=True, help='compose id')
-@click.option('--pool', help='name of the pool')
-@click.option('--snapshots', is_flag=True, help='require snapshots support')
-@click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
-@click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
-@click.option(
-    '--skip-prepare-verify-ssh/--no-skip-prepare-verify-ssh',
-    is_flag=True,
-    default=False,
-    help='If set, provisioning will skip SSH verification step.'
-)
-@click.option(
-    '--user-data',
-    default=None,
-    help='Optional JSON mapping to attach to the request.'
-)
-@click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
-@click.option('--log-types', '-l', default=None, metavar='logname:contenttype',
-              help='Types of logs that guest should support', type=click.Choice(ALLOWED_LOG_TYPES), multiple=True)
-@click.option(
-    '--watchdog-dispatch-delay',
-    type=int,
-    default=None,
-    help='Watchdog dispatch delay in seconds'
-)
-@click.option(
-    '--watchdog-period-delay',
-    type=int,
-    default=None,
-    help='Watchdog dispatch period in seconds'
-)
-@click.pass_obj
-def cmd_guest_create(
-        cfg: Configuration,
-        keyname: Optional[str] = None,
-        arch: Optional[str] = None,
-        hw_constraints: Optional[str] = None,
-        kickstart: Optional[str] = None,
-        shelf: Optional[str] = None,
-        compose: Optional[str] = None,
-        pool: Optional[str] = None,
-        snapshots: Optional[bool] = None,
-        spot_instance: Optional[bool] = None,
-        priority_group: Optional[str] = None,
-        post_install_script: Optional[str] = None,
-        skip_prepare_verify_ssh: bool = False,
-        user_data: Optional[str] = None,
-        wait: Optional[bool] = None,
-        log_types: Optional[List[str]] = None,
-        watchdog_dispatch_delay: Optional[int] = None,
-        watchdog_period_delay: Optional[int] = None
-) -> None:
+def _prepare_guest_request(
+    cfg: Configuration,
+    keyname: Optional[str] = None,
+    arch: Optional[str] = None,
+    hw_constraints: Optional[str] = None,
+    kickstart: Optional[str] = None,
+    shelf: Optional[str] = None,
+    compose: Optional[str] = None,
+    pool: Optional[str] = None,
+    snapshots: Optional[bool] = None,
+    spot_instance: Optional[bool] = None,
+    priority_group: Optional[str] = None,
+    post_install_script: Optional[str] = None,
+    skip_prepare_verify_ssh: bool = False,
+    user_data: Optional[str] = None,
+    log_types: Optional[List[str]] = None,
+    watchdog_dispatch_delay: Optional[int] = None,
+    watchdog_period_delay: Optional[int] = None
+) -> Dict[str, Any]:
     assert cfg.artemis_api_version is not None
 
     environment: Dict[str, Any] = {}
@@ -348,6 +308,89 @@ def cmd_guest_create(
     elif log_types:
         cfg.logger.error(f'--log-types is supported with API {API_FEATURE_VERSIONS["log-types"]} and newer')
         sys.exit(1)
+
+    return data
+
+
+@cmd_guest.command(name='create', short_help='Create provisioning request')
+@click.option('--keyname', required=True, help='name of ssh key')
+@click.option('--priority-group', help='name of priority group')
+@click.option('--arch', required=True, help='architecture')
+@click.option('--hw-constraints', required=False, default=None, help='Optional HW constraints.')
+@click.option('--kickstart', required=False, default=None, help='Optional Kickstart specification.')
+@click.option('--shelf', required=False, default=None, help='Shelf to use to serve the request')
+@click.option('--compose', required=True, help='compose id')
+@click.option('--pool', help='name of the pool')
+@click.option('--snapshots', is_flag=True, help='require snapshots support')
+@click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
+@click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
+@click.option(
+    '--skip-prepare-verify-ssh/--no-skip-prepare-verify-ssh',
+    is_flag=True,
+    default=False,
+    help='If set, provisioning will skip SSH verification step.'
+)
+@click.option(
+    '--user-data',
+    default=None,
+    help='Optional JSON mapping to attach to the request.'
+)
+@click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
+@click.option('--log-types', '-l', default=None, metavar='logname:contenttype',
+              help='Types of logs that guest should support', type=click.Choice(ALLOWED_LOG_TYPES), multiple=True)
+@click.option(
+    '--watchdog-dispatch-delay',
+    type=int,
+    default=None,
+    help='Watchdog dispatch delay in seconds'
+)
+@click.option(
+    '--watchdog-period-delay',
+    type=int,
+    default=None,
+    help='Watchdog dispatch period in seconds'
+)
+@click.pass_obj
+def cmd_guest_create(
+        cfg: Configuration,
+        keyname: Optional[str] = None,
+        arch: Optional[str] = None,
+        hw_constraints: Optional[str] = None,
+        kickstart: Optional[str] = None,
+        shelf: Optional[str] = None,
+        compose: Optional[str] = None,
+        pool: Optional[str] = None,
+        snapshots: Optional[bool] = None,
+        spot_instance: Optional[bool] = None,
+        priority_group: Optional[str] = None,
+        post_install_script: Optional[str] = None,
+        skip_prepare_verify_ssh: bool = False,
+        user_data: Optional[str] = None,
+        wait: Optional[bool] = None,
+        log_types: Optional[List[str]] = None,
+        watchdog_dispatch_delay: Optional[int] = None,
+        watchdog_period_delay: Optional[int] = None
+) -> None:
+    data = _prepare_guest_request(
+        cfg,
+        keyname=keyname,
+        arch=arch,
+        hw_constraints=hw_constraints,
+        kickstart=kickstart,
+        shelf=shelf,
+        compose=compose,
+        pool=pool,
+        snapshots=snapshots,
+        spot_instance=spot_instance,
+        priority_group=priority_group,
+        post_install_script=post_install_script,
+        skip_prepare_verify_ssh=skip_prepare_verify_ssh,
+        user_data=user_data,
+        log_types=log_types,
+        watchdog_dispatch_delay=watchdog_dispatch_delay,
+        watchdog_period_delay=watchdog_period_delay
+
+    )
 
     response = artemis_create(cfg, 'guests/', data)
 
@@ -984,6 +1027,111 @@ def cmd_cancel_shelved_guest(cfg: Configuration, guestnames: List[str], continue
 
         else:
             cfg.logger.unhandled_api_response(response, exit=not continue_on_error)
+
+
+@cmd_shelf_guest.command(name='preprovision', short_help='Create provisioning request')
+@click.option('--keyname', required=True, help='name of ssh key')
+@click.option('--priority-group', help='name of priority group')
+@click.option('--arch', required=True, help='architecture')
+@click.option('--hw-constraints', required=False, default=None, help='Optional HW constraints.')
+@click.option('--kickstart', required=False, default=None, help='Optional Kickstart specification.')
+@click.option('--shelf', required=True, default=None, help='Shelf to use to serve the request')
+@click.option('--compose', required=True, help='compose id')
+@click.option('--pool', help='name of the pool')
+@click.option('--snapshots', is_flag=True, help='require snapshots support')
+@click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
+@click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
+@click.option(
+    '--skip-prepare-verify-ssh/--no-skip-prepare-verify-ssh',
+    is_flag=True,
+    default=False,
+    help='If set, provisioning will skip SSH verification step.'
+)
+@click.option(
+    '--user-data',
+    default=None,
+    help='Optional JSON mapping to attach to the request.'
+)
+# @click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
+@click.option('--log-types', '-l', default=None, metavar='logname:contenttype',
+              help='Types of logs that guest should support', type=click.Choice(ALLOWED_LOG_TYPES), multiple=True)
+@click.option(
+    '--watchdog-dispatch-delay',
+    type=int,
+    default=None,
+    help='Watchdog dispatch delay in seconds'
+)
+@click.option(
+    '--watchdog-period-delay',
+    type=int,
+    default=None,
+    help='Watchdog dispatch period in seconds'
+)
+@click.option(
+    '--number', type=int, default=None, required=True
+)
+@click.pass_obj
+def cmd_shelf_guest_preprovision(
+    cfg: Configuration,
+    shelf: str,
+    number: int,
+    keyname: Optional[str] = None,
+    arch: Optional[str] = None,
+    hw_constraints: Optional[str] = None,
+    kickstart: Optional[str] = None,
+    compose: Optional[str] = None,
+    pool: Optional[str] = None,
+    snapshots: Optional[bool] = None,
+    spot_instance: Optional[bool] = None,
+    priority_group: Optional[str] = None,
+    post_install_script: Optional[str] = None,
+    skip_prepare_verify_ssh: bool = False,
+    user_data: Optional[str] = None,
+    # wait: Optional[bool] = None,
+    log_types: Optional[List[str]] = None,
+    watchdog_dispatch_delay: Optional[int] = None,
+    watchdog_period_delay: Optional[int] = None,
+) -> None:
+    data = _prepare_guest_request(
+        cfg,
+        keyname=keyname,
+        arch=arch,
+        hw_constraints=hw_constraints,
+        kickstart=kickstart,
+        shelf=shelf,
+        compose=compose,
+        pool=pool,
+        snapshots=snapshots,
+        spot_instance=spot_instance,
+        priority_group=priority_group,
+        post_install_script=post_install_script,
+        skip_prepare_verify_ssh=skip_prepare_verify_ssh,
+        user_data=user_data,
+        log_types=log_types,
+        watchdog_dispatch_delay=watchdog_dispatch_delay,
+        watchdog_period_delay=watchdog_period_delay
+    )
+
+    # response = artemis_create(cfg, f'shelves/{shelf}/preprovision', {'count': number, 'guest': data})
+
+    response = fetch_artemis(
+        cfg,
+        f'/shelves/{shelf}/preprovision',
+        method='post',
+        request_kwargs={
+            'json': {'count': number, 'guest': data}
+        },
+        allow_statuses=[202]
+    )
+
+    if response.ok:
+        cfg.logger.success('preprovisioning request submitted')
+
+    elif response.status_code == 404:
+        cfg.logger.error(f'shelf {shelf} not found')
+
+    else:
+        cfg.logger.unhandled_api_response(response)
 
 
 @cli_root.group(name='user', short_help='User management commands')
