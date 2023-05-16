@@ -4,6 +4,14 @@ include ../Makefile.lib
 
 ##@ -- Server targets ---------------------
 
+##@ Installation
+
+install-no-drivers: _env-info  ## Install component alone, no development tools, no driver requirements
+	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
+	poetry env info $$POETRY_ADDOPTS
+	poetry install -v --no-dev --remove-untracked $$POETRY_ADDOPTS
+
+
 ##@ Tests
 
 tests: .common-tests test-db-schema-revisions test-integration
