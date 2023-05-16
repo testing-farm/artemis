@@ -62,7 +62,18 @@ if [ -z "$ARTEMIS_DB_URL" ]; then
 fi
 
 if [ -z "$ARTEMIS_BROKER_URL" ]; then
-    export ARTEMIS_BROKER_URL="${ARTEMIS_BROKER_PROTOCOL}://${ARTEMIS_BROKER_USERNAME}:${ARTEMIS_BROKER_PASSWORD}@${ARTEMIS_BROKER_HOST}"
+    ARTEMIS_BROKER_URL="${ARTEMIS_BROKER_PROTOCOL}://${ARTEMIS_BROKER_USERNAME}:${ARTEMIS_BROKER_PASSWORD}@${ARTEMIS_BROKER_HOST}"
+    extra_variables=
+
+    if [ ! -z "$ARTEMIS_BROKER_HEARTBEAT_TIMEOUT" ]; then
+        extra_variables="${extra_variables:+$extra_variables&}heartbeat=$ARTEMIS_BROKER_HEARTBEAT_TIMEOUT"
+    fi
+
+    if [ ! -z "$ARTEMIS_BROKER_BLOCKED_CONNECTION_TIMEOUT" ]; then
+        extra_variables="${extra_variables:+$extra_variables&}blocked_connection_timeout=$ARTEMIS_BROKER_BLOCKED_CONNECTION_TIMEOUT"
+    fi
+
+    export ARTEMIS_BROKER_URL="${ARTEMIS_BROKER_URL}${extra_variables:+/?$extra_variables}"
 fi
 
 cd /APP
