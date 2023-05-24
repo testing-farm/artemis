@@ -29,7 +29,7 @@ ENV HOME=/tmp
 # default kerberos ccache file
 ENV KRB_CCACHE=/dev/shm/ccache
 
-ENV PATH="/tmp/.poetry/bin:$PATH"
+ENV PATH="/tmp/.local/bin:$PATH"
 
 #
 # Prepare virtual environment and install all required dependencies
@@ -52,7 +52,6 @@ RUN    microdnf -y install bash \
                            openssh-clients \
                            openssl-devel \
                            postgresql \
-                           poetry \
                            python3.9 \
                            # required by `openstack`
                            which \
@@ -63,6 +62,7 @@ RUN    microdnf -y install bash \
     && update-crypto-policies --set LEGACY \
     && microdnf clean all \
     && rm -rf /var/cache/dnf \
+    && curl -sSL https://install.python-poetry.org | python3.9 - --version 1.4.2 \
     && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
 
 #
