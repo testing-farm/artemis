@@ -24,6 +24,7 @@ click_completion = "*"
 semver = "*"
 stackprinter = "*"
 rich = "*"
+setuptools = "*"
 
 [tool.poetry.dev-dependencies]
 # All development dependencies are left unpinned, untill we run into troubles with a particular version.
