@@ -239,7 +239,6 @@ def cmd_guest_create(
 
     data: Dict[str, Any] = {
         'environment': environment,
-        'shelfname': shelf,
         'keyname': keyname,
         'priority_group': 'default-priority',
         'user_data': {}
@@ -294,6 +293,12 @@ def cmd_guest_create(
 
     elif kickstart is not None:
         cfg.logger.error(f'--kickstart is supported with API {API_FEATURE_VERSIONS["kickstart"]} and newer')
+
+    if cfg.artemis_api_version >= API_FEATURE_VERSIONS['shelving']:
+        data['shelfname'] = shelf
+
+    elif shelf is not None:
+        cfg.logger.error(f'--shelf is supported with API {API_FEATURE_VERSIONS["shelving"]} and newer')
 
     if user_data is not None:
         try:

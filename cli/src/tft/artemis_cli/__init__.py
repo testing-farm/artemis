@@ -568,7 +568,7 @@ def print_guests(
                 f'{guest["ctime"]}\n{guest["state_mtime"]}\n{guest.get("mtime", "")}',
                 guest['address'],
                 RichYAML.from_data(guest['user_data']) if guest['user_data'] else '',
-                guest['shelf']
+                guest.get('shelf', '')
             )
 
         return table
