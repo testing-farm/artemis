@@ -1836,7 +1836,7 @@ class AWSDriver(PoolDriver):
         if r_tag.is_error:
             return Error(Failure.from_failure(
                 'failed to tag resource',
-                r_output.unwrap_error().update(
+                r_tag.unwrap_error().update(
                     tags=tags,
                     resource_ids=taggable_resource_ids
                 )
@@ -1853,7 +1853,7 @@ class AWSDriver(PoolDriver):
             if r_enable_metadata.is_error:
                 return Error(Failure.from_failure(
                     'failed to enable instance tags in metadata',
-                    r_output.unwrap_error()
+                    r_enable_metadata.unwrap_error()
                 ))
 
         address = instance['PrivateIpAddress']
