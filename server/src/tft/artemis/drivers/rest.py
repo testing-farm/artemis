@@ -5,7 +5,7 @@ import base64
 import dataclasses
 import json
 import threading
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 import gluetool.log
 import gluetool.utils
@@ -17,8 +17,8 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure
 from ..db import GuestRequest
 from ..metrics import PoolResourcesMetrics
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolData, PoolDriver, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, ConfigCapabilitiesType, PoolCapabilities, PoolData, PoolDriver, \
+    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs
 
 
 @dataclasses.dataclass
@@ -48,6 +48,15 @@ class RestDriver(PoolDriver):
     ) -> None:
         super().__init__(logger, poolname, pool_config)
         self.url = self.pool_config["url"]
+
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+
+        capabilities_config = cast(ConfigCapabilitiesType, self.pool_config.get('capabilities'))
+        if capabilities_config:
+            if 'hostname' in capabilities_config:
+                capabilities.supports_hostnames = True
+
+        return Ok(capabilities)
 
     def can_acquire(
         self,
