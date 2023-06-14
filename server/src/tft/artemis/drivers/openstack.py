@@ -15,8 +15,8 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure, JSONType, log_dict_yaml, process_output_to_str
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
-from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, \
-    FlavorVirtualization
+from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, FlavorNetwork, \
+    FlavorNetworks, FlavorVirtualization
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, ConsoleUrlData, GuestLogUpdateProgress, \
@@ -592,13 +592,6 @@ class OpenStackDriver(PoolDriver):
             constraints = r_constraints.unwrap()
             assert constraints is not None
 
-            r_uses_network = constraints.uses_constraint(logger, 'network')
-            if r_uses_network.is_error:
-                return Error(r_uses_network.unwrap_error())
-
-            if r_uses_network.unwrap():
-                return Ok((False, 'network HW constraint not supported'))
-
         r_images = self.image_info_mapper.map_or_none(logger, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
@@ -1127,6 +1120,7 @@ class OpenStackDriver(PoolDriver):
                             size=UNITS.Quantity(int(flavor['Disk']), UNITS.gibibytes)
                         )
                     ]),
+                    network=FlavorNetworks([FlavorNetwork(type='eth')]),
                     virtualization=FlavorVirtualization(
                         is_virtualized=True
                     )

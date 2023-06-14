@@ -26,7 +26,7 @@ from ..cache import get_cached_set_as_list, get_cached_set_item
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorBoot, FlavorBootMethodType, FlavorCpu, \
-    FlavorVirtualization, Operator, SizeType
+    FlavorNetwork, FlavorNetworks, FlavorVirtualization, Operator, SizeType
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
@@ -98,6 +98,24 @@ EBS_DEVICE_NAMES = [
 ]
 
 
+# Type of container holding network interface info.
+class APINetworkInterfaceType(TypedDict, total=True):
+    DeviceIndex: int
+    SubnetId: str
+    DeleteOnTermination: bool
+    Groups: List[str]
+    AssociatePublicIpAddress: bool
+
+
+APINetworkInterfacesType = List[APINetworkInterfaceType]
+
+
+class APINetworkInfo(TypedDict, total=False):
+    MaximumNetworkInterfaces: int
+    MaximumNetworkCards: int
+    DefaultNetworkCardIndex: int
+
+
 class APIImageType(TypedDict):
     Name: Optional[str]
     ImageId: str
@@ -157,17 +175,9 @@ AWS_INSTANCE_SPECIFICATION = Template("""
   "Placement": {
     "AvailabilityZone": "{{ availability_zone }}"
   },
-  "NetworkInterfaces": [
-    {
-      "DeviceIndex": 0,
-      "SubnetId": "{{ subnet_id }}",
-      "DeleteOnTermination": true,
-      "Groups": [
-        "{{ security_group }}"
-      ],
-      "AssociatePublicIpAddress": false
-    }
-  ],
+  {% if network_interfaces -%}
+  "NetworkInterfaces": {{ network_interfaces | to_json }},
+  {% endif -%}
   {% if block_device_mappings -%}
   "BlockDeviceMappings": {{ block_device_mappings | to_json }},
   {% endif -%}
@@ -909,6 +919,282 @@ def create_block_device_mappings(
     return Ok(r_mappings.unwrap())
 
 
+class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfaceType]):
+    """
+    This wrapper over AWS EC2 API network interfaces. Its main purpose is to
+    host helper methods we use for modifications of network interface list.
+    """
+
+    def __init__(self, interfaces: Optional[List[APINetworkInterfaceType]] = None):
+        super().__init__()
+
+        self.data = interfaces[:] if interfaces else []
+
+    # Abstract methods we need to define to keep types happy, since MutableSequence leaves them to us.
+    def __delitem__(self, index: int) -> None:  # type: ignore[override]  # does not match supertype, but it's correct
+        del self.data[index]
+
+    def __getitem__(  # type: ignore[override]  # does not match supertype, but it's correct
+        self,
+        index: int
+    ) -> APINetworkInterfaceType:
+        return self.data[index]
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __setitem__(  # type: ignore[override]  # does not match supertype, but it's correct
+        self,
+        index: int,
+        value: APINetworkInterfaceType
+    ) -> None:
+        self.data[index] = value
+
+    def insert(self, index: int, value: APINetworkInterfaceType) -> None:
+        self[index] = value
+
+    # Override serialization - we're fine with quite a trivial approach.
+    def serialize(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], self.data)
+
+    @classmethod
+    def unserialize(cls, serialized: Dict[str, Any]) -> 'NetworkInterfaces':
+        cast_serialized = cast(APINetworkInterfacesType, serialized)
+
+        return NetworkInterfaces(cast_serialized)
+
+    # These two methods would deserve their own class, representing a single block device mapping, but, because
+    # such mapping isn't plain str/str dictionary, we would have to write so many checks and types to deal with
+    # the variants. It's more readable to have them here, namespaced, rather than top-level functions.
+    @staticmethod
+    def create_nic(
+        device_index: int,
+        subnet_id: str,
+        security_group: str,
+        delete_on_termination: bool = True,
+        associate_public_ip_address: bool = False
+    ) -> Result[APINetworkInterfaceType, Failure]:
+        nic: APINetworkInterfaceType = {
+            'DeviceIndex': device_index,
+            'SubnetId': subnet_id,
+            'DeleteOnTermination': delete_on_termination,
+            'Groups': [security_group],
+            'AssociatePublicIpAddress': associate_public_ip_address
+        }
+
+        return Ok(nic)
+
+    @staticmethod
+    def update_nic(
+        nic: APINetworkInterfaceType,
+        device_index: Optional[int] = None,
+        subnet_id: Optional[str] = None,
+        security_group: Optional[str] = None,
+        delete_on_termination: Optional[bool] = None,
+        associate_public_ip_address: Optional[bool] = None
+    ) -> Result[APINetworkInterfaceType, Failure]:
+        if device_index is not None:
+            nic['DeviceIndex'] = device_index
+
+        if subnet_id is not None:
+            nic['SubnetId'] = subnet_id
+
+        if delete_on_termination is not None:
+            nic['DeleteOnTermination'] = delete_on_termination
+
+        if security_group is not None:
+            nic['Groups'] = [security_group]
+
+        if associate_public_ip_address is not None:
+            nic['AssociatePublicIpAddress'] = associate_public_ip_address
+
+        return Ok(nic)
+
+    def _get_nic(
+        self,
+        index: int
+    ) -> Optional[APINetworkInterfaceType]:
+        try:
+            return self.data[index]
+
+        except IndexError:
+            return None
+
+    def find_free_device_index(self) -> int:
+        indices = [i for i in range(len(self.data) + 1)]
+
+        for nic in self.data:
+            if nic['DeviceIndex'] in indices:
+                indices.remove(nic['DeviceIndex'])
+
+        return indices[0]
+
+    def enlarge(
+        self,
+        count: int,
+        subnet_id: str,
+        security_group: str,
+        delete_on_termination: bool,
+        associate_public_ip_address: bool
+    ) -> Result[None, Failure]:
+        current_count = len(self)
+
+        for _ in range(count - current_count):
+            device_index = self.find_free_device_index()
+
+            r_append = self.append_nic(
+                device_index,
+                subnet_id,
+                security_group,
+                delete_on_termination=delete_on_termination,
+                associate_public_ip_address=associate_public_ip_address
+            )
+
+            if r_append.is_error:
+                return Error(r_append.unwrap_error())
+
+        return Ok(None)
+
+    def append_nic(
+        self,
+        device_index: int,
+        subnet_id: str,
+        security_group: str,
+        delete_on_termination: bool = True,
+        associate_public_ip_address: bool = False
+    ) -> Result[APINetworkInterfaceType, Failure]:
+        r_create = NetworkInterfaces.create_nic(
+            device_index,
+            subnet_id,
+            security_group,
+            delete_on_termination=delete_on_termination,
+            associate_public_ip_address=associate_public_ip_address
+        )
+
+        if r_create.is_ok:
+            self.data.append(r_create.unwrap())
+
+        return r_create
+
+
+def _honor_constraint_network(
+    logger: ContextAdapter,
+    pool: 'AWSDriver',
+    constraint: Constraint,
+    nics: NetworkInterfaces,
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavor: Flavor,
+) -> Result[bool, Failure]:
+    _, index, child_property_name = constraint.expand_name()
+
+    if child_property_name == 'type':
+        assert index is not None
+
+        r_enlarge = nics.enlarge(
+            index + 1,
+            pool.pool_config['subnet-id'],
+            pool.pool_config['security-group'],
+            delete_on_termination=True,
+            associate_public_ip_address=False
+        )
+
+        if r_enlarge.is_error:
+            return Error(r_enlarge.unwrap_error())
+
+        return Ok(True)
+
+    return Ok(False)
+
+
+def setup_extra_network_interfaces(
+    logger: ContextAdapter,
+    pool: 'AWSDriver',
+    nics: NetworkInterfaces,
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavor: Flavor
+) -> Result[NetworkInterfaces, Failure]:
+    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+
+    if r_spans.is_error:
+        return Error(r_spans.unwrap_error())
+
+    spans = r_spans.unwrap()
+
+    if not spans:
+        return Ok(nics)
+
+    # TODO: this could be a nice algorithm, picking the best span instead of the first one.
+    span = cast(List[Constraint], spans[0])
+
+    log_dict_yaml(logger.debug, 'selected span', [str(constraint) for constraint in span])
+
+    for constraint in span:
+        logger.debug(f'  {constraint}')
+
+        property_name, _, _ = (constraint.original_constraint or constraint).expand_name()
+
+        if property_name != 'network':
+            logger.debug('    ignored')
+            continue
+
+        r_consumed = _honor_constraint_network(
+            logger,
+            pool,
+            constraint.original_constraint or constraint,
+            nics,
+            guest_request,
+            image,
+            flavor
+        )
+
+        if r_consumed.is_error:
+            return Error(r_consumed.unwrap_error())
+
+        if r_consumed.unwrap() is True:
+            continue
+
+        return Error(Failure(
+            'cannot honor constraint',
+            constraint=repr(constraint)
+        ))
+
+    return Ok(nics)
+
+
+def create_network_interfaces(
+    logger: ContextAdapter,
+    pool: 'AWSDriver',
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavor: AWSFlavor
+) -> Result[NetworkInterfaces, Failure]:
+    nics = NetworkInterfaces()
+
+    nics.append_nic(
+        0,
+        pool.pool_config['subnet-id'],
+        pool.pool_config['security-group'],
+        delete_on_termination=True,
+        associate_public_ip_address=False
+    )
+
+    r_nics = setup_extra_network_interfaces(
+        logger,
+        pool,
+        nics,
+        guest_request,
+        image,
+        flavor,
+    )
+
+    if r_nics.is_error:
+        return r_nics
+
+    return Ok(r_nics.unwrap())
+
+
 def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None]:
     """
     Sanitize tags to make their values acceptable for AWS API and CLI.
@@ -1129,16 +1415,6 @@ class AWSDriver(PoolDriver):
             if r_constraints.is_error:
                 return Error(r_constraints.unwrap_error())
 
-            constraints = r_constraints.unwrap()
-            assert constraints is not None
-
-            r_uses_network = constraints.uses_constraint(logger, 'network')
-            if r_uses_network.is_error:
-                return Error(r_uses_network.unwrap_error())
-
-            if r_uses_network.unwrap():
-                return Ok((False, 'network HW constraint not supported'))
-
         r_images = self.image_info_mapper.map_or_none(logger, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
@@ -1188,7 +1464,7 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: AWSPoolImageInfo
-    ) -> Result[Optional[Flavor], Failure]:
+    ) -> Result[Optional[AWSFlavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger,
             guest_request.environment
@@ -1242,10 +1518,15 @@ class AWSDriver(PoolDriver):
                     poolname=self.poolname
                 )
 
-                return self._map_environment_to_flavor_info_by_cache_by_name_or_none(
+                r_default_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(
                     logger,
                     self.pool_config['default-instance-type']
                 )
+
+                if r_default_flavor.is_error:
+                    return Error(r_default_flavor.unwrap_error())
+
+                return Ok(cast(AWSFlavor, r_default_flavor.unwrap()))
 
             guest_request.log_warning_event(
                 logger,
@@ -1273,7 +1554,7 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: AWSPoolImageInfo
-    ) -> Result[Flavor, Failure]:
+    ) -> Result[AWSFlavor, Failure]:
         r_flavor = self._env_to_instance_type_or_none(logger, session, guest_request, image)
 
         if r_flavor.is_error:
@@ -1492,6 +1773,21 @@ class AWSDriver(PoolDriver):
             default_root_disk_size=default_root_disk_size
         )
 
+    def _create_network_interfaces(
+        self,
+        logger: ContextAdapter,
+        guest_request: GuestRequest,
+        image: AWSPoolImageInfo,
+        flavor: AWSFlavor
+    ) -> Result[NetworkInterfaces, Failure]:
+        return create_network_interfaces(
+            logger,
+            self,
+            guest_request,
+            image,
+            flavor
+        )
+
     def _create_user_data(
         self,
         logger: ContextAdapter,
@@ -1513,7 +1809,7 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        instance_type: Flavor,
+        instance_type: AWSFlavor,
         image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
@@ -1602,7 +1898,7 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        instance_type: Flavor,
+        instance_type: AWSFlavor,
         image: AWSPoolImageInfo
     ) -> Result[ProvisioningProgress, Failure]:
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
@@ -1628,6 +1924,11 @@ class AWSDriver(PoolDriver):
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
 
+        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type)
+
+        if r_network_interfaces.is_error:
+            return Error(r_network_interfaces.unwrap_error())
+
         user_data = self._create_user_data(logger, guest_request)
 
         specification = AWS_INSTANCE_SPECIFICATION.render(
@@ -1638,6 +1939,7 @@ class AWSDriver(PoolDriver):
             subnet_id=self.pool_config['subnet-id'],
             security_group=self.pool_config['security-group'],
             user_data=_base64_encode(user_data) if user_data else '',
+            network_interfaces=r_network_interfaces.unwrap().serialize(),
             block_device_mappings=r_block_device_mappings.unwrap().serialize()
         )
 
@@ -2000,7 +2302,7 @@ class AWSDriver(PoolDriver):
 
         images = r_images.unwrap()
 
-        pairs: List[Tuple[AWSPoolImageInfo, Flavor]] = []
+        pairs: List[Tuple[AWSPoolImageInfo, AWSFlavor]] = []
 
         for image in images:
             r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
@@ -2229,6 +2531,15 @@ class AWSDriver(PoolDriver):
                     cores = int(flavor['VCpuInfo']['DefaultCores'])
                     threads_per_core = int(flavor['VCpuInfo']['DefaultThreadsPerCore'])
 
+                    network = FlavorNetworks([FlavorNetwork(type='eth')])
+
+                    nic_limit = flavor['NetworkInfo']['MaximumNetworkInterfaces']
+
+                    if nic_limit > 1:
+                        network.items += [
+                            FlavorNetwork(type='eth', is_expansion=True, max_additional_items=nic_limit - 1)
+                        ]
+
                     flavors.append(AWSFlavor(
                         name=flavor['InstanceType'],
                         id=flavor['InstanceType'],
@@ -2240,6 +2551,7 @@ class AWSDriver(PoolDriver):
                             processors=vcpus,
                             threads_per_core=threads_per_core
                         ),
+                        network=network,
                         # memory is reported in MB
                         memory=UNITS.Quantity(int(flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
                         virtualization=FlavorVirtualization(

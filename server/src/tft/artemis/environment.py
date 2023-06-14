@@ -479,6 +479,13 @@ class FlavorNetwork(_FlavorSubsystemContainer):
     #: Type of the device.
     type: Optional[str] = None
 
+    # TODO: move to properties of whole Networks container, or use class inheritance,
+    # we can't now because `FlavorNetworks` can load just one type of items.
+    is_expansion: bool = False
+
+    # `items`, or `nics` - we want to generalize this, keep using generic naming.
+    max_additional_items: int = 0
+
 
 # Note: the HW requirement is called `network`, and holds a list of mappings. We have a `FlavorNetwork` to track
 # each of those mappings, but we need a class for their container, with methods for (un)serialization. Therefore
@@ -496,6 +503,42 @@ class FlavorNetworks(_FlavorSequenceContainer[FlavorNetwork]):
 
     ITEM_CLASS = FlavorNetwork
     ITEM_LABEL = 'network'
+
+    # Special attributes - we cannot call `len()` in conditions constraits generate, and sequences don't have
+    # any attribute we could inspect. And we also need to take expanion into account. Hence adding our own.
+    #
+    # TODO: and we want to move this into base class!
+    @property
+    def length(self) -> int:
+        """
+        Return "real" length of this container.
+
+        :returns: number of stored items.
+        """
+
+        return len(self.items)
+
+    @property
+    def expanded_length(self) -> int:
+        """
+        Return "expanded" length of this container.
+
+        It is computed as the number of static items plus the amount of additional items allowed by expansion.
+
+        :returns: number of allowed items.
+        """
+
+        if not self.items:
+            return 0
+
+        expansion = self.items[-1]
+
+        if expansion.is_expansion is False:
+            return len(self.items)
+
+        # Dropping 1 item from `len()` result, to compensate for the fact expansion item should not be counter
+        # among the "real" items, it is instead replaced by N additional items.
+        return len(self.items) - 1 + expansion.max_additional_items
 
 
 @dataclasses.dataclass(repr=False)
