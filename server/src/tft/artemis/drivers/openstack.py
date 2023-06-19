@@ -159,6 +159,7 @@ class OpenStackDriver(PoolDriver):
         return HookImageInfoMapper(self, 'OPENSTACK_ENVIRONMENT_TO_IMAGE')
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+        capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
         capabilities.supports_console_url = True
         capabilities.supports_snapshots = True

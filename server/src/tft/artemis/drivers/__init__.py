@@ -166,6 +166,7 @@ ConfigCapabilitiesType = TypedDict(
     'ConfigCapabilitiesType',
     {
         'supported-architectures': Union[Literal['any'], List[str]],
+        'supports-hostnames': Union[str, bool],
         'supports-snapshots': Union[str, bool],
         'supports-spot-instances': Union[str, bool],
         'disable-guest-logs': List[ConfigCapabilitiesDisableGuestLogType]
@@ -1795,6 +1796,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if 'supports-spot-instances' in capabilities_config:
             capabilities.supports_spot_instances = gluetool.utils.normalize_bool_option(
                 capabilities_config['supports-spot-instances']
+            )
+
+        if 'supports-hostnames' in capabilities_config:
+            capabilities.supports_hostnames = gluetool.utils.normalize_bool_option(
+                capabilities_config['supports-hostnames']
             )
 
         r_adjusted_capabilities = self.adjust_capabilities(capabilities)

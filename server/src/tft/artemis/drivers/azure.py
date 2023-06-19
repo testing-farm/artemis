@@ -81,6 +81,7 @@ class AzureDriver(PoolDriver):
         return HookImageInfoMapper(self, 'AZURE_ENVIRONMENT_TO_IMAGE')
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+        capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
 
         return Ok(capabilities)
