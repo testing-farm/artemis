@@ -312,6 +312,9 @@ properties:
                       enum:
                         - "any"
 
+                supports-hostnames:
+                  type: boolean
+
                 disable-guest-logs:
                   type: array
                   items:
