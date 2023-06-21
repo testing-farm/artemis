@@ -2705,7 +2705,7 @@ name = "cffi"
 version = "1.15.1"
 description = "Foreign Function Interface for Python calling C code."
 category = "main"
-optional = true
+optional = false
 python-versions = "*"
 files = [
     {file = "cffi-1.15.1-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:a66d3508133af6e8548451b25058d5812812ec3798c886bf38ed24a98216fab2"},
@@ -2975,7 +2975,7 @@ name = "cryptography"
 version = "38.0.4"
 description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.6"
 files = [
     {file = "cryptography-38.0.4-cp36-abi3-macosx_10_10_universal2.whl", hash = "sha256:2fa36a7b2cc0998a3a4d5af26ccb6273f3df133d61da2ba13b3286261e7efb70"},
@@ -4724,7 +4724,7 @@ name = "pycparser"
 version = "2.21"
 description = "C parser in Python"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 files = [
     {file = "pycparser-2.21-py2.py3-none-any.whl", hash = "sha256:8ee45429555515e1f6b185e78100aea234072576aa43ab53aefcae078162fca9"},
@@ -5801,6 +5801,7 @@ files = [
 ]
 
 [package.dependencies]
+cryptography = {version = ">=0.6", optional = true, markers = "extra == \"encrypted\""}
 SQLAlchemy = ">=1.3"
 
 [package.extras]
@@ -6214,4 +6215,4 @@ full = ["awscli", "azure-cli", "beaker-client", "python-openstackclient"]
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.9.0"
-content-hash = "1cc7b32969fb855fd01bf146752482b8f95dc318a20662aa8cf7c35ec236063f"
+content-hash = "d2a4eb477150ea914846552fc6133b93dc893be795e4bf7f232d9863804e7775"
