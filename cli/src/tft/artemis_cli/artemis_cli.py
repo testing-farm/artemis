@@ -44,6 +44,7 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('fixed-virtualization-hypervisor-enum', '0.0.58'),
         ('shelving', '0.0.56'),
         ('watchdog-delay', '0.0.56'),
         ('fixed-hw-validation', '0.0.55'),
