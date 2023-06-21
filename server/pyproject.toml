@@ -42,7 +42,7 @@ psycopg2 = "*"
 python-openstackclient = { version = "*", optional = true }
 # See https://github.com/python-poetry/poetry/issues/4402
 sqlalchemy = ">=1.4,<1.4.23"
-sqlalchemy-utils = "*"
+sqlalchemy-utils = { version = "*", extras = ["encrypted"] }
 stackprinter = "*"
 typing-extensions = "*"
 periodiq = "*"
