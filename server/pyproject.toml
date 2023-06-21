@@ -27,6 +27,7 @@ beaker-client = { version = "*", optional = true }
 # BeautifulSoup could be updated but it's pinned by gluetool to an older version...
 # beautifulsoup4 = "^4.9.3"
 click = "*"
+cryptography = "*"
 dramatiq = { version = "*", extras = ["rabbitmq"] }
 gluetool = "*"
 gunicorn = "*"
