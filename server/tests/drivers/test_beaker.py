@@ -874,15 +874,11 @@ def test_avoid_hostnames(
         """,
         ['--kernel-options', 'ksdevice=eth1',
          '--kernel-options-post', 'quiet',
-         '--ks-meta', '"no-autopart harness=restraint"',
-         '--ks-append', 'lang en_US.UTF-8',
-         '--ks-append', 'keyboard us',
-         '--ks-append', '%pre --log=/tmp/kickstart_pre.log',
-         '--ks-append', 'echo \"Pre-install ks script\"',
-         '--ks-append', '%end',
-         '--ks-append', '%post --nochroot',
-         '--ks-append', 'umount --recursive /mnt/sysimage',
-         '--ks-append', '%end']
+         '--ks-meta', '"no-autopart harness=restraint"\n',
+         '--ks-append', 'lang en_US.UTF-8\nkeyboard us\n',
+         '--ks-append', '%pre --log=/tmp/kickstart_pre.log\necho \"Pre-install ks script\"\n%end\n',
+         '--ks-append', '%post --nochroot\numount --recursive /mnt/sysimage\n%end\n'
+         ]
     )
 ], ids=[
     'full-ks',

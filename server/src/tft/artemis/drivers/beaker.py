@@ -852,25 +852,22 @@ class BeakerDriver(PoolDriver):
         options = []
 
         if kickstart.kernel_options is not None:
-            options += ['--kernel-options', kickstart.kernel_options.strip()]
+            options += ['--kernel-options', kickstart.kernel_options]
 
         if kickstart.kernel_options_post is not None:
-            options += ['--kernel-options-post', kickstart.kernel_options_post.strip()]
+            options += ['--kernel-options-post', kickstart.kernel_options_post]
 
         if kickstart.metadata is not None:
-            options += ['--ks-meta', kickstart.metadata.strip()]
+            options += ['--ks-meta', kickstart.metadata]
 
         if kickstart.script is not None:
-            for line in kickstart.script.splitlines():
-                options += ['--ks-append', line.strip()]
+            options += ['--ks-append', kickstart.script]
 
         if kickstart.pre_install is not None:
-            for line in kickstart.pre_install.splitlines():
-                options += ['--ks-append', line.strip()]
+            options += ['--ks-append', kickstart.pre_install]
 
         if kickstart.post_install is not None:
-            for line in kickstart.post_install.splitlines():
-                options += ['--ks-append', line.strip()]
+            options += ['--ks-append', kickstart.post_install]
 
         return options
 
