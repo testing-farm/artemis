@@ -1,0 +1,179 @@
+---
+
+#
+# This is a sample configuration file for Artemis service. Feel free to modify, comment out or
+# uncomment keys below to match your desired setup.
+#
+
+# SSH keys
+#
+# Since Artemis requires a working SSH connection to all provisioned guests, it needs to be given an
+# SSH key to use for these connections. Usually, cloud services install this SSH key on all
+# provisioned machines, therefore matching the Artemis setup.
+ssh-keys:
+    # Name key is requried, and Artemis will need at least the "master-key" to operate.
+  - name: master-key
+
+    # SSH key fingerprint
+    fingerprint: ""
+
+    # Public part of your SSH key
+    public: "ssh-rsa YOURSSHPUBLICKEY"
+
+    # Private part of your SSH key - do include "BEGIN" and "END" delimiters!
+    private: |
+      ...
+
+
+# Guest tags
+#
+# Provisioned guests can be "tagged" with key/value pairs. The following mapping
+# lists deployment-wide tags to apply, and there can be also pool-specific tags.
+guest_tags:
+  ProvisionedBy: Artemis
+  Owner: my-name
+
+
+# Pools
+#
+# Define guest sources, pools of machines for Artemis to pick from.
+#
+# There can be multiple pools with the same `driver` key. Feel free to copy & paste
+# a corresponding template as many times as you need, and comment out those you do
+# not need.
+pools:
+
+  # An AWS pool
+  - name: aws
+    driver: aws
+
+    # Pool-specific tags, applied to all instances. Adjust when needed, remove or add new ones.
+    # guest_tags:
+    #   ATag: ItsValue
+
+    parameters:
+      # AWS credentials
+      access-key-id: ""
+      secret-access-key: ""
+      default-region: ""
+
+    # Availability zone and security group must match the chosen subnet
+      subnet-id: ""
+      availability-zone: ""
+      security-group: ""
+
+      # Name of the SSH key AWS should install on provisioned VMs. The key should
+      # be the one you configured in the `ssh-keys` section above.
+      master-key-name: ""
+
+      # Whether to use spot requests preferably.
+      use-spot-request: true
+
+      # How many % we bid on the spot instance price. Raise this if we get too many instances terminated.
+      spot-price-bid-percentage: 10
+
+      # Default instance type, used for everything unless told otherwise.
+      default-instance-type: ""
+
+      # Default root disk size.
+      default-root-disk-size: 40
+
+      # Use regular expression to limit provisioning to a subset of all available networks.
+      network-regex: '.*'
+
+      # What IP version to provision VMs with.
+      ip-version: '4'
+
+      # Use regular expression to limit provisioning to a subset of all available flavors.
+      flavor-regex: ".*"
+
+      #
+      # Do NOT edit keys below
+      #
+      command: aws
+
+      capabilities:
+        supported-architectures:
+          - x86_64
+
+  # A Beaker pool
+  - name: beaker
+    driver: beaker
+
+    # Pool-specific tags, applied to all instances. Adjust when needed, remove or add new ones.
+    # guest_tags:
+    #   ATag: ItsValue
+
+    parameters:
+
+      # Beaker credentials - if you wish to use Kerberos authentication, leave the following
+      # two keys commented out. Otherwise, provide username and password of your Beaker account.
+      # username: ""
+      # password: ""
+
+      #
+      # Do NOT edit keys below
+      #
+      capabilities:
+        supported-architectures: any
+
+
+  # An OpenStack pool
+  - name: openstack
+    driver: openstack
+
+    # Pool-specific tags, applied to all instances. Adjust when needed, remove or add new ones.
+    # guest_tags:
+    #   ATag: ItsValue
+
+    parameters:
+      # OpenStack credentials as found in your openrc file
+      username: ""
+      password: ""
+      auth-url: ""
+      project-name: ""
+      user-domain-name: ""
+      api-version: ""
+
+      # Set one or the other, if both are set, project_domain_name is used.
+      project-domain-name: ""
+      # project-domain-id: ""
+
+      # Name of the SSH key OpenStack should install on provisioned VMs. The key should
+      # be the one you configured in the `ssh-keys` section above.
+      master-key-name: ""
+
+      # A security group to use for provisioning.
+      security-group: default
+
+      # Use regular expression to limit provisioning to a subset of all available networks.
+      network-regex: '.*'
+
+      # What IP version to provision VMs with.
+      ip-version: '4'
+
+      # Default flavor, used for everything unless told otherwise.
+      default-flavor: ""
+
+      # Use regular expression to limit provisioning to a subset of all available flavors.
+      flavor-regex: ".*"
+
+      #
+      # Do NOT edit keys below
+      #
+      capabilities:
+        supported-architectures:
+          - x86_64
+
+
+#
+# Do NOT edit keys below
+#
+priority-groups:
+  - name: default-priority
+
+users:
+  - name: admin
+    role: admin
+
+  - name: artemis
