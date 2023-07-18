@@ -15,4 +15,4 @@
 # Key is a pattern, matching an compose, value tells Artemis to which image
 # it should map it to.
 
-[]
+- '^CentOS\-Stream\-8$': 'CentOS Stream 8 x86_64'
