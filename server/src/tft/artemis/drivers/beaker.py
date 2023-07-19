@@ -215,6 +215,7 @@ def constraint_to_beaker_filter(
     constraint: ConstraintBase,
     guest_request: GuestRequest,
     pool: 'BeakerDriver',
+    constraint_parents: Optional[List[ConstraintBase]] = None,
     constraint_siblings: Optional[List[ConstraintBase]] = None,
 ) -> Result[bs4.BeautifulSoup, Failure]:
     """
@@ -222,11 +223,19 @@ def constraint_to_beaker_filter(
     element.
     """
 
+    constraint_parents = constraint_parents or []
+    constraint_siblings = constraint_siblings or []
+
     if isinstance(constraint, And):
         grouping_and = _new_tag('and')
 
         for child_constraint in constraint.constraints:
-            r_child_element = constraint_to_beaker_filter(child_constraint, guest_request, pool, constraint.constraints)
+            r_child_element = constraint_to_beaker_filter(
+                child_constraint,
+                guest_request,
+                pool,
+                constraint_parents=constraint_parents + [constraint],
+                constraint_siblings=constraint.constraints)
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -239,7 +248,12 @@ def constraint_to_beaker_filter(
         grouping_or = _new_tag('or')
 
         for child_constraint in constraint.constraints:
-            r_child_element = constraint_to_beaker_filter(child_constraint, guest_request, pool, constraint.constraints)
+            r_child_element = constraint_to_beaker_filter(
+                child_constraint,
+                guest_request,
+                pool,
+                constraint_parents=constraint_parents + [constraint],
+                constraint_siblings=constraint.constraints)
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -355,7 +369,39 @@ def constraint_to_beaker_filter(
                 constraint_name=constraint.name
             ))
 
-        return Ok(disk)
+        for i, parent in enumerate(reversed(constraint_parents)):
+            print(f'parent #{i}')
+            print(parent)
+            print()
+
+        # 4th parent is a group collecting all `disk` entries
+        if len(constraint_parents) >= 4:
+            parent = constraint_parents[-4]
+
+            # This should not happen unless environment parsing changes.
+            if not isinstance(parent, And):
+                return Error(Failure(
+                    'failed to find proper parent of disk constraint',
+                    constraint=repr(constraint),
+                    constraint_name=constraint.name
+                ))
+
+            group = _new_tag('and')
+
+            nr_disks = _new_tag(
+                'key_value',
+                key='NR_DISKS',
+                op=OPERATOR_SIGN_TO_OPERATOR[Operator.GTE],
+                value=str(len(parent.constraints))
+            )
+
+            group.append(disk)
+            group.append(nr_disks)
+
+            return Ok(group)
+
+        else:
+            return Ok(disk)
 
     if constraint_name.property == 'arch':
         op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
@@ -434,7 +480,6 @@ def constraint_to_beaker_filter(
             )
 
     if constraint_name.property == 'network':
-        constraint_siblings = constraint_siblings or []
         # NOTE(ivasilev) IIUC only eth is valid type. Maybe worth revisiting later
         if not all([cast(Constraint, net).value == "eth" for net in constraint_siblings]):
             return Error(Failure(

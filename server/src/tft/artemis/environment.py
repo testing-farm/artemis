@@ -1615,8 +1615,8 @@ def _parse_disks(spec: SpecType) -> ConstraintBase:
         for disk_index, disk_spec in enumerate(spec)
     ]
 
-    if len(group.constraints) == 1:
-        return group.constraints[0]
+    # Do not reduce group to a single item: we need more predictable tree
+    # for Beaker driver to be able to construct its own XML.
 
     return group
 

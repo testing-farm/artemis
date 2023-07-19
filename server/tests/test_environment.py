@@ -1308,7 +1308,7 @@ def test_parse_maximal_constraint() -> None:
             disk:
               - size: ">= 60 GiB"
         """,
-        '<and><system><arch op="==" value="x86_64"/></system><disk><size op="&gt;=" value="64424509440"/></disk></and>'
+        '<and><system><arch op="==" value="x86_64"/></system><and><disk><size op="&gt;=" value="64424509440"/></disk><key_value key="NR_DISKS" op="&gt;=" value="1"/></and></and>'  # noqa: E501
     ),
     (
         """

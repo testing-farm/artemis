@@ -458,12 +458,18 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
            <memory op="==" value="8192"/>
           </system>
           <and>
-           <disk>
-            <size op="==" value="42949672960"/>
-           </disk>
-           <disk>
-            <size op="==" value="128849018880"/>
-           </disk>
+           <and>
+            <disk>
+             <size op="==" value="42949672960"/>
+            </disk>
+            <key_value key="NR_DISKS" op="&gt;=" value="2"/>
+           </and>
+           <and>
+            <disk>
+             <size op="==" value="128849018880"/>
+            </disk>
+            <key_value key="NR_DISKS" op="&gt;=" value="2"/>
+           </and>
           </and>
           <key_value key="NR_ETH" value="2"/>
           <key_value key="TPM" op="==" value="2.0"/>
