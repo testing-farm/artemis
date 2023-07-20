@@ -12,7 +12,7 @@
 #
 
 FROM quay.io/testing-farm/promtail:v2.2.1 as PROMTAIL_SOURCE
-FROM registry.fedoraproject.org/fedora-minimal:36
+FROM registry.fedoraproject.org/fedora-minimal:38
 
 COPY --from=PROMTAIL_SOURCE /promtail /usr/bin/
 
