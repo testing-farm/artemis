@@ -20,6 +20,8 @@ from ..metrics import PoolResourcesMetrics
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolData, PoolDriver, PoolResourcesIDs, ProvisioningProgress, \
     ProvisioningState, SerializedPoolResourcesIDs
 
+ARTEMIS_GUESTNAME_HEADER = "Artemis-guestname"
+
 
 @dataclasses.dataclass
 class RestPoolData(PoolData):
@@ -29,6 +31,7 @@ class RestPoolData(PoolData):
 @dataclasses.dataclass
 class RestPoolResourcesIDs(PoolResourcesIDs):
     guest_id: Optional[str] = None
+    guestname: Optional[str] = None
 
 
 class RestDriver(PoolDriver):
@@ -48,6 +51,14 @@ class RestDriver(PoolDriver):
     ) -> None:
         super().__init__(logger, poolname, pool_config)
         self.url = self.pool_config["url"]
+
+    def _get_headers(self, guestname: Optional[str] = None) -> Dict[str, str]:
+        """
+        Prepares HTTP headers for backend requests.
+        """
+        if guestname is not None:
+            return {ARTEMIS_GUESTNAME_HEADER: guestname}
+        return {}
 
     def can_acquire(
         self,
@@ -90,7 +101,11 @@ class RestDriver(PoolDriver):
         }
 
         try:
-            response = requests.get(f"{self.url}/guests", params=payload)
+            response = requests.get(
+                f"{self.url}/guests",
+                params=payload,
+                headers=self._get_headers(guestname=guest_request.guestname),
+            )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc(
@@ -146,8 +161,11 @@ class RestDriver(PoolDriver):
         }
 
         try:
-            response = requests.post(f"{self.url}/guests",
-                                     json=payload)
+            response = requests.post(
+                f"{self.url}/guests",
+                json=payload,
+                headers=self._get_headers(guestname=guest_request.guestname),
+            )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc(
@@ -208,8 +226,11 @@ class RestDriver(PoolDriver):
         }
 
         try:
-            response = requests.get(f"{self.url}/guests/{pool_data.guest_id}",
-                                    json=payload)
+            response = requests.get(
+                f"{self.url}/guests/{pool_data.guest_id}",
+                json=payload,
+                headers=self._get_headers(guestname=guest_request.guestname),
+            )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc(
@@ -256,6 +277,9 @@ class RestDriver(PoolDriver):
     ) -> Result[None, Failure]:
         resource_ids = RestPoolResourcesIDs(guest_id=guest_id)
 
+        if guest_request is not None:
+            resource_ids.guestname = guest_request.guestname
+
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def release_pool_resources(
@@ -276,10 +300,12 @@ class RestDriver(PoolDriver):
 
         The response is expected to be empty.
         '''
-        guest_id = RestPoolResourcesIDs.unserialize_from_json(raw_resource_ids).guest_id
-
+        pool_resources = RestPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
         try:
-            response = requests.delete(f"{self.url}/guests/{guest_id}")
+            response = requests.delete(
+                f"{self.url}/guests/{pool_resources.guest_id}",
+                headers=self._get_headers(guestname=pool_resources.guestname),
+            )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc(
