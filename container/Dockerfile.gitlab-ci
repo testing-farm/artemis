@@ -1,4 +1,4 @@
-FROM quay.io/testing-farm/python-ci-image:2023-05-23-73a71064
+FROM quay.io/testing-farm/python-ci-image:2023-06-01-ec6b0f31
 
 RUN    dnf -y update \
     && dnf -y install \
