@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 import bs4
 import gluetool.log
 import gluetool.utils
+import requests
+import requests.exceptions
 import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter, log_xml
 from gluetool.result import Error, Ok, Result
@@ -590,8 +592,6 @@ def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, F
         if changes == 0:
             break
 
-    print('pruned', tree)
-
     return Ok(tree)
 
 
@@ -862,9 +862,9 @@ class BeakerDriver(PoolDriver):
         capabilities.supports_hostnames = True
         capabilities.supports_kickstart = True
         capabilities.supported_guest_logs = [
-            ('console', GuestLogContentType.URL),
-            ('console.log', GuestLogContentType.URL),
-            ('sys.log', GuestLogContentType.URL),
+            ('console:dump', GuestLogContentType.URL),
+            ('console:dump', GuestLogContentType.BLOB),
+            ('sys.log:dump', GuestLogContentType.URL),
         ]
 
         return Ok(capabilities)
@@ -1770,8 +1770,8 @@ class BeakerDriver(PoolDriver):
     # Since Beaker provides named logs, unlike other drivers, there are updaters for various log names.
     # To satisfy the "standard" logging expectations, use some of those for common logs like console/url
     # while keeping their Beaker-native names available at the same time.
-    @guest_log_updater('beaker', 'console', GuestLogContentType.URL)  # type: ignore[arg-type]
-    def _update_guest_log_console_url(
+    @guest_log_updater('beaker', 'console:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
+    def _update_guest_log_console_dump_url(
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
@@ -1779,16 +1779,43 @@ class BeakerDriver(PoolDriver):
     ) -> Result[GuestLogUpdateProgress, Failure]:
         return self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
 
-    @guest_log_updater('beaker', 'console.log', GuestLogContentType.URL)  # type: ignore[arg-type]
-    def _update_guest_log_console_log_url(
+    @guest_log_updater('beaker', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_console_dump_blob(
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        return self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
+        r_update = self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
 
-    @guest_log_updater('beaker', 'sys.log', GuestLogContentType.URL)  # type: ignore[arg-type]
+        if r_update.is_error:
+            return r_update
+
+        log_progress = r_update.unwrap()
+
+        if log_progress.state != GuestLogState.COMPLETE:
+            return r_update
+
+        assert log_progress.url is not None
+
+        try:
+            response = requests.get(log_progress.url)
+            response.raise_for_status()
+
+        except requests.exceptions.RequestException as exc:
+            return Error(Failure.from_exc(
+                'failed to fetch Beaker log URL',
+                exc,
+                url=log_progress.url
+            ))
+
+        log_progress.url = None
+        log_progress.blob = response.text
+        log_progress.state = GuestLogState.IN_PROGRESS
+
+        return r_update
+
+    @guest_log_updater('beaker', 'sys.log:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_sys_log_url(
         self,
         logger: gluetool.log.ContextAdapter,

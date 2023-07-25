@@ -15,6 +15,7 @@ import requests.adapters
 import rich.console
 import rich.highlighter
 import rich.json
+import rich.markup
 import rich.syntax
 import rich.table
 import rich.text
@@ -702,7 +703,7 @@ def print_guest_logs(
     def tabulate(logs: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
 
-        for header in ['Content Type', 'State', 'URL', 'Updated', 'Expires']:
+        for header in ['Content Type', 'State', 'URL', 'Blob', 'Updated', 'Expires']:
             table.add_column(header)
 
         for log in logs:
@@ -710,6 +711,7 @@ def print_guest_logs(
                 log['contenttype'],
                 log['state'],
                 log['url'],
+                rich.markup.escape(log['blob']),
                 log['updated'],
                 log['expires']
             )

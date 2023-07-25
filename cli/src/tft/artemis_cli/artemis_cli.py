@@ -63,7 +63,12 @@ API_FEATURE_VERSIONS = {
 }
 
 # FIXME Actual values from artemis_db.GuestLogContentType?
-ALLOWED_LOG_TYPES = ["console:blob", "console:url"]
+ALLOWED_LOG_TYPES = [
+    "console:dump/blob",
+    "console:dump/url",
+    "console:interactive/url",
+    'sys.log:dump/url'
+]
 
 
 @click.group()
@@ -371,7 +376,7 @@ def cmd_guest_create(
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['log-types']:
         log_types = log_types if log_types else []
-        data['log_types'] = list({tuple(log.split(':', 1)) for log in log_types})
+        data['log_types'] = list({tuple(log.split('/', 1)) for log in log_types})
 
     elif log_types:
         cfg.logger.error(f'--log-types is supported with API {API_FEATURE_VERSIONS["log-types"]} and newer')

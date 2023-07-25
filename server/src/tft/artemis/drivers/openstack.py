@@ -164,8 +164,8 @@ class OpenStackDriver(PoolDriver):
         capabilities.supports_console_url = True
         capabilities.supports_snapshots = True
         capabilities.supported_guest_logs = [
-            ('console', GuestLogContentType.BLOB),
-            ('console', GuestLogContentType.URL)
+            ('console:dump', GuestLogContentType.BLOB),
+            ('console:interactive', GuestLogContentType.URL)
         ]
 
         return Ok(capabilities)
@@ -1159,7 +1159,7 @@ class OpenStackDriver(PoolDriver):
 
         return r_output
 
-    @guest_log_updater('openstack', 'console', GuestLogContentType.URL)  # type: ignore[arg-type]
+    @guest_log_updater('openstack', 'console:interactive', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_console_url(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1192,7 +1192,7 @@ class OpenStackDriver(PoolDriver):
             expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
         ))
 
-    @guest_log_updater('openstack', 'console', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    @guest_log_updater('openstack', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_blob(
         self,
         logger: gluetool.log.ContextAdapter,

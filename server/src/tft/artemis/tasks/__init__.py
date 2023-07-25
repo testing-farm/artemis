@@ -2804,11 +2804,13 @@ class LoggingTailHandler(TailHandler):
 
             return IGNORE(r)
 
-        guestname, logname, contenttype = task_call.extract_args(
+        guestname, logname, _contenttype = task_call.extract_args(
             'guestname',
             'logname',
             'contenttype'
         )
+
+        contenttype = GuestLogContentType(_contenttype)
 
         query = sqlalchemy \
             .update(GuestLog.__table__) \
@@ -2902,7 +2904,7 @@ def do_update_guest_log(
         task='update-guest-log'
     )
 
-    workspace.handle_success('enter-task')
+    workspace.handle_success('entered-task')
 
     workspace.load_guest_request(guestname)
 
@@ -2922,9 +2924,80 @@ def do_update_guest_log(
 
     guest_log = r_guest_log.unwrap()
 
+    def _log_state_event(resolution: Optional[str] = None, new_state: Optional[GuestLogState] = None) -> None:
+        assert guest_log is not None
+        assert workspace.gr is not None
+
+        kwargs: Dict[str, Any] = {}
+
+        if resolution is not None:
+            kwargs['resolution'] = resolution
+
+        if new_state is not None:
+            kwargs['new_state'] = new_state.value
+
+        workspace.gr.log_event(
+            logger,
+            session,
+            'guest-log-updated',
+            logname=guest_log.logname,
+            # ignore[attr-defined]: some issue with annotations of SafeQuery, the real type
+            # seems to be hidden :/
+            contenttype=guest_log.contenttype.value,  # type: ignore[attr-defined]
+            current_state=guest_log.state.value,  # type: ignore[attr-defined]
+            **kwargs
+        )
+
+    def _update_log(progress: GuestLogUpdateProgress) -> DoerReturnType:
+        assert guest_log is not None
+        assert workspace.gr is not None
+
+        query = sqlalchemy \
+            .update(GuestLog.__table__) \
+            .where(GuestLog.guestname == workspace.gr.guestname) \
+            .where(GuestLog.logname == guest_log.logname) \
+            .where(GuestLog.contenttype == guest_log.contenttype) \
+            .where(GuestLog.state == guest_log.state) \
+            .where(GuestLog.updated == guest_log.updated) \
+            .where(GuestLog.url == guest_log.url) \
+            .where(GuestLog.blob == guest_log.blob) \
+            .values(
+                url=progress.url,
+                blob=progress.blob,
+                updated=datetime.datetime.utcnow(),
+                state=progress.state,
+                expires=progress.expires
+            )
+
+        r_store = safe_db_change(logger, session, query)
+
+        if r_store.is_error:
+            return Error(Failure.from_failure('failed to update the log', r_store.unwrap_error()))
+
+        if r_store.unwrap() is not True:
+            return workspace.handle_success('finished-task', return_value=RESCHEDULE)
+
+        return SUCCESS
+
+    def _update_log_and_quit(progress: GuestLogUpdateProgress) -> DoerReturnType:
+        r_update = _update_log(progress)
+
+        if r_update is SUCCESS:
+            return workspace.handle_success('finished-task')
+
+        return r_update
+
     if guest_log is None:
         # We're the first: create the record, and reschedule. We *could* proceed and try to fetch the data, too,
         # let's try with another task run first.
+
+        guest_log = GuestLog(
+            guestname=workspace.gr.guestname,
+            logname=logname,
+            # ignore[misc]: mypy probably does not understand, both state and contenttype are enums, not strings.
+            contenttype=contenttype,  # type: ignore[misc]
+            state=GuestLogState.PENDING
+        )
 
         r_upsert = upsert(
             logger,
@@ -2943,24 +3016,36 @@ def do_update_guest_log(
         if r_upsert.is_error:
             return workspace.handle_error(r_upsert, 'failed to create log record')
 
-        return workspace.handle_success('finished-task', return_value=RESCHEDULE)
+        _log_state_event()
 
-    logger.warning(f'logname={logname} contenttype={contenttype} state={guest_log.state}')
+        return workspace.handle_success('finished-task', return_value=RESCHEDULE)
 
     if guest_log.state == GuestLogState.ERROR:  # type: ignore[comparison-overlap]
         # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
         # to different pool, and here the could succeed - but it's never going to be tried again since it's
         # in ERROR state and there's no way to "reset" the state - possibly do that in API via POST.
+
+        _log_state_event(resolution='guest-log-in-error-state')
+
         return workspace.handle_success('finished-task')
 
     # TODO logs: it'd be nice to change logs' state to something final
     if workspace.gr.state in (GuestState.CONDEMNED, GuestState.ERROR):  # type: ignore[comparison-overlap]
-        logger.warning('guest can no longer provide any useful logs')
+        # logger.warning('guest can no longer provide any useful logs')
 
-        return workspace.handle_success('finished-task')
+        _log_state_event(resolution='guest-condemned')
+
+        return _update_log_and_quit(GuestLogUpdateProgress(
+            state=GuestLogState.COMPLETE,
+            url=guest_log.url,
+            blob=guest_log.blob,
+            expires=guest_log.expires
+        ))
 
     if workspace.gr.pool is None:
-        logger.warning('guest request has no pool at this moment, reschedule')
+        # logger.warning('guest request has no pool at this moment, reschedule')
+
+        _log_state_event(resolution='guest-not-routed')
 
         return workspace.handle_success('finished-task', return_value=RESCHEDULE)
 
@@ -2982,13 +3067,32 @@ def do_update_guest_log(
         # If the guest request reached its final states, there's no chance for a pool change in the future,
         # therefore UNSUPPORTED becomes final state as well.
         if workspace.gr.state in (GuestState.READY.value, GuestState.CONDEMNED.value):
-            return workspace.handle_success('finished-task')
+            _log_state_event(resolution='unsupported-and-guest-complete')
+
+            return _update_log_and_quit(GuestLogUpdateProgress(
+                state=GuestLogState.UNSUPPORTED,
+                url=guest_log.url,
+                blob=guest_log.blob,
+                expires=guest_log.expires
+            ))
 
         r_update: Result[GuestLogUpdateProgress, Failure] = Ok(GuestLogUpdateProgress(
             state=GuestLogState.UNSUPPORTED
         ))
 
     elif guest_log.state == GuestLogState.UNSUPPORTED:  # type: ignore[comparison-overlap]
+        # If the guest request reached its final states, there's no chance for a pool change in the future,
+        # therefore UNSUPPORTED becomes final state as well.
+        if workspace.gr.state in (GuestState.READY.value, GuestState.CONDEMNED.value):
+            _log_state_event(resolution='unsupported-and-guest-complete')
+
+            return _update_log_and_quit(GuestLogUpdateProgress(
+                state=GuestLogState.UNSUPPORTED,
+                url=guest_log.url,
+                blob=guest_log.blob,
+                expires=guest_log.expires
+            ))
+
         r_update = workspace.pool.update_guest_log(
             logger,
             workspace.gr,
@@ -2997,6 +3101,9 @@ def do_update_guest_log(
 
     elif guest_log.state == GuestLogState.COMPLETE:  # type: ignore[comparison-overlap]
         if not guest_log.is_expired:
+
+            _log_state_event(resolution='complete-not-expired')
+
             return workspace.handle_success('finished-task')
 
         r_update = workspace.pool.update_guest_log(
@@ -3024,32 +3131,15 @@ def do_update_guest_log(
 
     update_progress = r_update.unwrap()
 
-    logger.warning(f'update-progress: {update_progress}')
+    _log_state_event(new_state=update_progress.state)
 
-    query = sqlalchemy \
-        .update(GuestLog.__table__) \
-        .where(GuestLog.guestname == workspace.gr.guestname) \
-        .where(GuestLog.logname == logname) \
-        .where(GuestLog.state == guest_log.state) \
-        .where(GuestLog.contenttype == contenttype) \
-        .where(GuestLog.updated == guest_log.updated) \
-        .where(GuestLog.url == guest_log.url) \
-        .where(GuestLog.blob == guest_log.blob) \
-        .values(
-            url=update_progress.url,
-            blob=update_progress.blob,
-            updated=datetime.datetime.utcnow(),
-            state=update_progress.state,
-            expires=update_progress.expires
-        )
-
-    r_store = safe_db_change(logger, session, query)
+    r_store = _update_log(update_progress)
 
     if r_store.is_error:
-        return workspace.handle_error(r_store, 'failed to update the log')
+        return r_store
 
-    if r_store.unwrap() is not True:
-        return workspace.handle_success('finished-task', return_value=RESCHEDULE)
+    if r_store is RESCHEDULE:
+        return r_store
 
     if update_progress.state == GuestLogState.COMPLETE:
         return workspace.handle_success('finished-task')
@@ -3100,7 +3190,7 @@ def do_prepare_post_install_script(
         task='prepare-post-install-script'
     )
 
-    workspace.handle_success('enter-task')
+    workspace.handle_success('entered-task')
 
     workspace.load_guest_request(guestname, state=GuestState.PREPARING)
     workspace.load_gr_pool()
@@ -3186,7 +3276,7 @@ def do_guest_request_prepare_finalize_pre_connect(
         task='prepare-finalize-pre-connect'
     )
 
-    workspace.handle_success('enter-task')
+    workspace.handle_success('entered-task')
 
     logger.info('pre-connect preparation steps complete')
 
@@ -3253,7 +3343,7 @@ def do_guest_request_prepare_finalize_post_connect(
 ) -> DoerReturnType:
     workspace = Workspace(logger, session, cancel, guestname=guestname, task='prepare-finalize-post-connect')
 
-    workspace.handle_success('enter-task')
+    workspace.handle_success('entered-task')
 
     logger.info('post-connect preparation steps complete')
 
@@ -4243,7 +4333,7 @@ def do_acquire_guest_console_url(
 ) -> DoerReturnType:
     workspace = Workspace(logger, session, cancel, guestname=guestname, task='acquire-guest-console-url')
 
-    workspace.handle_success('enter-task')
+    workspace.handle_success('entered-task')
 
     workspace.load_guest_request(guestname)
     workspace.load_gr_pool()

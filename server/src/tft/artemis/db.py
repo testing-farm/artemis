@@ -1329,7 +1329,7 @@ class GuestLog(Base):
     logname = Column(String(), nullable=False, primary_key=True)
     contenttype = Column(Enum(GuestLogContentType), nullable=False, primary_key=True)
 
-    state = Column(Enum(GuestLogState), nullable=False, default=GuestLogState.PENDING)
+    state = Column(Enum(GuestLogState), nullable=False, default=GuestLogState.PENDING.value)
 
     url = Column(String(), nullable=True)
     blob = Column(String(), nullable=True)
