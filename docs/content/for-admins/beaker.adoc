@@ -136,3 +136,56 @@ avoid-hostnames:
   - not-so-fancy2.foo.com
 ....
 ====
+
+=== Beaker pools
+
+A pool can be pinned to use only a specific subset of Beaker machines by requesting them to belong to one or more Beaker pools.
+
+[NOTE]
+====
+Artemis pool is not equivalent to Beaker pool. Beaker pools are internal to Beaker, a way of access management, and a single Artemis pool can be configured to provision machines belonging to different Beaker pools.
+====
+
+.Specification
+[source,yaml]
+....
+pools:
+  - poolname-1
+  - poolname: poolname-2
+  - poolname: poolname-3
+    system-type: system-type-1
+  ...
+....
+
+.Example
+[source,yaml]
+....
+pools:
+  # Provision machines belonging to the following Beaker pools.
+  - some-pool
+  - another-pool
+  - poolname: yet-another-pool
+  # Same but with this pool, we need to use different system type for provisioning.
+  - poolname: custom-laptops
+    system-type: Laptop
+....
+
+Each provisioning Beaker job would then contain a set of `<pool/>` elements, with `<system_type/>` as needed, to instruct Beaker to pick only machines from specified pools.
+
+[TIP]
+====
+It is possible to configure multiple pools for the same set of Beaker credentials, each with different `pools` list. For example:
+
+[source,yaml]
+....
+# pool #1
+pools:
+  - some-pool
+
+# pool #2
+pools:
+  - some-pool
+  # Can use fancy machines as well!
+  - pool-with-very-fancy-machines
+....
+====
