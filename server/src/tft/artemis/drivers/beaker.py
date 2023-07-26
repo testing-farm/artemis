@@ -144,6 +144,12 @@ class ConstraintTranslationConfigType(TypedDict):
     element: str
 
 
+@dataclasses.dataclass
+class BeakerPool:
+    poolname: str
+    system_type: Optional[str] = None
+
+
 #: Mapping of operators to their Beaker representation. :py:attr:`Operator.MATCH` is missing on purpose: it is
 #: intercepted in :py:func:`operator_to_beaker_op`.
 OPERATOR_SIGN_TO_OPERATOR = {
@@ -622,6 +628,44 @@ def hostnames_to_beaker_filter(avoid_hostnames: List[str]) -> Result[bs4.Beautif
     return Ok(container)
 
 
+def beaker_pools_to_beaker_filter(pools: List[BeakerPool]) -> Result[bs4.BeautifulSoup, Failure]:
+    """
+    Convert given lists of beaker pools to Beaker XML tree representing Beaker filter compatible with Beaker's
+    ``hostRequires`` element.
+
+    For each ``pool`` and optional ``system-type``, a following element is created:
+
+    .. code-block:: xml
+
+       <and>
+         <pool value="$pool"/>
+         <system_type op="=" value="$system_type"/>
+       </and>
+
+    :param avoid_hostnames: list of Beaker pools to limit provisioning to.
+    :returns: a Beaker filter representing Beaker pool limitation.
+    """
+
+    # This is a container for all per-tag hostname elements. When called with an empty list, this would result
+    # in an empty <and/> element being returned - but that's OK, _prune_beaker_filter() can deal with such
+    # elements, and it simplifies handling of return values, no pesky `if is None` tests.
+    container = _new_tag('or')
+
+    for pool in pools:
+        if pool.system_type:
+            pool_container = _new_tag('and')
+
+            pool_container.append(_new_tag('pool', value=pool.poolname))
+            pool_container.append(_new_tag('system_type', op='=', value=pool.system_type))
+
+            container.append(pool_container)
+
+        else:
+            container.append(_new_tag('pool', value=pool.poolname))
+
+    return Ok(container)
+
+
 def merge_beaker_filters(filters: List[bs4.BeautifulSoup]) -> Result[bs4.BeautifulSoup, Failure]:
     """
     Merge given Beaker filters into a single filter.
@@ -712,6 +756,19 @@ def create_beaker_filter(
 
         beaker_filters.append(r_beaker_filter.unwrap())
 
+    r_beaker_pools = pool.beaker_pools
+
+    if r_beaker_pools.is_error:
+        return Error(r_beaker_pools.unwrap_error())
+
+    if r_beaker_pools.unwrap():
+        r_beaker_filter = beaker_pools_to_beaker_filter(r_beaker_pools.unwrap())
+
+        if r_beaker_filter.is_error:
+            return Error(r_beaker_filter.unwrap_error())
+
+        beaker_filters.append(r_beaker_filter.unwrap())
+
     if not beaker_filters:
         return Ok(None)
 
@@ -771,6 +828,22 @@ class BeakerDriver(PoolDriver):
             (group.hostnames for group in r_avoid_hostnames.unwrap().values()),
             self.pool_config.get('avoid-hostnames', [])
         ))
+
+    @property
+    def beaker_pools(self) -> Result[List[BeakerPool], Failure]:
+        pools: List[BeakerPool] = []
+
+        for entry in self.pool_config.get('pools', []):
+            if isinstance(entry, str):
+                pools.append(BeakerPool(poolname=entry))
+
+            elif isinstance(entry, dict):
+                pools.append(BeakerPool(poolname=entry['poolname'], system_type=entry.get('system-type')))
+
+            else:
+                return Error(Failure('unsupported beaker pool', beaker_pool=entry))
+
+        return Ok(pools)
 
     def _run_bkr(
         self,

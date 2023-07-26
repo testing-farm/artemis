@@ -102,6 +102,22 @@ properties:
     items:
       type: string
 
+  pools:
+    type: array
+    items:
+      oneOf:
+        - type: string
+        - type: object
+          properties:
+            poolname:
+              type: string
+
+            system-type:
+              type: string
+
+          required:
+            - poolname
+
 additionalProperties: false
 
 required: []
