@@ -1,0 +1,8 @@
+test: ./test.sh
+require:
+  - iproute
+
+/eth/extra-nics/3:
+    environment+:
+        TYPE: "eth"
+        EXPECTED: "3"

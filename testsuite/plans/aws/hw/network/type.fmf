@@ -1,0 +1,11 @@
+/eth/extra-nics/3:
+  discover+:
+    test:
+      - hw/network/type/eth/extra-nics/3
+
+  provision+:
+    hardware:
+      network:
+        - type: eth
+        - type: eth
+        - type: eth
