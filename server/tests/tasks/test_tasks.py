@@ -354,7 +354,7 @@ def test_mark_note_poolname_error_noop(
     cast(MagicMock, tft.artemis.middleware.set_message_note).assert_not_called()
 
 
-@pytest.mark.usefixtures('_schema_initialized_actual')
+@pytest.mark.usefixtures('dummy_guest_request', 'dummy_pool', '_schema_initialized_actual')
 def test_update_guest_state_and_request_task(
     #    logger: gluetool.log.ContextAdapter,
     db: tft.artemis.db.DB,
@@ -445,8 +445,7 @@ def test_update_guest_state_and_request_task_no_such_guest(
         current_state=tft.artemis.guest.GuestState.ROUTING,
         set_values={
             'poolname': 'dummy-pool'
-        },
-        poolname='dummy-pool'
+        }
     ) is workspace
 
     assert workspace.result is not None
@@ -459,7 +458,6 @@ def test_update_guest_state_and_request_task_no_such_guest(
     assert failure.details['new_state'] == 'provisioning'
     assert failure.details['task_name'] == 'acquire_guest_request'
     assert failure.details['task_args'] == ('not-so-dummy-guest', 'dummy-pool')
-    assert failure.details['poolname'] == 'dummy-pool'
     assert failure.details['guestname'] == 'not-so-dummy-guest'
     assert failure.recoverable is True
 

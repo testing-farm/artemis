@@ -52,6 +52,9 @@ if TYPE_CHECKING:
 T = TypeVar('T')
 
 
+UNDEFINED_POOL_NAME = 'undefined'
+
+
 # Guest age buckets are not all same, but:
 #
 # * first hour split into intervals of 5 minutes,
@@ -1242,7 +1245,7 @@ class PoolsMetrics(MetricsBase):
                 for pool in r_pools.unwrap()
             }
 
-        self.pools['undefined'] = UndefinedPoolMetrics('undefined')
+        self.pools[UNDEFINED_POOL_NAME] = UndefinedPoolMetrics(UNDEFINED_POOL_NAME)
 
         for metrics in self.pools.values():
             metrics.sync()
@@ -1504,6 +1507,7 @@ class ProvisioningMetrics(MetricsBase):
     _KEY_FAILOVER = 'metrics.provisioning.failover'
     _KEY_FAILOVER_SUCCESS = 'metrics.provisioning.failover.success'
     _KEY_PROVISIONING_DURATIONS = 'metrics.provisioning.durations'
+    _KEY_GUEST_STATE_TRANSITIONS = 'metrics.provisioning.guest.state.transitions'
 
     requested: int = 0
     current: int = 0
@@ -1514,6 +1518,9 @@ class ProvisioningMetrics(MetricsBase):
     # We want to maybe point fingers on pools where guests are stuck, so include pool name and state as labels.
     guest_ages: List[Tuple[GuestState, Optional[str], datetime.timedelta]] = dataclasses.field(default_factory=list)
     provisioning_durations: Dict[str, int] = dataclasses.field(default_factory=dict)
+
+    # pool:current-state:new-state => count
+    guest_state_transitions: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
 
     @staticmethod
     @with_context
@@ -1617,6 +1624,38 @@ class ProvisioningMetrics(MetricsBase):
 
         return Ok(None)
 
+    @staticmethod
+    @with_context
+    def inc_guest_state_transition(
+        poolname: Optional[str],
+        current_state: Optional[GuestState],
+        new_state: GuestState,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase counter for a given guest state transition by 1.
+
+        :param poolname: pool that executed the command.
+        :param current_state: current state of the guest.
+        :param new_state: current state of the guest.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        poolname = poolname or UNDEFINED_POOL_NAME
+        current_state_label = current_state.value if current_state is not None else "none"
+
+        inc_metric_field(
+            logger,
+            cache,
+            ProvisioningMetrics._KEY_GUEST_STATE_TRANSITIONS,
+            f'{poolname}:{current_state_label}:{new_state.value}'
+        )
+
+        return Ok(None)
+
     @with_context
     def sync(
         self,
@@ -1672,6 +1711,16 @@ class ProvisioningMetrics(MetricsBase):
         self.provisioning_durations = {
             field: count
             for field, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_DURATIONS).items()
+        }
+
+        # pool:current-state:new-state => count
+        self.guest_state_transitions = {
+            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
+            for field, count in get_metric_fields(
+                logger,
+                cache,
+                self._KEY_GUEST_STATE_TRANSITIONS
+            ).items()
         }
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -1731,12 +1780,21 @@ class ProvisioningMetrics(MetricsBase):
             registry=registry,
         )
 
+        self.GUEST_STATE_TRANSITIONS = Counter(
+            'guest_request_state_transitions',
+            'Overall total number of guest request state transitions, per pool, current state and new state.',
+            ['pool', 'current_state', 'new_state'],
+            registry=registry
+        )
+
     def update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
         """
 
         super().update_prometheus()
+
+        reset_counters(self.GUEST_STATE_TRANSITIONS)
 
         self.CURRENT_GUEST_REQUEST_COUNT_TOTAL.set(self.current)
         self.OVERALL_PROVISIONING_COUNT._value.set(self.requested)
@@ -1769,6 +1827,11 @@ class ProvisioningMetrics(MetricsBase):
             )
             self.PROVISION_DURATIONS._buckets[bucket_index].set(count)
             self.PROVISION_DURATIONS._sum.inc(float(bucket_threshold) * count)
+
+        for (poolname, current_state, new_state), count in self.guest_state_transitions.items():
+            self.GUEST_STATE_TRANSITIONS \
+                .labels(pool=poolname, current_state=current_state, new_state=new_state) \
+                ._value.set(count)
 
 
 @dataclasses.dataclass
@@ -2564,7 +2627,7 @@ class TaskMetrics(MetricsBase):
             field_split = tuple(field.split(':', 3))
 
             if len(field_split) == 3:
-                field_split = field_split + ('undefined',)
+                field_split = field_split + (UNDEFINED_POOL_NAME,)
 
             self.message_durations[cast(Tuple[str, str, str, str], field_split)] = count
 

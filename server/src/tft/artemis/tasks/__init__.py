@@ -1083,6 +1083,7 @@ def task_core(
             session,
             guestname,
             GuestState.ERROR
+            # TODO: poolname=?
         )
 
         # If the change failed, we're left with a loose end: the task marked the failure as something that will not
@@ -1486,20 +1487,23 @@ def _update_guest_state(
     new_state: GuestState,
     current_state: Optional[GuestState] = None,
     set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+    poolname: Optional[str] = None,
     current_pool_data: Optional[str] = None,
     **details: Any
 ) -> Result[bool, Failure]:
-    workspace = Workspace(
-        logger,
-        session,
-        threading.Event(),
-        guestname=guestname,
-        current_state=current_state.value if current_state is not None else None,
-        new_state=new_state.value,
-        **details
-    )
-
     current_state_label = current_state.value if current_state is not None else '<ignored>'
+
+    def handle_error(r: Result[Any, Any], message: str) -> Result[bool, Failure]:
+        assert r.is_error
+
+        return Error(
+            Failure.from_failure(
+                message,
+                r.unwrap_error(),
+                current_state=current_state_label,
+                new_state=new_state.value
+            ).update(poolname=poolname, **details)
+        )
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}')
 
@@ -1512,22 +1516,12 @@ def _update_guest_state(
     )
 
     if r_query.is_error:
-        return Error(Failure.from_failure(
-            'failed to switch guest state',
-            r_query.unwrap_error(),
-            current_state=current_state_label,
-            new_state=new_state.value
-        ))
+        return handle_error(r_query, 'failed to create state update query')
 
     r = safe_db_change(logger, session, r_query.unwrap())
 
     if r.is_error:
-        return Error(Failure.from_failure(
-            'failed to switch guest state',
-            r.unwrap_error(),
-            current_state=current_state_label,
-            new_state=new_state.value
-        ))
+        return handle_error(r, 'failed to switch guest state')
 
     if r.value is False:
         logger.warning(f'state switch: {current_state_label} => {new_state.value}: failed')
@@ -1536,11 +1530,21 @@ def _update_guest_state(
             'did not switch guest state',
             current_state=current_state_label,
             new_state=new_state.value
-        ))
+        ).update(poolname=poolname, **details))
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')
 
-    workspace.handle_success('state-changed')
+    metrics.ProvisioningMetrics.inc_guest_state_transition(poolname, current_state, new_state)
+
+    GuestRequest.log_event_by_guestname(
+        logger,
+        session,
+        guestname,
+        'state-changed',
+        new_state=new_state.value,
+        current_state=current_state_label,
+        poolname=poolname
+    )
 
     return Ok(True)
 
@@ -1554,6 +1558,7 @@ def _update_guest_state_and_request_task(
     *task_arguments: ActorArgumentType,
     current_state: Optional[GuestState] = None,
     set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+    poolname: Optional[str] = None,
     current_pool_data: Optional[str] = None,
     delay: Optional[int] = None,
     **details: Any
@@ -1571,7 +1576,7 @@ def _update_guest_state_and_request_task(
                 new_state=new_state.value,
                 task_name=task.actor_name,
                 task_args=task_arguments
-            ).update(**details)
+            ).update(poolname=poolname, **details)
         )
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}')
@@ -1599,13 +1604,16 @@ def _update_guest_state_and_request_task(
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')
 
+    metrics.ProvisioningMetrics.inc_guest_state_transition(poolname, current_state, new_state)
+
     GuestRequest.log_event_by_guestname(
         logger,
         session,
         guestname,
         'state-changed',
         new_state=new_state.value,
-        current_state=current_state_label
+        current_state=current_state_label,
+        poolname=poolname
     )
 
     return Ok(True)
@@ -2189,6 +2197,7 @@ class Workspace:
         new_state: GuestState,
         current_state: Optional[GuestState] = None,
         set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+        poolname: Optional[str] = None,
         current_pool_data: Optional[str] = None,
         **details: Any
     ) -> None:
@@ -2212,6 +2221,7 @@ class Workspace:
             new_state,
             current_state=current_state,
             set_values=set_values,
+            poolname=poolname or (self.gr.poolname if self.gr else None),
             current_pool_data=current_pool_data,
             **details
         )
@@ -2313,7 +2323,8 @@ class Workspace:
             self.session,
             self.guestname,
             new_state,
-            current_state=current_state
+            current_state=current_state,
+            poolname=self.gr.poolname if self.gr else None,
         )
 
         if r.is_error:
@@ -2457,6 +2468,7 @@ class Workspace:
         *task_arguments: ActorArgumentType,
         current_state: Optional[GuestState] = None,
         set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+        poolname: Optional[str] = None,
         current_pool_data: Optional[str] = None,
         delay: Optional[int] = None,
         **details: Any
@@ -2479,6 +2491,7 @@ class Workspace:
             *task_arguments,
             current_state=current_state,
             set_values=set_values,
+            poolname=poolname or (self.gr.poolname if self.gr else None),
             current_pool_data=current_pool_data,
             delay=delay,
             **details
