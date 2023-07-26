@@ -224,6 +224,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
             network:
               - type: eth
               - type: eth
+              - type: eth
         os:
           compose: dummy-compose
         kickstart: {}
@@ -233,7 +234,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
          <system>
           <arch op="==" value="x86_64"/>
          </system>
-         <key_value key="NR_ETH" value="2"/>
+         <key_value key="NR_ETH" op="&gt;=" value="3"/>
         </and>
         """
     ),
@@ -251,8 +252,8 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         kickstart: {}
         """,
         "failure\n\n"
-        "constraint: '[network[0].type == eth, network[1].type == nosuchinterface]'\n"
-        "constraint_name: network[0].type\nmessage: only eth networks are supported for beaker constraints\n"
+        "constraint: '[network[1].type == nosuchinterface]'\n"
+        "constraint_name: network[1].type\nmessage: only eth networks are supported for beaker constraints\n"
         "recoverable: true\n"
         "fail_guest_request: true"
     ),
@@ -377,7 +378,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
          </system>
          <and>
           <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
-          <key_value key="NR_ETH" value="2"/>
+          <key_value key="NR_ETH" op="&gt;=" value="2"/>
          </and>
         </and>
         """
@@ -471,7 +472,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
             <key_value key="NR_DISKS" op="&gt;=" value="2"/>
            </and>
           </and>
-          <key_value key="NR_ETH" value="2"/>
+          <key_value key="NR_ETH" op="&gt;=" value="2"/>
           <key_value key="TPM" op="==" value="2.0"/>
           <and>
            <system>

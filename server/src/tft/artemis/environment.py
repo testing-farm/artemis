@@ -1632,15 +1632,73 @@ def _parse_network(spec: SpecType, network_index: int) -> ConstraintBase:
 
     group = And()
 
-    group.constraints += [
-        Constraint.from_specification(
-            f'network[{network_index}].{constraint_name}',
-            str(spec[constraint_name]),
-            as_quantity=False
-        )
-        for constraint_name in ('type',)
-        if constraint_name in spec
-    ]
+    # Constructing a tree of conditions:
+    #
+    # (type is correct) || (last network is expansion && has enough spare networks && type is correct)
+    def _parse_type_spec(spec: SpecType) -> None:
+        # Our "expansion" branch consists of several conditions that must be satisfied: we need to check
+        # expansion is allowed first, then make sure the network we're trying to match with the flavor
+        # fits into what this expansion can handle, and then we can deal with type supported by the expansion.
+        direct_group = And()
+        expansion_group = And()
+
+        type_ = spec['type']
+
+        constraint_name = f'network[{network_index}].type'
+        original_constraint = Constraint.from_specification(constraint_name, str(type_), as_quantity=False)
+
+        direct_group.constraints += [original_constraint]
+
+        expansion_group.constraints += [
+            Constraint.from_specification(
+                'network.length',
+                '> 0',
+                as_quantity=False,
+                as_cast=int,
+                original_constraint=original_constraint
+            ),
+            Constraint.from_specification(
+                'network[-1].is_expansion',
+                'True',
+                as_quantity=False,
+                as_cast=bool,
+                original_constraint=original_constraint
+            ),
+            Constraint.from_specification(
+                'network.expanded_length',
+                f'> {network_index}',
+                as_quantity=False,
+                as_cast=int,
+                original_constraint=original_constraint
+            )
+        ]
+
+        if original_constraint.operator in (Operator.EQ,):
+            expansion_group.constraints += [
+                Constraint.from_specification(
+                    'network[-1].type',
+                    original_constraint.raw_value,
+                    as_quantity=False,
+                    original_constraint=original_constraint
+                )
+            ]
+
+        else:
+            raise ParseError(
+                message='operator not supported',
+                constraint_name=constraint_name,
+                raw_value=str(type_)
+            )
+
+        group.constraints += [
+            Or([
+                direct_group,
+                expansion_group
+            ])
+        ]
+
+    if 'type' in spec:
+        _parse_type_spec(spec)
 
     if len(group.constraints) == 1:
         return group.constraints[0]
