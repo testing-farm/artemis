@@ -85,7 +85,14 @@ def test_schedule_release_of_shelved_gr(
     mock_update_gr_and_reqest_task = mockpatch(tft.artemis.tasks.remove_shelf, '_update_guest_state_and_request_task')
     mock_update_gr_and_reqest_task.return_value = Ok(True)
 
-    mock_guests = [MagicMock(spec=tft.artemis.db.GuestRequest, guestname='dummy-guest', shelfname='dummy-shelf')]
+    mock_guests = [
+        MagicMock(
+            spec=tft.artemis.db.GuestRequest,
+            guestname='dummy-guest',
+            poolname='dummy-pool',
+            shelfname='dummy-shelf'
+        )
+    ]
 
     workspace.shelved_guests = cast(List[tft.artemis.db.GuestRequest], mock_guests)
 
@@ -103,7 +110,8 @@ def test_schedule_release_of_shelved_gr(
             current_state=tft.artemis.guest.GuestState.SHELVED,
             set_values={
                 'shelfname': None
-            }
+            },
+            poolname='dummy-pool'
         )
         for guest in mock_guests
     ])

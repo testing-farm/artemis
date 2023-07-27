@@ -78,7 +78,8 @@ class Workspace(_Workspace):
                 current_state=GuestState.SHELVED,
                 set_values={
                     'shelfname': None
-                }
+                },
+                poolname=guest.poolname
             )
 
             if r.is_error:

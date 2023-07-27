@@ -971,6 +971,7 @@ class GuestRequestManager:
                     failure_details=failure_details
                 )
 
+            current_state = guest_request.state
             guest_delete_task = release_guest_request
             extra_actor_args = []
 
@@ -1054,6 +1055,12 @@ class GuestRequestManager:
                     task_request_id=task_request_id,
                     *extra_actor_args
                 ).serialize()
+            )
+
+            metrics.ProvisioningMetrics.inc_guest_state_transition(
+                guest_request.poolname,
+                current_state,
+                GuestState.CONDEMNED
             )
 
     def acquire_guest_console_url(
