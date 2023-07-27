@@ -375,11 +375,6 @@ def constraint_to_beaker_filter(
                 constraint_name=constraint.name
             ))
 
-        for i, parent in enumerate(reversed(constraint_parents)):
-            print(f'parent #{i}')
-            print(parent)
-            print()
-
         # 4th parent is a group collecting all `disk` entries
         if len(constraint_parents) >= 4:
             parent = constraint_parents[-4]
@@ -486,16 +481,40 @@ def constraint_to_beaker_filter(
             )
 
     if constraint_name.property == 'network':
-        # NOTE(ivasilev) IIUC only eth is valid type. Maybe worth revisiting later
-        if not all([cast(Constraint, net).value == "eth" for net in constraint_siblings]):
+        if constraint_name.child_property in ('is_expansion', 'length', 'expanded_length'):
+            return Ok(_new_tag('or'))
+
+        if constraint_name.child_property == 'type' and constraint.value != 'eth':
             return Error(Failure(
                 'only eth networks are supported for beaker constraints',
                 constraint=repr(constraint_siblings),
                 constraint_name=constraint.name
             ))
-        network = _new_tag('key_value', key="NR_ETH", value=str(len(constraint_siblings)))
 
-        return Ok(network)
+        # 3rd parent is a group collecting all `network` entries
+        if len(constraint_parents) >= 3:
+            parent = constraint_parents[-3]
+
+            # This should not happen unless environment parsing changes.
+            if not isinstance(parent, And):
+                return Error(Failure(
+                    'failed to find proper parent of network constraint',
+                    constraint=repr(constraint),
+                    constraint_name=constraint.name
+                ))
+
+            return Ok(_new_tag(
+                'key_value',
+                key="NR_ETH",
+                op=OPERATOR_SIGN_TO_OPERATOR[Operator.GTE],
+                value=str(len(parent.constraints))
+            ))
+
+        return Error(Failure(
+            'constraint not supported by driver',
+            constraint=repr(constraint),
+            constraint_name=constraint.name
+        ))
 
     return Error(Failure(
         'constraint not supported by driver',
@@ -505,32 +524,73 @@ def constraint_to_beaker_filter(
 
 
 def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, Failure]:
-    def _remove_multiples(tag_name: str, key: str) -> None:
-        # first occurence will be kept, others removed
-        for el in tree.find_all(tag_name, key=key)[1:]:
-            el.extract()
+    def _remove_duplicates(tag_name: str, key: str) -> int:
+        changes = 0
 
-    _remove_multiples('key_value', 'NR_ETH')
+        for el in tree.find_all(tag_name, attrs={'key': key}):
+            if el.parent is None:
+                continue
+
+            siblings = [
+                sibling
+                for sibling in el.parent.find_all(
+                    tag_name,
+                    attrs={
+                        'key': key,
+                        'op': el.attrs['op'],
+                        'value': el.attrs['value']
+                    },
+                    resursive=False
+                )
+                if sibling is not el
+            ]
+
+            for sibling in siblings:
+                sibling.extract()
+
+                changes += 1
+
+        return changes
 
     # Conversion process produces empty `and` and `or` tags, thanks to how Beaker deals with disks without flavors.
     # The following code is a crude attempt to get rid of some of them (there may be some left, empty `or` in `and`
     # in `or`) would keep the last `or` since we run just two swipes. But that's good enough for now.
-    def _remove_empty(tag_name: str) -> None:
+    def _remove_empty(tag_name: str) -> int:
+        changes = 0
+
         for el in tree.find_all(tag_name):
             if len(el.contents) == 0:
                 el.extract()
 
-    _remove_empty('or')
-    _remove_empty('and')
-    _remove_empty('system')
+                changes += 1
 
-    def _remove_singles(tag_name: str) -> None:
+        return changes
+
+    def _remove_singles(tag_name: str) -> int:
+        changes = 0
+
         for el in tree.find_all(tag_name):
             if len(el.contents) == 1:
                 el.replace_with(el.contents[0])
 
-    _remove_singles('or')
-    _remove_singles('and')
+                changes += 1
+
+        return changes
+
+    for _ in range(0, 5):
+        changes = \
+            _remove_empty('or') \
+            + _remove_empty('and') \
+            + _remove_empty('system') \
+            + _remove_singles('or') \
+            + _remove_singles('and') \
+            + _remove_duplicates('key_value', 'NR_ETH') \
+            + _remove_duplicates('key_value', 'NR_DISKS')
+
+        if changes == 0:
+            break
+
+    print('pruned', tree)
 
     return Ok(tree)
 
