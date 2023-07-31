@@ -1991,7 +1991,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok([])
 
-    def _fetch_patched_pool_image_info_from_config(
+    def _patch_pool_image_info_from_config(
         self,
         logger: gluetool.log.ContextAdapter,
         images: Dict[str, PoolImageInfo]
@@ -2055,7 +2055,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(None)
 
-    def _fetch_pool_image_info_from_config(
+    def _update_pool_image_info_from_config(
         self,
         logger: gluetool.log.ContextAdapter,
         images: List[PoolImageInfo]
@@ -2072,7 +2072,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         }
 
         if 'patch-images' in self.pool_config:
-            r_patched_images = self._fetch_patched_pool_image_info_from_config(
+            r_patched_images = self._patch_pool_image_info_from_config(
                 logger,
                 image_map
             )
@@ -2101,21 +2101,21 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
             return Error(r_image_info.unwrap_error())
 
-        real_images = r_image_info.unwrap()
+        image_info = r_image_info.unwrap()
 
-        r_config_images = self._fetch_pool_image_info_from_config(LOGGER.get(), real_images)
+        r_updated_images = self._update_pool_image_info_from_config(LOGGER.get(), image_info)
 
-        if r_config_images.is_error:
-            return Error(r_config_images.unwrap_error())
+        if r_updated_images.is_error:
+            return Error(r_updated_images.unwrap_error())
 
-        all_images = real_images + r_config_images.unwrap()
+        patched_images = r_updated_images.unwrap()
 
         r_refresh = refresh_cached_set(
             CACHE.get(),
             self.image_info_cache_key,
             {
                 ii.name: ii
-                for ii in all_images
+                for ii in patched_images
                 if ii.name
             }
         )
@@ -2123,7 +2123,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_refresh.is_error:
             return Error(r_refresh.unwrap_error())
 
-        PoolMetrics(self.poolname).refresh_image_info_metrics(self.poolname, len(all_images))
+        PoolMetrics(self.poolname).refresh_image_info_metrics(self.poolname, len(patched_images))
 
         return Ok(None)
 
