@@ -10,7 +10,7 @@ import time
 import urllib
 import urllib.parse
 from time import sleep
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, Generator, List, Optional, cast
 
 import click
 import click_completion
@@ -213,9 +213,22 @@ def cmd_guest(cfg: Configuration) -> None:
     default=None,
     help='Watchdog dispatch period in seconds'
 )
-@click.pass_obj
+@click.option(
+    '--count',
+    type=int,
+    default=1,
+    help='How many guests to provision at once'
+)
+@click.option(
+    '--test',
+    is_flag=True,
+    default=False,
+    help='If specified, provisioned guest(s) would be returned right after provisioning'
+)
+@click.pass_context
 def cmd_guest_create(
-        cfg: Configuration,
+        ctx: Any,
+        count: int,
         keyname: Optional[str] = None,
         arch: Optional[str] = None,
         hw_constraints: Optional[str] = None,
@@ -232,8 +245,17 @@ def cmd_guest_create(
         wait: Optional[bool] = None,
         log_types: Optional[List[str]] = None,
         watchdog_dispatch_delay: Optional[int] = None,
-        watchdog_period_delay: Optional[int] = None
+        watchdog_period_delay: Optional[int] = None,
+        test: bool = False
 ) -> None:
+    cfg = cast(
+        Configuration,
+        ctx.obj
+    )
+
+    if test and not wait:
+        cfg.logger.error('--test cannot be used without --wait')
+
     assert cfg.artemis_api_version is not None
 
     environment: Dict[str, Any] = {}
@@ -355,75 +377,93 @@ def cmd_guest_create(
         cfg.logger.error(f'--log-types is supported with API {API_FEATURE_VERSIONS["log-types"]} and newer')
         sys.exit(1)
 
-    response = artemis_create(cfg, 'guests/', data)
+    def _create_guests() -> Generator[Any, None, None]:
+        for _ in range(count):
+            response = artemis_create(cfg, 'guests/', data)
 
-    if not response.ok:
-        cfg.logger.unhandled_api_response(response)
+            if not response.ok:
+                cfg.logger.unhandled_api_response(response)
 
-    guest = response.json()
+            yield response.json()
 
     if not wait:
-        print_guests(cfg, [guest])
+        print_guests(cfg, list(_create_guests()))
         return
 
     if cfg.output_format == 'table':
         def before() -> None:
             cfg.console.clear()
 
-        def on_update(guest: Dict[str, Any]) -> None:
+        def on_update(guests: List[Dict[str, Any]]) -> None:
             cfg.console.clear()
 
-            print_guests(cfg, [guest])
+            print_guests(cfg, guests)
 
-        def after(guest: Dict[str, Any]) -> None:
+        def after(guests: List[Dict[str, Any]]) -> None:
             pass
 
     else:
         def before() -> None:
             pass
 
-        def on_update(guest: Dict[str, Any]) -> None:
+        def on_update(guests: List[Dict[str, Any]]) -> None:
             pass
 
-        def after(guest: Dict[str, Any]) -> None:
-            print_guests(cfg, [guest])
+        def after(guests: List[Dict[str, Any]]) -> None:
+            print_guests(cfg, guests)
 
     before()
 
-    print_guests(cfg, [guest])
+    guests = list(_create_guests())
 
-    guestname = guest['guestname']
-    state = guest['state']
+    print_guests(cfg, guests)
 
-    with cfg.console.status('Waiting for guest to become ready...', spinner='dots'):
+    with cfg.console.status('Waiting for guests to become ready...', spinner='dots'):
         while True:
-            response = artemis_inspect(cfg, 'guests', guestname)
+            current_guests: List[Any] = guests[:]
 
-            if not response.ok:
-                cfg.logger.unhandled_api_response(response)
+            for i, guest in enumerate(current_guests):
+                guestname = guest['guestname']
+                old_state = guest['state']
 
-            guest = response.json()
+                response = artemis_inspect(cfg, 'guests', guestname)
 
-            new_state = guest['state']
+                if not response.ok:
+                    cfg.logger.unhandled_api_response(response)
 
-            if state == new_state:
-                sleep(cfg.provisioning_poll_interval)
-                continue
+                guests[i] = guest = response.json()
+                new_state = guest['state']
 
-            state = new_state
+                if old_state != new_state:
+                    on_update(guests)
 
-            on_update(guest)
-
-            if state == 'ready' or state == 'error':
+            if all(guest['state'] in ('ready', 'error') for guest in guests):
                 break
 
-    after(guest)
+            sleep(cfg.provisioning_poll_interval)
 
-    if state == 'ready':
-        cfg.logger.success('Provisioning finished, guest is ready.')
+        after(guests)
 
-    elif state == 'error':
-        cfg.logger.error('Provisioning finished with an error.')
+    all_ready = all(guest['state'] == 'ready' for guest in guests)
+    any_error = any(guest['state'] == 'error' for guest in guests)
+
+    if test:
+        if all_ready:
+            cfg.logger.success('Provisioning finished, guests are ready.')
+
+        elif any_error:
+            cfg.logger.error('Provisioning finished with an error.', exit=False)
+
+        ctx.invoke(cmd_cancel, guestnames=[guest['guestname'] for guest in guests])
+
+        sys.exit(1 if any_error else 0)
+
+    else:
+        if all_ready:
+            cfg.logger.success('Provisioning finished, guests are ready.')
+
+        elif any_error:
+            cfg.logger.error('Provisioning finished with an error.')
 
 
 @cmd_guest.command(name='inspect', short_help='Inspect provisioning request')
