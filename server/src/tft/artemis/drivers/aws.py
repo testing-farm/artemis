@@ -123,6 +123,20 @@ class APIImageType(TypedDict):
     PlatformDetails: str
     BlockDeviceMappings: APIBlockDeviceMappingsType
     EnaSupport: Optional[bool]
+    CreationDate: str
+
+
+ConfigImageFilter = TypedDict(
+    'ConfigImageFilter',
+    {
+        'name-wildcard': str,
+        'name-regex': str,
+        'creation-date-regex': str,
+        'owner': str,
+        'max-age': int
+    },
+    total=False
+)
 
 
 AWS_VM_HYPERVISORS = ('nitro', 'xen')
@@ -2379,22 +2393,41 @@ class AWSDriver(PoolDriver):
         return Ok(True)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        if self.pool_config.get('image-regex'):
-            image_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['image-regex'])
+        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:
+            name_patern: Optional[Pattern[str]] = None
+            creation_date_patern: Optional[Pattern[str]] = None
+            max_age: Optional[int] = None
 
-        else:
-            image_name_pattern = None
+            if filters:
+                if 'name-regex' in filters:
+                    name_patern = re.compile(filters['name-regex'])
 
-        def _fetch_images(name_filter: Optional[str] = None) -> Result[List[PoolImageInfo], Failure]:
+                if 'creation-date-regex' in filters:
+                    creation_date_patern = re.compile(filters['creation-date-regex'])
+
+                if 'max-age' in filters:
+                    max_age = filters.get('max-age')
+
             cli_options = [
                 'ec2',
-                'describe-images',
-                '--owners'
-            ] + self._image_owners
+                'describe-images'
+            ]
 
-            if name_filter is not None:
+            if filters and 'owner' in filters:
                 cli_options += [
-                    '--filter', f'Name=name,Values={name_filter}'
+                    '--owners',
+                    filters['owner']
+                ]
+
+            else:
+                cli_options += [
+                    '--owners',
+                    'self'
+                ]
+
+            if filters and 'name-wildcard' in filters:
+                cli_options += [
+                    '--filter', f'Name=name,Values={filters["name-wildcard"]}'
                 ]
 
             r_images = self._aws_command(
@@ -2412,8 +2445,15 @@ class AWSDriver(PoolDriver):
             images: List[PoolImageInfo] = []
 
             for image in cast(List[APIImageType], r_images.unwrap()):
-                if image_name_pattern is not None \
-                   and not image_name_pattern.match(image.get('Name') or image['ImageId']):
+                if name_patern is not None \
+                   and not name_patern.match(image.get('Name') or image['ImageId']):
+                    continue
+
+                if creation_date_patern is not None \
+                   and not creation_date_patern.match(image['CreationDate']):
+                    continue
+
+                if max_age is not None and is_old_enough(self.logger, image['CreationDate'], max_age):
                     continue
 
                 try:
@@ -2452,15 +2492,25 @@ class AWSDriver(PoolDriver):
                         image_info=r_images.unwrap()
                     ))
 
+            log_dict_yaml(self.logger.debug, 'image filters', filters)
+            log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
+
             return Ok(images)
 
         images: List[PoolImageInfo] = []
-        # As a default, use `[None]` - if image-name-filter is not specified, we'd iterate at least
-        # once with name_filter=None thanks to this, simplifying the code.
-        image_filters = cast(List[Optional[str]], self.pool_config.get('image-name-filters', [None]))
+        image_filters = cast(List[ConfigImageFilter], self.pool_config.get('image-filters', []))
 
-        for name_filter in image_filters:
-            r_images = _fetch_images(name_filter=name_filter)
+        if image_filters:
+            for filters in image_filters:
+                r_images = _fetch_images(filters)
+
+                if r_images.is_error:
+                    return r_images
+
+                images += r_images.unwrap()
+
+        else:
+            r_images = _fetch_images()
 
             if r_images.is_error:
                 return r_images

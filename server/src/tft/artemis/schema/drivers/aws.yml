@@ -43,13 +43,25 @@ properties:
   flavor-regex:
     type: string
 
-  image-name-filters:
+  image-filters:
     type: array
     items:
-      type: string
+      type: object
+      properties:
+        name-wildcard:
+          type: string
 
-  image-regex:
-    type: string
+        name-regex:
+          type: string
+
+        creation-date-regex:
+          type: string
+
+        owner:
+          type: string
+
+        max-age:
+          type: integer
 
   master-key-name:
     type: string
