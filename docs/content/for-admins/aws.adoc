@@ -10,57 +10,60 @@ draft: false
 
 === Image filters
 
-When searching for images, AWS driver would list all images available to <<_image_owners,image owners>> configured for the pool. This can be a substantial amount of images, especially when pool has access to public catalogs, and large number of images may considerably extend the time needed to acquire necessary information from AWS API and increase resource usage. To limit the set of inspected images, it is possible to specify a wildcard filters to apply to image names.
+When searching for images, AWS driver would list all images owned by the `self` owner, i.e. it is limited by images owned by the given credentials.
+This can be a substantial amount of images, especially when pool has access to public catalogs, and large number of images may considerably extend the time needed to acquire necessary information from AWS API and increase resource usage.
+To expand the set of possible owners while limiting the amount of cached images, it is possible to employ several image filters.
+
+Each entry of `image-filters` list may enable multiple filters at once, they all must match the image for it to be included in the cache.
+All filters are optional, but at least one must be enabled.
+
+Filters are applied in groups:
+
+1. `name-wildcard` and `owner` are applied first, being passed to AWS CLI `describe-images` command
+2. `name-regex`, `max-age` and `creation-date-regex` are applied second, pruning the list acquired from `describe-images` even further.
+
+.Specification
+[source,yaml]
+....
+image-filters:
+    # Image name must match a glob-like string
+  - name-wildcard: <wildcard string>
+
+    # Image name must match a regular expression
+    name-regex: <pattern>
+
+    # Image owner must match
+    owner: <string>
+
+    # Image must be younger than this many seconds
+    max-age: <integer>
+
+    # Image creation date must match a regular expression.
+    # The date would be in the following format: "2019-05-10T13:17:12.000Z"
+    creation-date-regex: <pattern>
+....
+
+.Example
+[source,yaml]
+....
+image-owners:
+  # Include all images we own
+  - owner: "self"
+
+  # From this owner, pick only CentOS Stream images
+  - owner: "123456"
+    name-wildcard: "CentOs Stream *"
+
+  # From this owner, pick only images created in November or December
+  - owner: "654321"
+    creation-date-regex: "2023-(11|12)-.*"
+....
 
 [NOTE]
 ====
-Wildcard paterns accepted by `image-name-filter` are an exception to Artemis prefering regular expressions when working with patterns. These patterns are not regular expressions, they will be passed to AWS CLI's `--filter` option which accepts glob-like wildcards only. See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html#Filtering_Resources_CLI[AWS EC2 documentation] for more details on filters.
-====
-
-.Specification
-[source,yaml]
-....
-image-name-filter:
-  - glob-1
-  - glob-2
-  ...
-....
-
-.Example
-[source,yaml]
-....
-image-name-filter:
-  # Include only images with names starting with "foo-" prefix...
-  - foo-*
-  # ... and images with "a-team-" prefix.
-  - a-team-*
-....
-
-=== Image owners
-
-When searching for images, AWS driver would list all images owned by the `self` owner, i.e. it is limited by images owned by the given credentials. To expand this set, it is possible to explicitly set the list of owners to include when looking for images a pool can use for provisioning.
-
-.Specification
-[source,yaml]
-....
-image-owners:
-  - owner-1
-  - owner-2
-  ...
-....
-
-.Example
-[source,yaml]
-....
-image-owners:
-  - self
-  - another-owner
-  - some-other-account
-....
-
-[IMPORTANT]
-====
-Once you opt in and use `image-owners` option, the list would be used **instead** of the default one, with `self` only. Therefore if you do wish to keep `self` in play, you need to make it one of the items of the `image-owners` list, as shown in the example above.
+Wildcard paterns accepted by `image-filters` are an exception to Artemis prefering regular expressions when working with patterns.
+These patterns are not regular expressions, they will be passed to AWS CLI's `--filter` option which accepts glob-like wildcards only.
+See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html#Filtering_Resources_CLI[AWS EC2 documentation] for more details on filters.
 ====
 
 === Expose Public IP address
