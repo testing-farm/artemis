@@ -399,6 +399,7 @@ class ActorOptions(TypedDict):
     # Singleton middleware
     singleton: bool
     singleton_deadline: int
+    singleton_no_retry_on_lock_fail: bool
 
     # Middleware notes
     artemis_notes: Optional[Dict[str, str]]
@@ -775,7 +776,7 @@ def actor_kwargs(
         'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value)),
         'singleton_deadline': int(
             actor_control_value(actor_name, 'SINGLETON_DEADLINE', KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE.value)
-        ),
+        )
     }
 
     if periodic is not None:
@@ -856,7 +857,8 @@ class task:
         queue_name: TaskQueue = TaskQueue.DEFAULT,
         periodic: Optional[periodiq.CronSpec] = None,
         tail_handler: Optional['TailHandler'] = None,
-        singleton: bool = False
+        singleton: bool = False,
+        singleton_no_retry_on_lock_fail: bool = False
     ) -> None:
         self.priority = priority
         self.queue_name = queue_name
@@ -865,6 +867,7 @@ class task:
         self.tail_handler = tail_handler
 
         self.singleton = singleton
+        self.singleton_no_retry_on_lock_fail = singleton_no_retry_on_lock_fail
 
     def __call__(self, fn: BareActorType) -> Actor:
         actor_name_uppersized = fn.__name__.upper()
@@ -880,6 +883,7 @@ class task:
             fn,
             tail_handler=self.tail_handler,
             singleton=self.singleton,
+            singleton_no_retry_on_lock_fail=self.singleton_no_retry_on_lock_fail,
             **dramatiq_kwargs
         )
 
@@ -4269,6 +4273,7 @@ def acquire_guest_console_url(guestname: str) -> None:
 
 @task(
     singleton=True,
+    singleton_no_retry_on_lock_fail=True,
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.POOL_DATA_REFRESH
 )
@@ -4305,12 +4310,18 @@ def do_refresh_pool_resources_metrics_dispatcher(
             refresh_pool_resources_metrics,
             pool.poolname
         )
+        dispatch_task(
+            get_pool_logger('refresh-pool-resources-metrics-dispatcher', _ROOT_LOGGER, pool.poolname),
+            refresh_pool_resources_metrics,
+            pool.poolname
+        )
 
     return workspace.handle_success('finished-task')
 
 
 @task(
     singleton=True,
+    singleton_no_retry_on_lock_fail=True,
     periodic=periodiq.cron(KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE.value),
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.PERIODIC
@@ -4372,6 +4383,7 @@ def do_refresh_pool_image_info(
 
 @task(
     singleton=True,
+    singleton_no_retry_on_lock_fail=True,
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.POOL_DATA_REFRESH
 )
@@ -4408,12 +4420,18 @@ def do_refresh_pool_image_info_dispatcher(
             refresh_pool_image_info,
             pool.poolname
         )
+        dispatch_task(
+            get_pool_logger('refresh-pool-image-info-dispatcher', _ROOT_LOGGER, pool.poolname),
+            refresh_pool_image_info,
+            pool.poolname
+        )
 
     return workspace.handle_success('finished-task')
 
 
 @task(
     singleton=True,
+    singleton_no_retry_on_lock_fail=True,
     periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value),
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.PERIODIC
@@ -4473,7 +4491,12 @@ def do_refresh_pool_flavor_info(
     return workspace.handle_success('finished-task')
 
 
-@task(singleton=True, priority=TaskPriority.HIGH, queue_name=TaskQueue.POOL_DATA_REFRESH)
+@task(
+    singleton=True,
+    singleton_no_retry_on_lock_fail=True,
+    priority=TaskPriority.HIGH,
+    queue_name=TaskQueue.POOL_DATA_REFRESH
+)
 def refresh_pool_flavor_info(poolname: str) -> None:
     task_core(
         cast(DoerType, do_refresh_pool_flavor_info),
@@ -4507,12 +4530,18 @@ def do_refresh_pool_flavor_info_dispatcher(
             refresh_pool_flavor_info,
             pool.poolname
         )
+        dispatch_task(
+            get_pool_logger('refresh-pool-flavor-info-dispatcher', logger, pool.poolname),
+            refresh_pool_flavor_info,
+            pool.poolname
+        )
 
     return workspace.handle_success('finished-task')
 
 
 @task(
     singleton=True,
+    singleton_no_retry_on_lock_fail=True,
     periodic=periodiq.cron(KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE.value),
     priority=TaskPriority.HIGH,
     queue_name=TaskQueue.PERIODIC
@@ -4584,6 +4613,7 @@ def do_gc_events(
 
 @task(
     singleton=True,
+    singleton_no_retry_on_lock_fail=True,
     periodic=periodiq.cron(KNOB_GC_EVENTS_SCHEDULE.value),
     priority=TaskPriority.LOW,
     queue_name=TaskQueue.PERIODIC
@@ -4631,7 +4661,12 @@ def do_refresh_pool_avoid_groups_hostnames(
     return workspace.handle_success('finished-task')
 
 
-@task(singleton=True, priority=TaskPriority.HIGH, queue_name=TaskQueue.POOL_DATA_REFRESH)
+@task(
+    singleton=True,
+    singleton_no_retry_on_lock_fail=True,
+    priority=TaskPriority.HIGH,
+    queue_name=TaskQueue.POOL_DATA_REFRESH
+)
 def refresh_pool_avoid_groups_hostnames(poolname: str) -> None:
     task_core(
         cast(DoerType, do_refresh_pool_avoid_groups_hostnames),
