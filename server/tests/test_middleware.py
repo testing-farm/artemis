@@ -173,7 +173,7 @@ def test_retry_message(
 
     mockpatch(tft.artemis.middleware, '_message_backoff').return_value = 79
 
-    task_call = tft.artemis.tasks.TaskCall.from_call(actor, *tuple(value for _, value in actor_arguments))
+    task_call = tft.artemis.tasks.TaskCall.from_call(actor, *tuple(str(value) for _, value in actor_arguments))
 
     tft.artemis.middleware._retry_message(
         logger,

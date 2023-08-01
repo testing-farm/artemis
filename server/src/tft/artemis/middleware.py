@@ -86,12 +86,14 @@ def _retry_message(
     logger: gluetool.log.ContextAdapter,
     broker: dramatiq.broker.Broker,
     message: dramatiq.message.Message,
-    task_call: Optional['TaskCall'] = None,
+    task_call: 'TaskCall',
     exc_info: Optional['ExceptionInfoType'] = None
-) -> None:
+) -> bool:
     """
     Enqueue a given message while increasing its "retried" count by 1.
     """
+
+    from . import log_dict_yaml
 
     message.options['retries'] = message.options.get('retries', 0) + 1
 
@@ -99,13 +101,28 @@ def _retry_message(
         message.options['traceback'] = '\n'.join(traceback.format_exception(*exc_info, limit=30))
 
     retries = cast(int, message.options['retries'])
-    backoff = _message_backoff(message, retries, actor=task_call.actor if task_call else None)
+    max_retries = _message_max_retries(message, task_call.actor)
+    backoff = _message_backoff(message, retries, actor=task_call.actor)
 
     retry_at = datetime.datetime.utcnow() + datetime.timedelta(milliseconds=backoff)
 
-    logger.info(f'retries: message={message.message_id} retries={retries} backoff={backoff} retrying-at={retry_at}')
-
     broker.enqueue(message, delay=backoff)
+
+    log_dict_yaml(
+        logger.info,
+        'message scheduled for retry',
+        {
+            'task_call': task_call.serialize(),
+            'retries': {
+                'current': retries,
+                'max': max_retries,
+                'backoff': backoff,
+                'retry-at': retry_at
+            }
+        }
+    )
+
+    return True
 
 
 def _fail_message(
@@ -169,7 +186,7 @@ def resolve_retry_message(
     logger: gluetool.log.ContextAdapter,
     broker: dramatiq.broker.Broker,
     task_call: 'TaskCall'
-) -> None:
+) -> bool:
     from . import log_dict_yaml
 
     assert task_call.broker_message is not None
@@ -193,7 +210,7 @@ def resolve_retry_message(
     if max_retries is not None and retries >= max_retries:
         # Kill messages for tasks we don't handle in any better way. After all, they did run out of retires.
         if not task_call.has_tail_handler:
-            return _fail_message(
+            _fail_message(
                 logger,
                 task_call.broker_message,
                 'retries exceeded',
@@ -205,10 +222,12 @@ def resolve_retry_message(
                 }
             )
 
-        if _handle_tails(logger, task_call.broker_message, task_call) is True:
-            return
+            return False
 
-    _retry_message(logger, broker, task_call.broker_message, task_call=task_call)
+        if _handle_tails(logger, task_call.broker_message, task_call) is True:
+            return False
+
+    return _retry_message(logger, broker, task_call.broker_message, task_call)
 
 
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # cannot subclass 'Retries'
@@ -509,7 +528,8 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
     def actor_options(self) -> Set[str]:
         return {
             'singleton',
-            'singleton_deadline'
+            'singleton_deadline',
+            'singleton_no_retry_on_lock_fail'
         }
 
     @staticmethod
@@ -554,7 +574,15 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
             failure_details['broker_message'] = _dump_message(message)
             Failure('failed to acquire singleton lock', **failure_details).handle(logger)
 
-            resolve_retry_message(logger, broker, task_call)
+            if task_call.actor.options['singleton_no_retry_on_lock_fail']:
+                logger.info('failed to acquire singleton lock, no retry requested')
+
+                raise dramatiq.middleware.SkipMessage('failed to acquire singleton lock')
+
+            if resolve_retry_message(logger, broker, task_call):
+                return
+
+            logger.info('failed to acquire singleton lock, out of retries')
 
             raise dramatiq.middleware.SkipMessage('failed to acquire singleton lock')
 
