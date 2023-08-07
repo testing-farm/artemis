@@ -348,6 +348,49 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
 
         self._message_start_times[message.message_id] = current_millis()
 
+    def _update_after_message(
+        self,
+        broker: dramatiq.broker.Broker,
+        message: dramatiq.message.Message,
+        *,
+        exception: Optional[BaseException] = None,
+        skipped: bool = False
+    ) -> None:
+        from .metrics import TaskMetrics
+        from .tasks import TaskCall
+
+        labels = (message.queue_name, message.actor_name)
+
+        task_call = TaskCall.from_message(broker, message)
+
+        if not skipped:
+            message_start_time = self._message_start_times.pop(message.message_id, current_millis())
+            message_duration = current_millis() - message_start_time
+
+            # Extract the poolname. `None` is a good starting value, but it turns out that most of the tasks
+            # relate to a particular pool in one way or another. Some tasks are given the poolname as a parameter,
+            # and some can tell us by attaching a note to the message.
+            poolname: ActorArgumentType = None
+
+            if 'poolname' in task_call.named_args:
+                poolname = task_call.named_args['poolname']
+
+            elif message.options:
+                poolname = get_metric_note(NOTE_POOLNAME)
+
+            TaskMetrics.inc_message_durations(
+                message.queue_name,
+                message.actor_name,
+                message_duration,
+                poolname
+            )
+
+        TaskMetrics.dec_current_messages(*labels)
+        TaskMetrics.inc_overall_messages(*labels)
+
+        if exception is not None:
+            TaskMetrics.inc_overall_errored_messages(*labels)
+
     def after_process_message(
         self,
         broker: dramatiq.broker.Broker,
@@ -357,41 +400,14 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
         result: None = None,
         exception: Optional[BaseException] = None
     ) -> None:
-        from .metrics import TaskMetrics
-        from .tasks import TaskCall
+        self._update_after_message(broker, message, exception=exception)
 
-        labels = (message.queue_name, message.actor_name)
-
-        task_call = TaskCall.from_message(broker, message)
-
-        message_start_time = self._message_start_times.pop(message.message_id, current_millis())
-        message_duration = current_millis() - message_start_time
-
-        # Extract the poolname. `None` is a good starting value, but it turns out that most of the tasks
-        # relate to a particular pool in one way or another. Some tasks are given the poolname as a parameter,
-        # and some can tell us by attaching a note to the message.
-        poolname: ActorArgumentType = None
-
-        if 'poolname' in task_call.named_args:
-            poolname = task_call.named_args['poolname']
-
-        elif message.options:
-            poolname = get_metric_note(NOTE_POOLNAME)
-
-        TaskMetrics.inc_message_durations(
-            message.queue_name,
-            message.actor_name,
-            message_duration,
-            poolname
-        )
-
-        TaskMetrics.dec_current_messages(*labels)
-        TaskMetrics.inc_overall_messages(*labels)
-
-        if exception is not None:
-            TaskMetrics.inc_overall_errored_messages(*labels)
-
-    after_skip_message = after_process_message
+    def after_skip_message(
+        self,
+        broker: dramatiq.broker.Broker,
+        message: dramatiq.message.Message
+    ) -> None:
+        self._update_after_message(broker, message, skipped=True)
 
 
 class WorkerMetrics(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
@@ -514,6 +530,8 @@ class CurrentMessage(dramatiq.middleware.Middleware):  # type: ignore[misc]  # c
         from .context import CURRENT_MESSAGE
 
         CURRENT_MESSAGE.set(None)
+
+    after_skip_message = after_process_message
 
 
 class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
