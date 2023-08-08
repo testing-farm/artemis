@@ -1076,6 +1076,16 @@ of a variable to render in a template.
 
 5+|Path to a file with a password for decrypting files protected by Ansible Vault.
 
+|`worker.max-tasks`
+|`int`
+|`ARTEMIS_WORKER_MAX_TASKS_PER_PROCESS`
+|`0`
+|no
+
+
+
+5+|After this many tasks processed, a worker process would reload itself. Set to 0 to disable.
+
 |`worker.metrics.process.enabled`
 |`bool`
 |`ARTEMIS_WORKER_PROCESS_METRICS_ENABLED`

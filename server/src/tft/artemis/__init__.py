@@ -1010,9 +1010,18 @@ def get_config() -> Dict[str, Any]:
 
 
 def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.Middleware]:
-    from .knobs import KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB_WORKER_TRAFFIC_METRICS_ENABLED
+    from .knobs import KNOB_WORKER_MAX_TASKS_PER_PROCESS, KNOB_WORKER_PROCESS_METRICS_ENABLED, \
+        KNOB_WORKER_TRAFFIC_METRICS_ENABLED
 
     middleware: List[dramatiq.Middleware] = []
+
+    if KNOB_WORKER_MAX_TASKS_PER_PROCESS.value != 0:
+        middleware.append(
+            artemis_middleware.WorkerMaxTasksPerProcess(
+                logger,
+                KNOB_WORKER_MAX_TASKS_PER_PROCESS.value
+            )
+        )
 
     if KNOB_WORKER_PROCESS_METRICS_ENABLED.value is True:
         from .knobs import KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK

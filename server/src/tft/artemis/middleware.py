@@ -3,6 +3,7 @@
 
 import datetime
 import os
+import signal
 import threading
 import traceback
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set, cast
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
 # Dramatiq does not have a global default for maximal number of retries, the value is only present as a default
 # of `Retries` middleware's `retries` keyword parameter.
 DEFAULT_MAX_RETRIES = 20
+
+DEFAULT_MAX_TASKS_PER_WORKER_PROCESS = 100
 
 
 def _dump_message(message: dramatiq.message.Message) -> Dict[str, Any]:
@@ -670,3 +673,41 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
             logger.info(f'singleton-lock: lockname={lockname} release=succeeded token={token}')
 
         logger.info('released singleton lock')
+
+
+class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+    def __init__(
+            self,
+            logger: gluetool.log.ContextAdapter,
+            max_tasks: int) -> None:
+        super().__init__()
+
+        self.logger = logger
+        self.lock = threading.Lock()
+        self.counter = max_tasks
+        self.signaled = False
+
+    def after_process_message(
+        self,
+        broker: dramatiq.broker.Broker,
+        message: dramatiq.message.Message,
+        *,
+        # This is on purpose, our tasks never return anything useful.
+        result: None = None,
+        exception: Optional[BaseException] = None
+    ) -> None:
+        with self.lock:
+            self.counter -= 1
+
+            self.logger.debug(f'worker task counter decreased to {self.counter}')
+
+            if self.counter > 0 or self.signaled:
+                return
+
+            self.logger.warning('worker task counter exhausted, restarting worker process')
+
+            os.kill(os.getppid(), signal.SIGHUP)
+
+            self.signaled = True
+
+    after_skip_message = after_process_message

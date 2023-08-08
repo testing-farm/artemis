@@ -844,6 +844,15 @@ KNOB_TEMPLATE_VARIABLE_DELIMITERS: Knob[str] = Knob(
     default='{{,}}'
 )
 
+KNOB_WORKER_MAX_TASKS_PER_PROCESS: Knob[int] = Knob(
+    'worker.max-tasks',
+    'After this many tasks processed, a worker process would reload itself. Set to 0 to disable.',
+    has_db=False,
+    envvar='ARTEMIS_WORKER_MAX_TASKS_PER_PROCESS',
+    cast_from_str=int,
+    default=0
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value
