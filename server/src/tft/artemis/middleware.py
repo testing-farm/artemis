@@ -686,6 +686,7 @@ class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[
         self.lock = threading.Lock()
         self.counter = max_tasks
         self.signaled = False
+        self.worker_pid = os.getpid()
 
     def after_process_message(
         self,
@@ -699,12 +700,12 @@ class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[
         with self.lock:
             self.counter -= 1
 
-            self.logger.debug(f'worker task counter decreased to {self.counter}')
+            self.logger.debug(f'worker task counter of {self.worker_pid} decreased to {self.counter}')
 
             if self.counter > 0 or self.signaled:
                 return
 
-            self.logger.warning('worker task counter exhausted, restarting worker process')
+            self.logger.warning(f'worker task counter of {self.worker_pid} exhausted, restarting worker process')
 
             os.kill(os.getppid(), signal.SIGHUP)
 
