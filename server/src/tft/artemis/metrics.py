@@ -2953,12 +2953,14 @@ class WorkerMetrics(MetricsBase):
 
     worker_process_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
     worker_thread_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
+    worker_process_restart_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
     worker_updated_timestamp: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
 
     _KEY_WORKER_PING = 'metrics.workers.ping'
 
     _KEY_WORKER_PROCESS_COUNT = 'metrics.workers.{worker}.processes'  # noqa: FS003
     _KEY_WORKER_THREAD_COUNT = 'metrics.workers.{worker}.threads'  # noqa: FS003
+    _KEY_WORKER_PROCESS_RESTART_COUNT = 'metrics.workers.{worker}.processes.restarts'  # noqa: FS003
     _KEY_UPDATED_TIMESTAMP = 'metrics.workers.{worker}.updated_timestamp'  # noqa: FS003
 
     @staticmethod
@@ -3032,6 +3034,30 @@ class WorkerMetrics(MetricsBase):
 
         return Ok(None)
 
+    @staticmethod
+    @with_context
+    def inc_worker_process_restart_count(
+        worker: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase the worker process counter by 1.
+
+        :param worker: name of the worker.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(
+            logger,
+            cache,
+            WorkerMetrics._KEY_WORKER_PROCESS_RESTART_COUNT.format(worker=worker)  # noqa: FS002
+        )
+
+        return Ok(None)
+
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
@@ -3057,6 +3083,13 @@ class WorkerMetrics(MetricsBase):
         self.WORKER_THREAD_COUNT = Gauge(
             'worker_thread_count',
             'Number of threads by worker.',
+            ['worker'],
+            registry=registry
+        )
+
+        self.WORKER_PROCESS_RESTART_COUNT = Counter(
+            'worker_process_restart_count',
+            'Number of worker process restarts, by worker.',
             ['worker'],
             registry=registry
         )
@@ -3092,6 +3125,11 @@ class WorkerMetrics(MetricsBase):
             for metric in iter_cache_keys(logger, cache, 'metrics.workers.*.threads')
         }
 
+        self.worker_process_restart_count = {
+            metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
+            for metric in iter_cache_keys(logger, cache, 'metrics.workers.*.processes.restarts')
+        }
+
         self.worker_updated_timestamp = {
             metric.decode().split('.')[2]: get_metric(logger, cache, metric.decode())
             for metric in iter_cache_keys(logger, cache, 'metrics.workers.*.updated_timestamp')
@@ -3108,12 +3146,14 @@ class WorkerMetrics(MetricsBase):
 
         reset_counters(self.WORKER_PROCESS_COUNT)
         reset_counters(self.WORKER_THREAD_COUNT)
+        reset_counters(self.WORKER_PROCESS_RESTART_COUNT)
         reset_counters(self.WORKER_UPDATED_TIMESTAMP)
 
         # TODO: move these into `reset_counters` - these should be more reliable, and we wouldn't have to
         # do the work on our own.
         self.WORKER_PROCESS_COUNT.clear()
         self.WORKER_THREAD_COUNT.clear()
+        self.WORKER_PROCESS_RESTART_COUNT.clear()
         self.WORKER_UPDATED_TIMESTAMP.clear()
 
         for worker, processes in self.worker_process_count.items():
@@ -3125,6 +3165,11 @@ class WorkerMetrics(MetricsBase):
             self.WORKER_THREAD_COUNT \
                 .labels(worker=worker) \
                 .set(threads)
+
+        for worker, restarts in self.worker_process_restart_count.items():
+            self.WORKER_PROCESS_RESTART_COUNT \
+                .labels(worker=worker) \
+                ._value.set(restarts)
 
         for worker, timestamp in self.worker_updated_timestamp.items():
             self.WORKER_UPDATED_TIMESTAMP \

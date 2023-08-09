@@ -1010,16 +1010,21 @@ def get_config() -> Dict[str, Any]:
 
 
 def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.Middleware]:
-    from .knobs import KNOB_WORKER_MAX_TASKS_PER_PROCESS, KNOB_WORKER_PROCESS_METRICS_ENABLED, \
+    from .knobs import KNOB_COMPONENT, KNOB_WORKER_MAX_TASKS_PER_PROCESS, KNOB_WORKER_PROCESS_METRICS_ENABLED, \
         KNOB_WORKER_TRAFFIC_METRICS_ENABLED
 
     middleware: List[dramatiq.Middleware] = []
 
+    worker_name = f'worker-{platform.node()}-{os.getpid()}'
+
     if KNOB_WORKER_MAX_TASKS_PER_PROCESS.value != 0:
         middleware.append(
             artemis_middleware.WorkerMaxTasksPerProcess(
+                KNOB_WORKER_MAX_TASKS_PER_PROCESS.value,
                 logger,
-                KNOB_WORKER_MAX_TASKS_PER_PROCESS.value
+                # TODO: worker_name made out of node & pid leads to way too many labels!
+                # worker_name
+                f'worker-{KNOB_COMPONENT.value}'
             )
         )
 
@@ -1028,7 +1033,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
 
         middleware.append(
             artemis_middleware.WorkerMetrics(
-                f'worker-{platform.node()}-{os.getpid()}',
+                worker_name,
                 KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK.value
             )
         )
@@ -1038,7 +1043,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
             artemis_middleware.WorkerTraffic(
                 logger,
                 get_cache(logger),
-                f'worker-{platform.node()}-{os.getpid()}'
+                worker_name
             )
         )
 

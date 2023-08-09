@@ -678,14 +678,16 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
     def __init__(
             self,
+            max_tasks: int,
             logger: gluetool.log.ContextAdapter,
-            max_tasks: int) -> None:
+            worker_name: str) -> None:
         super().__init__()
 
-        self.logger = logger
         self.lock = threading.Lock()
         self.counter = max_tasks
         self.signaled = False
+        self.logger = logger
+        self.worker_name = worker_name
         self.worker_pid = os.getpid()
 
     def after_process_message(
@@ -710,5 +712,8 @@ class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[
             os.kill(os.getppid(), signal.SIGHUP)
 
             self.signaled = True
+
+            from .metrics import WorkerMetrics as _WorkerMetrics
+            _WorkerMetrics.inc_worker_process_restart_count(self.worker_name)
 
     after_skip_message = after_process_message
