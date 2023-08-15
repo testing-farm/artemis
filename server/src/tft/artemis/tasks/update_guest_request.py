@@ -150,11 +150,20 @@ class Workspace(_Workspace):
         if self.provisioning_progress.state != ProvisioningState.COMPLETE:
             return
 
+        assert self.gr
+
         self.update_guest_state(
             GuestState.PREPARING,
             current_state=GuestState.PROMISED,
             set_values=self.new_guest_data,
             current_pool_data=self.current_pool_data.serialize()
+        )
+
+        self.gr.log_event(
+            self.logger,
+            self.session,
+            'address-assigned',
+            address=self.provisioning_progress.address
         )
 
     @step
