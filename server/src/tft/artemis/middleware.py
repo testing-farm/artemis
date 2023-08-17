@@ -501,9 +501,31 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         result: None = None,
         exception: Optional[BaseException] = None
     ) -> None:
-        from .cache import delete_cache_value
+        from .cache import delete_cache_value, set_cache_value
+        from .knobs import KNOB_WORKER_TRAFFIC_METRICS_TTL
+        from .metrics import WorkerTrafficTask
 
         delete_cache_value(self.logger, self.cache, self.current_key)
+
+        tid = threading.get_ident()
+
+        set_cache_value(
+            self.logger,
+            self.cache,
+            self.current_key,
+            WorkerTrafficTask(
+                workername=self.worker_name,
+                worker_pid=self.worker_pid,
+                worker_tid=tid,
+                ctime=datetime.datetime.utcnow(),
+                queue='<empty>',
+                actor='<empty>',
+                args={}
+            ).serialize_to_json().encode(),
+            # Use TTL, but much smaller than the one for the actual task records. We want these empty ones
+            # to disappear, end we expect workers are not sitting idle :)
+            ttl=int(KNOB_WORKER_TRAFFIC_METRICS_TTL.value / 4)
+        )
 
     after_skip_message = after_process_message
 
