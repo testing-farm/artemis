@@ -711,7 +711,7 @@ def print_guest_logs(
                 log['contenttype'],
                 log['state'],
                 log['url'],
-                rich.markup.escape(log['blob']),
+                rich.markup.escape(log['blob']) if log['blob'] is not None else '',
                 log['updated'],
                 log['expires']
             )
