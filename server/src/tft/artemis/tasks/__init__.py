@@ -1948,7 +1948,7 @@ class Workspace:
         gr = r.unwrap()
 
         if not gr:
-            self.result = SUCCESS
+            self.result = self.handle_success('finished-task')
             return
 
         if _cancel_task_if(self.logger, self.cancel):
@@ -4337,6 +4337,10 @@ def do_acquire_guest_console_url(
 
     workspace.load_guest_request(guestname)
     workspace.load_gr_pool()
+
+    if workspace.result:
+        return workspace.result
+
     assert workspace.pool
     assert workspace.gr
     assert workspace.gr.poolname
