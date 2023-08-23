@@ -1508,12 +1508,14 @@ class ProvisioningMetrics(MetricsBase):
     _KEY_FAILOVER_SUCCESS = 'metrics.provisioning.failover.success'
     _KEY_PROVISIONING_DURATIONS = 'metrics.provisioning.durations'
     _KEY_GUEST_STATE_TRANSITIONS = 'metrics.provisioning.guest.state.transitions'
+    _KEY_EMPTY_ROUTING = 'metrics.routing.empty'
 
     requested: int = 0
     current: int = 0
     success: Dict[str, int] = dataclasses.field(default_factory=dict)
     failover: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
     failover_success: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    empty_routing: Dict[str, int] = dataclasses.field(default_factory=dict)
 
     # We want to maybe point fingers on pools where guests are stuck, so include pool name and state as labels.
     guest_ages: List[Tuple[GuestState, Optional[str], datetime.timedelta]] = dataclasses.field(default_factory=list)
@@ -1556,6 +1558,25 @@ class ProvisioningMetrics(MetricsBase):
         """
 
         inc_metric_field(logger, cache, ProvisioningMetrics._KEY_PROVISIONING_SUCCESS, pool)
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_empty_routing(
+        from_pool: Optional[str],
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase empty routing result metric by 1.
+
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :param from_pool: name of the originating pool.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(logger, cache, ProvisioningMetrics._KEY_EMPTY_ROUTING, from_pool or UNDEFINED_POOL_NAME)
         return Ok(None)
 
     @staticmethod
@@ -1685,6 +1706,10 @@ class ProvisioningMetrics(MetricsBase):
             poolname: count
             for poolname, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_SUCCESS).items()
         }
+        self.empty_routing = {
+            poolname: count
+            for poolname, count in get_metric_fields(logger, cache, self._KEY_EMPTY_ROUTING).items()
+        }
         # fields are in form `from_pool:to_pool`
         self.failover = {
             cast(Tuple[str, str], tuple(field.split(':', 1))): count
@@ -1751,6 +1776,13 @@ class ProvisioningMetrics(MetricsBase):
             registry=registry
         )
 
+        self.OVERALL_EMPTY_ROUTING_COUNT = Counter(
+            'overall_empty_routing_count',
+            'Overall total number of all empty routing outcomes by previous pool.',
+            ['pool'],
+            registry=registry
+        )
+
         self.OVERALL_FAILOVER_COUNT = Counter(
             'overall_failover_count',
             'Overall total number of failovers to another pool by source and destination pool.',
@@ -1794,6 +1826,7 @@ class ProvisioningMetrics(MetricsBase):
 
         super().update_prometheus()
 
+        reset_counters(self.OVERALL_EMPTY_ROUTING_COUNT)
         reset_counters(self.GUEST_STATE_TRANSITIONS)
 
         self.CURRENT_GUEST_REQUEST_COUNT_TOTAL.set(self.current)
@@ -1801,6 +1834,9 @@ class ProvisioningMetrics(MetricsBase):
 
         for pool, count in self.success.items():
             self.OVERALL_SUCCESSFULL_PROVISIONING_COUNT.labels(pool=pool)._value.set(count)
+
+        for pool, count in self.empty_routing.items():
+            self.OVERALL_EMPTY_ROUTING_COUNT.labels(pool=pool)._value.set(count)
 
         for (from_pool, to_pool), count in self.failover.items():
             self.OVERALL_FAILOVER_COUNT.labels(from_pool=from_pool, to_pool=to_pool)._value.set(count)

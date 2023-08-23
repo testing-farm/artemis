@@ -90,6 +90,8 @@ class Workspace(_Workspace):
 
         # If no suitable pools found
         if not self.ruling.allows_pools:
+            metrics.ProvisioningMetrics.inc_empty_routing(self.current_poolname)
+
             self.result = RESCHEDULE
 
             return
