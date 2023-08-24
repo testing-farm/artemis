@@ -1862,6 +1862,16 @@ class AWSDriver(PoolDriver):
             r_block_device_mappings.unwrap().serialize_to_json()
         ])
 
+        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type)
+
+        if r_network_interfaces.is_error:
+            return Error(r_network_interfaces.unwrap_error())
+
+        command.extend([
+            '--network-interfaces',
+            r_network_interfaces.unwrap().serialize_to_json()
+        ])
+
         user_data = self._create_user_data(logger, guest_request)
 
         if user_data:
@@ -1879,6 +1889,22 @@ class AWSDriver(PoolDriver):
             command += [
                 '--tag-specifications'
             ] + _tags_to_tag_specifications(tags, 'instance', 'volume')
+
+        # Note: this is actually not used for anything but logging alone. We re-use the spot template, the fields are
+        # pretty much the same.
+        specification = AWS_INSTANCE_SPECIFICATION.render(
+            ami_id=image.id,
+            key_name=self.pool_config['master-key-name'],
+            instance_type=instance_type,
+            availability_zone=self.pool_config['availability-zone'],
+            subnet_id=self.pool_config['subnet-id'],
+            security_group=self.pool_config['security-group'],
+            user_data=_base64_encode(user_data) if user_data else '',
+            network_interfaces=r_network_interfaces.unwrap().serialize(),
+            block_device_mappings=r_block_device_mappings.unwrap().serialize()
+        )
+
+        log_dict_yaml(logger.info, 'non-spot request launch specification', json.loads(specification))
 
         r_instance_request = self._aws_command(command, key='Instances', commandname='aws.ec2-run-instances')
 
