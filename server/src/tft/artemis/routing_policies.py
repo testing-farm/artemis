@@ -937,12 +937,14 @@ def run_routing_policies(
             history=_serialize_history()
         )
 
-    ruling = PolicyRuling.from_pools(pools)
+    # A container for pools and result, we slowly remove pools from this container to reflect
+    # changes made by various policies. Eventually, this ruling is the one we return.
+    final_ruling = PolicyRuling.from_pools(pools)
 
     for policy in policies:
         policy_name = cast(PolicyWrapperType, policy).policy_name
 
-        r = policy(logger, session, [pool_ruling.pool for pool_ruling in ruling.pools], guest_request)
+        r = policy(logger, session, [pool_ruling.pool for pool_ruling in final_ruling.pools], guest_request)
 
         RoutingMetrics.inc_policy_called(policy_name)
 
@@ -956,25 +958,25 @@ def run_routing_policies(
                 history=_serialize_history()
             ))
 
-        policy_ruling = r.unwrap()
+        current_policy_ruling = r.unwrap()
 
-        history.append(RulingHistoryItem(policyname=policy_name, ruling=policy_ruling))
+        history.append(RulingHistoryItem(policyname=policy_name, ruling=current_policy_ruling))
 
-        if policy_ruling.cancel:
+        if current_policy_ruling.cancel:
             # Mark all input pools are excluded
-            map(lambda x: RoutingMetrics.inc_pool_excluded(policy_name, x.pool.poolname), ruling.pools)
+            map(lambda x: RoutingMetrics.inc_pool_excluded(policy_name, x.pool.poolname), final_ruling.pools)
 
             RoutingMetrics.inc_policy_canceled(policy_name)
 
-            ruling.pools = []
-            ruling.cancel = True
+            final_ruling.pools = []
+            final_ruling.cancel = True
 
             _log_history()
 
-            return Ok(ruling)
+            return Ok(final_ruling)
 
         # Store ruling metrics before we update ruling container with results from the policy.
-        for pool_ruling in ruling.pools:
+        for pool_ruling in current_policy_ruling.pools:
             if pool_ruling.allowed:
                 RoutingMetrics.inc_pool_allowed(policy_name, pool_ruling.pool.poolname)
 
@@ -982,8 +984,8 @@ def run_routing_policies(
                 RoutingMetrics.inc_pool_excluded(policy_name, pool_ruling.pool.poolname)
 
         # Now we can update our container with up-to-date results.
-        ruling.pools = [pool_ruling for pool_ruling in policy_ruling.pools if pool_ruling.allowed]
+        final_ruling.pools = [pool_ruling for pool_ruling in current_policy_ruling.pools if pool_ruling.allowed]
 
     _log_history()
 
-    return Ok(ruling)
+    return Ok(final_ruling)
