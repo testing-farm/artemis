@@ -172,6 +172,7 @@ def test_evaluate_ruling_empty(
     patch(monkeypatch, workspace, 'handle_success')
     patch(monkeypatch, workspace, 'update_guest_state')
 
+    workspace.gr = MagicMock(name='dummy-guest-request')
     workspace.ruling = tft.artemis.routing_policies.PolicyRuling()
 
     assert workspace.evaluate_ruling() is workspace

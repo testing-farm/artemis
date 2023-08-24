@@ -556,6 +556,9 @@ class GuestResponse:
     watchdog_dispatch_delay: Optional[int]
     watchdog_period_delay: Optional[int]
 
+    poolname: Optional[str]
+    last_poolname: Optional[str]
+
     @classmethod
     def from_db(cls, guest: artemis_db.GuestRequest) -> 'GuestResponse':
         return cls(
@@ -580,7 +583,9 @@ class GuestResponse:
             console_url_expires=guest.console_url_expires,
             log_types=guest.log_types,
             watchdog_dispatch_delay=guest.watchdog_dispatch_delay,
-            watchdog_period_delay=guest.watchdog_period_delay
+            watchdog_period_delay=guest.watchdog_period_delay,
+            poolname=guest.poolname,
+            last_poolname=guest.last_poolname
         )
 
 

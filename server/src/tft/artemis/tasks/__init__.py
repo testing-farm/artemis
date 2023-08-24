@@ -2725,6 +2725,7 @@ class ProvisioningTailHandler(TailHandler):
             current_state=self.current_state,
             set_values={
                 'poolname': None,
+                'last_poolname': workspace.gr.poolname,
                 'pool_data': json.dumps({}),
                 'address': None
             },
