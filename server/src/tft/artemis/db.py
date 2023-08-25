@@ -925,6 +925,7 @@ class GuestRequest(Base):
     shelfname = Column(String(250), ForeignKey('guest_shelves.shelfname'), nullable=True)
     priorityname = Column(String(250), ForeignKey('priority_groups.name'), nullable=True)
     poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
+    last_poolname = Column(String(250), nullable=True)
 
     @property
     def environment(self) -> 'Environment':
@@ -1067,6 +1068,7 @@ class GuestRequest(Base):
             state=GuestState.SHELF_LOOKUP,
             state_mtime=datetime.datetime.utcnow(),
             poolname=None,
+            last_poolname=None,
             pool_data=json.dumps({}),
             _on_ready=[(actor.actor_name, args) for actor, args in on_ready] if on_ready is not None else on_ready,
         )
