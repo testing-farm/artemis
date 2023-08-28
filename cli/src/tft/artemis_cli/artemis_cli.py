@@ -63,10 +63,10 @@ API_FEATURE_VERSIONS = {
 }
 
 # FIXME Actual values from artemis_db.GuestLogContentType?
-ALLOWED_LOG_TYPES = [
-    "console:dump/blob",
-    "console:dump/url",
-    "console:interactive/url",
+ALLOWED_LOGS = [
+    'console:dump/blob',
+    'console:dump/url',
+    'console:interactive/url',
     'sys.log:dump/url'
 ]
 
@@ -205,7 +205,7 @@ def cmd_guest(cfg: Configuration) -> None:
 )
 @click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
 @click.option('--log-types', '-l', default=None, metavar='logname:contenttype',
-              help='Types of logs that guest should support', type=click.Choice(ALLOWED_LOG_TYPES), multiple=True)
+              help='Types of logs that guest should support', type=click.Choice(ALLOWED_LOGS), multiple=True)
 @click.option(
     '--watchdog-dispatch-delay',
     type=int,
@@ -650,8 +650,15 @@ def cmd_guest_events(
 
 @cmd_guest.command(name='logs', short_help='Get specific logs from the guest')
 @click.argument('guestname', metavar='ID', default=None,)
-@click.argument('logname', metavar='LOGNAME',)
-@click.argument('contenttype', metavar='CONTENTTYPE',)
+@click.option(
+    '--log',
+    'logname',
+    required=True,
+    type=click.Choice(choices=ALLOWED_LOGS),
+    metavar='LOG-NAME:VARIANT/CONTENT-TYPE',
+    help='A log to acquire. '
+    f'One of {", ".join(ALLOWED_LOGS)}.'
+)
 @click.option('--wait', is_flag=True, default=False, help='Poll the server till the log is ready')
 @click.option('--force', is_flag=True, default=False, help='Force request')
 @click.pass_obj
@@ -659,14 +666,13 @@ def cmd_guest_log(
         cfg: Configuration,
         guestname: str,
         logname: str,
-        contenttype: str,
         wait: bool,
         force: bool
 ) -> None:
     if force:
         response = fetch_artemis(
             cfg,
-            f'/guests/{guestname}/logs/{logname}/{contenttype}',
+            f'/guests/{guestname}/logs/{logname}',
             method='post',
             allow_statuses=[202]
         )
@@ -674,7 +680,7 @@ def cmd_guest_log(
     else:
         response = fetch_artemis(
             cfg,
-            f'/guests/{guestname}/logs/{logname}/{contenttype}',
+            f'/guests/{guestname}/logs/{logname}',
             allow_statuses=[200, 404, 409]
         )
 
@@ -682,7 +688,7 @@ def cmd_guest_log(
             # first time asking for this type of log
             response = fetch_artemis(
                 cfg,
-                f'/guests/{guestname}/logs/{logname}/{contenttype}',
+                f'/guests/{guestname}/logs/{logname}',
                 method='post',
                 allow_statuses=[202]
             )
@@ -693,7 +699,7 @@ def cmd_guest_log(
             # settle down.
             response = fetch_artemis(
                 cfg,
-                f'/guests/{guestname}/logs/{logname}/{contenttype}',
+                f'/guests/{guestname}/logs/{logname}',
                 method='post',
                 allow_statuses=[202]
             )
@@ -704,7 +710,7 @@ def cmd_guest_log(
     log = response.json()
 
     if not wait:
-        if log:
+        if logname:
             print_guest_logs(cfg, [log])
 
     else:
@@ -714,7 +720,7 @@ def cmd_guest_log(
             while True:
                 response = fetch_artemis(
                     cfg,
-                    f'/guests/{guestname}/logs/{logname}/{contenttype}',
+                    f'/guests/{guestname}/logs/{logname}',
                     allow_statuses=[200, 404, 409]
                 )
 
@@ -734,7 +740,7 @@ def cmd_guest_log(
                     if state in ('complete', 'unsupported', 'error'):
                         break
 
-                    if state == 'in-progress' and contenttype == 'blob' and log['blob']:
+                    if state == 'in-progress' and logname.endswith('/blob') and log['blob']:
                         break
 
                 else:
