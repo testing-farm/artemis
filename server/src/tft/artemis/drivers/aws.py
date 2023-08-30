@@ -250,7 +250,7 @@ KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_AWS_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK',
     cast_from_str=int,
-    default=30
+    default=300
 )
 
 KNOB_CONSOLE_INTERACTIVE_URL: Knob[str] = Knob(
@@ -2810,8 +2810,9 @@ class AWSDriver(PoolDriver):
             ))
 
         return Ok(GuestLogUpdateProgress(
-            state=GuestLogState.COMPLETE,
-            blob=output
+            state=GuestLogState.IN_PROGRESS,
+            blob=output,
+            delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
         ))
 
     @guest_log_updater('aws', 'console:interactive', GuestLogContentType.URL)  # type: ignore[arg-type]

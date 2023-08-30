@@ -367,7 +367,7 @@ for the requested action.
 |`aws.logs.console.dump.blob.update-tick`
 |`int`
 |`ARTEMIS_AWS_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK`
-|`30`
+|`300`
 |no
 
 
