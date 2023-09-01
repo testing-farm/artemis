@@ -501,6 +501,22 @@ until cancelled and reprovisioned.
 
 5+|A template for Beaker job whiteboard.
 
+|`beaker.mapping.environment-to-image.pattern`
+|`str`
+|`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN`
+|`^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?$`
+|no
+
+
+|`beaker.mapping.environment-to-image.pattern:$entityname`
+|
+|`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN_$entityname`
+|
+|
+
+
+5+|A pattern for extracting distro and other components from the right side of the image mapping file.
+
 |`beaker.mapping.environment-to-image.pattern-map.filepath`
 |`str`
 |`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`

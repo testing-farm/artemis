@@ -74,6 +74,17 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     default='{{ os.compose }}'
 )
 
+KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN: Knob[str] = Knob(
+    'beaker.mapping.environment-to-image.pattern',
+    'A pattern for extracting distro and other components from the right side of the image mapping file.',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN',
+    cast_from_str=str,
+    default=r'^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?$'
+)
+
+
 KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     'beaker.guest-watchdog.ssh.connect-timeout',
     'Guest watchdog SSH timeout.',
@@ -840,9 +851,15 @@ def create_beaker_filter(
     return _prune_beaker_filter(r_beaker_filter.unwrap())
 
 
+@dataclasses.dataclass(repr=False)
+class BeakerPoolImageInfo(PoolImageInfo):
+    variant: str = 'Server'
+
+
 class BeakerDriver(PoolDriver):
     drivername = 'beaker'
 
+    image_info_class = BeakerPoolImageInfo
     pool_data_class = BeakerPoolData
 
     #: Template for a cache key holding avoid groups hostnames.
@@ -870,7 +887,7 @@ class BeakerDriver(PoolDriver):
         return Ok(capabilities)
 
     @property
-    def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
+    def image_info_mapper(self) -> HookImageInfoMapper[BeakerPoolImageInfo]:   # type: ignore[override]
         return HookImageInfoMapper(self, 'BEAKER_ENVIRONMENT_TO_IMAGE')
 
     @property
@@ -1015,13 +1032,45 @@ class BeakerDriver(PoolDriver):
         # We want the right-hand side to be human-readable and easy to follow, therefore OpenStack and AWS have this
         # extra level of dereference.
 
-        return Ok(PoolImageInfo(
-            name=imagename,
-            id=imagename,
-            arch=None,
-            boot=FlavorBoot(),
-            ssh=PoolImageSSHInfo()
-        ))
+        r_pattern = KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN.get_value(entityname=self.poolname)
+
+        if r_pattern.is_error:
+            return Error(Failure.from_failure(
+                'failed to lookup image pattern',
+                r_pattern.unwrap_error()
+            ))
+
+        pattern = r_pattern.unwrap()
+
+        match = re.match(pattern, imagename)
+
+        if not match:
+            return Error(Failure(
+                'failed to extract components from image mapping',
+                pattern=pattern,
+                imagename=imagename
+            ))
+
+        groups = match.groupdict()
+
+        try:
+            return Ok(BeakerPoolImageInfo(
+                name=groups['distro'],
+                id=groups['distro'],
+                arch=None,
+                boot=FlavorBoot(),
+                ssh=PoolImageSSHInfo(),
+                variant=groups['variant']
+            ))
+
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'failed to extract components from image mapping',
+                exc,
+                pattern=pattern,
+                imagename=imagename,
+                groups=groups
+            ))
 
     def _create_bkr_kickstart_options(
             self,
@@ -1054,7 +1103,7 @@ class BeakerDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        distro: PoolImageInfo
+        distro: BeakerPoolImageInfo
     ) -> Result[List[str], Failure]:
         r_whiteboard_template = KNOB_JOB_WHITEBOARD_TEMPLATE.get_value(entityname=self.poolname)
 
@@ -1088,6 +1137,9 @@ class BeakerDriver(PoolDriver):
             '--taskparam', f'RESERVETIME={str(KNOB_RESERVATION_DURATION.value)}',
             '--whiteboard', r_whiteboard.unwrap()
         ]
+
+        if distro.variant is not None:
+            command += ['--variant', distro.variant]
 
         for name, value in tags.items():
             command += ['--taskparam', f'ARTEMIS_TAG_{name}={value}']
@@ -1223,7 +1275,8 @@ class BeakerDriver(PoolDriver):
         if r_job_submit.is_error:
             return Error(Failure.from_failure(
                 'failed to submit job',
-                r_job_submit.unwrap_error()
+                r_job_submit.unwrap_error(),
+                job=job.prettify()
             ))
 
         bkr_output = r_job_submit.unwrap()

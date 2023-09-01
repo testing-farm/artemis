@@ -110,6 +110,8 @@ class KnobSourceEnvPerEntity(KnobSourceEnv[T]):
         **kwargs: Any
     ) -> Result[Optional[T], 'Failure']:
         if entityname is None:
+            from . import Failure
+
             return Error(Failure('entityname must be specified'))
 
         r_value = self._fetch_from_env(f'{self.envvar}_{entityname.replace("-", "_")}')

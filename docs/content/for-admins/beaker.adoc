@@ -189,3 +189,28 @@ pools:
   - pool-with-very-fancy-machines
 ....
 ====
+
+
+=== Distro variants
+
+A compose can be mapped to a particular distro variant, ``Server``, ``Workstation`` or any other offered by the distro. By default, no specific variant is requested from Beaker.
+
+.Specification
+[source,yaml]
+....
+- 'compose1':          'distro1'
+- 'compose1-Variant1': 'distro1;variant=Variant1'
+- 'compose1-Variant2': 'distro1;variant=Variant2'
+....
+
+.Example
+[source,yaml]
+....
+# Basic mapping for Fedora Rawhide, Beaker will pick the default variant for us.
+- 'Fedora-Rawhide': 'Fedora-Rawhide'
+# For users interested in a particular variant, prepare composes with precise mapping.
+- 'Fedora-Rawhide-Server': 'Fedora-Rawhide;variant=Server'
+- 'Fedora-Rawhide-Everything': 'Fedora-Rawhide;variant=Everything'
+....
+
+When `variant` key is specified in the right-hand side of the image mapping, it is propagated to Beaker job via `distro_variant` element, to instruct Beaker to provide the given distro variant. Without the `variant` key, no `distro_variant` element is emitted.
