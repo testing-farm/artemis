@@ -529,7 +529,7 @@ def release_lock(
     :returns: ``True`` when the operation was successfull, ``False`` otherwise.
     """
 
-    pipeline = cache.pipeline(transaction=True)
+    pipeline = cache.pipeline(transaction=True)  # type: ignore[no-untyped-call]
 
     try:
         pipeline.watch(lockname)

@@ -523,7 +523,7 @@ def test_environment_to_beaker_filter(
         assert str(beaker_filter) == expected
 
     else:
-        assert beaker_filter.prettify() == textwrap.dedent(expected).strip()
+        assert beaker_filter.prettify().strip() == textwrap.dedent(expected).strip()
 
 
 @pytest.mark.parametrize(('avoid_groups', 'expected'), [
@@ -784,7 +784,7 @@ def test_create_beaker_filter(
     else:
         assert expected
 
-        assert filter.prettify() == textwrap.dedent(expected).strip()
+        assert filter.prettify().strip() == textwrap.dedent(expected).strip()
 
 
 @pytest.mark.parametrize(('pool_config', 'expected'), [
