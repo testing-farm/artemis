@@ -28,7 +28,7 @@ import gluetool.log
 import gluetool.sentry
 import gluetool.utils
 import jinja2
-import jinja2.defaults
+import jinja2.filters
 import jinja2_ansible_filters.core_filters
 import jsonschema
 import periodiq
@@ -57,7 +57,7 @@ __VERSION__ = pkg_resources.get_distribution('tft-artemis').version
 # Install additional Jinja2 filters. This must be done before we call `render_template` for the first
 # time, because Jinja2 reuses anonymous environments.
 
-jinja2.defaults.DEFAULT_FILTERS.update(
+jinja2.filters.FILTERS.update(
     jinja2_ansible_filters.core_filters.FilterModule().filters()
 )
 

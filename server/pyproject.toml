@@ -20,20 +20,21 @@ include = ["artemis/schema"]
 [tool.poetry.dependencies]
 python = "~3.9.0"
 # New mypy vs. new Alembic: https://github.com/python/mypy/issues/11038 - Alembic 1.7.4 adds a workaround
-alembic = "*"
+alembic = "1.8.1"
 awscli = { version = "^1.27.24", optional = true }
 azure-cli = { version = "*", optional = true }
 beaker-client = { version = "*", optional = true }
 # BeautifulSoup could be updated but it's pinned by gluetool to an older version...
 # beautifulsoup4 = "^4.9.3"
 click = "*"
-dramatiq = { version = "*", extras = ["rabbitmq"] }
+# TODO: 1.13.0 and newer add typing support, way bigger patch
+dramatiq = { version = "1.13.0", extras = ["rabbitmq"] }
 gluetool = "*"
 gunicorn = "*"
 jinja2-ansible-filters = "*"
 jq = "*"
 molten = "*"
-Pint = "*"
+Pint = "0.18"
 # Avoid newer versions until either https://github.com/python/mypy/issues/10757 is fixed, or package
 # delivers proper type annotations.
 prometheus-client = "^0.12.0"
@@ -66,7 +67,8 @@ flake8-use-fstring = "*"
 isort = "*"
 # This will be trimmed down to 0.730 or something because of much more specific mypy-extensions bellow. Blocked
 # by Gluetool.
-mypy = "*"
+# TODO: 1.4.0 is the current release, but fails to play nicely with old typing-extensions
+mypy = "^0.991"
 pytest = "*"
 pre-commit = "*"
 pytest-flake8 = "*"
