@@ -185,7 +185,7 @@ class Configuration:
                 503,  # Service Unavailable
                 504   # Gateway Timeout
             ],
-            method_whitelist=[
+            allowed_methods=[
                 'HEAD', 'GET', 'POST', 'DELETE', 'PUT'
             ],
             backoff_factor=retry_backoff_factor
