@@ -311,6 +311,7 @@ class AWSPoolImageInfo(PoolImageInfo):
     #: Carries `EnaSupport` field as provided by AWS image description.
     ena_support: bool
 
+    #: Carries original `BootMode` image field.
     boot_mode: Optional[str]
 
     def serialize_scrubbed(self) -> Dict[str, Any]:
