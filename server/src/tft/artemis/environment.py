@@ -261,7 +261,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #      - type: eth
 
 
-FlavorBootMethodType = Union[Literal['bios'], Literal['uefi']]
+FlavorBootMethodType = Union[Literal['bios'], Literal['uefi'], Literal['uefi-preferred']]
 
 
 @dataclasses.dataclass(repr=False)

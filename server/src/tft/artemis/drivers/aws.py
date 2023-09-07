@@ -311,6 +311,8 @@ class AWSPoolImageInfo(PoolImageInfo):
     #: Carries `EnaSupport` field as provided by AWS image description.
     ena_support: bool
 
+    boot_mode: Optional[str]
+
     def serialize_scrubbed(self) -> Dict[str, Any]:
         serialized = super().serialize_scrubbed()
 
@@ -1305,6 +1307,9 @@ def _aws_boot_to_boot(boot_method: str) -> FlavorBootMethodType:
     if boot_method == 'uefi':
         return 'uefi'
 
+    if boot_method == 'uefi-preffered':
+        return 'uefi-preferred'
+
     return cast(FlavorBootMethodType, boot_method)
 
 
@@ -1520,7 +1525,7 @@ class AWSDriver(PoolDriver):
                 logger,
                 suitable_flavors,
                 'image boot method is supported',
-                lambda logger, flavor: image.boot.method[0] in flavor.boot.method
+                lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method)
             ))
 
         if not suitable_flavors:
@@ -2483,7 +2488,7 @@ class AWSDriver(PoolDriver):
                     continue
 
                 try:
-                    aws_boot_method = cast(Optional[str], JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE.input(image).first())
+                    aws_boot_mode = cast(Optional[str], JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE.input(image).first())
 
                 except Exception as exc:
                     return Error(Failure.from_exc(
@@ -2491,8 +2496,13 @@ class AWSDriver(PoolDriver):
                         exc
                     ))
 
-                if aws_boot_method:
-                    image_boot = FlavorBoot(method=[_aws_boot_to_boot(aws_boot_method)])
+                if aws_boot_mode:
+                    boot_method = _aws_boot_to_boot(aws_boot_mode)
+
+                    if boot_method == 'uefi-preferred':
+                        image_boot = FlavorBoot(method=['bios', 'uefi'])
+                    else:
+                        image_boot = FlavorBoot(method=[boot_method])
 
                 else:
                     image_boot = FlavorBoot()
@@ -2508,7 +2518,8 @@ class AWSDriver(PoolDriver):
                         platform_details=image['PlatformDetails'],
                         block_device_mappings=image['BlockDeviceMappings'],
                         # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or `None`
-                        ena_support=image.get('EnaSupport', False) or False
+                        ena_support=image.get('EnaSupport', False) or False,
+                        boot_mode=aws_boot_mode
                     ))
 
                 except KeyError as exc:
