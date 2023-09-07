@@ -50,6 +50,7 @@ periodiq = "*"
 redis = "*"
 jsonschema = "*"
 sentry-sdk = "*"
+setuptools = "*"
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient" ]
