@@ -311,6 +311,7 @@ class AWSPoolImageInfo(PoolImageInfo):
     #: Carries `EnaSupport` field as provided by AWS image description.
     ena_support: bool
 
+    #: Carries original `BootMode` image field.
     boot_mode: Optional[str]
 
     def serialize_scrubbed(self) -> Dict[str, Any]:
@@ -768,6 +769,30 @@ def _get_constraint_spans(
     return Ok(spans)
 
 
+def _get_constraint_span(
+    logger: ContextAdapter,
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavor: Flavor
+) -> Result[List[ConstraintBase], Failure]:
+    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+
+    if r_spans.is_error:
+        return Error(r_spans.unwrap_error())
+
+    spans = r_spans.unwrap()
+
+    if not spans:
+        return Ok([])
+
+    # TODO: this could be a nice algorithm, picking the best span instead of the first one.
+    span = spans[0]
+
+    log_dict_yaml(logger.debug, 'selected span', [str(constraint) for constraint in span])
+
+    return Ok(span)
+
+
 def setup_extra_volumes(
     logger: ContextAdapter,
     mappings: BlockDeviceMappings,
@@ -785,22 +810,19 @@ def setup_extra_volumes(
     :param flavor: a flavor that would serve as a basis for the provisioned instance.
     """
 
-    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+    r_span = _get_constraint_span(logger, guest_request, image, flavor)
 
-    if r_spans.is_error:
-        return Error(r_spans.unwrap_error())
+    if r_span.is_error:
+        return Error(r_span.unwrap_error())
 
-    spans = r_spans.unwrap()
+    span = r_span.unwrap()
 
-    if not spans:
+    if not span:
         return Ok(mappings)
 
-    # TODO: this could be a nice algorithm, picking the best span instead of the first one.
-    span = cast(List[Constraint], spans[0])
+    for _constraint in span:
+        constraint = cast(Constraint, _constraint)
 
-    log_dict_yaml(logger.debug, 'selected span', [str(constraint) for constraint in span])
-
-    for constraint in span:
         logger.debug(f'  {constraint}')
 
         property_name, _, _ = (constraint.original_constraint or constraint).expand_name()
@@ -1526,6 +1548,49 @@ class AWSDriver(PoolDriver):
                 suitable_flavors,
                 'image boot method is supported',
                 lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method)
+            ))
+
+        # Make sure the image and flavor support requested HW
+        if guest_request.environment.has_hw_constraints:
+            r_constraints = guest_request.environment.get_hw_constraints()
+
+            if r_constraints.is_error:
+                return Error(r_constraints.unwrap_error())
+
+            constraints = r_constraints.unwrap()
+            assert constraints is not None
+
+            def _boot_method_requested(logger: ContextAdapter, flavor: AWSFlavor) -> bool:
+                r_span = _get_constraint_span(logger, guest_request, image, flavor)
+
+                if r_span.is_error:
+                    r_span.unwrap_error().handle(logger)
+
+                    return False
+
+                span = r_span.unwrap()
+
+                for _constraint in span:
+                    constraint = cast(Constraint, _constraint)
+
+                    property_name, _, child_property = constraint.expand_name()
+
+                    if property_name != 'boot' or child_property != 'method':
+                        continue
+
+                    if constraint.operator == Operator.CONTAINS:
+                        return constraint.value in (image.boot.method + flavor.boot.method)
+
+                    if constraint.operator == Operator.NOTCONTAINS:
+                        return constraint.value not in (image.boot.method + flavor.boot.method)
+
+                return False
+
+            suitable_flavors = list(logging_filter(
+                logger,
+                suitable_flavors,
+                'requested boot method is supported by image and flavor',
+                _boot_method_requested
             ))
 
         if not suitable_flavors:
