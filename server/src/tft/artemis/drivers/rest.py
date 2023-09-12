@@ -178,14 +178,17 @@ class RestDriver(PoolDriver):
 
         data = response.json()
 
-        state = ProvisioningState[data.get("state").upper()]
-        pool_data = RestPoolData(guest_id=data.get("guest_id"))
-        address = data.get("address", None)
+        guest_id = data.get("guest_id")
+        if not guest_id:
+            return Error(Failure(
+                'REST backend responded with no guest ID',
+                payload=data
+            ))
 
         return Ok(ProvisioningProgress(
-            state=state,
-            pool_data=pool_data,
-            address=address,
+            state=ProvisioningState[data.get("state").upper()],
+            pool_data=RestPoolData(guest_id=guest_id),
+            address=data.get("address", None),
         ))
 
     def update_guest(
