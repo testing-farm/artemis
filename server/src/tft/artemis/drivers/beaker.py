@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
-import math
 import os
 import re
 import stat
@@ -30,8 +29,7 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
     PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, WatchdogState, create_tempfile, guest_log_updater, run_cli_tool, \
-    run_remote
+    ProvisioningState, SerializedPoolResourcesIDs, WatchdogState, create_tempfile, guest_log_updater, run_cli_tool
 
 NodeRefType = Any
 
@@ -1407,6 +1405,35 @@ class BeakerDriver(PoolDriver):
 
         return Ok(job_results.find('recipe')['system'])
 
+    def _get_recipe_id(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        job_results: bs4.BeautifulSoup
+    ) -> Result[str, Failure]:
+        """
+        Parse job results and return its recipe ID.
+
+        :param bs4.BeautifulSoup job_results: Job results in xml format.
+        :rtype: result.Result[str, Failure]
+        :returns: a recipe ID.
+        """
+
+        if not job_results.find('recipe') or len(job_results.find_all('recipe')) != 1:
+            return Error(Failure(
+                'job results XML has unknown structure',
+                job_results=job_results.prettify()
+            ))
+
+        recipe = job_results.find('recipe')
+
+        if not recipe['id']:
+            return Error(Failure(
+                'job results XML does not contain recipe ID attribute',
+                job_results=job_results.prettify()
+            ))
+
+        return Ok(recipe['id'])
+
     def update_guest(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1502,37 +1529,26 @@ class BeakerDriver(PoolDriver):
         :param guest_request: guest request to provision for.
         """
 
-        from ..tasks import _get_master_key
-
-        r_master_key = _get_master_key()
-
-        if r_master_key.is_error:
-            return Error(r_master_key.unwrap_error())
-
-        r_ssh_timeout = KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(session=session, entityname=self.poolname)
-
-        if r_ssh_timeout.is_error:
-            return Error(r_ssh_timeout.unwrap_error())
-
-        r_output = run_remote(
-            logger,
-            guest_request,
-            ['extendtesttime.sh', str(math.ceil(KNOB_RESERVATION_EXTENSION.value / 3600))],
-            key=r_master_key.unwrap(),
-            ssh_timeout=r_ssh_timeout.unwrap(),
-            ssh_options=self.ssh_options,
-            poolname=self.poolname,
-            commandname='bkr.extend',
-            cause_extractor=bkr_error_cause_extractor
-        )
-
-        if r_output.is_error:
-            return Error(Failure.from_failure(
+        # TODO: type inference has its limits, helping mypy to match eventual types by declaring the variable.
+        # Simple `return ...` would raise errors about incomplete types. Maybe pyright would be better.
+        r_result: Result[WatchdogState, Failure] = \
+            self._get_job_results(logger, BeakerPoolData.unserialize(guest_request).job_id) \
+            .map(lambda job_results: self._get_recipe_id(logger, job_results)) \
+            .map(lambda recipe_id: self._run_bkr(
+                logger,
+                [
+                    'watchdog-extend',
+                    f'--by={KNOB_RESERVATION_EXTENSION.value}',
+                    f'R:{recipe_id}'
+                ],
+                commandname='bkr.watchdog-extend')) \
+            .map(lambda _: Ok(WatchdogState.CONTINUE)) \
+            .map_error(lambda failure: Error(Failure.from_failure(
                 'failed to extend guest reservation',
-                r_output.unwrap_error()
-            ))
+                failure
+            )))
 
-        return Ok(WatchdogState.CONTINUE)
+        return r_result
 
     def can_acquire(
         self,
