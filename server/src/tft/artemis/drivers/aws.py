@@ -1134,7 +1134,7 @@ def _honor_constraint_network(
             pool.pool_config['subnet-id'],
             pool.pool_config['security-group'],
             delete_on_termination=True,
-            associate_public_ip_address=False
+            associate_public_ip_address=pool.use_public_ip
         )
 
         if r_enlarge.is_error:
@@ -1215,7 +1215,7 @@ def create_network_interfaces(
         pool.pool_config['subnet-id'],
         pool.pool_config['security-group'],
         delete_on_termination=True,
-        associate_public_ip_address=False
+        associate_public_ip_address=pool.use_public_ip
     )
 
     r_nics = setup_extra_network_interfaces(
@@ -1368,6 +1368,10 @@ class AWSDriver(PoolDriver):
             List[str],
             self.pool_config.get('image-owners', ['self'])
         )
+
+    @property
+    def use_public_ip(self) -> bool:
+        return normalize_bool_option(self.pool_config.get('use-public-ip', False))
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
@@ -2270,7 +2274,7 @@ class AWSDriver(PoolDriver):
                 ))
 
         address = instance['PrivateIpAddress']
-        if normalize_bool_option(self.pool_config.get('use-public-ip', False)):
+        if self.use_public_ip:
             address = instance['PublicIpAddress']
 
         return Ok(ProvisioningProgress(
