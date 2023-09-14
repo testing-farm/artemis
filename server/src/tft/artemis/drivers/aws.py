@@ -1579,16 +1579,18 @@ class AWSDriver(PoolDriver):
 
                     property_name, _, child_property = constraint.expand_name()
 
-                    if property_name != 'boot' or child_property != 'method':
-                        continue
+                    if property_name == 'boot' and child_property == 'method':
+                        if constraint.operator == Operator.CONTAINS:
+                            return constraint.value in (image.boot.method + flavor.boot.method)
 
-                    if constraint.operator == Operator.CONTAINS:
-                        return constraint.value in (image.boot.method + flavor.boot.method)
+                        if constraint.operator == Operator.NOTCONTAINS:
+                            return constraint.value not in (image.boot.method + flavor.boot.method)
 
-                    if constraint.operator == Operator.NOTCONTAINS:
-                        return constraint.value not in (image.boot.method + flavor.boot.method)
+                        return False
 
-                return False
+                # There was no constraint related to boot method, otherwise we wouldn't be at this point. Which means,
+                # boot method has not been requested, and therefore it does not matter.
+                return True
 
             suitable_flavors = list(logging_filter(
                 logger,
