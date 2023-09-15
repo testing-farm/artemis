@@ -680,6 +680,16 @@ for full list of connection parameters that can be specified via URL.
 
 5+|Optional name of the Artemis deployment (e.g. "production-01" or "development").
 
+|`disable-cert-verification`
+|`bool`
+|`ARTEMIS_DISABLE_CERT_VERIFICATION`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would disable HTTPS certificate verification when talking to remote URLs.
+
 |`gc.events.schedule`
 |`str`
 |`ARTEMIS_GC_EVENTS_SCHEDULE`

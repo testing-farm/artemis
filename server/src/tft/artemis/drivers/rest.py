@@ -16,6 +16,7 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure
 from ..db import GuestRequest
+from ..knobs import KNOB_DISABLE_CERT_VERIFICATION
 from ..metrics import PoolResourcesMetrics
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolData, PoolDriver, PoolResourcesIDs, ProvisioningProgress, \
     ProvisioningState, SerializedPoolResourcesIDs
@@ -105,6 +106,7 @@ class RestDriver(PoolDriver):
                 f"{self.url}/guests",
                 params=payload,
                 headers=self._get_headers(guestname=guest_request.guestname),
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -165,6 +167,7 @@ class RestDriver(PoolDriver):
                 f"{self.url}/guests",
                 json=payload,
                 headers=self._get_headers(guestname=guest_request.guestname),
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -230,6 +233,7 @@ class RestDriver(PoolDriver):
                 f"{self.url}/guests/{pool_data.guest_id}",
                 json=payload,
                 headers=self._get_headers(guestname=guest_request.guestname),
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -305,6 +309,7 @@ class RestDriver(PoolDriver):
             response = requests.delete(
                 f"{self.url}/guests/{pool_resources.guest_id}",
                 headers=self._get_headers(guestname=pool_resources.guestname),
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -351,7 +356,10 @@ class RestDriver(PoolDriver):
         resources = r_resources.unwrap()
 
         try:
-            response = requests.get(f"{self.url}/pool_resources_metrics")
+            response = requests.get(
+                f"{self.url}/pool_resources_metrics",
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
+            )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc(

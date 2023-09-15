@@ -855,6 +855,15 @@ KNOB_WORKER_MAX_TASKS_PER_PROCESS: Knob[int] = Knob(
     default=0
 )
 
+KNOB_DISABLE_CERT_VERIFICATION: Knob[bool] = Knob(
+    'disable-cert-verification',
+    'When enabled, Artemis would disable HTTPS certificate verification when talking to remote URLs.',
+    has_db=False,
+    envvar='ARTEMIS_DISABLE_CERT_VERIFICATION',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value

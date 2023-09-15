@@ -26,7 +26,7 @@ from ..cache import get_cached_set, refresh_cached_set
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Kickstart, Operator, Or, SizeType
-from ..knobs import Knob
+from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
     PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
@@ -1852,7 +1852,7 @@ class BeakerDriver(PoolDriver):
         assert log_progress.url is not None
 
         try:
-            response = requests.get(log_progress.url)
+            response = requests.get(log_progress.url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
             response.raise_for_status()
 
         except requests.exceptions.RequestException as exc:
