@@ -285,7 +285,7 @@ KNOB_UPDATE_GUEST_LOG_DELAY: Knob[int] = Knob(
     'actor.dispatch-preparing.delay',
     'How often to run guest log update',
     has_db=False,
-    envvar='ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY',
+    envvar='ARTEMIS_LOGS_UPDATE_TICK',
     cast_from_str=int,
     default=60
 )
