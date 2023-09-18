@@ -24,7 +24,7 @@ from ..metrics import APIMetrics
 from . import errors
 
 GUEST_ROUTE_PATTERN = re.compile(
-    r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+(?P<url_rest>/(events|snapshots))?$'
+    r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+(?P<url_rest>/(events|snapshots|logs/.+))?$'
 )
 SNAPSHOT_ROUTE_PATTERN = re.compile(
     r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+/snapshots/[a-z0-9-]+(?P<url_rest>/.+)?$'

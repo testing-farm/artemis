@@ -49,6 +49,7 @@ def test_rewrite_request_path_nop(path: str) -> None:
     ('/guests/foo-bar-79/snapshots', '/guests/GUESTNAME/snapshots'),
     ('/guests/foo-bar-79/snapshots/baz-97', '/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
     ('/guests/foo-bar-79/snapshots/baz-97/restore', '/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore'),
+    ('/guests/foo-bar-79/logs/console:dump/blob', '/guests/GUESTNAME/logs/console:dump/blob'),
     ('/current/guests/foo-bar-79', '/current/guests/GUESTNAME'),
     ('/current/guests/foo-bar-79/events', '/current/guests/GUESTNAME/events'),
     ('/current/guests/foo-bar-79/snapshots', '/current/guests/GUESTNAME/snapshots'),
