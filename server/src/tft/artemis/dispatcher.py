@@ -17,6 +17,7 @@ from .tasks import TaskLogger, _update_snapshot_state, dispatch_task, get_snapsh
 from .tasks import route_snapshot_request  # noqa: F401, isort:skip
 from .tasks import release_snapshot_request  # noqa: F401, isort:skip
 from .tasks import restore_snapshot_request  # noqa: F401, isort:skip
+from .tasks import update_guest_log  # noqa: F401, isort:skip
 
 
 def _dispatch_snapshot_request(

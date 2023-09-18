@@ -2804,7 +2804,7 @@ def create_guest_request_log(
     manager: GuestRequestManager,
     logger: gluetool.log.ContextAdapter
 ) -> Tuple[str, None]:
-    from ..tasks import dispatch_task, get_guest_logger, update_guest_log
+    from ..tasks import get_guest_logger, update_guest_log
 
     failure_details = {
         'guestname': guestname
@@ -2813,6 +2813,63 @@ def create_guest_request_log(
     guest_logger = get_guest_logger('create-guest-request-log', logger, guestname)
 
     with manager.db.get_session() as session:
+        r_upsert = artemis_db.upsert(
+            guest_logger,
+            session,
+            artemis_db.GuestLog,
+            primary_keys={
+                artemis_db.GuestLog.guestname: guestname,
+                artemis_db.GuestLog.logname: logname,
+                artemis_db.GuestLog.contenttype: artemis_db.GuestLogContentType(contenttype)
+            },
+            insert_data={
+                artemis_db.GuestLog.state: artemis_db.GuestLogState.PENDING
+            }
+        )
+
+        if r_upsert.is_error:
+            raise errors.InternalServerError(
+                logger=guest_logger,
+                caused_by=r_upsert.unwrap_error(),
+                failure_details=failure_details
+            )
+
+        if r_upsert.unwrap() is not True:
+            raise errors.ConflictError(
+                message='guest log already exists',
+                logger=guest_logger
+            )
+
+        r_task = artemis_db.TaskRequest.create(
+            guest_logger,
+            session,
+            update_guest_log,
+            guestname,
+            logname,
+            contenttype
+        )
+
+        if r_task.is_error:
+            raise errors.InternalServerError(
+                logger=guest_logger,
+                caused_by=r_task.unwrap_error(),
+                failure_details=failure_details
+            )
+
+        task_request_id = r_task.unwrap()
+
+        log_dict_yaml(
+            guest_logger.info,
+            f'requested task #{task_request_id}',
+            TaskCall.from_call(
+                update_guest_log,
+                guestname,
+                logname,
+                contenttype,
+                task_request_id=task_request_id
+            ).serialize()
+        )
+
         artemis_db.GuestRequest.log_event_by_guestname(
             guest_logger,
             session,
@@ -2822,21 +2879,6 @@ def create_guest_request_log(
                 'logname': logname,
                 'contenttype': contenttype
             }
-        )
-
-    r_dispatch = dispatch_task(
-        guest_logger,
-        update_guest_log,
-        guestname,
-        logname,
-        contenttype
-    )
-
-    if r_dispatch.is_error:
-        raise errors.InternalServerError(
-            logger=guest_logger,
-            caused_by=r_dispatch.unwrap_error(),
-            failure_details=failure_details
         )
 
     return HTTP_202, None

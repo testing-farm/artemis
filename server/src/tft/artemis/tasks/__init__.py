@@ -33,7 +33,7 @@ from typing_extensions import Protocol, TypedDict
 from .. import Failure, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, safe_call
 from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, SafeQuery, \
-    SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change, upsert
+    SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change
 from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
 from ..drivers import aws as aws_driver
 from ..drivers import azure as azure_driver
@@ -2989,37 +2989,12 @@ def do_update_guest_log(
         return r_update
 
     if guest_log is None:
-        # We're the first: create the record, and reschedule. We *could* proceed and try to fetch the data, too,
-        # let's try with another task run first.
-
-        guest_log = GuestLog(
-            guestname=workspace.gr.guestname,
-            logname=logname,
-            # ignore[misc]: mypy probably does not understand, both state and contenttype are enums, not strings.
-            contenttype=contenttype,  # type: ignore[misc]
-            state=GuestLogState.PENDING
+        return workspace.handle_failure(
+            Failure(
+                'no such guest log'
+            ),
+            'no such guest log'
         )
-
-        r_upsert = upsert(
-            logger,
-            session,
-            GuestLog,
-            primary_keys={
-                GuestLog.guestname: guestname,
-                GuestLog.logname: logname,
-                GuestLog.contenttype: contenttype
-            },
-            insert_data={
-                GuestLog.state: GuestLogState.PENDING
-            }
-        )
-
-        if r_upsert.is_error:
-            return workspace.handle_error(r_upsert, 'failed to create log record')
-
-        _log_state_event()
-
-        return workspace.handle_success('finished-task', return_value=RESCHEDULE)
 
     if guest_log.state == GuestLogState.ERROR:  # type: ignore[comparison-overlap]
         # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
@@ -3149,7 +3124,7 @@ def do_update_guest_log(
         return workspace.handle_success('finished-task')
 
     # PENDING, IN_PROGRESS and UNSUPPORTED proceed the same way
-    workspace.dispatch_task(
+    workspace.request_task(
         update_guest_log,
         guestname,
         logname,
