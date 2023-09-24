@@ -1,4 +1,4 @@
 ---
 # Comment
-- '^RHEL7.*$': 'rhel-7-v20220822'
-- '^RHEL8.*$': 'rhel-8-v20220822'
+- '^RHEL7.*$': 'rhel-7'
+- '^RHEL8.*$': 'rhel-8'

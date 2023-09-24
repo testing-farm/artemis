@@ -3,13 +3,16 @@
 
 import dataclasses
 import threading
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union, Tuple
+import json
+import re
 
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
-from tft.artemis.drivers.aws import awscli_error_cause_extractor
+from google.cloud import compute_v1
+import google.api_core
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
@@ -24,7 +27,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'gcp.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
     default='configuration/artemis-image-map-gcp.yaml'
@@ -34,7 +37,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     'gcp.mapping.environment-to-image.pattern-map.needle',
     'A pattern for needle to match in environment to image mapping file.',
     has_db=False,
-    per_pool=True,
+    per_entity=True,
     envvar='ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
     default='{{ os.compose }}'
@@ -45,6 +48,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 class GCPPoolData(PoolData):
     name: str
     id: str
+    project: str
     zone: str
 
 
@@ -59,18 +63,6 @@ class GCPDriver(PoolDriver):
                  pool_config: Dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
 
-        gcloud_auth_cmd = ['gcloud',
-                           'auth',
-                           'activate-service-account', self.pool_config['account'],
-                           '--key-file', self.pool_config['key_file'],
-                           '--format=json']
-        gcloud_auth_cmd_exec_result = run_cli_tool(self.logger, gcloud_auth_cmd, json_output=True)
-        assert gcloud_auth_cmd_exec_result.is_ok
-
-        posix_username_result = self.retrieve_posix_username_for_service_account(self.pool_config['account'])
-        assert posix_username_result.is_ok
-        self.posix_username = posix_username_result.ok
-
     @property
     def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
         return HookImageInfoMapper(self, 'GCP_ENVIRONMENT_TO_IMAGE')
@@ -78,20 +70,27 @@ class GCPDriver(PoolDriver):
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         return Ok(capabilities)
 
+    def _get_service_account_info(self):
+        sa_info = self.pool_config['service_account_info']
+        return sa_info
+
     def map_image_name_to_image_info(self,
                                      logger: gluetool.log.ContextAdapter,
-                                     imagename: str) -> Result[PoolImageInfo, Failure]:
+                                     image_name: str) -> Result[PoolImageInfo, Failure]:
+        sa_info = self._get_service_account_info()
+        client = compute_v1.ImagesClient.from_service_account_info(sa_info)
 
-        gcloud_describe_img_subcmd = ['images', 'describe', imagename]
-        # We need to pass in a project that owns the images instead of the usual one from config that will own the instances
-        image_description_result = self.run_gcloud_compute_subcommand(gcloud_describe_img_subcmd, project='rhel-cloud')
-        if image_description_result.is_error:
-            return Error(Failure.from_failure('Failed to fetch image information', image_description_result.unwrap_error()))
+        request = compute_v1.GetImageRequest()
+        request.project = 'rhel-cloud'
 
-        image_description = image_description_result.unwrap()
-        image_info = PoolImageInfo(name=image_description['name'],
-                                   id=image_description['id'],
-                                   arch=image_description['architecture'],
+        try:
+            image_description = client.get_from_family(project='rhel-cloud', family=image_name)
+        except google.api_core.exceptions.NotFound as image_not_found:
+            return Error(Failure.from_exc('The given imagename was not found:', image_not_found))
+
+        image_info = PoolImageInfo(name=image_description.name,
+                                   id=image_description.self_link,
+                                   arch=image_description.architecture,
                                    boot=FlavorBoot(),
                                    ssh=PoolImageSSHInfo())
 
@@ -106,7 +105,7 @@ class GCPDriver(PoolDriver):
     def can_acquire(self,
                     logger: gluetool.log.ContextAdapter,
                     session: sqlalchemy.orm.session.Session,
-                    guest_request: GuestRequest) -> Result[bool, Failure]:
+                    guest_request: GuestRequest) -> Result[Tuple[bool, Optional[str]], Failure]:
         """
         Check whether this driver can provision a guest that would satisfy the given environment.
         """
@@ -116,41 +115,42 @@ class GCPDriver(PoolDriver):
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap() is False:
-            return r_answer
+        can_acquire, dummy = r_answer.unwrap()
+        if can_acquire is False:
+            return Ok((can_acquire, dummy))
 
-        return Ok(guest_request.environment.has_hw_constraints is not True)
+        can_acquire = guest_request.environment.has_hw_constraints is not True
+        return Ok((can_acquire, None))
 
     def update_guest(self,
                      logger: gluetool.log.ContextAdapter,
                      session: sqlalchemy.orm.session.Session,
                      guest_request: GuestRequest,
                      cancelled: Optional[threading.Event] = None) -> Result[ProvisioningProgress, Failure]:
-        """
-        Called to query instance information described by ``guest_request`` to check whether the provisioning is done.
-
-        The provisioning is considered done, when the ProvisioningProgress contains an external IP. If the IP is not a part
-        of the returned `ProvisioningProgress`, the call to this method will be repeated.
-        """
-        instance_info_result = self._query_instance_info(guest_request)
-        if instance_info_result.is_error:
-            return Error(Failure('no such guest'))
-
-        instance_info = instance_info_result.unwrap()
-        if not instance_info:
-            return Error(Failure('Server show commmand output is empty'))
-
-        status = instance_info['status'].lower()
         pool_data = GCPPoolData.unserialize(guest_request)
 
-        if status == 'failed':
+        client = compute_v1.InstancesClient.from_service_account_info(self._get_service_account_info())
+
+        request = compute_v1.GetInstanceRequest()
+        request.instance = pool_data.name
+        request.project = pool_data.project
+        request.zone = pool_data.zone
+
+        try:
+            instance_info = client.get(request=request)
+        except google.api_core.exceptions.NotFound as instance_not_found:
+            return Error(Failure.from_exc(f'Failed to locate instance {request.instance}', instance_not_found))
+
+        instance_status = instance_info.status.lower()
+
+        if instance_status == 'failed':
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=GCPPoolData.unserialize(guest_request),
+                pool_data=pool_data,
                 pool_failures=[Failure('instance ended up in "failed" state')]
             ))
 
-        ip_address = instance_info['networkInterfaces'][0]['accessConfigs'][0]['natIP']
+        ip_address = self._get_ip_from_instance(instance_info)
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
@@ -163,21 +163,105 @@ class GCPDriver(PoolDriver):
             return Ok(True)
 
         pool_data = GCPPoolData.unserialize(guest_request)
-        delete_instance_cmd_result = self.run_gcloud_compute_subcommand(['instances', 'delete', f'{pool_data.name}', f'--zone={pool_data.zone}'])
-        if delete_instance_cmd_result.is_error:
-            return Error(delete_instance_cmd_result.unwrap_error())
+        request = compute_v1.DeleteInstanceRequest(instance=pool_data.name,
+                                                   project=pool_data.project,
+                                                   zone=pool_data.zone)
+        instance_client = compute_v1.InstancesClient.from_service_account_info(self._get_service_account_info())
+
+        try:
+            instance_client.delete(request=request)
+        except google.api_core.exceptions.NotFound as instance_not_found:
+            return Error(Failure.from_exc('Instance to delete was not found', instance_not_found))
         return Ok(True)
 
-    def retrieve_posix_username_for_service_account(self, account_email: str) -> Result[str, Failure]:
-        iam_describe_service_account_cmd = ['gcloud', 'iam', 'service-accounts', 'describe', account_email, '--format=json']
-        describe_service_cmd_result = run_cli_tool(self.logger, iam_describe_service_account_cmd, json_output=True)
-        if describe_service_cmd_result.is_error:
-            failure = Failure.from_failure('failed to get service account description', describe_service_cmd_result.unwrap_error())
-            return Error(failure)
+    def _create_boot_disk_for_image_link(self,
+                                         image_link: str,
+                                         size_gb: int = 30,
+                                         zone: str = 'us-west3-b',
+                                         disk_type: str = 'pd-standard') -> compute_v1.AttachedDisk:
 
-        service_account_id = cast(Dict[Any, Any], describe_service_cmd_result.unwrap().json)['uniqueId']
-        posix_username = f'sa_{service_account_id}'
-        return Ok(posix_username)
+        disk_type = 'zones/{zone}/diskTypes/{type}'.format(zone=zone, type=disk_type)
+
+        boot_disk = compute_v1.AttachedDisk()
+        initialize_params = compute_v1.AttachedDiskInitializeParams()
+        initialize_params.source_image = image_link
+        initialize_params.disk_size_gb = size_gb
+        initialize_params.disk_type = disk_type
+        boot_disk.initialize_params = initialize_params
+        boot_disk.auto_delete = True
+        boot_disk.boot = True
+
+        return boot_disk
+
+
+    def _ensure_machine_type_is_canonical(self, machine_type: str, zone: str) -> str:
+        if re.match(r"^zones/[a-z\d\-]+/machineTypes/[a-z\d\-]+$", machine_type):
+            return machine_type
+        return 'zones/{zone}/machineTypes/{machine_type}'.format(zone=zone, machine_type=machine_type)
+
+
+    def _create_instance(self,
+                         client: compute_v1.InstancesClient,
+                         image: PoolImageInfo,
+                         ssh_pub_key: str,
+                         project_id: str,
+                         zone: str,
+                         instance_name: str,
+                         disks: List[compute_v1.AttachedDisk],
+                         machine_type: str = "n1-standard-1",
+                         network_link: str = "global/networks/default",
+                         delete_protection: bool = False) -> Result[compute_v1.Instance, Failure]:
+
+        network_interface = compute_v1.NetworkInterface()
+        network_interface.network = network_link
+
+        # Configure external access - external IP will be auto assigned
+        access = compute_v1.AccessConfig()
+        access.type_ = compute_v1.AccessConfig.Type.ONE_TO_ONE_NAT.name
+        access.name = "External NAT"
+        access.network_tier = access.NetworkTier.PREMIUM.name
+        network_interface.access_configs = [access]
+
+        # Collect information into the Instance object.
+        instance = compute_v1.Instance()
+        instance.network_interfaces = [network_interface]
+        instance.name = instance_name
+        instance.disks = disks
+
+        instance.machine_type = self._ensure_machine_type_is_canonical(zone=zone, machine_type=machine_type)
+
+        # Add a ssh-key to the file
+        username = image.ssh.username
+        ssh_key = compute_v1.Items()
+        ssh_key.key = 'ssh-keys'
+        ssh_key.value = f'{username}:{ssh_pub_key}'
+        instance.metadata.items.append(ssh_key)
+
+        instance.scheduling = compute_v1.Scheduling()
+
+        if delete_protection:
+            instance.deletion_protection = True
+
+        # Prepare the request to insert an instance.
+        request = compute_v1.InsertInstanceRequest()
+        request.zone = zone
+        request.project = project_id
+        request.instance_resource = instance
+
+        try:
+            client.insert(request=request)
+        except google.api_core.exceptions.BadRequest as bad_request:
+            return Error(Failure.from_exc('Failed to create a GCP instance', bad_request))
+        except google.api_core.exceptions.Conflict as instance_with_name_exits:
+            return Error(Failure.from_exc('Failed to create a GCP instance', instance_with_name_exits))
+
+        try:
+            created_instance = client.get(project=project_id, zone=zone, instance=instance_name)
+        except google.api_core.exceptions.NotFound as instance_not_found:
+            return Error(
+                Failure.from_exc('Failed to query information about the fresly created instance', instance_not_found)
+            )
+        return Ok(created_instance)
 
 
     def acquire_guest(self,
@@ -185,22 +269,16 @@ class GCPDriver(PoolDriver):
                       session: sqlalchemy.orm.session.Session,
                       guest_request: GuestRequest,
                       cancelled: Optional[threading.Event] = None) -> Result[ProvisioningProgress, Failure]:
-        # 1. Read some 'knob' configuration about delay before updating the acquired guest
-        # 2. Map the request onto the image that should be spawned
-        # 3. Collect and add tags - for resource management
-        # 4. Call the CLI to create the VM as requested
-        # 5. Read & return creation output
-
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
-        delay_cfg_option_read_result = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(poolname=self.poolname)
+        delay_cfg_option_read_result = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
         if delay_cfg_option_read_result.is_error:
             return Error(delay_cfg_option_read_result.unwrap_error())
 
         map_request_to_image_result = self.image_info_mapper.map(logger, guest_request)
         if map_request_to_image_result.is_error:
             return Error(map_request_to_image_result.unwrap_error())
-        image = map_request_to_image_result.unwrap()
+        image = map_request_to_image_result.unwrap()[0]
 
         self.log_acquisition_attempt(logger, session, guest_request, image=image)
 
@@ -212,74 +290,40 @@ class GCPDriver(PoolDriver):
         # As guest IDs (names) can start with a number, add 'artemis-' prefix to make sure the instance name will start with a letter
         instance_name = f'artemis-{guest_request.guestname}'
 
-        gcloud_create_instance_subcmd = ['instances',
-                                         'create',
-                                         instance_name,
-                                         f'--metadata=ssh-keys=:{guest_request.ssh_key.public}']
+        service_account_info = self.pool_config['service_account_info']
+        project_id = self.pool_config['project']
+        zone = self.pool_config['zone']
 
-        create_instance_cmd_result = self.run_gcloud_compute_subcommand(gcloud_create_instance_subcmd, specify_zone=True)
+        instances_client = compute_v1.InstancesClient.from_service_account_info(service_account_info)
+        boot_disk = self._create_boot_disk_for_image_link(image.id, zone=zone)  # Image.id contains self_link
 
-        if create_instance_cmd_result.is_error:
-            return Error(create_instance_cmd_result.unwrap_error())
+        instance_r = self._create_instance(instances_client, image, self.pool_config['ssh_key'],
+                                           project_id, zone, instance_name, disks=[boot_disk])
+        if instance_r.is_error:
+            return Error(instance_r.unwrap_error())
+        instance = instance_r.unwrap()
 
-        created_instance_description = create_instance_cmd_result.unwrap()
-
-        instance_id = created_instance_description['id']
-        status = created_instance_description['status'].lower()
-        name = created_instance_description['name']
-
-        if status == 'running':
-            provisioninig_state = ProvisioningState.COMPLETE
-        else:
-            provisioninig_state = ProvisioningState.PENDING
-
-        # GCP creates used based on the service account used to spawn the VM - patch the default accordingly.
-        image.ssh.username = cast(str, self.posix_username)
+        # It is unlikely that the machine would be up and running
+        provisioninig_state = ProvisioningState.PENDING
 
         return Ok(ProvisioningProgress(
             state=provisioninig_state,
             pool_data=GCPPoolData(
-                id=created_instance_description['name'],
-                name=created_instance_description['name'],
-                zone=created_instance_description['zone']
+                id=instance.id,
+                project=project_id,
+                name=instance.name,
+                zone=instance.zone
             ),
             delay_update=delay_cfg_option_read_result.ok,
             ssh_info=image.ssh,
-            address=created_instance_description['networkInterfaces'][0]['accessConfigs'][0]['natIP']
+            address=self._get_ip_from_instance(instance)
         ))
 
-    def run_gcloud_compute_subcommand(self,
-                                      gcloud_compute_subcmd: List[str],
-                                      project: Optional[str] = None,
-                                      specify_zone: bool = False) -> Result[Dict[Any, Any], Failure]:
-        if not project:
-            project = self.pool_config['project']
-        zone = self.pool_config['zone']
-
-        gcloud_common_cmd_prefix = ['gcloud', 'compute', f'--project={project}', '--format=json']
-        zone_suffix = [f'--zone={zone}'] if specify_zone else []
-        command_exec_result = run_cli_tool(self.logger,
-                                           gcloud_common_cmd_prefix + gcloud_compute_subcmd + zone_suffix,
-                                           poolname=self.poolname,
-                                           cause_extractor=awscli_error_cause_extractor,
-                                           json_output=True)
-
-        if command_exec_result.is_error:
-            return Error(command_exec_result.unwrap_error())
-
-        return Ok(cast(Dict[Any, Any], command_exec_result.unwrap().json))
-
-    def _query_instance_info(self, guest_request: GuestRequest) -> Result[Any, Failure]:
-        pool_item = GCPPoolData.unserialize(guest_request)
-        instance_info_subcmd = ['instances', 'describe', f'{pool_item.name}']
-        info_cmd_result = self.run_gcloud_compute_subcommand(instance_info_subcmd, specify_zone=True)
-
-        if info_cmd_result.is_error:
-            error = info_cmd_result.unwrap_error()
-            return Error(Failure.from_failure('Failed to fetch instance information', error))
-
-        instance_info = info_cmd_result.unwrap()
-        return Ok(instance_info)
+    def _get_ip_from_instance(self, instance: compute_v1.Instance) -> Optional[str]:
+        access_configs = instance.network_interfaces[0].access_configs
+        if len(access_configs) > 0:
+            return access_configs[0].nat_i_p
+        return None
 
     def create_snapshot(self,
                         guest_request: GuestRequest,

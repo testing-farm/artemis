@@ -61,6 +61,7 @@ python-glanceclient = "*"
 python-novaclient = "*"
 fastapi = "*"
 uvicorn = "*"
+google-cloud-compute = "*"
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient" ]
