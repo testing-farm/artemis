@@ -52,6 +52,13 @@ class GCPPoolData(PoolData):
     zone: str
 
 
+@dataclasses.dataclass
+class GCPPoolResourcesIDs(PoolResourcesIDs):
+    name: str = ''
+    project: str = ''
+    zone: str = ''
+
+
 class GCPDriver(PoolDriver):
     drivername = 'gcp'
 
@@ -95,12 +102,6 @@ class GCPDriver(PoolDriver):
                                    ssh=PoolImageSSHInfo())
 
         return Ok(image_info)
-
-    def release_pool_resources(self,
-                               logger: gluetool.log.ContextAdapter,
-                               raw_resource_ids: SerializedPoolResourcesIDs) -> Result[None, Failure]:
-        raise NotImplementedError()
-        return Ok(None)
 
     def can_acquire(self,
                     logger: gluetool.log.ContextAdapter,
@@ -163,16 +164,29 @@ class GCPDriver(PoolDriver):
             return Ok(True)
 
         pool_data = GCPPoolData.unserialize(guest_request)
-        request = compute_v1.DeleteInstanceRequest(instance=pool_data.name,
-                                                   project=pool_data.project,
-                                                   zone=pool_data.zone)
-        instance_client = compute_v1.InstancesClient.from_service_account_info(self._get_service_account_info())
+
+        resource = GCPPoolResourcesIDs(name=pool_data.name, project=pool_data.project, zone=pool_data.zone)
+        r_cleanup = self.dispatch_resource_cleanup(logger, resource, guest_request=guest_request)
+        if r_cleanup.is_error:
+            return Error(r_cleanup.unwrap_error())
+        return Ok(True)
+
+
+    def release_pool_resources(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        raw_resource_ids: SerializedPoolResourcesIDs) -> Result[None, Failure]:
+        resource_ids = GCPPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
+        request = compute_v1.DeleteInstanceRequest(instance=resource_ids.name,
+                                                   project=resource_ids.project,
+                                                   zone=resource_ids.zone)
+        sa_info = self._get_service_account_info()
+        instance_client = compute_v1.InstancesClient.from_service_account_info(sa_info)
 
         try:
             instance_client.delete(request=request)
         except google.api_core.exceptions.NotFound as instance_not_found:
             return Error(Failure.from_exc('Instance to delete was not found', instance_not_found))
-        return Ok(True)
 
     def _create_boot_disk_for_image_link(self,
                                          image_link: str,
