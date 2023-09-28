@@ -7,14 +7,6 @@ properties:
   capabilities:
     type: object
 
-  vm_username:
-    description: Account name to be created on the provisioned VM.
-    type: string
-
-  ssh_pub_key:
-    description: Public key to upload to the provisioned VM.
-    type: string
-
   project:
     description: Project under which should the VM instances be spawned.
     type: string
@@ -33,4 +25,4 @@ properties:
 
 additionalProperties: false
 
-required: [service_account_info, zone, project, ssh_pub_key, vm_username]
+required: [service_account_info, zone, project]

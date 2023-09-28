@@ -47,7 +47,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 @dataclasses.dataclass
 class GCPPoolData(PoolData):
     name: str
-    id: str
+    id: int
     project: str
     zone: str
 
@@ -57,6 +57,12 @@ class GCPPoolResourcesIDs(PoolResourcesIDs):
     name: str = ''
     project: str = ''
     zone: str = ''
+
+
+@dataclasses.dataclass
+class SSHSetup:
+    pub_key: str
+    username: str
 
 
 class GCPDriver(PoolDriver):
@@ -95,11 +101,12 @@ class GCPDriver(PoolDriver):
         except google.api_core.exceptions.NotFound as image_not_found:
             return Error(Failure.from_exc('The given imagename was not found:', image_not_found))
 
+        ssh_info = PoolImageSSHInfo()
         image_info = PoolImageInfo(name=image_description.name,
                                    id=image_description.self_link,
                                    arch=image_description.architecture,
                                    boot=FlavorBoot(),
-                                   ssh=PoolImageSSHInfo())
+                                   ssh=ssh_info)
 
         return Ok(image_info)
 
@@ -187,6 +194,7 @@ class GCPDriver(PoolDriver):
             instance_client.delete(request=request)
         except google.api_core.exceptions.NotFound as instance_not_found:
             return Error(Failure.from_exc('Instance to delete was not found', instance_not_found))
+        return Ok(None)
 
     def _create_boot_disk_for_image_link(self,
                                          image_link: str,
@@ -217,7 +225,7 @@ class GCPDriver(PoolDriver):
     def _create_instance(self,
                          client: compute_v1.InstancesClient,
                          image: PoolImageInfo,
-                         ssh_pub_key: str,
+                         ssh_setup: SSHSetup,
                          project_id: str,
                          zone: str,
                          instance_name: str,
@@ -245,10 +253,9 @@ class GCPDriver(PoolDriver):
         instance.machine_type = self._ensure_machine_type_is_canonical(zone=zone, machine_type=machine_type)
 
         # Add a ssh-key to the file
-        username = image.ssh.username
         ssh_key = compute_v1.Items()
         ssh_key.key = 'ssh-keys'
-        ssh_key.value = f'{username}:{ssh_pub_key}'
+        ssh_key.value = f'{ssh_setup.username}:{ssh_setup.pub_key}'
         instance.metadata.items.append(ssh_key)
 
         instance.scheduling = compute_v1.Scheduling()
@@ -301,7 +308,8 @@ class GCPDriver(PoolDriver):
             return Error(r_base_tags.unwrap_error())
         tags = r_base_tags.unwrap()
 
-        # As guest IDs (names) can start with a number, add 'artemis-' prefix to make sure the instance name will start with a letter
+        # As guest IDs (names) can start with a number, add 'artemis-' prefix to make sure the instance nam
+        # will start with a letter
         instance_name = f'artemis-{guest_request.guestname}'
 
         service_account_info = self.pool_config['service_account_info']
@@ -311,22 +319,41 @@ class GCPDriver(PoolDriver):
         instances_client = compute_v1.InstancesClient.from_service_account_info(service_account_info)
         boot_disk = self._create_boot_disk_for_image_link(image.id, zone=zone)  # Image.id contains self_link
 
-        instance_r = self._create_instance(instances_client, image, self.pool_config['ssh_key'],
+        from ..tasks import _get_ssh_key  # Late import as top-level import leads to circular imports
+        r_ssh_key = _get_ssh_key(guest_request.ownername, guest_request.ssh_keyname)
+        if r_ssh_key.is_error:
+            msg = (f'Failed to query DB for the SSH (public) key with name {guest_request.ssh_keyname} '
+                   f'owned by {guest_request.ownername}')
+            return Error(Failure.from_failure(msg, r_ssh_key.unwrap_error()))
+
+        ssh_key = r_ssh_key.unwrap()
+        if not ssh_key:
+            msg = f'There is no SSH key named {guest_request.ssh_keyname} onwed by {guest_request.ownername}'
+            return Error(Failure(msg))
+
+        # We use 'artemis' as username since .ssh_username is root and root login is prohibited
+        ssh_setup = SSHSetup(pub_key=ssh_key.public, username='artemis')
+
+        r_instance = self._create_instance(instances_client, image, ssh_setup,
                                            project_id, zone, instance_name, disks=[boot_disk])
-        if instance_r.is_error:
-            return Error(instance_r.unwrap_error())
-        instance = instance_r.unwrap()
+        if r_instance.is_error:
+            return Error(r_instance.unwrap_error())
+        instance = r_instance.unwrap()
+
+        logger.info(f'Created instance {instance} with username: {guest_request.ssh_username}')
 
         # It is unlikely that the machine would be up and running
         provisioninig_state = ProvisioningState.PENDING
+
+        image.ssh.username = ssh_setup.username
 
         return Ok(ProvisioningProgress(
             state=provisioninig_state,
             pool_data=GCPPoolData(
                 id=instance.id,
                 project=project_id,
-                name=instance.name,
-                zone=instance.zone
+                name=instance_name,
+                zone=zone
             ),
             delay_update=delay_cfg_option_read_result.ok,
             ssh_info=image.ssh,
