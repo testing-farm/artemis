@@ -608,13 +608,25 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         lockname = failure_details['lockname'] = self._lock_name(task_call)
         ttl = failure_details['lock_deadline'] = task_call.actor.options['singleton_deadline']
 
-        token = acquire_lock(logger, self.cache, lockname, ttl=ttl)
+        token = acquire_lock(logger, self.cache, lockname, token_prefix=message.message_id, ttl=ttl)
 
         if token is None:
+            from .cache import collect_locks
+
+            locks = collect_locks(logger, self.cache)
+
             if KNOB_LOGGING_SINGLETON_LOCKS.value is True:
-                logger.info(f'singleton-lock: lockname={lockname} acquire=failed')
+                from . import log_dict_yaml
+
+                log_dict_yaml(
+                    logger.warning,
+                    f'singleton-lock: lockname={lockname} acquire=failed',
+                    locks
+                )
 
             failure_details['broker_message'] = _dump_message(message)
+            failure_details['locks'] = locks
+
             Failure('failed to acquire singleton lock', **failure_details).handle(logger)
 
             if task_call.actor.options['singleton_no_retry_on_lock_fail']:

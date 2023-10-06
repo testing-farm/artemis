@@ -9,7 +9,7 @@ Helpful building blocks for cache operations.
 
 import datetime
 import uuid
-from typing import Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, cast
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, cast
 
 import gluetool.log
 import redis
@@ -477,10 +477,40 @@ def get_cached_set_item(
 # * https://redis.io/docs/reference/patterns/distributed-locks/
 # * https://medium.com/geekculture/distributed-lock-implementation-with-redis-and-python-22ae932e10ee
 #
+
+def collect_locks(
+    logger: gluetool.log.ContextAdapter,
+    cache: redis.Redis
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Collect info about currently hold locks.
+
+    :param logger: logger to use for logging.
+    :param cache: cache instance to use for cache access.
+    :returns: a mapping between lock names and corresponding token and remaining TTL.
+    """
+
+    locks: Dict[str, Dict[str, Any]] = {}
+
+    for raw_lockname in iter_cache_keys(logger, cache, 'tasks.singleton.*'):
+        lockname = raw_lockname.decode()
+
+        token = get_cache_value(logger, cache, lockname)
+        ttl = safe_call_and_handle(logger, cast(RedisGetType, cache.ttl), lockname)
+
+        locks[lockname] = {
+            'token': token.decode() if token is not None else '',
+            'ttl': ttl
+        }
+
+    return locks
+
+
 def acquire_lock(
     logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     lockname: str,
+    token_prefix: Optional[str] = None,
     ttl: Optional[int] = None
 ) -> Optional[str]:
     """
@@ -491,6 +521,7 @@ def acquire_lock(
     :param logger: logger to use for logging.
     :param cache: cache instance to use for cache access.
     :param lockname: key holding representing the lock.
+    :param token_prefix: if set, it'd serve as the token prefix.
     :param ttl: if set, lock will be held for this many seconds until removed automatically
         if not released before.
     :returns: token assigned to lock when operation was successfull, or ``None``
@@ -498,6 +529,9 @@ def acquire_lock(
     """
 
     token = str(uuid.uuid4())
+
+    if token_prefix:
+        token = f'{token_prefix}/{token}'
 
     r = safe_call_and_handle(
         logger,
