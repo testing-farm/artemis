@@ -15,11 +15,11 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure
-from ..db import GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION
 from ..metrics import PoolResourcesMetrics
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolData, PoolDriver, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, PoolCapabilities, PoolData, PoolDriver, \
+    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, guest_log_updater
 
 ARTEMIS_GUESTNAME_HEADER = "Artemis-guestname"
 
@@ -52,6 +52,17 @@ class RestDriver(PoolDriver):
     ) -> None:
         super().__init__(logger, poolname, pool_config)
         self.url = self.pool_config["url"]
+
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+        capabilities.supported_guest_logs = [
+            ('flasher-event', GuestLogContentType.URL),
+            ('flasher-event', GuestLogContentType.BLOB),
+            ('flasher-debug', GuestLogContentType.URL),
+            ('flasher-debug', GuestLogContentType.BLOB),
+            ('console:dump', GuestLogContentType.BLOB)
+        ]
+
+        return Ok(capabilities)
 
     def _get_headers(self, guestname: Optional[str] = None) -> Dict[str, str]:
         """
@@ -379,6 +390,88 @@ class RestDriver(PoolDriver):
         resources.limits.memory = 0
 
         return Ok(resources)
+
+    def _get_guest_log_url(
+        self,
+        guest_request: GuestRequest,
+        log_name: str
+    ) -> str:
+        """
+        Create location (URL) of guest log.
+
+        :param logger: logger to use for logging.
+        :param guest_request: a request whose logs to look for.
+        :param log_name: a name of the log as known to backend (e.g. ``borrow/latest``).
+        :returns: log URL.
+        """
+
+        pool_data = RestPoolData.unserialize(guest_request)
+
+        return f"{self.url}/getlog/{pool_data.guest_id}/{log_name}"
+
+    @guest_log_updater('rest', 'flasher-debug', GuestLogContentType.URL)  # type: ignore[arg-type]
+    def _update_guest_log_borrow_all_url(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        url = self._get_guest_log_url(guest_request, 'cmd/all')
+        return Ok(GuestLogUpdateProgress(state=GuestLogState.COMPLETE, url=url))
+
+    @guest_log_updater('rest', 'flasher-event', GuestLogContentType.URL)  # type: ignore[arg-type]
+    def _update_guest_log_request_url(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        """
+        This log contains explicit logging output and does not contain much debug output. It will show the flow of
+        events taking place while provisioning a guest. It can be compared to the Artemis guest event log and is a good
+        place to look for where the problem occurred. Why the problem occurred could be discovered in the 'borrow' log,
+        which contains output of the underlying commands being executed to provision the guest.
+        """
+        url = self._get_guest_log_url(guest_request, 'event')
+        return Ok(GuestLogUpdateProgress(state=GuestLogState.COMPLETE, url=url))
+
+    @guest_log_updater('rest', 'flasher-debug', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_borrow_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        """
+        Artemis will store the log, replacing the exsting log data with data from newer requests to the log endpoint.
+        So it doesn't make sense to have Artemis store the '/latest' data, which would exclude older data.
+        """
+        url = self._get_guest_log_url(guest_request, 'cmd/all')
+        return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, url=url))
+
+    @guest_log_updater('rest', 'flasher-event', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_request_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        url = self._get_guest_log_url(guest_request, 'event')
+        return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, url=url))
+
+    @guest_log_updater('rest', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_console_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        """
+        Console output cannot be grouped. So all data is always returned and there is no need for '/lastest' and '/all'
+        endpoints.
+        """
+        url = self._get_guest_log_url(guest_request, 'console')
+        return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, url=url))
 
 
 PoolDriver._drivers_registry['rest'] = RestDriver
