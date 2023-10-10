@@ -4392,11 +4392,6 @@ def do_refresh_pool_resources_metrics_dispatcher(
             refresh_pool_resources_metrics,
             pool.poolname
         )
-        dispatch_task(
-            get_pool_logger('refresh-pool-resources-metrics-dispatcher', _ROOT_LOGGER, pool.poolname),
-            refresh_pool_resources_metrics,
-            pool.poolname
-        )
 
     return workspace.handle_success('finished-task')
 
@@ -4502,11 +4497,6 @@ def do_refresh_pool_image_info_dispatcher(
             refresh_pool_image_info,
             pool.poolname
         )
-        dispatch_task(
-            get_pool_logger('refresh-pool-image-info-dispatcher', _ROOT_LOGGER, pool.poolname),
-            refresh_pool_image_info,
-            pool.poolname
-        )
 
     return workspace.handle_success('finished-task')
 
@@ -4607,11 +4597,6 @@ def do_refresh_pool_flavor_info_dispatcher(
         return workspace.handle_success('finished-task')
 
     for pool in r_pools.unwrap():
-        dispatch_task(
-            get_pool_logger('refresh-pool-flavor-info-dispatcher', logger, pool.poolname),
-            refresh_pool_flavor_info,
-            pool.poolname
-        )
         dispatch_task(
             get_pool_logger('refresh-pool-flavor-info-dispatcher', logger, pool.poolname),
             refresh_pool_flavor_info,
