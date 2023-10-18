@@ -55,10 +55,10 @@ class RestDriver(PoolDriver):
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supported_guest_logs = [
-            ('flasher-event', GuestLogContentType.URL),
-            ('flasher-event', GuestLogContentType.BLOB),
-            ('flasher-debug', GuestLogContentType.URL),
-            ('flasher-debug', GuestLogContentType.BLOB),
+            ('flasher-event:dump', GuestLogContentType.URL),
+            ('flasher-event:dump', GuestLogContentType.BLOB),
+            ('flasher-debug:dump', GuestLogContentType.URL),
+            ('flasher-debug:dump', GuestLogContentType.BLOB),
             ('console:dump', GuestLogContentType.BLOB)
         ]
 
@@ -409,7 +409,7 @@ class RestDriver(PoolDriver):
 
         return f"{self.url}/getlog/{pool_data.guest_id}/{log_name}"
 
-    @guest_log_updater('rest', 'flasher-debug', GuestLogContentType.URL)  # type: ignore[arg-type]
+    @guest_log_updater('rest', 'flasher-debug:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_borrow_all_url(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -419,7 +419,7 @@ class RestDriver(PoolDriver):
         url = self._get_guest_log_url(guest_request, 'cmd/all')
         return Ok(GuestLogUpdateProgress(state=GuestLogState.COMPLETE, url=url))
 
-    @guest_log_updater('rest', 'flasher-event', GuestLogContentType.URL)  # type: ignore[arg-type]
+    @guest_log_updater('rest', 'flasher-event:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_request_url(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -435,7 +435,7 @@ class RestDriver(PoolDriver):
         url = self._get_guest_log_url(guest_request, 'event')
         return Ok(GuestLogUpdateProgress(state=GuestLogState.COMPLETE, url=url))
 
-    @guest_log_updater('rest', 'flasher-debug', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    @guest_log_updater('rest', 'flasher-debug:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_borrow_blob(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -449,7 +449,7 @@ class RestDriver(PoolDriver):
         url = self._get_guest_log_url(guest_request, 'cmd/all')
         return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, url=url))
 
-    @guest_log_updater('rest', 'flasher-event', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    @guest_log_updater('rest', 'flasher-event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_request_blob(
         self,
         logger: gluetool.log.ContextAdapter,
