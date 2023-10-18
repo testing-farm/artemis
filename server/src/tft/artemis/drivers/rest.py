@@ -374,9 +374,9 @@ class RestDriver(PoolDriver):
         resources.usage.instances = data["usage"]["instances"]
         resources.usage.cores = 0
         resources.usage.memory = 0
-        resources.limit.instances = data["limits"]["instances"]
-        resources.limit.cores = 0
-        resources.limit.memory = 0
+        resources.limits.instances = data["limits"]["instances"]
+        resources.limits.cores = 0
+        resources.limits.memory = 0
 
         return Ok(resources)
 
