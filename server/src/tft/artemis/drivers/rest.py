@@ -372,8 +372,11 @@ class RestDriver(PoolDriver):
 
         data = response.json()
         resources.usage.instances = data["usage"]["instances"]
-        resources.usage.cores = data["usage"]["cores"]
-        resources.usage.memory = data["usage"]["memory"]
+        resources.usage.cores = 0
+        resources.usage.memory = 0
+        resources.limits.instances = data["limits"]["instances"]
+        resources.limits.cores = 0
+        resources.limits.memory = 0
 
         return Ok(resources)
 
