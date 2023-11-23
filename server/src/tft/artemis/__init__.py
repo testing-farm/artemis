@@ -778,6 +778,28 @@ class Failure:
             }
         }
 
+    def get_sentry_contexts(self) -> Dict[str, Dict[str, Any]]:
+        from .knobs import KNOB_COMPONENT
+
+        contexts: Dict[str, Dict[str, Any]] = {}
+
+        # App https://develop.sentry.dev/sdk/event-payloads/contexts/#app-context
+        contexts['app'] = {
+            'type': 'app',
+            'app_identifier': KNOB_COMPONENT.value,
+            'app_name': 'Artemis',
+            'app_version': get_release(),
+        }
+
+        # https://docs.sentry.io/platforms/python/enriching-events/context/#structured-context
+        contexts['contexts'] = {
+            'guestname': self.details.get('guestname'),
+            'snapshotname': self.details.get('snapshotname'),
+            'poolname': self.details.get('poolname')
+        }
+
+        return contexts
+
     def get_sentry_details(self) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
         """
         Returns three mappings, data, tags and extra, accepted by Sentry as issue details.
@@ -942,6 +964,8 @@ class Failure:
             return
 
         event, tags, extra = self.get_sentry_details()
+
+        event['contexts'] = self.get_sentry_contexts()
 
         if additional_tags:
             tags.update(additional_tags)
