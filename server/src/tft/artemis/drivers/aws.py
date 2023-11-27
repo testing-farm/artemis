@@ -318,7 +318,8 @@ class AWSPoolImageInfo(PoolImageInfo):
         serialized = super().serialize_scrubbed()
 
         for bd_mapping in serialized['block_device_mappings']:
-            del bd_mapping['Ebs']['SnapshotId']
+            if 'Ebs' in bd_mapping and 'SnapshotId' in bd_mapping['Ebs']:
+                del bd_mapping['Ebs']['SnapshotId']
 
         return serialized
 
