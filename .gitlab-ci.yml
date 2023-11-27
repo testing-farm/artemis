@@ -17,6 +17,11 @@ workflow:
     # for tagged commits
     - if: $CI_COMMIT_TAG
 
+.apiary:
+  image: "ruby:2.7"
+  before_script:
+    - gem install apiaryio
+
 tests:
   stage: test_stage
   variables:
@@ -157,12 +162,21 @@ pages:preview:stop:
   script:
     - echo "bye"
 
-publish_apiary:
-  image: "ruby:2.6"
-
-  stage: deploy
+test_apiary:
+  stage: test_stage
+  extends: [.apiary]
   script:
-    - gem install apiaryio
+    - apiary preview --output=preview.html --path "api/apiary.apib"
+  except:
+    - main
+  artifacts:
+    paths:
+      - preview.html
+
+publish_apiary:
+  stage: deploy
+  extends: [.apiary]
+  script:
     - apiary publish --api-name="artemis6" --path "api/apiary.apib"
   only:
     - main
