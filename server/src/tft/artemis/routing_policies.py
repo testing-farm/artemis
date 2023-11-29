@@ -196,7 +196,7 @@ KNOB_ROUTE_POOL_ENABLED: Knob[bool] = Knob(
 KNOB_ONE_SHOT_ONLY_LABEL: Knob[str] = Knob(
     'route.policies.one-shot-only.label',
     """
-    Guest requests with this label in user data would the canceled by the ``one-shot-only`` policy when their first
+    Guest requests with this label in user data would be canceled by the ``one-shot-only`` policy when their first
     provisioning attempt fails.
     """,
     has_db=False,
@@ -913,7 +913,7 @@ def policy_one_shot_only(
     guest_request: GuestRequest
 ) -> PolicyReturnType:
     """
-    Do not try try provisioning for the guest request more than once.
+    Do not try provisioning for the guest request more than once.
     """
 
     if not guest_request.user_data.get(KNOB_ONE_SHOT_ONLY_LABEL.value):

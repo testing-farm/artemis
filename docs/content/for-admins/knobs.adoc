@@ -984,7 +984,7 @@ of crashed resources.
 
 
 
-5+|Guest requests with this label in user data would the canceled by the ``one-shot-only`` policy when their first
+5+|Guest requests with this label in user data would be canceled by the ``one-shot-only`` policy when their first
 provisioning attempt fails.
 
 |`route.pool.enabled`
