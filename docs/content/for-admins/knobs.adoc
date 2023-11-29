@@ -976,6 +976,17 @@ of crashed resources.
 
 5+|A delay, in seconds, between two calls of `update-guest-request` task checking provisioning progress.
 
+|`route.policies.one-shot-only.label`
+|`str`
+|`ARTEMIS_ROUTE_POLICIES_ONE_SHOT_ONLY_LABEL`
+|`ArtemisOneShotOnly`
+|no
+
+
+
+5+|Guest requests with this label in user data would the canceled by the ``one-shot-only`` policy when their first
+provisioning attempt fails.
+
 |`route.pool.enabled`
 |`bool`
 |`ARTEMIS_ROUTE_POOL_ENABLED`
