@@ -193,6 +193,18 @@ KNOB_ROUTE_POOL_ENABLED: Knob[bool] = Knob(
     default=True
 )
 
+KNOB_ONE_SHOT_ONLY_LABEL: Knob[str] = Knob(
+    'route.policies.one-shot-only.label',
+    """
+    Guest requests with this label in user data would be canceled by the ``one-shot-only`` policy when their first
+    provisioning attempt fails.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_ROUTE_POLICIES_ONE_SHOT_ONLY_LABEL',
+    cast_from_str=str,
+    default='ArtemisOneShotOnly'
+)
+
 
 class PolicyLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, policy_name: str) -> None:
@@ -891,6 +903,33 @@ def policy_use_only_when_addressed(
         pools,
         lambda pool: PoolPolicyRuling(pool=pool, allowed=not pool.use_only_when_addressed)
     ))
+
+
+@policy_boilerplate
+def policy_one_shot_only(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Do not try provisioning for the guest request more than once.
+    """
+
+    if not guest_request.user_data.get(KNOB_ONE_SHOT_ONLY_LABEL.value):
+        return Ok(PolicyRuling.from_pools(pools))
+
+    r_events = guest_request.fetch_events(session, eventname='acquisition-attempt')
+
+    if r_events.is_error:
+        return Error(r_events.unwrap_error())
+
+    events = r_events.unwrap()
+
+    if not events:
+        return Ok(PolicyRuling.from_pools(pools))
+
+    return Ok(PolicyRuling(cancel=True))
 
 
 def run_routing_policies(

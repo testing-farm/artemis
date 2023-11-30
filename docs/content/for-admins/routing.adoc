@@ -1,0 +1,18 @@
+---
+title: "Routing"
+date: 2023-11-29T10:22:42+01:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== Routing policies
+
+=== `one-shot-only`
+
+If a guest request has a specific key in its `user-data` field, this policy would cancel the request should it enter routing for the second time.
+In other words, when the first routing and provisioning attempt fails, there would be no second attempt.
+
+The key to look for in `user-data` can be set via `route.policies.one-shot-only.label` knob, or `ARTEMIS_ROUTE_POLICIES_ONE_SHOT_ONLY_LABEL`
+environment variable.
+By default, it is set to `ArtemisOneShotOnly`.
