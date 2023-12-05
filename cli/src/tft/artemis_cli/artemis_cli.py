@@ -67,7 +67,11 @@ ALLOWED_LOGS = [
     'console:dump/blob',
     'console:dump/url',
     'console:interactive/url',
-    'sys.log:dump/url'
+    'sys.log:dump/url',
+    'flasher-debug:dump/url',
+    'flasher-debug:dump/blob',
+    'flasher-event:dump/url',
+    'flasher-event:dump/blob'
 ]
 
 
