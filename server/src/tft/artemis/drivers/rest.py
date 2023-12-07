@@ -55,7 +55,11 @@ class RestDriver(PoolDriver):
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supported_guest_logs = [
-            ('console:dump', GuestLogContentType.BLOB)
+            ('console:dump', GuestLogContentType.BLOB),
+            ('flasher-debug:dump', GuestLogContentType.URL),
+            ('flasher-event:dump', GuestLogContentType.URL),
+            ('flasher-debug:dump', GuestLogContentType.BLOB),
+            ('flasher-event:dump', GuestLogContentType.BLOB)
         ]
 
         return Ok(capabilities)
