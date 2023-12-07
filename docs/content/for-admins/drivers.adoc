@@ -261,6 +261,9 @@ custom-flavors:
      family_name: <string>
      model: <integer>
      model_name: <string>
+     flag:
+       - <string>
+       ...
 
    disk:
      - size: <quantity>
@@ -294,6 +297,9 @@ custom-flavors:
      family_name: <string>
      model: <integer>
      model_name: <string>
+     flag:
+       - <string>
+       ...
 
    disk:
      - size: <quantity>
@@ -346,6 +352,11 @@ patch-flavors:
         family_name: Haswell
         model: 6
         model_name: i7-something
+        flag:
+          - fpu
+          - vme
+          - de
+          ...
 
     # Oh, yes, all these flavors are VMs, not bare metal machines, and we support nested virtualization.
     virtualization:

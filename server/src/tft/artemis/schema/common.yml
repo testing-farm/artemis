@@ -50,6 +50,11 @@ definitions:
       model-name:
         type: string
 
+      flag:
+        type: array
+        items:
+          type: string
+
     required: []
     additionalProperties: false
 

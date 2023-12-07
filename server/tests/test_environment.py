@@ -1152,6 +1152,56 @@ def test_empty_hw_constraints(logger: ContextAdapter) -> None:
     assert r_constraints.unwrap() is None
 
 
+def test_cpu_flags(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        cpu:
+            flag:
+              - avx
+              - avx2
+              - "!= smep"
+        """
+    )
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            cpu=tft.artemis.environment.FlavorCpu(
+                flag=[]
+            )
+        )
+    ) is False
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            cpu=tft.artemis.environment.FlavorCpu(
+                flag=['avx', 'avx2']
+            )
+        )
+    ) is True
+
+    assert eval_flavor(
+        logger,
+        constraint,
+        tft.artemis.environment.Flavor(
+            name='dummy-flavor',
+            id='dummy-flavor',
+            cpu=tft.artemis.environment.FlavorCpu(
+                flag=['avx', 'avx2', 'smep']
+            )
+        )
+    ) is False
+
+
 def test_schema_no_constraints_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
     spec = parse_spec(
         """
@@ -1257,6 +1307,10 @@ def test_parse_maximal_constraint() -> None:
                 model-name: "Haswell"
                 family: 6
                 family-name: Skylake
+                flag:
+                  - avx
+                  - avx2
+                  - "!= smep"
             disk:
                 - size: 40 GiB
                 - size: 120 GiB

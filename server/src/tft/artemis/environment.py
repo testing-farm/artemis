@@ -333,6 +333,9 @@ class FlavorCpu(_FlavorSubsystemContainer):
     #: CPU model name.
     model_name: Optional[str] = None
 
+    #: CPU flags.
+    flag: List[str] = dataclasses.field(default_factory=list)
+
 
 @dataclasses.dataclass(repr=False)
 class FlavorDisk(_FlavorSubsystemContainer):
@@ -1491,6 +1494,22 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
         )
         if constraint_name in spec
     ]
+
+    if 'flag' in spec:
+        flag_group = And()
+
+        for flag_spec in spec['flag']:
+            constraint = Constraint.from_specification('cpu.flag', flag_spec, as_quantity=False)
+
+            if constraint.operator == Operator.EQ:
+                constraint.change_operator(Operator.CONTAINS)
+
+            elif constraint.operator == Operator.NEQ:
+                constraint.change_operator(Operator.NOTCONTAINS)
+
+            flag_group.constraints += [constraint]
+
+        group.constraints += [flag_group]
 
     if len(group.constraints) == 1:
         return group.constraints[0]
