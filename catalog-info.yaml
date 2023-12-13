@@ -1,0 +1,30 @@
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: provisioner
+  description: Testing Farm Provisioner / Artemis
+  annotations:
+    gitlab.com/project-slug: 'testing-farm/oculus'
+    servicenow.com/appcode: TFT-001
+    jira/project-key: TFT
+    jira/label: Artemis
+    feedback/type: JIRA
+    feedback/host: https://issues.redhat.com
+    feedback/email-to: tft@redhat.com
+  tags:
+    - ecosystem:rhel
+    - ecosystem:public
+    - category:testing
+    - category:cloud
+    - language:python
+  links:
+    - title: "#testing-farm"
+      url: https://redhat.enterprise.slack.com/archives/C03BRN71JAF
+      icon: chat
+spec:
+  type: service
+  lifecycle: production
+  owner: group:redhat/tft
+  domain: quality-community/quality-community
+  system: quality-community/testing-farm
