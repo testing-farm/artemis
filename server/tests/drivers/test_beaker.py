@@ -405,6 +405,10 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                     model-name: "Haswell"
                     family: 6
                     # family-name: Skylake
+                    flag:
+                      - avx
+                      - avx2
+                      - "!= smep"
                 disk:
                     - size: 40 GiB
                     - size: 120 GiB
@@ -454,6 +458,17 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
            <cpu>
             <model_name op="==" value="Haswell"/>
            </cpu>
+           <and>
+            <cpu>
+             <flag op="==" value="avx"/>
+            </cpu>
+            <cpu>
+             <flag op="==" value="avx2"/>
+            </cpu>
+            <cpu>
+             <flag op="!=" value="smep"/>
+            </cpu>
+           </and>
           </and>
           <system>
            <memory op="==" value="8192"/>

@@ -53,7 +53,8 @@ ConfigFlavorCPUSpecType = TypedDict(
         'family': Optional[int],
         'family-name': Optional[str],
         'model': Optional[int],
-        'model-name': Optional[str]
+        'model-name': Optional[str],
+        'flag': Optional[List[str]]
     }
 )
 
@@ -651,6 +652,9 @@ def _apply_flavor_specification(
 
         if 'model-name' in cpu_patch:
             flavor.cpu.model_name = cpu_patch['model-name']
+
+        if 'flag' in cpu_patch:
+            flavor.cpu.flag = cpu_patch['flag'] or []
 
     if 'disk' in flavor_spec:
         # TODO: introduce way how to actually patch the list of disks, instead of recreating it. It's easier,

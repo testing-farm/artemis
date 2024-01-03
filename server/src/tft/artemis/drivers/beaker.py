@@ -356,6 +356,16 @@ def constraint_to_beaker_filter(
 
             cpu.append(model_name)
 
+        elif constraint_name.child_property == 'flag':
+            op, value = operator_to_beaker_op(
+                Operator.EQ if constraint.operator is Operator.CONTAINS else Operator.NEQ,
+                str(constraint.value)
+            )
+
+            flag = _new_tag('flag', op=op, value=value)
+
+            cpu.append(flag)
+
         else:
             return Error(Failure(
                 'constraint not supported by driver',
