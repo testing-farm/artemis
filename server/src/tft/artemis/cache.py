@@ -286,33 +286,33 @@ def iter_cache_keys(
 
 
 #
-# Manipulation of cached sets
+# Manipulation of cached mappings
 #
 
-def refresh_cached_set(
+def refresh_cached_mapping(
     cache: redis.Redis,
     key: str,
     items: Dict[str, SerializableContainer]
 ) -> Result[None, Failure]:
     """
-    Store a given set of items in a cache.
+    Store a given mapping in a cache.
 
-    Items are srialized into JSON blobs, and the whole set atomically replaces the current value
+    Items are serialized into JSON blobs, and the whole mapping atomically replaces the current value
     of a given key.
 
-    A special key, `{key}.updated`, is set to current time to indicate when the cached set
+    A special key, `{key}.updated`, is set to current time to indicate when the cached mapping
     has been refreshed.
 
     :param cache: cache instance to use for cache access.
-    :param key: key holding the set.
-    :param items: set of items to store.
+    :param key: key holding the mapping.
+    :param items: mapping of items to store.
     :returns: ``None`` when refresh went well, or an error.
     """
 
     key_updated = f'{key}.updated'
 
     if not items:
-        # When we get an empty set of items, we should remove the key entirely, to make queries looking for
+        # When we get an empty mapping, we should remove the key entirely, to make queries looking for
         # return `None` aka "not found". It's the same as if we'd try to remove all entries, just with one
         # action.
         safe_call(
@@ -359,22 +359,22 @@ def refresh_cached_set(
     return Ok(None)
 
 
-def get_cached_set(
+def get_cached_mapping(
     cache: redis.Redis,
     key: str,
     item_klass: Type[S]
 ) -> Result[Dict[str, S], Failure]:
     """
-    Retrieve cached set of items.
+    Retrieve cached mapping.
 
-    Items are unserialized into a given type, and the whole set is returned.
+    Items are unserialized into a given type, and the whole mapping is returned.
 
-    See :py:func:`get_cached_items_as_list` for the variant returning items in a list.
+    See :py:func:`get_cached_mapping_values` for the variant returning items in a list.
 
     :param cache: cache instance to use for cache access.
-    :param key: key holding the set.
+    :param key: key holding the mapping.
     :param item_klass: a class to use for unserialization.
-    :returns: the retrieved set, or an error.
+    :returns: the retrieved mapping, or an error.
     """
 
     r_fetch = safe_call(
@@ -403,23 +403,23 @@ def get_cached_set(
     return Ok(items)
 
 
-def get_cached_set_as_list(
+def get_cached_mapping_values(
     cache: redis.Redis,
     key: str,
     item_klass: Type[S]
 ) -> Result[List[S], Failure]:
     """
-    Retrieve cached set of items in the form of a list of items.
+    Retrieve cached mapping values as a list.
 
-    See :py:func:`get_cached_set` for the variant returning the set as a mapping.
+    See :py:func:`get_cached_mapping` for the variant returning the mapping.
 
     :param cache: cache instance to use for cache access.
-    :param key: key holding the set.
+    :param key: key holding the mapping.
     :param item_klass: a class to use for unserialization.
-    :returns: a list of items of the set, or an error.
+    :returns: a list of items of the mapping, or an error.
     """
 
-    r_fetch = get_cached_set(cache, key, item_klass)
+    r_fetch = get_cached_mapping(cache, key, item_klass)
 
     if r_fetch.is_error:
         return Error(r_fetch.unwrap_error())
@@ -429,20 +429,20 @@ def get_cached_set_as_list(
     return Ok(list(items.values()) if items else [])
 
 
-def get_cached_set_item(
+def get_cached_mapping_item(
     cache: redis.Redis,
     key: str,
     item_key: str,
     item_klass: Type[S]
 ) -> Result[Optional[S], Failure]:
     """
-    Retrieve one item of a cached set of items.
+    Retrieve one item of a cached mapping.
 
     Item is unserialized into a given type.
 
     :param cache: cache instance to use for cache access.
-    :param key: key holding the set.
-    :param item_key: name of the item within the set.
+    :param key: key holding the mapping.
+    :param item_key: name of the item within the mapping.
     :param item_klass: a class to use for unserialization.
     :returns: the retrieved item, ``None`` when there is no such item, or an error.
     """

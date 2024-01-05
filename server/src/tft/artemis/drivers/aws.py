@@ -22,7 +22,7 @@ from jinja2 import Template
 from typing_extensions import Literal, TypedDict
 
 from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str
-from ..cache import get_cached_set_as_list, get_cached_set_item
+from ..cache import get_cached_mapping_item, get_cached_mapping_values
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorBoot, FlavorBootMethodType, FlavorCpu, \
@@ -2840,14 +2840,14 @@ class AWSDriver(PoolDriver):
         return Ok(flavors)
 
     def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
-        return get_cached_set_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
+        return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
 
     def get_cached_pool_flavor_infos(self) -> Result[List[Flavor], Failure]:
         """
         Retrieve all flavor info known to the pool.
         """
 
-        return get_cached_set_as_list(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
+        return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
 
     def fetch_pool_resources_metrics(
         self,

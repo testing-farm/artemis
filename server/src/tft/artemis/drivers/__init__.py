@@ -26,7 +26,7 @@ from typing_extensions import Literal, Protocol, TypedDict
 
 from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, process_output_to_str, render_template, \
     safe_call
-from ..cache import get_cached_set_as_list, get_cached_set_item, refresh_cached_set
+from ..cache import get_cached_mapping_item, get_cached_mapping_values, refresh_cached_mapping
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
     SnapshotRequest, SSHKey
@@ -1374,7 +1374,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :returns: a flavor info or ``None`` if such a name does not exist.
         """
 
-        r_flavor = get_cached_set_item(
+        r_flavor = get_cached_mapping_item(
             CACHE.get(),
             self.flavor_info_cache_key,
             flavorname,
@@ -2114,7 +2114,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         patched_images = r_updated_images.unwrap()
 
-        r_refresh = refresh_cached_set(
+        r_refresh = refresh_cached_mapping(
             CACHE.get(),
             self.image_info_cache_key,
             {
@@ -2136,7 +2136,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Retrieve pool image info for an image of a given name.
         """
 
-        return get_cached_set_item(CACHE.get(), self.image_info_cache_key, imagename, self.image_info_class)
+        return get_cached_mapping_item(CACHE.get(), self.image_info_cache_key, imagename, self.image_info_class)
 
     def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         """
@@ -2252,7 +2252,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         all_flavors = real_flavors + r_config_flavors.unwrap()
 
-        r_refresh = refresh_cached_set(
+        r_refresh = refresh_cached_mapping(
             CACHE.get(),
             self.flavor_info_cache_key,
             {
@@ -2282,21 +2282,21 @@ class PoolDriver(gluetool.log.LoggerMixin):
            is unknown.
         """
 
-        return get_cached_set_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
+        return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
 
     def get_cached_pool_image_infos(self) -> Result[List[PoolImageInfo], Failure]:
         """
         Retrieve pool image info for all known images.
         """
 
-        return get_cached_set_as_list(CACHE.get(), self.image_info_cache_key, self.image_info_class)
+        return get_cached_mapping_values(CACHE.get(), self.image_info_cache_key, self.image_info_class)
 
     def get_cached_pool_flavor_infos(self) -> Result[List[Flavor], Failure]:
         """
         Retrieve all flavor info known to the pool.
         """
 
-        return get_cached_set_as_list(CACHE.get(), self.flavor_info_cache_key, self.flavor_info_class)
+        return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, self.flavor_info_class)
 
 
 def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -> Result[Optional[str], Failure]:

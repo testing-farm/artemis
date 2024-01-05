@@ -22,7 +22,7 @@ from typing_extensions import TypedDict
 
 from .. import Failure, SerializableContainer, log_dict_yaml, process_output_to_str, render_template, \
     template_environment
-from ..cache import get_cached_set, refresh_cached_set
+from ..cache import get_cached_mapping, refresh_cached_mapping
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Kickstart, Operator, Or, SizeType
@@ -1767,7 +1767,7 @@ class BeakerDriver(PoolDriver):
                 hostnames=r_list.unwrap()
             ))
 
-        r_refresh = refresh_cached_set(
+        r_refresh = refresh_cached_mapping(
             CACHE.get(),
             self.avoid_groups_hostnames_cache_key,
             {
@@ -1782,7 +1782,7 @@ class BeakerDriver(PoolDriver):
         return Ok(None)
 
     def get_avoid_groups_hostnames(self) -> Result[Dict[str, AvoidGroupHostnames], Failure]:
-        return get_cached_set(CACHE.get(), self.avoid_groups_hostnames_cache_key, AvoidGroupHostnames)
+        return get_cached_mapping(CACHE.get(), self.avoid_groups_hostnames_cache_key, AvoidGroupHostnames)
 
     def _get_beaker_machine_log_url(
         self,
