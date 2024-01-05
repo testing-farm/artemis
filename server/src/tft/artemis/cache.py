@@ -9,7 +9,7 @@ Helpful building blocks for cache operations.
 
 import datetime
 import uuid
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, cast
+from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Type, TypeVar, cast
 
 import gluetool.log
 import redis
@@ -37,6 +37,8 @@ RedisHGetType = Callable[[str, str], Optional[bytes]]
 RedisHSet = Callable[[str, bytes, bytes], None]
 RedisHMSet = Callable[[str, Dict[bytes, bytes]], None]
 RedisHGetAllType = Callable[[str], Optional[Dict[bytes, bytes]]]
+
+RedisSMembersType = Callable[[str], Optional[Set[bytes]]]
 
 RedisDeleteType = Callable[[str], None]
 RedisRenameType = Callable[[str, str], None]
@@ -467,6 +469,121 @@ def get_cached_mapping_item(
         return Error(r_unserialize.unwrap_error())
 
     return Ok(r_unserialize.unwrap())
+
+
+#
+# Manipulation of cached lists
+#
+def refresh_cached_list(
+    cache: redis.Redis,
+    key: str,
+    items: List[SerializableContainer]
+) -> Result[None, Failure]:
+    """
+    Store a given list in a cache.
+
+    Items are serialized into JSON blobs, and the whole list atomically replaces the current value
+    of a given key.
+
+    A special key, `{key}.updated`, is set to current time to indicate when the cached list
+    has been refreshed.
+
+    :param cache: cache instance to use for cache access.
+    :param key: key holding the list.
+    :param items: list of items to store.
+    :returns: ``None`` when refresh went well, or an error.
+    """
+
+    key_updated = f'{key}.updated'
+
+    if not items:
+        # When we get an empty list, we should remove the key entirely, to make queries looking for
+        # return `None` aka "not found". It's the same as if we'd try to remove all entries, just with one
+        # action.
+        safe_call(
+            cast(RedisDeleteType, cache.delete),
+            key
+        )
+
+        safe_call(
+            cast(RedisSetType, cache.set),
+            key_updated,
+            datetime.datetime.timestamp(datetime.datetime.utcnow())
+        )
+
+        return Ok(None)
+
+    # Two steps: create new structure, and replace the old one. We cannot check the old one
+    # and remove entries that are no longer valid.
+    new_key = f'{key}.new'
+
+    r_action = safe_call(
+        cache.sadd,
+        new_key,
+        *[
+            item.serialize_to_json().encode()
+            for item in items
+        ]
+    )
+
+    if r_action.is_error:
+        return Error(r_action.unwrap_error())
+
+    safe_call(
+        cast(RedisRenameType, cache.rename),
+        new_key,
+        key
+    )
+
+    safe_call(
+        cast(RedisSetType, cache.set),
+        key_updated,
+        datetime.datetime.timestamp(datetime.datetime.utcnow())
+    )
+
+    return Ok(None)
+
+
+def get_cached_list(
+    cache: redis.Redis,
+    key: str,
+    item_klass: Type[S]
+) -> Result[List[S], Failure]:
+    """
+    Retrieve cached list.
+
+    Items are unserialized into a given type, and the whole list is returned.
+
+    :param cache: cache instance to use for cache access.
+    :param key: key holding the list.
+    :param item_klass: a class to use for unserialization.
+    :returns: the retrieved list, or an error.
+    """
+
+    r_fetch = safe_call(
+        cast(RedisSMembersType, cache.smembers),
+        key
+    )
+
+    if r_fetch.is_error:
+        return Error(r_fetch.unwrap_error())
+
+    serialized = r_fetch.unwrap()
+
+    items: List[S] = []
+
+    if serialized is None:
+        return Ok(items)
+
+    for item_serialized in serialized:
+        r_unserialize = safe_call(item_klass.unserialize_from_json, item_serialized.decode('utf-8'))
+
+        if r_unserialize.is_error:
+            return Error(r_unserialize.unwrap_error())
+
+        items.append(r_unserialize.unwrap())
+
+    return Ok(items)
 
 
 #
