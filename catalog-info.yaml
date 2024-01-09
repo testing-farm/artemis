@@ -5,7 +5,7 @@ metadata:
   name: provisioner
   description: Testing Farm Provisioner / Artemis
   annotations:
-    gitlab.com/project-slug: 'testing-farm/oculus'
+    gitlab.com/project-slug: 'testing-farm/artemis'
     servicenow.com/appcode: TFT-001
     jira/project-key: TFT
     jira/label: Artemis
