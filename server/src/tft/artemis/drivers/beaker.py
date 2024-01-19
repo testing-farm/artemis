@@ -1733,12 +1733,21 @@ class BeakerDriver(PoolDriver):
             logger,
             [
                 'system-list',
-                '--xml-filter', f'<and><group op="=" value="{groupname}"/></and>'
+                '--pool', f'{groupname}'
             ],
             commandname='bkr.system-list-owned-by-group'
         )
 
         if r_list.is_error:
+            failure = r_list.unwrap_error()
+            if failure.command_output:
+                stderr = process_output_to_str(failure.command_output, stream='stderr')
+
+                if stderr and stderr.strip() == 'Nothing Matches':
+                    return Error(Failure.from_failure(
+                        'The Beaker pool does not exist or is empty',
+                        r_list.unwrap_error().update(groupname=groupname)
+                    ))
             return Error(Failure.from_failure(
                 'failed to fetch systems owned by a group',
                 r_list.unwrap_error().update(groupname=groupname)
