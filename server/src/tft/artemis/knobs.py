@@ -795,11 +795,11 @@ KNOB_SENTRY_DSN: Knob[Optional[str]] = Knob(
     default='undefined'
 )
 
-KNOB_SENTRY_BASE_URL: Knob[Optional[str]] = Knob(
-    'sentry.base-url',
-    'Sentry base URL, for nice event URLs in logs.',
+KNOB_SENTRY_EVENT_URL_TEMPLATE: Knob[Optional[str]] = Knob(
+    'sentry.event-url-template',
+    'Sentry event URL template, for nice event URLs in logs.',
     has_db=False,
-    envvar='ARTEMIS_SENTRY_BASE_URL',
+    envvar='ARTEMIS_SENTRY_EVENT_URL_TEMPLATE',
     cast_from_str=str,
     # TODO: Knob cannot use None as actual default value. Needs a fix.
     default='undefined'

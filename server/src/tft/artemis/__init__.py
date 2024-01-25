@@ -64,9 +64,10 @@ jinja2.filters.FILTERS.update(
 # Now we can import our stuff without any fear we'd miss DEFAULT_FILTERS update
 from . import db as artemis_db  # noqa: E402
 from . import middleware as artemis_middleware  # noqa: E402
+from .knobs import KNOB_TEMPLATE_VARIABLE_DELIMITERS  # noqa: E402
 from .knobs import Knob  # noqa: E402
-from .knobs import KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_SENTRY, KNOB_SENTRY_BASE_URL, \
-    KNOB_SENTRY_DISABLE_CERT_VERIFICATION, KNOB_SENTRY_DSN, KNOB_TEMPLATE_VARIABLE_DELIMITERS  # noqa: E402
+from .knobs import KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_SENTRY, KNOB_SENTRY_DISABLE_CERT_VERIFICATION, \
+    KNOB_SENTRY_DSN, KNOB_SENTRY_EVENT_URL_TEMPLATE  # noqa: E402
 
 if TYPE_CHECKING:
     from .environment import Environment
@@ -986,8 +987,14 @@ class Failure:
             else:
                 self.submited_to_sentry = True
 
-            if self.sentry_event_id and KNOB_SENTRY_BASE_URL.value not in (None, 'undefined'):
-                self.sentry_event_url = f'{KNOB_SENTRY_BASE_URL.value}/?query={self.sentry_event_id}'
+            if self.sentry_event_id and KNOB_SENTRY_EVENT_URL_TEMPLATE.value:
+                r_rendered = render_template(KNOB_SENTRY_EVENT_URL_TEMPLATE.value, EVENT_ID=self.sentry_event_id)
+
+                if r_rendered.is_error:
+                    r_rendered.unwrap_error().handle(logger, sentry=False)
+
+                else:
+                    self.sentry_event_url = r_rendered.unwrap()
 
     def reraise(self) -> NoReturn:
         if self.exception:
