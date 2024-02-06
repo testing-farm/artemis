@@ -7,7 +7,7 @@ import os
 import re
 import stat
 import threading
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 
 import bs4
 import gluetool.log
@@ -932,6 +932,22 @@ class BeakerDriver(PoolDriver):
 
         return Ok(pools)
 
+    @property
+    def console_failure_patterns(self) -> Result[Optional[List[Pattern[str]]], Failure]:
+        r_patterns = self.pool_config.get('console-failure-patterns', [])
+        patterns = []
+        for pattern in r_patterns:
+            try:
+                re.compile(pattern)
+            except Exception:
+                return Error(Failure(
+                    'failed to re.compile the pattern',
+                    pattern=pattern,
+                ))
+            patterns.append(pattern)
+
+        return Ok(patterns)
+
     def _run_bkr(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1417,6 +1433,32 @@ class BeakerDriver(PoolDriver):
 
         return Ok(job_results.find('recipe')['system'])
 
+    def _analyze_beaker_logs(
+        self,
+        log_urls: List[str],
+        patterns: List[Pattern[str]]
+    ) -> Result[Optional[List[str]], Failure]:
+
+        failures = []
+        for url in log_urls:
+            try:
+                response = requests.get(url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
+                response.raise_for_status()
+
+            except requests.exceptions.RequestException as exc:
+                return Error(Failure.from_exc(
+                    'failed to fetch Beaker log URL',
+                    exc,
+                    url=url
+                ))
+
+            for pattern in patterns:
+                if not any(pattern.search(line.decode('utf-8', 'ignore')) for line in response.iter_lines()):
+                    continue
+                failures.append(f"The pattern found in console log: {pattern}")
+
+        return Ok(failures)
+
     def update_guest(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1469,6 +1511,32 @@ class BeakerDriver(PoolDriver):
             ))
 
         if job_result == 'new':
+            r_console_log = self._get_beaker_machine_log_url(logger, guest_request, "console.log")
+            if r_console_log.is_error:
+                return Error(r_console_log.unwrap_error())
+            # fetch console log, grab patterns
+            r_failure_patterns = self.console_failure_patterns
+            if r_failure_patterns.is_error:
+                return Error(r_failure_patterns.unwrap_error())
+            console_log = r_console_log.unwrap()
+            failure_patterns = r_failure_patterns.unwrap()
+            if console_log and failure_patterns:
+                r_is_failed = self._analyze_beaker_logs([console_log], failure_patterns)
+                if r_is_failed.is_error:
+                    return Error(r_is_failed.unwrap_error())
+                failures = r_is_failed.unwrap()
+                if failures:
+                    return Ok(ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=BeakerPoolData.unserialize(guest_request),
+                        pool_failures=[Failure(
+                            'beaker job failed',
+                            job_result=job_result,
+                            job_status=job_status,
+                            job_results=job_results.prettify(),
+                            failures=failures
+                        )]
+                    ))
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=BeakerPoolData.unserialize(guest_request),
