@@ -118,6 +118,9 @@ properties:
           required:
             - poolname
 
+  preserve-for-investigation:
+    type: boolean
+
 additionalProperties: false
 
 required: []

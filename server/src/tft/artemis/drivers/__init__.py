@@ -1202,6 +1202,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def use_only_when_addressed(self) -> bool:
         return self.pool_config.get('use-only-when-addressed', False)
 
+    @property
+    def preserve_for_investigation(self) -> bool:
+        return gluetool.utils.normalize_bool_option(self.pool_config.get('preserve-for-investigation', False))
+
     def sanity(self) -> Result[bool, Failure]:
         """
         Do sanity checks after initializing the driver. Useful to check for pool configuration

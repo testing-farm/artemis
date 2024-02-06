@@ -83,6 +83,9 @@ properties:
     items:
       type: string
 
+  preserve-for-investigation:
+    type: boolean
+
 additionalProperties: false
 
 allOf:

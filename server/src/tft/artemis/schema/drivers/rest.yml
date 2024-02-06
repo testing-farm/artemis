@@ -26,6 +26,9 @@ properties:
   use-only-when-addressed:
     type: boolean
 
+  preserve-for-investigation:
+    type: boolean
+
 additionalProperties: false
 
 required:

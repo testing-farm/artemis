@@ -2713,12 +2713,14 @@ class ProvisioningTailHandler(TailHandler):
 
             assert workspace.pool
 
-            r_release = workspace.pool.release_guest(logger, workspace.gr)
+            # Don't release the guests if preserve-for-investigation is set
+            if not workspace.pool.preserve_for_investigation:
+                r_release = workspace.pool.release_guest(logger, workspace.gr)
 
-            if r_release.is_error:
-                workspace.handle_error(r_release, 'failed to release guest resources')
+                if r_release.is_error:
+                    workspace.handle_error(r_release, 'failed to release guest resources')
 
-                return RESCHEDULE
+                    return RESCHEDULE
 
         workspace.update_guest_state(
             self.new_state,
