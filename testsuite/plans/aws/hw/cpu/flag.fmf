@@ -1,0 +1,27 @@
+/x86_64/avx2:
+  discover+:
+    test:
+      - hw/cpu/flag/avx2
+
+  provision+:
+    hardware:
+      cpu:
+        flag:
+          - "avx2"
+
+/aarch64:
+  provision+:
+    # TODO: should not be needed once aarch64 is available in general pools
+    pool: "${ARTEMIS_AWS_POOLNAME_AARCH64}"
+    arch: aarch64
+
+/aarch64/cpuid:
+  discover+:
+    test:
+      - hw/cpu/flag/cpuid
+
+  provision+:
+    hardware:
+      cpu:
+        flag:
+          - "cpuid"

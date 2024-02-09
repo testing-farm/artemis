@@ -1,0 +1,13 @@
+test: ./test.sh
+
+require+:
+  - jq
+  - util-linux
+
+/avx2:
+    environment+:
+        EXPECTED: "avx2"
+
+/cpuid:
+    environment+:
+        EXPECTED: "cpuid"

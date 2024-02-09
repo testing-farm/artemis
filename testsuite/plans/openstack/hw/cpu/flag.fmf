@@ -1,0 +1,10 @@
+/x86_64/avx2:
+  discover+:
+    test:
+      - hw/cpu/flag/avx2
+
+  provision+:
+    hardware:
+      cpu:
+        flag:
+          - "avx2"
