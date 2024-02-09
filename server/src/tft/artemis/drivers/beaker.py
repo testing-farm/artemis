@@ -458,6 +458,10 @@ def constraint_to_beaker_filter(
         )
 
         hostname = _new_tag('hostname', op=op, value=value)
+        if constraint.operator == Operator.NOTMATCH:
+            group = _new_tag('not')
+            group.append(hostname)
+            return Ok(group)
 
         return Ok(hostname)
 
