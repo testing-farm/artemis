@@ -1,5 +1,5 @@
 test: ./test.sh
-require:
+require+:
   - libvirt
   - libvirt-client
   - libvirt-daemon

@@ -9,11 +9,6 @@
         is-supported: true
 
 /yes/aarch64:
-  enabled: false
-
-  tag:
-    - pending
-
   provision+:
     arch: aarch64
 
@@ -50,11 +45,6 @@
         is-supported: false
 
 /no/aarch64:
-  enabled: false
-
-  tag:
-    - pending
-
   provision+:
     arch: aarch64
 

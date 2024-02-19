@@ -14,7 +14,14 @@ fi
 
 virsh capabilities
 
-if [ "$(arch)" = "x86_64" ]; then
+if [ "$(arch)" = "aarch64" ]; then
+    if [ "$EXPECTED" = "yes" ]; then
+        virt-host-validate && exit 0
+    else
+        virt-host-validate || exit 0
+    fi
+
+elif [ "$(arch)" = "x86_64" ]; then
     if [ "$EXPECTED" = "yes" ]; then
         grep -E 'svm|vmx' /proc/cpuinfo && exit 0
     else

@@ -1,6 +1,6 @@
 test: ./test.sh
 
-require:
+require+:
   - dmidecode
 
 /default:

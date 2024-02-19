@@ -1,5 +1,5 @@
 test: ./test.sh
-require:
+require+:
   - iproute
 
 /eth/extra-nics/3:

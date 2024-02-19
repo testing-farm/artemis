@@ -13,3 +13,9 @@ provision:
 
 execute:
   how: tmt
+
+prepare:
+  - how: shell
+    script:
+      - dnf install -y jq python3-pip
+      - pip3 install --user yq || pip3 install yq
