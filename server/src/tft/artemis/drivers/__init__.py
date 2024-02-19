@@ -83,6 +83,18 @@ ConfigFlavorDiskExpandedSpecType = TypedDict(
 
 ConfigFlavorDiskSpecType = Union[ConfigFlavorDiskSpecificSpecType, ConfigFlavorDiskExpandedSpecType]
 
+#: pools[].parameters.{custom-flavors,patch-flavors}[].gpu
+ConfigFlavorGPUSpecType = TypedDict(
+    'ConfigFlavorGPUSpecType',
+    {
+        'device': Optional[int],
+        'device-name': Optional[str],
+        'vendor': Optional[int],
+        'vendor-name': Optional[str],
+        'driver': Optional[str]
+    }
+)
+
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].tpm
 class ConfigFlavorTPMSpecType(TypedDict):
@@ -115,6 +127,7 @@ ConfigPatchFlavorSpecType = TypedDict(
         'compatible': ConfigFlavorCompatibleSpecType,
         'cpu': ConfigFlavorCPUSpecType,
         'disk': List[ConfigFlavorDiskSpecType],
+        'gpu': ConfigFlavorGPUSpecType,
         'tpm': ConfigFlavorTPMSpecType,
         'virtualization': ConfigFlavorVirtualizationSpecType
     }
@@ -129,6 +142,7 @@ class ConfigCustomFlavorSpecType(TypedDict):
     compatible: ConfigFlavorCompatibleSpecType
     cpu: ConfigFlavorCPUSpecType
     disk: List[ConfigFlavorDiskSpecType]
+    gpu: ConfigFlavorGPUSpecType
     tpm: ConfigFlavorTPMSpecType
     virtualization: ConfigFlavorVirtualizationSpecType
 
@@ -702,6 +716,24 @@ def _apply_flavor_specification(
                     return Error(r_size.unwrap_error())
 
         flavor.disk = FlavorDisks(patched_disks)
+
+    if 'gpu' in flavor_spec:
+        gpu_patch = flavor_spec['gpu']
+
+        if 'device-name' in gpu_patch:
+            flavor.gpu.device_name = gpu_patch['device-name']
+
+        if 'device' in gpu_patch:
+            flavor.gpu.device = gpu_patch['device']
+
+        if 'vendor-name' in gpu_patch:
+            flavor.gpu.vendor_name = gpu_patch['vendor-name']
+
+        if 'vendor' in gpu_patch:
+            flavor.gpu.vendor = gpu_patch['vendor']
+
+        if 'driver' in gpu_patch:
+            flavor.gpu.driver = gpu_patch['driver']
 
     if 'tpm' in flavor_spec:
         tpm_patch = flavor_spec['tpm']
