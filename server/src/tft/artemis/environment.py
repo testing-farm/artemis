@@ -580,6 +580,18 @@ class FlavorTPM(_FlavorSubsystemContainer):
 
 
 @dataclasses.dataclass(repr=False)
+class FlavorZcrypt(_FlavorSubsystemContainer):
+    """
+    Represents HW properties related to zcrypt devices.
+    """
+
+    CONTAINER_PREFIX = 'zcrypt'
+
+    adapter: Optional[str] = None
+    mode: Optional[str] = None
+
+
+@dataclasses.dataclass(repr=False)
 class FlavorVirtualization(_FlavorSubsystemContainer):
     """
     Represents HW properties related to virtualization properties of a flavor.
@@ -637,6 +649,9 @@ class Flavor(_FlavorSubsystemContainer):
 
     #: TPM support
     tpm: FlavorTPM = dataclasses.field(default_factory=FlavorTPM)
+
+    #: zcrypt support.
+    zcrypt: FlavorZcrypt = dataclasses.field(default_factory=FlavorZcrypt)
 
     #: Virtualization properties.
     virtualization: FlavorVirtualization = dataclasses.field(default_factory=FlavorVirtualization)
@@ -1481,6 +1496,28 @@ def _parse_tpm(spec: SpecType) -> ConstraintBase:
     return group
 
 
+def _parse_zcrypt(spec: SpecType) -> ConstraintBase:
+    """
+    Parse constraints related to the ``zcrypt`` HW requirement.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    if 'adapter' in spec:
+        group.constraints.append(Constraint.from_specification('zcrypt.adapter', spec['adapter'], as_quantity=False))
+
+    if 'mode' in spec:
+        group.constraints.append(Constraint.from_specification('zcrypt.mode', spec['mode'], as_quantity=False))
+
+    if len(group.constraints) == 1:
+        return group.constraints[0]
+
+    return group
+
+
 def _parse_cpu(spec: SpecType) -> ConstraintBase:
     """
     Parse a cpu-related constraints.
@@ -1857,6 +1894,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
     if 'virtualization' in spec:
         group.constraints += [_parse_virtualization(spec['virtualization'])]
+
+    if 'zcrypt' in spec:
+        group.constraints += [_parse_zcrypt(spec['zcrypt'])]
 
     if len(group.constraints) == 1:
         return group.constraints[0]

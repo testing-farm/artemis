@@ -197,11 +197,19 @@ def _translate_constraint_by_config(
     translations: List[ConstraintTranslationConfigType]
 ) -> Result[bs4.BeautifulSoup, Failure]:
     for translation in translations:
-        if translation['operator'] != constraint.operator.value or translation['value'] != constraint.value:
+        if translation['operator'] != constraint.operator.value:
+            continue
+
+        if isinstance(translation['value'], str):
+            if not re.match(translation['value'], str(constraint.value)):
+                continue
+
+        elif translation['value'] != constraint.value:
             continue
 
         r_rendered_raw_element = render_template(
             translation['element'],
+            CONSTRAINT=constraint,
             **template_environment(guest_request=guest_request)
         )
 
@@ -543,6 +551,29 @@ def constraint_to_beaker_filter(
             constraint_name=constraint.name
         ))
 
+    if constraint_name.property == 'zcrypt':
+        if constraint_name.child_property == 'adapter':
+            return _translate_constraint_by_config(
+                constraint,
+                guest_request,
+                pool.pool_config
+                    .get('hw-constraints', {})
+                    .get('zcrypt', {})
+                    .get('adapter', {})
+                    .get('translations', [])
+            )
+
+        if constraint_name.child_property == 'mode':
+            return _translate_constraint_by_config(
+                constraint,
+                guest_request,
+                pool.pool_config
+                    .get('hw-constraints', {})
+                    .get('zcrypt', {})
+                    .get('mode', {})
+                    .get('translations', [])
+            )
+
     return Error(Failure(
         'constraint not supported by driver',
         constraint=repr(constraint),
@@ -647,13 +678,21 @@ def environment_to_beaker_filter(
     constraints = r_constraints.unwrap()
 
     if constraints is None:
-        r_beaker_filter = constraint_to_beaker_filter(Constraint.from_arch(environment.hw.arch), guest_request, pool)
+        r_beaker_filter = constraint_to_beaker_filter(
+            Constraint.from_arch(environment.hw.arch),
+            guest_request,
+            pool
+        )
 
     else:
-        r_beaker_filter = constraint_to_beaker_filter(And([
-            Constraint.from_arch(environment.hw.arch),
-            constraints
-        ]), guest_request, pool)
+        r_beaker_filter = constraint_to_beaker_filter(
+            And([
+                Constraint.from_arch(environment.hw.arch),
+                constraints
+            ]),
+            guest_request,
+            pool
+        )
 
     if r_beaker_filter.is_error:
         return r_beaker_filter

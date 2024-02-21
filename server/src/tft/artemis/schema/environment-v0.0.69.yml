@@ -1,0 +1,385 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: Environment schema
+type: object
+
+definitions:
+
+  # HW requirements: `boot` block
+  hw_boot:
+    type: object
+
+    properties:
+      method:
+        type: string
+        enum:
+          - bios
+          - uefi
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `boot`.
+    minProperties: 1
+
+  # HW requirements: `compatible` block
+  hw_compatible:
+    type: object
+
+    properties:
+      distro:
+        type: array
+        items:
+          type: string
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `compatible`.
+    minProperties: 1
+
+
+  # HW requirements: `cpu` block
+  hw_cpu:
+    type: object
+
+    properties:
+      processors:
+        anyOf:
+          - type: string
+          - type: integer
+      sockets:
+        anyOf:
+          - type: string
+          - type: integer
+      cores:
+        anyOf:
+          - type: string
+          - type: integer
+      threads:
+        anyOf:
+          - type: string
+          - type: integer
+      cores-per-socket:
+        anyOf:
+          - type: string
+          - type: integer
+      threads-per-core:
+        anyOf:
+          - type: string
+          - type: integer
+      family:
+        anyOf:
+          - type: string
+          - type: integer
+      family-name:
+        type: string
+      model:
+        anyOf:
+          - type: string
+          - type: integer
+      model-name:
+        type: string
+
+      flag:
+        type: array
+        items:
+          type: string
+          pattern: "^(?:(?:=|!=)\\s*)?[a-zA-Z0-9_-]+$"
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `cpu`.
+    minProperties: 1
+
+  # HW requirements: single `disk` item
+  hw_disk:
+    type: object
+
+    properties:
+      size:
+        anyOf:
+          - type: string
+          - type: integer
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `disk`.
+    minProperties: 1
+
+  # HW requirements: `disk` block
+  hw_disks:
+    type: array
+    items:
+      "$ref": "#/definitions/hw_disk"
+
+  hw_hostname:
+    type: string
+
+  hw_memory:
+    anyOf:
+      - type: string
+      - type: integer
+
+  # HW requirements: single `network` item
+  hw_network:
+    type: object
+
+    properties:
+      type:
+        type: string
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `network`.
+    minProperties: 1
+
+  # HW requirements: `network` block
+  hw_networks:
+    type: array
+    items:
+      "$ref": "#/definitions/hw_network"
+
+  # HW requirements: `tpm` block
+  hw_tpm:
+    type: object
+
+    properties:
+      version:
+        type: string
+
+    additionalProperties: false
+    minProperties: 1
+
+  # HW requirements: `virtualization` block
+  hw_virtualization:
+    type: object
+
+    properties:
+      is-virtualized:
+        type: boolean
+
+      is-supported:
+        type: boolean
+
+      hypervisor:
+        type: string
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `boot`.
+    minProperties: 1
+
+  # HW requirements: `zcrypt` block
+  hw_zcrypt:
+    type: object
+
+    properties:
+      adapter:
+        type: string
+
+      mode:
+        type: string
+
+    additionalProperties: false
+    minProperties: 1
+
+  # HW requirements: basic block
+  hw_block:
+    type: object
+
+    properties:
+      boot:
+        "$ref": "#/definitions/hw_boot"
+
+      compatible:
+        "$ref": "#/definitions/hw_compatible"
+
+      cpu:
+        "$ref": "#/definitions/hw_cpu"
+
+      disk:
+        "$ref": "#/definitions/hw_disks"
+
+      hostname:
+        "$ref": "#/definitions/hw_hostname"
+
+      memory:
+        "$ref": "#/definitions/hw_memory"
+
+      network:
+        "$ref": "#/definitions/hw_networks"
+
+      tpm:
+        "$ref": "#/definitions/hw_tpm"
+
+      virtualization:
+        "$ref": "#/definitions/hw_virtualization"
+
+      zcrypt:
+        "$ref": "#/definitions/hw_zcrypt"
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `block`.
+    minProperties: 1
+
+  # HW requirements: conditions
+  hw_and:
+    type: object
+    properties:
+      "and":
+        type: array
+        items:
+          oneOf:
+            - "$ref": "#/definitions/hw_block"
+            - "$ref": "#/definitions/hw_and"
+            - "$ref": "#/definitions/hw_or"
+
+    required:
+      - "and"
+
+  hw_or:
+    type: object
+    properties:
+      "or":
+        type: array
+        items:
+          oneOf:
+            - "$ref": "#/definitions/hw_block"
+            - "$ref": "#/definitions/hw_and"
+            - "$ref": "#/definitions/hw_or"
+
+    required:
+      - "or"
+
+  hw_constraints:
+    oneOf:
+      - "$ref": "#/definitions/hw_block"
+      - "$ref": "#/definitions/hw_and"
+      - "$ref": "#/definitions/hw_or"
+
+    required: []
+
+  hw_requirements:
+    type: object
+
+    properties:
+      arch:
+        type: string
+
+      constraints:
+        oneOf:
+          - "$ref": "#/definitions/hw_constraints"
+          - type:
+            - "null"
+
+    required:
+      - arch
+
+  os_requirements:
+    type: object
+
+    properties:
+      compose:
+        type: string
+
+    required:
+      - compose
+
+    additionalProperties: false
+
+  kickstart_specification:
+    type: object
+
+    # Properties are derived from the official Beaker documentation:
+    # https://beaker-project.org/docs/man/bkr.html#cmdoption-bkr-kernel-options
+    properties:
+
+      # KS property: `kernel-options`
+      kernel-options:
+        oneOf:
+          - type:
+            - string
+          - type:
+            - "null"
+
+      # KS property: `kernel-options-post`
+      kernel-options-post:
+        oneOf:
+          - type:
+            - string
+          - type:
+            - "null"
+
+      # KS property: `metadata`
+      metadata:
+        oneOf:
+          - type:
+            - string
+          - type:
+            - "null"
+
+      # KS property: `post-install`
+      post-install:
+        oneOf:
+          - type:
+            - string
+          - type:
+            - "null"
+
+      # KS property: `pre-install`
+      pre-install:
+        oneOf:
+          - type:
+            - string
+          - type:
+            - "null"
+
+      # KS property: `script`
+      script:
+        oneOf:
+          - type:
+            - string
+          - type:
+            - "null"
+
+    additionalProperties: false
+
+
+properties:
+  hw:
+    "$ref": "#/definitions/hw_requirements"
+
+  os:
+    "$ref": "#/definitions/os_requirements"
+
+  kickstart:
+    "$ref": "#/definitions/kickstart_specification"
+
+  pool:
+    oneOf:
+      - type:
+        - string
+      - type:
+        - "null"
+
+  snapshots:
+    type: boolean
+    default: false
+
+  spot_instance:
+    oneOf:
+      - type:
+        - boolean
+      - type:
+        - "null"
+
+required:
+  - hw
+  - os
+  - kickstart
+
+additionalProperties: false

@@ -4,6 +4,29 @@ description: Beaker pool driver schema
 type: object
 
 definitions:
+  hw_translation:
+    type: object
+
+    properties:
+      operator:
+        type: string
+        enum:
+          - '=='
+          - '!='
+
+      value:
+        type: string
+
+      element:
+        type: string
+
+    required:
+      - operator
+      - value
+      - element
+
+    additionalProperties: false
+
   hw_boot_method_translation:
     type: object
 
@@ -52,6 +75,37 @@ definitions:
     required: []
     additionalProperties: false
 
+  hw_zcrypt:
+    type: object
+
+    properties:
+      adapter:
+        type: object
+
+        properties:
+          translations:
+            type: array
+            items:
+              "$ref": "#/definitions/hw_translation"
+
+        required: []
+        additionalProperties: false
+
+      mode:
+        type: object
+
+        properties:
+          translations:
+            type: array
+            items:
+              "$ref": "#/definitions/hw_translation"
+
+        required: []
+        additionalProperties: false
+
+    required: []
+    additionalProperties: false
+
 properties:
 
   username:
@@ -94,6 +148,9 @@ properties:
     properties:
       boot:
         "$ref": "#/definitions/hw_boot"
+
+      zcrypt:
+        "$ref": "#/definitions/hw_zcrypt"
 
     required: []
 

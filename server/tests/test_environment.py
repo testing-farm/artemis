@@ -1330,6 +1330,9 @@ def test_parse_maximal_constraint() -> None:
                 is-supported: true
                 is-virtualized: false
                 hypervisor: xen
+            zcrypt:
+                adapter: CEX8C
+                mode: CCA
         """)
 
 
