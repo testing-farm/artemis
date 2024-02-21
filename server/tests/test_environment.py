@@ -1314,6 +1314,12 @@ def test_parse_maximal_constraint() -> None:
             disk:
                 - size: 40 GiB
                 - size: 120 GiB
+            gpu:
+                 device: 1
+                 device-name: "AMD Radeon Pro V520 GPUs"
+                 vendor: 2
+                 vendor-name: "AMD"
+                 driver: amd
             memory: 8 GiB
             network:
                 - type: eth

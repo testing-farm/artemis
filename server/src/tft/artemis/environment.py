@@ -466,6 +466,30 @@ class FlavorDisks(_FlavorSequenceContainer[FlavorDisk]):
 
 
 @dataclasses.dataclass(repr=False)
+class FlavorGpu(_FlavorSubsystemContainer):
+    """
+    Represents HW properties related to GPU of a flavor.
+    """
+
+    CONTAINER_PREFIX = 'gpu'
+
+    #: GPU device name.
+    device_name: Optional[str] = None
+
+    #: GPU device ID.
+    device: Optional[int] = None
+
+    #: GPU vendor name.
+    vendor_name: Optional[str] = None
+
+    #: GPU vendor ID.
+    vendor: Optional[int] = None
+
+    #: GPU driver/kernel module name.
+    driver: Optional[str] = None
+
+
+@dataclasses.dataclass(repr=False)
 class FlavorNetwork(_FlavorSubsystemContainer):
     """
     Represents a HW properties related to a network interface of a flavor, one interface in particular.
@@ -601,6 +625,9 @@ class Flavor(_FlavorSubsystemContainer):
 
     #: Disk/storage properties.
     disk: FlavorDisks = dataclasses.field(default_factory=FlavorDisks)
+
+    #: GPU properties.
+    gpu: FlavorGpu = dataclasses.field(default_factory=FlavorGpu)
 
     #: RAM size, in bytes.
     memory: Optional[SizeType] = None
@@ -1640,6 +1667,48 @@ def _parse_disks(spec: SpecType) -> ConstraintBase:
     return group
 
 
+def _parse_gpu(spec: SpecType) -> ConstraintBase:
+    """
+    Parse GPU-related constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    group.constraints += [
+        Constraint.from_specification(
+            f'gpu.{constraint_name.replace("-", "_")}',
+            str(spec[constraint_name])
+        )
+        for constraint_name in (
+            'device',
+            'vendor'
+        )
+        if constraint_name in spec
+    ]
+
+    group.constraints += [
+        Constraint.from_specification(
+            f'gpu.{constraint_name.replace("-", "_")}',
+            str(spec[constraint_name]),
+            as_quantity=False
+        )
+        for constraint_name in (
+            'device-name',
+            'vendor-name',
+            'driver'
+        )
+        if constraint_name in spec
+    ]
+
+    if len(group.constraints) == 1:
+        return group.constraints[0]
+
+    return group
+
+
 def _parse_network(spec: SpecType, network_index: int) -> ConstraintBase:
     """
     Parse a network-related constraints.
@@ -1773,6 +1842,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
     if 'disk' in spec:
         group.constraints += [_parse_disks(spec['disk'])]
+
+    if 'gpu' in spec:
+        group.constraints += [_parse_gpu(spec['gpu'])]
 
     if 'network' in spec:
         group.constraints += [_parse_networks(spec['network'])]
