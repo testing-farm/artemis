@@ -34,7 +34,8 @@ ENV PATH="/tmp/.local/bin:$PATH"
 #
 # Prepare virtual environment and install all required dependencies
 #
-RUN    microdnf -y install bash \
+RUN    microdnf --refresh \
+                -y install bash \
                            crypto-policies-scripts \
                            curl \
                            gcc \

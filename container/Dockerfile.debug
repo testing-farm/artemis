@@ -1,0 +1,29 @@
+#
+# Artemis debugging container
+#
+# Built on top of Artemis container, but contains more debugging tools.
+#
+
+FROM quay.io/testing-farm/artemis:latest
+
+#
+# Prepare virtual environment and install all required dependencies
+#
+RUN    microdnf --refresh \
+                --enablerepo=\*debuginfo\* \
+                -y install gdb \
+                           glibc-debuginfo \
+                           glibc-debugsource \
+                           python3-pip \
+                           python3.9-debuginfo \
+                           python3.9-debugsource \
+                           strace \
+                           ltrace \
+    && microdnf clean all \
+    && rm -rf /var/cache/dnf \
+    && pip install py-spy
+
+#
+# Entrypoint for all artemis apps
+#
+ENTRYPOINT ["/entrypoint.sh"]

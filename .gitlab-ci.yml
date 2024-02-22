@@ -51,26 +51,36 @@ container:
     - mkdir -p $HOME/.docker
     - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
 
-    # Build image tagged with ref (usualy a branch)
-    - buildah bud -t $IMAGE_REF -f container/Dockerfile .
+    # Build image - and its debugging variant - tagged with ref (usualy a branch)
+    - buildah bud -t "${IMAGE_REF}"       -f container/Dockerfile                             .
+    - buildah bud -t "${IMAGE_REF}.debug" -f container/Dockerfile.debug --from "${IMAGE_REF}" .
 
     # Tag it with short SHA
-    - buildah tag $IMAGE_REF $IMAGE_SHA
+    - buildah tag "${IMAGE_REF}"       "${IMAGE_SHA}"
+    - buildah tag "${IMAGE_REF}.debug" "${IMAGE_SHA}.debug"
 
     # Push images to registry
-    - buildah push $IMAGE_REF
-    - buildah push $IMAGE_SHA
+    - buildah push "${IMAGE_REF}"
+    - buildah push "${IMAGE_SHA}"
+    - buildah push "${IMAGE_REF}.debug"
+    - buildah push "${IMAGE_SHA}.debug"
 
     # For default branch, publish also a `:latest` image
     - if [ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]; then
-        buildah tag $IMAGE_REF $IMAGE_LATEST;
-        buildah push $IMAGE_LATEST;
+        buildah tag "${IMAGE_REF}"       "${IMAGE_LATEST}";
+        buildah tag "${IMAGE_REF}.debug" "${IMAGE_LATEST}.debug";
+
+        buildah push "${IMAGE_LATEST}";
+        buildah push "${IMAGE_LATEST}.debug";
       fi
 
     # When a commit tag is known (in a pipeline running for a tag), push image with the git tag.
     - if [ "$CI_COMMIT_TAG" != "" ]; then
-        buildah tag $IMAGE_REF $IMAGE_TAG;
-        buildah push $IMAGE_TAG;
+        buildah tag "${IMAGE_REF}"       "${IMAGE_TAG}";
+        buildah tag "${IMAGE_REF}.debug" "${IMAGE_TAG}.debug";
+
+        buildah push "${IMAGE_TAG}";
+        buildah push "${IMAGE_TAG}.debug";
       fi
 
 .docs:
