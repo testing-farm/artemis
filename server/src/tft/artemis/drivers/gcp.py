@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
-import threading
-from typing import Any, Dict, List, Optional, Union, Tuple
+from functools import cached_property
 import json
 import re
+import threading
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -16,7 +17,7 @@ import google.api_core
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
-from ..environment import FlavorBoot
+from ..environment import FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, \
@@ -54,9 +55,9 @@ class GCPPoolData(PoolData):
 
 @dataclasses.dataclass
 class GCPPoolResourcesIDs(PoolResourcesIDs):
-    name: str = ''
-    project: str = ''
-    zone: str = ''
+    name: Optional[str] = None
+    project: Optional[str] = None
+    zone: Optional[str] = None
 
 
 @dataclasses.dataclass
@@ -80,9 +81,24 @@ class GCPDriver(PoolDriver):
     def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
         return HookImageInfoMapper(self, 'GCP_ENVIRONMENT_TO_IMAGE')
 
+    @property
+    def _client(self) -> compute_v1.ImagesClient:
+        sa_info = self._get_service_account_info()
+        return compute_v1.ImagesClient.from_service_account_info(sa_info)
+
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+        # Mark all capabilities as unsupported - although GCP might support these, this driver does not.
+        capabilities.supported_architectures = ['x86_64']
+        capabilities.supports_snapshots = False
+        capabilities.supports_console_url = False
+        capabilities.supports_spot_instances = False
+        capabilities.supports_native_post_install_script = False
+        capabilities.supported_guest_logs = []
+        capabilities.supports_hostnames = False
+        capabilities.supports_kickstart = False
         return Ok(capabilities)
 
+    @cached_property
     def _get_service_account_info(self):
         sa_info = self.pool_config['service_account_info']
         return sa_info
@@ -90,16 +106,13 @@ class GCPDriver(PoolDriver):
     def map_image_name_to_image_info(self,
                                      logger: gluetool.log.ContextAdapter,
                                      image_name: str) -> Result[PoolImageInfo, Failure]:
-        sa_info = self._get_service_account_info()
-        client = compute_v1.ImagesClient.from_service_account_info(sa_info)
 
-        request = compute_v1.GetImageRequest()
-        request.project = 'rhel-cloud'
+        image_project = self.pool_config['image_project']
 
         try:
-            image_description = client.get_from_family(project='rhel-cloud', family=image_name)
-        except google.api_core.exceptions.NotFound as image_not_found:
-            return Error(Failure.from_exc('The given imagename was not found:', image_not_found))
+            image_description = self._client.get_from_family(project=image_project, family=image_name)
+        except google.api_core.exceptions.NotFound as exc:
+            return Error(Failure.from_exc('The given imagename was not found.', exc, imagename=image_name))
 
         ssh_info = PoolImageSSHInfo()
         image_info = PoolImageInfo(name=image_description.name,
@@ -123,12 +136,12 @@ class GCPDriver(PoolDriver):
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        can_acquire, dummy = r_answer.unwrap()
-        if can_acquire is False:
-            return Ok((can_acquire, dummy))
+        answer = r_answer.unwrap()
+        if answer[0] is False:
+            return Ok(answer)
 
         can_acquire = guest_request.environment.has_hw_constraints is not True
-        return Ok((can_acquire, None))
+        return Ok((can_acquire, 'HW constraints are not supported by the GCP driver'))
 
     def update_guest(self,
                      logger: gluetool.log.ContextAdapter,
@@ -137,17 +150,19 @@ class GCPDriver(PoolDriver):
                      cancelled: Optional[threading.Event] = None) -> Result[ProvisioningProgress, Failure]:
         pool_data = GCPPoolData.unserialize(guest_request)
 
-        client = compute_v1.InstancesClient.from_service_account_info(self._get_service_account_info())
-
         request = compute_v1.GetInstanceRequest()
         request.instance = pool_data.name
         request.project = pool_data.project
         request.zone = pool_data.zone
 
         try:
-            instance_info = client.get(request=request)
-        except google.api_core.exceptions.NotFound as instance_not_found:
-            return Error(Failure.from_exc(f'Failed to locate instance {request.instance}', instance_not_found))
+            instance_info = self._client.get(request=request)
+        except google.api_core.exceptions.NotFound as exc:
+            failure = Failure.from_exc(f'Failed to locate instance {request.instance}',
+                                       exc,
+                                       recoverable=False,
+                                       fail_guest_request=False)
+            return Error(failure)
 
         instance_status = instance_info.status.lower()
 
@@ -187,27 +202,31 @@ class GCPDriver(PoolDriver):
         request = compute_v1.DeleteInstanceRequest(instance=resource_ids.name,
                                                    project=resource_ids.project,
                                                    zone=resource_ids.zone)
-        sa_info = self._get_service_account_info()
-        instance_client = compute_v1.InstancesClient.from_service_account_info(sa_info)
-
         try:
-            instance_client.delete(request=request)
-        except google.api_core.exceptions.NotFound as instance_not_found:
-            return Error(Failure.from_exc('Instance to delete was not found', instance_not_found))
+            self._client.delete(request=request)
+        except google.api_core.exceptions.NotFound as exc:
+            failure = Failure.from_exc('Instance to delete was not found',
+                                       exc,
+                                       recoverable=False,
+                                       fail_guest_request=False)
+            return Error(failure)
         return Ok(None)
 
     def _create_boot_disk_for_image_link(self,
                                          image_link: str,
-                                         size_gb: int = 30,
+                                         size: Optional[SizeType] = None,
                                          zone: str = 'us-west3-b',
                                          disk_type: str = 'pd-standard') -> compute_v1.AttachedDisk:
 
         disk_type = 'zones/{zone}/diskTypes/{type}'.format(zone=zone, type=disk_type)
 
+        if not size:
+            size = SizeType()
+
         boot_disk = compute_v1.AttachedDisk()
         initialize_params = compute_v1.AttachedDiskInitializeParams()
         initialize_params.source_image = image_link
-        initialize_params.disk_size_gb = size_gb
+        initialize_params.disk_size_gb = int(size.to('GiB').magnitude)
         initialize_params.disk_type = disk_type
         boot_disk.initialize_params = initialize_params
         boot_disk.auto_delete = True
@@ -278,9 +297,9 @@ class GCPDriver(PoolDriver):
 
         try:
             created_instance = client.get(project=project_id, zone=zone, instance=instance_name)
-        except google.api_core.exceptions.NotFound as instance_not_found:
+        except google.api_core.exceptions.NotFound as exc:
             return Error(
-                Failure.from_exc('Failed to query information about the fresly created instance', instance_not_found)
+                Failure.from_exc('Failed to query information about the freshly created instance', exc)
             )
         return Ok(created_instance)
 
@@ -312,11 +331,9 @@ class GCPDriver(PoolDriver):
         # will start with a letter
         instance_name = f'artemis-{guest_request.guestname}'
 
-        service_account_info = self.pool_config['service_account_info']
         project_id = self.pool_config['project']
         zone = self.pool_config['zone']
 
-        instances_client = compute_v1.InstancesClient.from_service_account_info(service_account_info)
         boot_disk = self._create_boot_disk_for_image_link(image.id, zone=zone)  # Image.id contains self_link
 
         from ..tasks import _get_ssh_key  # Late import as top-level import leads to circular imports
@@ -334,7 +351,7 @@ class GCPDriver(PoolDriver):
         # We use 'artemis' as username since .ssh_username is root and root login is prohibited
         ssh_setup = SSHSetup(pub_key=ssh_key.public, username='artemis')
 
-        r_instance = self._create_instance(instances_client, image, ssh_setup,
+        r_instance = self._create_instance(self._client, image, ssh_setup,
                                            project_id, zone, instance_name, disks=[boot_disk])
         if r_instance.is_error:
             return Error(r_instance.unwrap_error())

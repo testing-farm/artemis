@@ -11,6 +11,10 @@ properties:
     description: Project under which should the VM instances be spawned.
     type: string
 
+  image_project:
+    description: Project which provides images for the managed VMs.
+    type: string
+
   zone:
     description: |
       Geographical zone where the instances should be located.
