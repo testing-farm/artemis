@@ -1,0 +1,9 @@
+test: ./test.sh
+
+require+:
+  - s390utils-base
+
+/default:
+    environment+:
+        EXPECTED_ADAPTER: "CEX8C"
+        EXPECTED_MODE: "CCA"

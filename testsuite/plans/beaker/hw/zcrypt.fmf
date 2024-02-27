@@ -1,0 +1,10 @@
+discover+:
+  test:
+    - hw/zcrypt
+
+provision+:
+  arch: s390x
+  hardware:
+      zcrypt:
+          adapter: "CEX8C"
+          mode: "CCA"
