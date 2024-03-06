@@ -126,6 +126,12 @@ class Workspace(_Workspace):
         assert self.gr
         assert self.db
 
+        self.gr.log_event(
+            self.logger,
+            self.session,
+            'canceled-by-pool'
+        )
+
         if ProvisioningTailHandler(GuestState.PROMISED, GuestState.ROUTING).handle_tail(
             self.logger,
             self.db,
