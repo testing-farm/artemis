@@ -17,7 +17,7 @@ import google.api_core
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
-from ..environment import FlavorBoot, SizeType
+from ..environment import FlavorBoot, SizeType, UNITS
 from ..knobs import Knob
 from ..metrics import ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, \
@@ -43,6 +43,8 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     cast_from_str=str,
     default='{{ os.compose }}'
 )
+
+DEFAULT_DISK_SIZE: SizeType = UNITS('20 GiB')
 
 
 @dataclasses.dataclass
@@ -220,8 +222,7 @@ class GCPDriver(PoolDriver):
 
         disk_type = f'zones/{zone}/diskTypes/{type}'
 
-        if not size:
-            size = SizeType()
+        size = size or DEFAULT_DISK_SIZE
 
         if not zone:
             zone = self.pool_config['zone']
