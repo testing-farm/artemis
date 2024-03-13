@@ -218,7 +218,7 @@ class GCPDriver(PoolDriver):
                                          zone: Optional[str] = None,
                                          disk_type: str = 'pd-standard') -> compute_v1.AttachedDisk:
 
-        disk_type = 'zones/{zone}/diskTypes/{type}'.format(zone=zone, type=disk_type)
+        disk_type = f'zones/{zone}/diskTypes/{type}'
 
         if not size:
             size = SizeType()
@@ -241,7 +241,7 @@ class GCPDriver(PoolDriver):
     def _ensure_machine_type_is_canonical(self, machine_type: str, zone: str) -> str:
         if re.match(r"^zones/[a-z\d\-]+/machineTypes/[a-z\d\-]+$", machine_type):
             return machine_type
-        return 'zones/{zone}/machineTypes/{machine_type}'.format(zone=zone, machine_type=machine_type)
+        return f'zones/{zone}/machineTypes/{machine_type}'
 
 
     def _create_instance(self,
