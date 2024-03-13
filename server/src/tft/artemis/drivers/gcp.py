@@ -253,9 +253,12 @@ class GCPDriver(PoolDriver):
                          zone: str,
                          instance_name: str,
                          disks: List[compute_v1.AttachedDisk],
-                         machine_type: str = "n1-standard-1",
-                         network_link: str = "global/networks/default",
+                         machine_type: Optional[str] = None,
+                         network_link: Optional[str] = None,
                          delete_protection: bool = False) -> Result[compute_v1.Instance, Failure]:
+
+        network_link = network_link or self.pool_config['network_resource_url']
+        machine_type = machine_type or self.pool_config['machine_type']
 
         network_interface = compute_v1.NetworkInterface()
         network_interface.network = network_link
