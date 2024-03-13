@@ -293,10 +293,10 @@ class GCPDriver(PoolDriver):
 
         try:
             client.insert(request=request)
-        except google.api_core.exceptions.BadRequest as bad_request:
-            return Error(Failure.from_exc('Failed to create a GCP instance', bad_request))
-        except google.api_core.exceptions.Conflict as instance_with_name_exits:
-            return Error(Failure.from_exc('Failed to create a GCP instance', instance_with_name_exits))
+        except google.api_core.exceptions.BadRequest as exc:
+            return Error(Failure.from_exc('Failed to create a GCP instance', exc))
+        except google.api_core.exceptions.Conflict as exc:
+            return Error(Failure.from_exc('Failed to create a GCP instance', exc))
 
         try:
             created_instance = client.get(project=project_id, zone=zone, instance=instance_name)
