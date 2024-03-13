@@ -215,13 +215,16 @@ class GCPDriver(PoolDriver):
     def _create_boot_disk_for_image_link(self,
                                          image_link: str,
                                          size: Optional[SizeType] = None,
-                                         zone: str = 'us-west3-b',
+                                         zone: Optional[str] = None,
                                          disk_type: str = 'pd-standard') -> compute_v1.AttachedDisk:
 
         disk_type = 'zones/{zone}/diskTypes/{type}'.format(zone=zone, type=disk_type)
 
         if not size:
             size = SizeType()
+
+        if not zone:
+            zone = self.pool_config['zone']
 
         boot_disk = compute_v1.AttachedDisk()
         initialize_params = compute_v1.AttachedDiskInitializeParams()
