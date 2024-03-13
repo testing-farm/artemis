@@ -328,7 +328,6 @@ class GCPDriver(PoolDriver):
         r_base_tags = self.get_guest_tags(logger, session, guest_request)
         if r_base_tags.is_error:
             return Error(r_base_tags.unwrap_error())
-        tags = r_base_tags.unwrap()
 
         # As guest IDs (names) can start with a number, add 'artemis-' prefix to make sure the instance nam
         # will start with a letter
@@ -342,14 +341,11 @@ class GCPDriver(PoolDriver):
         from ..tasks import _get_ssh_key  # Late import as top-level import leads to circular imports
         r_ssh_key = _get_ssh_key(guest_request.ownername, guest_request.ssh_keyname)
         if r_ssh_key.is_error:
-            msg = (f'Failed to query DB for the SSH (public) key with name {guest_request.ssh_keyname} '
-                   f'owned by {guest_request.ownername}')
-            return Error(Failure.from_failure(msg, r_ssh_key.unwrap_error()))
+            return Error(Failure.from_failure('failed to get SSH key', keyname=guest_request.ssh_keyname))
 
         ssh_key = r_ssh_key.unwrap()
         if not ssh_key:
-            msg = f'There is no SSH key named {guest_request.ssh_keyname} onwed by {guest_request.ownername}'
-            return Error(Failure(msg))
+            return Error(Failure.from_failure('failed to get SSH key', keyname=guest_request.ssh_keyname))
 
         # We use 'artemis' as username since .ssh_username is root and root login is prohibited
         ssh_setup = SSHSetup(pub_key=ssh_key.public, username='artemis')
