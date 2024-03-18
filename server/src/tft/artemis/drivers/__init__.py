@@ -912,10 +912,17 @@ def _apply_image_specification(
 
 
 @dataclasses.dataclass
+class GuestLogBlob:
+    ctime: datetime.datetime
+    content: str
+
+
+@dataclasses.dataclass
 class GuestLogUpdateProgress:
     state: GuestLogState
 
     url: Optional[str] = None
+    blobs: list[GuestLogBlob] = dataclasses.field(default_factory=list)
     blob: Optional[str] = None
     expires: Optional[datetime.datetime] = None
 
@@ -923,6 +930,49 @@ class GuestLogUpdateProgress:
     #: to run :py:meth:`PoolDriver.update_guest` sooner than this second in the future. If
     #: left unset, Artemis core will probably run the update as soon as possible.
     delay_update: Optional[int] = None
+
+    @classmethod
+    def from_blob(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        log: GuestLog,
+        timestamp: Optional[datetime.datetime],
+        content: Optional[str],
+        is_known_callback: Callable[[GuestLog, datetime.datetime, str], bool]
+    ) -> 'GuestLogUpdateProgress':
+        if not content:
+            logger.info('no console output received')
+
+            return GuestLogUpdateProgress(state=GuestLogState.PENDING)
+
+        assert timestamp is not None  # narrow type
+
+        if not log.blobs:
+            logger.info(f'first console output received with timestamp {timestamp}')
+
+            return GuestLogUpdateProgress(
+                state=GuestLogState.IN_PROGRESS,
+                blobs=[
+                    GuestLogBlob(ctime=timestamp, content=content)
+                ]
+            )
+
+        for blob in log.blobs:
+            logger.debug(f'existing log blob: {blob.ctime}')
+
+        if timestamp not in [blob.ctime for blob in log.blobs]:
+            logger.info(f'new console output received with {timestamp}')
+
+            return GuestLogUpdateProgress(
+                state=GuestLogState.IN_PROGRESS,
+                blobs=[
+                    GuestLogBlob(ctime=timestamp, content=content)
+                ]
+            )
+
+        logger.info(f'console output received with timestamp {timestamp}, already stored')
+
+        return GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS)
 
 
 #

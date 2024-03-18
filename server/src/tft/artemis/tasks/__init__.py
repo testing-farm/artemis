@@ -32,8 +32,8 @@ from typing_extensions import Protocol, TypedDict
 
 from .. import Failure, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, safe_call
 from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
-from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, SafeQuery, \
-    SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change
+from ..db import DB, GuestEvent, GuestLog, GuestLogBlob, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, \
+    SafeQuery, SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change
 from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
 from ..drivers import aws as aws_driver
 from ..drivers import azure as azure_driver
@@ -2963,10 +2963,8 @@ def do_update_guest_log(
             .where(GuestLog.state == guest_log.state) \
             .where(GuestLog.updated == guest_log.updated) \
             .where(GuestLog.url == guest_log.url) \
-            .where(GuestLog.blob == guest_log.blob) \
             .values(
                 url=progress.url,
-                blob=progress.blob,
                 updated=datetime.datetime.utcnow(),
                 state=progress.state,
                 expires=progress.expires
@@ -2979,6 +2977,19 @@ def do_update_guest_log(
 
         if r_store.unwrap() is not True:
             return workspace.handle_success('finished-task', return_value=RESCHEDULE)
+
+        for blob in progress.blobs:
+            blob_query = sqlalchemy \
+                .insert(GuestLogBlob.__table__) \
+                .values(
+                    guestname=guest_log.guestname,
+                    logname=guest_log.logname,
+                    contenttype=guest_log.contenttype,
+                    ctime=blob.ctime,
+                    content=blob.content
+                )
+
+            safe_db_change(logger, session, blob_query)
 
         return SUCCESS
 
@@ -3016,7 +3027,6 @@ def do_update_guest_log(
         return _update_log_and_quit(GuestLogUpdateProgress(
             state=GuestLogState.COMPLETE,
             url=guest_log.url,
-            blob=guest_log.blob,
             expires=guest_log.expires
         ))
 
@@ -3050,7 +3060,6 @@ def do_update_guest_log(
             return _update_log_and_quit(GuestLogUpdateProgress(
                 state=GuestLogState.UNSUPPORTED,
                 url=guest_log.url,
-                blob=guest_log.blob,
                 expires=guest_log.expires
             ))
 
@@ -3067,7 +3076,6 @@ def do_update_guest_log(
             return _update_log_and_quit(GuestLogUpdateProgress(
                 state=GuestLogState.UNSUPPORTED,
                 url=guest_log.url,
-                blob=guest_log.blob,
                 expires=guest_log.expires
             ))
 
