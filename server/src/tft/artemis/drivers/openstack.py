@@ -10,8 +10,11 @@ from typing import Any, Dict, List, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
 import jq
+import keystoneauth1
 import sqlalchemy.orm.session
+from glanceclient import Client as gcl
 from gluetool.result import Error, Ok, Result
+from keystoneauth1.identity import v3
 
 from .. import Failure, JSONType, log_dict_yaml, process_output_to_str
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
@@ -157,6 +160,25 @@ class OpenStackDriver(PoolDriver):
     @property
     def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
         return HookImageInfoMapper(self, 'OPENSTACK_ENVIRONMENT_TO_IMAGE')
+
+    def login_session(
+            self,
+            logger: gluetool.log.ContextAdapter
+    ) -> Result[keystoneauth1.session.Session, Failure]:
+        auth = v3.Password(
+            auth_url=self.pool_config['auth-url'], username=self.pool_config['username'],
+            password=self.pool_config['password'], user_domain_name=self.pool_config['user-domain-name'],
+            project_domain_name=self.pool_config['project-domain-name'],
+            project_name=self.pool_config['project-name']
+        )
+        try:
+            sess = keystoneauth1.session.Session(auth=auth)
+            return Ok(sess)
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'Failed to log into OpenStack tenant',
+                exc,
+            ))
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
@@ -1041,38 +1063,39 @@ class OpenStackDriver(PoolDriver):
         return Ok(resources)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
+        sess = self.login_session(self.logger)
+        if sess.is_error:
+            return Error(Failure.from_failure(
+                'Failed to log into OpenStack tenant',
+                sess.unwrap_error()
+            ))
+        glance = gcl(self.pool_config['glance-version'], session=sess.unwrap())
+
         if self.pool_config.get('image-regex'):
             image_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['image-regex'])
 
         else:
             image_name_pattern = None
-
-        r_images = self._run_os(['image', 'list'], commandname='os.image-list')
-
-        if r_images.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch image information',
-                r_images.unwrap_error()
-            ))
+        images = glance.images.list()
 
         try:
             return Ok([
                 PoolImageInfo(
-                    name=image['Name'],
-                    id=image['ID'],
+                    name=image['name'],
+                    id=image['id'],
                     arch=None,
-                    boot=FlavorBoot(),
+                    boot=FlavorBoot(method=[image.get('hw_firmware_type', 'bios')]),
                     ssh=PoolImageSSHInfo()
                 )
-                for image in cast(List[Dict[str, str]], r_images.unwrap())
-                if image_name_pattern is None or image_name_pattern.match(image['Name'])
+                for image in images
+                if image_name_pattern is None or image_name_pattern.match(image['name'])
             ])
 
         except KeyError as exc:
             return Error(Failure.from_exc(
                 'malformed image description',
                 exc,
-                image_info=r_images.unwrap()
+                image_info=images
             ))
 
     def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:

@@ -51,6 +51,7 @@ redis = "*"
 jsonschema = "*"
 sentry-sdk = "*"
 setuptools = "*"
+python-glanceclient = "*"
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient" ]

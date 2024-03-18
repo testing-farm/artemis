@@ -11,6 +11,9 @@ properties:
   auth-url:
     type: string
 
+  glance-version:
+    type: string
+
   capabilities:
     type: object
 
@@ -96,6 +99,7 @@ allOf:
   - project-name
   - user-domain-name
   - api-version
+  - glance-version
   - master-key-name
   - default-flavor
   - network-regex
