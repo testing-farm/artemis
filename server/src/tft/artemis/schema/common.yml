@@ -72,6 +72,9 @@ definitions:
       max-size:
         type: string
 
+      model-name:
+        type: string
+
     required:
       - max-count
       - min-size
@@ -83,6 +86,9 @@ definitions:
     oneOf:
       - properties:
           size:
+            type: string
+
+          model-name:
             type: string
 
         required: []
