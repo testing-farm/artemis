@@ -367,6 +367,7 @@ class FlavorDisk(_FlavorSubsystemContainer):
     max_additional_items: int = 0
     min_size: Optional[SizeType] = None
     max_size: Optional[SizeType] = None
+    model_name: Optional[str] = None
 
     def serialize(self) -> Dict[str, Any]:
         """
@@ -1676,6 +1677,14 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
     if 'size' in spec or 'space' in spec:
         _parse_size_spec(spec)
 
+    if 'model-name' in spec:
+        group.constraints += [
+            Constraint.from_specification(
+                'disk.model_name',
+                spec['model-name'],
+                as_quantity=False,
+            )
+        ]
     return group
 
 

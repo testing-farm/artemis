@@ -399,6 +399,13 @@ def constraint_to_beaker_filter(
 
             disk.append(size)
 
+        elif constraint_name.child_property == 'model_name':
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+            model = _new_tag('model', op=op, value=value)
+
+            disk.append(model)
+
         else:
             return Error(Failure(
                 'constraint not supported by driver',

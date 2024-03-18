@@ -1314,6 +1314,7 @@ def test_parse_maximal_constraint() -> None:
             disk:
                 - size: 40 GiB
                 - size: 120 GiB
+                - model-name: "PERC H310"
             gpu:
                  device: 1
                  device-name: "AMD Radeon Pro V520 GPUs"
@@ -1377,6 +1378,17 @@ def test_parse_maximal_constraint() -> None:
         """
         ---
 
+        arch: "x86_64"
+        constraints:
+            disk:
+              - model-name: "PERC H310"
+        """,
+        '<and><system><arch op="==" value="x86_64"/></system><disk><model op="==" value="PERC H310"/></disk></and>'  # noqa: E501
+    ),
+    (
+        """
+        ---
+
         arch: x86_64
         constraints:
             boot:
@@ -1410,6 +1422,7 @@ def test_parse_maximal_constraint() -> None:
     'IBM__POWER9',
     'IBM__POWER_PPC970',
     'DISK__SIZE_MIN_60G',
+    'DISK__MODEL_NAME',
     'NETBOOT_LEGACY',
     'NETBOOT_UEFI',
     'not NETBOOT_UEFI'

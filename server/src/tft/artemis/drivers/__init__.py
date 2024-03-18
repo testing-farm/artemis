@@ -60,9 +60,13 @@ ConfigFlavorCPUSpecType = TypedDict(
 
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].disk (static disk)
-class ConfigFlavorDiskSpecificSpecType(TypedDict):
-    size: Optional[Union[int, str]]
-
+ConfigFlavorDiskSpecificSpecType = TypedDict(
+    'ConfigFlavorDiskSpecificSpecType',
+    {
+        'size': Optional[Union[int, str]],
+        'model-name': Optional[str],
+    }
+)
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].disk (expansion)
 ConfigFlavorDiskExpansionSpecType = TypedDict(
@@ -71,6 +75,7 @@ ConfigFlavorDiskExpansionSpecType = TypedDict(
         'max-count': int,
         'min-size': Optional[Union[int, str]],
         'max-size': Optional[Union[int, str]],
+        'model-name': Optional[str],
     }
 )
 
@@ -691,6 +696,9 @@ def _apply_flavor_specification(
                 if r_size.is_error:
                     return Error(r_size.unwrap_error())
 
+                if specific_disk_patch.get('model-name'):
+                    disk.model_name = specific_disk_patch.get('model-name')
+
             else:
                 expansion_disk_patch = cast(ConfigFlavorDiskExpandedSpecType, disk_patch)['additional-disks']
 
@@ -714,6 +722,9 @@ def _apply_flavor_specification(
 
                 if r_size.is_error:
                     return Error(r_size.unwrap_error())
+
+                if specific_disk_patch.get('model-name'):
+                    disk.model_name = expansion_disk_patch.get('model-name')
 
         flavor.disk = FlavorDisks(patched_disks)
 

@@ -3101,6 +3101,7 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
 
 
 # NEW: zcrypt HW requirement
+# NEW: disk.model-name HW requirement
 @route_generator
 def generate_routes_v0_0_69(
     create_route: CreateRouteCallbackType,
@@ -4204,6 +4205,7 @@ def generate_routes_v0_0_17(
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
     # NEW: zcrypt HW requirement
+    # NEW: disk.model-name HW requirement
     ('v0.0.69', generate_routes_v0_0_69, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
