@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import math
 import os
 import re
@@ -1981,29 +1982,31 @@ class BeakerDriver(PoolDriver):
         if r_update.is_error:
             return r_update
 
-        log_progress = r_update.unwrap()
+        progress = r_update.unwrap()
 
-        if log_progress.state != GuestLogState.COMPLETE:
+        if progress.state != GuestLogState.COMPLETE:
             return r_update
 
-        assert log_progress.url is not None
+        assert progress.url is not None
 
         try:
-            response = requests.get(log_progress.url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
+            response = requests.get(progress.url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
             response.raise_for_status()
 
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc(
                 'failed to fetch Beaker log URL',
                 exc,
-                url=log_progress.url
+                url=progress.url
             ))
 
-        log_progress.url = None
-        log_progress.blob = response.text
-        log_progress.state = GuestLogState.IN_PROGRESS
-
-        return r_update
+        return Ok(GuestLogUpdateProgress.from_blob(
+            logger,
+            guest_log,
+            datetime.datetime.utcnow(),
+            response.text,
+            lambda guest_log, _, content: content in guest_log.blob_contents
+        ))
 
     @guest_log_updater('beaker', 'sys.log:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_sys_log_url(

@@ -755,7 +755,9 @@ def cmd_guest_log(
                     if state in ('complete', 'unsupported', 'error'):
                         break
 
-                    if state == 'in-progress' and logname.endswith('/blob') and log['blob']:
+                    if state == 'in-progress' \
+                            and logname.endswith('/blob') \
+                            and any([log.get('blob'), log.get('blobs')]):
                         break
 
                 else:

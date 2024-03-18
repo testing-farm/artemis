@@ -28,6 +28,7 @@ from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Intege
 from sqlalchemy.orm import column_property, relationship
 from sqlalchemy.orm.query import Query as _Query
 from sqlalchemy.orm.session import sessionmaker
+from sqlalchemy.schema import ForeignKeyConstraint, PrimaryKeyConstraint
 from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 
@@ -1324,17 +1325,42 @@ class GuestRequest(Base):
         return [(cast(str, actorname), cast(List['ActorArgumentType'], args)) for actorname, args in on_ready]
 
 
+class GuestLogBlob(Base):
+    __tablename__ = 'guest_log_blobs'
+
+    guestname = Column(String(), nullable=False)
+    logname = Column(String(), nullable=False)
+    contenttype = Column(Enum(GuestLogContentType), nullable=False)
+
+    ctime = Column(DateTime(), nullable=False, default=datetime.datetime.utcnow)
+    content = Column(Text(), nullable=False, server_default='')
+
+    guest_log = relationship('GuestLog', back_populates='blobs')
+
+    __table_args__ = (
+        PrimaryKeyConstraint('guestname', 'logname', 'contenttype', 'ctime'),
+        ForeignKeyConstraint(
+            ['guestname', 'logname', 'contenttype'],
+            ['guest_logs.guestname', 'guest_logs.logname', 'guest_logs.contenttype']
+        )
+    )
+
+
 class GuestLog(Base):
     __tablename__ = 'guest_logs'
 
-    guestname = Column(String(), nullable=False, primary_key=True)
-    logname = Column(String(), nullable=False, primary_key=True)
-    contenttype = Column(Enum(GuestLogContentType), nullable=False, primary_key=True)
+    guestname = Column(String(), nullable=False)
+    logname = Column(String(), nullable=False)
+    contenttype = Column(Enum(GuestLogContentType), nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint('guestname', 'logname', 'contenttype'),
+    )
 
     state = Column(Enum(GuestLogState), nullable=False, default=GuestLogState.PENDING.value)
 
     url = Column(String(), nullable=True)
-    blob = Column(String(), nullable=True)
+    blobs: List[GuestLogBlob] = relationship('GuestLogBlob', back_populates='guest_log')  # type: ignore[assignment]
 
     updated = Column(DateTime(), nullable=True)
     expires = Column(DateTime(), nullable=True)
@@ -1345,6 +1371,14 @@ class GuestLog(Base):
             return False
 
         return self.expires < datetime.datetime.utcnow()
+
+    @property
+    def blob_timestamps(self) -> List[datetime.datetime]:
+        return [blob.ctime for blob in self.blobs]
+
+    @property
+    def blob_contents(self) -> List[str]:
+        return [blob.content for blob in self.blobs]
 
 
 class SnapshotRequest(Base):

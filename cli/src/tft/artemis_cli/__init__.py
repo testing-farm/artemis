@@ -709,18 +709,58 @@ def print_guest_logs(
     def tabulate(logs: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
 
-        for header in ['Content Type', 'State', 'URL', 'Blob', 'Updated', 'Expires']:
+        for header in ['Content Type', 'State', 'URL', 'Blob', 'Ctime', 'Updated', 'Expires']:
             table.add_column(header)
 
         for log in logs:
-            table.add_row(
-                log['contenttype'],
-                log['state'],
-                log['url'],
-                rich.markup.escape(log['blob']) if log['blob'] is not None else '',
-                log['updated'],
-                log['expires']
-            )
+            if 'blob' in log:
+                head = rich.markup.escape('\n'.join(log['blob'].splitlines()[0:10]))
+                tail = rich.markup.escape('\n'.join(log['blob'].splitlines()[-10:]))
+
+                table.add_row(
+                    log['contenttype'],
+                    log['state'],
+                    log['url'],
+                    f'{head}\n--- --- ---\n{tail}',
+                    '',
+                    log['updated'],
+                    log['expires']
+                )
+
+            else:
+                table.add_row(
+                    log['contenttype'],
+                    log['state'],
+                    log['url'],
+                    '',
+                    '',
+                    log['updated'],
+                    log['expires']
+                )
+
+                for blob in log['blobs']:
+                    head = rich.markup.escape('\n'.join(blob['content'].splitlines()[0:10]))
+                    tail = rich.markup.escape('\n'.join(blob['content'].splitlines()[-10:]))
+
+                    table.add_row(
+                        '',
+                        '',
+                        '',
+                        f'{head}\n--- --- ---\n{tail}',
+                        blob['ctime'],
+                        '',
+                        ''
+                    )
+
+                    table.add_row(
+                        '',
+                        '',
+                        '',
+                        '',
+                        '',
+                        '',
+                        ''
+                    )
 
         return table
 

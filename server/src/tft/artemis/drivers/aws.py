@@ -9,7 +9,7 @@ import json
 import os
 import re
 import threading
-from typing import Any, Dict, Generator, List, MutableSequence, Optional, Pattern, Tuple, cast
+from typing import Any, Dict, Generator, List, MutableSequence, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
 import gluetool.utils
@@ -2946,12 +2946,14 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
-    ) -> Result[Optional[str], Failure]:
+    ) -> Result[
+            Union[Tuple[None, None], Tuple[datetime.datetime, Optional[str]]],
+            Failure]:
         pool_data = AWSPoolData.unserialize(guest_request)
 
         # This can actually happen, spot instances may take some time to get the instance ID.
         if pool_data.instance_id is None:
-            return Ok(None)
+            return Ok((None, None))
 
         r_output = self._aws_command([
             'ec2',
@@ -2965,7 +2967,12 @@ class AWSDriver(PoolDriver):
                 r_output.unwrap_error()
             ))
 
-        return Ok(cast(Optional[str], JQ_QUERY_CONSOLE_OUTPUT.input(r_output.unwrap()).first()))
+        output = cast(Dict[str, str], r_output.unwrap())
+
+        timestamp = datetime.datetime.strptime(output['Timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ')
+        console_output = output.get('Output')
+
+        return Ok((timestamp, console_output))
 
     @guest_log_updater('aws', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_dump_blob(
@@ -2987,26 +2994,19 @@ class AWSDriver(PoolDriver):
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        output = r_output.unwrap()
+        timestamp, output = r_output.unwrap()
 
-        if not output:
-            return Ok(GuestLogUpdateProgress(
-                state=GuestLogState.PENDING,
-                delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
-            ))
+        progress = GuestLogUpdateProgress.from_blob(
+            logger,
+            guest_log,
+            timestamp,
+            output,
+            lambda guest_log, timestamp, _: timestamp in guest_log.blob_timestamps
+        )
 
-        if output != guest_log.blob:
-            return Ok(GuestLogUpdateProgress(
-                state=GuestLogState.IN_PROGRESS,
-                blob=output,
-                delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
-            ))
+        progress.delay_update = KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
 
-        return Ok(GuestLogUpdateProgress(
-            state=GuestLogState.IN_PROGRESS,
-            blob=output,
-            delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
-        ))
+        return Ok(progress)
 
     @guest_log_updater('aws', 'console:interactive', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_console_url(

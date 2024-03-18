@@ -3,6 +3,7 @@
 
 import base64
 import dataclasses
+import datetime
 import json
 import threading
 from typing import Any, Dict, Optional, Tuple
@@ -411,6 +412,8 @@ class RestDriver(PoolDriver):
 
     def _update_guest_log_blob(
         self,
+        logger: gluetool.log.ContextAdapter,
+        guest_log: GuestLog,
         url: str
     ) -> Result[GuestLogUpdateProgress, Failure]:
         """
@@ -429,7 +432,13 @@ class RestDriver(PoolDriver):
                 url=url
             ))
 
-        return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, url=None, blob=response.text))
+        return Ok(GuestLogUpdateProgress.from_blob(
+            logger,
+            guest_log,
+            datetime.datetime.utcnow(),
+            response.text,
+            lambda guest_log, _, content: content in guest_log.blob_contents
+        ))
 
     @guest_log_updater('rest', 'flasher-debug:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_cmd_all_url(
@@ -468,7 +477,11 @@ class RestDriver(PoolDriver):
         Artemis will store the log, replacing the exsting log data with data from newer requests to the log endpoint.
         So it doesn't make sense to have Artemis store the '/latest' data, which would exclude older data.
         """
-        return self._update_guest_log_blob(self._get_guest_log_url(guest_request, 'cmd/all'))
+        return self._update_guest_log_blob(
+            logger,
+            guest_log,
+            self._get_guest_log_url(guest_request, 'cmd/all')
+        )
 
     @guest_log_updater('rest', 'flasher-event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_event_blob(
@@ -477,7 +490,11 @@ class RestDriver(PoolDriver):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        return self._update_guest_log_blob(self._get_guest_log_url(guest_request, 'event'))
+        return self._update_guest_log_blob(
+            logger,
+            guest_log,
+            self._get_guest_log_url(guest_request, 'event')
+        )
 
     @guest_log_updater('rest', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_blob(
@@ -492,7 +509,11 @@ class RestDriver(PoolDriver):
         """
         # TODO: change 'all' to 'console' when fetching of various logs is
         # implemented in gluetool artemis module.
-        return self._update_guest_log_blob(self._get_guest_log_url(guest_request, 'all'))
+        return self._update_guest_log_blob(
+            logger,
+            guest_log,
+            self._get_guest_log_url(guest_request, 'all')
+        )
 
 
 PoolDriver._drivers_registry['rest'] = RestDriver

@@ -912,10 +912,17 @@ def _apply_image_specification(
 
 
 @dataclasses.dataclass
+class GuestLogBlob:
+    ctime: datetime.datetime
+    content: str
+
+
+@dataclasses.dataclass
 class GuestLogUpdateProgress:
     state: GuestLogState
 
     url: Optional[str] = None
+    blobs: list[GuestLogBlob] = dataclasses.field(default_factory=list)
     blob: Optional[str] = None
     expires: Optional[datetime.datetime] = None
 
@@ -923,6 +930,52 @@ class GuestLogUpdateProgress:
     #: to run :py:meth:`PoolDriver.update_guest` sooner than this second in the future. If
     #: left unset, Artemis core will probably run the update as soon as possible.
     delay_update: Optional[int] = None
+
+    @classmethod
+    def from_blob(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        log: GuestLog,
+        timestamp: Optional[datetime.datetime],
+        content: Optional[str],
+        is_known_callback: Callable[[GuestLog, datetime.datetime, str], bool]
+    ) -> 'GuestLogUpdateProgress':
+        if timestamp is None:
+            logger.info('no blob received')
+
+            return GuestLogUpdateProgress(state=GuestLogState.PENDING)
+
+        if content is None:
+            logger.info('no log content received')
+
+            return GuestLogUpdateProgress(state=GuestLogState.PENDING)
+
+        if not log.blobs:
+            logger.info(f'first log content received with timestamp {timestamp}')
+
+            return GuestLogUpdateProgress(
+                state=GuestLogState.IN_PROGRESS,
+                blobs=[
+                    GuestLogBlob(ctime=timestamp, content=content)
+                ]
+            )
+
+        for blob in log.blobs:
+            logger.debug(f'existing log blob: {blob.ctime}')
+
+        if is_known_callback(log, timestamp, content):
+            logger.info(f'log content received with timestamp {timestamp}, already known')
+
+            return GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS)
+
+        logger.info(f'log content received with timestamp {timestamp}, unknown')
+
+        return GuestLogUpdateProgress(
+            state=GuestLogState.IN_PROGRESS,
+            blobs=[
+                GuestLogBlob(ctime=timestamp, content=content)
+            ]
+        )
 
 
 #

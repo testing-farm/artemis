@@ -1238,20 +1238,16 @@ class OpenStackDriver(PoolDriver):
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        output = r_output.unwrap()
+        progress = GuestLogUpdateProgress.from_blob(
+            logger,
+            guest_log,
+            datetime.datetime.utcnow(),
+            cast(str, r_output.unwrap()),
+            lambda guest_log, _, content: content in guest_log.blob_contents
+        )
+        progress.delay_update = delay_update
 
-        if output is None:
-            return Ok(GuestLogUpdateProgress(
-                state=GuestLogState.IN_PROGRESS,
-                delay_update=delay_update
-            ))
-
-        return Ok(GuestLogUpdateProgress(
-            state=GuestLogState.IN_PROGRESS,
-            # TODO logs: well, this *is* overwriting what we already downloaded... Do something.
-            blob=cast(str, output),
-            delay_update=delay_update
-        ))
+        return Ok(progress)
 
 
 PoolDriver._drivers_registry['openstack'] = OpenStackDriver
