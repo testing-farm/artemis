@@ -774,7 +774,10 @@ def print_broker_tasks(
                 task['queue_name'],
                 task['actor_name'].replace('_', '-'),
                 RichYAML.from_data(args) if args else '',
-                datetime.datetime.fromtimestamp(int(task['message_timestamp']) / 1000, tz=None).strftime("%Y-%m-%dT%H:%M:%S.%f")
+                datetime.datetime.fromtimestamp(
+                    int(task['message_timestamp']) / 1000,
+                    tz=None
+                ).strftime("%Y-%m-%dT%H:%M:%S.%f")
             )
 
         return table

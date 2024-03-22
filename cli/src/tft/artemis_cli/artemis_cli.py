@@ -1239,18 +1239,21 @@ def cmd_status_broker(cfg: Configuration, tick: int, include_dead_letters: bool)
         while True:
             status.update('Updating broker task list...')
 
-            def _iter_tasks(queues) -> Generator[Any, None, None]:
+            def _iter_tasks(queues: Any) -> Generator[Any, None, None]:
                 for queue in queues:
                     if queue['name'].endswith('.XQ') and not include_dead_letters:
                         continue
 
-                    output = json.loads(subprocess.check_output(rabbitmqadm_command + [
-                            'get',
-                            f'queue={queue["name"]}',
-                            'ackmode=ack_requeue_true',
-                            'count=999999'
-                        ]
-                    ))
+                    output = json.loads(
+                        subprocess.check_output(
+                            rabbitmqadm_command + [
+                                'get',
+                                f'queue={queue["name"]}',
+                                'ackmode=ack_requeue_true',
+                                'count=999999'
+                            ]
+                        )
+                    )
 
                     for message in output:
                         payload = json.loads(message['payload'])
