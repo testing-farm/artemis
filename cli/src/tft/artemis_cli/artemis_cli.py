@@ -4,6 +4,7 @@
 import json
 import os.path
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -21,10 +22,11 @@ import stackprinter
 from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
                DEFAULT_RETRY_BACKOFF_FACTOR, BasicAuthConfiguration,
                Configuration, artemis_create, artemis_delete, artemis_inspect,
-               artemis_update, confirm, fetch_artemis, load_yaml, print_events,
-               print_guest_logs, print_guests, print_json, print_knobs,
-               print_shelves, print_table, print_tasks, print_users,
-               print_yaml, validate_struct)
+               artemis_update, confirm, fetch_artemis, load_yaml,
+               print_broker_tasks, print_events, print_guest_logs,
+               print_guests, print_json, print_knobs, print_shelves,
+               print_table, print_tasks, print_users, print_yaml,
+               validate_struct)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000
@@ -160,6 +162,12 @@ def cli_root(
     cfg.artemis_api_url = cfg.raw_config['artemis_api_url']
     cfg.artemis_api_version = semver.VersionInfo.parse(cfg.raw_config['artemis_api_version'])
     assert cfg.artemis_api_url is not None
+
+    if 'broker' in cfg.raw_config:
+        cfg.broker_management_hostname = cfg.raw_config['broker']['management']['hostname']
+        cfg.broker_management_port = cfg.raw_config['broker']['management']['port']
+        cfg.broker_management_username = cfg.raw_config['broker']['management']['username']
+        cfg.broker_management_password = cfg.raw_config['broker']['management']['password']
 
     if 'authentication' in cfg.raw_config:
         cfg.authentication_method = cfg.raw_config['authentication']['method']
@@ -1201,6 +1209,61 @@ def cmd_status_top(cfg: Configuration, tick: int) -> None:
 
             cfg.console.clear()
             print_tasks(cfg, tasks)
+
+            status.update(f'Updating every {tick} seconds...')
+            sleep(tick)
+
+
+@cmd_status.command(name='broker', short_help='Display current broker messages in a top-like fashion')
+@click.option('--tick', metavar='N', type=int, default=10, help='Refresh output every N seconds')
+@click.option('--include-dead-letters', is_flag=True, help='Report also dead letter queues.')
+@click.pass_obj
+def cmd_status_broker(cfg: Configuration, tick: int, include_dead_letters: bool) -> None:
+    assert cfg.broker_management_hostname
+    assert cfg.broker_management_port
+    assert cfg.broker_management_username
+    assert cfg.broker_management_password
+
+    rabbitmqadm_command: List[str] = [
+        'rabbitmqadmin',
+        '--format', 'pretty_json',
+        '--host', cfg.broker_management_hostname,
+        '--port', str(cfg.broker_management_port),
+        '--username', cfg.broker_management_username,
+        '--password', cfg.broker_management_password
+    ]
+
+    with cfg.console.status('Updating broker task list...', spinner='dots') as status:
+        queues = json.loads(subprocess.check_output(rabbitmqadm_command + ['list', 'queues']).decode())
+
+        while True:
+            status.update('Updating broker task list...')
+
+            def _iter_tasks(queues: Any) -> Generator[Any, None, None]:
+                for queue in queues:
+                    if queue['name'].endswith('.XQ') and not include_dead_letters:
+                        continue
+
+                    output = json.loads(
+                        subprocess.check_output(
+                            rabbitmqadm_command + [
+                                'get',
+                                f'queue={queue["name"]}',
+                                'ackmode=ack_requeue_true',
+                                'count=999999'
+                            ]
+                        )
+                    )
+
+                    for message in output:
+                        payload = json.loads(message['payload'])
+
+                        payload['routing_key'] = queue['name']
+
+                        yield payload
+
+            cfg.console.clear()
+            print_broker_tasks(cfg, list(_iter_tasks(queues)))
 
             status.update(f'Updating every {tick} seconds...')
             sleep(tick)

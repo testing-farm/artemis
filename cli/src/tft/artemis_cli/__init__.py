@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import json
 import sys
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, cast
@@ -162,6 +163,11 @@ class Configuration:
 
     artemis_api_url: Optional[str] = None
     artemis_api_version: Optional[semver.VersionInfo] = None
+
+    broker_management_hostname: Optional[str] = None
+    broker_management_port: Optional[str] = None
+    broker_management_username: Optional[str] = None
+    broker_management_password: Optional[str] = None
 
     authentication_method: Optional[str] = None
     basic_auth: Optional[BasicAuthConfiguration] = None
@@ -737,6 +743,41 @@ def print_tasks(
                 task['actor'].replace('_', '-'),
                 RichYAML.from_data(task['args']) if task['args'] else '',
                 task['ctime']
+            )
+
+        return table
+
+    print_collection(cfg, tasks, tabulate, console=console)
+
+
+def print_broker_tasks(
+    cfg: Configuration,
+    tasks: CollectionType,
+    console: Optional[rich.console.Console] = None
+) -> None:
+    def tabulate(tasks: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
+
+        for header in ['Broker', 'Queue', 'Task', 'Arguments', 'CTime']:
+            table.add_column(header)
+
+        for task in tasks:
+            if task['actor_name'] == 'release_pool_resources':
+                args = task['args'][:]
+                args[1] = json.loads(args[1])
+
+            else:
+                args = task['args']
+
+            table.add_row(
+                task['routing_key'],
+                task['queue_name'],
+                task['actor_name'].replace('_', '-'),
+                RichYAML.from_data(args) if args else '',
+                datetime.datetime.fromtimestamp(
+                    int(task['message_timestamp']) / 1000,
+                    tz=None
+                ).strftime("%Y-%m-%dT%H:%M:%S.%f")
             )
 
         return table
