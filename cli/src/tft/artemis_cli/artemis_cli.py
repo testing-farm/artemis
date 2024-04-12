@@ -46,6 +46,9 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('hw-constraints-disk-model-name', '0.0.69'),
+        ('hw-constraints-zcrypt', '0.0.69'),
+        ('hw-constraints-cpu-flag', '0.0.67'),
         ('fixed-virtualization-hypervisor-enum', '0.0.58'),
         ('shelving', '0.0.56'),
         ('watchdog-delay', '0.0.56'),
