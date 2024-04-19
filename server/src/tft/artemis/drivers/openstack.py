@@ -165,10 +165,14 @@ class OpenStackDriver(PoolDriver):
             self,
             logger: gluetool.log.ContextAdapter
     ) -> Result[keystoneauth1.session.Session, Failure]:
+        # NOTE(ivasilev) Either project-domain-name or project-domain-id can be used for auth, so let's pass whatever's
+        # defined in the config without restricting to project-domain-name only and let keystone client decide what
+        # to use
         auth = v3.Password(
             auth_url=self.pool_config['auth-url'], username=self.pool_config['username'],
             password=self.pool_config['password'], user_domain_name=self.pool_config['user-domain-name'],
-            project_domain_name=self.pool_config['project-domain-name'],
+            project_domain_name=self.pool_config.get('project-domain-name'),
+            project_domain_id=self.pool_config.get('project-domain-id'),
             project_name=self.pool_config['project-name']
         )
         try:

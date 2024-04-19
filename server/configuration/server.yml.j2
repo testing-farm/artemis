@@ -29,8 +29,8 @@ pools:
     guest_tags: {{ openstack.guest_tags }}
     {% endif %}
     parameters:
-      username: "{{ openstack.credentials.username }}"
-      password: "{{ openstack.credentials.password }}"
+      username: "{{ openstack.credentials.username or '' }}"
+      password: "{{ openstack.credentials.password or ''}}"
       auth-url: "{{ openstack.credentials.auth_url }}"
       project-name: "{{ openstack.credentials.project_name }}"
       {% if openstack.credentials.project_domain_id is defined and openstack.credentials.project_domain_id != "" %}
@@ -49,6 +49,7 @@ pools:
       flavor-regex: '{{ flavor_regex | default('') }}'
       ip-version: "4"
       post-install-script: "{{ openstack.vms.post_install_script }}"
+      glance-version: "{{ openstack.vms.glance_version }}"
 
       capabilities:
         supports-spot-instances: false
@@ -66,8 +67,8 @@ pools:
     guest_tags: {{ azure.guest_tags }}
     {% endif %}
     parameters:
-      username: "{{ azure.credentials.username }}"
-      password: "{{ azure.credentials.password }}"
+      username: "{{ azure.credentials.username or ''}}"
+      password: "{{ azure.credentials.password or ''}}"
       resource-group: "{{ azure.vms.resource_group }}"
       post-install-script: "{{ azure.vms.post_install_script }}"
 
