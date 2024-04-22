@@ -14,7 +14,7 @@ from gluetool.result import Error, Ok, Result
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
-from .. import Failure, JSONType, log_dict_yaml
+from .. import Failure, JSONType, log_dict_yaml, render_template
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import FlavorBoot
 from ..knobs import Knob
@@ -43,13 +43,24 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     default='{{ os.compose }}'
 )
 
+KNOB_RESOURCE_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
+    'azure.mapping.resource-group-name.template',
+    'A pattern for guest resource group name',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE',
+    cast_from_str=str,
+    default='{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}'
+)
+
 
 AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'Microsoft.Compute/virtualMachines': ResourceType.VIRTUAL_MACHINE,
     'Microsoft.Network/virtualNetworks': ResourceType.VIRTUAL_NETWORK,
     'Microsoft.Compute/disks': ResourceType.DISK,
     'Microsoft.Network/publicIPAddresses': ResourceType.STATIC_IP,
-    'Microsfot.Network/networkInterfaces': ResourceType.NETWORK_INTERFACE
+    'Microsoft.Network/networkInterfaces': ResourceType.NETWORK_INTERFACE,
+    'Microsoft.Network/networkSecurityGroups': ResourceType.SECURITY_GROUP
 }
 
 
@@ -64,6 +75,7 @@ class AzurePoolData(PoolData):
 class AzurePoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
     assorted_resource_ids: Optional[List[Dict[str, str]]] = None
+    resource_group: Optional[str] = None
 
 
 class AzureSession:
@@ -130,15 +142,15 @@ class AzureSession:
 
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         if self.pool.pool_config['username'] and self.pool.pool_config['password']:
-            r_login = self._run_cmd(
-                logger,
-                [
-                    'login',
-                    '--username', self.pool.pool_config['username'],
-                    '--password', self.pool.pool_config['password']
-                ],
-                commandname='az.login'
-            )
+            login_cmd = [
+                'login',
+                '--username', self.pool.pool_config['username'],
+                '--password', self.pool.pool_config['password']
+            ]
+            if self.pool.pool_config['login'] == 'service-principal':
+                login_cmd.extend(['--service-principal', '--tenant', self.pool.pool_config['tenant']])
+
+            r_login = self._run_cmd(logger, login_cmd, commandname='az.login')
 
             if r_login.is_error:
                 return Error(Failure.from_failure(
@@ -189,11 +201,13 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         *other_resources: Any,
         instance_id: Optional[str] = None,
+        resource_group: Optional[str] = None,
         guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
         resource_ids = AzurePoolResourcesIDs(
             instance_id=instance_id,
-            assorted_resource_ids=list(other_resources) if other_resources else None
+            assorted_resource_ids=list(other_resources) if other_resources else None,
+            resource_group=resource_group
         )
 
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
@@ -229,40 +243,28 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
-        # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
-        # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
-
-        # delete vm first, resources second
+        # NOTE(ivasilev) As all of the vm resources belong to the same resource_group, removing it will effectively
+        # clean everything up. Calls to iterative one-by-one resource listing are left here only for the purpose of
+        # incurring costs
 
         resource_ids = AzurePoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
-        def _delete_resource(res_id: str) -> Any:
+        if resource_ids.resource_group:
+            # Actual removal
             with AzureSession(logger, self) as session:
-                return session.run_az(
+                r_remove_resource_group = session.run_az(
                     logger,
-                    ['resource', 'delete', '--ids', res_id],
-                    json_format=False,
-                    commandname='az.resource-delete'
-                )
+                    ['group', 'delete', '--name', resource_ids.resource_group, '-y'],
+                    commandname='az.group-delete')
+                if r_remove_resource_group.is_error:
+                    return Error(Failure.from_failure('failed to remove resource group',
+                                                      r_remove_resource_group.unwrap_error()))
 
         if resource_ids.instance_id is not None:
-            r_delete = _delete_resource(resource_ids.instance_id)
-
-            if r_delete.is_error:
-                return Error(r_delete.unwrap_error())
-
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         if resource_ids.assorted_resource_ids is not None:
             for resource in resource_ids.assorted_resource_ids:
-                r_delete = _delete_resource(resource['id'])
-
-                if r_delete.is_error:
-                    return Error(Failure.from_failure(
-                        'failed to terminate instance',
-                        r_delete.unwrap_error()
-                    ))
-
                 self.inc_costs(logger, AZURE_RESOURCE_TYPE[resource['type']], resource_ids.ctime)
 
         return Ok(None)
@@ -383,6 +385,7 @@ class AzureDriver(PoolDriver):
             logger,
             *assorted_resource_ids,
             instance_id=pool_data.instance_id,
+            resource_group=pool_data.resource_group,
             guest_request=guest_request
         )
 
@@ -546,20 +549,12 @@ class AzureDriver(PoolDriver):
 
         r_output = None
 
-        def _create(custom_data_filename: str) -> Result[JSONType, Failure]:
+        def _create(resource_group: str, custom_data_filename: str) -> Result[JSONType, Failure]:
             """
             The actual call to the azure cli guest create command is happening here.
             If custom_data_filename is an empty string then the guest vm is booted with no user-data.
+            The vm will be created under a distinct resource_group so that a cleanup later will be smooth and easy.
             """
-
-            az_options = [
-                'vm',
-                'create',
-                '--resource-group', self.pool_config['resource-group'],
-                '--image', image.id,
-                '--name', tags['ArtemisGuestLabel'],
-                '--custom-data', custom_data_filename
-            ]
 
             # According to `az` documentation, `--tags` accepts `space-separated tags`, but that's not really true.
             # Space-separated, yes, but not passed as one value after `--tags` option:
@@ -570,13 +565,36 @@ class AzureDriver(PoolDriver):
             #
             # As you can see, `baz=79` in the valid example is not a space-separated bit of a `--tags` argument,
             # but rather a stand-alone command-line item that is consumed by `--tags`.
+            tags_options = []
             if tags:
-                az_options += [
+                tags_options = [
                     '--tags'
                 ] + [
                     f'{tag}={value}'
                     for tag, value in tags.items()
                 ]
+
+            # First let's create a resource group for this vm
+            with AzureSession(logger, self) as session:
+                az_options = [
+                    'group', 'create', '--location', self.pool_config['location'],
+                    '--name', resource_group
+                ] + tags_options
+                r_create_resource_group = session.run_az(logger, az_options, commandname='az.vm-create')
+
+                if r_create_resource_group.is_error:
+                    return Error(Failure.from_failure('failed to create resource group',
+                                                      r_create_resource_group.unwrap_error()))
+
+            # Resource group pre-created, time to create a vm
+            az_options = [
+                'vm',
+                'create',
+                '--resource-group', resource_group,
+                '--image', image.id,
+                '--name', tags['ArtemisGuestLabel'],
+                '--custom-data', custom_data_filename
+            ] + tags_options
 
             with AzureSession(logger, self) as session:
                 return session.run_az(
@@ -585,13 +603,28 @@ class AzureDriver(PoolDriver):
                     commandname='az.vm-create'
                 )
 
+        r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
+        if r_resource_group_template.is_error:
+            return Error(Failure('Could not get resource_group_name template'))
+
+        r_rendered = render_template(
+            r_resource_group_template.unwrap(),
+            GUESTNAME=guest_request.guestname,
+            ENVIRONMENT=guest_request.environment,
+            TAGS=tags
+        )
+        if r_resource_group_template.is_error:
+            return Error(Failure('Could not render resource_group_name template'))
+
+        resource_group = r_rendered.unwrap()
+
         if guest_request.post_install_script:
             # user has specified custom script to execute, contents stored as post_install_script
             with create_tempfile(file_contents=guest_request.post_install_script) as custom_data_filename:
-                r_output = _create(custom_data_filename)
+                r_output = _create(resource_group, custom_data_filename)
         else:
             # using post_install_script setting from the pool config
-            r_output = _create(self.pool_config.get('post-install-script', ''))
+            r_output = _create(resource_group, self.pool_config.get('post-install-script', ''))
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
@@ -610,7 +643,7 @@ class AzureDriver(PoolDriver):
             pool_data=AzurePoolData(
                 instance_id=output['id'],
                 instance_name=tags['ArtemisGuestLabel'],
-                resource_group=self.pool_config['resource-group']
+                resource_group=resource_group
             ),
             delay_update=r_delay.unwrap(),
             ssh_info=image.ssh

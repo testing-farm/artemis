@@ -469,6 +469,22 @@ until cancelled and reprovisioned.
 
 5+|A pattern for needle to match in environment to image mapping file.
 
+|`azure.mapping.resource-group-name.template`
+|`str`
+|`ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE`
+|`{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}`
+|no
+
+
+|`azure.mapping.resource-group-name.template:$entityname`
+|
+|`ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE_$entityname`
+|
+|
+
+
+5+|A pattern for guest resource group name
+
 |`beaker.guest-watchdog.ssh.connect-timeout`
 |`int`
 |`ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT`

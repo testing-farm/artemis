@@ -687,6 +687,7 @@ class ResourceType(enum.Enum):
     STATIC_IP = 'static-ip'
     NETWORK_INTERFACE = 'network-interface'
     VIRTUAL_NETWORK = 'virtual-network'
+    SECURITY_GROUP = 'security-group'
 
 
 @dataclasses.dataclass
@@ -700,6 +701,7 @@ class PoolCostsMetrics(MetricsBase):
     static_ip: Optional[ResourceCostType]
     network_interface: Optional[ResourceCostType]
     virtual_network: Optional[ResourceCostType]
+    security_group: Optional[ResourceCostType]
 
     def __init__(self, poolname: str) -> None:
         """
@@ -715,6 +717,7 @@ class PoolCostsMetrics(MetricsBase):
         self.static_ip = None
         self.network_interface = None
         self.virtual_network = None
+        self.security_group = None
 
     @with_context
     def sync(self, cache: redis.Redis, logger: gluetool.log.ContextAdapter) -> None:

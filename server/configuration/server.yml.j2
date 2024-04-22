@@ -67,9 +67,18 @@ pools:
     guest_tags: {{ azure.guest_tags }}
     {% endif %}
     parameters:
+      {% if azure.credentials.service_principal %}
+      login: "service-principal"
+      tenant: "{{ azure.credentials.service_principal.tenant }}"
+      username: "{{ azure.credentials.service_principal.username or '' }}"
+      password: "{{ azure.credentials.service_principal.password or '' }}"
+      {% else %}
+      service-principal-auth: False
       username: "{{ azure.credentials.username or ''}}"
       password: "{{ azure.credentials.password or ''}}"
+      {% endif %}
       resource-group: "{{ azure.vms.resource_group }}"
+      location: "{{ azure.vms.location }}"
       post-install-script: "{{ azure.vms.post_install_script }}"
 
       capabilities:

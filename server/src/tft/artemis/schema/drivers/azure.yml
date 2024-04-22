@@ -4,12 +4,17 @@ description: Azure pool driver schema
 type: object
 
 properties:
+  login:
+    type: string
 
   capabilities:
     type: object
 
   cost:
     type: object
+
+  location:
+    type: string
 
   password:
     type: string
@@ -25,6 +30,9 @@ properties:
 
   resources:
     type: object
+
+  tenant:
+    type: string
 
   use-only-when-addressed:
     type: boolean
@@ -43,6 +51,7 @@ properties:
 additionalProperties: false
 
 required:
+- location
 - password
 - resource-group
 - username
