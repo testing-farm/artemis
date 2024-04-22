@@ -2403,6 +2403,7 @@ class TaskMetrics(MetricsBase):
     current_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
     current_delayed_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
     message_durations: Dict[Tuple[str, str, str, str], int] = dataclasses.field(default_factory=dict)
+    current_task_request_count: Dict[str, int] = dataclasses.field(default_factory=dict)
 
     _KEY_OVERALL_MESSAGES = 'metrics.tasks.messages.overall'
     _KEY_OVERALL_ERRORED_MESSAGES = 'metrics.tasks.messages.overall.errored'
@@ -2619,13 +2620,15 @@ class TaskMetrics(MetricsBase):
     def sync(
         self,
         logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        cache: redis.Redis,
+        session: sqlalchemy.orm.session.Session
     ) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
         :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
+        :param session: DB session to use for DB access.
         """
 
         super().sync()
@@ -2655,6 +2658,20 @@ class TaskMetrics(MetricsBase):
             cast(Tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_CURRENT_DELAYED_MESSAGES).items()
         }
+
+        self.current_task_request_count = {
+            record[0]: record[1]
+            for record in cast(
+                List[Tuple[str, int]],
+                session.query(
+                    artemis_db.TaskRequest.taskname,
+                    sqlalchemy.func.count(artemis_db.TaskRequest.taskname)
+                )
+                .group_by(artemis_db.TaskRequest.taskname)
+                .all()
+            )
+        }
+
         # queue:actor:bucket:poolname => count
         # deal with older version which had only three dimensions (no poolname)
         self.message_durations = {}
@@ -2718,6 +2735,13 @@ class TaskMetrics(MetricsBase):
             registry=registry
         )
 
+        self.CURRENT_TASK_REQUEST_COUNT = Gauge(
+            'current_task_request_count',
+            'Current number of task requests per actor.',
+            ['actor_name'],
+            registry=registry
+        )
+
         self.MESSAGE_DURATIONS = Histogram(
             'message_duration_milliseconds',
             'The time spent processing messages by queue and actor.',
@@ -2749,6 +2773,11 @@ class TaskMetrics(MetricsBase):
         _update_counter(self.OVERALL_RETRIED_MESSAGE_COUNT, self.overall_retried_message_count)
         _update_counter(self.CURRENT_MESSAGE_COUNT, self.current_message_count)
         _update_counter(self.CURRENT_DELAYED_MESSAGE_COUNT, self.current_delayed_message_count)
+
+        reset_counters(self.CURRENT_TASK_REQUEST_COUNT)
+
+        for actor_name, count in self.current_task_request_count.items():
+            self.CURRENT_TASK_REQUEST_COUNT.labels(actor_name=actor_name)._value.set(count)
 
         # Reset all duration buckets and sums first
         reset_histogram(self.MESSAGE_DURATIONS)
