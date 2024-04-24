@@ -79,7 +79,7 @@ container:
         buildah tag "$IMAGE_REF"       "$IMAGE_LATEST";
         buildah push "$IMAGE_LATEST";
 
-        echo "Tagging the ref debugging image, $IMAGE_REF_DEBUG, as latest debugging image, $IMAGE_LATEST_DEBUG"
+        echo "Tagging the ref debugging image, $IMAGE_REF_DEBUG, as latest debugging image, $IMAGE_LATEST_DEBUG";
         buildah tag "$IMAGE_REF_DEBUG" "$IMAGE_LATEST_DEBUG";
         buildah push "$IMAGE_LATEST_DEBUG";
       fi
@@ -90,7 +90,7 @@ container:
         buildah tag "$IMAGE_REF"       "$IMAGE_TAG";
         buildah push "$IMAGE_TAG";
 
-        echo "Tagging the ref debugging image, $IMAGE_REF_DEBUG, as tag debugging image, $IMAGE_TAG_DEBUG"
+        echo "Tagging the ref debugging image, $IMAGE_REF_DEBUG, as tag debugging image, $IMAGE_TAG_DEBUG";
         buildah tag "$IMAGE_REF_DEBUG" "$IMAGE_TAG_DEBUG";
         buildah push "$IMAGE_TAG_DEBUG";
       fi
