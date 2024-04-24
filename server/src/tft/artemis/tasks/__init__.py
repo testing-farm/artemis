@@ -789,14 +789,18 @@ def actor_kwargs(
 def resolve_actor(actorname: str) -> Result[Actor, Failure]:
     # Some tasks may seem to be unused, but they *must* be imported and known to broker
     # for transactional outbox to work correctly.
-    from . import release_guest_request  # noqa: F401, isort:skip
-    from . import route_guest_request  # noqa: F401, isort:skip
     from . import guest_request_watchdog  # noqa: F401, isort:skip
     from . import guest_shelf_lookup  # noqa: F401, isort:skip
-    from . import return_guest_to_shelf  # noqa: F401, isort:skip
-    from . import shelved_guest_watchdog  # noqa: F401, isort:skip
-    from . import remove_shelf  # noqa: F401, isort:skip
+    from . import prepare_verify_ssh  # noqa: F401, isort:skip
     from . import preprovision  # noqa: F401, isort:skip
+    from . import refresh_pool_avoid_groups_hostnames_dispatcher  # noqa: F401, isort:skip
+    from . import release_guest_request  # noqa: F401, isort:skip
+    from . import remove_shelf  # noqa: F401, isort:skip
+    from . import return_guest_to_shelf  # noqa: F401, isort:skip
+    from . import route_guest_request  # noqa: F401, isort:skip
+    from . import shelved_guest_watchdog  # noqa: F401, isort:skip
+    from . import update_guest_request  # noqa: F401, isort:skip
+    from . import worker_ping  # noqa: F401, isort:skip
 
     try:
         actor = BROKER.get_actor(actorname)

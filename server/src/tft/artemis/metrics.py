@@ -2636,6 +2636,11 @@ class TaskMetrics(MetricsBase):
 
         super().sync()
 
+        # TODO: find a better way how to make broker aware of all tasks. We rely on `resolve_actor` importing
+        # all subpackages, but that's hard to update.
+        from .tasks import BROKER, resolve_actor
+        resolve_actor('worker_ping')
+
         # queue:actor => count
         self.overall_message_count = {
             cast(Tuple[str, str], tuple(field.split(':', 1))): count
@@ -2663,6 +2668,11 @@ class TaskMetrics(MetricsBase):
         }
 
         self.current_task_request_count = {
+            actorname: 0
+            for actorname in BROKER.actors.keys()
+        }
+
+        self.current_task_request_count.update({
             record[0]: record[1]
             for record in cast(
                 List[Tuple[str, int]],
@@ -2673,7 +2683,7 @@ class TaskMetrics(MetricsBase):
                 .group_by(artemis_db.TaskRequest.taskname)
                 .all()
             )
-        }
+        })
 
         # queue:actor:bucket:poolname => count
         # deal with older version which had only three dimensions (no poolname)
