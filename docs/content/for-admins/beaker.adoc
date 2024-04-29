@@ -214,3 +214,22 @@ A compose can be mapped to a particular distro variant, ``Server``, ``Workstatio
 ....
 
 When `variant` key is specified in the right-hand side of the image mapping, it is propagated to Beaker job via `distro_variant` element, to instruct Beaker to provide the given distro variant. Without the `variant` key, no `distro_variant` element is emitted.
+
+
+=== AVC denials during installation
+
+AVC denials during installation are a common issue that may appear in early development phases of development of new OS version. Beaker would mark an affected job as "failed", and, by default, Artemis would terminate the job and retry. A `ignore-avc-on-compose-pattern` key lets maintainers to specify composes for which a Beaker job may failed because of AVC denials and be still accepted.
+
+.Specification
+[source,yaml]
+....
+ignore-avc-on-compose-pattern: <pattern>
+....
+
+.Example
+[source,yaml]
+....
+# AVC denials appear when installing new Fedora 55, they will be fixed next week.
+# For now, let users test their components.
+ignore-avc-on-compose-pattern: "(?i)fedora-55"
+....
