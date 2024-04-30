@@ -651,6 +651,12 @@ def _apply_flavor_specification(
     if 'arch' in flavor_spec:
         flavor.arch = flavor_spec['arch']
 
+    if 'boot' in flavor_spec:
+        boot_patch = flavor_spec['boot']
+
+        if 'method' in boot_patch:
+            flavor.boot = FlavorBoot(method=boot_patch['method'])
+
     if 'compatible' in flavor_spec:
         compatible_patch = flavor_spec['compatible']
 
