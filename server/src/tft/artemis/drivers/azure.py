@@ -255,7 +255,9 @@ class AzureDriver(PoolDriver):
                 r_remove_resource_group = session.run_az(
                     logger,
                     ['group', 'delete', '--name', resource_ids.resource_group, '-y'],
-                    commandname='az.group-delete')
+                    commandname='az.group-delete',
+                    json_format=False
+                )
                 if r_remove_resource_group.is_error:
                     return Error(Failure.from_failure('failed to remove resource group',
                                                       r_remove_resource_group.unwrap_error()))
