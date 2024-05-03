@@ -62,12 +62,6 @@ class GCPPoolResourcesIDs(PoolResourcesIDs):
     zone: Optional[str] = None
 
 
-@dataclasses.dataclass
-class SSHSetup:
-    pub_key: str
-    username: str
-
-
 class GCPDriver(PoolDriver):
     drivername = 'gcp'
 
@@ -84,12 +78,11 @@ class GCPDriver(PoolDriver):
         return HookImageInfoMapper(self, 'GCP_ENVIRONMENT_TO_IMAGE')
 
     @property
-    def _client(self) -> compute_v1.ImagesClient:
-        sa_info = self._get_service_account_info()
-        return compute_v1.ImagesClient.from_service_account_info(sa_info)
+    def _instances_client(self) -> compute_v1.ImagesClient:
+        sa_info = self._service_account_info
+        return compute_v1.InstancesClient.from_service_account_info(sa_info)
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
-        # Mark all capabilities as unsupported - although GCP might support these, this driver does not.
         capabilities.supported_architectures = ['x86_64']
         capabilities.supports_snapshots = False
         capabilities.supports_console_url = False
@@ -101,7 +94,7 @@ class GCPDriver(PoolDriver):
         return Ok(capabilities)
 
     @cached_property
-    def _get_service_account_info(self):
+    def _service_account_info(self):
         sa_info = self.pool_config['service_account_info']
         return sa_info
 
@@ -112,11 +105,13 @@ class GCPDriver(PoolDriver):
         image_project = self.pool_config['image_project']
 
         try:
-            image_description = self._client.get_from_family(project=image_project, family=image_name)
+            sa_info = self._service_account_info
+            images_client = compute_v1.ImagesClient.from_service_account_info(sa_info)
+            image_description = images_client.get_from_family(project=image_project, family=image_name)
         except google.api_core.exceptions.NotFound as exc:
             return Error(Failure.from_exc('The given imagename was not found.', exc, imagename=image_name))
 
-        ssh_info = PoolImageSSHInfo()
+        ssh_info = PoolImageSSHInfo(username='artemis')
         image_info = PoolImageInfo(name=image_description.name,
                                    id=image_description.self_link,
                                    arch=image_description.architecture,
@@ -158,7 +153,7 @@ class GCPDriver(PoolDriver):
         request.zone = pool_data.zone
 
         try:
-            instance_info = self._client.get(request=request)
+            instance_info = self._instances_client.get(request=request)
         except google.api_core.exceptions.NotFound as exc:
             failure = Failure.from_exc(f'Failed to locate instance {request.instance}',
                                        exc,
@@ -172,15 +167,20 @@ class GCPDriver(PoolDriver):
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
                 pool_data=pool_data,
-                pool_failures=[Failure('instance ended up in "failed" state')]
+                pool_failures=[Failure('instance ended up in the "failed" state')]
             ))
 
         ip_address = self._get_ip_from_instance(instance_info)
+        if ip_address:
+            return Ok(ProvisioningProgress(
+                state=ProvisioningState.COMPLETE,
+                pool_data=GCPPoolData.unserialize(guest_request),
+                address=ip_address
+            ))
 
         return Ok(ProvisioningProgress(
-            state=ProvisioningState.COMPLETE,
+            state=ProvisioningState.PENDING,
             pool_data=GCPPoolData.unserialize(guest_request),
-            address=ip_address
         ))
 
     def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
@@ -205,7 +205,7 @@ class GCPDriver(PoolDriver):
                                                    project=resource_ids.project,
                                                    zone=resource_ids.zone)
         try:
-            self._client.delete(request=request)
+            self._instances_client.delete(request=request)
         except google.api_core.exceptions.NotFound as exc:
             failure = Failure.from_exc('Instance to delete was not found',
                                        exc,
@@ -220,7 +220,7 @@ class GCPDriver(PoolDriver):
                                          zone: Optional[str] = None,
                                          disk_type: str = 'pd-standard') -> compute_v1.AttachedDisk:
 
-        disk_type = f'zones/{zone}/diskTypes/{type}'
+        disk_type = f'zones/{zone}/diskTypes/{disk_type}'
 
         size = size or DEFAULT_DISK_SIZE
 
@@ -248,7 +248,7 @@ class GCPDriver(PoolDriver):
     def _create_instance(self,
                          client: compute_v1.InstancesClient,
                          image: PoolImageInfo,
-                         ssh_setup: SSHSetup,
+                         ssh_pubkey: str,
                          project_id: str,
                          zone: str,
                          instance_name: str,
@@ -281,7 +281,7 @@ class GCPDriver(PoolDriver):
         # Add a ssh-key to the file
         ssh_key = compute_v1.Items()
         ssh_key.key = 'ssh-keys'
-        ssh_key.value = f'{ssh_setup.username}:{ssh_setup.pub_key}'
+        ssh_key.value = f'{image.ssh.username}:{ssh_pubkey}'
         instance.metadata.items.append(ssh_key)
 
         instance.scheduling = compute_v1.Scheduling()
@@ -351,10 +351,7 @@ class GCPDriver(PoolDriver):
         if not ssh_key:
             return Error(Failure.from_failure('failed to get SSH key', keyname=guest_request.ssh_keyname))
 
-        # We use 'artemis' as username since .ssh_username is root and root login is prohibited
-        ssh_setup = SSHSetup(pub_key=ssh_key.public, username='artemis')
-
-        r_instance = self._create_instance(self._client, image, ssh_setup,
+        r_instance = self._create_instance(self._instances_client, image, ssh_key.public,
                                            project_id, zone, instance_name, disks=[boot_disk])
         if r_instance.is_error:
             return Error(r_instance.unwrap_error())
@@ -364,8 +361,6 @@ class GCPDriver(PoolDriver):
 
         # It is unlikely that the machine would be up and running
         provisioninig_state = ProvisioningState.PENDING
-
-        image.ssh.username = ssh_setup.username
 
         return Ok(ProvisioningProgress(
             state=provisioninig_state,
@@ -377,12 +372,12 @@ class GCPDriver(PoolDriver):
             ),
             delay_update=delay_cfg_option_read_result.ok,
             ssh_info=image.ssh,
-            address=self._get_ip_from_instance(instance)
+            address=None
         ))
 
     def _get_ip_from_instance(self, instance: compute_v1.Instance) -> Optional[str]:
         access_configs = instance.network_interfaces[0].access_configs
-        if len(access_configs) > 0:
+        if access_configs:
             return access_configs[0].nat_i_p
         return None
 
