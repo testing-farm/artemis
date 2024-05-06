@@ -434,6 +434,15 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
 
         return BlockDeviceMappings(cast_serialized)
 
+    @staticmethod
+    def mapping_size(mapping: APIBlockDeviceMappingType) -> Optional[SizeType]:
+        size = mapping.get('Ebs', {}).get('VolumeSize', None)
+
+        if size is None:
+            return None
+
+        return UNITS.Quantity(size, UNITS.gibibytes)
+
     # These two methods would deserve their own class, representing a single block device mapping, but, because
     # such mapping isn't plain str/str dictionary, we would have to write so many checks and types to deal with
     # the variants. It's more readable to have them here, namespaced, rather than top-level functions.
@@ -703,19 +712,24 @@ def _honor_constraint_disk(
 
         mapping = mappings[index]
 
-        if constraint.operator in (Operator.EQ, Operator.GTE):
+        current_size = mappings.mapping_size(mapping)
+        desired_size = cast(SizeType, constraint.value)
+
+        if constraint.operator in (Operator.EQ, Operator.GTE) \
+                and (current_size is None or current_size.to('GiB').magnitude < desired_size.to('GiB').magnitude):
             r_update = mappings.update_mapping(
                 mapping,
-                size=cast(SizeType, constraint.value)
+                size=desired_size
             )
 
             if r_update.is_error:
                 return Error(r_update.unwrap_error())
 
-        elif constraint.operator == Operator.GT:
+        elif constraint.operator == Operator.GT \
+                and (current_size is None or current_size.to('GiB').magnitude <= desired_size.to('GiB').magnitude):
             r_update = mappings.update_mapping(
                 mapping,
-                size=constraint.value + UNITS.Quantity(1, 'gibibyte')
+                size=desired_size + UNITS.Quantity(1, 'gibibyte')
             )
 
             if r_update.is_error:
