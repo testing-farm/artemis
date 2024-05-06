@@ -514,7 +514,7 @@ class TaskCall(SerializableContainer):
         logger: gluetool.log.ContextAdapter,
         failure_details: Optional[Dict[str, Any]] = None
     ) -> gluetool.log.ContextAdapter:
-        logger = TaskLogger(logger, self.actor.actor_name, message=self.broker_message)
+        logger = TaskLogger(logger, self.actor.actor_name.replace('_', '-'), message=self.broker_message)
 
         if self.has_args('guestname'):
             guestname = self.named_args['guestname']

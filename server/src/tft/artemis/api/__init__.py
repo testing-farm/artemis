@@ -14,7 +14,7 @@ import sys
 import threading
 import uuid
 from inspect import Parameter
-from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple, Type, Union, cast
 
 import gluetool.log
 import gluetool.utils
@@ -368,6 +368,21 @@ class SchemaComponent(molten.components.SchemaComponent):
                     'errors': exc.response
                 }
             )
+
+
+class URLLogger(gluetool.log.ContextAdapter):
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        url: str
+    ) -> None:
+        super().__init__(logger, {
+            'ctx_url': (10, url)
+        })
+
+    @property
+    def url(self) -> str:
+        return cast(str, self._contexts['url'][1])
 
 
 class LoggerComponent:
@@ -1827,9 +1842,12 @@ class CacheManager:
     def refresh_pool_object_infos(
         self,
         logger: gluetool.log.ContextAdapter,
+        request: Request,
         poolname: str,
         actor: Actor
     ) -> Tuple[str, None]:
+        logger = URLLogger(logger, request.path)
+
         # We don't really need the pool object, but we'd like to avoid triggering tasks for pools that don't exist.
         # The race condition still exists though, because we don't try too hard :) The pool may be gone after our
         # check and before the dispatch, but we don't aim for consistency here, rather the user experience. The task
@@ -1870,21 +1888,23 @@ class CacheManager:
     def entry_refresh_pool_image_info(
         manager: 'CacheManager',
         logger: gluetool.log.ContextAdapter,
+        request: Request,
         poolname: str
     ) -> Tuple[str, None]:
         from ..tasks import refresh_pool_image_info
 
-        return manager.refresh_pool_object_infos(logger, poolname, refresh_pool_image_info)
+        return manager.refresh_pool_object_infos(logger, request, poolname, refresh_pool_image_info)
 
     @staticmethod
     def entry_refresh_pool_flavor_info(
         manager: 'CacheManager',
         logger: gluetool.log.ContextAdapter,
+        request: Request,
         poolname: str
     ) -> Tuple[str, None]:
         from ..tasks import refresh_pool_flavor_info
 
-        return manager.refresh_pool_object_infos(logger, poolname, refresh_pool_flavor_info)
+        return manager.refresh_pool_object_infos(logger, request, poolname, refresh_pool_flavor_info)
 
     def _get_pool(
         self,
