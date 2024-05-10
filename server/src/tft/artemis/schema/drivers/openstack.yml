@@ -14,6 +14,9 @@ properties:
   glance-version:
     type: string
 
+  nova-version:
+    type: string
+
   capabilities:
     type: object
 
@@ -100,6 +103,7 @@ allOf:
   - user-domain-name
   - api-version
   - glance-version
+  - nova-version
   - master-key-name
   - default-flavor
   - network-regex

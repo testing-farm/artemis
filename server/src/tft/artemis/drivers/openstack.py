@@ -15,6 +15,7 @@ import sqlalchemy.orm.session
 from glanceclient import Client as gcl
 from gluetool.result import Error, Ok, Result
 from keystoneauth1.identity import v3
+from novaclient import client as nocl
 
 from .. import Failure, JSONType, log_dict_yaml, process_output_to_str
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
@@ -1117,13 +1118,15 @@ class OpenStackDriver(PoolDriver):
         #   ...
         # ]
 
-        r_flavors = self._run_os(['flavor', 'list'], commandname='os.flavor-list')
-
-        if r_flavors.is_error:
+        sess = self.login_session(self.logger)
+        if sess.is_error:
             return Error(Failure.from_failure(
-                'failed to fetch flavor information',
-                r_flavors.unwrap_error()
+                'Failed to log into OpenStack tenant',
+                sess.unwrap_error()
             ))
+        nova = nocl.Client(self.pool_config['nova-version'], session=sess.unwrap())
+
+        flavors = nova.flavors.list()
 
         if self.pool_config.get('flavor-regex'):
             flavor_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['flavor-regex'])
@@ -1134,17 +1137,17 @@ class OpenStackDriver(PoolDriver):
         try:
             return Ok([
                 Flavor(
-                    name=flavor['Name'],
-                    id=flavor['ID'],
+                    name=flavor.name,
+                    id=flavor.id,
                     cpu=FlavorCpu(
-                        processors=int(flavor['VCPUs'])
+                        processors=int(flavor.vcpus)
                     ),
                     # memory is reported in MiB
-                    memory=UNITS.Quantity(int(flavor['RAM']), UNITS.mebibytes),
+                    memory=UNITS.Quantity(int(flavor.ram), UNITS.mebibytes),
                     disk=FlavorDisks([
                         FlavorDisk(
                             # diskspace is reported in GiB
-                            size=UNITS.Quantity(int(flavor['Disk']), UNITS.gibibytes)
+                            size=UNITS.Quantity(int(flavor.disk), UNITS.gibibytes)
                         )
                     ]),
                     network=FlavorNetworks([FlavorNetwork(type='eth')]),
@@ -1152,15 +1155,15 @@ class OpenStackDriver(PoolDriver):
                         is_virtualized=True
                     )
                 )
-                for flavor in cast(List[Dict[str, str]], r_flavors.unwrap())
-                if flavor_name_pattern is None or flavor_name_pattern.match(flavor['Name'])
+                for flavor in flavors
+                if flavor_name_pattern is None or flavor_name_pattern.match(flavor.name)
             ])
 
         except KeyError as exc:
             return Error(Failure.from_exc(
                 'malformed flavor description',
                 exc,
-                flavor_info=r_flavors.unwrap()
+                flavor_info=flavors
             ))
 
     def _do_fetch_console(

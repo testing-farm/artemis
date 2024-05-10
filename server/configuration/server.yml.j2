@@ -50,6 +50,7 @@ pools:
       ip-version: "4"
       post-install-script: "{{ openstack.vms.post_install_script }}"
       glance-version: "{{ openstack.vms.glance_version }}"
+      nova-version: "{{ openstack.vms.nova_version }}"
 
       capabilities:
         supports-spot-instances: false
