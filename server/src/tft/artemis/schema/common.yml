@@ -129,6 +129,11 @@ definitions:
         type: array
         items:
           type: string
+          # See tft.artemis.environment.FlavorBootMethodType for the list of supported boot methods
+          enum:
+            - bios
+            - uefi
+            - uefi-preferred
 
   patch_flavor:
     type: object

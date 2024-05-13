@@ -30,7 +30,7 @@ from ..cache import get_cached_mapping_item, get_cached_mapping_values, refresh_
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
     SnapshotRequest, SSHKey
-from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorDisk, FlavorDisks, \
+from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorBootMethodType, FlavorDisk, FlavorDisks, \
     MeasurableConstraintValueType, SizeType
 from ..knobs import KNOB_POOL_ENABLED, Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
@@ -45,6 +45,11 @@ GuestTagsType = Dict[str, str]
 # Types for configuration of custom/patched flavors
 #
 # NOTE: sometimes we cannot use class-based approach to TypedDict because some keys contain dashes.
+
+#: pools[].parameters.{custom-flavors,patch-flavors}[].boot
+class ConfigFlavorBootSpecType(TypedDict):
+    method: List[FlavorBootMethodType]
+
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].cpu
 ConfigFlavorCPUSpecType = TypedDict(
@@ -129,6 +134,7 @@ ConfigPatchFlavorSpecType = TypedDict(
         'name': str,
         'name-regex': str,
         'arch': str,
+        'boot': ConfigFlavorBootSpecType,
         'compatible': ConfigFlavorCompatibleSpecType,
         'cpu': ConfigFlavorCPUSpecType,
         'disk': List[ConfigFlavorDiskSpecType],
@@ -144,6 +150,7 @@ class ConfigCustomFlavorSpecType(TypedDict):
     name: str
     base: str
     arch: str
+    boot: ConfigFlavorBootSpecType
     compatible: ConfigFlavorCompatibleSpecType
     cpu: ConfigFlavorCPUSpecType
     disk: List[ConfigFlavorDiskSpecType]
