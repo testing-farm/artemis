@@ -2977,7 +2977,7 @@ def do_update_guest_log(
         r_store = safe_db_change(logger, session, query)
 
         if r_store.is_error:
-            return Error(Failure.from_failure('failed to update the log', r_store.unwrap_error()))
+            return workspace.handle_error(r_store, 'failed to update guest log')
 
         if r_store.unwrap() is not True:
             return workspace.handle_success('finished-task', return_value=RESCHEDULE)
@@ -2993,7 +2993,13 @@ def do_update_guest_log(
                     content=blob.content
                 )
 
-            safe_db_change(logger, session, blob_query)
+            r_store = safe_db_change(logger, session, blob_query)
+
+            if r_store.is_error:
+                return workspace.handle_error(r_store, 'failed to store guest log blob')
+
+            if r_store.unwrap() is not True:
+                return workspace.handle_success('finished-task', return_value=RESCHEDULE)
 
         return SUCCESS
 
