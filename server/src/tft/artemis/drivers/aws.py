@@ -1505,28 +1505,6 @@ class AWSDriver(PoolDriver):
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
-    def _filter_flavors_image_arch(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
-        suitable_flavors: List[AWSFlavor]
-    ) -> List[AWSFlavor]:
-        """
-        Make sure the image and flavor architecture match each other.
-        """
-
-        if image.arch is None:
-            return suitable_flavors
-
-        return list(logging_filter(
-            logger,
-            suitable_flavors,
-            'image and flavor arch matches',
-            lambda logger, flavor: flavor.arch == image.arch
-        ))
-
     def _filter_flavors_console_url_support(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1668,7 +1646,7 @@ class AWSDriver(PoolDriver):
 
         suitable_flavors = cast(List[AWSFlavor], r_suitable_flavors.unwrap())
 
-        suitable_flavors = self._filter_flavors_image_arch(
+        suitable_flavors = self.filter_flavors_image_arch(
             logger,
             session,
             guest_request,

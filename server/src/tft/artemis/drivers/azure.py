@@ -3,9 +3,10 @@
 
 import dataclasses
 import os
+import re
 import tempfile
 import threading
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Pattern, Tuple, TypedDict, Union, cast
 
 import gluetool.log
 import gluetool.utils
@@ -16,7 +17,8 @@ from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
 from .. import Failure, JSONType, log_dict_yaml, render_template
 from ..db import GuestRequest, SnapshotRequest
-from ..environment import FlavorBoot
+from ..environment import UNITS, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, FlavorNetwork, \
+    FlavorNetworks, FlavorVirtualization, SizeType
 from ..knobs import Knob
 from ..metrics import ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, \
@@ -64,6 +66,28 @@ AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
 }
 
 
+ConfigImageFilter = TypedDict(
+    'ConfigImageFilter',
+    {
+        'name-regex': str,
+        'offer': str,
+        'publisher': str,
+        'sku': str
+    },
+    total=False
+)
+
+
+class APIImageType(TypedDict):
+    name: Optional[str]
+    architecture: str
+    offer: str
+    publisher: str
+    sku: str
+    urn: str
+    version: str
+
+
 @dataclasses.dataclass
 class AzurePoolData(PoolData):
     instance_id: str
@@ -76,6 +100,38 @@ class AzurePoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
     assorted_resource_ids: Optional[List[Dict[str, str]]] = None
     resource_group: Optional[str] = None
+
+
+@dataclasses.dataclass(repr=False)
+class AzurePoolImageInfo(PoolImageInfo):
+    offer: str
+    publisher: str
+    sku: str
+    urn: str
+    version: str
+
+
+@dataclasses.dataclass(repr=False)
+class AzureFlavor(Flavor):
+    resource_disk_size: Optional[SizeType] = None
+
+    def serialize(self) -> Dict[str, Any]:
+        serialized = super().serialize()
+
+        # is not None comparison to successfully serialize 0 MB
+        if self.resource_disk_size is not None:
+            serialized['resource_disk_size'] = str(self.resource_disk_size)
+
+        return serialized
+
+    @classmethod
+    def unserialize(cls, serialized: Dict[str, Any]) -> 'AzureFlavor':
+        flavor = cast(AzureFlavor, super().unserialize(serialized))
+
+        if serialized['resource_disk_size'] is not None:
+            flavor.resource_disk_size = UNITS(serialized['resource_disk_size'])
+
+        return flavor
 
 
 class AzureSession:
@@ -176,6 +232,8 @@ class AzureSession:
 class AzureDriver(PoolDriver):
     drivername = 'azure'
 
+    image_info_class = AzurePoolImageInfo
+    flavor_info_class = AzureFlavor
     pool_data_class = AzurePoolData
 
     def __init__(
@@ -186,8 +244,9 @@ class AzureDriver(PoolDriver):
     ) -> None:
         super().__init__(logger, poolname, pool_config)
 
+    # TODO: return value does not match supertype - it should, it does, but mypy ain't happy: why?
     @property
-    def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
+    def image_info_mapper(self) -> HookImageInfoMapper[AzurePoolImageInfo]:  # type: ignore[override]
         return HookImageInfoMapper(self, 'AZURE_ENVIRONMENT_TO_IMAGE')
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
@@ -217,26 +276,73 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         imagename: str
     ) -> Result[PoolImageInfo, Failure]:
-        with AzureSession(logger, self) as session:
-            r_images_show = session.run_az(
+        return self._map_image_name_to_image_info_by_cache(logger, imagename)
+
+    def _env_to_instance_type(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: AzurePoolImageInfo
+    ) -> Result[AzureFlavor, Failure]:
+        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
+            logger,
+            guest_request.environment
+        )
+
+        if r_suitable_flavors.is_error:
+            return Error(r_suitable_flavors.unwrap_error())
+
+        suitable_flavors = cast(List[AzureFlavor], r_suitable_flavors.unwrap())
+
+        suitable_flavors = self.filter_flavors_image_arch(
+            logger,
+            session,
+            guest_request,
+            image,
+            suitable_flavors
+        )
+
+        # NOTE(ivasilev) hardware requirements not supported atm so skipping all related flavor filtering
+
+        if not suitable_flavors:
+            if self.pool_config.get('use-default-flavor-when-no-suitable', True):
+                guest_request.log_warning_event(
+                    logger,
+                    session,
+                    'no suitable flavors, using default',
+                    poolname=self.poolname
+                )
+
+                r_default_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(
+                    logger,
+                    self.pool_config['default-flavor']
+                )
+
+                if r_default_flavor.is_error:
+                    return Error(r_default_flavor.unwrap_error())
+
+                return Ok(cast(AzureFlavor, r_default_flavor.unwrap()))
+
+            guest_request.log_warning_event(
                 logger,
-                ['vm', 'image', 'show', '--urn', imagename],
-                commandname='az.vm-image-show'
+                session,
+                'no suitable flavors',
+                poolname=self.poolname
             )
 
-        if r_images_show.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch image information',
-                r_images_show.unwrap_error()
-            ))
+            return Error(Failure('no suitable flavor'))
 
-        return Ok(PoolImageInfo(
-            name=imagename,
-            id=imagename,
-            arch=None,
-            boot=FlavorBoot(),
-            ssh=PoolImageSSHInfo()
-        ))
+        if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
+            logger.info('default flavor among suitable ones, using it')
+
+            return Ok([
+                flavor
+                for flavor in suitable_flavors
+                if flavor.name == self.pool_config['default-flavor']
+            ][0])
+
+        return Ok(suitable_flavors[0])
 
     def release_pool_resources(
         self,
@@ -510,6 +616,162 @@ class AzureDriver(PoolDriver):
             ))
         return Ok(r_output.unwrap())
 
+    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
+        # Flavors are described by az cli as
+        # {
+        #     "maxDataDiskCount": int,
+        #     "memoryInMB": int,
+        #     "name": str,
+        #     "numberOfCores": int,
+        #     "osDiskSizeInMB": int,
+        #     "resourceDiskSizeInMB": int
+        # }
+
+        logger = self.logger
+        list_flavors_cmd = ['vm', 'list-sizes', '--location', self.pool_config['default-location']]
+        with AzureSession(logger, self) as session:
+            r_flavors_list = session.run_az(
+                logger,
+                list_flavors_cmd,
+                commandname='az.vm-flavors-list'
+            )
+
+            if r_flavors_list.is_error:
+                return Error(Failure.from_failure(
+                    'failed to fetch flavors information',
+                    r_flavors_list.unwrap_error()))
+
+        flavors = r_flavors_list.unwrap()
+
+        flavor_name_pattern: Optional[Pattern[str]] = None
+        if self.pool_config.get('flavor-regex'):
+            try:
+                flavor_name_pattern = re.compile(self.pool_config['flavor-regex'])
+            except re.error as exc:
+                return Error(Failure.from_exc('failed to compile regex', exc))
+
+        azure_flavors: List[Flavor] = []
+
+        for flavor in cast(List[Dict[str, str]], flavors):
+            try:
+                if flavor_name_pattern is not None and not flavor_name_pattern.match(flavor['name']):
+                    continue
+                max_data_disk_count = int(flavor['maxDataDiskCount'])
+                # diskspace is reported in MB
+                disks = [FlavorDisk(size=UNITS.Quantity(int(flavor['osDiskSizeInMB']), UNITS.megabytes))]
+                if max_data_disk_count > 1:
+                    disks.append(FlavorDisk(is_expansion=True, max_additional_items=max_data_disk_count - 1))
+                azure_flavors.append(
+                    AzureFlavor(
+                        name=flavor['name'],
+                        id=flavor['name'],
+                        cpu=FlavorCpu(
+                            processors=int(flavor['numberOfCores'])
+                        ),
+                        # memory is reported in MB
+                        memory=UNITS.Quantity(int(flavor['memoryInMB']), UNITS.megabytes),
+                        disk=FlavorDisks(disks),
+                        resource_disk_size=UNITS.Quantity(int(flavor['resourceDiskSizeInMB']), UNITS.megabytes),
+                        network=FlavorNetworks([FlavorNetwork(type='eth')]),
+                        virtualization=FlavorVirtualization()
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc(
+                    'malformed flavor description',
+                    exc,
+                    flavor_info=flavors
+                ))
+
+        return Ok(azure_flavors)
+
+    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
+        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:
+            name_pattern: Optional[Pattern[str]] = None
+
+            # AzureSession needs a logger but fetch_pool_image_info doesn't pass one along
+            # This will take the logger from the gluetool.log.LoggerMixin, is there a better way?
+            logger = self.logger
+            list_images_cmd = ['vm', 'image', 'list', '--all']
+
+            if filters:
+                if 'offer' in filters:
+                    list_images_cmd.extend(['--offer', filters['offer']])
+                if 'sku' in filters:
+                    list_images_cmd.extend(['--sku', filters['sku']])
+                if 'publisher' in filters:
+                    list_images_cmd.extend(['--publisher', filters['publisher']])
+                if 'name-regex' in filters:
+                    try:
+                        name_pattern = re.compile(filters['name-regex'])
+                    except re.error as exc:
+                        return Error(Failure.from_exc('failed to compile regex', exc))
+
+            with AzureSession(logger, self) as session:
+                r_images_list = session.run_az(
+                    logger,
+                    list_images_cmd,
+                    commandname='az.vm-image-list'
+                )
+
+                if r_images_list.is_error:
+                    return Error(Failure.from_failure(
+                        'failed to fetch image information',
+                        r_images_list.unwrap_error()
+                    ))
+
+            images: List[PoolImageInfo] = []
+            for image in cast(List[APIImageType], r_images_list.unwrap()):
+                try:
+                    # Apply wild-card filter if specified, unfortunately no way to filter by urn via azure cli
+                    if name_pattern and not name_pattern.match(image['urn']):
+                        continue
+                    images.append(AzurePoolImageInfo(
+                        name=image['urn'],
+                        id=image['urn'],
+                        urn=image['urn'],
+                        offer=image['offer'],
+                        publisher=image['publisher'],
+                        sku=image['sku'],
+                        version=image['version'],
+                        arch=image['architecture'],
+                        boot=FlavorBoot(),
+                        ssh=PoolImageSSHInfo()
+                    ))
+                except KeyError as exc:
+                    return Error(Failure.from_exc(
+                        'malformed image description',
+                        exc,
+                        image_info=r_images_list.unwrap()
+                    ))
+
+            log_dict_yaml(self.logger.debug, 'image filters', filters)
+            log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
+
+            return Ok(images)
+
+        images: List[PoolImageInfo] = []
+        image_filters = cast(List[ConfigImageFilter], self.pool_config.get('image-filters', []))
+
+        if image_filters:
+            for filters in image_filters:
+                r_images = _fetch_images(filters)
+
+                if r_images.is_error:
+                    return r_images
+
+                images += r_images.unwrap()
+
+        else:
+            r_images = _fetch_images()
+
+            if r_images.is_error:
+                return r_images
+
+            images += r_images.unwrap()
+
+        return Ok(images)
+
     def _do_acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -527,12 +789,32 @@ class AzureDriver(PoolDriver):
             return Error(r_images.unwrap_error())
 
         images = r_images.unwrap()
-        image = images[0]
+        pairs: List[Tuple[AzurePoolImageInfo, AzureFlavor]] = []
+
+        for image in images:
+            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
+            if r_instance_type.is_error:
+                return Error(r_instance_type.unwrap_error())
+
+            pairs.append((image, r_instance_type.unwrap()))
+
+        if not pairs:
+            return Error(Failure('no suitable image/flavor combination found'))
+
+        log_dict_yaml(logger.info, 'available image/flavor combinations', [
+            {
+                'flavor': flavor.serialize(),
+                'image': image.serialize()
+            } for image, flavor in pairs
+        ])
+
+        image, instance_type = pairs[0]
 
         self.log_acquisition_attempt(
             logger,
             session,
             guest_request,
+            flavor=instance_type,
             image=image
         )
 
@@ -579,7 +861,7 @@ class AzureDriver(PoolDriver):
             # First let's create a resource group for this vm
             with AzureSession(logger, self) as session:
                 az_options = [
-                    'group', 'create', '--location', self.pool_config['location'],
+                    'group', 'create', '--location', self.pool_config['default-location'],
                     '--name', resource_group
                 ] + tags_options
                 r_create_resource_group = session.run_az(logger, az_options, commandname='az.vm-create')
@@ -595,7 +877,8 @@ class AzureDriver(PoolDriver):
                 '--resource-group', resource_group,
                 '--image', image.id,
                 '--name', tags['ArtemisGuestLabel'],
-                '--custom-data', custom_data_filename
+                '--custom-data', custom_data_filename,
+                '--size', instance_type.name
             ] + tags_options
 
             with AzureSession(logger, self) as session:

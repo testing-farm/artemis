@@ -18,7 +18,7 @@ def test_sanity(
     flavors: List[AWSFlavor],
     image: AWSPoolImageInfo
 ) -> None:
-    suitable_flavors = aws_pool._filter_flavors_image_arch(
+    suitable_flavors = aws_pool.filter_flavors_image_arch(
         logger,
         session,
         guest_request,
@@ -39,7 +39,7 @@ def test_no_arch(
 ) -> None:
     image.arch = None
 
-    suitable_flavors = aws_pool._filter_flavors_image_arch(
+    suitable_flavors = aws_pool.filter_flavors_image_arch(
         logger,
         session,
         guest_request,

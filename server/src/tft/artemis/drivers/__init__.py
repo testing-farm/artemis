@@ -24,8 +24,8 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Literal, Protocol, TypedDict
 
-from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, process_output_to_str, render_template, \
-    safe_call
+from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str, \
+    render_template, safe_call
 from ..cache import get_cached_mapping_item, get_cached_mapping_values, refresh_cached_mapping
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
@@ -37,7 +37,7 @@ from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, Resou
 from ..script import hook_engine
 
 T = TypeVar('T')
-
+FlavorT = TypeVar('FlavorT', bound=Flavor)
 
 GuestTagsType = Dict[str, str]
 
@@ -1308,6 +1308,28 @@ class PoolDriver(gluetool.log.LoggerMixin):
         correctness or anything else.
         """
         return Ok(True)
+
+    def filter_flavors_image_arch(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfo,
+        suitable_flavors: List[FlavorT]
+    ) -> List[FlavorT]:
+        """
+        Make sure the image and flavor architecture match each other.
+        """
+
+        if image.arch is None:
+            return suitable_flavors
+
+        return list(logging_filter(
+            logger,
+            suitable_flavors,
+            'image and flavor arch matches',
+            lambda logger, flavor: flavor.arch == image.arch
+        ))
 
     def dispatch_resource_cleanup(
         self,

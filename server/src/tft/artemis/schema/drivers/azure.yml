@@ -13,8 +13,37 @@ properties:
   cost:
     type: object
 
-  location:
+  image-filters:
+    type: array
+    items:
+      type: object
+      properties:
+        name-regex:
+          type: string
+
+        offer:
+          type: string
+
+        publisher:
+          type: string
+
+        sku:
+          type: string
+
+  # Azure doesn't have flavors, it has sizes. However let's keep it unified as flavor is something natural when it
+  # comes to instance types
+  flavor-regex:
     type: string
+
+  default-flavor:
+    type: string
+
+  default-location:
+    type: string
+
+  use-default-flavor-when-no-suitable:
+    type: boolean
+    default: true
 
   password:
     type: string
@@ -23,9 +52,6 @@ properties:
     type: array
 
   post-install-script:
-    type: string
-
-  resource-group:
     type: string
 
   resources:
@@ -51,7 +77,7 @@ properties:
 additionalProperties: false
 
 required:
-- location
 - password
-- resource-group
 - username
+- default-flavor
+- default-location

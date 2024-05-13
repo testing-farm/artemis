@@ -79,7 +79,8 @@ pools:
       password: "{{ azure.credentials.password or ''}}"
       {% endif %}
       resource-group: "{{ azure.vms.resource_group }}"
-      location: "{{ azure.vms.location }}"
+      default-location: "{{ azure.vms.default_location }}"
+      default-flavor: "{{ azure.vms.default_flavor }}"
       post-install-script: "{{ azure.vms.post_install_script }}"
 
       capabilities:
