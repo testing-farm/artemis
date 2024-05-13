@@ -3208,6 +3208,7 @@ def route_generator(fn: RouteGeneratorType) -> RouteGeneratorOuterType:
 
 
 # NEW: guest log API adds multiple blobs
+# NEW: dropped boot.method enum
 @route_generator
 def generate_routes_v0_0_70(
     create_route: CreateRouteCallbackType,
@@ -4375,6 +4376,7 @@ def generate_routes_v0_0_17(
 #: when necessary.
 API_MILESTONES: List[Tuple[str, RouteGeneratorOuterType, List[str]]] = [
     # NEW: guest log API adds multiple blobs
+    # NEW: dropped boot.method enum
     ('v0.0.70', generate_routes_v0_0_70, [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
