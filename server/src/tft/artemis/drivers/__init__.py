@@ -30,7 +30,7 @@ from ..cache import get_cached_mapping_item, get_cached_mapping_values, refresh_
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
     SnapshotRequest, SSHKey
-from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorDisk, FlavorDisks, \
+from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorBootMethodType, FlavorDisk, FlavorDisks, \
     MeasurableConstraintValueType, SizeType
 from ..knobs import KNOB_POOL_ENABLED, Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
@@ -122,6 +122,11 @@ class ConfigFlavorCompatibleSpecType(TypedDict):
     distro: List[str]
 
 
+#: pools[].parameters.{custom-flavors,patch-flavors}[].boot
+class ConfigFlavorBootSpecType(TypedDict):
+    method: List[FlavorBootMethodType]
+
+
 #: pools[].parameters.patch-flavors[]
 ConfigPatchFlavorSpecType = TypedDict(
     'ConfigPatchFlavorSpecType',
@@ -134,7 +139,8 @@ ConfigPatchFlavorSpecType = TypedDict(
         'disk': List[ConfigFlavorDiskSpecType],
         'gpu': ConfigFlavorGPUSpecType,
         'tpm': ConfigFlavorTPMSpecType,
-        'virtualization': ConfigFlavorVirtualizationSpecType
+        'virtualization': ConfigFlavorVirtualizationSpecType,
+        'boot': ConfigFlavorBootSpecType
     }
 )
 
@@ -150,6 +156,7 @@ class ConfigCustomFlavorSpecType(TypedDict):
     gpu: ConfigFlavorGPUSpecType
     tpm: ConfigFlavorTPMSpecType
     virtualization: ConfigFlavorVirtualizationSpecType
+    boot: ConfigFlavorBootSpecType
 
 
 ConfigFlavorSpecType = Union[ConfigPatchFlavorSpecType, ConfigCustomFlavorSpecType]
@@ -650,6 +657,12 @@ def _apply_flavor_specification(
 
     if 'arch' in flavor_spec:
         flavor.arch = flavor_spec['arch']
+
+    if 'boot' in flavor_spec:
+        boot_patch = flavor_spec['boot']
+
+        if 'method' in boot_patch:
+            flavor.boot = FlavorBoot(method=boot_patch['method'])
 
     if 'compatible' in flavor_spec:
         compatible_patch = flavor_spec['compatible']
