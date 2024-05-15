@@ -183,6 +183,9 @@ properties:
   preserve-for-investigation:
     type: boolean
 
+  ignore-avc-on-compose-pattern:
+    type: string
+
 additionalProperties: false
 
 required: []

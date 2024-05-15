@@ -16,7 +16,7 @@ import gluetool.utils
 import requests
 import requests.exceptions
 import sqlalchemy.orm.session
-from gluetool.log import ContextAdapter, log_xml
+from gluetool.log import ContextAdapter, log_table, log_xml
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import ProcessOutput
 from typing_extensions import TypedDict
@@ -162,6 +162,51 @@ class ConstraintTranslationConfigType(TypedDict):
 class BeakerPool:
     poolname: str
     system_type: Optional[str] = None
+
+
+@dataclasses.dataclass
+class JobTaskResult:
+    taskname: str
+    task_result: str
+    task_status: str
+
+    phasename: Optional[str] = None
+    phase_result: Optional[str] = None
+
+
+def parse_job_task_results(
+    logger: gluetool.log.ContextAdapter,
+    job_results: bs4.BeautifulSoup
+) -> Result[List[JobTaskResult], Failure]:
+    """
+    Parse job results and return tasks and their results.
+
+    :param bs4.BeautifulSoup job_results: Job results in xml format.
+    :rtype: result.Result[Tuple[str, str], Failure]
+    :returns: a list of :py:class:`JobTaskResult` instances, each describing one phase of job's tasks.
+    """
+
+    results: List[JobTaskResult] = []
+
+    for task_element in job_results.find_all('task'):
+        if list(task_element.find_all('result')):
+            for task_result_element in task_element.find_all('result'):
+                results.append(JobTaskResult(
+                    taskname=task_element['name'],
+                    task_result=task_element['result'],
+                    task_status=task_element['status'],
+                    phasename=task_result_element['path'],
+                    phase_result=task_result_element['result']
+                ))
+
+        else:
+            results.append(JobTaskResult(
+                taskname=task_element['name'],
+                task_result=task_element['result'],
+                task_status=task_element['status']
+            ))
+
+    return Ok(results)
 
 
 #: Mapping of operators to their Beaker representation. :py:attr:`Operator.MATCH` is missing on purpose: it is
@@ -999,6 +1044,23 @@ class BeakerDriver(PoolDriver):
 
         return Ok(patterns)
 
+    @property
+    def ignore_avc_on_compose_pattern(self) -> Result[Optional[Pattern[str]], Failure]:
+        pattern = self.pool_config.get('ignore-avc-on-compose-pattern')
+
+        if pattern is None:
+            return Ok(None)
+
+        try:
+            return Ok(re.compile(pattern))
+
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'failed to compile ignore-avc-on-compose pattern',
+                exc,
+                pattern=pattern
+            ))
+
     def _run_bkr(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1547,7 +1609,24 @@ class BeakerDriver(PoolDriver):
 
         job_result, job_status = r_job_status.unwrap()
 
-        logger.info(f'current job status {BeakerPoolData.unserialize(guest_request).job_id}:{job_result}:{job_status}')
+        r_job_task_results = parse_job_task_results(logger, job_results)
+
+        if r_job_task_results.is_error:
+            return Error(r_job_task_results.unwrap_error())
+
+        job_task_results = r_job_task_results.unwrap()
+
+        log_table(
+            logger.info,
+            f'current job status {BeakerPoolData.unserialize(guest_request).job_id}:{job_result}:{job_status}',
+            [
+                ['Task', 'Result', 'Status', 'Phase', 'Phase result']
+            ] + [
+                [item or '' for item in dataclasses.astuple(job_task_result)]
+                for job_task_result in job_task_results
+            ],
+            headers='firstrow',
+            tablefmt='psql')
 
         if job_result == 'pass':
             r_guest_address = self._parse_guest_address(logger, job_results)
@@ -1600,6 +1679,65 @@ class BeakerDriver(PoolDriver):
             or (job_status == 'reserved' and job_result == 'warn')  # job failed, needs a bit more time to update status
 
         if job_is_failed:
+            fail_reason_avc_in_install = \
+                job_result == 'fail' \
+                and len(job_task_results) == 4 \
+                and dataclasses.astuple(job_task_results[0]) == (
+                    '/distribution/check-install',
+                    'Fail',
+                    'Completed',
+                    '/distribution/check-install',
+                    'Pass'
+                ) \
+                and dataclasses.astuple(job_task_results[1]) == (
+                    '/distribution/check-install',
+                    'Fail',
+                    'Completed',
+                    '/10_avc_check',
+                    'Fail'
+                ) \
+                and dataclasses.astuple(job_task_results[2]) == (
+                    '/distribution/check-install',
+                    'Fail',
+                    'Completed',
+                    '/distribution/check-install/Sysinfo',
+                    'Pass'
+                ) \
+                and dataclasses.astuple(job_task_results[3]) == (
+                    '/distribution/reservesys',
+                    'New',
+                    'Running',
+                    None,
+                    None
+                )
+
+            if fail_reason_avc_in_install:
+                r_ignore_avc_on_compose_pattern = self.ignore_avc_on_compose_pattern
+
+                if r_ignore_avc_on_compose_pattern.is_error:
+                    return Error(r_ignore_avc_on_compose_pattern.unwrap_error())
+
+                ignore_avc_on_compose_pattern = r_ignore_avc_on_compose_pattern.unwrap()
+
+                if ignore_avc_on_compose_pattern \
+                        and ignore_avc_on_compose_pattern.match(guest_request.environment.os.compose):
+                    r_guest_address = self._parse_guest_address(logger, job_results)
+
+                    if r_guest_address.is_error:
+                        return Error(r_guest_address.unwrap_error())
+
+                    return Ok(ProvisioningProgress(
+                        state=ProvisioningState.COMPLETE,
+                        pool_data=BeakerPoolData.unserialize(guest_request),
+                        pool_failures=[Failure(
+                            'AVC denials during installation',
+                            job_result=job_result,
+                            job_status=job_status,
+                            job_results=job_results.prettify()
+                        )],
+                        address=r_guest_address.unwrap()
+                    ))
+
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
                 pool_data=BeakerPoolData.unserialize(guest_request),
