@@ -79,6 +79,7 @@ pytest-icdiff = "*"
 pytest-mock = "*"
 redislite = "*"
 sqlalchemy-stubs = "*"
+types-Pillow = "*"
 types-mock = "*"
 types-setuptools = "*"
 
