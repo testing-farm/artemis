@@ -52,7 +52,7 @@ jsonschema = "*"
 sentry-sdk = "*"
 setuptools = "*"
 python-glanceclient = "*"
-nova = "*"
+python-novaclient = "*"
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient" ]
