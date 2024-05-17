@@ -4,6 +4,7 @@
 import dataclasses
 import datetime
 import json
+import re
 import sys
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, cast
 
@@ -36,6 +37,9 @@ _console_width: Optional[int] = None if sys.stdout.isatty() else 10000
 
 DEFAULT_CONSOLE = rich.console.Console(width=_console_width)
 DEFAULT_LOGGING_CONSOLE = rich.console.Console(stderr=True, width=_console_width)
+
+ANSI_COLOR_SEQUENCE_REGEX = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+DEFAULT_LOG_LINES_SPLIT = 10
 
 
 class ValidationResult(NamedTuple):
@@ -712,16 +716,29 @@ def print_guest_logs(
         for header in ['Content Type', 'State', 'URL', 'Blob', 'Ctime', 'Updated', 'Expires']:
             table.add_column(header)
 
+        def sanitize(text: str) -> str:
+            """Remove ansi colors and do some escaping"""
+            return rich.markup.escape(ANSI_COLOR_SEQUENCE_REGEX.sub('', text))
+
+        def format_log(log: str) -> str:
+            # If logs are shorter than twice the DEFAULT_LOG_LINES_SPLIT -> just output as is
+            log_lines = log.splitlines()
+            if len(log_lines) <= 2 * DEFAULT_LOG_LINES_SPLIT:
+                return sanitize('\n'.join(log_lines))
+
+            # If logs is longer than twice the DEFAULT_LOG_LINES_SPLIT -> split it accordingly into head and tail
+            head = sanitize('\n'.join(log_lines[0:DEFAULT_LOG_LINES_SPLIT]))
+            tail = sanitize('\n'.join(log_lines[-DEFAULT_LOG_LINES_SPLIT:]))
+
+            return f'{head}\n--- --- ---\n{tail}'
+
         for log in logs:
             if 'blob' in log:
-                head = rich.markup.escape('\n'.join(log['blob'].splitlines()[0:10]))
-                tail = rich.markup.escape('\n'.join(log['blob'].splitlines()[-10:]))
-
                 table.add_row(
                     log['contenttype'],
                     log['state'],
                     log['url'],
-                    f'{head}\n--- --- ---\n{tail}',
+                    format_log(log['blob']),
                     '',
                     log['updated'],
                     log['expires']
@@ -739,14 +756,11 @@ def print_guest_logs(
                 )
 
                 for blob in log['blobs']:
-                    head = rich.markup.escape('\n'.join(blob['content'].splitlines()[0:10]))
-                    tail = rich.markup.escape('\n'.join(blob['content'].splitlines()[-10:]))
-
                     table.add_row(
                         '',
                         '',
                         '',
-                        f'{head}\n--- --- ---\n{tail}',
+                        format_log(blob['content']),
                         blob['ctime'],
                         '',
                         ''
