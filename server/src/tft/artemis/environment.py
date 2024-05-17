@@ -1861,6 +1861,36 @@ def _parse_networks(spec: SpecType) -> ConstraintBase:
     return group
 
 
+def _parse_system(spec: SpecType) -> ConstraintBase:
+    """
+    Parse constraints related to the ``system`` HW requirement.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`BaseConstraint` or one of its subclasses.
+    """
+
+    group = And()
+
+    group.constraints += [
+        Constraint.from_specification(
+            f'system.{constraint_name.replace("-", "_")}',
+            str(spec[constraint_name]))
+        for constraint_name in ('vendor', 'model', 'numa-nodes')
+        if constraint_name in spec
+    ]
+
+    group.constraints += [
+        Constraint.from_specification(
+            f'system.{constraint_name.replace("-", "_")}',
+            str(spec[constraint_name]),
+            as_quantity=False)
+        for constraint_name in ('model-name', 'vendor-name')
+        if constraint_name in spec
+    ]
+
+    return group
+
+
 def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
     """
     Parse actual constraints.
@@ -1897,6 +1927,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
     if 'hostname' in spec:
         group.constraints += [Constraint.from_specification('hostname', spec['hostname'], as_quantity=False)]
+
+    if 'system' in spec:
+        group.constraints += [_parse_system(spec['system'])]
 
     if 'tpm' in spec:
         group.constraints += [_parse_tpm(spec['tpm'])]
