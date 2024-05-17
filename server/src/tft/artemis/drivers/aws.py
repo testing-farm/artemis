@@ -25,8 +25,8 @@ from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_
 from ..cache import get_cached_mapping_item, get_cached_mapping_values
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Constraint, ConstraintBase, Flavor, FlavorBoot, FlavorBootMethodType, FlavorCpu, \
-    FlavorNetwork, FlavorNetworks, FlavorVirtualization, Operator, SizeType
+from ..environment import UNITS, Constraint, Flavor, FlavorBoot, FlavorBootMethodType, FlavorCpu, FlavorNetwork, \
+    FlavorNetworks, FlavorVirtualization, Operator, SizeType
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
@@ -693,7 +693,7 @@ def _honor_constraint_disk(
 ) -> Result[bool, Failure]:
     logger.debug(f'honor-constraint-disk: {constraint}')
 
-    property_name, index, child_property_name = constraint.expand_name()
+    property_name, index, child_property_name, _ = constraint.expand_name()
 
     if child_property_name == 'size':
         log_dict_yaml(logger.debug, '  mappings before', mappings.serialize())
@@ -750,7 +750,7 @@ def _get_constraint_spans(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor
-) -> Result[List[List[ConstraintBase]], Failure]:
+) -> Result[List[List[Constraint]], Failure]:
     if not guest_request.environment.has_hw_constraints:
         return Ok([])
 
@@ -790,7 +790,7 @@ def _get_constraint_span(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor
-) -> Result[List[ConstraintBase], Failure]:
+) -> Result[List[Constraint], Failure]:
     r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
 
     if r_spans.is_error:
@@ -836,12 +836,10 @@ def setup_extra_volumes(
     if not span:
         return Ok(mappings)
 
-    for _constraint in span:
-        constraint = cast(Constraint, _constraint)
-
+    for constraint in span:
         logger.debug(f'  {constraint}')
 
-        property_name, _, _ = (constraint.original_constraint or constraint).expand_name()
+        property_name, _, _, _ = (constraint.original_constraint or constraint).expand_name()
 
         if property_name != 'disk':
             logger.debug('    ignored')
@@ -1140,7 +1138,7 @@ def _honor_constraint_network(
     image: AWSPoolImageInfo,
     flavor: Flavor,
 ) -> Result[bool, Failure]:
-    _, index, child_property_name = constraint.expand_name()
+    _, index, child_property_name, _ = constraint.expand_name()
 
     if child_property_name == 'type':
         assert index is not None
@@ -1180,14 +1178,14 @@ def setup_extra_network_interfaces(
         return Ok(nics)
 
     # TODO: this could be a nice algorithm, picking the best span instead of the first one.
-    span = cast(List[Constraint], spans[0])
+    span = spans[0]
 
     log_dict_yaml(logger.debug, 'selected span', [str(constraint) for constraint in span])
 
     for constraint in span:
         logger.debug(f'  {constraint}')
 
-        property_name, _, _ = (constraint.original_constraint or constraint).expand_name()
+        property_name, _, _, _ = (constraint.original_constraint or constraint).expand_name()
 
         if property_name != 'network':
             logger.debug('    ignored')
@@ -1618,10 +1616,8 @@ class AWSDriver(PoolDriver):
             if not span:
                 return False
 
-            for _constraint in span:
-                constraint = cast(Constraint, _constraint)
-
-                property_name, _, child_property = constraint.expand_name()
+            for constraint in span:
+                property_name, _, child_property, _ = constraint.expand_name()
 
                 if property_name == 'boot' and child_property == 'method':
                     if constraint.operator == Operator.CONTAINS:

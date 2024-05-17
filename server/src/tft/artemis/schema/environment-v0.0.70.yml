@@ -111,6 +111,36 @@ definitions:
     items:
       "$ref": "#/definitions/hw_disk"
 
+  # HW requirements: `gpu` block
+  hw_gpu:
+    type: object
+
+    properties:
+      device-name:
+        type: string
+
+      device:
+        anyOf:
+          - type: string
+          - type: integer
+
+      vendor-name:
+        type: string
+
+      vendor:
+        anyOf:
+          - type: string
+          - type: integer
+
+      driver:
+        type: string
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `gpu`.
+    minProperties: 1
+
   hw_hostname:
     type: string
 
@@ -232,6 +262,9 @@ definitions:
 
       disk:
         "$ref": "#/definitions/hw_disks"
+
+      gpu:
+        "$ref": "#/definitions/hw_gpu"
 
       hostname:
         "$ref": "#/definitions/hw_hostname"
