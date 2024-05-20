@@ -1257,18 +1257,38 @@ def safe_call_and_handle(
 JSONSchemaType = Dict[str, Any]
 
 
+def construct_validation_schema(data: Any) -> Result[JSONSchemaType, Failure]:
+    """
+    Construct a JSON schema for future use in data validation.
+
+    :param data: raw YAML/JSON data representing the schema.
+    """
+
+    r_schema = safe_call(
+        gluetool.utils.from_yaml,
+        data,
+        loader_type='safe'
+    )
+
+    if r_schema.is_error:
+        return Error(Failure.from_failure(
+            'failed to construct schema',
+            r_schema.unwrap_error()
+        ))
+
+    return Ok(cast(JSONSchemaType, r_schema.unwrap()))
+
+
 def load_validation_schema(schema_path: str) -> Result[JSONSchemaType, Failure]:
     """
     Load a JSON schema for future use in data validation.
 
-    :param schema_path: path to a schema file relative to ``schema`` directory in ``tft.artemis`` package.
+    :param schema_path: path to a schema file.
     """
-
-    root_schema_dirpath = pkg_resources.resource_filename('tft.artemis', 'schema')
 
     r_schema = safe_call(
         gluetool.utils.load_yaml,
-        os.path.join(root_schema_dirpath, schema_path),
+        schema_path,
         loader_type='safe'
     )
 
@@ -1280,6 +1300,18 @@ def load_validation_schema(schema_path: str) -> Result[JSONSchemaType, Failure]:
         ))
 
     return Ok(cast(JSONSchemaType, r_schema.unwrap()))
+
+
+def load_packaged_validation_schema(schema_subpath: str) -> Result[JSONSchemaType, Failure]:
+    """
+    Load a JSON schema for future use in data validation.
+
+    :param schema_subpath: path to a schema file relative to ``schema`` directory in ``tft.artemis`` package.
+    """
+
+    root_schema_dirpath = pkg_resources.resource_filename('tft.artemis', 'schema')
+
+    return load_validation_schema(os.path.join(root_schema_dirpath, schema_subpath))
 
 
 def validate_data(data: Any, schema: JSONSchemaType) -> Result[List[str], Failure]:

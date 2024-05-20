@@ -19,7 +19,7 @@ from tft.artemis.environment import UNITS, Constraint, ConstraintBase, Environme
 
 @pytest.fixture(name='schema_v0_0_19')
 def fixture_schema_v0_0_19() -> tft.artemis.JSONSchemaType:
-    r_schema = tft.artemis.load_validation_schema('environment-v0.0.19.yml')
+    r_schema = tft.artemis.load_packaged_validation_schema('environment-v0.0.19.yml')
 
     assert r_schema.is_ok
 
@@ -28,7 +28,7 @@ def fixture_schema_v0_0_19() -> tft.artemis.JSONSchemaType:
 
 @pytest.fixture(name='kickstart_schema')
 def fixture_kickstart_schema() -> tft.artemis.JSONSchemaType:
-    r_schema = tft.artemis.load_validation_schema('environment-v0.0.53.yml')
+    r_schema = tft.artemis.load_packaged_validation_schema('environment-v0.0.53.yml')
 
     assert r_schema.is_ok
 
