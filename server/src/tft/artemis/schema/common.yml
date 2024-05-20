@@ -105,6 +105,28 @@ definitions:
     items:
       "$ref": "#/definitions/patch_flavor_disk"
 
+  patch_flavor_gpu:
+    type: object
+
+    properties:
+      device-name:
+        type: string
+
+      device:
+        type: integer
+
+      vendor-name:
+        type: string
+
+      vendor:
+        type: integer
+
+      driver:
+        type: string
+
+    required: []
+    additionalProperties: false
+
   patch_flavor_virtualization:
     type: object
 
@@ -152,6 +174,9 @@ definitions:
 
       disk:
         "$ref": "#/definitions/patch_flavor_disks"
+
+      gpu:
+        "$ref": "#/definitions/patch_flavor_gpu"
 
       virtualization:
         "$ref": "#/definitions/patch_flavor_virtualization"

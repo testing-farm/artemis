@@ -1851,9 +1851,34 @@ class BeakerDriver(PoolDriver):
         # since `has_hw_constraints` was positive, there should be constraints...
         assert constraints is not None
 
-        r_uses_network = constraints.uses_constraint(logger, 'network')
-        if r_uses_network.is_error:
-            return Error(r_uses_network.unwrap_error())
+        # TODO: copy helpers from tmt for this kind of filtering
+        supported_constraints: List[str] = [
+            'boot.method',
+            'compatible.distro',
+            'cpu.processors',
+            'cpu.cores',
+            'cpu.family',
+            'cpu.model',
+            'cpu.model_name',
+            'cpu.flag',
+            'disk[].size',
+            'disk[].model_name',
+            'arch',
+            'memory',
+            'hostname',
+            'tpm',
+            'virtualization.is_supported',
+            'virtualization.is_virtualized',
+            'virtualization.hypervisor',
+            'network[].type',
+            'zcrypt.adapter',
+            'zcrypt.mode'
+        ]
+
+        for span in constraints.spans(logger):
+            for constraint in span:
+                if constraint.expand_name().spec_name not in supported_constraints:
+                    return Ok((False, f'HW requirement {constraint.expand_name().spec_name} is not supported'))
 
         r_filter = constraint_to_beaker_filter(constraints, guest_request, self)
 

@@ -1703,15 +1703,15 @@ def test_reducer_short_circuit_ok(
 @pytest.mark.parametrize(('constraint_name', 'expected'), [
     (
         'arch',
-        ('arch', None, None)
+        ('arch', None, None, 'arch')
     ),
     (
         'boot.method',
-        ('boot', None, 'method')
+        ('boot', None, 'method', 'boot.method')
     ),
     (
         'disk[79].size',
-        ('disk', 79, 'size')
+        ('disk', 79, 'size', 'disk[].size')
     )
 ], ids=[
     'arch',
