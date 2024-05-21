@@ -3,21 +3,143 @@
 
 import os.path
 import sys
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import click
 import gluetool.log
+import requests
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, get_config, get_db, get_logger, load_validation_schema, validate_data
+from .. import Failure, JSONSchemaType, construct_validation_schema, get_config, get_db, get_logger, \
+    load_packaged_validation_schema, load_validation_schema, validate_data
 from ..db import DB, GuestShelf, GuestTag, Pool, PriorityGroup, SSHKey, User, UserRoles, upsert
-from ..drivers import GuestTagsType
+from ..drivers import GuestTagsType, PoolDriver
 from ..guest import GuestState
+from ..knobs import KNOB_DISABLE_CERT_VERIFICATION
+
+
+def _load_bundled_schema(logger: gluetool.log.ContextAdapter) -> Tuple[JSONSchemaType, Dict[str, JSONSchemaType]]:
+    logger.info('validating server config against bundled schema')
+
+    r_schema = load_packaged_validation_schema('common.yml')
+
+    if r_schema.is_error:
+        r_schema.unwrap_error().handle(logger)
+
+        sys.exit(1)
+
+    schema = r_schema.unwrap()
+
+    driver_schemas: Dict[str, JSONSchemaType] = {}
+
+    for driver_name in PoolDriver._drivers_registry.keys():
+        r_schema = load_packaged_validation_schema(os.path.join('drivers', f'{driver_name}.yml'))
+
+        if r_schema.is_error:
+            r_schema.unwrap_error().handle(logger)
+
+            sys.exit(1)
+
+        driver_schemas[driver_name] = r_schema.unwrap()
+
+    return schema, driver_schemas
+
+
+def _load_local_schema(
+    logger: gluetool.log.ContextAdapter,
+    basedir: str
+) -> Tuple[JSONSchemaType, Dict[str, JSONSchemaType]]:
+    logger.info(f'validating server config against schema from {basedir}')
+
+    def _fetch_schema(path: str) -> Result[JSONSchemaType, Failure]:
+        path = f'{basedir}/{path}'
+
+        logger.debug(f'loading schema {path}')
+
+        return load_validation_schema(path)
+
+    r_schema = _fetch_schema('common.yml')
+
+    if r_schema.is_error:
+        r_schema.unwrap_error().handle(logger)
+
+        sys.exit(1)
+
+    schema = r_schema.unwrap()
+
+    driver_schemas: Dict[str, JSONSchemaType] = {}
+
+    for driver_name in PoolDriver._drivers_registry.keys():
+        r_schema = _fetch_schema(os.path.join('drivers', f'{driver_name}.yml'))
+
+        if r_schema.is_error:
+            r_schema.unwrap_error().handle(logger)
+
+            sys.exit(1)
+
+        driver_schemas[driver_name] = r_schema.unwrap()
+
+    return schema, driver_schemas
+
+
+def _load_remote_schema(
+    logger: gluetool.log.ContextAdapter,
+    baseurl: str
+) -> Tuple[JSONSchemaType, Dict[str, JSONSchemaType]]:
+    logger.info(f'validating server config against schema from {baseurl}')
+
+    def _fetch_schema(path: str) -> Result[JSONSchemaType, Failure]:
+        url = f'{baseurl}/{path}'
+
+        logger.debug(f'fetching schema {url}')
+
+        try:
+            response = requests.get(
+                url,
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
+            )
+
+            response.raise_for_status()
+
+        except requests.exceptions.RequestException as exc:
+            return Error(Failure.from_exc(
+                'failed to fetch schema',
+                exc,
+                baseurl=baseurl,
+                schema=path
+            ))
+
+        return construct_validation_schema(response.text)
+
+    r_schema = _fetch_schema('common.yml')
+
+    if r_schema.is_error:
+        r_schema.unwrap_error().handle(logger)
+
+        sys.exit(1)
+
+    schema = r_schema.unwrap()
+
+    driver_schemas: Dict[str, JSONSchemaType] = {}
+
+    for driver_name in PoolDriver._drivers_registry.keys():
+        r_schema = _fetch_schema(os.path.join('drivers', f'{driver_name}.yml'))
+
+        if r_schema.is_error:
+            r_schema.unwrap_error().handle(logger)
+
+            sys.exit(1)
+
+        driver_schemas[driver_name] = r_schema.unwrap()
+
+    return schema, driver_schemas
 
 
 def validate_config(
     logger: gluetool.log.ContextAdapter,
-    server_config: Dict[str, Any]
+    server_config: Dict[str, Any],
+    schema: JSONSchemaType,
+    driver_schemas: Dict[str, JSONSchemaType]
 ) -> Result[List[str], Failure]:
     """
     Validate a server configuration data using a JSON schema.
@@ -29,13 +151,7 @@ def validate_config(
     # In this list we will accumulate all validation errors reported by `validate_data`.
     validation_errors: List[str] = []
 
-    # First the overall server and common configuration
-    r_schema = load_validation_schema('common.yml')
-
-    if r_schema.is_error:
-        return Error(r_schema.unwrap_error())
-
-    r_validation = validate_data(server_config, r_schema.unwrap())
+    r_validation = validate_data(server_config, schema)
 
     if r_validation.is_error:
         return Error(r_validation.unwrap_error())
@@ -51,14 +167,16 @@ def validate_config(
             'pool_driver': pool.get('driver')
         }
 
-        r_schema = load_validation_schema(os.path.join('drivers', pool.get('driver', '') + '.yml'))
+        if pool.get('driver') not in driver_schemas:
+            return Error(Failure(
+                'driver schema not defined',
+                driver_schemas=driver_schemas,
+                **failure_details
+            ))
 
-        if r_schema.is_error:
-            r_schema.unwrap_error().details.update(failure_details)
+        schema = driver_schemas[pool.get('driver')]
 
-            return Error(r_schema.unwrap_error())
-
-        r_validation = validate_data(pool.get('parameters'), r_schema.unwrap())
+        r_validation = validate_data(pool.get('parameters'), schema)
 
         if r_validation.is_error:
             r_validation.unwrap_error().details.update(failure_details)
@@ -88,7 +206,9 @@ def config_to_db(
     # that are missing. Artemis' default example of configuration tries to add as little as possible,
     # which means we probably don't return any tag user might have removed.
 
-    r_validation = validate_config(logger, server_config)
+    schema, driver_schemas = _load_bundled_schema(logger)
+
+    r_validation = validate_config(logger, server_config, schema, driver_schemas)
 
     if r_validation.is_error:
         r_validation.unwrap_error().handle(logger)
@@ -333,12 +453,27 @@ def cmd_config_to_db(ctx: Any) -> None:
     name='validate-config',
     help='Validate the given configuration, without changing the DB. Obeys all environment variables.'
 )
+@click.option(
+    '--schema', 'custom_schema',
+    metavar='DIRPATH|URL',
+    default=None,
+    help='If specified, the given schema would be used instead of the packaged one.'
+)
 @click.pass_context
-def cmd_validate_config(ctx: Any) -> None:
+def cmd_validate_config(ctx: Any, custom_schema: Optional[str] = None) -> None:
     logger = get_logger()
     server_config = get_config()
 
-    r_validation = validate_config(logger, server_config)
+    if custom_schema is None:
+        schema, driver_schemas = _load_bundled_schema(logger)
+
+    elif custom_schema.startswith('https://'):
+        schema, driver_schemas = _load_remote_schema(logger, custom_schema)
+
+    else:
+        schema, driver_schemas = _load_local_schema(logger, custom_schema)
+
+    r_validation = validate_config(logger, server_config, schema, driver_schemas)
 
     if r_validation.is_error:
         r_validation.unwrap_error().handle(logger)

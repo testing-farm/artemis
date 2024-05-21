@@ -40,7 +40,7 @@ from typing_extensions import Protocol
 
 from .. import __VERSION__, Failure, FailureDetailsType, JSONSchemaType
 from .. import db as artemis_db
-from .. import get_cache, get_db, get_logger, load_validation_schema, log_dict_yaml, metrics, validate_data
+from .. import get_cache, get_db, get_logger, load_packaged_validation_schema, log_dict_yaml, metrics, validate_data
 from ..cache import get_cache_value, iter_cache_keys
 from ..context import DATABASE, LOGGER, SESSION
 from ..drivers import PoolDriver
@@ -4480,7 +4480,7 @@ def collect_routes(
 
     for milestone_version, routes_generator, compatible_versions in API_MILESTONES:
         # Preload environment schema.
-        r_schema = load_validation_schema(f'environment-{milestone_version}.yml')
+        r_schema = load_packaged_validation_schema(f'environment-{milestone_version}.yml')
 
         if r_schema.is_error:
             return Error(r_schema.unwrap_error())
