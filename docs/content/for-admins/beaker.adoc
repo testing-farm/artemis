@@ -233,3 +233,27 @@ ignore-avc-on-compose-pattern: <pattern>
 # For now, let users test their components.
 ignore-avc-on-compose-pattern: "(?i)fedora-55"
 ....
+
+
+=== Installation method
+
+With the help of `installation-method-map` key, it is possible to specify a custom installation method in the case of need. The key holds a mapping between regular expressions, matching compose/distro, and corresponding methods. If the compose/distro of a request matches one of the patterns, its method is added to Beaker job XML.
+
+Patterns are matched against a combination of multiple guest request properties: request compose and architecture, and corresponding Beaker distro and optionally its variant, if set. All four components are separated with a colon, `:`. For example, a guest request for Fedora 55 on x86_64, mapped to `Fedora-55-20240522.0` distro, would yield the following string for patterns to match: `Fedora-55:x86_64:Fedora-55-20240522.0:Server`.
+
+.Specification
+[source,yaml]
+....
+installation-method-map:
+  <pattern>: <string>
+  <pattern>: <string>
+  ...
+....
+
+.Example
+[source,yaml]
+....
+# There is a bug in Fedora 55 installation that requires HTTP method to be used.
+installation-method-map:
+  "(?i)^fedora-55.*": "http"
+....
