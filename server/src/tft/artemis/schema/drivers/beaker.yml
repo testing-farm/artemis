@@ -186,6 +186,9 @@ properties:
   ignore-avc-on-compose-pattern:
     type: string
 
+  installation-method-map:
+    type: object
+
 additionalProperties: false
 
 required: []

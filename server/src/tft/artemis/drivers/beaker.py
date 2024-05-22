@@ -959,7 +959,7 @@ def create_beaker_filter(
 
 @dataclasses.dataclass(repr=False)
 class BeakerPoolImageInfo(PoolImageInfo):
-    variant: str = 'Server'
+    variant: Optional[str] = 'Server'
 
 
 class BeakerDriver(PoolDriver):
@@ -1060,6 +1060,27 @@ class BeakerDriver(PoolDriver):
                 exc,
                 pattern=pattern
             ))
+
+    @property
+    def installation_method_map(self) -> Result[List[Tuple[Pattern[str], str]], Failure]:
+        patterns_in: Dict[str, str] = self.pool_config.get('installation-method-map', {})
+        patterns_out: List[Tuple[Pattern[str], str]] = []
+
+        for pattern, method in patterns_in.items():
+            try:
+                patterns_out.append((
+                    re.compile(pattern),
+                    method
+                ))
+
+            except Exception:
+                return Error(Failure(
+                    'failed to compile installation method pattern',
+                    pattern=pattern,
+                    method=method
+                ))
+
+        return Ok(patterns_out)
 
     def _run_bkr(
         self,
@@ -1264,6 +1285,13 @@ class BeakerDriver(PoolDriver):
 
         tags = r_tags.unwrap()
 
+        r_installation_method_map = self.installation_method_map
+
+        if r_installation_method_map.is_error:
+            return Error(r_installation_method_map.unwrap_error())
+
+        installation_method_map = r_installation_method_map.unwrap()
+
         command = [
             'workflow-simple',
             '--dry-run',
@@ -1285,6 +1313,20 @@ class BeakerDriver(PoolDriver):
 
         if guest_request.environment.has_ks_specification:
             command += self._create_bkr_kickstart_options(guest_request.environment.kickstart)
+
+        space = ':'.join([
+            guest_request.environment.os.compose,
+            guest_request.environment.hw.arch,
+            distro.id,
+            distro.variant or ''
+        ])
+
+        for pattern, method in installation_method_map:
+            if not pattern.match(space):
+                continue
+
+            command += ['--method', method]
+            break
 
         return Ok(command)
 
