@@ -20,6 +20,7 @@ workflow:
 .apiary:
   image: "ruby:2.7"
   before_script:
+    - gem install ffi -v 1.16.0
     - gem install apiaryio
 
 tests:
