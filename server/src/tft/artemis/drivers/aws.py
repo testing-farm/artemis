@@ -715,28 +715,58 @@ def _honor_constraint_disk(
         current_size = mappings.mapping_size(mapping)
         desired_size = cast(SizeType, constraint.value)
 
-        if constraint.operator in (Operator.EQ, Operator.GTE) \
-                and (current_size is None or current_size.to('GiB').magnitude < desired_size.to('GiB').magnitude):
-            r_update = mappings.update_mapping(
-                mapping,
-                size=desired_size
-            )
+        if constraint.operator in (Operator.EQ, Operator.GTE):
+            # Current size is unset, we must set the size.
+            if current_size is None:
+                r_update = mappings.update_mapping(
+                    mapping,
+                    size=desired_size
+                )
 
-            if r_update.is_error:
-                return Error(r_update.unwrap_error())
+                if r_update.is_error:
+                    return Error(r_update.unwrap_error())
 
-        elif constraint.operator == Operator.GT \
-                and (current_size is None or current_size.to('GiB').magnitude <= desired_size.to('GiB').magnitude):
-            r_update = mappings.update_mapping(
-                mapping,
-                size=desired_size + UNITS.Quantity(1, 'gibibyte')
-            )
+            # Current size is smaller than the desired one, we need to set the size.
+            elif current_size.to('GiB').magnitude < desired_size.to('GiB').magnitude:
+                r_update = mappings.update_mapping(
+                    mapping,
+                    size=desired_size
+                )
 
-            if r_update.is_error:
-                return Error(r_update.unwrap_error())
+                if r_update.is_error:
+                    return Error(r_update.unwrap_error())
+
+            # Current size is set, and it's equal or bigger than desired size, no need to do anything.
+            else:
+                pass
+
+        elif constraint.operator == Operator.GT:
+            # Current size is unset, we must set the size.
+            if current_size is None:
+                r_update = mappings.update_mapping(
+                    mapping,
+                    size=desired_size + UNITS.Quantity(1, 'gibibyte')
+                )
+
+                if r_update.is_error:
+                    return Error(r_update.unwrap_error())
+
+            # Current size is smaller or equal to the desired one, we need to set the size.
+            elif current_size.to('GiB').magnitude <= desired_size.to('GiB').magnitude:
+                r_update = mappings.update_mapping(
+                    mapping,
+                    size=desired_size + UNITS.Quantity(1, 'gibibyte')
+                )
+
+                if r_update.is_error:
+                    return Error(r_update.unwrap_error())
+
+            # Current size is set, and it's bigger than desired size, no need to do anything.
+            else:
+                pass
 
         else:
-            return Error(Failure('cannot honor constraint', constraint=str(constraint)))
+            return Error(Failure('cannot honor disk.size constraint', constraint=repr(constraint)))
 
         log_dict_yaml(logger.debug, '  mappings after', mappings.serialize())
 
@@ -861,7 +891,7 @@ def setup_extra_volumes(
             continue
 
         return Error(Failure(
-            'cannot honor constraint',
+            'cannot honor disk constraint',
             constraint=repr(constraint)
         ))
 
@@ -1208,7 +1238,7 @@ def setup_extra_network_interfaces(
             continue
 
         return Error(Failure(
-            'cannot honor constraint',
+            'cannot honor network constraint',
             constraint=repr(constraint)
         ))
 
