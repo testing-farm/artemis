@@ -27,8 +27,8 @@ from . import assert_task_core_call
 
 
 @pytest.fixture(name='guest_template')
-def fixture() -> tft.artemis.api.GuestRequest:
-    return tft.artemis.api.GuestRequest(
+def fixture() -> tft.artemis.api.models.GuestRequest:
+    return tft.artemis.api.models.GuestRequest(
         keyname='dummy-key',
         environment=tft.artemis.environment.Environment(
             hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
@@ -47,7 +47,7 @@ def fixture() -> tft.artemis.api.GuestRequest:
 
 @pytest.fixture(name='workspace')
 def fixture_workspace(
-    guest_template: tft.artemis.api.GuestRequest,
+    guest_template: tft.artemis.api.models.GuestRequest,
     logger: gluetool.log.ContextAdapter,
     db: tft.artemis.db.DB,
     session: sqlalchemy.orm.session.Session
@@ -129,7 +129,7 @@ def test_parse_log_types(
 
 def test_create_guests(
     workspace: Workspace,
-    guest_template: tft.artemis.api.GuestRequest,
+    guest_template: tft.artemis.api.models.GuestRequest,
     mockpatch: MockPatcher
 ) -> None:
     workspace.shelfname = 'dummy-shelf'
@@ -158,8 +158,8 @@ def test_create_guests(
         ownername='dummy-user',
         shelfname='dummy-shelf',
         ssh_keyname='dummy-key',
-        ssh_port=tft.artemis.api.DEFAULT_SSH_PORT,
-        ssh_username=tft.artemis.api.DEFAULT_SSH_USERNAME,
+        ssh_port=tft.artemis.api.environment.DEFAULT_SSH_PORT,
+        ssh_username=tft.artemis.api.environment.DEFAULT_SSH_USERNAME,
         priorityname=guest_template.priority_group,
         user_data=guest_template.user_data,
         skip_prepare_verify_ssh=guest_template.skip_prepare_verify_ssh,
@@ -201,7 +201,7 @@ def test_exit(
 
 
 def test_doer(
-    guest_template: tft.artemis.api.GuestRequest,
+    guest_template: tft.artemis.api.models.GuestRequest,
     mockpatch: MockPatcher,
     logger: gluetool.log.ContextAdapter,
     db: tft.artemis.db.DB,
@@ -233,7 +233,7 @@ def test_doer(
 
 @pytest.mark.usefixtures('current_message')
 def test_task(
-    guest_template: tft.artemis.api.GuestRequest,
+    guest_template: tft.artemis.api.models.GuestRequest,
     mockpatch: MockPatcher
 ) -> None:
     mock_task_core = mockpatch(tft.artemis.tasks.preprovision, 'task_core')

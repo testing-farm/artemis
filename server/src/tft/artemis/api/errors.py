@@ -4,9 +4,7 @@
 from typing import Any, Dict, Optional, Union
 
 import gluetool.log
-import molten.http.query_params
-from molten import HTTP_400, HTTP_401, HTTP_403, HTTP_404, HTTP_405, HTTP_409, HTTP_500, Request
-from molten.errors import HTTPError
+from fastapi import HTTPException, Request, status
 
 from .. import Failure, FailureDetailsType, get_logger
 
@@ -22,20 +20,20 @@ def get_failure_details_from_request(request: Optional[Request]) -> Dict[str, An
 
     # Request params are dict-like, but not a dict alone which makes it harder for our YAML-ish logging
     # to represent them as strings. To overcome this difficulty, help our logging until it gets smarter.
-    if request.params is None:
+    if request.query_params is None:
         serialized_params: Optional[Union[str, Dict[str, str]]] = None
 
-    elif isinstance(request.params, (dict, molten.http.query_params.QueryParams)):
-        serialized_params = dict(request.params)
+    elif isinstance(request.query_params, dict):
+        serialized_params = dict(request.query_params)
 
     else:
-        serialized_params = str(request.params)
+        serialized_params = str(request.query_params)
 
     return {
         'api_request_method': request.method,
-        'api_request_path': request.path,
+        'api_request_path': request.url,
         'api_request_params': serialized_params,
-        'api_request_host': request.host
+        'api_request_host': request.client.host if request.client else ''
     }
 
 
@@ -44,11 +42,11 @@ def get_failure_details_from_request(request: Optional[Request]) -> Dict[str, An
 # to `raise BadRequestError(caused_by='this should have been a failure instance')`, and mypy wouldn't spot
 # the error. As soon as mypy gives me tools smart enough to protect me from the errors like this, I'll be
 # happy to use them.
-class ArtemisHTTPError(HTTPError):
+class ArtemisHTTPError(HTTPException):
     def __init__(
         self,
         *,
-        status: str,
+        status: int,
         message: Optional[str] = None,
         response: Optional[Any] = None,
         headers: Optional[Any] = None,
@@ -62,7 +60,7 @@ class ArtemisHTTPError(HTTPError):
         Base class for our custom HTTP errors. Provides one interface to reporting issues via HTTP responses
         and takes care of proper reporting if needed.
 
-        :param status: HTTP status code as provided by :py:mod:`molten`.
+        :param status: HTTP status code as provided by :py:mod:`fastapi`.
         :param message: a message to include in the response body. It is ignored if ``response`` is specified.
         :param response: a JSON representing the body of the response. If not specified, an empty mapping is used.
         :param headers: mapping with additional or custom HTTP headers to include in the response.
@@ -85,7 +83,7 @@ class ArtemisHTTPError(HTTPError):
         else:
             response = {}
 
-        super().__init__(status=status, response=response, headers=headers)
+        super().__init__(status_code=status, detail=response, headers=headers)
 
         if report_as_failure:
             details = {}
@@ -131,7 +129,7 @@ class InternalServerError(ArtemisHTTPError):
             message = 'Unknown error'
 
         super().__init__(
-            status=HTTP_500,
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=message,
             response=response,
             headers=headers,
@@ -158,7 +156,7 @@ class BadRequestError(ArtemisHTTPError):
             message = 'Bad request'
 
         super().__init__(
-            status=HTTP_400,
+            status=status.HTTP_400_BAD_REQUEST,
             message=message,
             response=response,
             headers=headers,
@@ -185,7 +183,7 @@ class NoSuchEntityError(ArtemisHTTPError):
             message = 'No such entity'
 
         super().__init__(
-            status=HTTP_404,
+            status=status.HTTP_404_NOT_FOUND,
             message=message,
             response=response,
             headers=headers,
@@ -213,7 +211,7 @@ class UnauthorizedError(ArtemisHTTPError):
             message = 'Not authorized to perform this action'
 
         super().__init__(
-            status=HTTP_401,
+            status=status.HTTP_401_GONE,
             message=message,
             response=response,
             headers=headers,
@@ -241,7 +239,7 @@ class ForbiddenError(ArtemisHTTPError):
             message = 'Not authorized to perform this action'
 
         super().__init__(
-            status=HTTP_403,
+            status=status.HTTP_403_FORBIDDEN,
             message=message,
             response=response,
             headers=headers,
@@ -269,7 +267,7 @@ class ConflictError(ArtemisHTTPError):
             message = 'Request conflicts with the current state of the resource'
 
         super().__init__(
-            status=HTTP_409,
+            status=status.HTTP_409_CONFLICT,
             message=message,
             response=response,
             headers=headers,
@@ -297,7 +295,7 @@ class MethodNotAllowedError(ArtemisHTTPError):
             message = 'This method is not compatible with the given resource'
 
         super().__init__(
-            status=HTTP_405,
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
             message=message,
             response=response,
             headers=headers,

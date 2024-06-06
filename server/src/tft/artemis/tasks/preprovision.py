@@ -20,8 +20,8 @@ import sqlalchemy
 import sqlalchemy.orm.session
 
 from .. import Failure
-from ..api import DEFAULT_SSH_PORT, DEFAULT_SSH_USERNAME
-from ..api import GuestRequest as GuestRequestSchema
+from ..api.environment import DEFAULT_SSH_PORT, DEFAULT_SSH_USERNAME
+from ..api.models import GuestRequest as GuestRequestSchema
 from ..db import DB, GuestLogContentType, GuestRequest, execute_db_statement
 from ..environment import Environment
 from ..guest import GuestState

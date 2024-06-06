@@ -7,7 +7,7 @@ import gluetool.log
 import pytest
 
 import tft.artemis.drivers
-from tft.artemis.api import GuestRequest
+from tft.artemis.api.models import GuestRequest
 from tft.artemis.tasks import Workspace
 
 

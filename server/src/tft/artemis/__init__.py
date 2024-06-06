@@ -836,7 +836,7 @@ class Failure:
             tags['poolname'] = self.details['poolname']
 
         if self.exc_info:
-            event, _ = sentry_sdk.utils.event_from_exception(self.exc_info)
+            event, _ = cast(Tuple[Dict[str, Any], Dict[str, Any]], sentry_sdk.utils.event_from_exception(self.exc_info))
 
         elif self.traceback:
             # Convert our traceback to format understood by Sentry, and store it in `data['stacktrace']` where Sentry
@@ -979,7 +979,7 @@ class Failure:
                 scope.set_extra(name, value)
 
             try:
-                self.sentry_event_id = sentry_sdk.capture_event(event, scope=scope)
+                self.sentry_event_id = sentry_sdk.capture_event(cast(sentry_sdk._types.Event, event), scope=scope)
 
             except Exception as exc:
                 Failure.from_exc('failed to submit to Sentry', exc).handle(logger, sentry=False)

@@ -22,6 +22,7 @@ import psycopg2.errors
 import sqlalchemy
 import sqlalchemy.event
 import sqlalchemy.ext.declarative
+import sqlalchemy.pool
 import sqlalchemy.sql.expression
 from gluetool.result import Error, Ok, Result
 from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
@@ -1532,9 +1533,9 @@ class DB:
         else:
             self._echo_pool = gluetool.utils.normalize_bool_option(KNOB_LOGGING_DB_POOL.value)
 
+        connect_args: Dict[str, Any] = {}
         # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
         if url.startswith('postgresql://'):
-            connect_args: Dict[str, str] = {}
 
             if application_name is not None:
                 connect_args['application_name'] = application_name
@@ -1554,9 +1555,19 @@ class DB:
                 connect_args=connect_args
             )
 
-        # SQLite does not support altering pool size nor max overflow
+        # SQLite does not support altering pool size nor max overflow, and must be told to share DB between
+        # thread.
         else:
-            self.engine = sqlalchemy.create_engine(url)
+            connect_args['check_same_thread'] = False
+
+            if application_name is not None:
+                connect_args['application_name'] = application_name
+
+            self.engine = sqlalchemy.create_engine(
+                url,
+                connect_args=connect_args,
+                poolclass=sqlalchemy.pool.StaticPool
+            )
 
         # TODO: hopefully, with better sqlalchemy stubs, cast() wouldn't be needed anymore
         _engine_execution_options = cast(

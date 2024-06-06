@@ -33,7 +33,6 @@ gluetool = "*"
 gunicorn = "*"
 jinja2-ansible-filters = "*"
 jq = "*"
-molten = "*"
 Pint = "0.18"
 # Avoid newer versions until either https://github.com/python/mypy/issues/10757 is fixed, or package
 # delivers proper type annotations.
@@ -53,6 +52,7 @@ sentry-sdk = "*"
 setuptools = "*"
 python-glanceclient = "*"
 python-novaclient = "*"
+fastapi = "*"
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient" ]

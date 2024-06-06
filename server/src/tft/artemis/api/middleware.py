@@ -1,27 +1,23 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import base64
 import dataclasses
 import json
 import re
 import time
-import urllib.parse
-from typing import Any, Callable, List, Optional, Pattern
+from typing import Awaitable, Callable
 
-import molten.validation.common
-import sqlalchemy.orm.session
-from gluetool.result import Error, Ok, Result
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import status as http_status
 from gluetool.utils import normalize_bool_option
-from molten import Request, Response
-from molten.errors import HTTPError
-from molten.http.status_codes import HTTP_200
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from .. import Failure
-from ..db import DB, SafeQuery, User
+from ..db import DB
 from ..knobs import Knob
 from ..metrics import APIMetrics
 from . import errors
+from .dependencies import get_db, get_logger
+from .models import AuthContext
 
 GUEST_ROUTE_PATTERN = re.compile(
     r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+(?P<url_rest>/(events|snapshots|logs/.+))?$'
@@ -29,22 +25,6 @@ GUEST_ROUTE_PATTERN = re.compile(
 SNAPSHOT_ROUTE_PATTERN = re.compile(
     r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+/snapshots/[a-z0-9-]+(?P<url_rest>/.+)?$'
 )
-
-
-NO_AUTH = [
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/_docs(?:/.+)?'),
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/_schema(?:/.+)?'),
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/metrics')
-]
-
-PROVISIONING_AUTH = [
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/guests(?:/.+)?')
-]
-
-ADMIN_AUTH = [
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/users(?:/.+)?'),
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/_status(?:/.+)?')
-]
 
 
 # A feature switches for authentication and authorization, disabled by default.
@@ -74,194 +54,20 @@ KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
     default=False
 )
 
-#: This header is added by our authorization middleware, to transport an auth context to route handlers.
-#:
-#: Note that user may specify its own value, but that shouldn't matter, because our middleware
-#: overwrites the provided value with our own string, throwing whatever user tried to sneak in away.
-#: Before every request, the middleware does its own tests, based entirely on provided credentials.
-#:
-#: This solution is far from being perfect, but I do not know how to transport the auth context
-#: down to handlers, in a Molten way, e.g. using dependency injection. Looking at things, I always
-#: get down to the fact that I need to attach something to a request, and ``Request`` class is using
-#: ``__slots__`` which means I cannot add any new attributes.
-AUTH_CTX_HEADER = 'x-auth-ctx'
 
+# NOTE(ivasilev) As middlewares are handled at starlette level there is no way to use dependency injection at the
+# moment https://github.com/tiangolo/fastapi/issues/402. This approach kinda works, although sneaking in db object this
+# way is far from perfect that's the best we can get at the moment as to keep the old logic we absolutely rely on
+# Authorization middleware to be called before actual routing as we expect context injection taking place at a certain
+# moment and this can't be guaranteed with converting authorization middleware to a router-level dependency.
+# However as siwalter has noticed if we require more than 1 parameter to be sneaked in this way current approach should
+# be reconsidered towards passing a state object with db as one of the parameters.
+class AuthorizationMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: FastAPI, db: DB = get_db(logger=get_logger())):
+        super().__init__(app)
+        self.db = db
 
-def matches_path(request: Request, patterns: List[Pattern[str]]) -> bool:
-    return any(pattern.match(request.path) for pattern in patterns)
-
-
-@dataclasses.dataclass
-class AuthContext:
-    request: Request
-
-    is_authentication_enabled: bool
-    is_authorization_enabled: bool
-
-    is_empty: bool = True
-    is_invalid_request: bool = False
-    is_authenticated: bool = False
-    is_authorized: bool = False
-
-    username: Optional[str] = None
-    token: Optional[str] = None
-
-    user: Optional[User] = None
-
-    _serialized_fields = (
-        'is_authentication_enabled',
-        'is_authorization_enabled',
-        'is_empty',
-        'is_invalid_request',
-        'is_authenticated',
-        'is_authorized',
-        'username'
-    )
-
-    def serialize(self) -> str:
-        return json.dumps({
-            field: getattr(self, field)
-            for field in self._serialized_fields
-        })
-
-    @classmethod
-    def unserialize(cls, serialized: str, request: Request) -> 'AuthContext':
-        unserialized = json.loads(serialized)
-
-        ctx = AuthContext(
-            request=request,
-            is_authentication_enabled=unserialized['is_authentication_enabled'],
-            is_authorization_enabled=unserialized['is_authorization_enabled']
-        )
-
-        for field in AuthContext._serialized_fields:
-            setattr(ctx, field, unserialized[field])
-
-        return ctx
-
-    def inject(self) -> None:
-        """
-        Inject the context into a request, i.e. serialize the context, and store it in request headers.
-        """
-
-        # By this, we throw away whatever user might have tried to sneak in.
-        self.request.headers.add(AUTH_CTX_HEADER, self.serialize())
-
-    @classmethod
-    def extract(cls, request: Request) -> Result['AuthContext', Failure]:
-        """
-        Extract the context from a requst, i.e. find the corresponding header, and unserialize its content.
-        """
-
-        serialized_ctx = request.headers.get(AUTH_CTX_HEADER)
-
-        if serialized_ctx is None:
-            return Error(Failure(
-                'undefined auth context',
-                request_path=request.path
-            ))
-
-        return Ok(AuthContext.unserialize(serialized_ctx, request))
-
-    def _extract_credentials_basic(self) -> None:
-        # HTTP header looks like this: `Authorization: Basic credentials`, where `credentials
-        # is base64 encoded username and password, joined by a colon (`username:password`).
-
-        auth_header = self.request.headers.get('Authorization')
-
-        if not auth_header:
-            return
-
-        self.is_empty = False
-
-        header_split = auth_header.strip().split(' ', 1)
-
-        if len(header_split) != 2:
-            self.is_invalid_request = True
-            return
-
-        if header_split[0].strip().lower() != 'basic':
-            self.is_invalid_request = True
-            return
-
-        try:
-            username, password = base64.b64decode(header_split[1]).decode().split(':', 1)
-
-        except Exception:
-            self.is_invalid_request = True
-            return
-
-        if not username or not password:
-            self.is_invalid_request = True
-            return
-
-        try:
-            self.username, self.token = urllib.parse.unquote(username), urllib.parse.unquote(password)
-
-        except Exception:
-            self.is_invalid_request = True
-
-    def verify_auth_basic(
-        self,
-        session: sqlalchemy.orm.session.Session,
-        token_type: str
-    ) -> None:
-        self._extract_credentials_basic()
-
-        if self.is_empty:
-            return
-
-        if self.is_invalid_request:
-            return
-
-        assert self.username is not None
-        assert self.token is not None
-
-        r_user = SafeQuery.from_session(session, User) \
-            .filter(User.username == self.username) \
-            .one_or_none()
-
-        if r_user.is_error:
-            raise errors.InternalServerError(caused_by=r_user.unwrap_error())
-
-        user = r_user.unwrap()
-
-        if not user:
-            return
-
-        if token_type == 'provisioning' and user.provisioning_token == User.hash_token(self.token):
-            self.user = user
-            self.is_authenticated = True
-            return
-
-        if token_type == 'admin' and user.admin_token == User.hash_token(self.token):
-            self.user = user
-            self.is_authenticated = True
-            return
-
-    def verify_auth(self, db: DB) -> None:
-        if matches_path(self.request, NO_AUTH):
-            self.is_authorized = True
-            return
-
-        with db.get_session() as session:
-            if matches_path(self.request, PROVISIONING_AUTH):
-                self.verify_auth_basic(session, 'provisioning')
-
-                if self.user and self.is_authenticated:
-                    self.is_authorized = True
-                    return
-
-            if matches_path(self.request, ADMIN_AUTH):
-                self.verify_auth_basic(session, 'admin')
-
-                if self.user and self.is_authenticated and self.user.is_admin:
-                    self.is_authorized = True
-                    return
-
-
-def authorization_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
-    def _authorization_middleware(request: Request, db: DB) -> Any:
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         # We need context even when authentication and authorization are disabled: handlers request it,
         # and dependency injection must have something to give them.
         #
@@ -276,9 +82,10 @@ def authorization_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
         ctx.inject()
 
         if not ctx.is_authentication_enabled:
-            return handler()
+            response = await call_next(request)
+            return response
 
-        ctx.verify_auth(db)
+        ctx.verify_auth(self.db)
 
         # Refresh stored state, to capture changes made by verification.
         ctx.inject()
@@ -291,26 +98,26 @@ def authorization_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
         #     raise errors.UnauthorizedError()
 
         if not ctx.is_authorization_enabled:
-            return handler()
+            response = await call_next(request)
+            return response
 
         if not ctx.is_authorized:
             raise errors.UnauthorizedError()
 
-        return handler()
+        response = await call_next(request)
+        return response
 
-    return _authorization_middleware
 
-
-def error_handler_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
-    def middleware() -> Any:
+class ErrorHandlerMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         try:
-            return handler()
+            response = await call_next(request)
+            return response
         except errors.ArtemisHTTPError as error:
             return Response(
-                status=error.status,
-                content=json.dumps(error.response),
+                status_code=error.status_code,
+                content=json.dumps(error.detail),
                 headers=error.headers)
-    return middleware
 
 
 def rewrite_request_path(path: str) -> str:
@@ -336,34 +143,35 @@ def rewrite_request_path(path: str) -> str:
     return path
 
 
-def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
-    def middleware(request: Request) -> Any:
+class PrometheusMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         status = "500 Internal Server Error"
 
         start_time = time.monotonic()
 
-        path = rewrite_request_path(request.path)
+        path = rewrite_request_path(request.url.path)
 
         APIMetrics.inc_requests_in_progress(request.method, path)
 
         try:
-            response = handler()
+            response = await call_next(request)
 
             if isinstance(response, tuple):
                 status = response[0]
 
             elif isinstance(response, Response):
-                status = response.status
+                status = str(response.status_code)
 
             # For JSON-like responses, use 200 because handler did not bother to provide better response,
             # like `DELETE` with its `204 No Content`.
-            elif dataclasses.is_dataclass(response) or molten.validation.common.is_schema(response):
-                status = HTTP_200
+            # FIXME XXX(ivasilev) Might need some attention
+            elif dataclasses.is_dataclass(response):
+                status = str(http_status.HTTP_200_OK)
 
             return response
 
-        except HTTPError as exc:
-            status = exc.status
+        except HTTPException as exc:
+            status = str(exc.status_code)
 
             raise
 
@@ -375,5 +183,3 @@ def prometheus_middleware(handler: Callable[..., Any]) -> Callable[..., Any]:
 
             # Convert the difference from fractional seconds to milliseconds
             APIMetrics.inc_request_durations(request.method, path, (end_time - start_time) * 1000.0)
-
-    return middleware

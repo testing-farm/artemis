@@ -680,12 +680,12 @@ def release_lock(
     :returns: ``True`` when the operation was successfull, ``False`` otherwise.
     """
 
-    pipeline = cache.pipeline(transaction=True)  # type: ignore[no-untyped-call]
+    pipeline = cache.pipeline(transaction=True)
 
     try:
-        pipeline.watch(lockname)
+        pipeline.watch(lockname)  # type: ignore[no-untyped-call]
 
-        actual_token = pipeline.get(lockname)
+        actual_token = cast(Optional[bytes], pipeline.get(lockname))
 
         if actual_token is None:
             Failure(
@@ -711,7 +711,7 @@ def release_lock(
 
         pipeline.multi()
         pipeline.delete(lockname)
-        pipeline.execute()
+        pipeline.execute()  # type: ignore[no-untyped-call]
 
     except redis.exceptions.WatchError as exc:
         Failure.from_exc(
