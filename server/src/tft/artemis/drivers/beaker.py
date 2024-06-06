@@ -1863,6 +1863,12 @@ class BeakerDriver(PoolDriver):
             'cpu.flag',
             'disk[].size',
             'disk[].model_name',
+            # Special internal constraints
+            'disk[].is_expansion',
+            'disk[].min_size',
+            'disk[].max_size',
+            'disk.length',
+            'disk.expanded_length',
             'arch',
             'memory',
             'hostname',
@@ -1871,6 +1877,12 @@ class BeakerDriver(PoolDriver):
             'virtualization.is_virtualized',
             'virtualization.hypervisor',
             'network[].type',
+            # Special internal constraints
+            'network[].is_expansion',
+            'network[].min_size',
+            'network[].max_size',
+            'network.length',
+            'network.expanded_length',
             'zcrypt.adapter',
             'zcrypt.mode'
         ]
