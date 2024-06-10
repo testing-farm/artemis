@@ -47,6 +47,7 @@ import sentry_sdk.integrations.stdlib
 import sentry_sdk.integrations.threading
 import sentry_sdk.serializer
 import sentry_sdk.transport
+import sentry_sdk.types
 import sentry_sdk.utils
 import stackprinter
 from gluetool.result import Error, Ok, Result
@@ -979,7 +980,7 @@ class Failure:
                 scope.set_extra(name, value)
 
             try:
-                self.sentry_event_id = sentry_sdk.capture_event(cast(sentry_sdk._types.Event, event), scope=scope)
+                self.sentry_event_id = sentry_sdk.capture_event(cast(sentry_sdk.types.Event, event), scope=scope)
 
             except Exception as exc:
                 Failure.from_exc('failed to submit to Sentry', exc).handle(logger, sentry=False)
