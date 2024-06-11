@@ -222,8 +222,13 @@ class Sentry:
                 sentry_sdk.integrations.atexit.AtexitIntegration(),
                 sentry_sdk.integrations.modules.ModulesIntegration(),
                 sentry_sdk.integrations.argv.ArgvIntegration(),
-                sentry_sdk.integrations.threading.ThreadingIntegration()
-            ]
+                sentry_sdk.integrations.threading.ThreadingIntegration(),
+            ],
+            # This will prevent sentry from auto enabling integrations based on the project dependencies. We are
+            # already listing default integrations ourselves and having some form of control is useful to prevent
+            # surprises like extensive sentry communication per normal request with middleware for fastapi/starlette
+            # integrations.
+            default_integrations=False
         )
 
 
