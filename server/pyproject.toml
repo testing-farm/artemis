@@ -22,7 +22,7 @@ python = "~3.9.0"
 # New mypy vs. new Alembic: https://github.com/python/mypy/issues/11038 - Alembic 1.7.4 adds a workaround
 alembic = "1.8.1"
 awscli = { version = "^1.27.24", optional = true }
-azure-cli = { version = "*", optional = true }
+azure-cli = { version = "^2.0.77", optional = true }
 beaker-client = { version = "*", optional = true }
 # BeautifulSoup could be updated but it's pinned by gluetool to an older version...
 # beautifulsoup4 = "^4.9.3"

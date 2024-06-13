@@ -41,9 +41,18 @@ properties:
   default-location:
     type: string
 
+  # Default resource group for all cloud primitives that the driver needs which will be used for multiple guests
+  # creation, like storage account for boot log storage
+  default-resource-group:
+    type: string
+    default: artemis-internals
+
   use-default-flavor-when-no-suitable:
     type: boolean
     default: true
+
+  boot-log-storage:
+    type: string
 
   password:
     type: string

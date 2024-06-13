@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import os
 import re
 import tempfile
@@ -16,14 +17,14 @@ from gluetool.result import Error, Ok, Result
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
 from .. import Failure, JSONType, log_dict_yaml, render_template
-from ..db import GuestRequest, SnapshotRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import UNITS, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, FlavorNetwork, \
     FlavorNetworks, FlavorVirtualization, SizeType
 from ..knobs import Knob
 from ..metrics import ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, \
-    PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
+from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, HookImageInfoMapper, PoolCapabilities, PoolData, \
+    PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
+    SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, run_cli_tool, vm_info_to_ip
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'azure.mapping.environment-to-image.pattern-map.filepath',
@@ -53,6 +54,15 @@ KNOB_RESOURCE_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
     envvar='ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE',
     cast_from_str=str,
     default='{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}'
+)
+
+KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK: Knob[int] = Knob(
+    'azure.logs.console.dump.blob.update-tick',
+    'How long, in seconds, to take between updating guest console log.',
+    has_db=False,
+    envvar='ARTEMIS_AZURE_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK',
+    cast_from_str=int,
+    default=300
 )
 
 
@@ -90,9 +100,12 @@ class APIImageType(TypedDict):
 
 @dataclasses.dataclass
 class AzurePoolData(PoolData):
-    instance_id: str
-    instance_name: str
-    resource_group: str
+    # A long identificator '/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/...'
+    instance_id: Optional[str] = None
+    instance_name: Optional[str] = None
+    resource_group: Optional[str] = None
+    # A uuid id
+    vm_id: Optional[str] = None
 
 
 @dataclasses.dataclass
@@ -100,6 +113,7 @@ class AzurePoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
     assorted_resource_ids: Optional[List[Dict[str, str]]] = None
     resource_group: Optional[str] = None
+    boot_log_container: Optional[str] = None
 
 
 @dataclasses.dataclass(repr=False)
@@ -252,6 +266,9 @@ class AzureDriver(PoolDriver):
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
+        capabilities.supported_guest_logs = [
+            ('console:dump', GuestLogContentType.BLOB),
+        ]
 
         return Ok(capabilities)
 
@@ -263,10 +280,25 @@ class AzureDriver(PoolDriver):
         resource_group: Optional[str] = None,
         guest_request: Optional[GuestRequest] = None
     ) -> Result[None, Failure]:
+        boot_log_container_name = None
+
+        if guest_request:
+            r_boot_log_storage = self._find_boot_log_storage_container(logger, guest_request)
+            if r_boot_log_storage.is_error:
+                # NOTE(ivasilev) We can't raise error here and exit as in this case other resources won't be cleaned
+                # up. If we are killing the guest early (before it entered preparing/ready state) absence of log
+                # storage container is to be expected. So let's log the error and move on, imho that's the best we
+                # can do here.
+                Failure('Could not get the name of log storage container for cleanup').handle(logger)
+                boot_log_container_name = None
+            else:
+                boot_log_container_name = r_boot_log_storage.unwrap()['name']
+
         resource_ids = AzurePoolResourcesIDs(
             instance_id=instance_id,
             assorted_resource_ids=list(other_resources) if other_resources else None,
-            resource_group=resource_group
+            resource_group=resource_group,
+            boot_log_container=boot_log_container_name
         )
 
         return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
@@ -368,6 +400,24 @@ class AzureDriver(PoolDriver):
                     return Error(Failure.from_failure('failed to remove resource group',
                                                       r_remove_resource_group.unwrap_error()))
 
+                # storage containers used for console log have to be cleaned up separately - they belong to a different
+                # resource group and can't be tagged out of the box so need special treatment
+                if resource_ids.boot_log_container is not None:
+                    r_remove_storage = session.run_az(
+                        logger,
+                        [
+                            'storage', 'container-rm', 'delete',
+                            '--name', resource_ids.boot_log_container,
+                            '--storage-account', self.pool_config['boot-log-storage'],
+                            '-y'
+                        ],
+                        json_format=False,
+                        commandname='az.storage-container-rm',
+                    )
+                    if r_remove_storage.is_error:
+                        return Error(Failure.from_failure('failed to remove storage container for boot logs',
+                                                          r_remove_storage.unwrap_error()))
+
         if resource_ids.instance_id is not None:
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
@@ -435,12 +485,14 @@ class AzureDriver(PoolDriver):
 
         status = output['provisioningState'].lower()
 
-        logger.info(f'current instance status {AzurePoolData.unserialize(guest_request).instance_id}:{status}')
+        pool_data = AzurePoolData.unserialize(guest_request)
+
+        logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
         if status == 'failed':
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=AzurePoolData.unserialize(guest_request),
+                pool_data=pool_data,
                 pool_failures=[Failure('instance ended up in "failed" state')]
             ))
 
@@ -449,9 +501,28 @@ class AzureDriver(PoolDriver):
         if r_ip_address.is_error:
             return Error(r_ip_address.unwrap_error())
 
+        # Let's also figure out a uuid of the machine that may come handly later (like when we need to fetch console
+        # log). Surprisingly enough this is not the value of the id field that is provided upon vm creation and you
+        # have to make another api call to get that as it's not shown upon vm creation.
+
+        # If we got this far - we absolutely must have an instance id already
+        assert pool_data.instance_id is not None
+
+        with AzureSession(logger, self) as azure_session:
+            r_vm_show = azure_session.run_az(
+                logger,
+                ['vm', 'show', '--id', pool_data.instance_id],
+                commandname='vm-show'
+            )
+        if r_vm_show.is_error:
+            return Error(r_vm_show.unwrap_error())
+
+        vm_info = cast(Dict[str, Any], r_vm_show.unwrap())
+        pool_data.vm_id = vm_info['vmId']
+
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
-            pool_data=AzurePoolData.unserialize(guest_request),
+            pool_data=pool_data,
             address=r_ip_address.unwrap()
         ))
 
@@ -462,7 +533,6 @@ class AzureDriver(PoolDriver):
         :param Guest guest: a guest to be destroyed.
         :rtype: result.Result[bool, Failure]
         """
-
         if AzurePoolData.is_empty(guest_request):
             return Ok(True)
 
@@ -603,10 +673,15 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[Any, Failure]:
+        instance_id = AzurePoolData.unserialize(guest_request).instance_id
+
+        if not instance_id:
+            return Error(Failure('Need an instance ID to fetch any information about a guest'))
+
         with AzureSession(logger, self) as session:
             r_output = session.run_az(
                 logger,
-                ['vm', 'show', '-d', '--ids', AzurePoolData.unserialize(guest_request).instance_id],
+                ['vm', 'show', '-d', '--ids', instance_id],
                 commandname='az.vm-show')
 
         if r_output.is_error:
@@ -850,6 +925,7 @@ class AzureDriver(PoolDriver):
             # As you can see, `baz=79` in the valid example is not a space-separated bit of a `--tags` argument,
             # but rather a stand-alone command-line item that is consumed by `--tags`.
             tags_options = []
+
             if tags:
                 tags_options = [
                     '--tags'
@@ -858,33 +934,53 @@ class AzureDriver(PoolDriver):
                     for tag, value in tags.items()
                 ]
 
-            # First let's create a resource group for this vm
             with AzureSession(logger, self) as session:
-                az_options = [
-                    'group', 'create', '--location', self.pool_config['default-location'],
-                    '--name', resource_group
-                ] + tags_options
-                r_create_resource_group = session.run_az(logger, az_options, commandname='az.vm-create')
+                # First let's create a resource group for this vm
+                r_create_resource_group = session.run_az(
+                    logger,
+                    [
+                        'group', 'create',
+                        '--location', self.pool_config['default-location'],
+                        '--name', resource_group
+                    ] + tags_options,
+                    commandname='az.vm-create'
+                )
 
                 if r_create_resource_group.is_error:
                     return Error(Failure.from_failure('failed to create resource group',
                                                       r_create_resource_group.unwrap_error()))
+                az_vm_create_options = [
+                    'vm', 'create',
+                    '--resource-group', resource_group,
+                    '--image', image.id,
+                    '--name', tags['ArtemisGuestLabel'],
+                    '--custom-data', custom_data_filename,
+                    '--size', instance_type.name
+                ] + tags_options
 
-            # Resource group pre-created, time to create a vm
-            az_options = [
-                'vm',
-                'create',
-                '--resource-group', resource_group,
-                '--image', image.id,
-                '--name', tags['ArtemisGuestLabel'],
-                '--custom-data', custom_data_filename,
-                '--size', instance_type.name
-            ] + tags_options
+                # If pool config has storage for boot of diagnostics specified -> let's try creating a storage, azure
+                # will indeed fail gracefully if it already exists
+                if self.pool_config['boot-log-storage']:
+                    r_create_storage = session.run_az(
+                        logger,
+                        [
+                            'storage', 'account', 'create',
+                            '--resource-group', self.pool_config['default-resource-group'],
+                            '--name', self.pool_config['boot-log-storage']
+                        ],
+                        commandname='az.storage-account-create'
+                    )
 
-            with AzureSession(logger, self) as session:
+                    if r_create_storage.is_error:
+                        return Error(Failure.from_failure('failed to create a storage account',
+                                                          r_create_storage.unwrap_error()))
+
+                    az_vm_create_options += ['--boot-diagnostics-storage', self.pool_config['boot-log-storage']]
+
+                # Resource group and boot log storage pre-created, time to create a vm
                 return session.run_az(
                     logger,
-                    az_options,
+                    az_vm_create_options,
                     commandname='az.vm-create'
                 )
 
@@ -928,11 +1024,141 @@ class AzureDriver(PoolDriver):
             pool_data=AzurePoolData(
                 instance_id=output['id'],
                 instance_name=tags['ArtemisGuestLabel'],
+                # This will be set later in guest update
+                vm_id=None,
                 resource_group=resource_group
             ),
             delay_update=r_delay.unwrap(),
             ssh_info=image.ssh
         ))
+
+    def _find_boot_log_storage_container(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[Dict[str, str], Failure]:
+
+        pool_data = AzurePoolData.unserialize(guest_request)
+
+        with AzureSession(logger, self) as session:
+            az_options = ['storage', 'container', 'list',
+                          '--auth-mode', 'login', '--account-name', self.pool_config['boot-log-storage']]
+            r_container_list = session.run_az(logger, az_options, commandname='az.storage-container-list')
+
+            if r_container_list.is_error:
+                return Error(Failure.from_failure('Could not retrieve list of storage containers',
+                                                  r_container_list.unwrap_error()))
+
+            containers = cast(List[Dict[str, str]], r_container_list.unwrap())
+
+            # Now let's find the storage container that ends with vmId of the machine.
+            storage_container = next(
+                (c for c in containers if pool_data.vm_id and c['name'].endswith(pool_data.vm_id)), None)
+            if not storage_container:
+                # Could not find a storage container for serial log - something weird is going on, can't proceed
+                return Error(Failure('Could not find a storage container'))
+
+            return Ok(storage_container)
+
+    def _fetch_guest_console_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[
+            Union[Tuple[None, None], Tuple[datetime.datetime, Optional[str]]],
+            Failure]:
+        """
+        Retrieve last modification date of the serial console log and its contents directly from storage container.
+        """
+
+        # Azure doesn't natively provide modification timestamps, so will have to be creative and fetch
+        # modification data of the serial log file from the vm-associated container of the boot log storage
+
+        blobs: List[Dict[str, Any]] = []
+
+        with AzureSession(logger, self) as session:
+            r_storage_container = self._find_boot_log_storage_container(logger, guest_request)
+            if r_storage_container.is_error:
+                return Error(Failure.from_failure('Could not get name of log storage container for serial console log',
+                                                  r_storage_container.unwrap_error()))
+            storage_container = r_storage_container.unwrap()
+
+            # Let's find a serial console log among blobs stored
+            az_options = ['storage', 'blob', 'list', '--container-name', storage_container['name'],
+                          '--auth-mode', 'key', '--account-name', self.pool_config['boot-log-storage']]
+            r_blob_list = session.run_az(logger, az_options, commandname='az.storage-blob-list')
+
+            if r_blob_list.is_error:
+                return Error(Failure.from_failure('Could not get a list of stored blobs',
+                                                  r_blob_list.unwrap_error()))
+
+            blobs = cast(List[Dict[str, Any]], r_blob_list.unwrap())
+            # The one we need will end with a serialconsole.log
+            serial_console_log = next((b for b in blobs if b['name'].endswith('.serialconsole.log')), None)
+            if not serial_console_log:
+                return Error(Failure('Could not find a serial console log'))
+
+            # Let's now download the console log contents directly from storage container
+            az_options = ['storage', 'blob', 'download', '--name', serial_console_log['name'],
+                          '--container-name', storage_container['name'],
+                          '--account-name', self.pool_config['boot-log-storage']]
+            r_blob_download = session.run_az(logger, az_options, json_format=False,
+                                             commandname='az-storage-blob-download')
+            if r_blob_download.is_error:
+                return Error(Failure.from_failure('Could not download a serial console log blob',
+                                                  r_blob_download.unwrap_error()))
+
+            blob = cast(str, r_blob_download.unwrap())
+            # Need to get rid of all 0x00 characters to make a db-saveable string
+            blob = blob.replace('\x00', '\uFFFD')
+            try:
+                timestamp = datetime.datetime.strptime(serial_console_log['properties']['lastModified'],
+                                                       '%Y-%m-%dT%H:%M:%S%z')
+
+            except KeyError as exc:
+                return Error(Failure.from_exc('Could not access lastModified property of the blob', exc))
+            except ValueError as exc:
+                return Error(Failure.from_exc('Unexpected datetime format', exc))
+
+        return Ok((timestamp, blob))
+
+    @guest_log_updater('azure', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_console_dump_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        """
+        Update console.dump/blob guest log.
+
+        Only machines that have boot diagnostics enabled can provide serial console logs.
+
+        See [1] for console access details.
+
+        [1] https://learn.microsoft.com/en-us/azure/virtual-machines/boot-diagnostics
+        """
+        pool_data = AzurePoolData.unserialize(guest_request)
+        # No vm id -> no guest log
+        if pool_data.vm_id is None:
+            return Ok(GuestLogUpdateProgress(
+                state=GuestLogState.PENDING,
+                delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
+            ))
+
+        timestamp, output = self._fetch_guest_console_blob(logger, guest_request).unwrap()
+
+        progress = GuestLogUpdateProgress.from_blob(
+            logger,
+            guest_log,
+            timestamp,
+            output,
+            lambda guest_log, timestamp, _: timestamp in guest_log.blob_timestamps
+        )
+
+        progress.delay_update = KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
+
+        return Ok(progress)
 
 
 PoolDriver._drivers_registry['azure'] = AzureDriver

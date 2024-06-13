@@ -87,6 +87,10 @@ pools:
         supports-spot-instances: false
         supported-architectures:
           - x86_64
+        {% if azure.boot_log_storage %}
+        supported-guest-logs:
+          - console:dump/blob
+        {% endif %}
 
       resources: {{ azure.resources | default("{}") }}
   {% endif %}
