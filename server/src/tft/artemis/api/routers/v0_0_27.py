@@ -36,10 +36,11 @@ router__cache = APIRouter(
 
 @router_guests.get("/", status_code=status.HTTP_200_OK)
 def get_guests(
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
     request: Request
 ) -> List[GuestResponse]:
-    return get_guest_requests(manager=manager, request=request)
+    return get_guest_requests(logger, manager=manager, request=request)
 
 
 @router_guests.post("/", status_code=status.HTTP_201_CREATED)
@@ -61,11 +62,12 @@ def create_guest(
 
 @router_guests.get("/{guestname}", status_code=status.HTTP_200_OK)
 def get_guest(
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     guestname: str,
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
     request: Request
 ) -> GuestResponse:
-    return get_guest_request(guestname=guestname, manager=manager, request=request)
+    return get_guest_request(logger, guestname=guestname, manager=manager, request=request)
 
 
 @router_guests.delete("/{guestname}", status_code=status.HTTP_204_NO_CONTENT)
@@ -81,18 +83,20 @@ def delete_guest(
 @router_guests.get("/events", status_code=status.HTTP_200_OK)
 def get_events(
     request: Request,
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     manager: Annotated[GuestEventManager, Depends(GuestEventManager)]
 ) -> List[GuestEvent]:
-    return manager.get_events(EventSearchParameters.from_request(request))
+    return manager.get_events(logger, EventSearchParameters.from_request(request))
 
 
 @router_guests.get("/{guestname}/events", status_code=status.HTTP_200_OK)
 def get_guest_events(
     guestname: str,
     request: Request,
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     manager: Annotated[GuestEventManager, Depends(GuestEventManager)]
 ) -> List[GuestEvent]:
-    return manager.get_events_by_guestname(guestname, EventSearchParameters.from_request(request))
+    return manager.get_events_by_guestname(logger, guestname, EventSearchParameters.from_request(request))
 
 
 # NOTE(ivasilev) Snapshots are doomed, so didn't really check them properly
@@ -101,9 +105,10 @@ def get_guest_events(
 def get_snapshot_request(
     guestname: str,
     snapshotname: str,
-    manager: Annotated[SnapshotRequestManager, Depends(SnapshotRequestManager)]
+    manager: Annotated[SnapshotRequestManager, Depends(SnapshotRequestManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> SnapshotResponse:
-    snapshot_response = manager.get_snapshot(guestname, snapshotname)
+    snapshot_response = manager.get_snapshot(logger, guestname, snapshotname)
 
     if snapshot_response is None:
         raise errors.NoSuchEntityError()

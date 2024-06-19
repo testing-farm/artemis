@@ -21,9 +21,9 @@ from ..drivers import ping_shell_remote
 from ..guest import GuestState
 from ..knobs import Knob
 from ..metrics import ShelfMetrics
-from . import _ROOT_LOGGER, DoerReturnType, DoerType, ProvisioningTailHandler
-from . import Workspace as _Workspace
-from . import get_guest_logger, step, task, task_core
+from . import _ROOT_LOGGER, DoerReturnType, DoerType
+from . import GuestRequestWorkspace as _Workspace
+from . import ProvisioningTailHandler, get_guest_logger, step, task, task_core
 
 KNOB_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD: Knob[int] = Knob(
     'actor.shelved-guest-watchdog.dispatch.delay',
@@ -56,125 +56,74 @@ class Workspace(_Workspace):
     ssh_connect_timeout: int
 
     @step
-    def entry(self) -> None:
-        """
-        Begin the update process with nice logging and loading request data and pool.
-        """
+    def run(self) -> None:
+        with self.transaction():
+            self.load_guest_request(self.guestname, state=GuestState.SHELVED)
 
-        assert self.guestname
-
-        self.handle_success('entered-task')
-
-        self.load_guest_request(self.guestname, state=GuestState.SHELVED)
-        self.load_gr_pool()
-
-    @step
-    def end_if_ssh_disabled(self) -> None:
-        """
-        End watchdog if SSH ping was disabled by the user.
-        """
-
-        assert self.gr
-
-        if self.gr.skip_prepare_verify_ssh is True:
-            self.logger.warning('SSH ping is disabled, watchdog will not continue')
-            self.result = self.handle_success('finished-task')
-
-    @step
-    def load_ssh_timeout(self) -> None:
-        """
-        Load SSH timeout
-        """
-
-        assert self.pool
-
-        r = KNOB_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(
-            session=self.session,
-            entityname=self.pool.poolname
-        )
-
-        if r.is_error:
-            self.result = self.handle_error(r, 'failed to obtain SSH timeout value')
-            return
-
-        self.ssh_connect_timeout = r.unwrap()
-
-    @step
-    def run_watchdog(self) -> None:
-        """
-        Try to "ping" the guest to verify it is still accessible
-        """
-
-        assert self.gr
-        assert self.pool
-        assert self.master_key
-
-        r_ping = ping_shell_remote(
-            self.logger,
-            self.gr,
-            key=self.master_key,
-            ssh_timeout=self.ssh_connect_timeout,
-            ssh_options=self.pool.ssh_options,
-            poolname=self.pool.poolname,
-            commandname=f'{Workspace.TASKNAME}.shell-ping',
-            cause_extractor=self.pool.cli_error_cause_extractor
-        )
-
-        self.guest_ping_result = r_ping
-
-        if r_ping.is_error:
-            self.logger.error('ping failed, guest is inaccessible')
-
-    @step
-    def dispatch_release(self) -> None:
-        """
-        If ping failed, schedule release of the affected guest
-        """
-
-        if self.guest_ping_result.is_error:
-            from .release_guest_request import release_guest_request
+            if self.result:
+                return
 
             assert self.gr
 
-            ShelfMetrics.inc_dead(self.gr.shelfname)
+            if self.gr.skip_prepare_verify_ssh is True:
+                return self._progress('shelved-guest-watchdog-cancelled')
 
-            self.update_guest_state_and_request_task(
-                GuestState.CONDEMNED,
-                release_guest_request,
-                self.guestname,
-                current_state=GuestState.SHELVED
+            self.load_gr_pool()
+            self.load_master_ssh_key()
+
+            if self.result:
+                return
+
+            assert self.pool
+            assert self.master_key
+
+            r_timeout = KNOB_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(
+                session=self.session,
+                entityname=self.pool.poolname
             )
 
-            ShelfMetrics.inc_removals(self.gr.shelfname)
+            if r_timeout.is_error:
+                return self._error(r_timeout, 'failed to obtain SSH timeout value')
 
-            self.result = self.handle_error(self.guest_ping_result, 'ping failed')
+            r_ping = ping_shell_remote(
+                self.logger,
+                self.gr,
+                key=self.master_key,
+                ssh_timeout=r_timeout.unwrap(),
+                ssh_options=self.pool.ssh_options,
+                poolname=self.pool.poolname,
+                commandname=f'{Workspace.TASKNAME}.shell-ping',
+                cause_extractor=self.pool.cli_error_cause_extractor
+            )
 
-    @step
-    def schedule_followup(self) -> None:
-        """
-        Schedule followup for the watchdog
-        """
+            if r_ping.is_error:
+                from .release_guest_request import release_guest_request
 
-        assert self.guestname
+                self._error(r_ping, 'ping failed, guest is inaccessible', no_effect=True)
 
-        self.dispatch_task(
-            shelved_guest_watchdog,
-            self.guestname,
-            delay=KNOB_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD.value
-        )
+                ShelfMetrics.inc_dead(self.gr.shelfname)
 
-    @step
-    def exit(self) -> None:
-        """
-        Wrap up the shelf lookup process by updating metrics & final logging.
-        """
+                self.update_guest_state_and_request_task(
+                    GuestState.CONDEMNED,
+                    release_guest_request,
+                    self.guestname,
+                    current_state=GuestState.SHELVED
+                )
 
-        self.result = self.handle_success('finished-task')
+                ShelfMetrics.inc_removals(self.gr.shelfname)
+
+            else:
+                self.dispatch_task(
+                    shelved_guest_watchdog,
+                    self.guestname,
+                    delay=KNOB_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD.value
+                )
 
     @classmethod
     def create(
         cls,
         logger: gluetool.log.ContextAdapter,
+        db: DB,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
         guestname: str
@@ -190,7 +139,7 @@ class Workspace(_Workspace):
         :returns: newly created workspace.
         """
 
-        return cls(logger, session, cancel, guestname=guestname, task=cls.TASKNAME)
+        return cls(logger, session, cancel, db, guestname=guestname, task=cls.TASKNAME)
 
     @classmethod
     def shelved_guest_watchdog(
@@ -217,15 +166,10 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, session, cancel, guestname) \
-            .entry() \
-            .end_if_ssh_disabled() \
-            .load_ssh_timeout() \
-            .load_master_ssh_key() \
-            .run_watchdog() \
-            .dispatch_release() \
-            .schedule_followup() \
-            .exit() \
+        return cls.create(logger, db, session, cancel, guestname) \
+            .begin() \
+            .run() \
+            .complete() \
             .final_result
 
 

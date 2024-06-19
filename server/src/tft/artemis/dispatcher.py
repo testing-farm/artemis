@@ -2,80 +2,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import time
+from typing import Optional
 
 import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
 from . import Failure, get_db, get_logger
-from .db import SafeQuery, SnapshotRequest, TaskRequest, execute_db_statement
-from .guest import GuestState
-from .tasks import TaskLogger, _update_snapshot_state, dispatch_task, get_snapshot_logger, resolve_actor
+from .context import DATABASE, LOGGER, SESSION
+from .db import SafeQuery, TaskRequest, execute_dml, transaction
+from .tasks import TaskLogger, dispatch_task, resolve_actor
 
 # Some tasks may seem to be unused, but they *must* be imported and known to broker
 # for transactional outbox to work correctly.
-from .tasks import route_snapshot_request  # noqa: F401, isort:skip
-from .tasks import release_snapshot_request  # noqa: F401, isort:skip
-from .tasks import restore_snapshot_request  # noqa: F401, isort:skip
 from .tasks import update_guest_log  # noqa: F401, isort:skip
-
-
-def _dispatch_snapshot_request(
-    root_logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    snapshot: SnapshotRequest
-) -> None:
-    logger = get_snapshot_logger('dispatch-snapshot-create', root_logger, snapshot.guestname, snapshot.snapshotname)
-
-    logger.begin()
-
-    # Release the snapshot to the next stage. If this succeeds, dispatcher will no longer have any power
-    # over the snapshot, and completion of the request would be taken over by a set of tasks.
-    if not _update_snapshot_state(
-        logger,
-        session,
-        snapshot.snapshotname,
-        snapshot.guestname,
-        GuestState.PENDING,
-        GuestState.ROUTING
-    ):
-        # Somebody already did our job, the snapshot request is not in PENDING state anymore.
-        logger.finished()
-        return
-
-    dispatch_task(logger, route_snapshot_request, snapshot.guestname, snapshot.snapshotname)
-
-    logger.finished()
-
-
-def _release_snapshot_request(
-    root_logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    snapshot: SnapshotRequest
-) -> None:
-    logger = get_snapshot_logger('dispatch-snapshot-release', root_logger, snapshot.guestname, snapshot.snapshotname)
-
-    logger.begin()
-
-    # Schedule task to remove the given snapshot request.
-    dispatch_task(logger, release_snapshot_request, snapshot.guestname, snapshot.snapshotname)
-
-    logger.finished()
-
-
-def _restore_snapshot_request(
-    root_logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    snapshot: SnapshotRequest
-) -> None:
-    logger = get_snapshot_logger('dispatch-snapshot-restore', root_logger, snapshot.guestname, snapshot.snapshotname)
-
-    logger.begin()
-
-    # Schedule task to remove the given snapshot equest.
-    dispatch_task(logger, restore_snapshot_request, snapshot.guestname, snapshot.snapshotname)
-
-    logger.finished()
 
 
 def handle_task_request(
@@ -84,6 +24,8 @@ def handle_task_request(
     task_request: TaskRequest
 ) -> None:
     logger = TaskLogger(root_logger, f'task-request#{task_request.id}')
+
+    LOGGER.set(logger)
 
     logger.begin()
 
@@ -124,7 +66,7 @@ def handle_task_request(
     if r_dispatch.is_error:
         return _log_failure(r_dispatch.unwrap_error(), 'failed to dispatch task')
 
-    r_delete = execute_db_statement(
+    r_delete = execute_dml(
         logger,
         session,
         sqlalchemy.delete(TaskRequest.__table__).where(TaskRequest.id == task_request.id)
@@ -136,64 +78,60 @@ def handle_task_request(
     logger.finished()
 
 
+def pick_task_request(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+) -> bool:
+    LOGGER.set(logger)
+
+    with transaction(logger, session) as transaction_result:
+        r_pending_task = SafeQuery.from_session(session, TaskRequest) \
+            .limit(1) \
+            .one_or_none()
+
+        if r_pending_task.is_error:
+            Failure.from_failure(
+                'failed to fetch pending task',
+                r_pending_task.unwrap_error()
+            ).handle(logger)
+
+            return False
+
+        task_request: Optional[TaskRequest] = r_pending_task.unwrap()
+
+        if task_request is None:
+            return False
+
+        handle_task_request(logger, session, task_request)
+
+    LOGGER.set(logger)
+
+    if not transaction_result.complete:
+        assert transaction_result.failure is not None
+
+        transaction_result.failure.handle(logger)
+
+    return transaction_result.complete
+
+
 def main() -> None:
-    root_logger = get_logger()
-    db = get_db(root_logger, application_name='artemis-dispatcher')
+    logger = TaskLogger(get_logger(), 'dispatcher')
+    db = get_db(logger, application_name='artemis-dispatcher')
+
+    LOGGER.set(logger)
+    DATABASE.set(db)
 
     # Spawn HTTP server to provide metrics for Prometheus
     # ...
 
     while True:
-        root_logger.info('tick...')
+        logger.info('tick...')
 
-        with db.get_session() as session:
-            r_pending_tasks = SafeQuery.from_session(session, TaskRequest) \
-                .all()
+        with db.get_session(logger) as session:
+            SESSION.set(session)
 
-            if r_pending_tasks.is_error:
-                Failure.from_failure(
-                    'failed to fetch pending tasks',
-                    r_pending_tasks.unwrap_error()
-                ).handle(root_logger)
-
-            else:
-                for task_request in r_pending_tasks.unwrap():
-                    handle_task_request(root_logger, session, task_request)
-
-        # For each pending guest request, start their processing by submitting the first, routing task.
-        with db.get_session() as session:
-            r_pending_sr = SafeQuery.from_session(session, SnapshotRequest) \
-                .filter(SnapshotRequest.state == GuestState.PENDING) \
-                .all()
-
-            if r_pending_sr.is_ok:
-                for snapshot in r_pending_sr.unwrap():
-                    _dispatch_snapshot_request(root_logger, session, snapshot)
-
-            else:
-                Failure('failed to fetch pending snapshot requests').handle(root_logger)
-
-            r_restoring_sr = SafeQuery.from_session(session, SnapshotRequest) \
-                .filter(SnapshotRequest.state == GuestState.CONDEMNED) \
-                .all()
-
-            if r_restoring_sr.is_ok:
-                for snapshot in r_restoring_sr.unwrap():
-                    _release_snapshot_request(root_logger, session, snapshot)
-
-            else:
-                Failure('failed to fetch condemned snapshot requests').handle(root_logger)
-
-            r_restoring_sr = SafeQuery.from_session(session, SnapshotRequest) \
-                .filter(SnapshotRequest.state == GuestState.RESTORING) \
-                .all()
-
-            if r_restoring_sr.is_ok:
-                for snapshot in r_restoring_sr.unwrap():
-                    _restore_snapshot_request(root_logger, session, snapshot)
-
-            else:
-                Failure('failed to fetch restoring snapshot requests').handle(root_logger)
+            while pick_task_request(logger, session):
+                pass
 
         time.sleep(10)
 

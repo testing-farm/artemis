@@ -8,7 +8,6 @@ import enum
 import functools
 import hashlib
 import json
-import logging
 import secrets
 import threading
 import time
@@ -21,6 +20,7 @@ import gluetool.log
 import psycopg2.errors
 import sqlalchemy
 import sqlalchemy.event
+import sqlalchemy.exc
 import sqlalchemy.ext.declarative
 import sqlalchemy.pool
 import sqlalchemy.sql.expression
@@ -34,7 +34,7 @@ from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 
 from .guest import GuestState
-from .knobs import get_vault_password
+from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password
 
 if TYPE_CHECKING:
     from mypy_extensions import VarArg
@@ -252,181 +252,50 @@ def stringify_query(session: sqlalchemy.orm.session.Session, query: Any) -> str:
     return str(query.compile(dialect=session.bind.dialect))
 
 
-def execute_db_statement(
+def assert_not_in_transaction(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    statement: Union[sqlalchemy.insert, sqlalchemy.update, sqlalchemy.delete],
-    expected_records: Union[int, Tuple[int, int]] = 1,
-) -> Result[Optional[Any], 'Failure']:
-    """
-    Execute a given SQL query, ``INSERT``, ``UPDATE`` or ``DELETE``.
+    rollback: bool = True
+) -> bool:
+    if not session.is_active:
+        return True
 
-    .. note::
+    # from . import Failure
+    # Failure('Unresolved transaction').handle(logger)
 
-       This routine should replace :py:func:`safe_db_change` one day: we use ``safe_db_change()`` to perform
-       changes that must be synchronized with other actions, like dispatching tasks, which is something
-       we are moving to different implementation based on transaction outbox.
-    """
+    if rollback:
+        session.rollback()
 
-    from . import Failure
-
-    def to_failure(exc: Exception) -> Failure:
-        if isinstance(exc, sqlalchemy.exc.StatementError):
-            return Failure.from_exc(
-                'failed to execute DB statement',
-                exc,
-                statement=exc.statement,
-                serialization_failure=False
-            )
-
-        return Failure.from_exc(
-            'failed to execute DB statement',
-            exc,
-            serialization_failure=False
-        )
-
-    try:
-        result = cast(
-            sqlalchemy.engine.ResultProxy,
-            session.execute(statement)
-        )
-
-        if result.is_insert:
-            # TODO: INSERT sets this correctly, but what about INSERT + ON CONFLICT? If the row exists,
-            # TODO: rowcount is set to 0, but the (optional) UPDATE did happen, so... UPSERT should probably
-            # TODO: be ready to accept both 0 and 1. We might need to return more than just true/false for
-            # TODO: ON CONFLICT to become auditable.
-            affected_rows = result.rowcount
-
-        else:
-            affected_rows = result.rowcount
-
-        if isinstance(expected_records, tuple) \
-           and not (expected_records[0] <= affected_rows <= expected_records[1]):
-            return Error(Failure(
-                'unexpected number of affected rows',
-                statement=stringify_query(session, statement),
-                serialization_failure=False,
-                affected_rows=affected_rows,
-                expected_affected_rows_min=expected_records[0],
-                expected_affected_rows_max=expected_records[1]
-            ))
-
-        elif affected_rows != expected_records:
-            return Error(Failure(
-                'unexpected number of affected rows',
-                statement=stringify_query(session, statement),
-                serialization_failure=False,
-                affected_rows=affected_rows,
-                expected_affected_rows=expected_records
-            ))
-
-        logger.debug(f'found {affected_rows} matching rows, as expected')
-
-    except sqlalchemy.exc.OperationalError as exc:
-        if not isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
-           or exc.orig.pgerror.strip() != 'ERROR:  could not serialize access due to concurrent update':
-
-            return Error(to_failure(exc))
-
-        return Error(Failure(
-            'failed to execute DB statement',
-            query=exc.statement,
-            serialization_failure=True
-        ))
-
-    except Exception as exc:
-        return Error(to_failure(exc))
-
-    else:
-        if result.is_insert:
-            logger.debug(f'created record with primary key {result.inserted_primary_key}')
-
-            return Ok(result.inserted_primary_key)
-
-        return Ok(None)
+    return False
 
 
-def safe_db_change(
+def execute_dml(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    query: Any,
-    expected_records: Union[int, Tuple[int, int]] = 1,
-) -> Result[bool, 'Failure']:
+    statement: Any,
+) -> Result[sqlalchemy.engine.ResultProxy, 'Failure']:
     """
-    Execute a given SQL query, ``INSERT``, ``UPDATE`` or ``DELETE``, followed by an explicit commit. Verify
-    the expected number of records has been changed (or created).
+    Execute a given DML statement, ``INSERT``, ``UPDATE`` or ``DELETE``.
 
-    :returns: a valid boolean result if queries were executed successfully: ``True`` if changes were made, and
-        the number of changed records matched the expectation, ``False`` otherwise. If the queries - including the
-        commit - were rejected by lower layers or database, an invalid result is returned, wrapping
-        a :py:class:`Failure` instance.
+    :returns: ``None`` if the statement was executed correctly, :py:class:`Failure` otherwise.
     """
 
-    logger.debug(f'safe db change: {stringify_query(session, query)} - expect {expected_records} records')
+    logger.debug(f'execute DML: {stringify_query(session, statement)}')
 
     from . import Failure, safe_call
 
-    r = safe_call(session.execute, query)
+    r = safe_call(session.execute, statement)
 
     if r.is_error:
         return Error(
             Failure.from_failure(
-                'failed to execute update query',
+                'failed to execute DML statement',
                 r.unwrap_error(),
-                query=stringify_query(session, query)
+                query=stringify_query(session, statement)
             )
         )
 
-    query_result = cast(
-        sqlalchemy.engine.ResultProxy,
-        r.value
-    )
-
-    if query_result.is_insert:
-        # TODO: INSERT sets this correctly, but what about INSERT + ON CONFLICT? If the row exists,
-        # TODO: rowcount is set to 0, but the (optional) UPDATE did happen, so... UPSERT should probably
-        # TODO: be ready to accept both 0 and 1. We might need to return more than just true/false for
-        # TODO: ON CONFLICT to become auditable.
-        affected_rows = query_result.rowcount
-
-    else:
-        affected_rows = query_result.rowcount
-
-    if isinstance(expected_records, tuple):
-        if not (expected_records[0] <= affected_rows <= expected_records[1]):
-            logger.warning(
-                f'expected {expected_records[0]} - {expected_records[1]} matching rows, found {affected_rows}'
-            )
-
-            return Ok(False)
-
-    elif affected_rows != expected_records:
-        logger.warning(f'expected {expected_records} matching rows, found {affected_rows}')
-
-        return Ok(False)
-
-    logger.debug(f'found {affected_rows} matching rows, as expected')
-
-    r = safe_call(session.commit)
-
-    if r.is_error:
-        failure = r.unwrap_error()
-
-        if isinstance(failure.exception, sqlalchemy.orm.exc.NoResultFound):
-            logger.warning(f'expected {expected_records} matching rows, found 0')
-
-            return Ok(False)
-
-        return Error(
-            Failure.from_failure(
-                'failed to commit query',
-                failure,
-                query=stringify_query(session, query)
-            )
-        )
-
-    return Ok(True)
+    return Ok(r.unwrap())
 
 
 def upsert(
@@ -519,19 +388,61 @@ def upsert(
 
         expected_records = expected_records if expected_records is not None else 1
 
-    return safe_db_change(logger, session, statement, expected_records=expected_records)
+    logger.debug(f'safe db change: {stringify_query(session, statement)} - expect {expected_records} records')
+
+    from . import Failure
+
+    r = execute_dml(logger, session, statement)
+
+    if r.is_error:
+        return Error(
+            Failure.from_failure(
+                'failed to execute upsert query',
+                r.unwrap_error(),
+                query=stringify_query(session, statement)
+            )
+        )
+
+    query_result = r.unwrap()
+
+    # TODO: INSERT sets this correctly, but what about INSERT + ON CONFLICT? If the row exists,
+    # TODO: rowcount is set to 0, but the (optional) UPDATE did happen, so... UPSERT should probably
+    # TODO: be ready to accept both 0 and 1. We might need to return more than just true/false for
+    # TODO: ON CONFLICT to become auditable.
+    affected_rows = query_result.rowcount
+
+    if isinstance(expected_records, tuple):
+        if not (expected_records[0] <= affected_rows <= expected_records[1]):
+            logger.warning(
+                f'expected {expected_records[0]} - {expected_records[1]} matching rows, found {affected_rows}'
+            )
+
+            return Ok(False)
+
+    elif affected_rows != expected_records:
+        logger.warning(f'expected {expected_records} matching rows, found {affected_rows}')
+
+        return Ok(False)
+
+    logger.debug(f'found {affected_rows} matching rows, as expected')
+
+    return Ok(True)
 
 
 @dataclasses.dataclass
 class TransactionResult:
-    success: bool = False
+    complete: bool = False
+    conflict: bool = False
 
     failure: Optional['Failure'] = None
     failed_query: Optional[str] = None
 
 
 @contextlib.contextmanager
-def transaction() -> Generator[TransactionResult, None, None]:
+def transaction(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session
+) -> Generator[TransactionResult, None, None]:
     """
     Thin context manager for handling possible transation rollback when executing multiple queries.
 
@@ -553,10 +464,12 @@ def transaction() -> Generator[TransactionResult, None, None]:
             ...
     """
 
+    from . import Failure
+
     result = TransactionResult()
 
     def _save_error(exc: Exception) -> None:
-        result.success = False
+        result.complete = False
 
         if isinstance(exc, sqlalchemy.exc.StatementError):
             result.failure = Failure.from_exc(
@@ -572,60 +485,33 @@ def transaction() -> Generator[TransactionResult, None, None]:
             )
 
     try:
+        assert_not_in_transaction(logger, session, rollback=False)
+
+        session.begin()
+
         yield result
 
+        session.commit()
+
+        result.complete = True
+
     except sqlalchemy.exc.OperationalError as exc:
-        if not isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
-           or exc.orig.pgerror.strip() != 'ERROR:  could not serialize access due to concurrent update':
+        if isinstance(exc, sqlalchemy.exc.OperationalError) \
+                and isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
+                and exc.orig.pgerror.strip() == 'ERROR:  could not serialize access due to concurrent update':
+
+            result.complete = False
+            result.conflict = True
+            result.failure = Failure.from_exc('could not serialize access due to concurrent update', exc)
+            result.failed_query = exc.statement
+
+        else:
             _save_error(exc)
-            return
-
-        result.success = False
-        result.failed_query = exc.statement
 
     except Exception as exc:
+        session.rollback()
+
         _save_error(exc)
-
-    else:
-        result.success = True
-
-
-def execute_in_transaction(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    *queries: Union[sqlalchemy.insert, sqlalchemy.update]
-) -> Result[bool, 'Failure']:
-    """
-    Execute given SQL queries as if they were part of a single transaction, and detect transaction rollback.
-
-    .. note::
-
-       Since the DB session is an input parameter of this function, it is **not** the responsibility of this
-       function to start a transaction-aware DB session - that is left to caller, because such a session
-       can and would be used for other queries as well.
-
-    :returns: ``True`` when all queries were successfully executed, ``False`` otherwise.
-    """
-
-    try:
-        for query in queries:
-            session.execute(query)
-
-    except sqlalchemy.exc.OperationalError as exc:
-        if not isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
-           or exc.orig.pgerror.strip() != 'ERROR:  could not serialize access due to concurrent update':
-            raise exc
-
-        return Ok(False)
-
-    except Exception as exc:
-        return Error(Failure.from_exc(
-            'failed to execute in transaction',
-            exc=exc,
-            query=stringify_query(session, query)
-        ))
-
-    return Ok(True)
 
 
 class UserRoles(enum.Enum):
@@ -807,12 +693,12 @@ class TaskRequest(Base):
     ) -> Result[int, 'Failure']:
         stmt = cls.create_query(task, *args, delay=delay)
 
-        r = execute_db_statement(logger, session, stmt)
+        r = execute_dml(logger, session, stmt)
 
         if r.is_error:
             return Error(r.unwrap_error())
 
-        return Ok(cast(Tuple[int], r.unwrap())[0])
+        return Ok(r.unwrap().inserted_primary_key[0])
 
 
 class GuestShelf(Base):
@@ -998,7 +884,8 @@ class GuestRequest(Base):
         sqlalchemy  # type: ignore[attr-defined]
         .select(sqlalchemy.func.max(GuestEvent.updated))
         .where(GuestEvent.guestname == guestname)
-        .scalar_subquery()
+        .scalar_subquery(),
+        deferred=True
     )
 
     address = Column(String(250), nullable=True)
@@ -1125,10 +1012,12 @@ class GuestRequest(Base):
 
         from . import log_dict_yaml
 
-        r = safe_db_change(
+        r = execute_dml(
             logger,
             session,
-            sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
+            sqlalchemy
+            .insert(GuestEvent.__table__)  # type: ignore[attr-defined]
+            .values(
                 guestname=guestname,
                 eventname=eventname,
                 _details=details
@@ -1479,6 +1368,33 @@ class Knob(Base):
 # TODO: shuffle a bit with files to avoid local imports and to set this up conditionaly. It's probably not
 # critical, but it would also help a bit with DB class, and it would be really nice to not install the event
 # hooks when not asked to log slow queries.
+def _log_db_statement(statement: str) -> None:
+    if not KNOB_LOGGING_DB_QUERIES.value:
+        return
+
+    from .context import CURRENT_MESSAGE, CURRENT_TASK, LOGGER
+
+    logger = LOGGER.get(None)
+
+    if not logger:
+        from .tasks import _ROOT_LOGGER
+
+        logger = _ROOT_LOGGER
+
+    current_task = CURRENT_TASK.get(None)
+    current_message = CURRENT_MESSAGE.get(None)
+
+    if current_task:
+        logger = current_task.logger(logger)
+
+    elif current_message:
+        from .tasks import MessageLogger
+
+        logger = MessageLogger(logger, current_message)
+
+    logger.info(statement)
+
+
 @sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'before_cursor_execute')  # type: ignore[no-untyped-call,misc]
 def before_cursor_execute(
     conn: sqlalchemy.engine.Connection,
@@ -1488,6 +1404,8 @@ def before_cursor_execute(
     context: Any,
     executemany: Any
 ) -> None:
+    _log_db_statement(statement)
+
     conn.info.setdefault('query_start_time', []).append(time.time())
 
 
@@ -1520,6 +1438,20 @@ def after_cursor_execute(
     ).handle(LOGGER.get())
 
 
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'commit')  # type: ignore[no-untyped-call,misc]
+def before_commit(
+    conn: sqlalchemy.engine.Connection,
+) -> None:
+    _log_db_statement('COMMIT')
+
+
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'rollback')  # type: ignore[no-untyped-call,misc]
+def before_rollback(
+    conn: sqlalchemy.engine.Connection,
+) -> None:
+    _log_db_statement('ROLLBACK')
+
+
 class DB:
     instance: Optional['DB'] = None
     _lock = threading.RLock()
@@ -1545,14 +1477,14 @@ class DB:
         url: str,
         application_name: Optional[str] = None
     ) -> None:
-        from .knobs import KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE, KNOB_LOGGING_DB_POOL, KNOB_LOGGING_DB_QUERIES
+        from .knobs import KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE, KNOB_LOGGING_DB_POOL
 
         self.logger = logger
 
         logger.info(f'connecting to db {url}')
 
-        if KNOB_LOGGING_DB_QUERIES.value:
-            gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
+        # if KNOB_LOGGING_DB_QUERIES.value:
+        #    gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
 
         self._echo_pool: Union[str, bool] = False
 
@@ -1607,7 +1539,20 @@ class DB:
         self.engine_autocommit = _engine_execution_options(isolation_level='AUTOCOMMIT')
         self.sessionmaker_autocommit = sqlalchemy.orm.sessionmaker(bind=self.engine_autocommit)
 
-        self.engine_transactional = _engine_execution_options(isolation_level='REPEATABLE READ')
+        if url.startswith('postgresql://'):
+            self.engine_transactional = _engine_execution_options(
+                isolation_level='REPEATABLE READ',
+                autobegin=False,
+                autocommit=False
+            )
+
+        else:
+            self.engine_transactional = _engine_execution_options(
+                isolation_level='SERIALIZABLE',
+                autobegin=False,
+                autocommit=False
+            )
+
         self.sessionmaker_transactional = sqlalchemy.orm.sessionmaker(bind=self.engine_transactional)
 
     def __new__(
@@ -1624,7 +1569,7 @@ class DB:
         return cls.instance
 
     @contextmanager
-    def get_session(self, transactional: bool = False) -> Iterator[sqlalchemy.orm.session.Session]:
+    def get_session(self, logger: gluetool.log.ContextAdapter) -> Iterator[sqlalchemy.orm.session.Session]:
         """
         Create new DB session.
 
@@ -1632,19 +1577,20 @@ class DB:
         :returns: new DB session.
         """
 
-        if transactional:
-            Session = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional)
+        Session = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional)
 
-        else:
-            Session = sqlalchemy.orm.scoped_session(self.sessionmaker_autocommit)
-
-        session = Session()
+        session = Session(
+            autoflush=True,
+            # autobegin=False,
+            expire_on_commit=True,
+            twophase=False,
+        )
 
         if self._echo_pool:
             from .metrics import DBPoolMetrics
 
             gluetool.log.log_dict(
-                self.logger.info,
+                logger.info,
                 'pool metrics',
                 DBPoolMetrics.load(self.logger, self, session)  # type: ignore[attr-defined]
             )
@@ -1652,22 +1598,7 @@ class DB:
         try:
             yield session
 
-            # Commit only when the transaction is still active. Our transactions are usually commited here, after
-            # being used in read-only workflows, or workflows that do not care about conflicts or concurrency.
-            # The workflows that do care about concurrency - switching guest request state, for example - calls
-            # commit explicitly. Any SQL query after that starts new transaction.
-            #
-            # But if this explicit commit fails - because somebody already modified the guest request record - then
-            # the transaction is marked as failed, and rolled back. This does not automatically mean we'd encounter
-            # an exception, since the situation was probably handled and reported and so on. Which means we have to
-            # check session state before issuing `COMMIT`, because committing a failed transaction will just case yet
-            # another error.
-            #
-            # A thing to consider: could we/should we do a rollback instead of a commit? Because we work in read-only
-            # mode, then rollback vs commit makes no difference, or we make changes and then we could issue explicit
-            # commits, like we do when changing guest request state. We don't make that many changes after all...
-            if session.transaction.is_active:
-                session.commit()
+            assert_not_in_transaction(logger, session)
 
         except Exception:
             session.rollback()
@@ -1676,6 +1607,21 @@ class DB:
 
         finally:
             cast(Callable[[], None], Session.remove)()
+
+    @contextmanager
+    def transaction(
+        self,
+        logger: gluetool.log.ContextAdapter
+    ) -> Iterator[tuple[sqlalchemy.orm.session.Session, TransactionResult]]:
+        """
+        Create new DB session & transaction.
+
+        :returns: new DB session & transaction result tracker.
+        """
+
+        with self.get_session(logger) as session:
+            with transaction(logger, session) as T:
+                yield (session, T)
 
 
 def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:

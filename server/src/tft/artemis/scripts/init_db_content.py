@@ -226,7 +226,7 @@ def config_to_db(
 
         sys.exit(1)
 
-    with db.get_session() as session:
+    with db.transaction(logger) as (session, T):
         def _add_tags(poolname: str, input_tags: GuestTagsType) -> None:
             for tag, value in input_tags.items():
                 logger.info(f'  Adding {tag}={value}')
@@ -428,6 +428,13 @@ def config_to_db(
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize SSH key record'
+
+    if not T.complete:
+        assert T.failure is not None  # narrow type
+
+        T.failure.handle(logger)
+
+        assert False, 'Failed to successfully populate DB'
 
 
 @click.group()

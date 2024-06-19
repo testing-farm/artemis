@@ -519,10 +519,14 @@ def test_auth_context_verify_auth_basic_admin_invalid_token(
     assert auth_context.token == 'wrong-password'
 
 
-def test_auth_context_verify_auth_no_auth(db: tft.artemis.db.DB, auth_context: AuthContext,
-                                          monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
+def test_auth_context_verify_auth_no_auth(
+    db: tft.artemis.db.DB,
+    logger: gluetool.log.ContextAdapter,
+    auth_context: AuthContext,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
     monkeypatch.setitem(auth_context.request.scope, 'path', '/_docs')
-    auth_context.verify_auth(db)
+    auth_context.verify_auth(logger, db)
 
     assert auth_context.is_empty is True
     assert auth_context.is_invalid_request is False
@@ -534,6 +538,7 @@ def test_auth_context_verify_auth_no_auth(db: tft.artemis.db.DB, auth_context: A
 
 def test_auth_context_verify_auth_provisioning(
     db: tft.artemis.db.DB,
+    logger: gluetool.log.ContextAdapter,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
     auth_context: AuthContext
 ) -> None:
@@ -549,7 +554,7 @@ def test_auth_context_verify_auth_provisioning(
 
     monkeypatch.setattr(auth_context, 'verify_auth_basic', mock_verify_auth_basic)
 
-    auth_context.verify_auth(db)
+    auth_context.verify_auth(logger, db)
 
     assert auth_context.is_empty is True
     assert auth_context.is_invalid_request is False
@@ -562,6 +567,7 @@ def test_auth_context_verify_auth_provisioning(
 
 def test_auth_context_verify_auth_admin(
     db: tft.artemis.db.DB,
+    logger: gluetool.log.ContextAdapter,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
     auth_context: AuthContext
 ) -> None:
@@ -581,7 +587,7 @@ def test_auth_context_verify_auth_admin(
 
     monkeypatch.setattr(auth_context, 'verify_auth_basic', mock_verify_auth_basic)
 
-    auth_context.verify_auth(db)
+    auth_context.verify_auth(logger, db)
 
     assert auth_context.is_empty is True
     assert auth_context.is_invalid_request is False
@@ -594,6 +600,7 @@ def test_auth_context_verify_auth_admin(
 
 def test_auth_context_verify_auth_admin_with_user_role(
     db: tft.artemis.db.DB,
+    logger: gluetool.log.ContextAdapter,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
     auth_context: AuthContext
 ) -> None:
@@ -613,7 +620,7 @@ def test_auth_context_verify_auth_admin_with_user_role(
 
     monkeypatch.setattr(auth_context, 'verify_auth_basic', mock_verify_auth_basic)
 
-    auth_context.verify_auth(db)
+    auth_context.verify_auth(logger, db)
 
     assert auth_context.is_empty is True
     assert auth_context.is_invalid_request is False
