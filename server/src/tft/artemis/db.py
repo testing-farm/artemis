@@ -21,6 +21,7 @@ import gluetool.log
 import psycopg2.errors
 import sqlalchemy
 import sqlalchemy.event
+import sqlalchemy.exc
 import sqlalchemy.ext.declarative
 import sqlalchemy.pool
 import sqlalchemy.sql.expression
@@ -249,6 +250,70 @@ def stringify_query(session: sqlalchemy.orm.session.Session, query: Any) -> str:
     """
 
     return str(query.compile(dialect=session.bind.dialect))
+
+
+def execute_dml(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    statement: Any,
+) -> Result[None, 'Failure']:
+    """
+    Execute a given DML statement, ``INSERT``, ``UPDATE`` or ``DELETE``.
+
+    :returns: ``None`` if the statement was executed correctly, :py:class:`Failure` otherwise.
+    """
+
+    logger.debug(f'execute DML: {stringify_query(session, statement)}')
+
+    from . import Failure, safe_call
+
+    r = safe_call(session.execute, statement)
+
+    if r.is_error:
+        return Error(
+            Failure.from_failure(
+                'failed to execute DML statement',
+                r.unwrap_error(),
+                query=stringify_query(session, statement)
+            )
+        )
+
+    return Ok(None)
+
+
+def commit(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+) -> Result[bool, 'Failure']:
+    """
+    Commit the current transaction.
+
+    :returns: ``True`` for successful commit, ``False`` for rejected commit, :py:class:`Failure` otherwise.
+    """
+
+    from . import Failure, safe_call
+
+    r = safe_call(session.commit)
+
+    if r.is_error:
+        failure = r.unwrap_error()
+
+        exc = failure.exception
+
+        if exc \
+                and isinstance(exc, sqlalchemy.exc.OperationalError) \
+                and isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
+                and exc.orig.pgerror.strip() == 'ERROR:  could not serialize access due to concurrent update':
+            return Ok(False)
+
+        return Error(
+            Failure.from_failure(
+                'failed to commit transaction',
+                r.unwrap_error()
+            )
+        )
+
+    return Ok(True)
 
 
 def execute_db_statement(
@@ -1096,10 +1161,12 @@ class GuestRequest(Base):
 
         from . import log_dict_yaml
 
-        r = safe_db_change(
+        r = execute_dml(
             logger,
             session,
-            sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
+            sqlalchemy
+            .insert(GuestEvent.__table__)  # type: ignore[attr-defined]
+            .values(
                 guestname=guestname,
                 eventname=eventname,
                 _details=details
@@ -1609,7 +1676,12 @@ class DB:
         else:
             Session = sqlalchemy.orm.scoped_session(self.sessionmaker_autocommit)
 
-        session = Session()
+        session = Session(
+            autoflush=True,
+            # autobegin=True,
+            expire_on_commit=True,
+            twophase=False,
+        )
 
         if self._echo_pool:
             from .metrics import DBPoolMetrics

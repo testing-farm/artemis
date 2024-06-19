@@ -33,7 +33,7 @@ from typing_extensions import Protocol, TypedDict
 from .. import Failure, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, safe_call
 from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, GuestEvent, GuestLog, GuestLogBlob, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, \
-    SafeQuery, SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change
+    SafeQuery, SnapshotRequest, SSHKey, TaskRequest, commit, execute_db_statement, execute_dml, safe_db_change
 from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
 from ..drivers import aws as aws_driver
 from ..drivers import azure as azure_driver
@@ -1182,6 +1182,282 @@ def task_core(
     raise Exception(f'message processing failed: {doer_result.unwrap_error().message}')
 
 
+def run_doer_v2(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    cancel: threading.Event,
+    fn: DoerType,
+    actor_name: str,
+    *args: ActorArgumentType,
+    **kwargs: Any
+) -> DoerReturnType:
+    """
+    Run a given function - "doer" - isolated in its own thread. This thread then serves as a landing
+    spot for dramatiq control exceptions (e.g. Shutdown).
+
+    Control exceptions are delivered to the thread that runs the task. We don't want to interrupt
+    the actual task code, which is hidden in the doer, so we offload it to a separate thread, catch
+    exceptions here, and notify doer via "cancel" event.
+    """
+
+    executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+    doer_future: Optional[concurrent.futures.Future[DoerReturnType]] = None
+
+    def _wait(message: str) -> None:
+        """
+        Wait for doer future to complete.
+
+        Serves as a helper, to provide unified logging.
+        """
+
+        assert doer_future is not None
+
+        while True:
+            # We could drop timeout parameter, but it seems that without timeout in play, control exceptions
+            # are delivered when blocking wait() finishes, which is obviously *after* the doer competes its
+            # job - and that's too late for canceling anything, so not using timeout makes cancellation impossible.
+            #
+            # This is connected to GIL and how an exception can be delivered to a thread. So, we use timeout,
+            # to interrupt wait() regularly, so we get a chance to receive exceptions and signal cancellation
+            # to doer thread. The actual timeout length is pretty much pointless.
+            done_futures, undone_futures = concurrent.futures.wait({doer_future}, timeout=10.0)
+
+            gluetool.log.log_dict(logger.debug, 'doer futures', [done_futures, undone_futures])
+
+            if len(undone_futures) != 0:
+                logger.debug('doer is still running')
+                continue
+
+            break
+
+        logger.debug(message)
+
+        assert len(done_futures) == 1
+        assert len(undone_futures) == 0
+        assert doer_future in done_futures
+
+    try:
+        executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix=threading.current_thread().name
+        )
+
+        logger.debug(f'submitting task doer {fn}')
+
+        # We need to propagate our current context to newly spawned thread. To do that, we need to copy our context,
+        # and then use its `run()` method instead of the function we'd run in our new thread. `run()` would then
+        # do its setup and call our function when context is set properly.
+        thread_context = contextvars.copy_context()
+
+        def _thread_trampoline() -> DoerReturnType:
+            profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
+
+            if profile_actor:
+                profiler = Profiler()
+                profiler.start()
+
+            try:
+                return thread_context.run(fn, logger, db, session, cancel, *args, **kwargs)
+
+            finally:
+                if profile_actor:
+                    profiler.stop()
+                    profiler.log(logger, 'profiling report (inner)')
+
+        doer_future = executor.submit(_thread_trampoline)
+
+        _wait('doer finished in regular mode')
+
+    except dramatiq.middleware.Interrupt as exc:
+        if isinstance(exc, dramatiq.middleware.TimeLimitExceeded):
+            logger.error('task time depleted')
+
+        elif isinstance(exc, dramatiq.middleware.Shutdown):
+            logger.error('worker shutdown requested')
+
+        else:
+            assert False, 'Unhandled interrupt exception'
+
+        logger.debug('entering doer cancellation mode')
+
+        cancel.set()
+
+        logger.debug('waiting for doer to finish')
+
+        _wait('doer finished in cancellation mode')
+
+    assert doer_future is not None
+    assert doer_future.done(), 'doer finished yet not marked as done'
+
+    if executor:
+        executor.shutdown()
+
+    return doer_future.result()
+
+
+def task_core_v2(
+    doer: DoerType,
+    logger: TaskLogger,
+    db: Optional[DB] = None,
+    session: Optional[sqlalchemy.orm.session.Session] = None,
+    cancel: Optional[threading.Event] = None,
+    doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
+    doer_kwargs: Optional[Dict[str, Any]] = None,
+    session_isolation: bool = False
+) -> None:
+    old_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+
+    def _log_rss() -> None:
+        new_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+
+        logger.info(f'RSS: {os.getpid()} {actor_name.replace("_", "-")} {old_rss} {new_rss} {new_rss - old_rss}')
+
+    logger.begin()
+
+    # TODO: implement a proper decorator, or merge this into @task decorator - but @task seems to be flawed,
+    # which requires a fix, therefore merge this into @task once it gets fixed.
+    caller_frame = inspect.stack()[1]
+
+    actor_name = caller_frame.frame.f_code.co_name
+
+    profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
+
+    if profile_actor:
+        profiler = Profiler()
+        profiler.start()
+
+    db = db or get_root_db()
+    cancel = cancel or threading.Event()
+
+    doer_args = doer_args or tuple()
+    doer_kwargs = doer_kwargs or dict()
+
+    doer_result: DoerReturnType = Error(Failure('undefined doer result'))
+
+    # Updating context - this function is the entry point into Artemis code, therefore context
+    # is probably left empty or with absolutely wrong objects.
+
+    LOGGER.set(logger)
+    DATABASE.set(db)
+
+    # Small helper so we can keep all session-related stuff inside one block, and avoid repetition or more than
+    # one `get_session()` call.
+    def _run_doer(session: sqlalchemy.orm.session.Session) -> DoerReturnType:
+        SESSION.set(session)
+
+        assert db is not None
+        assert cancel is not None
+        assert doer_args is not None
+        assert doer_kwargs is not None
+
+        doer_result = run_doer_v2(
+            logger,
+            db,
+            session,
+            cancel,
+            doer,
+            actor_name,
+            *doer_args,
+            **doer_kwargs
+        )
+
+        # "Ignored" failures - failures the tasks don't wish to repeat by running the task again - need
+        # special handling: we have to mark the guest request as failed. Without this step, client will
+        # spin endlessly until it finally gives up.
+
+        if not is_ignore_result(doer_result):
+            return doer_result
+
+        failure = cast(_IgnoreType, doer_result.unwrap()).failure
+
+        # Not all failures influence their parent guest request.
+        if failure.recoverable is not False or failure.fail_guest_request is not True:
+            return doer_result
+
+        # Also, not all failures relate to guests. Such failures are easy to deal with, there's nothing to update.
+        if 'guestname' not in failure.details:
+            return doer_result
+
+        guestname = failure.details['guestname']
+
+        r_state_change = _update_guest_state_v2(
+            logger,
+            session,
+            guestname,
+            GuestState.ERROR
+            # TODO: poolname=?
+        )
+
+        # If the change failed, we're left with a loose end: the task marked the failure as something that will not
+        # get better over time, but here we failed to mark the request as failed because of issue that may be
+        # transient. If that's the case, we should probably try again. Otherwise, we log the error that killed the
+        # state change, and move on.
+        if r_state_change.is_error:
+            # Describes the problem encountered when changing the guest request state.
+            state_change_failure = r_state_change.unwrap_error()
+
+            # Describes *when* this change was needed, i.e. what we attempted to do. Brings more context for humans.
+            failure = Failure.from_failure(
+                'failed to mark guest request as failed',
+                state_change_failure
+            )
+
+            # State change failed because of recoverable failure => use it as an excuse to try again. We can expect the
+            # task to fail, but we will get another chance to mark the guest as failed. This effectively drops the
+            # original `IGNORE` result, replacing it with an error.
+            if state_change_failure.recoverable is True:
+                return Error(failure)
+
+            # State change failed because of irrecoverable failure => no point to try again. Probably not very common,
+            # but still possible, in theory. At least try to log the situation before proceeding with the original
+            # `IGNORE`.
+            failure.handle(logger)
+
+        # State change succeeded, and changed exactly the request we're working with. There is nothing left to do,
+        # we proceed by propagating the original "ignore" result, closing the chapter.
+        return doer_result
+
+    try:
+        if session is None:
+            with db.get_session(transactional=session_isolation is True) as session:
+                doer_result = _run_doer(session)
+
+        else:
+            doer_result = _run_doer(session)
+
+    except Exception as exc:
+        failure = Failure.from_exc('unhandled doer exception', exc)
+        failure.handle(logger)
+
+        doer_result = Error(failure)
+
+    if profile_actor:
+        profiler.stop()
+        profiler.log(logger, 'profiling report (outer)')
+
+    if doer_result.is_ok:
+        result = doer_result.unwrap()
+
+        if is_ignore_result(doer_result):
+            logger.warning('message processing encountered error and requests waiver')
+
+        _log_rss()
+
+        logger.finished()
+
+        if result is Reschedule:
+            raise Exception('message processing requested reschedule')
+
+        return
+
+    _log_rss()
+
+    # To avoid chain a of exceptions in the log - which we already logged above - raise a generic,
+    # insignificant exception to notify scheduler that this task failed and needs to be retried.
+    raise Exception(f'message processing failed: {doer_result.unwrap_error().message}')
+
+
 def _cancel_task_if(
     logger: gluetool.log.ContextAdapter,
     cancel: threading.Event,
@@ -1639,6 +1915,74 @@ def _update_guest_state_and_request_task(
     return Ok(True)
 
 
+def _update_guest_state_v2(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    guestname: str,
+    new_state: GuestState,
+    current_state: Optional[GuestState] = None,
+    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+    poolname: Optional[str] = None,
+    current_pool_data: Optional[str] = None,
+    **details: Any
+) -> Result[None, Failure]:
+    current_state_label = current_state.value if current_state is not None else '<ignored>'
+
+    def handle_error(r: Result[Any, Failure], message: str) -> Result[None, Failure]:
+        assert r.is_error
+
+        return Error(
+            Failure.from_failure(
+                message,
+                r.unwrap_error(),
+                current_state=current_state_label,
+                new_state=new_state.value
+            ).update(poolname=poolname, **details)
+        )
+
+    logger.warning(f'state switch: {current_state_label} => {new_state.value}')
+
+    r_query = _guest_state_update_query(
+        guestname=guestname,
+        new_state=new_state,
+        current_state=current_state,
+        set_values=set_values,
+        current_pool_data=current_pool_data
+    )
+
+    if r_query.is_error:
+        return handle_error(r_query, 'failed to create state update query')
+
+    r_execute = execute_dml(logger, session, r_query.unwrap())
+
+    if r_execute.is_error:
+        return handle_error(r_execute, 'failed to switch guest state')
+
+    logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
+
+    GuestRequest.log_event_by_guestname(
+        logger,
+        session,
+        guestname,
+        'state-changed',
+        new_state=new_state.value,
+        current_state=current_state_label,
+        poolname=poolname,
+        **details,
+    )
+
+    r_commit = commit(logger, session)
+
+    if r_commit.is_error:
+        return handle_error(r_commit, 'failed to switch guest state')
+
+    logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')
+
+    metrics.ProvisioningMetrics.inc_guest_state_transition(poolname, current_state, new_state)
+
+    return Ok(None)
+
+
 def _update_snapshot_state(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -1912,6 +2256,110 @@ class Workspace:
             )
 
         return return_value
+
+    #
+    #
+    #
+
+    def _event(self, event: str, **details: Any) -> None:
+        assert self.guestname
+
+        GuestRequest.log_event_by_guestname(
+            self.logger,
+            self.session,
+            self.guestname,
+            event,
+            **self.spice_details,
+            **details
+        )
+
+    def _commit(self, label: str) -> None:
+        r = commit(self.logger, self.session)
+
+        if r.is_error:
+            self.fail(r.unwrap_error(), label, no_commit=False)
+
+    def begin(self) -> None:
+        if self.guestname:
+            self._event('entered-task')
+            self._commit('failed to store guest event')
+
+    def progress(self, eventname: str) -> None:
+        if self.guestname:
+            self._event(eventname)
+
+    def complete(self) -> None:
+        if self.guestname:
+            self._event('finished-task')
+            self._commit('failed to store guest event')
+
+        if not self.result:
+            self.result = SUCCESS
+
+    def reschedule(self) -> None:
+        if self.guestname:
+            self._event('rescheduled')
+            self.complete()
+
+        if not self.result:
+            self.result = RESCHEDULE
+
+    def fail(self, failure: Failure, label: str, no_commit: bool = False) -> None:
+        failure.handle(self.logger, label=label, sentry=True, guestname=self.guestname, **self.spice_details)
+
+        if self.guestname:
+            GuestRequest.log_error_event_by_guestname(
+                self.logger,
+                self.session,
+                self.guestname,
+                label,
+                failure
+            )
+
+            if not no_commit:
+                self._commit('failed to store guest event')
+
+        if failure.recoverable is True:
+            self.result = Error(failure)
+
+        else:
+            self.result = IGNORE(Error(failure))
+
+    def error(self, error: Result[Any, Failure], label: str) -> None:
+        self.fail(error.unwrap_error(), label)
+
+    def update_guest_state_v2(
+        self,
+        new_state: GuestState,
+        current_state: Optional[GuestState] = None,
+        set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+        poolname: Optional[str] = None,
+        current_pool_data: Optional[str] = None,
+        **details: Any
+    ) -> None:
+        if self.result:
+            return
+
+        assert self.guestname
+
+        r = _update_guest_state_v2(
+            self.logger,
+            self.session,
+            self.guestname,
+            new_state,
+            current_state=current_state,
+            set_values=set_values,
+            poolname=poolname or (self.gr.poolname if self.gr else None),
+            current_pool_data=current_pool_data,
+            **details
+        )
+
+        if r.is_error:
+            self.error(r, 'failed to update guest request')
+
+    #
+    #
+    #
 
     def load_guest_request(self, guestname: str, state: Optional[GuestState] = None) -> None:
         """

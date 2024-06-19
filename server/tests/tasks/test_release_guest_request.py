@@ -3,12 +3,13 @@
 
 import json
 import threading
-from typing import cast
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import gluetool.log
 import pytest
 import sqlalchemy
+from gluetool.result import Error, Ok, Result
 
 import tft.artemis
 import tft.artemis.db
@@ -36,7 +37,7 @@ def test_entry(
     workspace: Workspace,
     mockpatch: MockPatcher
 ) -> None:
-    mockpatch(workspace, 'handle_success')
+    mockpatch(workspace, 'begin')
     mockpatch(workspace, 'load_guest_request')
 
     assert workspace.guestname is not None
@@ -44,7 +45,7 @@ def test_entry(
 
     assert workspace.result is None
 
-    cast(MagicMock, workspace.handle_success).assert_called_once_with('entered-task')
+    cast(MagicMock, workspace.begin).assert_called_once_with()
     cast(MagicMock, workspace.load_guest_request).assert_called_once_with(
         'dummy-guest-name',
         state=tft.artemis.guest.GuestState.CONDEMNED
@@ -108,6 +109,41 @@ def test_load_pool_no_pool_data(
     cast(MagicMock, workspace.load_gr_pool).assert_not_called()
 
 
+@pytest.mark.usefixtures('dummy_guest_request')
+def test_pool_resources(
+    workspace: Workspace,
+    mockpatch: MockPatcher
+) -> None:
+    mockpatch(workspace, 'pool')
+    mockpatch(workspace.pool, 'release_guest', return_value=Ok(True))
+    mockpatch(workspace, 'error')
+
+    assert workspace.pool
+
+    assert workspace.handle_pool_resources() is workspace
+
+    cast(MagicMock, workspace.pool.release_guest).assert_called_once_with(workspace.logger, workspace.gr)
+    cast(MagicMock, workspace.error).assert_not_called()
+
+
+@pytest.mark.usefixtures('dummy_guest_request')
+def test_pool_resources_failed(
+    workspace: Workspace,
+    mockpatch: MockPatcher
+) -> None:
+    mock_error: Result[Any, tft.artemis.Failure] = Error(MagicMock())
+    mockpatch(workspace, 'pool')
+    mockpatch(workspace.pool, 'release_guest', return_value=mock_error)
+    mockpatch(workspace, 'error')
+
+    assert workspace.pool
+
+    assert workspace.handle_pool_resources() is workspace
+
+    cast(MagicMock, workspace.pool.release_guest).assert_called_once_with(workspace.logger, workspace.gr)
+    cast(MagicMock, workspace.error).assert_called_once_with(mock_error, 'failed to release guest')
+
+
 def test_exit(
     workspace: Workspace
 ) -> None:
@@ -141,7 +177,7 @@ def test_doer(
 def test_task(
     mockpatch: MockPatcher
 ) -> None:
-    mock_task_core = mockpatch(tft.artemis.tasks.release_guest_request, 'task_core')
+    mock_task_core = mockpatch(tft.artemis.tasks.release_guest_request, 'task_core_v2')
 
     assert tft.artemis.tasks.release_guest_request.release_guest_request.options['tail_handler'] is None
 

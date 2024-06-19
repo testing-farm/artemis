@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import contextvars
+import dataclasses
 import datetime
 import json
 import logging
@@ -99,9 +100,13 @@ def mockpatch(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> MockPatcher:
     def _mockpatch(
         obj: Any,
         member_name: str,
-        obj_name: Optional[str] = None
+        obj_name: Optional[str] = None,
+        return_value: Optional[Any] = dataclasses.MISSING
     ) -> MagicMock:
         mock = MagicMock(name=f'{member_name}<M>' if obj_name is None else f'{obj_name}.{member_name}<M>')
+
+        if return_value is not dataclasses.MISSING:
+            mock.return_value = return_value
 
         monkeypatch.setattr(obj, member_name, mock)
 

@@ -17,12 +17,12 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from ..db import DB, GuestRequest, safe_db_change
+from ..db import DB, GuestRequest, execute_dml
 from ..drivers import PoolData
 from ..guest import GuestState
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
 from . import Workspace as _Workspace
-from . import get_guest_logger, step, task, task_core
+from . import get_guest_logger, step, task, task_core_v2
 
 
 class Workspace(_Workspace):
@@ -42,7 +42,7 @@ class Workspace(_Workspace):
 
         assert self.guestname
 
-        self.handle_success('entered-task')
+        self.begin()
 
         self.load_guest_request(self.guestname, state=GuestState.CONDEMNED)
 
@@ -66,26 +66,24 @@ class Workspace(_Workspace):
         r_release = self.pool.release_guest(self.logger, self.gr)
 
         if r_release.is_error:
-            self.result = self.handle_error(r_release, 'failed to release guest')
-            return
+            self.error(r_release, 'failed to release guest')
 
     @step
     def remove_guest_request(self) -> None:
-        query = sqlalchemy \
-            .delete(GuestRequest.__table__) \
-            .where(GuestRequest.guestname == self.guestname) \
-            .where(GuestRequest.state == GuestState.CONDEMNED)
-
-        r_delete = safe_db_change(self.logger, self.session, query)
+        r_delete = execute_dml(
+            self.logger,
+            self.session,
+            sqlalchemy
+                .delete(GuestRequest.__table__)
+                .where(GuestRequest.guestname == self.guestname)
+                .where(GuestRequest.state == GuestState.CONDEMNED)
+        )
 
         if r_delete.is_error:
-            self.result = self.handle_error(r_delete, 'failed to remove guest request record')
+            self.error(r_delete, 'failed to remove guest request record')
             return
 
-        # We ignore the actual return value: the query was executed, but we either removed exactly one record,
-        # which is good, or we removed 0 records, which is also acceptable, as somebody already did that for us.
-        # We did schedule the release of resources successfully, which means we left no loose ends.
-        self.handle_success('released')
+        self.progress('released')
 
     @step
     def exit(self) -> None:
@@ -93,7 +91,7 @@ class Workspace(_Workspace):
         Wrap up the routing process by updating metrics & final logging.
         """
 
-        self.result = self.handle_success('finished-task')
+        self.complete()
 
     @classmethod
     def create(
@@ -154,8 +152,9 @@ def release_guest_request(guestname: str) -> None:
     :param guestname: name of the request to process.
     """
 
-    task_core(
+    task_core_v2(
         cast(DoerType, Workspace.release_guest_request),
         logger=get_guest_logger('release-guest-request', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
+        session_isolation=True
     )
