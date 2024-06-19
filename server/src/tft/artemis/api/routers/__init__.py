@@ -1,12 +1,13 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
 import dataclasses
 import datetime
 import json
 import os
 import uuid
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Dict, Generator, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import fastapi
 import gluetool.log
@@ -47,9 +48,12 @@ class GuestRequestManager:
         self.db = db
 
     # NOTE(ivasilev) No idea why how to make mypy happy, muting for now
-    def get_guest_requests(self, response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
-                           ) -> List[GuestResponseType]:
-        with self.db.get_session() as session:
+    def get_guest_requests(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
+    ) -> List[GuestResponseType]:
+        with get_session(logger, self.db) as (session, _):
             r_guests = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest).all()
 
             if r_guests.is_error:
@@ -85,7 +89,7 @@ class GuestRequestManager:
 
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
-        with self.db.get_session(transactional=True) as session:
+        with get_session(guest_logger, self.db) as (session, _):
             SESSION.set(session)
 
             # Validate guest request
@@ -136,14 +140,7 @@ class GuestRequestManager:
                 security_group_rules_egress=security_group_rules_egress
             )
 
-            r_create = artemis_db.execute_db_statement(guest_logger, session, create_guest_stmt)
-
-            if r_create.is_error:
-                raise errors.InternalServerError(
-                    logger=guest_logger,
-                    caused_by=r_create.unwrap_error(),
-                    failure_details=failure_details
-                )
+            execute_dml(guest_logger, session, create_guest_stmt, failure_details=failure_details)
 
             artemis_db.GuestRequest.log_event_by_guestname(
                 guest_logger,
@@ -177,7 +174,7 @@ class GuestRequestManager:
             # Everything went well, update our accounting.
             metrics.ProvisioningMetrics.inc_requested()
 
-        gr = self.get_by_guestname(guestname, response_model=response_model)
+        gr = self.get_by_guestname(guest_logger, guestname, response_model=response_model)
 
         if gr is None:
             # Now isn't this just funny... We just created the record, how could it be missing? There's probably
@@ -192,10 +189,11 @@ class GuestRequestManager:
 
     def get_by_guestname(
         self,
+        logger: gluetool.log.ContextAdapter,
         guestname: str,
         response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
     ) -> Optional[GuestResponseType]:
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             r_guest_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest) \
                 .filter(artemis_db.GuestRequest.guestname == guestname) \
                 .one_or_none()
@@ -226,7 +224,7 @@ class GuestRequestManager:
 
         guest_logger = get_guest_logger('delete-guest-request', logger, guestname)
 
-        with self.db.get_session(transactional=True) as session:
+        with get_session(logger, self.db) as (session, _):
             gr_query = artemis_db.SafeQuery \
                 .from_session(session, artemis_db.GuestRequest) \
                 .filter(artemis_db.GuestRequest.guestname == guestname)
@@ -273,7 +271,7 @@ class GuestRequestManager:
                     .where(snapshot_count_subquery.c.snapshot_count == 0) \
                     .values(state=GuestState.CONDEMNED)
 
-                r_state = artemis_db.execute_db_statement(guest_logger, session, query)
+                r_state = artemis_db.execute_dml(guest_logger, session, query)
 
                 # The query can miss either with existing snapshots, or when the guest request has been
                 # removed from DB already. The "gone already" situation could be better expressed by
@@ -344,10 +342,10 @@ class GuestRequestManager:
         guestname: str,
         logger: gluetool.log.ContextAdapter
     ) -> ConsoleUrlResponse:
-        from ...tasks import acquire_guest_console_url as task_acquire_guest_console_url
         from ...tasks import dispatch_task
+        from ...tasks.acquire_guest_console_url import acquire_guest_console_url
 
-        r_dispatch = dispatch_task(logger, task_acquire_guest_console_url, guestname)
+        r_dispatch = dispatch_task(logger, acquire_guest_console_url, guestname)
         if r_dispatch.is_error:
             raise errors.InternalServerError(caused_by=r_dispatch.unwrap_error(), logger=logger)
 
@@ -364,7 +362,7 @@ def acquire_guest_console_url(
     console_url_logger = get_guest_logger('acquire-guest-console-url', logger, guestname)
 
     # first see if the console has already been created and isn't expired yet
-    gr = manager.get_by_guestname(guestname)
+    gr = manager.get_by_guestname(console_url_logger, guestname)
     if not gr:
         # no such guest found, aborting
         raise errors.NoSuchEntityError(request=request, logger=console_url_logger)
@@ -580,21 +578,23 @@ def _parse_log_types(
 
 # NOTE(ivasilev) No idea why how to make mypy happy, muting for now
 def get_guest_requests(
+    logger: gluetool.log.ContextAdapter,
     manager: GuestRequestManager,
     request: Request,
     response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
 ) -> List[GuestResponseType]:
-    return manager.get_guest_requests(response_model=response_model)
+    return manager.get_guest_requests(logger, response_model=response_model)
 
 
 # NOTE(ivasilev) No idea why how to make mypy happy, muting for now
 def get_guest_request(
+    logger: gluetool.log.ContextAdapter,
     guestname: str,
     manager: GuestRequestManager,
     request: Request,
     response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
 ) -> GuestResponseType:
-    guest_response = manager.get_by_guestname(guestname, response_model=response_model)
+    guest_response = manager.get_by_guestname(logger, guestname, response_model=response_model)
 
     if guest_response is None:
         raise errors.NoSuchEntityError(request=request)
@@ -608,7 +608,7 @@ def delete_guest(
     logger: gluetool.log.ContextAdapter,
     manager: GuestRequestManager
 ) -> None:
-    guest = manager.get_by_guestname(guestname)
+    guest = manager.get_by_guestname(logger, guestname)
 
     if not guest:
         raise errors.NoSuchEntityError(request=request)
@@ -627,9 +627,10 @@ class GuestEventManager:
 
     def get_events(
         self,
+        logger: gluetool.log.ContextAdapter,
         search_params: EventSearchParameters
     ) -> List[GuestEvent]:
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             r_events = artemis_db.GuestEvent.fetch(
                 session,
                 page=search_params.page,
@@ -649,10 +650,11 @@ class GuestEventManager:
 
     def get_events_by_guestname(
         self,
+        logger: gluetool.log.ContextAdapter,
         guestname: str,
         search_params: EventSearchParameters
     ) -> List[GuestEvent]:
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             r_events = artemis_db.GuestEvent.fetch(
                 session,
                 guestname=guestname,
@@ -673,7 +675,7 @@ class GuestEventManager:
             ]
 
 
-def perform_safe_db_change(
+def execute_dml(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     query: Any,
@@ -685,14 +687,14 @@ def perform_safe_db_change(
     failure_details: Optional[FailureDetailsType] = None
 ) -> None:
     """
-    Helper for handling :py:func:`safe_db_change` in the same manner. Performs the query and tests the result:
+    Helper for handling :py:func:`execute_dml` in the same manner. Performs the query and tests the result:
 
     * raise ``500 Internal Server Error`` if the change failed,
     * raise ``conflict_error`` if the query didn't fail but changed no records,
     * do nothing and return when the query didn't fail and changed expected number of records.
     """
 
-    r_change = artemis_db.safe_db_change(logger, session, query)
+    r_change = artemis_db.execute_dml(logger, session, query)
 
     if r_change.is_error:
         raise errors.InternalServerError(
@@ -701,8 +703,29 @@ def perform_safe_db_change(
             failure_details=failure_details
         )
 
-    if not r_change.unwrap():
+    if not r_change.unwrap().rowcount:
         raise conflict_error(logger=logger, failure_details=failure_details)
+
+
+@contextlib.contextmanager
+def get_session(
+    logger: gluetool.log.ContextAdapter,
+    db: artemis_db.DB
+) -> Generator[Tuple[sqlalchemy.orm.session.Session, artemis_db.TransactionResult], None, None]:
+    with db.get_session(logger) as session:
+        with artemis_db.transaction(logger, session) as T:
+            yield session, T
+
+        if not T.complete:
+            assert T.failure is not None  # narrow type
+
+            if T.conflict:
+                raise errors.ConflictError(logger=logger, caused_by=T.failure)
+
+            raise errors.InternalServerError(
+                logger=logger,
+                caused_by=T.failure
+            )
 
 
 class GuestShelfManager:
@@ -722,7 +745,7 @@ class GuestShelfManager:
         else:
             ownername = global_env.DEFAULT_GUEST_REQUEST_OWNER
 
-        return manager.get_shelves(ownername)
+        return manager.get_shelves(logger, ownername)
 
     @staticmethod
     def entry_get_shelf(
@@ -730,7 +753,7 @@ class GuestShelfManager:
         shelfname: str,
         logger: gluetool.log.ContextAdapter
     ) -> Optional[GuestShelfResponse]:
-        return manager.get_shelf(shelfname)
+        return manager.get_shelf(logger, shelfname)
 
     @staticmethod
     def entry_create_shelf(
@@ -759,7 +782,7 @@ class GuestShelfManager:
         auth: AuthContext,
         logger: gluetool.log.ContextAdapter
     ) -> None:
-        if not manager.get_shelf(shelfname):
+        if not manager.get_shelf(logger, shelfname):
             raise errors.NoSuchEntityError(request=request)
 
         manager.delete_by_shelfname(shelfname, logger)
@@ -774,7 +797,7 @@ class GuestShelfManager:
         auth: AuthContext,
         logger: gluetool.log.ContextAdapter
     ) -> None:
-        guest = manager.get_by_guestname(guestname)
+        guest = manager.get_by_guestname(logger, guestname)
 
         if not guest:
             raise errors.NoSuchEntityError(request=request)
@@ -789,8 +812,8 @@ class GuestShelfManager:
     def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
         self.db = db
 
-    def get_shelves(self, ownername: str) -> List[GuestShelfResponse]:
-        with self.db.get_session() as session:
+    def get_shelves(self, logger: gluetool.log.ContextAdapter, ownername: str) -> List[GuestShelfResponse]:
+        with get_session(logger, self.db) as (session, _):
             r_shelves = artemis_db.SafeQuery \
                 .from_session(session, artemis_db.GuestShelf) \
                 .filter(artemis_db.GuestShelf.ownername == ownername) \
@@ -804,8 +827,8 @@ class GuestShelfManager:
                 for shelf in r_shelves.unwrap()
             ]
 
-    def get_shelf(self, shelfname: str) -> Optional[GuestShelfResponse]:
-        with self.db.get_session() as session:
+    def get_shelf(self, logger: gluetool.log.ContextAdapter, shelfname: str) -> Optional[GuestShelfResponse]:
+        with get_session(logger, self.db) as (session, _):
             r_shelf = artemis_db.SafeQuery \
                 .from_session(session, artemis_db.GuestShelf) \
                 .filter(artemis_db.GuestShelf.shelfname == shelfname) \
@@ -831,8 +854,8 @@ class GuestShelfManager:
             'shelfname': shelfname
         }
 
-        with self.db.get_session() as session:
-            perform_safe_db_change(
+        with get_session(logger, self.db) as (session, _):
+            execute_dml(
                 logger,
                 session,
                 artemis_db.GuestShelf.create_query(shelfname, ownername),
@@ -840,7 +863,7 @@ class GuestShelfManager:
                 failure_details=failure_details
             )
 
-        shelf = self.get_shelf(shelfname)
+        shelf = self.get_shelf(logger, shelfname)
 
         if shelf is None:
             raise errors.InternalServerError(
@@ -857,7 +880,7 @@ class GuestShelfManager:
             'shelfname': shelfname
         }
 
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             r_shelf = artemis_db.SafeQuery \
                 .from_session(session, artemis_db.GuestShelf) \
                 .filter(artemis_db.GuestShelf.shelfname == shelfname) \
@@ -882,7 +905,7 @@ class GuestShelfManager:
                 .where(artemis_db.GuestShelf.shelfname == shelfname) \
                 .values(state=GuestState.CONDEMNED)
 
-            r_state = artemis_db.execute_db_statement(logger, session, query)
+            r_state = artemis_db.execute_dml(logger, session, query)
 
             if r_state.is_error:
                 raise errors.InternalServerError(
@@ -930,7 +953,7 @@ class GuestShelfManager:
             'raw_log_types': preprovisioning_request.guest.log_types
         }
 
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             preprovisioning_request.guest = _validate_guest_request(
                 logger,
                 session,
@@ -977,8 +1000,13 @@ class SnapshotRequestManager:
     def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
         self.db = db
 
-    def get_snapshot(self, guestname: str, snapshotname: str) -> Optional[SnapshotResponse]:
-        with self.db.get_session() as session:
+    def get_snapshot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guestname: str,
+        snapshotname: str
+    ) -> Optional[SnapshotResponse]:
+        with get_session(logger, self.db) as (session, _):
             r_snapshot_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.SnapshotRequest) \
                 .filter(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
                 .filter(artemis_db.SnapshotRequest.guestname == guestname) \
@@ -1009,8 +1037,8 @@ class SnapshotRequestManager:
 
         snapshot_logger = get_snapshot_logger('create-snapshot-request', logger, guestname, snapshotname)
 
-        with self.db.get_session() as session:
-            perform_safe_db_change(
+        with get_session(logger, self.db) as (session, _):
+            execute_dml(
                 snapshot_logger,
                 session,
                 sqlalchemy.insert(artemis_db.SnapshotRequest.__table__).values(
@@ -1032,7 +1060,7 @@ class SnapshotRequestManager:
                 snapshotname=snapshotname
             )
 
-        sr = self.get_snapshot(guestname, snapshotname)
+        sr = self.get_snapshot(logger, guestname, snapshotname)
 
         if sr is None:
             # Now isn't this just funny... We just created the record, how could it be missing? There's probably
@@ -1050,7 +1078,7 @@ class SnapshotRequestManager:
 
         snapshot_logger = get_snapshot_logger('delete-snapshot-request', logger, guestname, snapshotname)
 
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             query = sqlalchemy \
                 .update(artemis_db.SnapshotRequest.__table__) \
                 .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
@@ -1060,7 +1088,7 @@ class SnapshotRequestManager:
             # Unline guest requests, here seem to be no possibility of conflict or relationships we must
             # preserve. Given the query, snapshot request already being removed seems to be the only option
             # here - what else could cause the query *not* marking the record as condemned?
-            perform_safe_db_change(snapshot_logger, session, query, conflict_error=errors.NoSuchEntityError)
+            execute_dml(snapshot_logger, session, query, conflict_error=errors.NoSuchEntityError)
 
             artemis_db.GuestRequest.log_event_by_guestname(
                 snapshot_logger,
@@ -1079,7 +1107,7 @@ class SnapshotRequestManager:
 
         snapshot_logger = get_snapshot_logger('delete-snapshot-request', logger, guestname, snapshotname)
 
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             query = sqlalchemy \
                 .update(artemis_db.SnapshotRequest.__table__) \
                 .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
@@ -1092,9 +1120,9 @@ class SnapshotRequestManager:
             # would better express the former, but sticking with "409 Conflict" to signal user there's a
             # conflict of some kind, and after resolving it - e.g. by inspecting the snapshot request - user
             # should decide how to proceed.
-            perform_safe_db_change(snapshot_logger, session, query)
+            execute_dml(snapshot_logger, session, query)
 
-            snapshot_response = self.get_snapshot(guestname, snapshotname)
+            snapshot_response = self.get_snapshot(logger, guestname, snapshotname)
 
             assert snapshot_response is not None
 
@@ -1181,7 +1209,7 @@ class KnobManager:
         #   static knob, since `$poolname` placeholder in the name is replaced with the actual pool name. For these
         #   records, we must find their "parent" knob, because we need to know its casting function (which applies
         #   to all "child" records of the given per-pool-capable knob).
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             r_knobs = artemis_db.SafeQuery.from_session(session, artemis_db.Knob) \
                 .all()
 
@@ -1214,7 +1242,7 @@ class KnobManager:
         return list(knobs.values())
 
     def get_knob(self, logger: gluetool.log.ContextAdapter, knobname: str) -> Optional[KnobResponse]:
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             r_knob = artemis_db.SafeQuery.from_session(session, artemis_db.Knob) \
                 .filter(artemis_db.Knob.knobname == knobname) \
                 .one_or_none()
@@ -1275,7 +1303,7 @@ class KnobManager:
             'knobname': knobname
         }
 
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             knob = Knob.DB_BACKED_KNOBS.get(knobname)
 
             if knob is None:
@@ -1326,8 +1354,8 @@ class KnobManager:
         logger.info(f'knob changed: {knobname} = {casted_value}')
 
     def delete_knob(self, logger: gluetool.log.ContextAdapter, knobname: str) -> None:
-        with self.db.get_session() as session:
-            perform_safe_db_change(
+        with get_session(logger, self.db) as (session, _):
+            execute_dml(
                 logger,
                 session,
                 sqlalchemy.delete(artemis_db.Knob.__table__).where(artemis_db.Knob.knobname == knobname)
@@ -1368,7 +1396,7 @@ class CacheManager:
         # check and before the dispatch, but we don't aim for consistency here, rather the user experience. The task
         # is safe: if the pool is gone in that sensitive period of time, task will report an error and won't ask for
         # reschedule. If we can avoid some of the errors with a trivial DB query, let's do so.
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             _ = self._get_pool(logger, session, poolname)
 
         from ...tasks import dispatch_task
@@ -1406,7 +1434,7 @@ class CacheManager:
         request: Request,
         poolname: str
     ) -> None:
-        from ...tasks import refresh_pool_image_info
+        from ...tasks.refresh_pool_image_info import refresh_pool_image_info
 
         return manager.refresh_pool_object_infos(logger, request, poolname, refresh_pool_image_info)
 
@@ -1417,7 +1445,7 @@ class CacheManager:
         request: Request,
         poolname: str
     ) -> None:
-        from ...tasks import refresh_pool_flavor_info
+        from ...tasks.refresh_pool_flavor_info import refresh_pool_flavor_info
 
         return manager.refresh_pool_object_infos(logger, request, poolname, refresh_pool_flavor_info)
 
@@ -1451,7 +1479,7 @@ class CacheManager:
         return pool
 
     def _get_pool_object_infos(self, logger: gluetool.log.ContextAdapter, poolname: str, method_name: str) -> Response:
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             pool = self._get_pool(logger, session, poolname)
 
             method = getattr(pool, method_name, None)
@@ -1495,16 +1523,16 @@ class UserManager:
         self.db = db
 
     @staticmethod
-    def entry_get_users(manager: 'UserManager') -> List[UserResponse]:
-        with manager.db.get_session() as session:
+    def entry_get_users(manager: 'UserManager', logger: gluetool.log.ContextAdapter) -> List[UserResponse]:
+        with get_session(logger, manager.db) as (session, _):
             return [
                 UserResponse.from_db(user)
                 for user in manager.get_users(session)
             ]
 
     @staticmethod
-    def entry_get_user(manager: 'UserManager', username: str) -> UserResponse:
-        with manager.db.get_session() as session:
+    def entry_get_user(manager: 'UserManager', username: str, logger: gluetool.log.ContextAdapter) -> UserResponse:
+        with get_session(logger, manager.db) as (session, _):
             return UserResponse.from_db(manager.get_user(session, username))
 
     @staticmethod
@@ -1527,7 +1555,7 @@ class UserManager:
 
         manager.create_user(logger, username, actual_role)
 
-        with manager.db.get_session() as session:
+        with get_session(logger, manager.db) as (session, _):
             return UserResponse.from_db(manager.get_user(session, username))
 
     @staticmethod
@@ -1596,8 +1624,8 @@ class UserManager:
         username: str,
         role: artemis_db.UserRoles
     ) -> None:
-        with self.db.get_session() as session:
-            perform_safe_db_change(
+        with get_session(logger, self.db) as (session, _):
+            execute_dml(
                 logger,
                 session,
                 sqlalchemy.insert(artemis_db.User.__table__).values(
@@ -1611,11 +1639,11 @@ class UserManager:
         logger: gluetool.log.ContextAdapter,
         username: str
     ) -> None:
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             # Provides nicer error when the user does not exist
             _ = self.get_user(session, username)
 
-            perform_safe_db_change(
+            execute_dml(
                 logger,
                 session,
                 sqlalchemy.delete(artemis_db.User.__table__).where(
@@ -1632,7 +1660,7 @@ class UserManager:
         username: str,
         tokentype: TokenTypes
     ) -> TokenResetResponse:
-        with self.db.get_session() as session:
+        with get_session(logger, self.db) as (session, _):
             # Provides nicer error when the user does not exist
             user = self.get_user(session, username)
 
@@ -1654,7 +1682,7 @@ class UserManager:
             else:
                 assert False, 'Unreachable'
 
-            perform_safe_db_change(
+            execute_dml(
                 logger,
                 session,
                 query,
@@ -1719,7 +1747,7 @@ def get_guest_request_log(
 
     guest_logger = get_guest_logger('create-guest-request-log', logger, guestname)
 
-    with manager.db.get_session() as session:
+    with get_session(guest_logger, manager.db) as (session, _):
         r_log = artemis_db.SafeQuery.from_session(session, artemis_db.GuestLog) \
             .filter(artemis_db.GuestLog.guestname == guestname) \
             .filter(artemis_db.GuestLog.logname == logname) \
@@ -1754,7 +1782,8 @@ def create_guest_request_log(
     manager: GuestRequestManager,
     logger: gluetool.log.ContextAdapter
 ) -> None:
-    from ...tasks import get_guest_logger, update_guest_log
+    from ...tasks import get_guest_logger
+    from ...tasks.update_guest_log import update_guest_log
 
     failure_details = {
         'guestname': guestname
@@ -1762,7 +1791,7 @@ def create_guest_request_log(
 
     guest_logger = get_guest_logger('create-guest-request-log', logger, guestname)
 
-    with manager.db.get_session() as session:
+    with get_session(guest_logger, manager.db) as (session, _):
         r_upsert = artemis_db.upsert(
             guest_logger,
             session,

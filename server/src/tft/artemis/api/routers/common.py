@@ -102,17 +102,19 @@ def delete_knob(
 
 @router_users.get('/', status_code=status.HTTP_200_OK)
 def get_users(
-    manager: Annotated[UserManager, Depends(UserManager)]
+    manager: Annotated[UserManager, Depends(UserManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
 ) -> List[UserResponse]:
-    return manager.entry_get_users(manager=manager)
+    return manager.entry_get_users(manager, logger)
 
 
 @router_users.get('/{username}', status_code=status.HTTP_200_OK)
 def get_user(
     username: str,
-    manager: Annotated[UserManager, Depends(UserManager)]
+    manager: Annotated[UserManager, Depends(UserManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
 ) -> UserResponse:
-    return manager.entry_get_user(username=username, manager=manager)
+    return manager.entry_get_user(manager, username, logger)
 
 
 @router_users.post('/{username}', status_code=status.HTTP_201_CREATED)

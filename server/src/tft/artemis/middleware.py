@@ -191,11 +191,17 @@ def _handle_tails(
 
     db = get_root_db(tail_logger)
 
-    with db.get_session() as session:
+    with db.transaction(tail_logger) as (session, T):
         if tail_handler.handle_tail(tail_logger, db, session, task_call):
             return True
 
-    tail_logger.error('failed to handle the chain tail')
+    if T.complete is not True:
+        assert T.failure is not None  # narrow type
+
+        T.failure.handle(tail_logger, 'failed to handle the chain tail')
+
+    else:
+        tail_logger.error('failed to handle the chain tail')
 
     # This would cause the message to be dropped, effectively halting any work towards provisioning
     # of the guest or capturing its logs.

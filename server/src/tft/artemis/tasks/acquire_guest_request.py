@@ -1,15 +1,6 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Inspect the provisioning progress of a given request, and update info Artemis holds for this request.
-
-.. note::
-
-   Task MUST be aware of the possibility of another task performing the same job at the same time. All changes
-   MUST preserve consistent and restartable state.
-"""
-
 import datetime
 import threading
 from typing import Dict, Union, cast
@@ -18,7 +9,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 
 from ..db import DB
-from ..drivers import PoolData, ProvisioningProgress, ProvisioningState
+from ..drivers import ProvisioningState
 from ..guest import GuestState
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
 from . import GuestRequestWorkspace as _Workspace
@@ -30,20 +21,12 @@ class Workspace(_Workspace):
     Workspace for guest request update task.
     """
 
+    TASKNAME = 'acquire-guest-request'
+
     @step
     def run(self) -> None:
-        """
-        Foo.
-        """
-
-        skip_prepare_verify_ssh: bool
-
-        current_pool_data: PoolData
-        provisioning_progress: ProvisioningProgress
-        new_guest_data: Dict[str, Union[str, int, None, datetime.datetime, GuestState]]
-
         with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.PROMISED)
+            self.load_guest_request(self.guestname, state=GuestState.PROVISIONING)
             self.load_gr_pool()
 
             if self.result:
@@ -53,64 +36,86 @@ class Workspace(_Workspace):
             assert self.pool
 
             skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
-            current_pool_data = self.pool.pool_data_class.unserialize(self.gr)
 
-            r_progress = self.pool.update_guest(self.logger, self.session, self.gr)
+            result = self.pool.acquire_guest(
+                self.logger,
+                self.session,
+                self.gr,
+                cancelled=self.cancel
+            )
 
-            if r_progress.is_error:
-                return self._error(r_progress, 'failed to update guest')
+            if result.is_error:
+                return self._error(result, 'failed to provision')
 
-            provisioning_progress = r_progress.unwrap()
+            provisioning_progress = result.unwrap()
 
-            new_guest_data = {
+            # not returning here - pool was able to recover and proceed
+            for failure in provisioning_progress.pool_failures:
+                self._fail(failure, 'pool encountered failure during acquisition', no_effect=True)
+
+            # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
+            # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
+            # save guest's address. In both cases, we must be sure nobody else did any changes before us.
+
+            new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
                 'pool_data': provisioning_progress.pool_data.serialize()
             }
 
             if provisioning_progress.ssh_info is not None:
-                new_guest_data.update({
+                new_guest_values.update({
                     'ssh_username': provisioning_progress.ssh_info.username,
                     'ssh_port': provisioning_progress.ssh_info.port
                 })
 
-            if provisioning_progress.address is not None:
-                new_guest_data['address'] = provisioning_progress.address
-
-            # not returning here - pool was able to recover and proceed
-            for failure in provisioning_progress.pool_failures:
-                self._fail(failure, 'pool encountered failure during update', no_effect=True)
-
             if provisioning_progress.state == ProvisioningState.PENDING:
-                self._progress('pending')
+                from .update_guest_request import update_guest_request
 
                 self.update_guest_state_and_request_task(
                     GuestState.PROMISED,
                     update_guest_request,
                     self.guestname,
-                    current_state=GuestState.PROMISED,
-                    set_values=new_guest_data,
-                    current_pool_data=current_pool_data.serialize(),
+                    current_state=GuestState.PROVISIONING,
+                    set_values=new_guest_values,
+                    pool=self.gr.poolname,
+                    pool_data=provisioning_progress.pool_data.serialize(),
                     delay=provisioning_progress.delay_update
                 )
 
+                if self.result:
+                    # TODO: we failed to save pool data & request follow-up task, must retry - and that will
+                    # cause acquire-guest-task to allocate new resources while those we have *now* would not
+                    # be tracked.
+                    return
+
+                self._progress('scheduled update')
+
             elif provisioning_progress.state == ProvisioningState.CANCEL:
-                assert self.db
+                self._progress('provisioning cancelled')
 
-                self._progress('canceled-by-pool')
+                # This may fail, and re-running task should be correct - probably nothing was allocated.
+                r_release = self.pool.release_guest(self.logger, self.gr)
 
-                if not ProvisioningTailHandler(GuestState.PROMISED, GuestState.ROUTING).handle_tail(
+                if r_release.is_error:
+                    return self._error(r_release, 'failed to release after cancel')
+
+                if not ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.SHELF_LOOKUP).handle_tail(
                     self.logger,
                     self.db,
                     self.session,
                     TaskCall(
-                        actor=update_guest_request,
-                        args=(self.guestname,),
-                        arg_names=('guestname',)
+                        actor=acquire_guest_request,
+                        args=(self.gr.guestname, self.pool.poolname),
+                        arg_names=('guestname', 'poolname')
                     )
                 ):
                     self._reschedule()
 
-            elif provisioning_progress.state == ProvisioningState.COMPLETE:
+            else:
+                assert provisioning_progress.address
+
                 self._progress('address-assigned', address=provisioning_progress.address)
+
+                new_guest_values['address'] = provisioning_progress.address
 
                 # Running verify-ssh step is optional - user might have requested us to skip the step.
                 if skip_prepare_verify_ssh:
@@ -120,9 +125,11 @@ class Workspace(_Workspace):
                         GuestState.PREPARING,
                         prepare_finalize_pre_connect,
                         self.guestname,
-                        current_state=GuestState.PROMISED,
-                        set_values=new_guest_data,
-                        current_pool_data=current_pool_data.serialize()
+                        current_state=GuestState.PROVISIONING,
+                        address=provisioning_progress.address,
+                        set_values=new_guest_values,
+                        pool=self.gr.poolname,
+                        pool_data=provisioning_progress.pool_data.serialize()
                     )
 
                 else:
@@ -133,11 +140,21 @@ class Workspace(_Workspace):
                         GuestState.PREPARING,
                         prepare_verify_ssh,
                         self.guestname,
-                        current_state=GuestState.PROMISED,
-                        set_values=new_guest_data,
-                        current_pool_data=current_pool_data.serialize(),
+                        current_state=GuestState.PROVISIONING,
+                        address=provisioning_progress.address,
+                        set_values=new_guest_values,
+                        pool=self.gr.poolname,
+                        current_pool_data=provisioning_progress.pool_data.serialize(),
                         delay=KNOB_DISPATCH_PREPARE_DELAY.value
                     )
+
+                if self.result:
+                    # TODO: we failed to save pool data & request follow-up task, must retry - and that will
+                    # cause acquire-guest-task to allocate new resources while those we have *now* would not
+                    # be tracked.
+                    return
+
+                self._progress('successfully acquired')
 
     @classmethod
     def create(
@@ -159,10 +176,10 @@ class Workspace(_Workspace):
         :returns: newly created workspace.
         """
 
-        return cls(logger, session, cancel, db, guestname, task='update-guest-request')
+        return cls(logger, session, cancel, db, guestname, task=Workspace.TASKNAME)
 
     @classmethod
-    def update_guest_request(
+    def acquire_guest_request(
         cls,
         logger: gluetool.log.ContextAdapter,
         db: DB,
@@ -189,15 +206,9 @@ class Workspace(_Workspace):
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PROMISED, GuestState.SHELF_LOOKUP))
-def update_guest_request(guestname: str) -> None:
-    """
-    Update guest request provisioning progress.
-
-    :param guestname: name of the request to process.
-    """
-
+def acquire_guest_request(guestname: str) -> None:
     task_core(
-        cast(DoerType, Workspace.update_guest_request),
-        logger=get_guest_logger('update-guest-request', _ROOT_LOGGER, guestname),
+        cast(DoerType, Workspace.acquire_guest_request),
+        logger=get_guest_logger(Workspace.TASKNAME, _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )

@@ -1469,7 +1469,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
             resource_id.ctime = guest_request.ctime if guest_request else None
 
         # Local import, to avoid circular imports
-        from ..tasks import dispatch_sequence, release_pool_resources
+        from ..tasks import dispatch_sequence
+        from ..tasks.release_pool_resources import release_pool_resources
 
         return dispatch_sequence(
             logger,

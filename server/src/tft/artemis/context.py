@@ -33,7 +33,7 @@ prevent most of the issues.
 
 import contextvars
 import functools
-from typing import Any, Callable, Dict, Optional, Tuple, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, TypeVar
 
 import dramatiq.broker
 import gluetool.log
@@ -43,6 +43,9 @@ import sqlalchemy.orm.session
 from . import get_cache, get_logger
 from .db import DB
 
+if TYPE_CHECKING:
+    from .tasks import TaskCall
+
 T = TypeVar('T')
 
 LOGGER: contextvars.ContextVar[gluetool.log.ContextAdapter] = contextvars.ContextVar('LOGGER', default=get_logger())
@@ -51,6 +54,7 @@ SESSION: contextvars.ContextVar[sqlalchemy.orm.session.Session] = contextvars.Co
 CACHE: contextvars.ContextVar[redis.Redis] = contextvars.ContextVar('CACHE', default=get_cache(LOGGER.get()))
 CURRENT_MESSAGE: contextvars.ContextVar[Optional[dramatiq.broker.MessageProxy]] = \
     contextvars.ContextVar('CURRENT_MESSAGE')
+CURRENT_TASK: contextvars.ContextVar[Optional['TaskCall']] = contextvars.ContextVar('CURRENT_TASK')
 
 #: Context variables available as injectables.
 CONTEXT_PROVIDERS: Dict[Tuple[str, Any], contextvars.ContextVar[Any]] = {
@@ -58,7 +62,8 @@ CONTEXT_PROVIDERS: Dict[Tuple[str, Any], contextvars.ContextVar[Any]] = {
     ('db', DB): DATABASE,
     ('session', sqlalchemy.orm.session.Session): SESSION,
     ('cache', redis.Redis): CACHE,
-    ('current_message', dramatiq.broker.MessageProxy): CURRENT_MESSAGE
+    ('current_message', dramatiq.broker.MessageProxy): CURRENT_MESSAGE,
+    ('current_task', 'TaskCall'): CURRENT_TASK
 }
 
 
