@@ -236,7 +236,8 @@ def fixture_provisioning_message(
 
 @pytest.fixture(name='logging_actor')
 def fixture_logging_actor() -> Actor:
-    return tft.artemis.tasks.update_guest_log
+    from tft.artemis.tasks.update_guest_log import update_guest_log
+    return update_guest_log
 
 
 @pytest.fixture(name='logging_actor_arguments')

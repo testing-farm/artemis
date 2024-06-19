@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import datetime
-from typing import cast
+import threading
+from typing import Dict, cast
 from unittest.mock import MagicMock
 
 import _pytest.logging
@@ -16,7 +17,8 @@ from sqlalchemy import Column, Integer, Text
 
 import tft.artemis.db
 import tft.artemis.tasks
-from tft.artemis.db import DB, Base, GuestEvent, GuestRequest, SafeQuery, safe_db_change, transaction, upsert
+from tft.artemis.db import DB, Base, GuestEvent, GuestRequest, SafeQuery, TransactionResult, safe_db_change, \
+    transaction, upsert
 from tft.artemis.guest import GuestState
 
 from . import MockPatcher, assert_failure_log
@@ -487,11 +489,11 @@ def test_transaction_no_transactions(
         count=2
     )
 
-    with transaction() as r:
+    with transaction(logger, session) as r:
         session.execute(query1)
         session.execute(query2)
 
-    assert r.success is True
+    assert r.complete is True
 
     records = SafeQuery.from_session(session, Counters).order_by(Counters.name).all().unwrap()
 
@@ -512,11 +514,11 @@ def test_transaction(
     Test whether :py:func:`transaction` behaves correctly when wrapping non-conflicting queries.
     """
 
-    with db.get_session(transactional=True) as session:
+    with db.get_session_v2(logger) as session:
         update = tft.artemis.tasks._guest_state_update_query(
             'dummy-guest',
             GuestState.PROVISIONING,
-            current_state=GuestState.ROUTING
+            current_state=GuestState.SHELF_LOOKUP
         ).unwrap()
 
         insert = sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
@@ -525,23 +527,26 @@ def test_transaction(
             eventname='dummy-event'
         )
 
-        with transaction() as r:
+        with transaction(logger, session) as r:
             session.execute(update)
             session.execute(insert)
 
-        assert r.success is True
+        assert r.complete is True
 
-    requests = SafeQuery.from_session(session, GuestRequest).all().unwrap()
+        requests = SafeQuery.from_session(session, GuestRequest) \
+            .filter(GuestRequest.guestname == 'dummy-guest') \
+            .all() \
+            .unwrap()
 
-    assert len(requests) == 1
-    # TODO: cast shouldn't be needed, sqlalchemy should annouce .state as enum - maybe with more recent stubs?
-    assert cast(GuestState, requests[0].state) == GuestState.PROVISIONING
+        assert len(requests) == 1
+        # TODO: cast shouldn't be needed, sqlalchemy should annouce .state as enum - maybe with more recent stubs?
+        assert cast(GuestState, requests[0].state) == GuestState.PROVISIONING
 
-    events = SafeQuery.from_session(session, GuestEvent).all().unwrap()
+        events = SafeQuery.from_session(session, GuestEvent).all().unwrap()
 
-    assert len(events) == 1
-    assert events[0].guestname == 'dummy-guest'
-    assert events[0].eventname == 'dummy-event'
+        assert len(events) == 1
+        assert events[0].guestname == 'dummy-guest'
+        assert events[0].eventname == 'dummy-event'
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_initialized_actual')
@@ -555,65 +560,95 @@ def test_transaction_conflict(
     Test whether :py:func:`transaction` intercepts and reports transaction rollback.
     """
 
-    with db.get_session(transactional=True) as session2, db.get_session(transactional=True) as session3:
-        update1 = tft.artemis.tasks._guest_state_update_query(
-            'dummy-guest',
-            GuestState.PROVISIONING,
-            current_state=GuestState.ROUTING
-        ).unwrap()
+    checkpoint_transactions_started = threading.Barrier(2)
+    checkpoint_thread1_done = threading.Barrier(2)
 
-        update2 = tft.artemis.tasks._guest_state_update_query(
-            'dummy-guest',
-            GuestState.PROMISED,
-            current_state=GuestState.ROUTING
-        ).unwrap()
+    transaction_results: Dict[int, TransactionResult] = {}
 
-        insert1 = sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
-            updated=datetime.datetime.utcnow(),
-            guestname='dummy-guest',
-            eventname='dummy-event'
-        )
+    def thread1() -> None:
+        with db.get_session_v2(logger) as session:
+            update = tft.artemis.tasks._guest_state_update_query(
+                'dummy-guest',
+                GuestState.PROVISIONING,
+                current_state=GuestState.SHELF_LOOKUP
+            ).unwrap()
 
-        insert2 = sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
-            updated=datetime.datetime.utcnow(),
-            guestname='dummy-guest',
-            eventname='another-dummy-event'
-        )
+            insert = sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
+                updated=datetime.datetime.utcnow(),
+                guestname='dummy-guest',
+                eventname='dummy-event'
+            )
 
-        # To create conflict, we must "initialize" view of both sessions, by executing a query. This will setup
-        # their initial knowledge - without this step, the second transaction wouldn't run into any conflict because
-        # it would issue its first query when the first transaction has been already committed.
-        #
-        # Imagine two tasks, both loading guest request from DB, then making some decisions, eventually both
-        # trying to change it. The initial DB query sets the stage for both transactions seeing the same DB
-        # state, and only one is allowed to modify the records both touched.
-        SafeQuery.from_session(session2, GuestRequest).all()
-        SafeQuery.from_session(session3, GuestRequest).all()
+            with transaction(logger, session) as r:
+                SafeQuery.from_session(session, GuestRequest).all()
 
-        with transaction() as r1:
-            session2.execute(update1)
-            session2.execute(insert1)
+                checkpoint_transactions_started.wait()
 
-        session2.commit()
+                session.execute(update)
+                session.execute(insert)
 
-        assert r1.success is True
+                checkpoint_thread1_done.wait()
 
-        with transaction() as r2:
-            session3.execute(update2)
-            session3.execute(insert2)
+        transaction_results[threading.get_ident()] = r
 
-        session2.commit()
+    def thread2() -> None:
+        with db.get_session_v2(logger) as session:
+            update = tft.artemis.tasks._guest_state_update_query(
+                'dummy-guest',
+                GuestState.PROMISED,
+                current_state=GuestState.SHELF_LOOKUP
+            ).unwrap()
 
-        assert r2.success is False
+            insert = sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
+                updated=datetime.datetime.utcnow(),
+                guestname='dummy-guest',
+                eventname='another-dummy-event'
+            )
 
-    requests = SafeQuery.from_session(session, GuestRequest).all().unwrap()
+            with transaction(logger, session) as r:
+                SafeQuery.from_session(session, GuestRequest).all()
 
-    assert len(requests) == 1
-    # TODO: cast shouldn't be needed, sqlalchemy should annouce .state as enum - maybe with more recent stubs?
-    assert cast(GuestState, requests[0].state) == GuestState.PROVISIONING
+                checkpoint_transactions_started.wait()
+                checkpoint_thread1_done.wait()
 
-    events = SafeQuery.from_session(session, GuestEvent).all().unwrap()
+                session.execute(update)
+                session.execute(insert)
 
-    assert len(events) == 1
-    assert events[0].guestname == 'dummy-guest'
-    assert events[0].eventname == 'dummy-event'
+        transaction_results[threading.get_ident()] = r
+
+    t1 = threading.Thread(target=thread1)
+    t2 = threading.Thread(target=thread2)
+
+    t1.start()
+    t2.start()
+
+    t1.join()
+    t2.join()
+
+    assert len(transaction_results) == 2
+
+    assert t1.ident is not None
+    assert t2.ident is not None
+
+    r1 = transaction_results[t1.ident]
+    r2 = transaction_results[t2.ident]
+
+    assert r1.complete is True
+
+    assert r2.complete is False
+    assert r2.failure is not None
+    assert r2.failed_query is not None
+    assert 'UPDATE' in r2.failed_query
+
+    with transaction(logger, session):
+        requests = SafeQuery.from_session(session, GuestRequest).all().unwrap()
+
+        assert len(requests) == 1
+        # TODO: cast shouldn't be needed, sqlalchemy should annouce .state as enum - maybe with more recent stubs?
+        assert cast(GuestState, requests[0].state) == GuestState.PROVISIONING
+
+        events = SafeQuery.from_session(session, GuestEvent).all().unwrap()
+
+        assert len(events) == 1
+        assert events[0].guestname == 'dummy-guest'
+        assert events[0].eventname == 'dummy-event'

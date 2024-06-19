@@ -21,9 +21,10 @@ from ..db import DB
 from ..drivers import ping_shell_remote
 from ..guest import GuestState
 from ..knobs import Knob
-from . import _ROOT_LOGGER, DoerReturnType, DoerType, ProvisioningTailHandler
-from . import Workspace as _Workspace
-from . import get_guest_logger, step, task, task_core
+from . import _ROOT_LOGGER, DoerReturnType, DoerType
+from . import GuestRequestWorkspace as _Workspace
+from . import ProvisioningTailHandler, get_guest_logger, step, task, task_core_v2
+from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
 
 KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     'actor.verify-ssh.connect-timeout',
@@ -41,68 +42,39 @@ class Workspace(_Workspace):
     Workspace for SSH verification task.
     """
 
-    # current_pool_data: PoolData
-    # provisioning_progress: ProvisioningProgress
-    # new_guest_data: Dict[str, Union[str, int, None, datetime.datetime, GuestState]]
-
-    ssh_connect_timeout: int
-
     @step
-    def entry(self) -> None:
-        """
-        Begin the update process with nice logging and loading request data and pool.
-        """
+    def run(self) -> None:
+        with self.transaction():
+            assert self.gr
+            assert self.pool
+            assert self.master_key
 
-        assert self.guestname
+            r = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=self.session, entityname=self.pool.poolname)
 
-        self.handle_success('entered-task')
+            if r.is_error:
+                return self._error(r, 'failed to obtain SSH timeout value')
 
-        self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-        self.load_gr_pool()
+            ssh_connect_timeout = r.unwrap()
 
-    @step
-    def load_ssh_timeout(self) -> None:
-        assert self.pool
-
-        r = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=self.session, entityname=self.pool.poolname)
-
-        if r.is_error:
-            self.result = self.handle_error(r, 'failed to obtain SSH timeout value')
-            return
-
-        self.ssh_connect_timeout = r.unwrap()
-
-    @step
-    def ping(self) -> None:
-        assert self.gr
-        assert self.pool
-        assert self.master_key
-
-        r_ping = ping_shell_remote(
-            self.logger,
-            self.gr,
-            key=self.master_key,
-            ssh_timeout=self.ssh_connect_timeout,
-            ssh_options=self.pool.ssh_options,
-            poolname=self.pool.poolname,
-            commandname='prepare-verify-ssh.shell-ping',
-            cause_extractor=self.pool.cli_error_cause_extractor
-        )
-
-        if r_ping.is_error:
-            # We do not want the generic "failed CLI" error here, to make SSH verification issues stand out more.
-            self.result = self.handle_failure(
-                Failure.from_failure('failed to verify SSH', r_ping.unwrap_error()),
-                'failed to verify SSH'
+            r_ping = ping_shell_remote(
+                self.logger,
+                self.gr,
+                key=self.master_key,
+                ssh_timeout=ssh_connect_timeout,
+                ssh_options=self.pool.ssh_options,
+                poolname=self.pool.poolname,
+                commandname='prepare-verify-ssh.shell-ping',
+                cause_extractor=self.pool.cli_error_cause_extractor
             )
 
-    @step
-    def exit(self) -> None:
-        """
-        Wrap up the routing process by updating metrics & final logging.
-        """
+            if r_ping.is_error:
+                # We do not want the generic "failed CLI" error here, to make SSH verification issues stand out more.
+                return self._fail(
+                    Failure.from_failure('failed to verify SSH', r_ping.unwrap_error()),
+                    'failed to verify SSH'
+                )
 
-        self.result = self.handle_success('finished-task')
+            self.request_task_v2(prepare_finalize_pre_connect, self.guestname)
 
     @classmethod
     def create(
@@ -147,12 +119,13 @@ class Workspace(_Workspace):
         """
 
         return cls.create(logger, db, session, cancel, guestname) \
-            .entry() \
+            .begin() \
+            .load_guest_request_v2(guestname, state=GuestState.PREPARING) \
             .mark_note_poolname() \
-            .load_ssh_timeout() \
-            .load_master_ssh_key() \
-            .ping() \
-            .exit() \
+            .load_gr_pool_v2() \
+            .load_master_ssh_key_v2() \
+            .run() \
+            .complete() \
             .final_result
 
 
@@ -164,7 +137,7 @@ def prepare_verify_ssh(guestname: str) -> None:
     :param guestname: name of the request to process.
     """
 
-    task_core(
+    task_core_v2(
         cast(DoerType, Workspace.prepare_verify_ssh),
         logger=get_guest_logger('prepare-verify-ssh', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)

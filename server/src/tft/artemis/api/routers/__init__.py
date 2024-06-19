@@ -325,10 +325,10 @@ class GuestRequestManager:
         guestname: str,
         logger: gluetool.log.ContextAdapter
     ) -> ConsoleUrlResponse:
-        from ...tasks import acquire_guest_console_url as task_acquire_guest_console_url
         from ...tasks import dispatch_task
+        from ...tasks.acquire_guest_console_url import acquire_guest_console_url
 
-        r_dispatch = dispatch_task(logger, task_acquire_guest_console_url, guestname)
+        r_dispatch = dispatch_task(logger, acquire_guest_console_url, guestname)
         if r_dispatch.is_error:
             raise errors.InternalServerError(caused_by=r_dispatch.unwrap_error(), logger=logger)
 
@@ -1364,7 +1364,7 @@ class CacheManager:
         request: Request,
         poolname: str
     ) -> None:
-        from ...tasks import refresh_pool_image_info
+        from ...tasks.refresh_pool_image_info import refresh_pool_image_info
 
         return manager.refresh_pool_object_infos(logger, request, poolname, refresh_pool_image_info)
 
@@ -1375,7 +1375,7 @@ class CacheManager:
         request: Request,
         poolname: str
     ) -> None:
-        from ...tasks import refresh_pool_flavor_info
+        from ...tasks.refresh_pool_flavor_info import refresh_pool_flavor_info
 
         return manager.refresh_pool_object_infos(logger, request, poolname, refresh_pool_flavor_info)
 
@@ -1712,7 +1712,8 @@ def create_guest_request_log(
     manager: GuestRequestManager,
     logger: gluetool.log.ContextAdapter
 ) -> None:
-    from ...tasks import get_guest_logger, update_guest_log
+    from ...tasks import get_guest_logger
+    from ...tasks.update_guest_log import update_guest_log
 
     failure_details = {
         'guestname': guestname

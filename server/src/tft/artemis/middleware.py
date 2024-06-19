@@ -170,7 +170,7 @@ def _handle_tails(
     db = get_root_db(tail_logger)
 
     with db.get_session() as session:
-        if tail_handler.handle_tail(tail_logger, db, session, task_call):
+        if tail_handler.handle_tail_v2(tail_logger, db, session, task_call):
             return True
 
     tail_logger.error('failed to handle the chain tail')
