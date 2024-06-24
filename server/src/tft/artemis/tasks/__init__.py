@@ -34,6 +34,7 @@ from .. import Failure, SerializableContainer, get_broker, get_db, get_logger, l
 from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, GuestEvent, GuestLog, GuestLogBlob, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, \
     SafeQuery, SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change
+from ..drivers import GuestLogBlob as GuestLogBlobProgress
 from ..drivers import GuestLogUpdateProgress, PoolData, PoolDriver, PoolLogger, ProvisioningState
 from ..drivers import aws as aws_driver
 from ..drivers import azure as azure_driver
@@ -2929,7 +2930,7 @@ def do_update_guest_log(
     if r_guest_log.is_error:
         return workspace.handle_error(r_guest_log, 'failed to fetch the log')
 
-    guest_log = r_guest_log.unwrap()
+    guest_log: Optional[GuestLog] = r_guest_log.unwrap()
 
     def _log_state_event(resolution: Optional[str] = None, new_state: Optional[GuestLogState] = None) -> None:
         assert guest_log is not None
@@ -2954,6 +2955,52 @@ def do_update_guest_log(
             current_state=guest_log.state.value,  # type: ignore[attr-defined]
             **kwargs
         )
+
+    def _insert_blob(blob: GuestLogBlobProgress) -> DoerReturnType:
+        assert guest_log is not None
+
+        blob_query = sqlalchemy \
+            .insert(GuestLogBlob.__table__) \
+            .values(
+                guestname=guest_log.guestname,
+                logname=guest_log.logname,
+                contenttype=guest_log.contenttype,
+                ctime=blob.ctime,
+                content=blob.content
+            )
+
+        r_store = safe_db_change(logger, session, blob_query)
+
+        if r_store.is_error:
+            return workspace.handle_error(r_store, 'failed to store guest log blob')
+
+        if r_store.unwrap() is not True:
+            return workspace.handle_success('finished-task', return_value=RESCHEDULE)
+
+        return SUCCESS
+
+    def _update_blob(blob: GuestLogBlob, content: str) -> DoerReturnType:
+        assert guest_log is not None
+
+        blob_query = sqlalchemy \
+            .update(GuestLogBlob.__table__) \
+            .where(GuestLogBlob.guestname == guest_log.guestname) \
+            .where(GuestLogBlob.logname == guest_log.logname) \
+            .where(GuestLogBlob.contenttype == guest_log.contenttype) \
+            .where(GuestLogBlob.ctime == blob.ctime) \
+            .values(
+                content=content
+            )
+
+        r_store = safe_db_change(logger, session, blob_query)
+
+        if r_store.is_error:
+            return workspace.handle_error(r_store, 'failed to update guest log blob')
+
+        if r_store.unwrap() is not True:
+            return workspace.handle_success('finished-task', return_value=RESCHEDULE)
+
+        return SUCCESS
 
     def _update_log(progress: GuestLogUpdateProgress) -> DoerReturnType:
         assert guest_log is not None
@@ -2982,24 +3029,24 @@ def do_update_guest_log(
         if r_store.unwrap() is not True:
             return workspace.handle_success('finished-task', return_value=RESCHEDULE)
 
-        for blob in progress.blobs:
-            blob_query = sqlalchemy \
-                .insert(GuestLogBlob.__table__) \
-                .values(
-                    guestname=guest_log.guestname,
-                    logname=guest_log.logname,
-                    contenttype=guest_log.contenttype,
-                    ctime=blob.ctime,
-                    content=blob.content
-                )
+        if progress.overwrite:
+            assert progress.blobs
 
-            r_store = safe_db_change(logger, session, blob_query)
+            current_blob: Optional[GuestLogBlob] = guest_log.blobs[0] if guest_log.blobs else None
+            new_blob = progress.blobs[0]
 
-            if r_store.is_error:
-                return workspace.handle_error(r_store, 'failed to store guest log blob')
+            if current_blob:
+                return _update_blob(current_blob, new_blob.content)
 
-            if r_store.unwrap() is not True:
-                return workspace.handle_success('finished-task', return_value=RESCHEDULE)
+            else:
+                return _insert_blob(new_blob)
+
+        else:
+            for blob in progress.blobs:
+                result = _insert_blob(blob)
+
+                if result is not SUCCESS:
+                    return result
 
         return SUCCESS
 

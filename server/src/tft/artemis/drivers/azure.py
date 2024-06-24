@@ -1148,7 +1148,7 @@ class AzureDriver(PoolDriver):
 
         timestamp, output = self._fetch_guest_console_blob(logger, guest_request).unwrap()
 
-        progress = GuestLogUpdateProgress.from_blob(
+        progress = GuestLogUpdateProgress.from_snapshot(
             logger,
             guest_log,
             timestamp,

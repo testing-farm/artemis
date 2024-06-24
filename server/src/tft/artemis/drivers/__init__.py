@@ -935,9 +935,11 @@ class GuestLogUpdateProgress:
     state: GuestLogState
 
     url: Optional[str] = None
+    expires: Optional[datetime.datetime] = None
+
+    overwrite: bool = False
     blobs: list[GuestLogBlob] = dataclasses.field(default_factory=list)
     blob: Optional[str] = None
-    expires: Optional[datetime.datetime] = None
 
     #: If set, it represents a suggestion from the pool driver: it does not make much sense
     #: to run :py:meth:`PoolDriver.update_guest` sooner than this second in the future. If
@@ -945,7 +947,7 @@ class GuestLogUpdateProgress:
     delay_update: Optional[int] = None
 
     @classmethod
-    def from_blob(
+    def from_snapshot(
         cls,
         logger: gluetool.log.ContextAdapter,
         log: GuestLog,
@@ -953,6 +955,19 @@ class GuestLogUpdateProgress:
         content: Optional[str],
         is_known_callback: Callable[[GuestLog, datetime.datetime, str], bool]
     ) -> 'GuestLogUpdateProgress':
+        """
+        Create guest log progress update from new "snapshot" content.
+
+        :param logger: logger to use for logging.
+        :param log: guest log to extend.
+        :param timestamp: if not set, the progress update would state the log is still in ``PENDING`` state.
+            If set, the timestamp would be assigned as "created at" timestamp to the new guest log blob.
+        :param content: if not set, the progress update would state the log is still in ``PENDING`` state.
+            If set, the content would be stored in the new guest log blob.
+        :param is_known_callback: a callable returning ``True`` if the new snapshot content is already stored.
+            In that case, no new blob would be added.
+        """
+
         if timestamp is None:
             logger.info('no blob received')
 
@@ -985,6 +1000,53 @@ class GuestLogUpdateProgress:
 
         return GuestLogUpdateProgress(
             state=GuestLogState.IN_PROGRESS,
+            blobs=[
+                GuestLogBlob(ctime=timestamp, content=content)
+            ]
+        )
+
+    @classmethod
+    def from_unabridged(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        log: GuestLog,
+        content: Optional[str],
+    ) -> 'GuestLogUpdateProgress':
+        """
+        Create guest log progress update from new unabridged, complete content.
+
+        :param logger: logger to use for logging.
+        :param log: guest log to extend.
+        :param content: if not set, the progress update would state the log is still in ``PENDING`` state.
+            If set, the content would be stored as the new - and only - guest log blob.
+        """
+
+        if content is None:
+            logger.info('no log content received')
+
+            return GuestLogUpdateProgress(state=GuestLogState.PENDING, overwrite=True)
+
+        timestamp = datetime.datetime.utcnow()
+
+        if not log.blobs:
+            logger.info('first log content received')
+
+            return GuestLogUpdateProgress(
+                state=GuestLogState.IN_PROGRESS,
+                overwrite=True,
+                blobs=[
+                    GuestLogBlob(ctime=timestamp, content=content)
+                ]
+            )
+
+        for blob in log.blobs:
+            logger.debug(f'existing log blob: {blob.ctime}')
+
+        logger.info('log content received, overwriting')
+
+        return GuestLogUpdateProgress(
+            state=GuestLogState.IN_PROGRESS,
+            overwrite=True,
             blobs=[
                 GuestLogBlob(ctime=timestamp, content=content)
             ]

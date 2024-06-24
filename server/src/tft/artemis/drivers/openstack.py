@@ -1241,7 +1241,7 @@ class OpenStackDriver(PoolDriver):
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        progress = GuestLogUpdateProgress.from_blob(
+        progress = GuestLogUpdateProgress.from_snapshot(
             logger,
             guest_log,
             datetime.datetime.utcnow(),

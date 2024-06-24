@@ -2217,7 +2217,7 @@ class BeakerDriver(PoolDriver):
                 url=progress.url
             ))
 
-        return Ok(GuestLogUpdateProgress.from_blob(
+        return Ok(GuestLogUpdateProgress.from_snapshot(
             logger,
             guest_log,
             datetime.datetime.utcnow(),

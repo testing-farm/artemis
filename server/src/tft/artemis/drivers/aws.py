@@ -3014,7 +3014,7 @@ class AWSDriver(PoolDriver):
 
         timestamp, output = r_output.unwrap()
 
-        progress = GuestLogUpdateProgress.from_blob(
+        progress = GuestLogUpdateProgress.from_snapshot(
             logger,
             guest_log,
             timestamp,

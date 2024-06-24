@@ -3,7 +3,6 @@
 
 import base64
 import dataclasses
-import datetime
 import json
 import threading
 from typing import Any, Dict, Optional, Tuple
@@ -432,12 +431,10 @@ class RestDriver(PoolDriver):
                 url=url
             ))
 
-        return Ok(GuestLogUpdateProgress.from_blob(
+        return Ok(GuestLogUpdateProgress.from_unabridged(
             logger,
             guest_log,
-            datetime.datetime.utcnow(),
-            response.text,
-            lambda guest_log, _, content: content in guest_log.blob_contents
+            response.text
         ))
 
     @guest_log_updater('rest', 'flasher-debug:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
