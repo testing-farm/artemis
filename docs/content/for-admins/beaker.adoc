@@ -218,22 +218,54 @@ When `variant` key is specified in the right-hand side of the image mapping, it 
 
 === AVC denials during installation
 
-AVC denials during installation are a common issue that may appear in early development phases of development of new OS version. Beaker would mark an affected job as "failed", and, by default, Artemis would terminate the job and retry. A `ignore-avc-on-compose-pattern` key lets maintainers to specify composes for which a Beaker job may failed because of AVC denials and be still accepted.
+AVC denials during installation are a common issue that may appear in early development phases of development of new OS version. Beaker would mark an affected job as "failed", and, by default, Artemis would terminate the job and retry. `failed-avc-result-patterns` and `ignore-avc-on-compose-pattern` keys lets maintainers to detect such situations and specify composes for which a Beaker job may failed because of AVC denials and be still accepted.
 
 .Specification
 [source,yaml]
 ....
+failed-avc-result-patterns:
+  - <pattern1>
+  - <pattern2>
+  ...
 ignore-avc-on-compose-pattern: <pattern>
 ....
 
 .Example
 [source,yaml]
 ....
+# All jobs where `/distribution/check-install` task fails because of AVC denials would be considered.
+failed-avc-result-patterns:
+  - "/distribution/check-install:Fail:Completed:/10_avc_check:Fail"
+
 # AVC denials appear when installing new Fedora 55, they will be fixed next week.
 # For now, let users test their components.
 ignore-avc-on-compose-pattern: "(?i)fedora-55"
 ....
 
+`failed-avc-result-patterns` specifies a list of patterns. If all of them match at least one task result, the job would be then checked against `ignore-avc-on-compose-pattern` pattern. `failed-avc-result-patterns` patterns are matched against a combination of task result fields: task name, task result, task status, phase name and phase result. Phase name and phase result may be empty strings if Beaker XML does not specify them.
+
+For example, task results as reported in Beaker job result XML:
+
+[source,xml]
+....
+<task name="/distribution/check-install" result="Fail" status="Completed">
+  <result path="/distribution/check-install" result="Pass"/>
+  <result path="/10_avc_check" result="Fail"/>
+  <result path="/distribution/check-install/Sysinfo" result="Pass"/>
+
+<task name="/distribution/reservesys" result="New" status="Running" >
+  <result path="/distribution/reservesys" result="Pass" />
+....
+
+would be converted into the following lines:
+
+[source]
+....
+/distribution/check-install:Fail:Completed:/distribution/check-install:Pass
+/distribution/check-install:Fail:Completed:/10_avc_check:Fail
+/distribution/check-install:Fail:Completed:/distribution/check-install/Sysinfo:Pass
+/distribution/reservesys:New:Running:/distribution/reservesys:Pass
+....
 
 === Installation method
 
