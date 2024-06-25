@@ -504,12 +504,10 @@ class RestDriver(PoolDriver):
         Console output cannot be grouped. So all data is always returned and there is no need for '/lastest' and '/all'
         endpoints.
         """
-        # TODO: change 'all' to 'console' when fetching of various logs is
-        # implemented in gluetool artemis module.
         return self._update_guest_log_blob(
             logger,
             guest_log,
-            self._get_guest_log_url(guest_request, 'all')
+            self._get_guest_log_url(guest_request, 'console')
         )
 
 
