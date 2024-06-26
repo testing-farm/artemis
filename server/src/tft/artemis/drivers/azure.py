@@ -914,6 +914,15 @@ class AzureDriver(PoolDriver):
             If custom_data_filename is an empty string then the guest vm is booted with no user-data.
             The vm will be created under a distinct resource_group so that a cleanup later will be smooth and easy.
             """
+            from ..tasks import _get_master_key
+
+            r_ssh_key = _get_master_key()
+
+            if r_ssh_key.is_error:
+                return Error(Failure.from_failure('could not obtain artemis ssh key',
+                                                  r_ssh_key.unwrap_error()))
+
+            ssh_key = r_ssh_key.unwrap()
 
             # According to `az` documentation, `--tags` accepts `space-separated tags`, but that's not really true.
             # Space-separated, yes, but not passed as one value after `--tags` option:
@@ -924,6 +933,7 @@ class AzureDriver(PoolDriver):
             #
             # As you can see, `baz=79` in the valid example is not a space-separated bit of a `--tags` argument,
             # but rather a stand-alone command-line item that is consumed by `--tags`.
+
             tags_options = []
 
             if tags:
@@ -977,12 +987,15 @@ class AzureDriver(PoolDriver):
 
                     az_vm_create_options += ['--boot-diagnostics-storage', self.pool_config['boot-log-storage']]
 
-                # Resource group and boot log storage pre-created, time to create a vm
-                return session.run_az(
-                    logger,
-                    az_vm_create_options,
-                    commandname='az.vm-create'
-                )
+                with create_tempfile(file_contents=ssh_key.public) as ssh_key_filepath:
+                    az_vm_create_options += ['--ssh-key-values', ssh_key_filepath]
+
+                    # Resource group / boot log storage pre-created, ssh_key passed -> time to create a vm
+                    return session.run_az(
+                        logger,
+                        az_vm_create_options,
+                        commandname='az.vm-create'
+                    )
 
         r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_resource_group_template.is_error:
