@@ -183,6 +183,11 @@ properties:
   preserve-for-investigation:
     type: boolean
 
+  failed-avc-result-patterns:
+    type: array
+    items:
+      type: string
+
   ignore-avc-on-compose-pattern:
     type: string
 

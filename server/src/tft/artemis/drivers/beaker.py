@@ -1045,6 +1045,28 @@ class BeakerDriver(PoolDriver):
         return Ok(patterns)
 
     @property
+    def failed_avc_patterns(self) -> Result[List[Pattern[str]], Failure]:
+        patterns = self.pool_config.get('failed-avc-result-patterns')
+
+        if not patterns:
+            return Ok([])
+
+        compiled_patterns: List[Pattern[str]] = []
+
+        for pattern in patterns:
+            try:
+                compiled_patterns.append(re.compile(pattern))
+
+            except Exception as exc:
+                return Error(Failure.from_exc(
+                    'failed to compile task result pattern',
+                    exc,
+                    pattern=pattern
+                ))
+
+        return Ok(compiled_patterns)
+
+    @property
     def ignore_avc_on_compose_pattern(self) -> Result[Optional[Pattern[str]], Failure]:
         pattern = self.pool_config.get('ignore-avc-on-compose-pattern')
 
@@ -1721,39 +1743,26 @@ class BeakerDriver(PoolDriver):
             or (job_status == 'reserved' and job_result == 'warn')  # job failed, needs a bit more time to update status
 
         if job_is_failed:
-            fail_reason_avc_in_install = \
-                job_result == 'fail' \
-                and len(job_task_results) == 4 \
-                and dataclasses.astuple(job_task_results[0]) == (
-                    '/distribution/check-install',
-                    'Fail',
-                    'Completed',
-                    '/distribution/check-install',
-                    'Pass'
-                ) \
-                and dataclasses.astuple(job_task_results[1]) == (
-                    '/distribution/check-install',
-                    'Fail',
-                    'Completed',
-                    '/10_avc_check',
-                    'Fail'
-                ) \
-                and dataclasses.astuple(job_task_results[2]) == (
-                    '/distribution/check-install',
-                    'Fail',
-                    'Completed',
-                    '/distribution/check-install/Sysinfo',
-                    'Pass'
-                ) \
-                and dataclasses.astuple(job_task_results[3]) == (
-                    '/distribution/reservesys',
-                    'New',
-                    'Running',
-                    None,
-                    None
-                )
+            r_failed_avc_patterns = self.failed_avc_patterns
+
+            if r_failed_avc_patterns.is_error:
+                return Error(r_failed_avc_patterns.unwrap_error())
+
+            matchable_job_task_results: List[str] = [
+                f'{result.taskname}:{result.task_result}:{result.task_status}:{result.phasename or ""}:{result.phase_result or ""}'  # noqa: E501
+                for result in job_task_results
+            ]
+
+            log_dict_yaml(logger.info, 'matchable job task results', matchable_job_task_results)
+
+            fail_reason_avc_in_install = all(
+                any(pattern.match(result) for result in matchable_job_task_results)
+                for pattern in r_failed_avc_patterns.unwrap()
+            )
 
             if fail_reason_avc_in_install:
+                logger.warning('detected AVC denials during installation')
+
                 r_ignore_avc_on_compose_pattern = self.ignore_avc_on_compose_pattern
 
                 if r_ignore_avc_on_compose_pattern.is_error:
@@ -1767,6 +1776,8 @@ class BeakerDriver(PoolDriver):
 
                     if r_guest_address.is_error:
                         return Error(r_guest_address.unwrap_error())
+
+                    logger.info('ignoring AVC denials during installation')
 
                     return Ok(ProvisioningProgress(
                         state=ProvisioningState.COMPLETE,
