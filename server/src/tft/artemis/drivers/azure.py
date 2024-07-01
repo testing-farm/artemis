@@ -13,6 +13,7 @@ import gluetool.log
 import gluetool.utils
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from gluetool.utils import normalize_bool_option
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
@@ -263,6 +264,10 @@ class AzureDriver(PoolDriver):
     def image_info_mapper(self) -> HookImageInfoMapper[AzurePoolImageInfo]:  # type: ignore[override]
         return HookImageInfoMapper(self, 'AZURE_ENVIRONMENT_TO_IMAGE')
 
+    @property
+    def use_public_ip(self) -> bool:
+        return normalize_bool_option(self.pool_config.get('use-public-ip', False))
+
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
@@ -381,25 +386,37 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[None, Failure]:
-        # NOTE(ivasilev) As all of the vm resources belong to the same resource_group, removing it will effectively
-        # clean everything up. Calls to iterative one-by-one resource listing are left here only for the purpose of
-        # incurring costs
+        # NOTE(ivasilev) If the resource_group matches the one in pool config's guest-request-group, then the cleanup
+        # will be solely relying on removing all resources tagged with the instance-id tag one by one.
+        # Otherwise in case of a precreated for this guest RG, by removing it we'll will effectively clean everything
+        # up in a single call. Calls to iterative one-by-one resource listing in this scenario will remain only for the
+        # purpose of incurring costs.
+
+        def _delete_resource(resource_id: str) -> Any:
+            with AzureSession(logger, self) as session:
+                return session.run_az(
+                    logger,
+                    ['resource', 'delete', '--ids', resource_id],
+                    json_format=False,
+                    commandname='az.resource-delete'
+                )
 
         resource_ids = AzurePoolResourcesIDs.unserialize_from_json(raw_resource_ids)
+        resource_group = resource_ids.resource_group
 
-        if resource_ids.resource_group:
-            # Actual removal
+        if resource_group:
             with AzureSession(logger, self) as session:
-                r_remove_resource_group = session.run_az(
-                    logger,
-                    ['group', 'delete', '--name', resource_ids.resource_group, '-y'],
-                    commandname='az.group-delete',
-                    json_format=False
-                )
-                if r_remove_resource_group.is_error:
-                    return Error(Failure.from_failure('failed to remove resource group',
-                                                      r_remove_resource_group.unwrap_error()))
-
+                if resource_group != self.pool_config.get('guest-resource-group'):
+                    # RG has been precreated for this guest -> by removing it all resources will be cleaned up
+                    r_remove_resource_group = session.run_az(
+                        logger,
+                        ['group', 'delete', '--name', resource_group, '-y'],
+                        commandname='az.group-delete',
+                        json_format=False
+                    )
+                    if r_remove_resource_group.is_error:
+                        return Error(Failure.from_failure('failed to remove resource group',
+                                                          r_remove_resource_group.unwrap_error()))
                 # storage containers used for console log have to be cleaned up separately - they belong to a different
                 # resource group and can't be tagged out of the box so need special treatment
                 if resource_ids.boot_log_container is not None:
@@ -420,10 +437,14 @@ class AzureDriver(PoolDriver):
 
         if resource_ids.instance_id is not None:
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
+            if resource_group == self.pool_config.get('guest-resource-group'):
+                _delete_resource(resource_ids.instance_id)
 
         if resource_ids.assorted_resource_ids is not None:
             for resource in resource_ids.assorted_resource_ids:
                 self.inc_costs(logger, AZURE_RESOURCE_TYPE[resource['type']], resource_ids.ctime)
+                if resource_group == self.pool_config.get('guest-resource-group'):
+                    _delete_resource(resource["id"])
 
         return Ok(None)
 
@@ -496,29 +517,10 @@ class AzureDriver(PoolDriver):
                 pool_failures=[Failure('instance ended up in "failed" state')]
             ))
 
-        r_ip_address = vm_info_to_ip(output, 'publicIps')
+        r_ip_address = vm_info_to_ip(output, 'publicIps' if self.use_public_ip else 'privateIps')
 
         if r_ip_address.is_error:
             return Error(r_ip_address.unwrap_error())
-
-        # Let's also figure out a uuid of the machine that may come handly later (like when we need to fetch console
-        # log). Surprisingly enough this is not the value of the id field that is provided upon vm creation and you
-        # have to make another api call to get that as it's not shown upon vm creation.
-
-        # If we got this far - we absolutely must have an instance id already
-        assert pool_data.instance_id is not None
-
-        with AzureSession(logger, self) as azure_session:
-            r_vm_show = azure_session.run_az(
-                logger,
-                ['vm', 'show', '--id', pool_data.instance_id],
-                commandname='vm-show'
-            )
-        if r_vm_show.is_error:
-            return Error(r_vm_show.unwrap_error())
-
-        vm_info = cast(Dict[str, Any], r_vm_show.unwrap())
-        pool_data.vm_id = vm_info['vmId']
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
@@ -912,7 +914,10 @@ class AzureDriver(PoolDriver):
             """
             The actual call to the azure cli guest create command is happening here.
             If custom_data_filename is an empty string then the guest vm is booted with no user-data.
-            The vm will be created under a distinct resource_group so that a cleanup later will be smooth and easy.
+            If pool config doesn't have a fixed guest_resource_group defined, then a new vm will be created under a
+            distinct resource_group so that a cleanup later will be smooth and easy. If there is a fixed
+            guest_resource_group then the cleanup will be bulky and old-fashioned and will be dependent on the guest
+            tags.
             """
             from ..tasks import _get_master_key
 
@@ -945,20 +950,22 @@ class AzureDriver(PoolDriver):
                 ]
 
             with AzureSession(logger, self) as session:
-                # First let's create a resource group for this vm
-                r_create_resource_group = session.run_az(
-                    logger,
-                    [
-                        'group', 'create',
-                        '--location', self.pool_config['default-location'],
-                        '--name', resource_group
-                    ] + tags_options,
-                    commandname='az.vm-create'
-                )
+                if resource_group != self.pool_config.get('guest-resource-group'):
+                    # First let's create a resource group for this vm
+                    r_create_resource_group = session.run_az(
+                        logger,
+                        [
+                            'group', 'create',
+                            '--location', self.pool_config['default-location'],
+                            '--name', resource_group
+                        ] + tags_options,
+                        commandname='az.vm-create'
+                    )
 
-                if r_create_resource_group.is_error:
-                    return Error(Failure.from_failure('failed to create resource group',
-                                                      r_create_resource_group.unwrap_error()))
+                    if r_create_resource_group.is_error:
+                        return Error(Failure.from_failure('failed to create resource group',
+                                                          r_create_resource_group.unwrap_error()))
+
                 az_vm_create_options = [
                     'vm', 'create',
                     '--resource-group', resource_group,
@@ -970,7 +977,7 @@ class AzureDriver(PoolDriver):
 
                 # If pool config has storage for boot of diagnostics specified -> let's try creating a storage, azure
                 # will indeed fail gracefully if it already exists
-                if self.pool_config['boot-log-storage']:
+                if self.pool_config.get('boot-log-storage'):
                     r_create_storage = session.run_az(
                         logger,
                         [
@@ -997,20 +1004,26 @@ class AzureDriver(PoolDriver):
                         commandname='az.vm-create'
                     )
 
-        r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
-        if r_resource_group_template.is_error:
-            return Error(Failure('Could not get resource_group_name template'))
+        # Let's figure out a resource group for guest. If one is defined in pool config - we should be using it,
+        # otherwise let's create a new one specifically for this vm to make cleanup fast and easy.
+        if not self.pool_config.get('guest-resource-group'):
 
-        r_rendered = render_template(
-            r_resource_group_template.unwrap(),
-            GUESTNAME=guest_request.guestname,
-            ENVIRONMENT=guest_request.environment,
-            TAGS=tags
-        )
-        if r_resource_group_template.is_error:
-            return Error(Failure('Could not render resource_group_name template'))
+            r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
+            if r_resource_group_template.is_error:
+                return Error(Failure('Could not get resource_group_name template'))
 
-        resource_group = r_rendered.unwrap()
+            r_rendered = render_template(
+                r_resource_group_template.unwrap(),
+                GUESTNAME=guest_request.guestname,
+                ENVIRONMENT=guest_request.environment,
+                TAGS=tags
+            )
+            if r_resource_group_template.is_error:
+                return Error(Failure('Could not render resource_group_name template'))
+
+            resource_group = r_rendered.unwrap()
+        else:
+            resource_group = self.pool_config['guest-resource-group']
 
         if guest_request.post_install_script:
             # user has specified custom script to execute, contents stored as post_install_script
@@ -1031,14 +1044,29 @@ class AzureDriver(PoolDriver):
 
         logger.info(f'acquired instance status {output["id"]}:{status}')
 
+        # In order to populate vmId that will be used to retrieve console logs we'll need a vm show. The vmID will
+        # be there right after guest create finishes so there is no need to populate in during guest update
+        with AzureSession(logger, self) as azure_session:
+            r_vm_show = azure_session.run_az(
+                logger,
+                [
+                    'vm', 'show',
+                    '--id', output['id'],
+                ],
+                commandname='vm-show'
+            )
+        if r_vm_show.is_error:
+            return Error(r_vm_show.unwrap_error())
+
+        vm_info = cast(Dict[str, Any], r_vm_show.unwrap())
+
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
             pool_data=AzurePoolData(
                 instance_id=output['id'],
                 instance_name=tags['ArtemisGuestLabel'],
-                # This will be set later in guest update
-                vm_id=None,
+                vm_id=vm_info['vmId'],
                 resource_group=resource_group
             ),
             delay_update=r_delay.unwrap(),
@@ -1052,6 +1080,9 @@ class AzureDriver(PoolDriver):
     ) -> Result[Dict[str, str], Failure]:
 
         pool_data = AzurePoolData.unserialize(guest_request)
+
+        if not self.pool_config.get('boot-log-storage'):
+            return Error(Failure('Boot log storage container is not specified by the pool'))
 
         with AzureSession(logger, self) as session:
             az_options = ['storage', 'container', 'list',

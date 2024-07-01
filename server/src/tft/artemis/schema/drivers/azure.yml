@@ -47,6 +47,9 @@ properties:
     type: string
     default: artemis-internals
 
+  guest-resource-group:
+    type: string
+
   use-default-flavor-when-no-suitable:
     type: boolean
     default: true
@@ -68,6 +71,10 @@ properties:
 
   tenant:
     type: string
+
+  use-public-ip:
+    type: boolean
+    default: false
 
   use-only-when-addressed:
     type: boolean
