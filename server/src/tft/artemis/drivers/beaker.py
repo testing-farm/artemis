@@ -1925,7 +1925,7 @@ class BeakerDriver(PoolDriver):
             'arch',
             'memory',
             'hostname',
-            'tpm',
+            'tpm.version',
             'virtualization.is_supported',
             'virtualization.is_virtualized',
             'virtualization.hypervisor',
