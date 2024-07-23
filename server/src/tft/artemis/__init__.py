@@ -1138,7 +1138,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
         )
 
     middleware += [
-        dramatiq.middleware.age_limit.AgeLimit(),
+        artemis_middleware.AgeLimit(),
         dramatiq.middleware.time_limit.TimeLimit(),
         dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
         dramatiq.middleware.callbacks.Callbacks(),

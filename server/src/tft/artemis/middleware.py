@@ -6,7 +6,7 @@ import os
 import signal
 import threading
 import traceback
-from typing import TYPE_CHECKING, Any, Dict, Optional, Set, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Tuple, cast
 
 import dramatiq.broker
 import dramatiq.message
@@ -82,6 +82,28 @@ def _message_backoff(
             factor=_message_min_backoff(message, actor=actor),
             max_backoff=_message_max_backoff(message, actor=actor)
         )[1]
+    )
+
+
+def _message_tools(
+    broker: dramatiq.broker.Broker,
+    message: dramatiq.message.Message
+) -> Tuple[gluetool.log.ContextAdapter, 'TaskCall', Dict[str, Any]]:
+    from . import get_logger
+    from .tasks import TaskCall
+
+    logger = get_logger()
+    task_call = TaskCall.from_message(broker, message)
+
+    failure_details: Dict[str, Any] = {
+        'task_call': task_call,
+        'broker_message': _dump_message(message)
+    }
+
+    return (
+        task_call.logger(logger, failure_details),
+        task_call,
+        failure_details
     )
 
 
@@ -260,13 +282,9 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # can
         if exception is None:
             return
 
-        from . import get_logger
-        from .tasks import TaskCall
+        logger, task_call, _ = _message_tools(broker, message)
 
-        logger = get_logger()
-        task_call = TaskCall.from_message(broker, message)
-
-        resolve_retry_message(task_call.logger(logger), broker, task_call)
+        resolve_retry_message(logger, broker, task_call)
 
 
 MESSAGE_NOTE_OPTION_KEY = 'artemis_notes'
@@ -585,19 +603,10 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         return f'{lockname}.{":".join(str(arg) for arg in task_call.args)}'
 
     def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
-        from . import Failure, get_logger
+        from . import Failure
         from .knobs import KNOB_LOGGING_SINGLETON_LOCKS
-        from .tasks import TaskCall
 
-        logger = get_logger()
-
-        task_call = TaskCall.from_message(broker, message)
-
-        failure_details: Dict[str, Any] = {
-            'task_call': task_call
-        }
-
-        logger = task_call.logger(logger, failure_details)
+        logger, task_call, failure_details = _message_tools(broker, message)
 
         if not task_call.actor.options['singleton']:
             logger.debug('not a singleton')
@@ -624,7 +633,6 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
                     locks
                 )
 
-            failure_details['broker_message'] = _dump_message(message)
             failure_details['locks'] = locks
 
             Failure('failed to acquire singleton lock', **failure_details).handle(logger)
@@ -657,19 +665,9 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         result: None = None,
         exception: Optional[BaseException] = None
     ) -> None:
-        from . import get_logger
         from .knobs import KNOB_LOGGING_SINGLETON_LOCKS
-        from .tasks import TaskCall
 
-        logger = get_logger()
-
-        task_call = TaskCall.from_message(broker, message)
-
-        failure_details: Dict[str, Any] = {
-            'task_call': task_call
-        }
-
-        logger = task_call.logger(logger, failure_details)
+        logger, task_call, failure_details = _message_tools(broker, message)
 
         if not task_call.actor.options['singleton']:
             logger.debug('not a singleton')
@@ -751,3 +749,35 @@ class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[
             _WorkerMetrics.inc_worker_process_restart_count(self.worker_name)
 
     after_skip_message = after_process_message
+
+
+class AgeLimit(dramatiq.middleware.age_limit.AgeLimit):  # type: ignore[misc]  # cannot subclass 'Middleware'
+    """
+    Drop messages that spend too much time in queue.
+
+    This is a reimplementation of original middleware, does the same thing, but does it with our logging,
+    including Sentry integration.
+    """
+
+    def before_process_message(
+        self,
+        broker: dramatiq.broker.Broker,
+        message: dramatiq.message.Message
+    ) -> None:
+        logger, task_call, _ = _message_tools(broker, message)
+
+        delta = current_millis() - message.message_timestamp
+
+        max_age = message.options.get('max_age') or task_call.actor.options.get('max_age', self.max_age)
+
+        logger.debug(f'age {delta / 1000} seconds')
+
+        if not max_age:
+            return
+
+        if delta < max_age:
+            return
+
+        _fail_message(logger, message, f'message exceeded its age limit {delta / 1000.0}')
+
+        raise dramatiq.middleware.SkipMessage('message exceeded its age limit')
