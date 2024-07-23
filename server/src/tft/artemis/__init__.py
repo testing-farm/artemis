@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import importlib
 import inspect
 import itertools
 import json
@@ -68,7 +69,7 @@ from . import middleware as artemis_middleware  # noqa: E402
 from .knobs import KNOB_TEMPLATE_VARIABLE_DELIMITERS  # noqa: E402
 from .knobs import Knob  # noqa: E402
 from .knobs import KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_SENTRY, KNOB_SENTRY_DISABLE_CERT_VERIFICATION, \
-    KNOB_SENTRY_DSN, KNOB_SENTRY_EVENT_URL_TEMPLATE  # noqa: E402
+    KNOB_SENTRY_DSN, KNOB_SENTRY_EVENT_URL_TEMPLATE, KNOB_SENTRY_INTEGRATIONS  # noqa: E402
 
 if TYPE_CHECKING:
     from .environment import Environment
@@ -140,6 +141,17 @@ def get_yaml() -> ruamel.yaml.main.YAML:
     return YAML
 
 
+def get_logger() -> gluetool.log.ContextAdapter:
+    from .knobs import KNOB_LOGGING_JSON, KNOB_LOGGING_LEVEL
+
+    gluetool.color.switch(True)
+
+    return gluetool.log.Logging.setup_logger(
+        level=KNOB_LOGGING_LEVEL.value,
+        json_output=KNOB_LOGGING_JSON.value
+    )
+
+
 # This knob needs to live in this module, because its default value includes
 # __VERSION__ we can't import from knobs module (circular import).
 #
@@ -175,6 +187,67 @@ def get_release() -> str:
 
 
 class Sentry:
+    @classmethod
+    def _ingest_integrations(cls, logger: gluetool.log.ContextAdapter) -> List[sentry_sdk.integrations.Integration]:
+        r_integrations = KNOB_SENTRY_INTEGRATIONS.get_value()
+
+        if r_integrations.is_error:
+            r_integrations.unwrap_error() \
+                .handle(logger, label='Failed to load Sentry integrations', sentry=False)
+
+            return []
+
+        integrations = []
+
+        for integration_name in r_integrations.unwrap().split(','):
+            integration_name = integration_name.strip()
+
+            module_name = f'sentry_sdk.integrations.{integration_name}'
+            class_name = f'{integration_name.capitalize()}Integration'
+
+            failure_details: Dict[str, Any] = {
+                'integration_name': integration_name,
+                'module_name': module_name,
+                'class_name': class_name
+            }
+
+            try:
+                module = importlib.import_module(module_name)
+
+            except Exception as exc:
+                Failure.from_exc('Failed to import Sentry integration', exc, **failure_details) \
+                    .handle(logger, sentry=False)
+
+                return []
+
+            klass = getattr(module, class_name, None)
+
+            if klass is None:
+                Failure('Failed to find Sentry integration', **failure_details) \
+                    .handle(logger, sentry=False)
+
+                return []
+
+            try:
+                if integration_name == 'logging':
+                    # Disable sending any log messages as standalone events
+                    integration: sentry_sdk.integrations.Integration = klass(event_level=None)
+
+                else:
+                    integration = klass()
+
+            except Exception as exc:
+                Failure.from_exc('Failed to instantiate Sentry integration', exc, **failure_details) \
+                    .handle(logger, sentry=False)
+
+                return []
+
+            integrations.append(integration)
+
+            logger.info(f'enabled {integration_name} Sentry integration')
+
+        return integrations
+
     def __init__(self) -> None:
         self.enabled = False
 
@@ -196,6 +269,8 @@ class Sentry:
 
             sentry_sdk.transport.HttpTransport._get_pool_options = _get_pool_options  # type: ignore[assignment]
 
+        integrations = Sentry._ingest_integrations(get_logger())
+
         # Controls how many variables and other items are captured in event and stack frames. The default
         # value of 10 is pretty small, 1000 should be more than enough for anything we ever encounter.
         sentry_sdk.serializer.MAX_DATABAG_BREADTH = 1000
@@ -211,19 +286,7 @@ class Sentry:
             traces_sample_rate=1.0,
             # We need to override one parameter of on of the default integrations,
             # so we're doomed to list all of them.
-            integrations=[
-                # Disable sending any log messages as standalone events
-                sentry_sdk.integrations.logging.LoggingIntegration(event_level=None),
-                # The rest is just default list of integrations.
-                # https://docs.sentry.io/platforms/python/configuration/integrations/default-integrations/
-                sentry_sdk.integrations.stdlib.StdlibIntegration(),
-                sentry_sdk.integrations.excepthook.ExcepthookIntegration(),
-                sentry_sdk.integrations.dedupe.DedupeIntegration(),
-                sentry_sdk.integrations.atexit.AtexitIntegration(),
-                sentry_sdk.integrations.modules.ModulesIntegration(),
-                sentry_sdk.integrations.argv.ArgvIntegration(),
-                sentry_sdk.integrations.threading.ThreadingIntegration(),
-            ],
+            integrations=integrations,
             # This will prevent sentry from auto enabling integrations based on the project dependencies. We are
             # already listing default integrations ourselves and having some form of control is useful to prevent
             # surprises like extensive sentry communication per normal request with middleware for fastapi/starlette
@@ -1021,17 +1084,6 @@ class Failure:
             self.submit_to_sentry(logger)
 
         self.log(logger.error, label=label)
-
-
-def get_logger() -> gluetool.log.ContextAdapter:
-    from .knobs import KNOB_LOGGING_JSON, KNOB_LOGGING_LEVEL
-
-    gluetool.color.switch(True)
-
-    return gluetool.log.Logging.setup_logger(
-        level=KNOB_LOGGING_LEVEL.value,
-        json_output=KNOB_LOGGING_JSON.value
-    )
 
 
 def get_config() -> Dict[str, Any]:

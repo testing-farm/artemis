@@ -1090,6 +1090,16 @@ for said guest request again.
 
 5+|Sentry event URL template, for nice event URLs in logs.
 
+|`sentry.integrations`
+|`str`
+|`ARTEMIS_SENTRY_INTEGRATIONS`
+|`logging,stdlib,excepthook,dedupe,atexit,modules,argv,threading`
+|no
+
+
+
+5+|Comma-separated list of Sentry integrations, in order in which they should be enabled.
+
 |`shelf.max-guests`
 |`int`
 |`ARTEMIS_SHELF_MAX_GUESTS`

@@ -814,6 +814,17 @@ KNOB_SENTRY_DISABLE_CERT_VERIFICATION: Knob[bool] = Knob(
     default=False
 )
 
+KNOB_SENTRY_INTEGRATIONS: Knob[str] = Knob(
+    'sentry.integrations',
+    'Comma-separated list of Sentry integrations, in order in which they should be enabled.',
+    has_db=False,
+    envvar='ARTEMIS_SENTRY_INTEGRATIONS',
+    cast_from_str=str,
+    # The rest is just default list of integrations.
+    # https://docs.sentry.io/platforms/python/configuration/integrations/default-integrations/
+    default='logging,stdlib,excepthook,dedupe,atexit,modules,argv,threading'
+)
+
 KNOB_LOGGING_SENTRY: Knob[bool] = Knob(
     'logging.sentry',
     'When enabled, Artemis would log more Sentry-related debug info.',
