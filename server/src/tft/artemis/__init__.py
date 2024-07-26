@@ -8,6 +8,7 @@ import itertools
 import json
 import os
 import platform
+import resource
 import sys
 import traceback as _traceback
 from types import FrameType, TracebackType
@@ -72,7 +73,7 @@ from .knobs import KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_SENTRY, KNOB_SENTRY
     KNOB_SENTRY_DSN, KNOB_SENTRY_EVENT_URL_TEMPLATE, KNOB_SENTRY_INTEGRATIONS  # noqa: E402
 
 if TYPE_CHECKING:
-    from .environment import Environment
+    from .environment import Environment, SizeType
     from .tasks import TaskCall
 
 stackprinter.set_excepthook(
@@ -1465,3 +1466,35 @@ def template_environment(guest_request: Optional[artemis_db.GuestRequest]) -> Di
         })
 
     return env
+
+
+def _rss_factory() -> 'SizeType':
+    from .environment import UNITS
+
+    return UNITS.Quantity(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, UNITS.kilobytes)
+
+
+@dataclasses.dataclass
+class RSSWatcher:
+    old_rss: 'SizeType' = dataclasses.field(default_factory=_rss_factory)
+    new_rss: Optional['SizeType'] = None
+
+    def snapshot(self) -> None:
+        self.new_rss = _rss_factory()
+
+    @property
+    def delta(self) -> Optional['SizeType']:
+        if self.new_rss is None:
+            return None
+
+        from .environment import UNITS
+
+        return UNITS.Quantity(self.new_rss.to('bytes').magnitude - self.old_rss.to('bytes').magnitude, UNITS.bytes)
+
+    def format(self) -> str:
+        delta = self.delta
+
+        if self.new_rss is None or delta is None:
+            return f'RSS: {self.old_rss.to("MB"):.2f}'
+
+        return f'RSS: {self.old_rss.to("MB"):.2f} -> {self.new_rss.to("MB"):.2f}, {delta.to("MB"):.2f} delta'

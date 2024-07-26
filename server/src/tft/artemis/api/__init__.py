@@ -24,7 +24,7 @@ from ..knobs import KNOB_LOGGING_JSON, KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB
     Knob
 from ..script import hook_engine
 from . import environment
-from .middleware import AuthorizationMiddleware, ErrorHandlerMiddleware, PrometheusMiddleware
+from .middleware import AuthorizationMiddleware, ErrorHandlerMiddleware, PrometheusMiddleware, RSSWatcherMiddleware
 from .routers import define_openapi_schema
 
 KNOB_API_PROCESSES: Knob[int] = Knob(
@@ -176,7 +176,8 @@ def run_app() -> fastapi.FastAPI:
     mw: List[Middleware] = [
         Middleware(AuthorizationMiddleware),
         Middleware(ErrorHandlerMiddleware),
-        Middleware(PrometheusMiddleware)
+        Middleware(PrometheusMiddleware),
+        Middleware(RSSWatcherMiddleware)
     ]
 
     return _create_app(middlewares=mw)
@@ -186,7 +187,9 @@ class UvicornWorker(uvicorn.workers.UvicornWorker):
     CONFIG_KWARGS = uvicorn.workers.UvicornWorker.CONFIG_KWARGS
     CONFIG_KWARGS['log_config'] = uvicorn.config.LOGGING_CONFIG
     CONFIG_KWARGS['log_config']['formatters']['access']['fmt'] = \
-        '[%(asctime)s] [%(process)s] [%(client_addr)s] "%(request_line)s" %(status_code)s'
+        '[%(asctime)s] [+] [%(process)s] [%(client_addr)s] [%(request_line)s] %(status_code)s'
+    CONFIG_KWARGS['log_config']['formatters']['access']['datefmt'] = \
+        '%H:%M:%S'
 
 
 def main() -> NoReturn:
