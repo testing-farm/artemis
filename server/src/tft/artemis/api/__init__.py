@@ -12,6 +12,8 @@ from typing import Any, List, NoReturn, Optional, Sequence, cast
 import fastapi
 import gluetool.log
 import gluetool.utils
+import uvicorn.config
+import uvicorn.workers
 from fastapi import FastAPI
 from gluetool.result import Ok
 from starlette.middleware import Middleware
@@ -180,6 +182,13 @@ def run_app() -> fastapi.FastAPI:
     return _create_app(middlewares=mw)
 
 
+class UvicornWorker(uvicorn.workers.UvicornWorker):
+    CONFIG_KWARGS = uvicorn.workers.UvicornWorker.CONFIG_KWARGS
+    CONFIG_KWARGS['log_config'] = uvicorn.config.LOGGING_CONFIG
+    CONFIG_KWARGS['log_config']['formatters']['access']['fmt'] = \
+        '[%(asctime)s] [%(process)s] [%(client_addr)s] "%(request_line)s" %(status_code)s'
+
+
 def main() -> NoReturn:
     gunicorn_path = shutil.which('gunicorn')
 
@@ -197,7 +206,7 @@ def main() -> NoReturn:
         ]
 
     gunicorn_options += [
-        '-k', 'uvicorn.workers.UvicornWorker',
+        '-k', 'tft.artemis.api.UvicornWorker',
         '--bind', '0.0.0.0:8001',
         '--workers', str(KNOB_API_PROCESSES.value),
         '--threads', str(KNOB_API_THREADS.value),
@@ -215,8 +224,11 @@ def main() -> NoReturn:
             '--reload'
         ]
 
+    # TODO: this does not apply anymore! Since the work is offloaded to Uvicorn worker,
+    # we need to modify its logging configuration.
+    #
+    # See https://docs.gunicorn.org/en/stable/settings.html#access-log-format
     if KNOB_LOGGING_JSON.value is True:
-        # See https://docs.gunicorn.org/en/stable/settings.html#access-log-format
         gunicorn_options += [
             '--access-logformat',
             json.dumps({
