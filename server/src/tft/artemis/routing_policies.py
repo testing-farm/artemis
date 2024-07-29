@@ -575,7 +575,7 @@ def policy_use_spot_instances(
     guest_request: GuestRequest
 ) -> PolicyReturnType:
     """
-    Use or ignore pools based on the user data tag set by the ``KNOB_ONE_SHOT_ONLY_LABEL`` value.
+    Use or ignore pools based on the user data tag set by the ``KNOB_USE_SPOT_LABEL`` value.
 
     * if set to ``True``, allow only spot instance pools
     * if set to ``False``, allow only dedicated (non-spot) instance pools
