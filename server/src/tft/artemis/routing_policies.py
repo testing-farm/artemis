@@ -205,6 +205,18 @@ KNOB_ONE_SHOT_ONLY_LABEL: Knob[str] = Knob(
     default='ArtemisOneShotOnly'
 )
 
+KNOB_USE_SPOT_LABEL: Knob[str] = Knob(
+    'route.policies.use-spot.label',
+    """
+    Guest requests with this label in user data set to ``true`` would use spot instances, with ``false`` they would
+    avoid them.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_ROUTE_POLICIES_USE_SPOT_LABEL',
+    cast_from_str=str,
+    default='ArtemisUseSpot'
+)
+
 
 class PolicyLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, policy_name: str) -> None:
@@ -518,42 +530,6 @@ def policy_supports_guest_logs(
 
 
 @policy_boilerplate
-def policy_supports_spot_instances(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    pools: List[PoolDriver],
-    guest_request: GuestRequest
-) -> PolicyReturnType:
-    """
-    If guest request requires spot instance, disallow all pools that lack this capability.
-    """
-
-    # If request does not insist on using spot or non-spot instance, we can easily move forward and use any
-    # pool we've been given.
-    if guest_request.environment.spot_instance is None:
-        return Ok(PolicyRuling.from_pools(pools))
-
-    r_capabilities = collect_pool_capabilities(pools)
-
-    if r_capabilities.is_error:
-        return Error(r_capabilities.unwrap_error())
-
-    pool_capabilities = r_capabilities.unwrap()
-
-    # Pick only pools whose spot instance support matches the request - a pool cannot support both kinds at the same
-    # time.
-    return Ok(PolicyRuling(
-        pools=[
-            PoolPolicyRuling(
-                pool=pool,
-                allowed=bool(capabilities.supports_spot_instances is guest_request.environment.spot_instance)
-            )
-            for pool, capabilities in pool_capabilities
-        ]
-    ))
-
-
-@policy_boilerplate
 def policy_prefer_spot_instances(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -568,7 +544,7 @@ def policy_prefer_spot_instances(
     # If request does insist on using spot or non-spot instance, we should not mess with its request by
     # possibly removing the group it requests. For such environments, do nothing and let other policies
     # apply their magic.
-    if guest_request.environment.spot_instance is not None:
+    if KNOB_USE_SPOT_LABEL.value in guest_request.user_data and not guest_request.user_data[KNOB_USE_SPOT_LABEL.value]:
         return Ok(PolicyRuling.from_pools(pools))
 
     r_capabilities = collect_pool_capabilities(pools)
@@ -589,6 +565,43 @@ def policy_prefer_spot_instances(
         pools,
         lambda pool: PoolPolicyRuling(pool=pool, allowed=bool(pool in preferred_pools))
     ))
+
+
+@policy_boilerplate
+def policy_use_spot_instances(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Use or ignore pools based on the user data tag set by the ``KNOB_ONE_SHOT_ONLY_LABEL`` value.
+
+    * if set to ``True``, allow only spot instance pools
+    * if set to ``False``, allow only dedicated (non-spot) instance pools
+    * if not set, do nothing
+    """
+    if KNOB_USE_SPOT_LABEL.value not in guest_request.user_data:
+        return Ok(PolicyRuling.from_pools(pools))
+
+    r_capabilities = collect_pool_capabilities(pools)
+
+    if r_capabilities.is_error:
+        return Error(r_capabilities.unwrap_error())
+
+    artemis_use_spot = gluetool.utils.normalize_bool_option(
+        guest_request.user_data.get(KNOB_ONE_SHOT_ONLY_LABEL.value, 'false') or 'false'
+    )
+
+    preferred_pools = [
+        pool
+        for pool, capabilities in r_capabilities.unwrap()
+        if capabilities.supports_spot_instances is artemis_use_spot
+    ]
+
+    return Ok(
+        PolicyRuling.from_pools(pools, lambda pool: PoolPolicyRuling(pool=pool, allowed=bool(pool in preferred_pools)))
+    )
 
 
 @policy_boilerplate

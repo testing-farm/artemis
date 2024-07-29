@@ -1040,6 +1040,17 @@ of crashed resources.
 5+|Guest requests with this label in user data would be canceled by the ``one-shot-only`` policy when their first
 provisioning attempt fails.
 
+|`route.policies.use-spot.label`
+|`str`
+|`ARTEMIS_ROUTE_POLICIES_USE_SPOT_LABEL`
+|`ArtemisUseSpot`
+|no
+
+
+
+5+|Guest requests with this label in user data set to ``true`` would use spot instances, with ``false`` they would
+avoid them.
+
 |`route.pool.enabled`
 |`bool`
 |`ARTEMIS_ROUTE_POOL_ENABLED`
