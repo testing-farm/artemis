@@ -205,6 +205,18 @@ KNOB_ONE_SHOT_ONLY_LABEL: Knob[str] = Knob(
     default='ArtemisOneShotOnly'
 )
 
+KNOB_USE_SPOT_LABEL: Knob[str] = Knob(
+    'route.policies.use-spot.label',
+    """
+    Guest requests with this label in user data set to ``true`` would use spot instances, with ``false`` they would
+    avoid them.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_ROUTE_POLICIES_USE_SPOT_LABEL',
+    cast_from_str=str,
+    default='ArtemisUseSpot'
+)
+
 
 class PolicyLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, policy_name: str) -> None:
@@ -530,8 +542,10 @@ def policy_supports_spot_instances(
 
     # If request does not insist on using spot or non-spot instance, we can easily move forward and use any
     # pool we've been given.
-    if guest_request.environment.spot_instance is None:
+    if guest_request.environment.spot_instance is None and KNOB_USE_SPOT_LABEL.value not in guest_request.user_data:
         return Ok(PolicyRuling.from_pools(pools))
+
+    use_spot = gluetool.utils.normalize_bool_option(str(guest_request.user_data.get(KNOB_USE_SPOT_LABEL.value, "false")))
 
     r_capabilities = collect_pool_capabilities(pools)
 
@@ -546,7 +560,7 @@ def policy_supports_spot_instances(
         pools=[
             PoolPolicyRuling(
                 pool=pool,
-                allowed=bool(capabilities.supports_spot_instances is guest_request.environment.spot_instance)
+                allowed=bool(capabilities.supports_spot_instances is (guest_request.environment.spot_instance or use_spot))
             )
             for pool, capabilities in pool_capabilities
         ]
@@ -568,7 +582,7 @@ def policy_prefer_spot_instances(
     # If request does insist on using spot or non-spot instance, we should not mess with its request by
     # possibly removing the group it requests. For such environments, do nothing and let other policies
     # apply their magic.
-    if guest_request.environment.spot_instance is not None:
+    if guest_request.environment.spot_instance is not None and KNOB_USE_SPOT_LABEL.value in guest_request.user_data:
         return Ok(PolicyRuling.from_pools(pools))
 
     r_capabilities = collect_pool_capabilities(pools)
