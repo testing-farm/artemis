@@ -3,6 +3,7 @@
 
 import dataclasses
 import json
+import os
 import re
 import time
 from typing import Awaitable, Callable
@@ -12,6 +13,7 @@ from fastapi import status as http_status
 from gluetool.utils import normalize_bool_option
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from .. import RSSWatcher
 from ..db import DB
 from ..knobs import Knob
 from ..metrics import APIMetrics
@@ -183,3 +185,22 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
             # Convert the difference from fractional seconds to milliseconds
             APIMetrics.inc_request_durations(request.method, path, (end_time - start_time) * 1000.0)
+
+
+class RSSWatcherMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        logger = get_logger()
+
+        request_info = f'{request.method} {request.scope["path"]} HTTP/{request.scope["http_version"]}'
+        client_info = f'{request.scope["client"][0]}:{request.scope["client"][1]}'
+
+        rss = RSSWatcher()
+
+        logger.info(f'[{os.getpid()}] [{client_info}] [{request_info}] {rss.format()}')  # noqa: FS002
+
+        try:
+            return await call_next(request)
+
+        finally:
+            rss.snapshot()
+            logger.info(f'[{os.getpid()}] [{client_info}] [{request_info}] {rss.format()}')  # noqa: FS002

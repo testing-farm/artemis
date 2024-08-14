@@ -11,7 +11,6 @@ import inspect
 import json
 import os
 import random
-import resource
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union, cast
 
@@ -30,7 +29,8 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol, TypedDict
 
-from .. import Failure, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, safe_call
+from .. import Failure, RSSWatcher, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, \
+    safe_call
 from ..context import CURRENT_MESSAGE, DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, GuestEvent, GuestLog, GuestLogBlob, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, \
     SafeQuery, SnapshotRequest, SSHKey, TaskRequest, execute_db_statement, safe_db_change
@@ -1020,14 +1020,11 @@ def task_core(
     doer_kwargs: Optional[Dict[str, Any]] = None,
     session_isolation: bool = False
 ) -> None:
-    old_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-
-    def _log_rss() -> None:
-        new_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-
-        logger.info(f'RSS: {os.getpid()} {actor_name.replace("_", "-")} {old_rss} {new_rss} {new_rss - old_rss}')
+    rss = RSSWatcher()
 
     logger.begin()
+
+    logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
 
     # TODO: implement a proper decorator, or merge this into @task decorator - but @task seems to be flawed,
     # which requires a fix, therefore merge this into @task once it gets fixed.
@@ -1167,7 +1164,8 @@ def task_core(
         if is_ignore_result(doer_result):
             logger.warning('message processing encountered error and requests waiver')
 
-        _log_rss()
+        rss.snapshot()
+        logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
 
         logger.finished()
 
@@ -1176,7 +1174,8 @@ def task_core(
 
         return
 
-    _log_rss()
+    rss.snapshot()
+    logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
 
     # To avoid chain a of exceptions in the log - which we already logged above - raise a generic,
     # insignificant exception to notify scheduler that this task failed and needs to be retried.
