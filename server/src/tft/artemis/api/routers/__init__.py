@@ -236,55 +236,50 @@ class GuestRequestManager:
                 guest_delete_task = return_guest_to_shelf
                 extra_actor_args = [GuestState.CONDEMNED.value]
 
-            if guest_request.state == GuestState.CONDEMNED:  # type: ignore[comparison-overlap]
-                raise errors.ConflictError(
-                    logger=guest_logger,
-                    failure_details=failure_details
-                )
+            if guest_request.state != GuestState.CONDEMNED:  # type: ignore[comparison-overlap]
+                snapshot_count_subquery = session.query(
+                    sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
+                ).filter(
+                    artemis_db.SnapshotRequest.guestname == guestname
+                ).subquery('t')
 
-            snapshot_count_subquery = session.query(
-                sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
-            ).filter(
-                artemis_db.SnapshotRequest.guestname == guestname
-            ).subquery('t')
+                query = sqlalchemy \
+                    .update(artemis_db.GuestRequest.__table__) \
+                    .where(artemis_db.GuestRequest.guestname == guestname) \
+                    .where(snapshot_count_subquery.c.snapshot_count == 0) \
+                    .values(state=GuestState.CONDEMNED)
 
-            query = sqlalchemy \
-                .update(artemis_db.GuestRequest.__table__) \
-                .where(artemis_db.GuestRequest.guestname == guestname) \
-                .where(snapshot_count_subquery.c.snapshot_count == 0) \
-                .values(state=GuestState.CONDEMNED)
+                r_state = artemis_db.execute_db_statement(guest_logger, session, query)
 
-            r_state = artemis_db.execute_db_statement(guest_logger, session, query)
+                # The query can miss either with existing snapshots, or when the guest request has been
+                # removed from DB already. The "gone already" situation could be better expressed by
+                # returning "404 Not Found", but we can't tell which of these two situations caused the
+                # change to go vain, therefore returning general "409 Conflict", expressing our believe
+                # user should resolve the conflict and try again.
+                if r_state.is_error:
+                    failure = r_state.unwrap_error()
 
-            # The query can miss either with existing snapshots, or when the guest request has been
-            # removed from DB already. The "gone already" situation could be better expressed by
-            # returning "404 Not Found", but we can't tell which of these two situations caused the
-            # change to go vain, therefore returning general "409 Conflict", expressing our believe
-            # user should resolve the conflict and try again.
-            if r_state.is_error:
-                failure = r_state.unwrap_error()
+                    if failure.details.get('serialization_failure', False):
+                        raise errors.ConflictError(
+                            logger=guest_logger,
+                            caused_by=failure,
+                            failure_details=failure_details
+                        )
 
-                if failure.details.get('serialization_failure', False):
-                    raise errors.ConflictError(
+                    raise errors.InternalServerError(
                         logger=guest_logger,
                         caused_by=failure,
                         failure_details=failure_details
                     )
 
-                raise errors.InternalServerError(
-                    logger=guest_logger,
-                    caused_by=failure,
-                    failure_details=failure_details
+                artemis_db.GuestRequest.log_event_by_guestname(
+                    guest_logger,
+                    session,
+                    guestname,
+                    'condemned'
                 )
 
-            artemis_db.GuestRequest.log_event_by_guestname(
-                guest_logger,
-                session,
-                guestname,
-                'condemned'
-            )
-
-            guest_logger.info('condemned')
+                guest_logger.info('condemned')
 
             r_task = artemis_db.TaskRequest.create(
                 guest_logger,
