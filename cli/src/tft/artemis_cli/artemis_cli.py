@@ -1,8 +1,10 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import ipaddress
 import json
 import os.path
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +48,7 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('security-group-rules', '0.0.72'),
         ('hw-constraints-disk-model-name', '0.0.69'),
         ('hw-constraints-zcrypt', '0.0.69'),
         ('hw-constraints-cpu-flag', '0.0.67'),
@@ -78,6 +81,9 @@ ALLOWED_LOGS = [
     'flasher-event:dump/url',
     'flasher-event:dump/blob'
 ]
+
+# Won't be validating CIDR and 65535 max port range with regex here, not worth it
+SECURITY_GROUP_RULE_FORMAT = re.compile(r"(tcp|ip|icmp|udp|-1|[0-255]):(.*):(\d{1,5}-\d{1,5}|\d{1,5}|-1)")
 
 
 @click.group()
@@ -207,6 +213,10 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
 @click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
 @click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
+@click.option('--security-group-rule-ingress', multiple=True,
+              help='An additional ingress security group rule in PROTOCOL:comma-separated CIDRs:PORT format')
+@click.option('--security-group-rule-egress', multiple=True,
+              help='An additional egress security group rule in PROTOCOL:comma-separated CIDRs:PORT format')
 @click.option(
     '--skip-prepare-verify-ssh/--no-skip-prepare-verify-ssh',
     is_flag=True,
@@ -260,6 +270,8 @@ def cmd_guest_create(
         spot_instance: Optional[bool] = None,
         priority_group: Optional[str] = None,
         post_install_script: Optional[str] = None,
+        security_group_rule_ingress: Optional[List[str]] = None,
+        security_group_rule_egress: Optional[List[str]] = None,
         skip_prepare_verify_ssh: bool = False,
         user_data: Optional[str] = None,
         wait: Optional[bool] = None,
@@ -388,6 +400,51 @@ def cmd_guest_create(
             post_install = post_install_script.replace('\\n', '\n')
 
     data['post_install_script'] = post_install
+
+    def _add_secgroup_rules(sg_type: str, sg_data: List[str]) -> None:
+        data[sg_type] = []
+
+        for sg_rule in sg_data:
+            matches = re.match(SECURITY_GROUP_RULE_FORMAT, sg_rule)
+            if not matches:
+                cfg.logger.error('Bad format of security group rule, should be PROTOCOL:CIDR:PORT')
+                sys.exit(1)
+
+            protocol, cidrs, port = matches[1], matches[2], matches[3]
+
+            # Let's validate cidr(s)
+            for cidr in cidrs.split(','):
+                try:
+                    cidr = str(ipaddress.ip_network(cidr))
+                except ValueError as err:
+                    cfg.logger.error(f'CIDR {cidr} has incorrect format: {err}')
+                    sys.exit(1)
+
+                # Artemis expectes port_min/port_max, -1 has to be convered to a proper range 0-65535
+                port_min = 0 if port == '-1' else int(port.split('-')[0])
+                port_max = 65535 if port == '-1' else int(port.split('-')[-1])
+
+                # Allowing user to specify several cidrs in one rule is just syntax sugar, artemis api expects one
+                # cidr per rule
+                data[sg_type].append(
+                    {
+                        'type': sg_type.split('_')[-1],
+                        'protocol': protocol,
+                        'cidr': cidr,
+                        'port_min': port_min,
+                        'port_max': port_max
+                    }
+                )
+
+    if cfg.artemis_api_version >= API_FEATURE_VERSIONS['security-group-rules']:
+        _add_secgroup_rules('security_group_rules_ingress', security_group_rule_ingress or [])
+        _add_secgroup_rules('security_group_rules_egress', security_group_rule_egress or [])
+
+    elif security_group_rule_ingress or security_group_rule_egress:
+        cfg.logger.error(
+            '--security-group-rule-* options are supported with API '
+            f'{API_FEATURE_VERSIONS["security-group-rules"]} and newer')
+        sys.exit(1)
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['log-types']:
         log_types = log_types if log_types else []

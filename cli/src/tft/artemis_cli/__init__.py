@@ -565,11 +565,15 @@ def print_guests(
         table = rich.table.Table()
 
         for header in [
-            'Guestname', 'Compose', 'Arch', 'Pool', 'State', 'CTime / SMTime / MTime', 'Address', 'User Data', 'Shelf'
+            'Guestname', 'Compose', 'Arch', 'Pool', 'State', 'CTime / SMTime / MTime', 'Address', 'User Data',
+            'Security Group Rules', 'Shelf',
         ]:
             table.add_column(header, no_wrap=(header == 'Guestname'))
 
         for guest in guests:
+            security_group_rules = (
+                (guest.get('security_group_rules_ingress') or []) + (guest.get('security_group_rules_egress') or []))
+
             table.add_row(
                 guest['guestname'],
                 guest['environment']['os']['compose'],
@@ -579,6 +583,7 @@ def print_guests(
                 f'{guest["ctime"]}\n{guest["state_mtime"]}\n{guest.get("mtime", "")}',
                 guest['address'],
                 RichYAML.from_data(guest['user_data']) if guest['user_data'] else '',
+                RichYAML.from_data(security_group_rules if security_group_rules else ''),
                 guest.get('shelf', '')
             )
 

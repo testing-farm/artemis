@@ -1410,7 +1410,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         *resource_ids: PoolResourcesIDs,
-        guest_request: Optional[GuestRequest] = None
+        guest_request: Optional[GuestRequest] = None,
+        delay: Optional[int] = None
     ) -> Result[None, Failure]:
         """
         Schedule removal of given resources. Resources are identified by keys and values which are passed
@@ -1421,10 +1422,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if all(resource_id.is_empty() for resource_id in resource_ids):
             return Ok(None)
 
-        r_delay = KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY.get_value(entityname=self.poolname)
+        if delay is None:
+            r_delay = KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY.get_value(entityname=self.poolname)
 
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
+            if r_delay.is_error:
+                return Error(r_delay.unwrap_error())
+
+            delay = r_delay.unwrap()
 
         for resource_id in resource_ids:
             resource_id.ctime = guest_request.ctime if guest_request else None
@@ -1441,7 +1445,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 )
                 for resource_id in resource_ids
             ],
-            delay=r_delay.unwrap()
+            delay=delay
         )
 
     def release_pool_resources(

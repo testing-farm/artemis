@@ -140,7 +140,9 @@ class Workspace(_Workspace):
                 watchdog_dispatch_delay=self.guest_template.watchdog_dispatch_delay,
                 watchdog_period_delay=self.guest_template.watchdog_period_delay,
                 bypass_shelf_lookup=True,
-                on_ready=[(return_guest_to_shelf, [GuestState.READY.value])]
+                on_ready=[(return_guest_to_shelf, [GuestState.READY.value])],
+                security_group_rules_ingress=None,
+                security_group_rules_egress=None,
             )
 
             r_guest = execute_db_statement(self.logger, self.session, stmt)

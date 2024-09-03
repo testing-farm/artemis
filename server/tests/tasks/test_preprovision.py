@@ -171,7 +171,9 @@ def test_create_guests(
         on_ready=[(
             tft.artemis.tasks.return_guest_to_shelf.return_guest_to_shelf,
             [tft.artemis.guest.GuestState.READY.value]
-        )]
+        )],
+        security_group_rules_ingress=None,
+        security_group_rules_egress=None
     ) for _ in range(3)]
 
     assert mock_execute_db_statement.mock_calls == [call(

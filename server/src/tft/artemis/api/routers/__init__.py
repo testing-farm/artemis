@@ -26,6 +26,7 @@ from ...drivers import PoolDriver
 from ...environment import Environment
 from ...guest import GuestState
 from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, Knob
+from ...security_group_rules import SecurityGroupRule
 from ...tasks import Actor, TaskCall, _get_ssh_key, get_snapshot_logger
 from .. import environment as global_env
 from .. import errors
@@ -34,15 +35,20 @@ from ..models import AboutResponse, AuthContext, ConsoleUrlResponse, CreateUserR
     GuestEvent, GuestLogResponse, GuestRequest, GuestResponse, GuestShelfResponse, KnobResponse, KnobUpdateRequest, \
     PreprovisioningRequest, SnapshotRequest, SnapshotResponse, TokenResetResponse, TokenTypes, UserResponse
 from ..models.v0_0_69 import GuestLogResponse_v0_0_69
+from ..models.v0_0_72 import GuestRequest_v0_0_72, GuestResponse_v0_0_72
 
 GuestLogResponseType = TypeVar('GuestLogResponseType', GuestLogResponse, GuestLogResponse_v0_0_69)
+GuestResponseType = TypeVar('GuestResponseType', GuestResponse, GuestResponse_v0_0_72)
+GuestRequestType = TypeVar('GuestRequestType', GuestRequest, GuestRequest_v0_0_72)
 
 
 class GuestRequestManager:
     def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
         self.db = db
 
-    def get_guest_requests(self) -> List[GuestResponse]:
+    # NOTE(ivasilev) No idea why how to make mypy happy, muting for now
+    def get_guest_requests(self, response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
+                           ) -> List[GuestResponseType]:
         with self.db.get_session() as session:
             r_guests = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest).all()
 
@@ -50,17 +56,18 @@ class GuestRequestManager:
                 raise errors.InternalServerError(caused_by=r_guests.unwrap_error())
 
             return [
-                GuestResponse.from_db(guest)
+                response_model.from_db(guest)
                 for guest in r_guests.unwrap()
             ]
 
     def create(
         self,
-        guest_request: GuestRequest,
+        guest_request: GuestRequestType,
         ownername: str,
         logger: gluetool.log.ContextAdapter,
-        environment_schema: JSONSchemaType
-    ) -> GuestResponse:
+        environment_schema: JSONSchemaType,
+        response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
+    ) -> GuestResponseType:
         from ...tasks import get_guest_logger
         from ...tasks.guest_shelf_lookup import guest_shelf_lookup
 
@@ -97,6 +104,17 @@ class GuestRequestManager:
                 failure_details
             )
 
+            security_group_rules_ingress = _parse_security_group_rules(
+                guest_logger,
+                guest_request.security_group_rules_ingress,
+                failure_details
+            )
+            security_group_rules_egress = _parse_security_group_rules(
+                guest_logger,
+                guest_request.security_group_rules_egress,
+                failure_details
+            )
+
             create_guest_stmt = artemis_db.GuestRequest.create_query(
                 guestname=guestname,
                 environment=environment,
@@ -113,7 +131,9 @@ class GuestRequestManager:
                 log_types=_parse_log_types(logger, guest_request.log_types, failure_details),
                 watchdog_dispatch_delay=guest_request.watchdog_dispatch_delay,
                 watchdog_period_delay=guest_request.watchdog_period_delay,
-                on_ready=[]
+                on_ready=[],
+                security_group_rules_ingress=security_group_rules_ingress,
+                security_group_rules_egress=security_group_rules_egress
             )
 
             r_create = artemis_db.execute_db_statement(guest_logger, session, create_guest_stmt)
@@ -132,7 +152,7 @@ class GuestRequestManager:
                 'created',
                 **{
                     'environment': environment.serialize(),
-                    'user_data': guest_request.user_data
+                    'user_data': guest_request.user_data,
                 }
             )
 
@@ -157,7 +177,7 @@ class GuestRequestManager:
             # Everything went well, update our accounting.
             metrics.ProvisioningMetrics.inc_requested()
 
-        gr = self.get_by_guestname(guestname)
+        gr = self.get_by_guestname(guestname, response_model=response_model)
 
         if gr is None:
             # Now isn't this just funny... We just created the record, how could it be missing? There's probably
@@ -170,7 +190,11 @@ class GuestRequestManager:
 
         return gr
 
-    def get_by_guestname(self, guestname: str) -> Optional[GuestResponse]:
+    def get_by_guestname(
+        self,
+        guestname: str,
+        response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
+    ) -> Optional[GuestResponseType]:
         with self.db.get_session() as session:
             r_guest_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest) \
                 .filter(artemis_db.GuestRequest.guestname == guestname) \
@@ -184,7 +208,7 @@ class GuestRequestManager:
             if guest_request_record is None:
                 return None
 
-            return GuestResponse.from_db(guest_request_record)
+            return response_model.from_db(guest_request_record)
 
     def delete_by_guestname(
         self,
@@ -361,11 +385,11 @@ def acquire_guest_console_url(
 def _validate_guest_request(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    guest_request: 'GuestRequest',
+    guest_request: 'GuestRequestType',
     ownername: str,
     environment_schema: JSONSchemaType,
     failure_details: FailureDetailsType
-) -> 'GuestRequest':
+) -> 'GuestRequestType':
     SESSION.set(session)
 
     guest_request.environment = _validate_environment(
@@ -511,6 +535,25 @@ def _parse_environment(
         )
 
 
+def _parse_security_group_rules(
+    logger: gluetool.log.ContextAdapter,
+    security_group_rules: Optional[List[Dict[str, Any]]],
+    failure_details: FailureDetailsType
+) -> Optional[List[SecurityGroupRule]]:
+    try:
+        return [SecurityGroupRule.unserialize(rule) for rule in security_group_rules] if security_group_rules else None
+
+    except Exception as exc:
+        raise errors.BadRequestError(
+            response={
+                'message': 'Bad request'
+            },
+            logger=logger,
+            caused_by=Failure.from_exc('failed to parse security group rules', exc),
+            failure_details=failure_details
+        )
+
+
 def _parse_log_types(
     logger: gluetool.log.ContextAdapter,
     log_types: Optional[List[Any]],
@@ -535,19 +578,23 @@ def _parse_log_types(
     return parsed_log_types
 
 
+# NOTE(ivasilev) No idea why how to make mypy happy, muting for now
 def get_guest_requests(
     manager: GuestRequestManager,
-    request: Request
-) -> List[GuestResponse]:
-    return manager.get_guest_requests()
+    request: Request,
+    response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
+) -> List[GuestResponseType]:
+    return manager.get_guest_requests(response_model=response_model)
 
 
+# NOTE(ivasilev) No idea why how to make mypy happy, muting for now
 def get_guest_request(
     guestname: str,
     manager: GuestRequestManager,
-    request: Request
-) -> GuestResponse:
-    guest_response = manager.get_by_guestname(guestname)
+    request: Request,
+    response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
+) -> GuestResponseType:
+    guest_response = manager.get_by_guestname(guestname, response_model=response_model)
 
     if guest_response is None:
         raise errors.NoSuchEntityError(request=request)
@@ -1843,12 +1890,13 @@ def define_openapi_schema(app: fastapi.FastAPI) -> Dict[str, str]:
 
 def create_guest_request(
     api_version: str,
-    guest_request: GuestRequest,
+    guest_request: GuestRequestType,
     manager: GuestRequestManager,
     request: Request,
     auth: AuthContext,
     logger: gluetool.log.ContextAdapter,
-) -> GuestResponse:
+    response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
+) -> GuestResponseType:
     # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
     # and we got so far means user must be authenticated.
     if auth.is_authentication_enabled and auth.is_authenticated:
@@ -1864,7 +1912,7 @@ def create_guest_request(
         raise errors.InternalServerError(caused_by=r_schemas.unwrap_error())
     schemas = r_schemas.unwrap()
 
-    return manager.create(guest_request, ownername, logger, schemas[api_version])
+    return manager.create(guest_request, ownername, logger, schemas[api_version], response_model=response_model)
 
 
 # XXX FIXME NOTE(ivasilev) Not yet tested, can't figure out how to do that with artemis-cli

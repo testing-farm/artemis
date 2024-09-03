@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from ... import Failure
 from ... import db as artemis_db
 from ...guest import GuestState
+from ...security_group_rules import SecurityGroupRulesInput
 from .. import errors
 
 DEFAULT_EVENTS_PAGE = 1
@@ -251,6 +252,8 @@ class GuestRequest:
     watchdog_period_delay: Optional[int] = None
     bypass_shelf_lookup: bool = False
     skip_prepare_verify_ssh: bool = False
+    security_group_rules_ingress: SecurityGroupRulesInput = None
+    security_group_rules_egress: SecurityGroupRulesInput = None
 
 
 class GuestSSHInfo(BaseModel):

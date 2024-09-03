@@ -237,7 +237,11 @@ def fixture_schema_initialized_actual(
         [],
         None,
         None,
-        []
+        [],
+        # security-group-rules-ingress
+        None,
+        # security-group-rules-egress
+        None
     ))
 
     session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest.__table__).values(

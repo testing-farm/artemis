@@ -21,7 +21,8 @@ from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 from typing_extensions import Literal, TypedDict
 
-from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str
+from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str, \
+    render_template
 from ..cache import get_cached_mapping_item, get_cached_mapping_values
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -29,6 +30,7 @@ from ..environment import UNITS, Constraint, Flavor, FlavorBoot, FlavorBootMetho
     FlavorNetworks, FlavorVirtualization, Operator, SizeType
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
+from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
     HookImageInfoMapper, ImageInfoMapperResultType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
     PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
@@ -282,6 +284,28 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     default='{{ os.compose }}'
 )
 
+KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
+    'aws.mapping.guest-security-group-name.template',
+    'A pattern for guest security group name.',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE',
+    cast_from_str=str,
+    default='{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}'
+)
+
+KNOB_REMOVE_SECURITY_GROUP_DELAY: Knob[int] = Knob(
+    'aws.remove-security-group.delay',
+    """
+    A delay, in seconds, between scheduling the guest security group clean up
+    task in aws and actual attempt to clean up the resource.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_AWS_REMOVE_SECURITY_GROUP_DELAY',
+    cast_from_str=int,
+    default=150
+)
+
 
 class FailedSpotRequest(Failure):
     def __init__(
@@ -298,6 +322,7 @@ class FailedSpotRequest(Failure):
 class AWSPoolData(PoolData):
     instance_id: Optional[str] = None
     spot_instance_id: Optional[str] = None
+    security_group: Optional[str] = None
 
 
 @dataclasses.dataclass(repr=False)
@@ -334,6 +359,7 @@ class AWSFlavor(Flavor):
 class AWSPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
     spot_instance_id: Optional[str] = None
+    security_group: Optional[str] = None
 
 
 class AWSHookImageInfoMapper(HookImageInfoMapper[AWSPoolImageInfo]):
@@ -1052,7 +1078,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
     def create_nic(
         device_index: int,
         subnet_id: str,
-        security_group: str,
+        security_groups: List[str],
         delete_on_termination: bool = True,
         associate_public_ip_address: bool = False
     ) -> Result[APINetworkInterfaceType, Failure]:
@@ -1060,7 +1086,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
             'DeviceIndex': device_index,
             'SubnetId': subnet_id,
             'DeleteOnTermination': delete_on_termination,
-            'Groups': [security_group],
+            'Groups': security_groups,
             'AssociatePublicIpAddress': associate_public_ip_address
         }
 
@@ -1071,7 +1097,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         nic: APINetworkInterfaceType,
         device_index: Optional[int] = None,
         subnet_id: Optional[str] = None,
-        security_group: Optional[str] = None,
+        security_groups: Optional[List[str]] = None,
         delete_on_termination: Optional[bool] = None,
         associate_public_ip_address: Optional[bool] = None
     ) -> Result[APINetworkInterfaceType, Failure]:
@@ -1084,8 +1110,8 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         if delete_on_termination is not None:
             nic['DeleteOnTermination'] = delete_on_termination
 
-        if security_group is not None:
-            nic['Groups'] = [security_group]
+        if security_groups is not None:
+            nic['Groups'] = security_groups
 
         if associate_public_ip_address is not None:
             nic['AssociatePublicIpAddress'] = associate_public_ip_address
@@ -1115,7 +1141,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         self,
         count: int,
         subnet_id: str,
-        security_group: str,
+        security_groups: List[str],
         delete_on_termination: bool,
         associate_public_ip_address: bool
     ) -> Result[None, Failure]:
@@ -1127,7 +1153,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
             r_append = self.append_nic(
                 device_index,
                 subnet_id,
-                security_group,
+                security_groups,
                 delete_on_termination=delete_on_termination,
                 associate_public_ip_address=associate_public_ip_address
             )
@@ -1141,14 +1167,14 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         self,
         device_index: int,
         subnet_id: str,
-        security_group: str,
+        security_groups: List[str],
         delete_on_termination: bool = True,
         associate_public_ip_address: bool = False
     ) -> Result[APINetworkInterfaceType, Failure]:
         r_create = NetworkInterfaces.create_nic(
             device_index,
             subnet_id,
-            security_group,
+            security_groups,
             delete_on_termination=delete_on_termination,
             associate_public_ip_address=associate_public_ip_address
         )
@@ -1167,6 +1193,7 @@ def _honor_constraint_network(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
+    security_groups: List[str]
 ) -> Result[bool, Failure]:
     _, index, child_property_name, _ = constraint.expand_name()
 
@@ -1176,7 +1203,7 @@ def _honor_constraint_network(
         r_enlarge = nics.enlarge(
             index + 1,
             pool.pool_config['subnet-id'],
-            pool.pool_config['security-group'],
+            security_groups,
             delete_on_termination=True,
             associate_public_ip_address=pool.use_public_ip
         )
@@ -1195,7 +1222,8 @@ def setup_extra_network_interfaces(
     nics: NetworkInterfaces,
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
-    flavor: Flavor
+    flavor: Flavor,
+    security_groups: List[str]
 ) -> Result[NetworkInterfaces, Failure]:
     r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
 
@@ -1228,7 +1256,8 @@ def setup_extra_network_interfaces(
             nics,
             guest_request,
             image,
-            flavor
+            flavor,
+            security_groups
         )
 
         if r_consumed.is_error:
@@ -1250,14 +1279,15 @@ def create_network_interfaces(
     pool: 'AWSDriver',
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
-    flavor: AWSFlavor
+    flavor: AWSFlavor,
+    security_groups: List[str]
 ) -> Result[NetworkInterfaces, Failure]:
     nics = NetworkInterfaces()
 
     nics.append_nic(
         0,
         pool.pool_config['subnet-id'],
-        pool.pool_config['security-group'],
+        security_groups,
         delete_on_termination=True,
         associate_public_ip_address=pool.use_public_ip
     )
@@ -1269,6 +1299,7 @@ def create_network_interfaces(
         guest_request,
         image,
         flavor,
+        security_groups
     )
 
     if r_nics.is_error:
@@ -1427,25 +1458,6 @@ class AWSDriver(PoolDriver):
 
         return Ok(capabilities)
 
-    def sanity(self) -> Result[bool, Failure]:
-        required_variables = [
-            'access-key-id',
-            'secret-access-key',
-            'default-region',
-            'availability-zone',
-            'command',
-            'default-instance-type',
-            'master-key-name',
-            'security-group',
-            'subnet-id'
-        ]
-
-        for variable in required_variables:
-            if variable not in self.pool_config:
-                return Error(Failure(f"Required variable '{variable}' not found in pool configuration"))
-
-        return Ok(True)
-
     def release_pool_resources(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1480,6 +1492,23 @@ class AWSDriver(PoolDriver):
                 ))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
+
+        if resource_ids.security_group is not None:
+            r_output = self._aws_command(
+                [
+                    'ec2', 'delete-security-group',
+                    '--group-id', resource_ids.security_group
+                ],
+                json_output=False,
+                commandname='aws.ec2-delete-security=group')
+
+            if r_output.is_error:
+                return Error(Failure.from_failure(
+                    'failed to delete a guest security group',
+                    r_output.unwrap_error()
+                ))
+
+            self.inc_costs(logger, ResourceType.SECURITY_GROUP, resource_ids.ctime)
 
         return Ok(None)
 
@@ -1997,14 +2026,16 @@ class AWSDriver(PoolDriver):
         logger: ContextAdapter,
         guest_request: GuestRequest,
         image: AWSPoolImageInfo,
-        flavor: AWSFlavor
+        flavor: AWSFlavor,
+        security_groups: List[str]
     ) -> Result[NetworkInterfaces, Failure]:
         return create_network_interfaces(
             logger,
             self,
             guest_request,
             image,
-            flavor
+            flavor,
+            security_groups
         )
 
     def _create_user_data(
@@ -2022,6 +2053,151 @@ class AWSDriver(PoolDriver):
                 return f.read()
 
         return None
+
+    def _assign_security_group_rules(
+        self,
+        logger: ContextAdapter,
+        guest_request: GuestRequest,
+        guest_security_group_id: str
+    ) -> Result[List[str], Failure]:
+        """
+        Ideally there should be a dedicated stage in the artemis lifecycle, when upon startup the artemis config's
+        security-group-rules are matched against existing rules in the security-group (with correction
+        applied if something doesn't match). Then this security group is attached to the guest and another one
+        is created to hold any custom rules from the guest request.
+
+        At the moment we are not there yet, so this dynamic rules adjustment is out of the picture.
+        For the interim period let's have it the following way:
+
+        * if there is a security-group defined in the config, then it will be attached as is to the guest instance.
+          All custom rules go to a separate security group that is precreated for each guest. The guest will have 2
+          security groups attached to it. In the event of cancellation only custom security group will be cleaned up.
+
+        * if there is security-group-rules section defined, then all the rules from it together with any custom ones
+          from guest request will go into a created-per-guest security group. The guest will end up with just 1
+          custom security group. In the event of cancellation this group will be cleaned up.
+
+        This helper performs all the necessary setting of the security groups involved and returns a list of security
+        group ids to be used during actual instance creation. The created-per-guest security group will be the first
+        in the resulted list.
+        """
+        res_security_groups = [guest_security_group_id]
+        guest_secgroup_rules = guest_request.security_group_rules
+
+        if not self.pool_config.get('security-group-rules') and self.pool_config.get('security-group'):
+            # 2 security groups per guest case
+            res_security_groups.append(self.pool_config['security-group'])
+
+        if self.pool_config.get('security-group-rules'):
+            # 1 security group per guest case, custom and pool merged into one secgroup
+            r_rules_from_config = SecurityGroupRules.load_from_pool_config(self.pool_config['security-group-rules'])
+            if r_rules_from_config.is_error:
+                return Error(Failure.from_failure('failed to load security group rules from pool config',
+                                                  r_rules_from_config.unwrap_error()))
+
+            guest_secgroup_rules.extend(r_rules_from_config.unwrap())
+
+        def _create_ip_permissions_payload(rules: List[SecurityGroupRule]) -> str:
+            ip_permissions = []
+            for rule in rules:
+                ip_permissions.append({'IpProtocol': rule.protocol,
+                                       'FromPort': rule.port_min,
+                                       'ToPort': rule.port_max,
+                                       'Ipv6Ranges' if rule.is_ipv6 else 'IpRanges': [
+                                           {'CidrIpv6' if rule.is_ipv6 else 'CidrIp': rule.cidr}]
+                                       })
+            return json.dumps(ip_permissions)
+
+        # Update new security group with a proper set of rules
+        rules_map = {'ingress': guest_secgroup_rules.ingress,
+                     'egress': guest_secgroup_rules.egress}
+
+        # NOTE(ivasilev) As we have to support both ipv4 and ipv6 can't use the comfort of --cidr passing as this
+        # argument supports only ipv4 addresses, need to form --ip-permissions payload manually.
+        for rule_type, rules in rules_map.items():
+            if not rules:
+                # No rules to apply, skipping
+                continue
+
+            r_update_sg_bulk = self._aws_command([
+                'ec2', f'authorize-security-group-{rule_type}',
+                '--group-id', guest_security_group_id,
+                '--ip-permissions', _create_ip_permissions_payload(rules)
+            ])
+            if r_update_sg_bulk.is_error:
+                return Error(Failure.from_failure('failed to update security group', r_update_sg_bulk.unwrap_error()))
+
+        return Ok(res_security_groups)
+
+    def _create_guest_security_group(
+        self,
+        logger: ContextAdapter,
+        guest_request: GuestRequest,
+        tags: Dict[str, str],
+    ) -> Result[List[str], Failure]:
+        # Get the name of the new group from the template
+        r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
+        if r_security_group_template.is_error:
+            return Error(Failure('Could not get guest security group name template'))
+
+        r_rendered = render_template(
+            r_security_group_template.unwrap(),
+            GUESTNAME=guest_request.guestname,
+            ENVIRONMENT=guest_request.environment,
+            TAGS=tags
+        )
+        if r_security_group_template.is_error:
+            return Error(Failure('Could not render guest security group name template'))
+
+        security_group_name = r_rendered.unwrap()
+
+        # Get the VPC id from the subnet-id, otherwise subsequent instance creation may fail with SG and subnet
+        # not belonging to the same network
+        r_subnet_details = self._aws_command(
+            [
+                'ec2', 'describe-subnets',
+                '--filters', f'Name=subnet-id,Values={self.pool_config["subnet-id"]}'
+            ],
+            key="Subnets", commandname='aws.ec2-describe-subnets'
+        )
+
+        if r_subnet_details.is_error:
+            return Error(Failure.from_failure(
+                'failed to list subnet details, cannot retrieve VPC id',
+                r_subnet_details.unwrap_error()
+            ))
+
+        subnet_details = cast(List[Dict[str, str]], r_subnet_details.unwrap())
+        vpc_id = subnet_details[0]['VpcId']
+
+        # Create a new security group and retrieve it's id
+        r_create_sg = self._aws_command(
+            [
+                'ec2', 'create-security-group',
+                '--group-name', security_group_name,
+                '--description', 'Autocreated artemis guest security group',
+                '--vpc-id', vpc_id
+            ],
+            key='GroupId', commandname='aws.ec2-create-security-group'
+        )
+
+        if r_create_sg.is_error:
+            return Error(Failure.from_failure(
+                'failed to create a security group',
+                r_create_sg.unwrap_error()
+            ))
+
+        security_group_id = cast(str, r_create_sg.unwrap())
+
+        r_get_secgroups = self._assign_security_group_rules(logger, guest_request, security_group_id)
+        if r_get_secgroups.is_error:
+            return Error(Failure.from_failure(
+                'failed to setup guest security group rules properly',
+                r_get_secgroups.unwrap_error()
+            ))
+
+        # Finally return the ids of the future instance secgroups
+        return Ok(r_get_secgroups.unwrap())
 
     def _request_instance(
         self,
@@ -2041,6 +2217,24 @@ class AWSDriver(PoolDriver):
         if r_base_tags.is_error:
             return Error(r_base_tags.unwrap_error())
 
+        tags = r_base_tags.unwrap()
+
+        # If create-security-group-per-guest is defined in the config then precreate a security group for each guest,
+        # otherwise use the one from the security-group pool configuration
+        if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
+            r_create_guest_sg = self._create_guest_security_group(logger=logger,
+                                                                  guest_request=guest_request,
+                                                                  tags=tags)
+            if r_create_guest_sg.is_error:
+                return Error(r_create_guest_sg.unwrap_error())
+
+            security_group_ids = r_create_guest_sg.unwrap()
+        else:
+            assert self.pool_config['security-group']
+            security_group_ids = [self.pool_config['security-group']]
+
+        logger.info(f'Using security groups {security_group_ids}')
+
         command = [
             'ec2', 'run-instances',
             '--image-id', image.id,
@@ -2054,9 +2248,6 @@ class AWSDriver(PoolDriver):
         if 'subnet-id' in self.pool_config:
             command.extend(['--subnet-id', self.pool_config['subnet-id']])
 
-        if 'security-group' in self.pool_config:
-            command.extend(['--security-group-ids', self.pool_config['security-group']])
-
         r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
 
         if r_block_device_mappings.is_error:
@@ -2067,7 +2258,8 @@ class AWSDriver(PoolDriver):
             r_block_device_mappings.unwrap().serialize_to_json()
         ])
 
-        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type)
+        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type,
+                                                               security_group_ids)
 
         if r_network_interfaces.is_error:
             return Error(r_network_interfaces.unwrap_error())
@@ -2088,8 +2280,6 @@ class AWSDriver(PoolDriver):
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
 
-        tags = r_base_tags.unwrap()
-
         if tags:
             command += [
                 '--tag-specifications'
@@ -2103,7 +2293,7 @@ class AWSDriver(PoolDriver):
             instance_type=instance_type,
             availability_zone=self.pool_config['availability-zone'],
             subnet_id=self.pool_config['subnet-id'],
-            security_group=self.pool_config['security-group'],
+            security_groups=security_group_ids,
             user_data=_base64_encode(user_data) if user_data else '',
             network_interfaces=r_network_interfaces.unwrap().serialize(),
             block_device_mappings=r_block_device_mappings.unwrap().serialize()
@@ -2133,7 +2323,10 @@ class AWSDriver(PoolDriver):
         # There is no chance that the guest will be ready in this step
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
-            pool_data=AWSPoolData(instance_id=instance_id),
+            pool_data=AWSPoolData(
+                instance_id=instance_id,
+                security_group=(security_group_ids[0]
+                                if security_group_ids[0] != self.pool_config.get('security-group') else None)),
             delay_update=r_delay.unwrap(),
             ssh_info=image.ssh
         ))
@@ -2156,6 +2349,24 @@ class AWSDriver(PoolDriver):
         if r_base_tags.is_error:
             return Error(r_base_tags.unwrap_error())
 
+        tags = r_base_tags.unwrap()
+
+        # If create-security-group-per-guest is defined in the config then precreate a security group for each guest,
+        # otherwise use the one from the security-group pool configuration
+        if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
+            r_create_guest_sg = self._create_guest_security_group(logger=logger,
+                                                                  guest_request=guest_request,
+                                                                  tags=tags)
+            if r_create_guest_sg.is_error:
+                return Error(r_create_guest_sg.unwrap_error())
+
+            security_group_ids = r_create_guest_sg.unwrap()
+        else:
+            assert self.pool_config['security-group']
+            security_group_ids = [self.pool_config['security-group']]
+
+        logger.info(f'Using security groups {security_group_ids}')
+
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)
         if r_price.is_error:
@@ -2169,7 +2380,8 @@ class AWSDriver(PoolDriver):
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
 
-        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type)
+        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type,
+                                                               security_group_ids)
 
         if r_network_interfaces.is_error:
             return Error(r_network_interfaces.unwrap_error())
@@ -2182,7 +2394,7 @@ class AWSDriver(PoolDriver):
             instance_type=instance_type,
             availability_zone=self.pool_config['availability-zone'],
             subnet_id=self.pool_config['subnet-id'],
-            security_group=self.pool_config['security-group'],
+            security_group=security_group_ids,
             user_data=_base64_encode(user_data) if user_data else '',
             network_interfaces=r_network_interfaces.unwrap().serialize(),
             block_device_mappings=r_block_device_mappings.unwrap().serialize()
@@ -2195,8 +2407,6 @@ class AWSDriver(PoolDriver):
             f'--spot-price={spot_price}',
             f'--launch-specification={" ".join(specification.split())}'
         ]
-
-        tags = r_base_tags.unwrap()
 
         if tags:
             command += [
@@ -2222,7 +2432,10 @@ class AWSDriver(PoolDriver):
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
-            pool_data=AWSPoolData(spot_instance_id=spot_instance_id),
+            pool_data=AWSPoolData(
+                spot_instance_id=spot_instance_id,
+                security_group=(security_group_ids[0]
+                                if security_group_ids[0] != self.pool_config.get('security-group') else None)),
             delay_update=r_delay.unwrap(),
             ssh_info=image.ssh
         ))
@@ -2258,7 +2471,8 @@ class AWSDriver(PoolDriver):
                 state=ProvisioningState.PENDING,
                 pool_data=AWSPoolData(
                     instance_id=spot_instance['InstanceId'],
-                    spot_instance_id=pool_data.spot_instance_id
+                    spot_instance_id=pool_data.spot_instance_id,
+                    security_group=pool_data.security_group
                 ),
                 delay_update=r_delay.unwrap()
             ))
@@ -2620,6 +2834,23 @@ class AWSDriver(PoolDriver):
 
         if r_cleanup.is_error:
             return Error(r_cleanup.unwrap_error())
+
+        # Security group can be cleaned up after all instance resources are freed. To avoid most certain retries let's
+        # introduce a delay
+        if pool_data.security_group is not None:
+            r_delay = KNOB_REMOVE_SECURITY_GROUP_DELAY.get_value(entityname=self.poolname)
+
+            if r_delay.is_error:
+                return Error(r_delay.unwrap_error())
+
+            r_secgroup_cleanup = self.dispatch_resource_cleanup(
+                logger,
+                AWSPoolResourcesIDs(security_group=pool_data.security_group),
+                guest_request=guest_request,
+                delay=r_delay.unwrap())
+
+            if r_secgroup_cleanup.is_error:
+                return Error(r_cleanup.unwrap_error())
 
         return Ok(True)
 

@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
     from . import Failure
     from .environment import Environment
+    from .security_group_rules import SecurityGroupRule, SecurityGroupRules
     from .tasks import Actor, ActorArgumentType
 
 
@@ -928,6 +929,8 @@ class GuestRequest(Base):
     priorityname = Column(String(250), ForeignKey('priority_groups.name'), nullable=True)
     poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
     last_poolname = Column(String(250), nullable=True)
+    _security_group_rules_ingress = Column(JSON(), nullable=True)
+    _security_group_rules_egress = Column(JSON(), nullable=True)
 
     @property
     def environment(self) -> 'Environment':
@@ -940,6 +943,26 @@ class GuestRequest(Base):
             self._environment['kickstart'] = {}  # type: ignore[call-overload]
 
         return Environment.unserialize(cast(Dict[str, Any], self._environment))
+
+    @property
+    def security_group_rules_ingress(self) -> List['SecurityGroupRule']:
+        from .security_group_rules import SecurityGroupRule
+
+        return [SecurityGroupRule.unserialize(rule) for rule in cast(List[Dict[str, Any]],
+                                                                     self._security_group_rules_ingress or [])]
+
+    @property
+    def security_group_rules_egress(self) -> List['SecurityGroupRule']:
+        from .security_group_rules import SecurityGroupRule
+
+        return [SecurityGroupRule.unserialize(rule) for rule in cast(List[Dict[str, Any]],
+                                                                     self._security_group_rules_egress or [])]
+
+    @property
+    def security_group_rules(self) -> 'SecurityGroupRules':
+        from .security_group_rules import SecurityGroupRules
+
+        return SecurityGroupRules(ingress=self.security_group_rules_ingress, egress=self.security_group_rules_egress)
 
     # This is tricky:
     # * we want to keep `nullable=False`, because `ctime` cannot ever be set to `NULL`. That way we're not forced
@@ -1043,7 +1066,9 @@ class GuestRequest(Base):
         log_types: List[Tuple[str, GuestLogContentType]],
         watchdog_dispatch_delay: Optional[int],
         watchdog_period_delay: Optional[int],
-        on_ready: Optional[List[Tuple['Actor', List['ActorArgumentType']]]]
+        on_ready: Optional[List[Tuple['Actor', List['ActorArgumentType']]]],
+        security_group_rules_ingress: Optional[List['SecurityGroupRule']],
+        security_group_rules_egress: Optional[List['SecurityGroupRule']]
     ) -> sqlalchemy.insert:
         return sqlalchemy.insert(cls.__table__).values(
             guestname=guestname,
@@ -1073,6 +1098,10 @@ class GuestRequest(Base):
             last_poolname=None,
             pool_data=json.dumps({}),
             _on_ready=[(actor.actor_name, args) for actor, args in on_ready] if on_ready is not None else on_ready,
+            _security_group_rules_ingress=([rule.serialize() for rule in security_group_rules_ingress]
+                                           if security_group_rules_ingress else None),
+            _security_group_rules_egress=([rule.serialize() for rule in security_group_rules_egress]
+                                          if security_group_rules_egress else None),
         )
 
     @classmethod

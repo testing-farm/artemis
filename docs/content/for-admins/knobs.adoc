@@ -416,6 +416,22 @@ for the requested action.
 
 5+|A pattern for needle to match in environment to image mapping file.
 
+|`aws.mapping.guest-security-group-name.template`
+|`str`
+|`ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE`
+|`{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}`
+|no
+
+
+|`aws.mapping.guest-security-group-name.template:$entityname`
+|
+|`ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE_$entityname`
+|
+|
+
+
+5+|A pattern for guest security group name.
+
 |`aws.pending-timeout`
 |`int`
 |`ARTEMIS_AWS_PENDING_TIMEOUT`
@@ -425,6 +441,17 @@ for the requested action.
 
 
 5+|How long, in seconds, is an instance allowed to stay in `pending` state until cancelled and reprovisioned.
+
+|`aws.remove-security-group.delay`
+|`int`
+|`ARTEMIS_AWS_REMOVE_SECURITY_GROUP_DELAY`
+|`150`
+|no
+
+
+
+5+|A delay, in seconds, between scheduling the guest security group clean up
+task in aws and actual attempt to clean up the resource.
 
 |`aws.spot-open-timeout`
 |`int`

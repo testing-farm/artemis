@@ -89,6 +89,28 @@ properties:
   security-group:
     type: string
 
+  security-group-rules:
+    type: array
+    items:
+      type: object
+      properties:
+        type:
+          type: string
+        protocol:
+          type: string
+        cidr:
+          type: array
+          items:
+            type: string
+        port:
+          type: string
+      required:
+        - type
+        - protocol
+        - cidr
+        - port
+      additionalProperties: false
+
   spot-price-bid-percentage:
     type: integer
 
@@ -102,6 +124,10 @@ properties:
     type: boolean
 
   use-public-ip:
+    type: boolean
+    default: false
+
+  create-security-group-per-guest:
     type: boolean
     default: false
 
@@ -123,5 +149,10 @@ required:
 - default-region
 - master-key-name
 - secret-access-key
-- security-group
 - subnet-id
+
+oneOf:
+  - required:
+    - security-group
+  - required:
+    - security-group-rules
