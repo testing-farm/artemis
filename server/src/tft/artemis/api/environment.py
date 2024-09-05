@@ -5,7 +5,8 @@ from typing import Dict, List, Tuple
 
 from gluetool.result import Error, Ok, Result
 
-from .. import __VERSION__, Failure, JSONSchemaType, get_logger, load_packaged_validation_schema
+from .. import (__VERSION__, Failure, JSONSchemaType, get_logger,
+                load_packaged_validation_schema)
 
 DEFAULT_GUEST_REQUEST_OWNER = 'artemis'
 
