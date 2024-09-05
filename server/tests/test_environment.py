@@ -7,14 +7,16 @@ from unittest.mock import MagicMock
 
 import gluetool.utils
 import pytest
-from gluetool.log import ContextAdapter
-from gluetool.result import Result
-
 import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS, Constraint, ConstraintBase, Environment, Flavor, FlavorBoot, \
-    FlavorCompatible, FlavorCpu, FlavorNetwork, FlavorNetworks, FlavorVirtualization, Operator
+from gluetool.log import ContextAdapter
+from gluetool.result import Result
+from tft.artemis.environment import (UNITS, Constraint, ConstraintBase,
+                                     Environment, Flavor, FlavorBoot,
+                                     FlavorCompatible, FlavorCpu,
+                                     FlavorNetwork, FlavorNetworks,
+                                     FlavorVirtualization, Operator)
 
 
 @pytest.fixture(name='schema_v0_0_19')
@@ -1879,8 +1881,7 @@ def test_kickstart_schema(kickstart_schema: tft.artemis.JSONSchemaType, logger: 
         },
         'os': {'compose': 'dummy-compose'},
         'pool': None,
-        'snapshots': False,
-        'spot_instance': None,
+        'snapshots': False
     }
 
     r_validation = tft.artemis.validate_data(spec, kickstart_schema)

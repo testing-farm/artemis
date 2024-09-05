@@ -14,8 +14,9 @@ import enum
 import itertools
 import operator
 import re
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Iterable, Iterator, List, NamedTuple, Optional, \
-    Sequence, Type, TypeVar, Union, cast
+from typing import (TYPE_CHECKING, Any, Callable, ClassVar, Dict, Iterable,
+                    Iterator, List, NamedTuple, Optional, Sequence, Type,
+                    TypeVar, Union, cast)
 
 import gluetool.log
 import gluetool.utils
@@ -2157,10 +2158,6 @@ class Environment(SerializableContainer):
     kickstart: Kickstart
     pool: Optional[str] = None
     snapshots: bool = False
-
-    #: If set, the request limits the instance to be either a spot instance, or a regular one. If left unset,
-    #: the request does not care, and any kind of instance can be used.
-    spot_instance: Optional[bool] = None
 
     @property
     def has_hw_constraints(self) -> bool:

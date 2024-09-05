@@ -211,7 +211,6 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--compose', required=True, help='compose id')
 @click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
-@click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
 @click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
 @click.option('--security-group-rule-ingress', multiple=True,
               help='An additional ingress security group rule in PROTOCOL:comma-separated CIDRs:PORT format')
@@ -267,7 +266,6 @@ def cmd_guest_create(
         compose: Optional[str] = None,
         pool: Optional[str] = None,
         snapshots: Optional[bool] = None,
-        spot_instance: Optional[bool] = None,
         priority_group: Optional[str] = None,
         post_install_script: Optional[str] = None,
         security_group_rule_ingress: Optional[List[str]] = None,
@@ -369,8 +367,6 @@ def cmd_guest_create(
 
     if snapshots:
         environment['snapshots'] = True
-
-    environment['spot_instance'] = spot_instance
 
     post_install = None
     if post_install_script:
