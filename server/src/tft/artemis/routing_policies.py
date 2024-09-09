@@ -590,7 +590,7 @@ def policy_use_spot_instances(
         return Error(r_capabilities.unwrap_error())
 
     artemis_use_spot = gluetool.utils.normalize_bool_option(
-        guest_request.user_data.get(KNOB_ONE_SHOT_ONLY_LABEL.value, 'false') or 'false'
+        guest_request.user_data.get(KNOB_USE_SPOT_LABEL.value, 'false') or 'false'
     )
 
     preferred_pools = [
