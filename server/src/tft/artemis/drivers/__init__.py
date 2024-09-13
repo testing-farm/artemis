@@ -1562,6 +1562,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if r_uses_hostname.unwrap() is True:
                     return Ok((False, 'hostname HW constraint not supported'))
 
+            if guest_request.environment.has_ks_specification and not capabilities.supports_kickstart:
+                if guest_request.skip_prepare_verify_ssh:
+                    Ok((False, 'SSH access is required to perform non-native kickstart installation'))
+
+                if guest_request.environment.kickstart.kernel_options_post is not None:
+                    Ok((False, 'cannot configure custom kernel cmdline with non-native kickstart'))
+
         return Ok((True, None))
 
     def _map_image_name_to_image_info_by_cache(
