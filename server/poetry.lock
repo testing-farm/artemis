@@ -4753,6 +4753,19 @@ docs = ["sphinx", "sphinx-rtd-theme", "zope.interface"]
 tests = ["coverage[toml] (==5.0.4)", "pytest (>=6.0.0,<7.0.0)"]
 
 [[package]]
+name = "pykickstart"
+version = "3.58"
+description = "Python module for manipulating kickstart files"
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "pykickstart-3.58.tar.gz", hash = "sha256:d6c71814dfba0d6e78d1d9f0366c3adefbb7ba92ff3432def740fb220ddab788"},
+]
+
+[package.dependencies]
+requests = "*"
+
+[[package]]
 name = "pymsalruntime"
 version = "0.17.1"
 description = "The MSALRuntime Python Interop Package"
@@ -6335,4 +6348,4 @@ full = ["awscli", "azure-cli", "beaker-client", "google-cloud-compute", "python-
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.9.0"
-content-hash = "779aaa9bf153ebe25a01689589d438b61f80b008d347e88b22e3bf7d1cfd30aa"
+content-hash = "232c2bd6c3b5ec280911db6241fa016e18a2ad844aa7a1ba62ba2d4a5f34f4c2"
