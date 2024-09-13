@@ -171,6 +171,22 @@ guest request watchdog tasks.
 
 5+|A delay, in seconds, after which new guest request watchdog task is scheduled.
 
+|`actor.kickstart.ssh-timeout`
+|`int`
+|`ARTEMIS_PREPARE_KICKSTART_SSH_TIMEOUT`
+|`15`
+|yes
+
+
+|`actor.kickstart.ssh-timeout:$entityname`
+|
+|`ARTEMIS_PREPARE_KICKSTART_SSH_TIMEOUT_$entityname`
+|
+|
+
+
+5+|Kickstart installation SSH connection timeout.
+
 |`actor.refresh-pool-avoid-groups-hostnames.schedule`
 |`str`
 |`ARTEMIS_ACTOR_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE`
