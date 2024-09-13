@@ -1,0 +1,103 @@
+# Use text mode install
+text
+
+eula --agreed
+
+# Configure install tree and repos
+url --url={{ install_tree }} --noverifyssl
+
+{%- for name, opts in repos.items() %}
+repo --name={{ name }}
+{%- for type in ['baseurl', 'mirrorlist', 'metalink'] %}
+{%- if opts[type] -%}
+{{ ' ' }}--{{ type }}={{ opts[type] }}
+{%- endif %}
+{%- endfor %}
+{%- if opts['sslverify'] == '0' %} --noverifyssl{% endif %}
+{%- endfor %}
+
+# Disable firstboot
+firstboot --disable
+
+# Keyboard layouts
+keyboard --vckeymap=us --xlayouts='us'
+
+# System language
+lang en_US.UTF-8
+
+# Network configuration with DHCP
+network --bootproto=dhcp --onboot=on --activate
+
+# Firewall configuration
+firewall --enabled --ssh
+
+# SELinux configuration
+selinux --enforcing
+
+# Timezone
+timezone UTC --utc
+
+# System bootloader configuration
+bootloader --location=mbr
+
+# Clear the Master Boot Record
+zerombr
+
+# Automatically partitioning
+autopart --nohome
+
+# Use all available space
+clearpart --all --initlabel
+
+# Ignore second drive
+# ignoredisk --drives=vdb
+
+# Reboot after installation
+reboot
+
+# Enable and configure services, including cloud-init
+services --enabled=cloud-init,cloud-config,cloud-final,cloud-init-local
+
+# Lock the root password
+rootpw --lock
+
+# Package selection (minimal install)
+# TODO: List installed packages on the source machine a install all
+%packages --ignoremissing
+{%- for package in packages %}
+{{ package }}
+{%- endfor %}
+%end
+
+{% if script %}
+{{ script }}
+{% endif %}
+
+%pre
+{%- if pre_install %}
+{{ pre_install }}
+{%- endif %}
+%end
+
+# Restore important files
+%post --log=/dev/console
+{%- for filename, contents in files.items() %}
+cat >> /{{ filename }} <<__EOF__
+{{ contents }}
+__EOF__
+restorecon -R /{{ filename }}
+
+{% if post_install %}
+{{ post_install }}
+{%- endif %}
+{% endfor %}
+
+# Indicator of installation completion
+touch /.ksinstall
+%end
+
+%onerror
+touch /.kserror
+%end
+
+reboot --eject
