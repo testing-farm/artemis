@@ -1562,10 +1562,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if r_uses_hostname.unwrap() is True:
                     return Ok((False, 'hostname HW constraint not supported'))
 
-        # Check whether given pool supports kickstart file specification.
-        if guest_request.environment.has_ks_specification and not capabilities.supports_kickstart:
-            return Ok((False, 'kickstart specification not supported'))
-
         return Ok((True, None))
 
     def _map_image_name_to_image_info_by_cache(
