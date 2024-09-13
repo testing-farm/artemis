@@ -1,0 +1,6 @@
+---
+#
+# The mapping file maps compose names to guest repo names to pull the installer from
+#
+# - 'compose-name' : 'repo-name'
+#

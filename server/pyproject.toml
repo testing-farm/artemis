@@ -53,6 +53,7 @@ setuptools = "*"
 python-glanceclient = "*"
 python-novaclient = "*"
 fastapi = "*"
+pykickstart = "^3.58"
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient" ]
