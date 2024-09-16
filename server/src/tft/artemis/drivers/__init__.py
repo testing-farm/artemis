@@ -175,7 +175,8 @@ ConfigImageSpecType = TypedDict(
     {
         'name': str,
         'name-regex': str,
-        'ssh': ConfigImageSSHSpecType
+        'ssh': ConfigImageSSHSpecType,
+        'supports-kickstart': bool
     }
 )
 
@@ -433,6 +434,8 @@ class PoolImageInfo(SerializableContainer):
     arch: Optional[str]
     boot: FlavorBoot
     ssh: PoolImageSSHInfo
+
+    supports_kickstart: bool
 
     def serialize_scrubbed(self) -> Dict[str, Any]:
         """
@@ -955,6 +958,9 @@ def _apply_image_specification(
 
         if 'port' in ssh_patch:
             image.ssh.port = ssh_patch['port']
+
+    if 'supports-kickstart' in image_spec:
+        image.supports_kickstart = image_spec['supports-kickstart']
 
     return Ok(None)
 
@@ -1562,12 +1568,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if r_uses_hostname.unwrap() is True:
                     return Ok((False, 'hostname HW constraint not supported'))
 
-            if guest_request.environment.has_ks_specification and not capabilities.supports_kickstart:
-                if guest_request.skip_prepare_verify_ssh:
-                    Ok((False, 'SSH access is required to perform non-native kickstart installation'))
+        if guest_request.environment.has_ks_specification and not capabilities.supports_kickstart:
+            if guest_request.skip_prepare_verify_ssh:
+                Ok((False, 'SSH access is required to perform non-native kickstart installation'))
 
-                if guest_request.environment.kickstart.kernel_options_post is not None:
-                    Ok((False, 'cannot configure custom kernel cmdline with non-native kickstart'))
+            if guest_request.environment.kickstart.kernel_options_post is not None:
+                Ok((False, 'cannot configure custom kernel cmdline with non-native kickstart'))
 
         return Ok((True, None))
 

@@ -236,7 +236,8 @@ class IBMCloudVPCDriver(PoolDriver):
                         user_data_format=image['user_data_format'],
                         arch=arch,
                         boot=FlavorBoot(),
-                        ssh=PoolImageSSHInfo()
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False
                     ))
                 except KeyError as exc:
                     return Error(Failure.from_exc(
