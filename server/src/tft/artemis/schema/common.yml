@@ -238,6 +238,9 @@ definitions:
       ssh:
         "$ref": "#/definitions/patch_image_ssh"
 
+      supports-kickstart:
+        type: boolean
+
     oneOf:
       - required:
         - name

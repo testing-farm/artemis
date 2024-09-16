@@ -173,7 +173,8 @@ ConfigImageSpecType = TypedDict(
     {
         'name': str,
         'name-regex': str,
-        'ssh': ConfigImageSSHSpecType
+        'ssh': ConfigImageSSHSpecType,
+        'supports-kickstart': bool
     }
 )
 
@@ -411,6 +412,8 @@ class PoolImageInfo(SerializableContainer):
     arch: Optional[str]
     boot: FlavorBoot
     ssh: PoolImageSSHInfo
+
+    supports_kickstart: bool
 
     def serialize_scrubbed(self) -> Dict[str, Any]:
         """
@@ -933,6 +936,9 @@ def _apply_image_specification(
 
         if 'port' in ssh_patch:
             image.ssh.port = ssh_patch['port']
+
+    if 'supports-kickstart' in image_spec:
+        image.supports_kickstart = image_spec['supports-kickstart']
 
     return Ok(None)
 

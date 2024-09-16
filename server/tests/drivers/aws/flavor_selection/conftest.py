@@ -31,7 +31,8 @@ def fixture_image() -> AWSPoolImageInfo:
         platform_details='Linux/UNIX',
         block_device_mappings=[],
         ena_support=False,
-        boot_mode=None
+        boot_mode=None,
+        supports_kickstart=False
     )
 
 
