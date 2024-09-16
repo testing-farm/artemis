@@ -1541,6 +1541,12 @@ class AWSDriver(PoolDriver):
         if not images:
             return Ok((False, 'compose not supported'))
 
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
+            if not images:
+                return Ok((False, 'compose does not support kickstart'))
+
         pairs: List[Tuple[AWSPoolImageInfo, Flavor]] = []
 
         for image in images:
@@ -2749,6 +2755,9 @@ class AWSDriver(PoolDriver):
 
         images = r_images.unwrap()
 
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
         pairs: List[Tuple[AWSPoolImageInfo, AWSFlavor]] = []
 
         for image in images:
@@ -2934,6 +2943,7 @@ class AWSDriver(PoolDriver):
                         arch=_aws_arch_to_arch(image['Architecture']),
                         boot=image_boot,
                         ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
                         platform_details=image['PlatformDetails'],
                         block_device_mappings=image['BlockDeviceMappings'],
                         # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or `None`

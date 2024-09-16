@@ -1262,6 +1262,7 @@ class BeakerDriver(PoolDriver):
                 arch=None,
                 boot=FlavorBoot(),
                 ssh=PoolImageSSHInfo(),
+                supports_kickstart=True,
                 variant=groups['variant']
             ))
 

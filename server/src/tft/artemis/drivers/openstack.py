@@ -444,6 +444,9 @@ class OpenStackDriver(PoolDriver):
 
         images = r_images.unwrap()
 
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
         pairs: List[Tuple[PoolImageInfo, Flavor]] = []
 
         for image in images:
@@ -648,6 +651,13 @@ class OpenStackDriver(PoolDriver):
 
         if not images:
             return Ok((False, 'compose not supported'))
+
+        # The driver does not support kickstart natively. Filter only images we can perform ks install on.
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
+            if not images:
+                return Ok((False, 'compose does not support kickstart'))
 
         pairs: List[Tuple[PoolImageInfo, Flavor]] = []
 
@@ -1109,7 +1119,8 @@ class OpenStackDriver(PoolDriver):
                     id=image['id'],
                     arch=None,
                     boot=FlavorBoot(method=[image.get('hw_firmware_type', 'bios')]),
-                    ssh=PoolImageSSHInfo()
+                    ssh=PoolImageSSHInfo(),
+                    supports_kickstart=False
                 )
                 for image in r_images.unwrap()
                 if image_name_pattern is None or image_name_pattern.match(image['name'])
