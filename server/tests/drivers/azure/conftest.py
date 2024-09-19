@@ -23,7 +23,7 @@ def fixture_azure_pool(logger: gluetool.log.ContextAdapter) -> tft.artemis.drive
             "supported-architectures": ["X86_64"]
         },
 
-        "flavor-regex": "Standard_B2*",
+        "flavor-regex": "Standard_B2.*",
 
         "image-filters": [
             {
