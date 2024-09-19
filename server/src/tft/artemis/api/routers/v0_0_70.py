@@ -23,9 +23,9 @@ from . import CacheManager, GuestEventManager, GuestRequestManager, GuestShelfMa
     SnapshotRequestManager, StatusManager, UserManager, create_guest_request, create_guest_request_log
 from . import delete_guest as delete_artemis_guest
 from . import get_about, get_guest_request, get_guest_request_log, get_guest_requests, preprovision_guest
+from ._cache import router__cache
+from ._shelves import router_shelves
 from .common import router__status, router_default, router_knobs, router_users
-from .v0_0_27 import router__cache
-from .v0_0_58 import router_shelves
 
 # NEW: guest log API adds multiple blobs
 # NEW: dropped boot.method enum
@@ -34,6 +34,13 @@ router_guests = APIRouter(
     prefix="/guests",
     tags=["guests"],
     responses={status.HTTP_404_NOT_FOUND: {"description": "Not found"}},
+)
+
+
+router__cache = APIRouter(
+    prefix="/_cache",
+    tags=["cache"],
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Not found"}}
 )
 
 

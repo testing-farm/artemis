@@ -99,12 +99,7 @@ def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
     assert response.headers['location'] == f'/{CURRENT_MILESTONE_VERSION}/about'
 
     # supported versions should include no redirects
-    response = api_client.request('GET', '/v0.0.18/about', allow_redirects=False)
-    assert response.status_code == 200
-
-    # XXX FIXME Those tests will be failing as v0.0.17 is not yet implemented
-
-    response = api_client.request('GET', '/v0.0.17/about', allow_redirects=False)
+    response = api_client.request('GET', '/v0.0.72/about', allow_redirects=False)
     assert response.status_code == 200
 
 
@@ -763,7 +758,7 @@ def fixture_schemas(logger: gluetool.log.ContextAdapter) -> Dict[str, tft.artemi
                 os=OsRequirements(compose='foo'),
                 kickstart=Kickstart()
             ),
-            'v0.0.55',
+            'v0.0.72',
             True
         ),
         (
@@ -779,7 +774,7 @@ def fixture_schemas(logger: gluetool.log.ContextAdapter) -> Dict[str, tft.artemi
                 os=OsRequirements(compose='foo'),
                 kickstart=Kickstart()
             ),
-            'v0.0.55',
+            'v0.0.72',
             False
         ),
         (
@@ -795,7 +790,7 @@ def fixture_schemas(logger: gluetool.log.ContextAdapter) -> Dict[str, tft.artemi
                 os=OsRequirements(compose='foo'),
                 kickstart=Kickstart()
             ),
-            'v0.0.55',
+            'v0.0.72',
             True
         )
     ]

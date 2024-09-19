@@ -34,10 +34,8 @@ from ..dependencies import get_db
 from ..models import AboutResponse, AuthContext, ConsoleUrlResponse, CreateUserRequest, EventSearchParameters, \
     GuestEvent, GuestLogResponse, GuestRequest, GuestResponse, GuestShelfResponse, KnobResponse, KnobUpdateRequest, \
     PreprovisioningRequest, SnapshotRequest, SnapshotResponse, TokenResetResponse, TokenTypes, UserResponse
-from ..models.v0_0_69 import GuestLogResponse_v0_0_69
 from ..models.v0_0_72 import GuestRequest_v0_0_72, GuestResponse_v0_0_72
 
-GuestLogResponseType = TypeVar('GuestLogResponseType', GuestLogResponse, GuestLogResponse_v0_0_69)
 GuestResponseType = TypeVar('GuestResponseType', GuestResponse, GuestResponse_v0_0_72)
 GuestRequestType = TypeVar('GuestRequestType', GuestRequest, GuestRequest_v0_0_72)
 
@@ -1702,15 +1700,13 @@ class StatusManager:
         )
 
 
-# NOTE(ivasilev) No idea why how to make mypy happy, muting for now
 def get_guest_request_log(
     guestname: str,
     logname: str,
     contenttype: str,
     manager: GuestRequestManager,
-    logger: gluetool.log.ContextAdapter,
-    guest_log_response_model: Type[GuestLogResponseType] = GuestLogResponse  # type: ignore[assignment]
-) -> GuestLogResponseType:
+    logger: gluetool.log.ContextAdapter
+) -> GuestLogResponse:
     from ...tasks import get_guest_logger
 
     failure_details = {
@@ -1744,7 +1740,7 @@ def get_guest_request_log(
                 logger=guest_logger
             )
 
-        return guest_log_response_model.from_db(log)
+        return GuestLogResponse.from_db(log)
 
 
 def create_guest_request_log(
