@@ -6,7 +6,7 @@ import datetime
 import os
 import re
 import tempfile
-from typing import Any, Dict, List, Optional, Pattern, Tuple, TypedDict, Union, cast
+from typing import Any, Dict, Iterator, List, Optional, Pattern, Tuple, TypedDict, Union, cast
 
 import gluetool.log
 import gluetool.utils
@@ -715,63 +715,53 @@ class AzureDriver(PoolDriver):
         #     "resourceDiskSizeInMB": int
         # }
 
-        logger = self.logger
-        list_flavors_cmd = ['vm', 'list-sizes', '--location', self.pool_config['default-location']]
-        with AzureSession(logger, self) as session:
-            r_flavors_list = session.run_az(
-                logger,
-                list_flavors_cmd,
-                commandname='az.vm-flavors-list'
-            )
-
-            if r_flavors_list.is_error:
-                return Error(Failure.from_failure(
-                    'failed to fetch flavors information',
-                    r_flavors_list.unwrap_error()))
-
-        flavors = r_flavors_list.unwrap()
-
-        flavor_name_pattern: Optional[Pattern[str]] = None
-        if self.pool_config.get('flavor-regex'):
-            try:
-                flavor_name_pattern = re.compile(self.pool_config['flavor-regex'])
-            except re.error as exc:
-                return Error(Failure.from_exc('failed to compile regex', exc))
-
-        azure_flavors: List[Flavor] = []
-
-        for flavor in cast(List[Dict[str, str]], flavors):
-            try:
-                if flavor_name_pattern is not None and not flavor_name_pattern.match(flavor['name']):
-                    continue
-                max_data_disk_count = int(flavor['maxDataDiskCount'])
-                # diskspace is reported in MB
-                disks = [FlavorDisk(size=UNITS.Quantity(int(flavor['osDiskSizeInMB']), UNITS.megabytes))]
-                if max_data_disk_count > 1:
-                    disks.append(FlavorDisk(is_expansion=True, max_additional_items=max_data_disk_count - 1))
-                azure_flavors.append(
-                    AzureFlavor(
-                        name=flavor['name'],
-                        id=flavor['name'],
-                        cpu=FlavorCpu(
-                            processors=int(flavor['numberOfCores'])
-                        ),
-                        # memory is reported in MB
-                        memory=UNITS.Quantity(int(flavor['memoryInMB']), UNITS.megabytes),
-                        disk=FlavorDisks(disks),
-                        resource_disk_size=UNITS.Quantity(int(flavor['resourceDiskSizeInMB']), UNITS.megabytes),
-                        network=FlavorNetworks([FlavorNetwork(type='eth')]),
-                        virtualization=FlavorVirtualization()
-                    )
+        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+            list_flavors_cmd = ['vm', 'list-sizes', '--location', self.pool_config['default-location']]
+            with AzureSession(logger, self) as session:
+                r_flavors_list = session.run_az(
+                    logger,
+                    list_flavors_cmd,
+                    commandname='az.vm-flavors-list'
                 )
-            except KeyError as exc:
-                return Error(Failure.from_exc(
-                    'malformed flavor description',
-                    exc,
-                    flavor_info=flavors
-                ))
 
-        return Ok(azure_flavors)
+                if r_flavors_list.is_error:
+                    return Error(Failure.from_failure(
+                        'failed to fetch flavors information',
+                        r_flavors_list.unwrap_error()))
+
+            return Ok(cast(List[Dict[str, Any]], r_flavors_list.unwrap()))
+
+        def _constructor(
+            logger: gluetool.log.ContextAdapter,
+            raw_flavor: Dict[str, Any]
+        ) -> Iterator[Result[Flavor, Failure]]:
+            max_data_disk_count = int(raw_flavor['maxDataDiskCount'])
+            # diskspace is reported in MB
+            disks = [FlavorDisk(size=UNITS.Quantity(int(raw_flavor['osDiskSizeInMB']), UNITS.megabytes))]
+            if max_data_disk_count > 1:
+                disks.append(FlavorDisk(is_expansion=True, max_additional_items=max_data_disk_count - 1))
+
+            yield Ok(AzureFlavor(
+                name=raw_flavor['name'],
+                id=raw_flavor['name'],
+                cpu=FlavorCpu(
+                    processors=int(raw_flavor['numberOfCores'])
+                ),
+                # memory is reported in MB
+                memory=UNITS.Quantity(int(raw_flavor['memoryInMB']), UNITS.megabytes),
+                disk=FlavorDisks(disks),
+                resource_disk_size=UNITS.Quantity(int(raw_flavor['resourceDiskSizeInMB']), UNITS.megabytes),
+                network=FlavorNetworks([FlavorNetwork(type='eth')]),
+                virtualization=FlavorVirtualization()
+            ))
+
+        return self.do_fetch_pool_flavor_info(
+            self.logger,
+            _fetch,
+            # ignore[index]: for some reason, mypy does not detect the type correctly
+            lambda raw_flavor: cast(str, raw_flavor['name']),  # type: ignore[index]
+            _constructor
+        )
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
         def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:

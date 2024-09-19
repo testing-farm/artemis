@@ -2391,6 +2391,86 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return get_cached_mapping_item(CACHE.get(), self.image_info_cache_key, imagename, self.image_info_class)
 
+    def do_fetch_pool_flavor_info(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        fetch: Callable[
+            [gluetool.log.ContextAdapter],
+            Result[List[T], Failure]
+        ],
+        name_getter: Callable[
+            [T],
+            str
+        ],
+        constructor: Callable[
+            [gluetool.log.ContextAdapter, T],
+            Iterator[Result[Flavor, Failure]]
+        ]
+    ) -> Result[List[Flavor], Failure]:
+        """
+        A helper implementation for constructing flavor info.
+
+        :param logger: logger to use for logging.
+        :param fetch: a callable that returns a list of raw flavor information, one entry per
+            flavor. The actual type of each raw flavor entry is not important for this helper, it
+            must match input types expected by ``name_getter`` and ``constructor``.
+        :param name_getter: a callable that returns a name of the flavor for a given raw flavor entry.
+        :param constructor: a callable that yields actual :py:class:`Flavor` instances, one for each
+            flavor constructed from a given raw flavor.
+        """
+
+        flavor_name_pattern: Optional[Pattern[str]] = None
+
+        if self.pool_config.get('flavor-regex'):
+            try:
+                flavor_name_pattern = re.compile(self.pool_config['flavor-regex'])
+
+            except re.error as exc:
+                return Error(Failure.from_exc('failed to compile flavor-regex pattern', exc))
+
+        r_raw_flavors = fetch(logger)
+
+        if r_raw_flavors.is_error:
+            return Error(r_raw_flavors.unwrap_error())
+
+        raw_flavors = r_raw_flavors.unwrap()
+
+        flavors: List[Flavor] = []
+
+        for raw_flavor in raw_flavors:
+            try:
+                flavor_name = name_getter(raw_flavor)
+
+            except Exception as exc:
+                return Error(Failure.from_exc(
+                    'malformed flavor description',
+                    exc,
+                    raw_flavor=raw_flavor
+                ))
+
+            if flavor_name_pattern is not None and not flavor_name_pattern.match(flavor_name):
+                continue
+
+            try:
+                for r_flavor in constructor(logger, raw_flavor):
+                    if r_flavor.is_error:
+                        return Error(Failure.from_failure(
+                            'failed to extract flavor info',
+                            r_flavor.unwrap_error(),
+                            raw_flavor=raw_flavor
+                        ))
+
+                    flavors.append(r_flavor.unwrap())
+
+            except Exception as exc:
+                return Error(Failure.from_exc(
+                    'failed to extract flavor info',
+                    exc,
+                    raw_flavor=raw_flavor
+                ))
+
+        return Ok(flavors)
+
     def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         """
         Responsible for fetching the most up-to-date flavor info..
