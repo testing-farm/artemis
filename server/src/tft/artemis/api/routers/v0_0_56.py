@@ -36,7 +36,7 @@ from . import (
     preprovision_guest,
 )
 from .common import router__status, router_default, router_knobs, router_users
-from .v0_0_27 import router__cache
+from .v0_0_53 import router__cache
 
 router_guests = APIRouter(
     prefix='/guests',

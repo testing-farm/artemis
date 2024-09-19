@@ -65,37 +65,6 @@ API_MILESTONES: list[tuple[str, list[str]]] = [
     ('v0.0.55', []),
     # NEW: added Kickstart specification
     ('v0.0.53', []),
-    # NEW: added compatible HW constraint
-    ('v0.0.48', []),
-    # NEW: added missing cpu.processors constraint
-    ('v0.0.47', []),
-    # NEW: added new CPU constraints
-    ('v0.0.46', []),
-    # NEW: added hostname HW constraint
-    ('v0.0.38', []),
-    # NEW: virtualization HW constraint
-    ('v0.0.37', []),
-    # NEW: current worker tasks
-    # NEW: boot.method HW constraint
-    ('v0.0.32', []),
-    # NEW: trigger pool info refresh
-    # NEW: HW requirement changes - added `network`
-    ('v0.0.28', []),
-    # NEW: HW requirement changes - refactored `disk`
-    ('v0.0.27', []),
-    # NEW: allow log-types to be specified in guest request
-    ('v0.0.26', []),
-    # NEW: allow skipping verify-ssh steps
-    ('v0.0.24', []),
-    # NEW: user management
-    ('v0.0.21', []),
-    # NEW: guest logs
-    ('v0.0.20', []),
-    # NEW: environment.hw opens
-    ('v0.0.19', []),
-    # NEW: /guest/$GUESTNAME/console/url
-    ('v0.0.18', []),
-    ('v0.0.17', []),
 ]
 
 CURRENT_MILESTONE_VERSION = API_MILESTONES[0][0]

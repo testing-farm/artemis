@@ -8,7 +8,7 @@ from typing import Annotated
 
 import fastapi
 import gluetool.log
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
 from ..dependencies import get_auth_context, get_logger
 from ..models import (
@@ -20,6 +20,7 @@ from ..models import (
     GuestResponse,
 )
 from . import (
+    CacheManager,
     GuestEventManager,
     GuestRequestManager,
     create_guest_request,
@@ -30,7 +31,29 @@ from . import (
     get_guest_requests,
 )
 from .common import router__status, router_default, router_knobs, router_users
-from .v0_0_27 import router__cache
+
+router__cache = APIRouter(
+    prefix='/_cache', tags=['cache'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
+)
+
+
+@router__cache.get('/pools/{poolname}/image-info', status_code=status.HTTP_200_OK)
+def get_pool_image_info(
+    poolname: str,
+    manager: Annotated[CacheManager, Depends(CacheManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+) -> Response:
+    return manager.entry_pool_image_info(poolname=poolname, manager=manager, logger=logger)
+
+
+@router__cache.get('/pools/{poolname}/flavor-info', status_code=status.HTTP_200_OK)
+def get_pool_flavor_info(
+    poolname: str,
+    manager: Annotated[CacheManager, Depends(CacheManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+) -> Response:
+    return manager.entry_pool_flavor_info(poolname=poolname, manager=manager, logger=logger)
+
 
 router_guests = APIRouter(
     prefix='/guests',

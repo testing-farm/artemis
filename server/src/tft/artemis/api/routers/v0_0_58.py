@@ -4,7 +4,7 @@
 # flake8: noqa: FS003 f-string missing prefix
 # NEW: fixed virtualization.hypervisor enum
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 import fastapi
 import gluetool.log
@@ -18,32 +18,25 @@ from ..models import (
     GuestLogResponse,
     GuestRequest,
     GuestResponse,
-    GuestShelfResponse,
-    PreprovisioningRequest,
 )
 from . import (
     GuestEventManager,
     GuestRequestManager,
-    GuestShelfManager,
     create_guest_request,
     create_guest_request_log,
     delete_guest as delete_artemis_guest,
     get_guest_request,
     get_guest_request_log,
     get_guest_requests,
-    preprovision_guest,
 )
 from .common import router__status, router_default, router_knobs, router_users
-from .v0_0_27 import router__cache
+from .v0_0_53 import router__cache
+from .v0_0_56 import router_shelves
 
 router_guests = APIRouter(
     prefix='/guests',
     tags=['guests'],
     responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}},
-)
-
-router_shelves = APIRouter(
-    prefix='/shelves', tags=['shelves'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
 )
 
 
@@ -128,79 +121,6 @@ def create_guest_log(
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> None:
     return create_guest_request_log(guestname, logname, contenttype, manager, logger)
-
-
-@router_shelves.get('/', status_code=status.HTTP_200_OK)
-def get_shelves(
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> list[GuestShelfResponse]:
-    return GuestShelfManager.entry_get_shelves(manager=manager, auth=auth, logger=logger)
-
-
-@router_shelves.get('/{shelfname}', status_code=status.HTTP_200_OK)
-def get_shelf(
-    shelfname: str,
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> Optional[GuestShelfResponse]:
-    return GuestShelfManager.entry_get_shelf(shelfname=shelfname, manager=manager, logger=logger)
-
-
-@router_shelves.post('/{shelfname}', status_code=status.HTTP_201_CREATED)
-def create_shelf(
-    shelfname: str,
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> GuestShelfResponse:
-    return GuestShelfManager.entry_create_shelf(shelfname=shelfname, manager=manager, auth=auth, logger=logger)
-
-
-@router_shelves.delete('/{shelfname}', status_code=status.HTTP_204_NO_CONTENT)
-def delete_shelf(
-    shelfname: str,
-    request: Request,
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> None:
-    return GuestShelfManager.entry_delete_shelf(
-        shelfname=shelfname, request=request, manager=manager, auth=auth, logger=logger
-    )
-
-
-@router_shelves.delete('/guests/{guestname}', status_code=status.HTTP_204_NO_CONTENT)
-def entry_delete_shelved_guest(
-    guestname: str,
-    request: Request,
-    manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> None:
-    return GuestShelfManager.entry_delete_shelved_guest(
-        guestname=guestname, request=request, manager=manager, auth=auth, logger=logger
-    )
-
-
-@router_shelves.post('/{shelfname}/preprovision', status_code=status.HTTP_202_ACCEPTED)
-def preprovision(
-    shelfname: str,
-    preprovisioning_request: PreprovisioningRequest,
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> None:
-    return preprovision_guest(
-        api_version='v0.0.58',
-        shelfname=shelfname,
-        preprovisioning_request=preprovisioning_request,
-        manager=manager,
-        auth=auth,
-        logger=logger,
-    )
 
 
 def register_routes(app: fastapi.FastAPI) -> None:

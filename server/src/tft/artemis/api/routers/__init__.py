@@ -1382,7 +1382,6 @@ class StatusManager:
         )
 
 
-# NOTE(ivasilev) No idea why how to make mypy happy, muting for now
 def get_guest_request_log(
     guestname: str,
     logname: str,

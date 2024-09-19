@@ -88,12 +88,7 @@ def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
     assert response.headers['location'] == f'/{CURRENT_MILESTONE_VERSION}/about'
 
     # supported versions should include no redirects
-    response = api_client.request('GET', '/v0.0.18/about', allow_redirects=False)
-    assert response.status_code == 200
-
-    # XXX FIXME Those tests will be failing as v0.0.17 is not yet implemented
-
-    response = api_client.request('GET', '/v0.0.17/about', allow_redirects=False)
+    response = api_client.request('GET', '/v0.0.72/about', allow_redirects=False)
     assert response.status_code == 200
 
 
