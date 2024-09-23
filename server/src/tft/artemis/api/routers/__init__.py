@@ -722,6 +722,9 @@ def get_session(
             if T.conflict:
                 raise errors.ConflictError(logger=logger, caused_by=T.failure)
 
+            if T.failure.exception is not None and isinstance(T.failure.exception, errors.ArtemisHTTPError):
+                raise T.failure.exception
+
             raise errors.InternalServerError(
                 logger=logger,
                 caused_by=T.failure
