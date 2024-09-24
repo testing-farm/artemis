@@ -980,6 +980,20 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 
 5+|If enabled, pattern maps loaded by pools would be cached.
 
+|`pool.default-post-install-template`
+|`str`
+|`ARTEMIS_DEFAULT_POST_INSTALL_TEMPLATE`
+|`
+{% if GUEST_REQUEST.post_install_script %}
+{{ GUEST_REQUEST.post_install_script }}
+{% endif %}
+`
+|no
+
+
+
+5+|A post install template to use if nothing specific is defined in pool configuration
+
 |`pool.dispatch-resource-cleanup`
 |`int`
 |`ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY`

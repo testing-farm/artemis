@@ -8,6 +8,7 @@ import gluetool
 import gluetool.log
 import pytest
 import sqlalchemy
+import yaml
 from gluetool.result import Error, Ok, Result
 
 import tft.artemis
@@ -16,6 +17,24 @@ import tft.artemis.drivers.localhost
 from tft.artemis.drivers import vm_info_to_ip
 
 from . import MockPatcher
+
+POST_INSTALL_SCRIPT_TEMPLATE_CLOUD_INIT = """
+#cloud-config
+bootcmd:
+  - ip route add 10.0.0.8/0 via 10.130.68.1 dev env3
+{% if GUEST_REQUEST.post_install_script %}
+  - mkdir -m 0755 -p /run/artemis
+write_files:
+  - path: /run/artemis/user_post_install.sh
+    content:
+{% filter indent(6, first=True, blank=True) -%}
+{{ GUEST_REQUEST.post_install_script }}
+{%- endfilter %}
+    permissions: '0755'
+runcmd:
+  - sh "/run/artemis/user_post_install.sh"
+{% endif %}
+"""
 
 
 @pytest.mark.parametrize(
@@ -221,3 +240,48 @@ def test_driver_load_error(
     failure = r.unwrap_error()
 
     assert failure.message == 'dummy failure'
+
+
+@pytest.mark.parametrize(
+    ('user_data',),
+    [
+        ('#!/bin/sh\n echo Something > 42',),
+        ('',),
+        (None,),
+    ]
+)
+def test_generate_post_install_script_from_template_cloud_init(
+    user_data: Optional[str],
+    logger: gluetool.log.ContextAdapter,
+) -> None:
+    guest_request = MagicMock(post_install_script=user_data)
+    pool = tft.artemis.drivers.PoolDriver(logger, 'dummy-driver-with-post-install-script',
+                                          {'post-install-template': POST_INSTALL_SCRIPT_TEMPLATE_CLOUD_INIT})
+    r_script = pool.generate_post_install_script(guest_request)
+    assert r_script.is_ok
+    script = r_script.unwrap()
+    assert script
+    # Make sure that resulting post-install-script is at least valid yaml
+    print(script)
+    yaml.safe_load(script)
+
+
+@pytest.mark.parametrize(
+    ('user_data',),
+    [
+        ('#!/bin/sh\n echo Something > 42',),
+        ('',),
+        (None,),
+    ]
+)
+def test_generate_post_install_script_from_template_default(
+    user_data: Optional[str],
+    logger: gluetool.log.ContextAdapter,
+) -> None:
+    guest_request = MagicMock(post_install_script=user_data)
+    pool = tft.artemis.drivers.PoolDriver(logger, 'dummy-driver-with-post-install-script', {})
+    r_script = pool.generate_post_install_script(guest_request)
+    assert r_script.is_ok
+    script = r_script.unwrap()
+    # Make sure that resulting post-install-script is matches passed user-data
+    assert script == (user_data or '')

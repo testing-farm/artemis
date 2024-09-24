@@ -117,7 +117,7 @@ properties:
   patch-images:
     type: array
 
-  post-install-script:
+  post-install-template:
     type: string
 
   capabilities:

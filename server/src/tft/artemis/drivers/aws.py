@@ -2043,16 +2043,11 @@ class AWSDriver(PoolDriver):
         logger: ContextAdapter,
         guest_request: GuestRequest,
     ) -> Optional[str]:
-        if guest_request.post_install_script:
-            return guest_request.post_install_script
+        r_post_install_script = self.generate_post_install_script(guest_request)
+        if r_post_install_script.is_error:
+            return None
 
-        post_install_script_filepath = cast(Optional[str], self.pool_config.get('post-install-script'))
-
-        if post_install_script_filepath:
-            with open(post_install_script_filepath) as f:
-                return f.read()
-
-        return None
+        return r_post_install_script.unwrap()
 
     def _assign_security_group_rules(
         self,

@@ -463,7 +463,7 @@ class OpenStackDriver(PoolDriver):
 
         network = r_network.unwrap()
 
-        def _create(user_data_filename: str) -> Result[Any, Failure]:
+        def _create(user_data_filename: Optional[str] = None) -> Result[Any, Failure]:
             """The actual call to the openstack cli guest create command is happening here.
                If user_data_filename is an empty string then the guest vm is booted with no user-data.
             """
@@ -480,6 +480,8 @@ class OpenStackDriver(PoolDriver):
                 for tag, value in tags.items()
             ), [])
 
+            user_data_options: List[str] = [] if not user_data_filename else ['--user-data', user_data_filename]
+
             os_options = [
                 'server',
                 'create',
@@ -488,20 +490,23 @@ class OpenStackDriver(PoolDriver):
                 '--network', network,
                 '--key-name', self.pool_config['master-key-name'],
                 '--security-group', self.pool_config.get('security-group', 'default'),
-                '--user-data', user_data_filename
-            ] + property_options + [
+            ] + property_options + user_data_options + [
                 tags['ArtemisGuestLabel']
             ]
 
             return self._run_os(os_options, commandname='os.server-create')
 
-        if guest_request.post_install_script:
-            # user has specified custom script to execute, contents stored as post_install_script
-            with create_tempfile(file_contents=guest_request.post_install_script) as user_data_filename:
+        r_post_install_script = self.generate_post_install_script(guest_request)
+        if r_post_install_script.is_error:
+            return Error(Failure.from_failure('Could not generate post-install script',
+                                              r_post_install_script.unwrap_error()))
+
+        post_install_script = r_post_install_script.unwrap()
+        if post_install_script:
+            with create_tempfile(file_contents=post_install_script) as user_data_filename:
                 r_output = _create(user_data_filename)
         else:
-            # using post_install_script setting from the pool config
-            r_output = _create(self.pool_config.get('post-install-script', ''))
+            r_output = _create()
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())

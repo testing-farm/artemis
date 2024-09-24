@@ -25,7 +25,7 @@ from gluetool.result import Error, Ok, Result
 from typing_extensions import Literal, Protocol, TypedDict
 
 from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str, \
-    render_template, safe_call
+    render_template, safe_call, template_environment
 from ..cache import get_cached_mapping_item, get_cached_mapping_values, refresh_cached_mapping
 from ..context import CACHE, LOGGER
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
@@ -276,6 +276,19 @@ KNOB_LOGGING_CLI_COMMAND_PATTERN: Knob[str] = Knob(
     envvar='ARTEMIS_LOG_CLI_COMMAND_PATTERN',
     cast_from_str=str,
     default=r'.*'
+)
+
+KNOB_DEFAULT_POST_INSTALL_TEMPLATE: Knob[str] = Knob(
+    'pool.default-post-install-template',
+    'A post install template to use if nothing specific is defined in pool configuration',
+    has_db=False,
+    envvar='ARTEMIS_DEFAULT_POST_INSTALL_TEMPLATE',
+    cast_from_str=str,
+    default="""
+{% if GUEST_REQUEST.post_install_script %}
+{{ GUEST_REQUEST.post_install_script }}
+{% endif %}
+"""
 )
 
 
@@ -2195,6 +2208,25 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         return Ok([])
+
+    def generate_post_install_script(self, guest_request: GuestRequest) -> Result[str, Failure]:
+        """
+        A helper that combines pool-defined post-install-script template with portion of user-supplied
+        post-install-script to generate final script to be passed to the pool driver.
+        Any possible templating will be resolved at this point.
+        """
+        post_install_template = self.pool_config.get('post-install-template')
+
+        if not post_install_template:
+            # No pool configuration for post-install means that default one will be used
+            r_default_template = KNOB_DEFAULT_POST_INSTALL_TEMPLATE.get_value(entityname=self.poolname)
+            if r_default_template.is_error:
+                return Error(r_default_template.unwrap_error())
+
+            post_install_template = r_default_template.unwrap()
+
+        # pool configuration is a templated post-install-script, try to combine it with user data passed
+        return render_template(post_install_template, **template_environment(guest_request))
 
     def _patch_pool_image_info_from_config(
         self,

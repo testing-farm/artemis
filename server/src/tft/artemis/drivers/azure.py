@@ -910,7 +910,7 @@ class AzureDriver(PoolDriver):
 
         r_output = None
 
-        def _create(resource_group: str, custom_data_filename: str) -> Result[JSONType, Failure]:
+        def _create(resource_group: str, custom_data_filename: Optional[str] = None) -> Result[JSONType, Failure]:
             """
             The actual call to the azure cli guest create command is happening here.
             If custom_data_filename is an empty string then the guest vm is booted with no user-data.
@@ -971,9 +971,11 @@ class AzureDriver(PoolDriver):
                     '--resource-group', resource_group,
                     '--image', image.id,
                     '--name', tags['ArtemisGuestLabel'],
-                    '--custom-data', custom_data_filename,
                     '--size', instance_type.name
                 ] + tags_options
+
+                if custom_data_filename:
+                    az_vm_create_options += ['--custom-data', custom_data_filename]
 
                 # If pool config has storage for boot of diagnostics specified -> let's try creating a storage, azure
                 # will indeed fail gracefully if it already exists
@@ -1025,13 +1027,17 @@ class AzureDriver(PoolDriver):
         else:
             resource_group = self.pool_config['guest-resource-group']
 
-        if guest_request.post_install_script:
-            # user has specified custom script to execute, contents stored as post_install_script
-            with create_tempfile(file_contents=guest_request.post_install_script) as custom_data_filename:
+        r_post_install_script = self.generate_post_install_script(guest_request)
+        if r_post_install_script.is_error:
+            return Error(Failure.from_failure('Could not generate post-install script',
+                                              r_post_install_script.unwrap_error()))
+
+        post_install_script = r_post_install_script.unwrap()
+        if post_install_script:
+            with create_tempfile(file_contents=post_install_script) as custom_data_filename:
                 r_output = _create(resource_group, custom_data_filename)
         else:
-            # using post_install_script setting from the pool config
-            r_output = _create(resource_group, self.pool_config.get('post-install-script', ''))
+            r_output = _create(resource_group)
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
