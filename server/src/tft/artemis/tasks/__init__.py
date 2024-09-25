@@ -2271,7 +2271,7 @@ class ProvisioningTailHandler(TailHandler):
             workspace.update_guest_state_and_request_task(
                 self.new_state,
                 guest_shelf_lookup,
-                guestname=workspace.guestname,
+                workspace.guestname,
                 current_state=self.current_state,
                 current_pool_data=workspace.gr.pool_data,
                 set_values={
@@ -2288,7 +2288,7 @@ class ProvisioningTailHandler(TailHandler):
             workspace.update_guest_state_and_request_task(
                 self.new_state,
                 route_guest_request,
-                guestname=workspace.guestname,
+                workspace.guestname,
                 current_state=self.current_state,
                 current_pool_data=workspace.gr.pool_data,
                 set_values={
