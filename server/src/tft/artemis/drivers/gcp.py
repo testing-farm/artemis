@@ -135,7 +135,15 @@ class GCPDriver(PoolDriver):
 
         answer = r_answer.unwrap()
         if answer[0] is False:
-            return Ok(answer)
+            return r_answer
+
+        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
+
+        images = r_images.unwrap()
+        if not images:
+            return Ok((False, 'compose not supported'))
 
         can_acquire = guest_request.environment.has_hw_constraints is not True
         return Ok((can_acquire, 'HW constraints are not supported by the GCP driver'))
