@@ -4,6 +4,7 @@
 import dataclasses
 from functools import cached_property
 import json
+import proto
 import re
 import threading
 from typing import Any, Dict, List, Optional, Union, Tuple
@@ -367,7 +368,7 @@ class GCPDriver(PoolDriver):
             return Error(r_instance.unwrap_error())
         instance = r_instance.unwrap()
 
-        logger.info(f'Created instance {instance} with username: {guest_request.ssh_username}')
+        log_dict_yaml(logger.info, 'created instance', proto.Message.to_dict(instance))
 
         # It is unlikely that the machine would be up and running
         provisioninig_state = ProvisioningState.PENDING
