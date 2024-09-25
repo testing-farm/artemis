@@ -145,8 +145,10 @@ class GCPDriver(PoolDriver):
         if not images:
             return Ok((False, 'compose not supported'))
 
-        can_acquire = guest_request.environment.has_hw_constraints is not True
-        return Ok((can_acquire, 'HW constraints are not supported by the GCP driver'))
+        if guest_request.environment.has_hw_constraints:
+            return Ok((False, 'HW constraints are not supported by the GCP driver'))
+
+        return Ok((True, None))
 
     def update_guest(self,
                      logger: gluetool.log.ContextAdapter,
