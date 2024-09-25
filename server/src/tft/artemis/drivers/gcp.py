@@ -151,6 +151,24 @@ class GCPDriver(PoolDriver):
 
         return Ok((True, None))
 
+    def _query_instance_id(self, instance_name, project, zone) -> Result[int, Failure]:
+        """ Perform API call to GCP, asking about the given instance """
+        request = compute_v1.GetInstanceRequest()
+        request.instance = instance_name
+        request.project = project
+        request.zone = zone
+
+        try:
+            instance_info = self._instances_client.get(request=request)
+        except google.api_core.exceptions.NotFound as exc:
+            failure = Failure.from_exc(f'Failed to locate instance {request.instance}',
+                                       exc,
+                                       recoverable=False,
+                                       fail_guest_request=False)
+            return Error(failure)
+
+        return Ok(instance_info.id)
+
     def update_guest(self,
                      logger: gluetool.log.ContextAdapter,
                      session: sqlalchemy.orm.session.Session,
@@ -365,7 +383,32 @@ class GCPDriver(PoolDriver):
         r_instance = self._create_instance(self._instances_client, image, ssh_key.public,
                                            project_id, zone, instance_name, disks=[boot_disk])
         if r_instance.is_error:
+            failure = r_instance.error()
+            if not failure.exc_info:
+                return Error(r_instance.unwrap_error())
+
+            exc_instance = failure.exc_info[1]
+            if isinstance(exc_instance, google.api_core.exceptions.AlreadyExists):
+                # The instance already exists, do not try creating it again
+                r_instance_id = self._query_instance_id(instance_name, project_id, zone)
+                if r_instance_id.is_error:
+                    return r_instance_id
+
+                return Ok(ProvisioningProgress(
+                    state=ProvisioningState.PENDING,  # Check the VM state again - schedule update_guest()
+                    pool_data=GCPPoolData(
+                        id=r_instance_id.unwrap(),
+                        project=project_id,
+                        name=instance_name,
+                        zone=zone
+                    ),
+                    delay_update=delay_cfg_option_read_result.ok,
+                    ssh_info=image.ssh,
+                    address=None
+                ))
+
             return Error(r_instance.unwrap_error())
+
         instance = r_instance.unwrap()
 
         log_dict_yaml(logger.info, 'created instance', proto.Message.to_dict(instance))
