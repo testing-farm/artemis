@@ -857,6 +857,20 @@ KNOB_TEMPLATE_VARIABLE_DELIMITERS: Knob[str] = Knob(
     default='{{,}}'
 )
 
+KNOB_TEMPLATE_BLOCK_DELIMITERS: Knob[str] = Knob(
+    'template.delimiters.block',
+    """
+    Block delimiters for various Jinja2 templates.
+    Useful when Artemis deployment renders templates that Artemis itself is supposed to render.
+    The value shall be comma-separated list of two strings, the start and end delimiter
+    of a block in a template.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_TEMPLATE_BLOCK_DELIMITERS',
+    cast_from_str=str,
+    default='{%,%}'  # noqa: FS003
+)
+
 KNOB_WORKER_MAX_TASKS_PER_PROCESS: Knob[int] = Knob(
     'worker.max-tasks',
     'After this many tasks processed, a worker process would reload itself. Set to 0 to disable.',
