@@ -1168,6 +1168,19 @@ for said guest request again.
 
 5+|Maximum number of guests present on a shelf.
 
+|`template.delimiters.block`
+|`str`
+|`ARTEMIS_TEMPLATE_BLOCK_DELIMITERS`
+|`{%,%}`
+|no
+
+
+
+5+|Block delimiters for various Jinja2 templates.
+Useful when Artemis deployment renders templates that Artemis itself is supposed to render.
+The value shall be comma-separated list of two strings, the start and end delimiter
+of a block in a template.
+
 |`template.delimiters.variable`
 |`str`
 |`ARTEMIS_TEMPLATE_VARIABLE_DELIMITERS`
