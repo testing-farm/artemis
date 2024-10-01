@@ -171,6 +171,38 @@ guest request watchdog tasks.
 
 5+|A delay, in seconds, after which new guest request watchdog task is scheduled.
 
+|`actor.kickstart-wait.initial-delay`
+|`int`
+|`ARTEMIS_PREPARE_KICKSTART_WAIT_INITIAL_DELAY`
+|`300`
+|yes
+
+
+|`actor.kickstart-wait.initial-delay:$entityname`
+|
+|`ARTEMIS_PREPARE_KICKSTART_WAIT_INITIAL_DELAY_$entityname`
+|
+|
+
+
+5+|Delay before attempting to check the kickstart installation completion.
+
+|`actor.kickstart-wait.retry-delay`
+|`int`
+|`ARTEMIS_PREPARE_KICKSTART_WAIT_RETRY_DELAY`
+|`120`
+|yes
+
+
+|`actor.kickstart-wait.retry-delay:$entityname`
+|
+|`ARTEMIS_PREPARE_KICKSTART_WAIT_RETRY_DELAY_$entityname`
+|
+|
+
+
+5+|Delay between kickstart installation completion checks.
+
 |`actor.kickstart.boot-installer-script-filepath`
 |`str`
 |`ARTEMIS_PREPARE_KICKSTART_BOOT_INSTALLER_SCRIPT_FILEPATH`
