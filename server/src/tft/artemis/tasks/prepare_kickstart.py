@@ -466,16 +466,22 @@ class Workspace(_Workspace):
         """
 
         assert self.guestname
+        assert self.pool
 
-        from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
+        from .prepare_kickstart_wait import KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY, prepare_kickstart_wait
 
-        # TODO: We might want to wait for the setup to complete and verify SSH connection again
-        # TODO: Parametrize the delay (Right now we will wait 5 mins, which may or may not be enough)
+        r_delay = KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY.get_value(
+            session=self.session,
+            entityname=self.pool.poolname
+        )
+
+        if r_delay.is_error:
+            return self._error(r_delay, 'failed to load the delay for installation check task')
 
         self.request_task(
-            prepare_finalize_pre_connect,
+            prepare_kickstart_wait,
             self.guestname,
-            delay=60 * 5
+            delay=r_delay.unwrap()
         )
 
     def run(self) -> 'Workspace':

@@ -774,6 +774,7 @@ def resolve_actor(actorname: str) -> Result[Actor, Failure]:
     from . import prepare_finalize_post_connect  # noqa: F401, isort:skip
     from . import prepare_finalize_pre_connect  # noqa: F401, isort:skip
     from . import prepare_kickstart  # noqa: F401, isort:skip
+    from . import prepare_kickstart_wait  # noqa: F401, isort:skip
     from . import prepare_post_install_script  # noqa: F401, isort:skip
     from . import prepare_verify_ssh  # noqa: F401, isort:skip
     from . import preprovision  # noqa: F401, isort:skip
