@@ -3,6 +3,13 @@ text
 
 eula --agreed
 
+{% if 'auth' in metadata %}
+auth {{ metadata.auth }}
+{% endif %}
+
+# Network configuration with DHCP
+network --bootproto=dhcp --onboot=on --activate
+
 # Configure install tree and repos
 url --url={{ install_tree }} --noverifyssl
 
@@ -23,10 +30,7 @@ firstboot --disable
 keyboard --vckeymap=us --xlayouts='us'
 
 # System language
-lang en_US.UTF-8
-
-# Network configuration with DHCP
-network --bootproto=dhcp --onboot=on --activate
+lang {{ metadata.lang | default('en_US.UTF-8') }}
 
 # Firewall configuration
 firewall --enabled --ssh
@@ -38,22 +42,23 @@ selinux --enforcing
 timezone UTC --utc
 
 # System bootloader configuration
-bootloader --location=mbr
+bootloader --location=mbr {% if kernel_options_post %} --append="{{ kernel_options_post }}"{% endif %}
+
+{%- if 'ignoredisk' in metadata %}
+# Ignore additional drives
+ignoredisk {{ metadata.ignoredisk }}
+{%- endif %}
 
 # Clear the Master Boot Record
 zerombr
 
-# Automatically partitioning
-autopart --nohome
-
 # Use all available space
 clearpart --all --initlabel
 
-# Ignore second drive
-# ignoredisk --drives=vdb
-
-# Reboot after installation
-reboot
+{%- if 'no_autopart' not in metadata %}
+# Automatically partitioning
+autopart {% if 'autopart_type' in metadata %} --type {{ metadata.autopart_type }}{% endif %}
+{%- endif %}
 
 # Enable and configure services, including cloud-init
 services --enabled=cloud-init,cloud-config,cloud-final,cloud-init-local
@@ -61,23 +66,27 @@ services --enabled=cloud-init,cloud-config,cloud-final,cloud-init-local
 # Lock the root password
 rootpw --lock
 
-# Package selection (minimal install)
-# TODO: List installed packages on the source machine a install all
+# List of packages to install
+# note the '--ignoremissing' flag
 %packages --ignoremissing
 {%- for package in packages %}
 {{ package }}
 {%- endfor %}
+
+{%- if 'packages' in metadata %}
+{%- for pkg in metadata.packages.split(':') %}
+{{ pkg }}
+{%- endfor %}
+{%- endif %}
 %end
 
-{% if script %}
-{{ script }}
-{% endif %}
+%pre --log=/dev/console
+touch /.ksinstall /.ksinprogress
+%end
 
-%pre
 {%- if pre_install %}
 {{ pre_install }}
 {%- endif %}
-%end
 
 # Restore important files
 %post --log=/dev/console
@@ -86,18 +95,23 @@ cat >> /{{ filename }} <<__EOF__
 {{ contents }}
 __EOF__
 restorecon -R /{{ filename }}
-
-{% if post_install %}
-{{ post_install }}
-{%- endif %}
-{% endfor %}
+{%- endfor %}
 
 # Indicator of installation completion
 touch /.ksinstall
 %end
 
+{% if post_install %}
+{{ post_install }}
+{%- endif %}
+
 %onerror
 touch /.kserror
 %end
 
+{% if script %}
+{{ script }}
+{% endif %}
+
+# Reboot after installation
 reboot --eject
