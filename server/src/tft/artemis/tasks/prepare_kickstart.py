@@ -281,7 +281,7 @@ class Workspace(_Workspace):
         r_kexec = run_remote(
             self.logger,
             self.gr,
-            ['/usr/bin/rpm', '-qa', '--queryformat', '%{NAME}.%{ARCH}\n'],
+            ['/usr/bin/rpm', '-qa', '--queryformat', '%{NAME}.%{ARCH}\n'],  # noqa: FS003
             key=self.master_key,
             ssh_options=self.pool.ssh_options,
             ssh_timeout=self.ssh_timeout,
