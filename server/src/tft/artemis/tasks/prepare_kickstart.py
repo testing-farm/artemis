@@ -35,7 +35,7 @@ from . import get_guest_logger, step, task, task_core
 TASK_NAME = 'prepare-kickstart'
 
 KS_DST = '/tmp/kickstart.ks'
-KS_TPL = 'files/kickstart.ks.j2'
+KS_TPL = '../kickstart/kickstart.ks.j2'
 SCRIPT_DST = '/tmp/do-kexec.sh'
 SCRIPT_SRC = 'files/do-kexec.sh'
 
@@ -278,30 +278,31 @@ class Workspace(_Workspace):
         assert self.files is not None
 
         # Template kickstart
-        loader = jinja2.FileSystemLoader(os.path.dirname(os.path.abspath(__file__)))
-        env = jinja2.Environment(loader=loader)
-        tpl = env.get_template(KS_TPL)
-        kickstart = tpl.render(
-            install_tree=self.repos['rhel-BaseOS']['baseurl'],
-            repos=self.repos,
-            packages=self.packages,
-            files=self.files,
-            script=self.gr.environment.kickstart.script,
-            pre_install=self.gr.environment.kickstart.pre_install,
-            post_install=self.gr.environment.kickstart.post_install
-        )
-        # TODO: Consider not using global delimiters to enable unchanged tpls
-        # to work even when a custom delims are set
-        # r_kickstart = render_template(
-        #     os.path.join(os.path.dirname(os.path.abspath(__file__)), KS_TPL),
-        #     repos=self.repos,
-        #     packages=self.packages,
-        #     files={}
-        # )
+        try:
+            metadata = self.gr.environment.kickstart.metadata or ''
 
-        # if r_kickstart.is_error:
-        #     return self._error(r_kickstart, 'Failed to prepare kickstart file')
-        #     return
+            loader = jinja2.FileSystemLoader(os.path.dirname(os.path.abspath(__file__)))
+            env = jinja2.Environment(loader=loader)
+            tpl = env.get_template(KS_TPL)
+            kickstart = tpl.render(
+                install_tree=self.repos['rhel-BaseOS']['baseurl'],
+                repos=self.repos,
+                packages=self.packages,
+                files=self.files,
+                script=self.gr.environment.kickstart.script,
+                pre_install=self.gr.environment.kickstart.pre_install,
+                post_install=self.gr.environment.kickstart.post_install,
+                kernel_options_post=self.gr.environment.kickstart.kernel_options_post,
+                metadata={
+                    tag[0]: tag[1] if len(tag) > 1 else None
+                    for tag in [m.split('=', maxsplit=1) for m in metadata.split()]
+                }
+            )
+        except Exception as exc:
+            return self._fail(
+                Failure.from_exc('failed to template kickstart configuration', exc),
+                'failed to template kickstart configuration'
+            )
 
         # Copy to guest
         # with create_tempfile(file_contents=r_kickstart.unwrap()) as kickstart_filepath:
