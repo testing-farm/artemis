@@ -90,6 +90,9 @@ properties:
   preserve-for-investigation:
     type: boolean
 
+  patch-flavors:
+    type: array
+
 additionalProperties: false
 
 required:
