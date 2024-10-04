@@ -149,6 +149,23 @@ class AzureFlavor(Flavor):
         return flavor
 
 
+def _azure_arch_to_arch(arch: str) -> str:
+    """
+    Convert processors architecture as known to Azure API to architecture as tracked by Artemis.
+
+    There is at least one difference, ``x64`` used by Azure is what we know as ``x86_64``.
+    This function serves as a small compatibility layer.
+
+    :param str: architecture as known to Azure..
+    :returns: new architecture name. It might be the original architecture if it was not necessary to change it.
+    """
+
+    if arch == 'x64':
+        return 'x86_64'
+
+    return arch
+
+
 class AzureSession:
     """
     A representation of a authenticated Azure session.
@@ -811,7 +828,7 @@ class AzureDriver(PoolDriver):
                         publisher=image['publisher'],
                         sku=image['sku'],
                         version=image['version'],
-                        arch=image['architecture'],
+                        arch=_azure_arch_to_arch(image['architecture']),
                         boot=FlavorBoot(),
                         ssh=PoolImageSSHInfo()
                     ))
