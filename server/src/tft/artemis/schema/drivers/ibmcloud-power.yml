@@ -1,0 +1,72 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: IBMCloud pool driver schema for Virtual Power Server (ppc64)
+
+type: object
+
+properties:
+  api-key:
+    type: string
+
+  default-region:
+    type: string
+
+  capabilities:
+    type: object
+
+  image-filters:
+    type: array
+    items:
+      type: object
+      properties:
+        name-regex:
+          type: string
+
+  workspace-crn:
+    type: string
+
+  use-default-flavor-when-no-suitable:
+    type: boolean
+    default: true
+
+  post-install-template:
+    type: string
+
+  use-public-ip:
+    type: boolean
+    default: false
+
+  use-only-when-addressed:
+    type: boolean
+
+  subnet-id:
+    type: string
+
+  username:
+    type: string
+
+  ssh-options:
+    type: array
+    items:
+      type: string
+
+  master-key-name:
+    type: string
+
+  preserve-for-investigation:
+    type: boolean
+
+  resources:
+    type: object
+
+  installed-plugins-dir:
+    type: string
+
+additionalProperties: false
+
+required:
+- api-key
+- workspace-crn
+- subnet-id
+- master-key-name
+- default-region
+- installed-plugins-dir

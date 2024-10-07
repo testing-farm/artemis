@@ -1,0 +1,9 @@
+---
+#
+# The mapping file maps compose names to IBM cloud Power infra images, use the following format
+#
+# - 'compose-name' : 'ibmcloud pi image id/name'
+#
+- '^CentOS-Stream-9$': 'CentOS-Stream-9'
+- '^RHEL-8-LatestUpdated$': 'RHEL8-SP8'
+- '^RHEL-9-LatestUpdated$': 'RHEL9-SP4'

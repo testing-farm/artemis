@@ -763,6 +763,70 @@ for full list of connection parameters that can be specified via URL.
 
 5+|How old must the guest events be to be removed, in seconds.
 
+|`ibmcloud-power.mapping.environment-to-image.pattern-map.filepath`
+|`str`
+|`ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
+|`artemis-image-map-ibmcloud-power.yaml`
+|no
+
+
+|`ibmcloud-power.mapping.environment-to-image.pattern-map.filepath:$entityname`
+|
+|`ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$entityname`
+|
+|
+
+
+5+|Path to a pattern map file with environment to image mapping.
+
+|`ibmcloud-power.mapping.environment-to-image.pattern-map.needle`
+|`str`
+|`ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE`
+|`{{ os.compose }}`
+|no
+
+
+|`ibmcloud-power.mapping.environment-to-image.pattern-map.needle:$entityname`
+|
+|`ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$entityname`
+|
+|
+
+
+5+|A pattern for needle to match in environment to image mapping file.
+
+|`ibmcloud.mapping.environment-to-image.pattern-map.filepath`
+|`str`
+|`ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
+|`artemis-image-map-ibmcloud-vpc.yaml`
+|no
+
+
+|`ibmcloud.mapping.environment-to-image.pattern-map.filepath:$entityname`
+|
+|`ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$entityname`
+|
+|
+
+
+5+|Path to a pattern map file with environment to image mapping.
+
+|`ibmcloud.mapping.environment-to-image.pattern-map.needle`
+|`str`
+|`ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE`
+|`{{ os.compose }}`
+|no
+
+
+|`ibmcloud.mapping.environment-to-image.pattern-map.needle:$entityname`
+|
+|`ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$entityname`
+|
+|
+
+
+5+|A pattern for needle to match in environment to image mapping file.
+
 |`logging.cli.command-pattern`
 |`str`
 |`ARTEMIS_LOG_CLI_COMMAND_PATTERN`
@@ -980,6 +1044,16 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 
 5+|If enabled, pattern maps loaded by pools would be cached.
 
+|`pool.cli-session-configuration-dir`
+|`str`
+|`ARTEMIS_CLI_SESSION_CONFIGURATION_DIR`
+|`/var/tmp/artemis/cli-sessions`
+|no
+
+
+
+5+|Path to directory where directories for CLI sessions will be created
+
 |`pool.default-post-install-template`
 |`str`
 |`ARTEMIS_DEFAULT_POST_INSTALL_TEMPLATE`
@@ -1026,6 +1100,22 @@ of crashed resources.
 
 
 5+|If unset for a pool, the given pool is ignored by Artemis in general.
+
+|`pool.max-parallel-cli-sessions`
+|`int`
+|`ARTEMIS_MAX_PARALLEL_CLI_SESSIONS`
+|`4`
+|no
+
+
+|`pool.max-parallel-cli-sessions:$entityname`
+|
+|`ARTEMIS_MAX_PARALLEL_CLI_SESSIONS_$entityname`
+|
+|
+
+
+5+|A maximum number of parallel CLI sessions for the same pool
 
 |`pool.update-guest-request-tick`
 |`int`

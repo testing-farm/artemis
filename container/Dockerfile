@@ -60,6 +60,8 @@ RUN    microdnf --refresh \
                            lsof \
                            procps-ng \
                            net-tools \
+                           # required by ibmcloud installer
+                           tar \
     && update-crypto-policies --set LEGACY \
     && microdnf clean all \
     && rm -rf /var/cache/dnf \
@@ -83,6 +85,19 @@ RUN    mkdir -p $HOME/.aws \
 #
 RUN    mkdir -p /etc/beaker \
     && ln -s $CONFIGURATION/beaker-client-config /etc/beaker/client.conf
+
+#
+# Prepare ibmcloud cli session model directory by installing all necessary plugins.
+# This one will be used to create parallel session dirs.
+# The model directory will be $HOME/.ibmcloud/.bluemix
+#
+RUN    mkdir -p $HOME/.ibmcloud \
+    # Install ibmcloud cli
+    && curl -fsSL https://clis.cloud.ibm.com/install/linux | sh \
+    # VPC infra plugins
+    && IBMCLOUD_HOME=$HOME/.ibmcloud ibmcloud plugin install is \
+    # Power infra plugins
+    && IBMCLOUD_HOME=$HOME/.ibmcloud ibmcloud plugin install power-iaas
 
 #
 # We want Artemis to support also older SSH keys for now, Fedora 33+ has strong crypto enabled

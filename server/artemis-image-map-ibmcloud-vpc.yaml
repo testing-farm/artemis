@@ -1,0 +1,9 @@
+---
+#
+# The mapping file maps compose names to IBM cloud VPC infra images, use the following format
+#
+# - 'compose-name' : 'aws ami id'
+#
+- '^RHEL-8.6.0$': 'ibm-redhat-8-6-minimal-amd64-7'
+- '^Fedora-39$': 'fedora-39-cloud-base'
+- '^RHEL-8.4.0$': 'ibm-l1bm-rhel8-4-minimal-s390x-byol-2'

@@ -1,0 +1,97 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: IBMCloud pool driver schema
+
+type: object
+
+properties:
+  api-key:
+    type: string
+
+  region:
+    type: string
+
+  # Specific part of the region, like us-east-2
+  zone:
+    type: string
+
+  capabilities:
+    type: object
+
+  cost:
+    type: object
+
+  image-filters:
+    type: array
+    items:
+      type: object
+      properties:
+        name-regex:
+          type: string
+
+        offer:
+          type: string
+
+        publisher:
+          type: string
+
+        sku:
+          type: string
+
+  # ibm cloud doesn't have flavors, it has profiles. However let's keep it unified as flavor is something natural when it
+  # comes to instance types
+  flavor-regex:
+    type: string
+
+  default-flavor:
+    type: string
+
+  default-region:
+    type: string
+
+  use-default-flavor-when-no-suitable:
+    type: boolean
+    default: true
+
+  post-install-template:
+    type: string
+
+  use-public-ip:
+    type: boolean
+    default: false
+
+  use-only-when-addressed:
+    type: boolean
+
+  subnet-id:
+    type: string
+
+  username:
+    type: string
+
+  ssh-options:
+    type: array
+    items:
+      type: string
+
+  master-key-name:
+    type: string
+
+  preserve-for-investigation:
+    type: boolean
+
+  resources:
+    type: object
+
+  installed-plugins-dir:
+    type: string
+
+additionalProperties: false
+
+required:
+- api-key
+- zone
+- default-flavor
+- default-region
+- subnet-id
+- master-key-name
+- installed-plugins-dir

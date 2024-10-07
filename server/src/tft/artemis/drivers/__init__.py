@@ -5,8 +5,10 @@ import contextlib
 import dataclasses
 import datetime
 import enum
+import fcntl
 import json
 import os
+import random
 import re
 import shlex
 import sys
@@ -289,6 +291,26 @@ KNOB_DEFAULT_POST_INSTALL_TEMPLATE: Knob[str] = Knob(
 {{ GUEST_REQUEST.post_install_script }}
 {% endif %}
 """
+)
+
+KNOB_CLI_SESSION_CONFIGURATION_DIR: Knob[str] = Knob(
+    'pool.cli-session-configuration-dir',
+    'Path to directory where directories for CLI sessions will be created',
+    has_db=False,
+    envvar='ARTEMIS_CLI_SESSION_CONFIGURATION_DIR',
+    cast_from_str=str,
+    default='/var/tmp/artemis/cli-sessions'
+)
+
+KNOB_PARALLEL_CLI_SESSIONS: Knob[int] = Knob(
+    'pool.max-parallel-cli-sessions',
+    'A maximum number of parallel CLI sessions for the same pool',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_MAX_PARALLEL_CLI_SESSIONS',
+    cast_from_str=int,
+    # NOTE(ivasilev) The number of parallel sessions is still trial and error, let's keep 4 for now and increase later.
+    default=4
 )
 
 
@@ -2886,3 +2908,134 @@ def create_tempfile(file_contents: Optional[str] = None, **kwargs: Any) -> Itera
         yield temp_file.name
     finally:
         os.unlink(temp_file.name)
+
+
+class CLISessionPermanentDir:
+    """
+    A representation of an authenticated cli session that is using same config directory.
+
+    When it's not possible to pass credentials to distinct cli commands (azure, ibmcloud),
+    one needs to authenticate, and then all future commands share credentials the cli stores in
+    a configuration directory. The directory is created and set up one time, all future commands
+    reuse it.
+
+    To prevent possible problems with simultaneous execution there is an exclusive lock in place for config directory
+    access.
+
+    This class uses ``CLI_CONFIG_DIR`` to store credentials in a dedicated
+    directory, all commands executed by the session would then share these
+    credentials, which in turn enables concurrent use of cloud cli for different
+    pools and guest requests.
+    """
+    CLI_PREFIX = 'cli'
+    CLI_CMD = 'cli'
+    CLI_CONFIG_DIR_ENV_VAR = 'CLI_CONFIG_DIR'
+
+    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver') -> None:
+        self.pool = pool
+
+        r_session_dir_path = KNOB_CLI_SESSION_CONFIGURATION_DIR.get_value(entityname=self.pool.poolname)
+
+        # Can't raise exceptions there, so saving the error in _login_result
+        if r_session_dir_path.is_error:
+            self._login_result: Result[None, Failure] = Error(r_session_dir_path.unwrap_error())
+            return
+
+        r_parallel_sessions = KNOB_PARALLEL_CLI_SESSIONS.get_value(entityname=self.pool.poolname)
+
+        if r_parallel_sessions.is_error:
+            self._login_result = Error(r_parallel_sessions.unwrap_error())
+
+        self.parallel_sessions = r_parallel_sessions.unwrap()
+
+        self.session_dir_path = os.path.join(
+            r_session_dir_path.unwrap(),
+            f'{self.CLI_PREFIX}-{self.pool.poolname}-{random.randint(1, self.parallel_sessions)}'
+        )
+
+        try:
+            if not os.path.exists(self.session_dir_path):
+                os.makedirs(self.session_dir_path)
+                self._prepare_session_dir(logger)
+        except OSError as err:
+            self._login_result = Error(Failure.from_exc('Failed to create directory for cli session', err))
+            return
+
+        # Log into the tenant, and since we cannot raise an exception, save the result.
+        # If we fail, any call to `run` would return this saved result.
+        self._login_result = self._login(logger)
+
+    def _prepare_session_dir(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
+        """
+        In case some more work is needed to end up with a functional session dir (like installing / copying plugins
+        etc) this will be done by this method.
+        """
+        return Ok(None)
+
+    def __enter__(self) -> 'CLISessionPermanentDir':
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        return
+
+    def _run_cmd(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: List[str],
+        json_format: bool = True,
+        commandname: Optional[str] = None
+    ) -> Result[Union[JSONType, str], Failure]:
+        environ = {
+            **os.environ,
+            self.CLI_CONFIG_DIR_ENV_VAR: self.session_dir_path
+        }
+
+        session_dir_fd = os.open(self.session_dir_path, os.O_RDONLY)
+
+        # Obtain lock
+        try:
+            fcntl.flock(session_dir_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as err:
+            fcntl.flock(session_dir_fd, fcntl.LOCK_UN)
+            os.close(session_dir_fd)
+            return Error(Failure.from_exc('Failed to obtain the lock - another command is running', err))
+
+        # Run command, isolation should be guaranteed now
+        r_run = run_cli_tool(
+            logger,
+            [self.CLI_CMD] + options,
+            env=environ,
+            json_output=json_format,
+            command_scrubber=lambda cmd: ([self.CLI_PREFIX] + options),
+            poolname=self.pool.poolname,
+            commandname=commandname,
+            cause_extractor=self.pool.cli_error_cause_extractor
+        )
+
+        # Release the lock
+        fcntl.flock(session_dir_fd, fcntl.LOCK_UN)
+        os.close(session_dir_fd)
+
+        if r_run.is_error:
+            return Error(r_run.unwrap_error())
+
+        if json_format:
+            return Ok(r_run.unwrap().json)
+
+        return Ok(r_run.unwrap().stdout)
+
+    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
+        """Will be overridden by particular implementation"""
+        raise NotImplementedError()
+
+    def run(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: List[str],
+        json_format: bool = True,
+        commandname: Optional[str] = None
+    ) -> Result[Union[JSONType, str], Failure]:
+        if self._login_result is not None and self._login_result.is_error:
+            return Error(self._login_result.unwrap_error())
+
+        return self._run_cmd(logger, options, json_format, commandname=commandname)
