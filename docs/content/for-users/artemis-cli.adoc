@@ -1,5 +1,5 @@
 ---
-title: "Aremis CLI"
+title: "Artemis CLI"
 date: 2021-06-07T23:01:42+02:00
 draft: false
 ---
