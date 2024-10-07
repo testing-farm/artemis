@@ -17,7 +17,7 @@ from gluetool.result import Error, Ok, Result
 from keystoneauth1.identity import v3
 from novaclient import client as nocl
 
-from .. import Failure, JSONType, log_dict_yaml, process_output_to_str
+from .. import Failure, JSONType, log_dict_yaml, process_output_to_str, safe_call
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, FlavorNetwork, \
     FlavorNetworks, FlavorVirtualization
@@ -404,6 +404,20 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(r_output.unwrap())
 
+    def _get_glance(self) -> Result[gcl, Failure]:
+
+        sess = self.login_session(self.logger)
+        if sess.is_error:
+            return Error(sess.unwrap_error())
+        try:
+            glance = gcl(self.pool_config['glance-version'], session=sess.unwrap())
+            return Ok(glance)
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'Failed to get glance Client',
+                exc,
+            ))
+
     def _do_acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -759,9 +773,10 @@ class OpenStackDriver(PoolDriver):
         self,
         snapshot_request: SnapshotRequest,
     ) -> Result[bool, Failure]:
-        os_options = ['image', 'delete', snapshot_request.snapshotname]
-
-        r_output = self._run_os(os_options, json_format=False, commandname='os.image-delete')
+        r_glance = self._get_glance()
+        if r_glance.is_error:
+            return Error(r_glance.unwrap_error())
+        r_output = safe_call(r_glance.unwrap().images.delete, snapshot_request.snapshotname)
 
         if r_output.is_error:
             return Error(Failure.from_failure(
@@ -1073,20 +1088,23 @@ class OpenStackDriver(PoolDriver):
         return Ok(resources)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        sess = self.login_session(self.logger)
-        if sess.is_error:
-            return Error(Failure.from_failure(
-                'Failed to log into OpenStack tenant',
-                sess.unwrap_error()
-            ))
-        glance = gcl(self.pool_config['glance-version'], session=sess.unwrap())
+        r_glance = self._get_glance()
+        if r_glance.is_error:
+            return Error(r_glance.unwrap_error())
 
         if self.pool_config.get('image-regex'):
             image_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['image-regex'])
 
         else:
             image_name_pattern = None
-        images = glance.images.list()
+
+        r_images = safe_call(r_glance.unwrap().images.list)
+
+        if r_images.is_error:
+            return Error(Failure.from_failure(
+                'Failed to list images',
+                r_images.unwrap_error()
+            ))
 
         try:
             return Ok([
@@ -1097,7 +1115,7 @@ class OpenStackDriver(PoolDriver):
                     boot=FlavorBoot(method=[image.get('hw_firmware_type', 'bios')]),
                     ssh=PoolImageSSHInfo()
                 )
-                for image in images
+                for image in r_images.unwrap()
                 if image_name_pattern is None or image_name_pattern.match(image['name'])
             ])
 
@@ -1105,7 +1123,7 @@ class OpenStackDriver(PoolDriver):
             return Error(Failure.from_exc(
                 'malformed image description',
                 exc,
-                image_info=images
+                image_info=r_images.unwrap()
             ))
 
     def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
