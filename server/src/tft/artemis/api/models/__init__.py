@@ -10,6 +10,7 @@ import re
 import urllib.parse
 from typing import Any, Dict, List, Optional, Pattern, Tuple
 
+import gluetool.log
 import sqlalchemy.orm.session
 from fastapi import Request
 from gluetool.result import Error, Ok, Result
@@ -216,12 +217,14 @@ class AuthContext:
             self.is_authenticated = True
             return
 
-    def verify_auth(self, db: artemis_db.DB) -> None:
+    def verify_auth(self, logger: gluetool.log.ContextAdapter, db: artemis_db.DB) -> None:
         if matches_path(self.request, NO_AUTH):
             self.is_authorized = True
             return
 
-        with db.get_session() as session:
+        from ..routers import get_session
+
+        with get_session(logger, db) as (session, _):
             if matches_path(self.request, PROVISIONING_AUTH):
                 self.verify_auth_basic(session, 'provisioning')
 

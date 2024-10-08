@@ -763,6 +763,26 @@ for full list of connection parameters that can be specified via URL.
 
 5+|How old must the guest events be to be removed, in seconds.
 
+|`gc.guest-log-blobs.schedule`
+|`str`
+|`ARTEMIS_GC_GUEST_LOG_BLOBS_SCHEDULE`
+|`15 */4 * * *`
+|no
+
+
+
+5+|When to run garbage collection task for guest request log blobs.
+
+|`gc.guest-log-blobs.threshold`
+|`int`
+|`ARTEMIS_GC_GUEST_LOG_BLOBS_THRESHOLD`
+|`2592000`
+|no
+
+
+
+5+|How old must the guest log blobs be to be removed, in seconds.
+
 |`ibmcloud-power.mapping.environment-to-image.pattern-map.filepath`
 |`str`
 |`ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`

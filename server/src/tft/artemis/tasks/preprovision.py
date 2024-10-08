@@ -13,7 +13,7 @@ Try to find a suitable guest, which can satisfy the request from the specified s
 import json
 import threading
 import uuid
-from typing import Any, List, Optional, Tuple, cast
+from typing import Any, Optional, cast
 
 import gluetool.log
 import sqlalchemy
@@ -22,7 +22,7 @@ import sqlalchemy.orm.session
 from .. import Failure
 from ..api.environment import DEFAULT_SSH_PORT, DEFAULT_SSH_USERNAME
 from ..api.models import GuestRequest as GuestRequestSchema
-from ..db import DB, GuestLogContentType, GuestRequest, execute_db_statement
+from ..db import DB, GuestLogContentType, GuestRequest, execute_dml
 from ..environment import Environment
 from ..guest import GuestState
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
@@ -40,9 +40,9 @@ class Workspace(_Workspace):
 
     guest_template: GuestRequestSchema
     guest_count: int
-    ownername: str
-    environment: Environment
-    log_types: List[Tuple[str, GuestLogContentType]]
+    # ownername: str
+    # environment: Environment
+    # log_types: List[Tuple[str, GuestLogContentType]]
 
     def __init__(
         self,
@@ -64,116 +64,91 @@ class Workspace(_Workspace):
         self.guest_count = guest_count
 
     @step
-    def entry(self) -> None:
-        """
-        Begin the preprovisioning process with nice logging and loading shelf data.
-        """
-
-        assert self.shelfname
-
-        self.handle_success('entered-task')
-
-        self.load_shelf(self.shelfname, state=GuestState.READY)
-
-    @step
-    def parse_environment(self) -> None:
-        """
-        Parse the guest environment.
-        """
-
-        try:
-            self.environment = Environment.unserialize(self.guest_template.environment)
-
-        except Exception as exc:
-            self.result = self.handle_failure(
-                Failure.from_exc('failed to parse environment', exc),
-                'failed to parse environment'
-            )
-
-    @step
-    def parse_log_types(self) -> None:
-        """
-        Parse the guest log types.
-        """
-
-        self.log_types = []
+    def run(self) -> None:
+        log_types = []
 
         if self.guest_template.log_types:
             try:
-                self.log_types = [
+                log_types = [
                     (logtype, GuestLogContentType(contenttype))
                     for (logtype, contenttype) in self.guest_template.log_types
                 ]
 
             except Exception as exc:
-                self.result = self.handle_failure(
+                return self._fail(
                     Failure.from_exc('failed to parse log types', exc),
                     'failed to parse log types'
                 )
 
-    @step
-    def create_guests(self) -> None:
-        """
-        Create new guest entries in the DB.
-        """
+        try:
+            environment = Environment.unserialize(self.guest_template.environment)
 
-        assert self.shelf
-
-        from .return_guest_to_shelf import return_guest_to_shelf
-
-        for _ in range(self.guest_count):
-            guestname = str(uuid.uuid4())
-
-            stmt = GuestRequest.create_query(
-                guestname=guestname,
-                environment=self.environment,
-                ownername=self.shelf.ownername,
-                shelfname=self.shelfname,
-                ssh_keyname=self.guest_template.keyname,
-                ssh_port=DEFAULT_SSH_PORT,
-                ssh_username=DEFAULT_SSH_USERNAME,
-                priorityname=self.guest_template.priority_group,
-                user_data=self.guest_template.user_data,
-                skip_prepare_verify_ssh=self.guest_template.skip_prepare_verify_ssh,
-                post_install_script=self.guest_template.post_install_script,
-                log_types=self.log_types,
-                watchdog_dispatch_delay=self.guest_template.watchdog_dispatch_delay,
-                watchdog_period_delay=self.guest_template.watchdog_period_delay,
-                bypass_shelf_lookup=True,
-                on_ready=[(return_guest_to_shelf, [GuestState.READY.value])],
-                security_group_rules_ingress=None,
-                security_group_rules_egress=None,
+        except Exception as exc:
+            return self._fail(
+                Failure.from_exc('failed to parse environment', exc),
+                'failed to parse guest template environment'
             )
 
-            r_guest = execute_db_statement(self.logger, self.session, stmt)
+        with self.transaction():
+            assert self.shelfname
 
-            if r_guest.is_error:
-                self.result = self.handle_error(r_guest, 'failed to create new guest')
-                return
-
-            GuestRequest.log_event_by_guestname(
-                self.logger,  # shelf logger, does not contain guestname
-                self.session,
-                guestname,
-                'created',
-                **{
-                    'environment': self.environment.serialize(),
-                    'user_data': self.guest_template.user_data
-                }
-            )
-
-            self.request_task(guest_shelf_lookup, guestname)
+            self.load_shelf(self.shelfname, state=GuestState.READY)
 
             if self.result:
                 return
 
-    @step
-    def exit(self) -> None:
-        """
-        Wrap up the process by updating metrics & final logging.
-        """
+            assert self.shelf
 
-        self.result = self.handle_success('finished-task')
+            from .return_guest_to_shelf import return_guest_to_shelf
+
+            for _ in range(self.guest_count):
+                if self.result:
+                    return
+
+                guestname = str(uuid.uuid4())
+
+                stmt = GuestRequest.create_query(
+                    guestname=guestname,
+                    environment=environment,
+                    ownername=self.shelf.ownername,
+                    shelfname=self.shelfname,
+                    ssh_keyname=self.guest_template.keyname,
+                    ssh_port=DEFAULT_SSH_PORT,
+                    ssh_username=DEFAULT_SSH_USERNAME,
+                    priorityname=self.guest_template.priority_group,
+                    user_data=self.guest_template.user_data,
+                    skip_prepare_verify_ssh=self.guest_template.skip_prepare_verify_ssh,
+                    post_install_script=self.guest_template.post_install_script,
+                    log_types=log_types,
+                    watchdog_dispatch_delay=self.guest_template.watchdog_dispatch_delay,
+                    watchdog_period_delay=self.guest_template.watchdog_period_delay,
+                    bypass_shelf_lookup=True,
+                    on_ready=[(return_guest_to_shelf, [GuestState.READY.value])],
+                    security_group_rules_ingress=None,
+                    security_group_rules_egress=None
+                )
+
+                r_create = execute_dml(
+                    self.logger,
+                    self.session,
+                    stmt
+                )
+
+                if r_create.is_error:
+                    return self._error(r_create, 'failed to create new guest')
+
+                GuestRequest.log_event_by_guestname(
+                    self.logger,  # shelf logger, does not contain guestname
+                    self.session,
+                    guestname,
+                    'created',
+                    **{
+                        'environment': environment.serialize(),
+                        'user_data': self.guest_template.user_data
+                    }
+                )
+
+                self.request_task(guest_shelf_lookup, guestname)
 
     @classmethod
     def create(
@@ -239,11 +214,9 @@ class Workspace(_Workspace):
         """
 
         return cls.create(logger, db, session, cancel, shelfname, guest_template, guest_count) \
-            .entry() \
-            .parse_environment() \
-            .parse_log_types() \
-            .create_guests() \
-            .exit() \
+            .begin() \
+            .run() \
+            .complete() \
             .final_result
 
 
@@ -258,6 +231,5 @@ def preprovision(shelfname: str, guest_template: str, guest_count: str) -> None:
     task_core(
         cast(DoerType, Workspace.preprovision),
         logger=get_shelf_logger(Workspace.TASKNAME, _ROOT_LOGGER, shelfname),
-        doer_args=(shelfname, guest_template, guest_count),
-        session_isolation=True
+        doer_args=(shelfname, guest_template, guest_count)
     )

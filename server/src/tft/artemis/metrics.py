@@ -3360,7 +3360,11 @@ class Metrics(MetricsBase):
         })
 
     @with_context
-    def render_prometheus_metrics(self, db: artemis_db.DB) -> Result[bytes, Failure]:
+    def render_prometheus_metrics(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        db: artemis_db.DB
+    ) -> Result[bytes, Failure]:
         """
         Render plaintext output of Prometheus metrics representing values in this tree of metrics.
 
@@ -3368,12 +3372,13 @@ class Metrics(MetricsBase):
 
            **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
 
+        :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :returns: plaintext represenation of Prometheus metrics, encoded as ``bytes``.
         """
 
         def _render() -> bytes:
-            with db.get_session() as session:
+            with db.get_session(logger) as session:
                 SESSION.set(session)
 
                 self.sync()

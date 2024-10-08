@@ -21,7 +21,7 @@ from ..db import DB, GuestRequest, GuestShelf, SafeQuery
 from ..guest import GuestState
 from ..knobs import KNOB_SHELF_MAX_GUESTS
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import Workspace as _Workspace
+from . import GuestRequestWorkspace as _Workspace
 from . import get_guest_logger, step, task, task_core
 
 
@@ -32,142 +32,87 @@ class Workspace(_Workspace):
 
     TASKNAME = 'return-guest-to-shelf'
 
-    shelf: Optional[GuestShelf]
-    shelved_count: int
+    # shelf: Optional[GuestShelf]
+    # shelved_count: int
     current_state: GuestState
 
     @step
-    def entry(self) -> None:
-        """
-        Begin the process with nice logging and loading request data.
-        """
+    def run(self) -> None:
+        with self.transaction():
+            self.load_guest_request(self.guestname, state=self.current_state)
 
-        assert self.current_state
-        assert self.guestname
+            if self.result:
+                return
 
-        self.handle_success('entered-task')
+            assert self.gr
 
-        self.load_guest_request(self.guestname, state=self.current_state)
+            # Verify we can return the guest to the shelf
+            r_shelf = SafeQuery.from_session(self.session, GuestShelf) \
+                .filter(GuestShelf.shelfname == self.gr.shelfname) \
+                .filter(GuestShelf.state == GuestState.READY) \
+                .one_or_none()
 
-    @step
-    def load_valid_shelf(self) -> None:
-        """
-        Load a shelf if specified in guest request
-        """
+            if r_shelf.is_error:
+                return self._error(r_shelf, 'failed to load shelf')
 
-        assert self.gr
+            def _release() -> None:
+                from .release_guest_request import release_guest_request
 
-        # Verify we can return the guest to the shelf
-        # TODO: Determine if session isolation (REPEATABLE READ) access is required
-        r_shelf = SafeQuery.from_session(self.session, GuestShelf) \
-            .filter(GuestShelf.shelfname == self.gr.shelfname) \
-            .filter(GuestShelf.state == GuestState.READY) \
-            .one_or_none()
+                if self.current_state == GuestState.CONDEMNED:
+                    self.request_task(release_guest_request, self.guestname)
 
-        if r_shelf.is_error:
-            self.result = self.handle_error(r_shelf, 'failed to load shelf')
-            return
+                else:
+                    self.update_guest_state_and_request_task(
+                        GuestState.CONDEMNED,
+                        release_guest_request,
+                        self.guestname,
+                        current_state=self.current_state
+                    )
 
-        self.shelf = r_shelf.unwrap()
+            shelf: Optional[GuestShelf] = r_shelf.unwrap()
 
-    @step
-    def load_shelved_count(self) -> None:
-        """
-        Load the number of guests currently present in a shelf.
-        """
+            if shelf is None:
+                _release()
+                return
 
-        if self.shelf is None:
-            return
+            r_shelved_count = SafeQuery.from_session(self.session, GuestRequest) \
+                .filter(GuestRequest.shelfname == shelf.shelfname) \
+                .filter(GuestRequest.state == GuestState.SHELVED) \
+                .count()
 
-        r_shelved_count = SafeQuery.from_session(self.session, GuestRequest) \
-            .filter(GuestRequest.shelfname == self.shelf.shelfname) \
-            .filter(GuestRequest.state == GuestState.SHELVED) \
-            .count()
+            if r_shelved_count.is_error:
+                return self._error(r_shelved_count, 'failed to load the number of shelved guests')
 
-        if r_shelved_count.is_error:
-            self.result = self.handle_error(r_shelved_count, 'failed to load the number of shelved guests')
-            return
+            shelved_count = r_shelved_count.unwrap()
 
-        self.shelved_count = r_shelved_count.unwrap()
+            r_shelf_max_guests = KNOB_SHELF_MAX_GUESTS.get_value(session=self.session, entityname=shelf.shelfname)
 
-    @step
-    def load_shelf_max_guests(self) -> None:
-        """
-        Load the maximum number of guests allowed for a shelf.
-        """
+            if r_shelf_max_guests.is_error:
+                return self._error(r_shelf_max_guests, 'failed to obtain the maximum allowed number of guests')
 
-        if self.shelf is None:
-            return
+            shelf_max_guests = r_shelf_max_guests.unwrap()
 
-        r_shelf_max_guests = KNOB_SHELF_MAX_GUESTS.get_value(session=self.session, entityname=self.shelf.shelfname)
+            # Don't shelve special guests containing HW requirements or post-install script for now
+            # TODO: Add support to properly handle special guests
+            if self.gr.post_install_script is not None or self.gr.environment.hw.constraints is not None:
+                self.logger.debug('guest request specified extra post-install script or HW constraints')
 
-        if r_shelf_max_guests.is_error:
-            self.result = self.handle_error(r_shelf_max_guests, 'failed to obtain the maximum allowed number of guests')
-            return
+                return _release()
 
-        self.shelf_max_guests = r_shelf_max_guests.unwrap()
+            if shelved_count >= shelf_max_guests:
+                self.logger.debug(f'shelf {shelf.shelfname} is full, guest will be released')
 
-    @step
-    def return_guest(self) -> None:
-        """
-        Return the guest to a shelf if possible.
-        """
+                return _release()
 
-        assert self.current_state
-        assert self.gr
+            # Switch state to SHELVED and dispatch a watchdog task
+            from .shelved_guest_watchdog import shelved_guest_watchdog
 
-        from .shelved_guest_watchdog import shelved_guest_watchdog
-
-        if self.shelf is None:
-            return
-
-        # Don't shelve special guests containing HW requirements or post-install script for now
-        # TODO: Add support to properly handle special guests
-        if self.gr.post_install_script is not None or self.gr.environment.hw.constraints is not None:
-            self.logger.debug('guest request specified post-install script or HW constraints, guest will be released')
-            return
-
-        if self.shelved_count >= self.shelf_max_guests:
-            self.logger.debug(f'shelf {self.shelf.shelfname} is full, guest will be released')
-            # Possibly schedule a task to release other guests if count > max??
-            return
-
-        # TODO: Dispatch WDOG task to verify the guest is reachable while shelved
-        # Switch state to SHELVED and dispatch a watchdog task
-        self.update_guest_state_and_request_task(
-            GuestState.SHELVED,
-            shelved_guest_watchdog,
-            self.guestname,
-            current_state=self.current_state
-        )
-
-        self.result = self.handle_success('finished-task')
-
-    @step
-    def dispatch_release(self) -> None:
-        """
-        Dispatch guest release if we were not able to return it to a shelf.
-        """
-
-        from .release_guest_request import release_guest_request
-
-        if self.current_state == GuestState.CONDEMNED:
-            self.request_task(release_guest_request, self.guestname)
-        else:
             self.update_guest_state_and_request_task(
-                GuestState.CONDEMNED,
-                release_guest_request,
+                GuestState.SHELVED,
+                shelved_guest_watchdog,
                 self.guestname,
                 current_state=self.current_state
             )
-
-    @step
-    def exit(self) -> None:
-        """
-        Wrap up the shelf lookup process by updating metrics & final logging.
-        """
-
-        self.result = self.handle_success('finished-task')
 
     @classmethod
     def create(
@@ -175,10 +120,11 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
+        db: DB,
         guestname: str,
         current_state: GuestState
     ) -> 'Workspace':
-        workspace = Workspace(logger, session, cancel, guestname=guestname, task=cls.TASKNAME)
+        workspace = Workspace(logger, session, cancel, db, guestname=guestname, task=cls.TASKNAME)
 
         workspace.current_state = current_state
 
@@ -212,14 +158,10 @@ class Workspace(_Workspace):
         """
 
         return cls \
-            .create(logger, session, cancel, guestname, GuestState(current_state)) \
-            .entry() \
-            .load_valid_shelf() \
-            .load_shelved_count() \
-            .load_shelf_max_guests() \
-            .return_guest() \
-            .dispatch_release() \
-            .exit() \
+            .create(logger, session, cancel, db, guestname, GuestState(current_state)) \
+            .begin() \
+            .run() \
+            .complete() \
             .final_result
 
 
@@ -234,5 +176,5 @@ def return_guest_to_shelf(guestname: str, current_state: str) -> None:
     task_core(
         cast(DoerType, Workspace.return_guest_to_shelf),
         logger=get_guest_logger('return-guest-to-shelf', _ROOT_LOGGER, guestname),
-        doer_args=(guestname, current_state),
+        doer_args=(guestname, current_state)
     )

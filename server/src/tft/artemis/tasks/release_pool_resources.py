@@ -11,17 +11,16 @@ Schedule release of guest request and all its resources.
 """
 
 import threading
-from typing import cast
+from typing import Optional, cast
 
 import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from ..db import DB, GuestRequest, execute_dml
-from ..drivers import PoolData
-from ..guest import GuestState
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import GuestRequestWorkspace as _Workspace
+from ..db import DB
+from ..drivers import PoolDriver
+from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger
+from . import Workspace as _Workspace
 from . import get_guest_logger, step, task, task_core
 
 
@@ -30,41 +29,30 @@ class Workspace(_Workspace):
     Workspace for guest request release task.
     """
 
+    TASKNAME = 'release-pool-resources'
+
+    poolname: str
+    serialized_resource_ids: str
+
     @step
     def run(self) -> None:
         with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.CONDEMNED)
+            r_pool = PoolDriver.load(self.logger, self.session, self.poolname)
 
-            if self.result:
-                return
+            if r_pool.is_error:
+                return self._error(r_pool, 'pool sanity failed')
 
-            assert self.gr
+            pool = r_pool.unwrap()
 
-            if self.gr.poolname is not None and not PoolData.is_empty(self.gr):
-                self.mark_note_poolname()
-                self.load_gr_pool()
+            r_release = pool.release_pool_resources(self.logger, self.serialized_resource_ids)
 
-                if self.result:
-                    return
+            if r_release.is_error:
+                # Irrecoverable failures in release-pool-resources chain shouldn't influence the guest request.
+                # The release process is decoupled, and therefore pool outages should no longer affect the request.
+                failure = r_release.unwrap_error()
+                failure.fail_guest_request = False
 
-                assert self.pool
-
-                r_release = self.pool.release_guest(self.logger, self.gr)
-
-                if r_release.is_error:
-                    return self._error(r_release, 'failed to release guest')
-
-            r_delete = execute_dml(
-                self.logger,
-                self.session,
-                sqlalchemy
-                    .delete(GuestRequest.__table__)
-                    .where(GuestRequest.guestname == self.guestname)
-                    .where(GuestRequest.state == GuestState.CONDEMNED)
-            )
-
-            if r_delete.is_error:
-                return self._error(r_delete, 'failed to remove guest request record')
+                return self._error(r_release, 'failed to release pool resources')
 
             self._progress('released')
 
@@ -75,7 +63,9 @@ class Workspace(_Workspace):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
-        guestname: str
+        poolname: str,
+        serialized_resource_ids: str,
+        guestname: Optional[str]
     ) -> 'Workspace':
         """
         Create workspace.
@@ -88,16 +78,24 @@ class Workspace(_Workspace):
         :returns: newly created workspace.
         """
 
-        return cls(logger, session, cancel, db, guestname, task='release-guest-request')
+        workspace = cls(logger, session, cancel, task=Workspace.TASKNAME)
+
+        workspace.poolname = poolname
+        workspace.serialized_resource_ids = serialized_resource_ids
+        workspace.guestname = guestname
+
+        return workspace
 
     @classmethod
-    def release_guest_request(
+    def release_pool_resources(
         cls,
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
         cancel: threading.Event,
-        guestname: str
+        poolname: str,
+        serialized_resource_ids: str,
+        guestname: Optional[str]
     ) -> DoerReturnType:
         """
         Schedule release of guest request resources.
@@ -110,7 +108,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, cancel, guestname) \
+        return cls.create(logger, db, session, cancel, poolname, serialized_resource_ids, guestname) \
             .begin() \
             .run() \
             .complete() \
@@ -118,15 +116,15 @@ class Workspace(_Workspace):
 
 
 @task()
-def release_guest_request(guestname: str) -> None:
-    """
-    Schedule release of guest request resources.
+def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional[str]) -> None:
+    if guestname:
+        logger = get_guest_logger(Workspace.TASKNAME, _ROOT_LOGGER, guestname)
 
-    :param guestname: name of the request to process.
-    """
+    else:
+        logger = TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME)
 
     task_core(
-        cast(DoerType, Workspace.release_guest_request),
-        logger=get_guest_logger('release-guest-request', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        cast(DoerType, Workspace.release_pool_resources),
+        logger=logger,
+        doer_args=(poolname, resource_ids, guestname)
     )

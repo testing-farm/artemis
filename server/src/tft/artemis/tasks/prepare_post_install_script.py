@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Verify guest is reachable over SSH.
+Inspect the provisioning progress of a given request, and update info Artemis holds for this request.
 
 .. note::
 
@@ -16,73 +16,74 @@ from typing import cast
 import gluetool.log
 import sqlalchemy.orm.session
 
-from .. import Failure
 from ..db import DB
-from ..drivers import ping_shell_remote
 from ..guest import GuestState
-from ..knobs import Knob
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
 from . import GuestRequestWorkspace as _Workspace
 from . import ProvisioningTailHandler, get_guest_logger, step, task, task_core
-from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
 
-KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
-    'actor.verify-ssh.connect-timeout',
-    'Prepare stage SSH timeout.',
-    per_entity=True,
-    has_db=True,
-    envvar='ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT',
-    cast_from_str=int,
-    default=15
-)
+POST_INSTALL_SCRIPT_REMOTE_FILEPATH = '/tmp/artemis-post-install-script.sh'
 
 
 class Workspace(_Workspace):
     """
-    Workspace for SSH verification task.
+    Workspace for guest request update task.
     """
 
     @step
     def run(self) -> None:
+        # Avoid circular imports
+        from ..drivers import copy_to_remote, create_tempfile, run_remote
+        from .prepare_verify_ssh import KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT
+
         with self.transaction():
             self.load_guest_request(self.guestname, state=GuestState.PREPARING)
             self.mark_note_poolname()
             self.load_gr_pool()
             self.load_master_ssh_key()
 
-            if self.result:
-                return
-
             assert self.gr
             assert self.pool
             assert self.master_key
 
-            r = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=self.session, entityname=self.pool.poolname)
+            r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(
+                session=self.session,
+                entityname=self.pool.poolname
+            )
 
-            if r.is_error:
-                return self._error(r, 'failed to obtain SSH timeout value')
+            if r_ssh_timeout.is_error:
+                return self._error(r_ssh_timeout, 'failed to obtain ssh timeout value')
 
-            ssh_connect_timeout = r.unwrap()
+            with create_tempfile(file_contents=self.gr.post_install_script) as post_install_filepath:
+                r_upload = copy_to_remote(
+                    self.logger,
+                    self.gr,
+                    post_install_filepath,
+                    POST_INSTALL_SCRIPT_REMOTE_FILEPATH,
+                    key=self.master_key,
+                    ssh_timeout=r_ssh_timeout.unwrap(),
+                    ssh_options=self.pool.ssh_options,
+                    poolname=self.pool.poolname,
+                    commandname='prepare-post-install-script.copy-to-remote',
+                    cause_extractor=self.pool.cli_error_cause_extractor
+                )
 
-            r_ping = ping_shell_remote(
+            if r_upload.is_error:
+                return self._error(r_upload, 'failed to upload post-install script')
+
+            r_ssh = run_remote(
                 self.logger,
                 self.gr,
+                ['/bin/sh', POST_INSTALL_SCRIPT_REMOTE_FILEPATH],
                 key=self.master_key,
-                ssh_timeout=ssh_connect_timeout,
-                ssh_options=self.pool.ssh_options,
+                ssh_timeout=r_ssh_timeout.unwrap(),
                 poolname=self.pool.poolname,
-                commandname='prepare-verify-ssh.shell-ping',
+                commandname='prepare-post-install-script.execute',
                 cause_extractor=self.pool.cli_error_cause_extractor
             )
 
-            if r_ping.is_error:
-                # We do not want the generic "failed CLI" error here, to make SSH verification issues stand out more.
-                return self._fail(
-                    Failure.from_failure('failed to verify SSH', r_ping.unwrap_error()),
-                    'failed to verify SSH'
-                )
-
-            self.request_task(prepare_finalize_pre_connect, self.guestname)
+            if r_ssh.is_error:
+                return self._error(r_ssh, 'failed to execute post-install script successfully')
 
     @classmethod
     def create(
@@ -104,10 +105,10 @@ class Workspace(_Workspace):
         :returns: newly created workspace.
         """
 
-        return cls(logger, session, cancel, db=db, guestname=guestname, task='prepare-verify-ssh')
+        return cls(logger, session, cancel, db, guestname, task='prepare-finalize-pre-connect')
 
     @classmethod
-    def prepare_verify_ssh(
+    def prepare_post_install_script(
         cls,
         logger: gluetool.log.ContextAdapter,
         db: DB,
@@ -115,17 +116,6 @@ class Workspace(_Workspace):
         cancel: threading.Event,
         guestname: str
     ) -> DoerReturnType:
-        """
-        Verify guest's SSH connection is up and ready.
-
-        :param logger: logger to use for logging.
-        :param db: DB instance to use for DB access.
-        :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
-        :param guestname: name of the request to process.
-        :returns: task result.
-        """
-
         return cls.create(logger, db, session, cancel, guestname) \
             .begin() \
             .run() \
@@ -134,15 +124,9 @@ class Workspace(_Workspace):
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.SHELF_LOOKUP))
-def prepare_verify_ssh(guestname: str) -> None:
-    """
-    Verify guest's SSH connection is up and ready.
-
-    :param guestname: name of the request to process.
-    """
-
+def prepare_post_install_script(guestname: str) -> None:
     task_core(
-        cast(DoerType, Workspace.prepare_verify_ssh),
-        logger=get_guest_logger('prepare-verify-ssh', _ROOT_LOGGER, guestname),
+        cast(DoerType, Workspace.prepare_post_install_script),
+        logger=get_guest_logger('prepare-post-install-script', _ROOT_LOGGER, guestname),
         doer_args=(guestname,)
     )

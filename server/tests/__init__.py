@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import dataclasses
 import logging
 import operator
 import re
@@ -33,7 +34,8 @@ class MockPatcher(Protocol):
         self,
         obj: Any,
         member_name: str,
-        obj_name: Optional[str] = None
+        obj_name: Optional[str] = None,
+        return_value: Optional[Any] = dataclasses.MISSING
     ) -> MagicMock:
         pass
 

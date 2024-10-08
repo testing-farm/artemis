@@ -70,6 +70,8 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
         self.db = db
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        logger = get_logger()
+
         # We need context even when authentication and authorization are disabled: handlers request it,
         # and dependency injection must have something to give them.
         #
@@ -87,7 +89,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             return response
 
-        ctx.verify_auth(self.db)
+        ctx.verify_auth(logger, self.db)
 
         # Refresh stored state, to capture changes made by verification.
         ctx.inject()
