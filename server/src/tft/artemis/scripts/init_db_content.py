@@ -99,6 +99,9 @@ def _load_remote_schema(
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value
             )
 
+            if response.status_code == 404:
+                return Ok({})
+
             response.raise_for_status()
 
         except requests.exceptions.RequestException as exc:
@@ -129,6 +132,12 @@ def _load_remote_schema(
             r_schema.unwrap_error().handle(logger)
 
             sys.exit(1)
+
+        schema = r_schema.unwrap()
+
+        if not schema:
+            logger.warning(f'Driver schema "{driver_name}" was not downloaded.')
+            continue
 
         driver_schemas[driver_name] = r_schema.unwrap()
 
