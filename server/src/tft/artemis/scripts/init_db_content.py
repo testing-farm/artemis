@@ -133,13 +133,13 @@ def _load_remote_schema(
 
             sys.exit(1)
 
-        schema = r_schema.unwrap()
+        driver_schema = r_schema.unwrap()
 
-        if not schema:
+        if not driver_schema:
             logger.warning(f'Driver schema "{driver_name}" was not downloaded.')
             continue
 
-        driver_schemas[driver_name] = r_schema.unwrap()
+        driver_schemas[driver_name] = driver_schema
 
     return schema, driver_schemas
 
