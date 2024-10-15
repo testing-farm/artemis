@@ -9,8 +9,8 @@ import threading
 from typing import Any, Dict, List, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
-import jq
 import keystoneauth1
+import novaclient.v2.servers
 import sqlalchemy.orm.session
 from glanceclient import Client as gcl
 from gluetool.result import Error, Ok, Result
@@ -109,10 +109,6 @@ def os_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> OsErrorCau
             return cause
 
     return OsErrorCauses.NONE
-
-
-# IP address is suplied in a list of mappings
-JQ_QUERY_INSTANCE_IPV4_ADDRESS = jq.compile('.addresses | to_entries[0].value[0]')
 
 
 @dataclasses.dataclass
@@ -368,25 +364,31 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(network_name)
 
+    def _get_nova(self) -> Result[novaclient.v2.client.Client, Failure]:
+
+        sess = self.login_session(self.logger)
+        if sess.is_error:
+            return Error(sess.unwrap_error())
+        try:
+            nova = nocl.Client(self.pool_config['nova-version'], session=sess.unwrap())
+            return Ok(nova)
+        except Exception as exc:
+            return Error(Failure.from_exc(
+                'Failed to get nova Client',
+                exc,
+            ))
+
     def _show_guest(
         self,
         guest_request: GuestRequest
-    ) -> Result[Any, Failure]:
-        os_options = [
-            'server',
-            'show',
-            OpenStackPoolData.unserialize(guest_request).instance_id
-        ]
+    ) -> Result[novaclient.v2.servers.Server, Failure]:
 
-        r_output = self._run_os(os_options, commandname='os.server-show')
+        r_nova = self._get_nova()
+        if r_nova.is_error:
+            return Error(r_nova.unwrap_error())
+        instance = safe_call(r_nova.unwrap().servers.get, OpenStackPoolData.unserialize(guest_request).instance_id)
 
-        if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch instance information',
-                r_output.unwrap_error()
-            ))
-
-        return Ok(r_output.unwrap())
+        return instance
 
     def _show_snapshot(
         self,
@@ -551,9 +553,9 @@ class OpenStackDriver(PoolDriver):
         if r_show.is_error:
             return Error(r_show.unwrap_error())
 
-        output = r_show.unwrap()
+        instance = r_show.unwrap()
 
-        return Ok(output['status'].lower())
+        return Ok(instance.status.lower())
 
     def is_guest_stopped(
         self,
@@ -846,17 +848,17 @@ class OpenStackDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_output = self._show_guest(guest_request)
+        r_instance = self._show_guest(guest_request)
 
-        if r_output.is_error:
+        if r_instance.is_error:
             return Error(Failure('no such guest'))
 
-        output = r_output.unwrap()
+        instance = r_instance.unwrap()
 
-        if not output:
+        if not instance:
             return Error(Failure('Server show commmand output is empty'))
 
-        status = output['status'].lower()
+        status = instance.status.lower()
 
         logger.info(f'current instance status {OpenStackPoolData.unserialize(guest_request).instance_id}:{status}')
 
@@ -869,15 +871,15 @@ class OpenStackDriver(PoolDriver):
                 pool_failures=[Failure('instance ended up in "ERROR" state')]
             ))
 
-        if status == 'build' and 'created' in output:
+        if status == 'build' and instance.created:
             try:
-                created_stamp = datetime.datetime.strptime(output['created'], '%Y-%m-%dT%H:%M:%SZ')
+                created_stamp = datetime.datetime.strptime(instance.created, '%Y-%m-%dT%H:%M:%SZ')
 
             except Exception as exc:
                 Failure.from_exc(
                     'failed to parse "created" timestamp',
                     exc,
-                    stamp=output['created']
+                    stamp=instance.created
                 ).handle(self.logger)
 
             else:
@@ -899,13 +901,13 @@ class OpenStackDriver(PoolDriver):
             ))
 
         try:
-            ip_address = cast(str, JQ_QUERY_INSTANCE_IPV4_ADDRESS.input(output).first())
+            raw_address = list(instance.addresses.values())[0]
+            ip_address = cast(str, raw_address[0]['addr'])
 
         except Exception as exc:
             return Error(Failure.from_exc(
                 'failed to parse IP address',
                 exc,
-                output=output
             ))
 
         return Ok(ProvisioningProgress(
@@ -1141,15 +1143,10 @@ class OpenStackDriver(PoolDriver):
         #   ...
         # ]
 
-        sess = self.login_session(self.logger)
-        if sess.is_error:
-            return Error(Failure.from_failure(
-                'Failed to log into OpenStack tenant',
-                sess.unwrap_error()
-            ))
-        nova = nocl.Client(self.pool_config['nova-version'], session=sess.unwrap())
-
-        flavors = nova.flavors.list()
+        r_nova = self._get_nova()
+        if r_nova.is_error:
+            return Error(r_nova.unwrap_error())
+        flavors = safe_call(r_nova.unwrap().flavors.list).unwrap()
 
         if self.pool_config.get('flavor-regex'):
             flavor_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['flavor-regex'])
