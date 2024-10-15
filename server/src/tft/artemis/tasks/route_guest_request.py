@@ -19,7 +19,7 @@ import sqlalchemy.orm.session
 from .. import metrics
 from ..db import DB
 from ..guest import GuestState
-from ..routing_policies import PolicyRuling
+from ..routing_policies import PolicyReturnType
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
 from . import GuestRequestWorkspace as _Workspace
 from . import ProvisioningTailHandler, get_guest_logger, step, task, task_core
@@ -46,8 +46,8 @@ class Workspace(_Workspace):
 
             assert self.gr
 
-            ruling = cast(
-                PolicyRuling,
+            r_ruling = cast(
+                PolicyReturnType,
                 self.run_hook(
                     'ROUTE',
                     session=self.session,
@@ -55,6 +55,11 @@ class Workspace(_Workspace):
                     pools=self.pools
                 )
             )
+
+            if r_ruling.is_error:
+                return self._error(r_ruling, 'routing hook failed')
+
+            ruling = r_ruling.unwrap()
 
             if ruling.cancel:
                 self._progress('routing-cancelled')
