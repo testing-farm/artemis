@@ -2003,12 +2003,11 @@ class Workspace:
         if r.is_error:
             self._error(r, 'failed to create task request')
 
-    def run_hook(self, hook_name: str, **kwargs: Any) -> Any:
+    def run_hook(self, hook_name: str, **kwargs: Any) -> Result[Any, Failure]:
         r_engine = hook_engine(hook_name)
 
         if r_engine.is_error:
-            self._error(r_engine, f'failed to load {hook_name} hook')
-            return
+            return Error(Failure.from_failure(f'failed to load {hook_name} hook', r_engine.unwrap_error()))
 
         engine = r_engine.unwrap()
 
@@ -2022,11 +2021,7 @@ class Workspace:
         except Exception as exc:
             r = Error(Failure.from_exc('unhandled hook error', exc))
 
-        if r.is_error:
-            self._error(r, 'hook failed')
-            return
-
-        return r.unwrap()
+        return r
 
     def load_pools(self: WorkspaceBound) -> WorkspaceBound:
         if self.result:
