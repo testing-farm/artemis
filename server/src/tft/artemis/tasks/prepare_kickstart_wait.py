@@ -10,7 +10,6 @@ Wait for kickstart installation to complete.
    MUST preserve consistent and restartable state.
 """
 
-import threading
 from typing import cast
 
 import gluetool.log
@@ -21,7 +20,7 @@ from ..db import DB
 from ..drivers import ping_shell_remote, run_remote
 from ..guest import GuestState
 from ..knobs import Knob
-from . import _ROOT_LOGGER, SUCCESS, DoerReturnType, DoerType, ProvisioningTailHandler, TaskCall
+from . import _ROOT_LOGGER, SUCCESS, DoerReturnType, DoerType, ProvisioningTailHandler
 from . import Workspace as _Workspace
 from . import get_guest_logger, step, task, task_core
 from .prepare_kickstart import KNOB_PREPARE_KICKSTART_SSH_TIMEOUT
@@ -54,194 +53,133 @@ class Workspace(_Workspace):
     Workspace to handle checking the kickstart installation concluded.
     """
 
-    ssh_timeout: int
-
     @step
-    def load_gr_and_pool(self) -> None:
+    def run(self) -> None:
         """
-        Load necessary elements.
+        Wrap the steps within a transaction.
         """
+
+        from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
 
         assert self.guestname
 
-        self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-        self.mark_note_poolname()
-        self.load_gr_pool()
-        self.load_master_ssh_key()
+        with self.transaction():
+            # Load GR, pool and SSH key
+            self.load_guest_request(self.guestname, state=GuestState.PREPARING)
+            self.mark_note_poolname()
+            self.load_gr_pool()
+            self.load_master_ssh_key()
 
-    @step
-    def load_ssh_timeout(self) -> None:
-        """
-        Load the SSH timeout value.
-        """
+            if self.result:
+                return
 
-        assert self.pool
+            assert self.gr
+            assert self.master_key
+            assert self.pool
 
-        r = KNOB_PREPARE_KICKSTART_SSH_TIMEOUT.get_value(session=self.session, entityname=self.pool.poolname)
-
-        if r.is_error:
-            return self._error(r, 'failed to obtain SSH timeout value')
-
-        self.ssh_timeout = r.unwrap()
-
-    @step
-    def check_accessible(self) -> None:
-        """
-        Verify the guest can be accessed.
-        """
-
-        assert self.gr
-        assert self.master_key
-        assert self.pool
-        assert self.ssh_timeout
-
-        r = ping_shell_remote(
-            self.logger,
-            self.gr,
-            key=self.master_key,
-            ssh_timeout=self.ssh_timeout,
-            ssh_options=self.pool.ssh_options,
-            poolname=self.pool.poolname,
-            commandname='prepare-verify-ssh.shell-ping',
-            cause_extractor=self.pool.cli_error_cause_extractor
-        )
-
-        if r.is_error:
-            return self._fail(
-                Failure.from_failure('failed to connect to the guest', r.unwrap_error()),
-                'failed to connect to the guest'
-            )
-
-    @step
-    def check_inprogress(self) -> None:
-        """
-        Check whether the installation is still ongoing.
-        """
-
-        assert self.gr
-        assert self.guestname
-        assert self.master_key
-        assert self.pool
-        assert self.ssh_timeout
-
-        r = run_remote(
-            self.logger,
-            self.gr,
-            ['/bin/ls', '/.ksinprogress'],
-            key=self.master_key,
-            ssh_options=self.pool.ssh_options,
-            ssh_timeout=self.ssh_timeout,
-            poolname=self.pool.poolname,
-            commandname='prepare-kickstart-wait.check-inprogress'
-        )
-
-        if not r.is_error:
-            self._progress('install-inprogress')
-
-            r_delay = KNOB_PREPARE_KICKSTART_WAIT_RETRY_DELAY.get_value(
+            # Load the SSH timeout value.
+            r_ssh_timeout = KNOB_PREPARE_KICKSTART_SSH_TIMEOUT.get_value(
                 session=self.session,
                 entityname=self.pool.poolname
             )
 
-            if r_delay.is_error:
-                return self._error(r_delay, 'failed to load task retry delay')
+            if r_ssh_timeout.is_error:
+                return self._error(r_ssh_timeout, 'failed to obtain SSH timeout value')
 
-            self.request_task(
-                prepare_kickstart_wait,
-                self.guestname,
-                delay=r_delay.unwrap()
-            )
+            ssh_timeout = r_ssh_timeout.unwrap()
 
-            self.result = SUCCESS
-
-    @step
-    def check_error(self) -> None:
-        """
-        Check the installation did not error out.
-        """
-
-        assert self.gr
-        assert self.master_key
-        assert self.pool
-        assert self.ssh_timeout
-
-        r = run_remote(
-            self.logger,
-            self.gr,
-            ['/bin/ls', '/.kserror'],
-            key=self.master_key,
-            ssh_options=self.pool.ssh_options,
-            ssh_timeout=self.ssh_timeout,
-            poolname=self.pool.poolname,
-            commandname='prepare-kickstart-wait.check-inprogress'
-        )
-
-        if not r.is_error:
-            # End the provisioning here as there's nothing else to do
-            self._error(r, 'the installation terminated with an error')
-
-            ProvisioningTailHandler(GuestState.PREPARING, GuestState.ERROR).handle_tail(
+            # Check the guest is accessible
+            r_ping = ping_shell_remote(
                 self.logger,
-                self.db,
-                self.session,
-                TaskCall(
-                    actor=prepare_kickstart_wait,
-                    args=(self.guestname,),
-                    arg_names=('guestname',)
-                )
+                self.gr,
+                key=self.master_key,
+                ssh_timeout=ssh_timeout,
+                ssh_options=self.pool.ssh_options,
+                poolname=self.pool.poolname,
+                commandname='prepare-verify-ssh.shell-ping',
+                cause_extractor=self.pool.cli_error_cause_extractor
             )
 
-            return
+            if r_ping.is_error:
+                return self._fail(
+                    Failure.from_failure('failed to connect to the guest', r_ping.unwrap_error()),
+                    'failed to connect to the guest'
+                )
 
-    @step
-    def check_complete(self) -> None:
-        """
-        A sanity check to verify the kickstart installation did happen.
-        """
+            # Try to determine whether the installation in progress
+            r_inprogress = run_remote(
+                self.logger,
+                self.gr,
+                ['/bin/ls', '/.ksinprogress'],
+                key=self.master_key,
+                ssh_options=self.pool.ssh_options,
+                ssh_timeout=ssh_timeout,
+                poolname=self.pool.poolname,
+                commandname='prepare-kickstart-wait.check-inprogress'
+            )
 
-        assert self.gr
-        assert self.master_key
-        assert self.pool
-        assert self.ssh_timeout
+            if not r_inprogress.is_error:
+                # Check if the installation had not errored out
+                r_iserror = run_remote(
+                    self.logger,
+                    self.gr,
+                    ['/bin/ls', '/.kserror'],
+                    key=self.master_key,
+                    ssh_options=self.pool.ssh_options,
+                    ssh_timeout=ssh_timeout,
+                    poolname=self.pool.poolname,
+                    commandname='prepare-kickstart-wait.check-error'
+                )
 
-        r = run_remote(
-            self.logger,
-            self.gr,
-            ['/bin/ls', '/.ksinstall'],
-            key=self.master_key,
-            ssh_options=self.pool.ssh_options,
-            ssh_timeout=self.ssh_timeout,
-            poolname=self.pool.poolname,
-            commandname='prepare-kickstart-wait.check-inprogress'
-        )
+                if not r_iserror.is_error:
+                    # End the provisioning here as there's nothing else to do
+                    return self._fail(
+                        Failure.from_failure(
+                            'the installation terminated with an error',
+                            r_iserror.unwrap_error(),
+                            recoverable=False
+                        ),
+                        'the installation terminated with an error'
+                    )
 
-        if r.is_error:
-            self._error(r, 'failed to verify the kickstart installation was performed')
+                self._progress('install-inprogress')
 
-    @step
-    def dispatch_finalize(self) -> None:
-        """
-        Dispatch next task.
-        """
+                r_delay = KNOB_PREPARE_KICKSTART_WAIT_RETRY_DELAY.get_value(
+                    session=self.session,
+                    entityname=self.pool.poolname
+                )
 
-        assert self.guestname
+                if r_delay.is_error:
+                    return self._error(r_delay, 'failed to load task retry delay')
 
-        from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
+                self.request_task(
+                    prepare_kickstart_wait,
+                    self.guestname,
+                    delay=r_delay.unwrap()
+                )
 
-        self.request_task(
-            prepare_finalize_pre_connect,
-            self.guestname
-        )
+                self.result = SUCCESS
 
-    def run(self) -> 'Workspace':
-        with self.transaction():
-            return self.load_gr_and_pool() \
-                .load_ssh_timeout() \
-                .check_accessible() \
-                .check_inprogress() \
-                .check_error() \
-                .check_complete() \
-                .dispatch_finalize()
+            # A sanity check to verify the kickstart installation did happen.
+            r_install = run_remote(
+                self.logger,
+                self.gr,
+                ['/bin/ls', '/.ksinstall'],
+                key=self.master_key,
+                ssh_options=self.pool.ssh_options,
+                ssh_timeout=ssh_timeout,
+                poolname=self.pool.poolname,
+                commandname='prepare-kickstart-wait.check-inprogress'
+            )
+
+            if r_install.is_error:
+                self._error(r_install, 'failed to verify the kickstart installation was performed')
+
+            # Dispatch next task.
+            self.request_task(
+                prepare_finalize_pre_connect,
+                self.guestname
+            )
 
     @classmethod
     def create(
