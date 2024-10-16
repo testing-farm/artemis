@@ -2613,6 +2613,12 @@ def run_cli_tool(
         return _command
 
     command_scrubber = command_scrubber or _noop_scrubber
+    failure_details: Dict[str, Any] = {
+        'scrubbed_command': command_scrubber(command),
+        'poolname': poolname,
+        'commandname': commandname,
+        'environ': env
+    }
 
     start_time = time.monotonic()
 
@@ -2641,10 +2647,8 @@ def run_cli_tool(
             Failure(
                 'detected a slow CLI command',
                 command_output=output,
-                scrubbed_command=command_scrubber(command),
-                poolname=poolname,
-                commandname=commandname,
-                time=command_time
+                time=command_time,
+                **failure_details
             ).handle(logger, label='CLI output')
 
         if KNOB_LOGGING_CLI_OUTPUT.value \
@@ -2668,9 +2672,7 @@ def run_cli_tool(
             'error running CLI command',
             exc,
             command_output=exc.output,
-            scrubbed_command=command_scrubber(command),
-            poolname=poolname,
-            commandname=commandname
+            **failure_details
         ))
 
     else:
@@ -2681,9 +2683,7 @@ def run_cli_tool(
             return Error(Failure(
                 'CLI did not emit any output',
                 command_output=output,
-                scrubbed_command=command_scrubber(command),
-                poolname=poolname,
-                commandname=commandname
+                **failure_details
             ))
 
         output_stdout = ''
@@ -2702,9 +2702,7 @@ def run_cli_tool(
             return Error(Failure(
                 'CLI did not emit any output, cannot treat as JSON',
                 command_output=output,
-                scrubbed_command=command_scrubber(command),
-                poolname=poolname,
-                commandname=commandname
+                **failure_details
             ))
 
         try:
@@ -2715,9 +2713,7 @@ def run_cli_tool(
                 'failed to convert string to JSON',
                 exc=exc,
                 command_output=output,
-                scrubbed_command=command_scrubber(command),
-                poolname=poolname,
-                commandname=commandname
+                **failure_details
             ))
 
     return Ok(CLIOutput(output, output_stdout))
@@ -2999,7 +2995,11 @@ class CLISessionPermanentDir:
         except OSError as err:
             fcntl.flock(session_dir_fd, fcntl.LOCK_UN)
             os.close(session_dir_fd)
-            return Error(Failure.from_exc('Failed to obtain the lock - another command is running', err))
+            return Error(Failure.from_exc(
+                'Failed to obtain the lock - another command is running',
+                err,
+                session_dir_path=self.session_dir_path
+            ))
 
         # Run command, isolation should be guaranteed now
         r_run = run_cli_tool(
@@ -3018,7 +3018,7 @@ class CLISessionPermanentDir:
         os.close(session_dir_fd)
 
         if r_run.is_error:
-            return Error(r_run.unwrap_error())
+            return Error(r_run.unwrap_error().update(session_path=self.session_dir_path))
 
         if json_format:
             return Ok(r_run.unwrap().json)
