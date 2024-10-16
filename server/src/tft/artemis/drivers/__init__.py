@@ -2950,13 +2950,20 @@ class CLISessionPermanentDir:
             f'{self.CLI_PREFIX}-{self.pool.poolname}-{random.randint(1, self.parallel_sessions)}'
         )
 
-        try:
-            if not os.path.exists(self.session_dir_path):
+        if not os.path.exists(self.session_dir_path):
+            # First try creating an empty session directory
+            try:
                 os.makedirs(self.session_dir_path)
-                self._prepare_session_dir(logger)
-        except OSError as err:
-            self._login_result = Error(Failure.from_exc('Failed to create directory for cli session', err))
-            return
+            except OSError as err:
+                self._login_result = Error(Failure.from_exc('Failed to create directory for cli session', err))
+                return
+
+            # Now let's attempt to set it up
+            r_session_dir = self._prepare_session_dir(logger)
+
+            if r_session_dir.is_error:
+                self._login_result = Error(r_session_dir.unwrap_error())
+                return
 
         # Log into the tenant, and since we cannot raise an exception, save the result.
         # If we fail, any call to `run` would return this saved result.

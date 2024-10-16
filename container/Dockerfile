@@ -99,6 +99,10 @@ RUN    mkdir -p $HOME/.ibmcloud \
     # Power infra plugins
     && IBMCLOUD_HOME=$HOME/.ibmcloud ibmcloud plugin install power-iaas
 
+# Change permission for model plugins directory so that artemis user could access it to copy files
+RUN    find $HOME/.ibmcloud -type d -exec chmod g+rx {} +
+RUN    find $HOME/.ibmcloud -type f -exec chmod g+r {} +
+
 #
 # We want Artemis to support also older SSH keys for now, Fedora 33+ has strong crypto enabled
 # https://fedoraproject.org/wiki/Changes/StrongCryptoSettings2
