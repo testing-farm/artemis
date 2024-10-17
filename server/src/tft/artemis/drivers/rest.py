@@ -42,6 +42,8 @@ class RestDriver(PoolDriver):
 
     drivername = 'rest'
 
+    http_timeout = 60
+
     pool_data_class = RestPoolData
 
     def __init__(
@@ -117,7 +119,8 @@ class RestDriver(PoolDriver):
                 f"{self.url}/guests",
                 params=payload,
                 headers=self._get_headers(guestname=guest_request.guestname),
-                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                timeout=http_timeout
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -178,7 +181,8 @@ class RestDriver(PoolDriver):
                 f"{self.url}/guests",
                 json=payload,
                 headers=self._get_headers(guestname=guest_request.guestname),
-                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                timeout=http_timeout
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -247,7 +251,8 @@ class RestDriver(PoolDriver):
                 f"{self.url}/guests/{pool_data.guest_id}",
                 json=payload,
                 headers=self._get_headers(guestname=guest_request.guestname),
-                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                timeout=http_timeout
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -323,7 +328,8 @@ class RestDriver(PoolDriver):
             response = requests.delete(
                 f"{self.url}/guests/{pool_resources.guest_id}",
                 headers=self._get_headers(guestname=pool_resources.guestname),
-                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                timeout=http_timeout
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -372,7 +378,8 @@ class RestDriver(PoolDriver):
         try:
             response = requests.get(
                 f"{self.url}/pool_resources_metrics",
-                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                timeout=http_timeout
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -421,7 +428,9 @@ class RestDriver(PoolDriver):
         assert url is not None
 
         try:
-            response = requests.get(url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
+            response = requests.get(url,
+                                    verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                                    timeout=http_timeout)
             response.raise_for_status()
 
         except requests.exceptions.RequestException as exc:
