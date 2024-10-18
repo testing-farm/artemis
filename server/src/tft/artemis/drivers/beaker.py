@@ -27,7 +27,7 @@ from ..cache import get_cached_mapping, refresh_cached_mapping
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Kickstart, Operator, Or, SizeType
-from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, Knob
+from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT, Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
     PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
@@ -1619,7 +1619,9 @@ class BeakerDriver(PoolDriver):
         failures = []
         for url in log_urls:
             try:
-                response = requests.get(url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
+                response = requests.get(url,
+                                        verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                                        timeout=KNOB_HTTP_TIMEOUT.value)
                 response.raise_for_status()
 
             except requests.exceptions.RequestException as exc:
@@ -2218,7 +2220,9 @@ class BeakerDriver(PoolDriver):
         assert progress.url is not None
 
         try:
-            response = requests.get(progress.url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
+            response = requests.get(progress.url,
+                                    verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                                    timeout=KNOB_HTTP_TIMEOUT.value)
             response.raise_for_status()
 
         except requests.exceptions.RequestException as exc:
