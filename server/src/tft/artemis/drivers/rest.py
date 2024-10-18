@@ -16,7 +16,7 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..knobs import KNOB_DISABLE_CERT_VERIFICATION
+from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, PoolCapabilities, PoolData, PoolDriver, \
     PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, guest_log_updater
@@ -41,8 +41,6 @@ class RestDriver(PoolDriver):
     '''
 
     drivername = 'rest'
-
-    http_timeout = 60
 
     pool_data_class = RestPoolData
 
@@ -120,7 +118,7 @@ class RestDriver(PoolDriver):
                 params=payload,
                 headers=self._get_headers(guestname=guest_request.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                timeout=http_timeout
+                timeout=KNOB_HTTP_TIMEOUT.value
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -182,7 +180,7 @@ class RestDriver(PoolDriver):
                 json=payload,
                 headers=self._get_headers(guestname=guest_request.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                timeout=http_timeout
+                timeout=KNOB_HTTP_TIMEOUT.value
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -252,7 +250,7 @@ class RestDriver(PoolDriver):
                 json=payload,
                 headers=self._get_headers(guestname=guest_request.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                timeout=http_timeout
+                timeout=KNOB_HTTP_TIMEOUT.value
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -329,7 +327,7 @@ class RestDriver(PoolDriver):
                 f"{self.url}/guests/{pool_resources.guest_id}",
                 headers=self._get_headers(guestname=pool_resources.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                timeout=http_timeout
+                timeout=KNOB_HTTP_TIMEOUT.value
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -379,7 +377,7 @@ class RestDriver(PoolDriver):
             response = requests.get(
                 f"{self.url}/pool_resources_metrics",
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                timeout=http_timeout
+                timeout=KNOB_HTTP_TIMEOUT.value
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:
@@ -430,7 +428,7 @@ class RestDriver(PoolDriver):
         try:
             response = requests.get(url,
                                     verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                                    timeout=http_timeout)
+                                    timeout=KNOB_HTTP_TIMEOUT.value)
             response.raise_for_status()
 
         except requests.exceptions.RequestException as exc:

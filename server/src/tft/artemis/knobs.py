@@ -898,6 +898,7 @@ KNOB_HTTP_TIMEOUT: Knob[int] = Knob(
     default=60
 )
 
+
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value
 
