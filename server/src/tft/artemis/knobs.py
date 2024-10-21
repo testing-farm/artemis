@@ -889,6 +889,15 @@ KNOB_DISABLE_CERT_VERIFICATION: Knob[bool] = Knob(
     default=False
 )
 
+KNOB_HTTP_TIMEOUT: Knob[int] = Knob(
+    'http_timeout',
+    'The HTTP timeout value which may be used by various parts of Artemis',
+    has_db=False,
+    envvar='ARTEMIS_HTTP_TIMEOUT',
+    cast_from_str=int,
+    default=60
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value

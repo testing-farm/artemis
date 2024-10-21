@@ -783,6 +783,16 @@ for full list of connection parameters that can be specified via URL.
 
 5+|How old must the guest log blobs be to be removed, in seconds.
 
+|`http_timeout`
+|`int`
+|`ARTEMIS_HTTP_TIMEOUT`
+|`60`
+|no
+
+
+
+5+|The HTTP timeout value which may be used by various parts of Artemis
+
 |`ibmcloud-power.mapping.environment-to-image.pattern-map.filepath`
 |`str`
 |`ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
