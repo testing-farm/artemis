@@ -10,7 +10,6 @@ Schedule release of guest request and all its resources.
    MUST preserve consistent and restartable state.
 """
 
-import threading
 from typing import cast
 
 import gluetool.log
@@ -74,7 +73,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         guestname: str
     ) -> 'Workspace':
         """
@@ -83,12 +81,11 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param guestname: name of the request to process.
         :returns: newly created workspace.
         """
 
-        return cls(logger, session, cancel, db, guestname, task='release-guest-request')
+        return cls(logger, session, db, guestname, task='release-guest-request')
 
     @classmethod
     def release_guest_request(
@@ -96,7 +93,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         guestname: str
     ) -> DoerReturnType:
         """
@@ -105,12 +101,11 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param guestname: name of the request to process.
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, cancel, guestname) \
+        return cls.create(logger, db, session, guestname) \
             .begin() \
             .run() \
             .complete() \

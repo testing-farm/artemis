@@ -11,7 +11,6 @@ Try to find a suitable guest, which can satisfy the request from the specified s
 """
 
 import json
-import threading
 import uuid
 from typing import Any, Optional, cast
 
@@ -48,7 +47,6 @@ class Workspace(_Workspace):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         shelfname: str,
         guest_template: GuestRequestSchema,
         guest_count: int,
@@ -57,7 +55,7 @@ class Workspace(_Workspace):
         db: Optional[DB] = None,
         **default_details: Any
     ) -> None:
-        super().__init__(logger, session, cancel, guestname=guestname, task=task, db=db)
+        super().__init__(logger, session, guestname=guestname, task=task, db=db)
 
         self.shelfname = shelfname
         self.guest_template = guest_template
@@ -156,7 +154,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         shelfname: str,
         guest_template: str,
         guest_count: str
@@ -167,7 +164,6 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param shelfname: name of the shelf to create guests for.
         :param guest_template: Template of a guest to be pre-provisioned.
         :param guest_count: Number of guests to be created.
@@ -177,7 +173,6 @@ class Workspace(_Workspace):
         return cls(
             logger,
             session,
-            cancel,
             task=cls.TASKNAME,
             shelfname=shelfname,
             guest_template=GuestRequestSchema(**json.loads(guest_template)),
@@ -190,7 +185,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         shelfname: str,
         guest_template: str,
         guest_count: str
@@ -206,14 +200,13 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param shelfname: name of the shelf to create guests for.
         :param guest_template: Template of a guest to be pre-provisioned.
         :param guest_count: Number of guests to be created.
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, cancel, shelfname, guest_template, guest_count) \
+        return cls.create(logger, db, session, shelfname, guest_template, guest_count) \
             .begin() \
             .run() \
             .complete() \

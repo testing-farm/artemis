@@ -3,7 +3,6 @@
 
 import dataclasses
 import re
-import threading
 from typing import Any, Dict, List, Optional, Pattern, Tuple, TypedDict, cast
 
 import gluetool.log
@@ -209,8 +208,7 @@ class IBMCloudPowerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
@@ -218,8 +216,6 @@ class IBMCloudPowerDriver(PoolDriver):
 
         :param Environment environment: environmental requirements a guest must satisfy.
         :param Key key: master key to upload to the guest.
-        :param threading.Event cancelled: if set, method should cancel its operation, release
-            resources, and return.
 
         :rtype: result.Result[Guest, Failure]
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
@@ -232,7 +228,7 @@ class IBMCloudPowerDriver(PoolDriver):
             logger,
             session,
             guest_request,
-            cancelled)
+        )
 
     def _translate_constraints_to_cli_args(
         self,
@@ -420,8 +416,7 @@ class IBMCloudPowerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
 
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
@@ -519,8 +514,7 @@ class IBMCloudPowerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest

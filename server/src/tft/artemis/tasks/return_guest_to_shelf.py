@@ -10,7 +10,6 @@ If applicable, return the guest to a shelf, otherwise schedule a full release.
    MUST preserve consistent and restartable state.
 """
 
-import threading
 from typing import Optional, cast
 
 import gluetool.log
@@ -119,12 +118,11 @@ class Workspace(_Workspace):
         cls,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         db: DB,
         guestname: str,
         current_state: GuestState
     ) -> 'Workspace':
-        workspace = Workspace(logger, session, cancel, db, guestname=guestname, task=cls.TASKNAME)
+        workspace = Workspace(logger, session, db, guestname=guestname, task=cls.TASKNAME)
 
         workspace.current_state = current_state
 
@@ -136,7 +134,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         guestname: str,
         current_state: str
     ) -> DoerReturnType:
@@ -151,14 +148,13 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param guestname: name of the request to process.
         :param current_state: current state of the guest request to be shelved.
         :returns: task result.
         """
 
         return cls \
-            .create(logger, session, cancel, db, guestname, GuestState(current_state)) \
+            .create(logger, session, db, guestname, GuestState(current_state)) \
             .begin() \
             .run() \
             .complete() \

@@ -11,7 +11,6 @@ Inspect the provisioning progress of a given request, and update info Artemis ho
 """
 
 import datetime
-import threading
 from typing import Optional, cast
 
 import gluetool.log
@@ -137,7 +136,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         guestname: str
     ) -> 'Workspace':
         """
@@ -146,12 +144,11 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param guestname: name of the request to process.
         :returns: newly created workspace.
         """
 
-        return cls(logger, session, cancel, db, guestname, task=Workspace.TASKNAME)
+        return cls(logger, session, db, guestname, task=Workspace.TASKNAME)
 
     @classmethod
     def prepare_finalize_post_connect(
@@ -159,10 +156,9 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         guestname: str
     ) -> DoerReturnType:
-        return cls.create(logger, db, session, cancel, guestname) \
+        return cls.create(logger, db, session, guestname) \
             .begin() \
             .run() \
             .complete() \

@@ -9,7 +9,6 @@ Remove shelf and schedule the removal of all shelved guests
     Task MUST be aware of the possibility of another task performing the same job at the same time. All changes
     MUST preserve consistent and restartable state.
 """
-import threading
 from typing import List, cast
 
 import gluetool.log
@@ -95,7 +94,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         shelfname: str
     ) -> 'Workspace':
         """
@@ -104,12 +102,11 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param shelfname: name of the shelf to process.
         :returns: newly created workspace.
         """
 
-        workspace = cls(logger, session, cancel, db=db, task=cls.TASKNAME)
+        workspace = cls(logger, session, db=db, task=cls.TASKNAME)
         workspace.shelfname = shelfname
 
         return workspace
@@ -120,7 +117,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         shelfname: str
     ) -> DoerReturnType:
         """
@@ -130,12 +126,11 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param shelfname: name of the shelf to process.
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, cancel, shelfname) \
+        return cls.create(logger, db, session, shelfname) \
             .begin() \
             .run() \
             .complete() \

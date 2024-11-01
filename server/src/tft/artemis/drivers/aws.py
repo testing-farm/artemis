@@ -8,7 +8,6 @@ import ipaddress
 import json
 import os
 import re
-import threading
 from typing import Any, Dict, Generator, List, MutableSequence, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
@@ -2627,8 +2626,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         pool_data = AWSPoolData.unserialize(guest_request)
 
@@ -2717,8 +2715,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
@@ -2726,8 +2723,6 @@ class AWSDriver(PoolDriver):
 
         :param Environment environment: environmental requirements a guest must satisfy.
         :param Key key: master key to upload to the guest.
-        :param threading.Event cancelled: if set, method should cancel its operation, release
-            resources, and return.
         :rtype: result.Result[Guest, Failure]
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
@@ -2735,16 +2730,14 @@ class AWSDriver(PoolDriver):
         return self._do_acquire_guest(
             logger,
             session,
-            guest_request,
-            cancelled
+            guest_request
         )
 
     def _do_acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
-import threading
 import unittest
 from typing import Any, Dict, Tuple, cast
 from unittest.mock import MagicMock, call
@@ -32,21 +31,14 @@ def server_config(logger: gluetool.log.ContextAdapter) -> tft.artemis.JSONType:
     return cast(tft.artemis.JSONType, gluetool.utils.load_yaml('artemis-configuration/server.yml', logger=logger))
 
 
-@pytest.fixture
-def cancel() -> threading.Event:
-    return threading.Event()
-
-
 def test_run_doer(
     logger: gluetool.log.ContextAdapter,
-    db: tft.artemis.db.DB,
-    cancel: threading.Event
+    db: tft.artemis.db.DB
 ) -> None:
     def foo(
         _logger: gluetool.log.ContextAdapter,
         _db: tft.artemis.db.DB,
         _session: sqlalchemy.orm.session.Session,
-        _cancel: threading.Event,
         bar: str
     ) -> tft.artemis.tasks.DoerReturnType:
         assert bar == '79'
@@ -54,11 +46,10 @@ def test_run_doer(
         return tft.artemis.tasks.RESCHEDULE
 
     with db.get_session(logger) as session:
-        assert tft.artemis.tasks.run_doer(
+        assert tft.artemis.tasks.run_doer_multithread(
             logger,
             db,
             session,
-            cancel,
             cast(tft.artemis.tasks.DoerType, foo),
             'test_run_doer',
             '79'
@@ -67,24 +58,21 @@ def test_run_doer(
 
 def test_run_doer_exception(
     logger: gluetool.log.ContextAdapter,
-    db: tft.artemis.db.DB,
-    cancel: threading.Event
+    db: tft.artemis.db.DB
 ) -> None:
     def foo(
         _logger: gluetool.log.ContextAdapter,
         _db: tft.artemis.db.DB,
-        _session: sqlalchemy.orm.session.Session,
-        _cancel: threading.Event
+        _session: sqlalchemy.orm.session.Session
     ) -> tft.artemis.tasks.DoerReturnType:
         raise Exception('foo')
 
     with db.get_session(logger) as session:
         with pytest.raises(Exception, match=r'foo'):
-            tft.artemis.tasks.run_doer(
+            tft.artemis.tasks.run_doer_multithread(
                 logger,
                 db,
                 session,
-                cancel,
                 cast(tft.artemis.tasks.DoerType, foo),
                 'test_run_doer_exception'
             )
@@ -165,7 +153,6 @@ def test_dispatcher_task_exception(
 
 TaskCoreArgsType = Tuple[
     tft.artemis.tasks.TaskLogger,
-    threading.Event,
     MagicMock,
     MagicMock,
     Tuple[MagicMock, MagicMock],
@@ -183,9 +170,10 @@ def task_core_args(
 ) -> TaskCoreArgsType:
     task_logger = tft.artemis.tasks.TaskLogger(logger, 'dummy-task')
 
-    cancel = threading.Event()
-
     run_doer = mockpatch(tft.artemis.tasks, 'run_doer')
+    monkeypatch.setattr(tft.artemis.tasks, 'run_doer_multithread', run_doer)
+    monkeypatch.setattr(tft.artemis.tasks, 'run_doer_singlethread', run_doer)
+
     doer = MagicMock(name='mock_doer', actor_name='dummy-actor-name')
     doer_args = (
         MagicMock(name='mock_doer_arg1'),
@@ -198,7 +186,7 @@ def task_core_args(
 
     monkeypatch.setitem(broker.actors, doer.actor_name, doer)
 
-    return task_logger, cancel, run_doer, doer, doer_args, doer_kwargs
+    return task_logger, run_doer, doer, doer_args, doer_kwargs
 
 
 def test_task_core_ok(
@@ -208,20 +196,19 @@ def test_task_core_ok(
     caplog: _pytest.logging.LogCaptureFixture,
     task_core_args: TaskCoreArgsType
 ) -> None:
-    task_logger, cancel, run_doer, doer, doer_args, doer_kwargs = task_core_args
+    task_logger, run_doer, doer, doer_args, doer_kwargs = task_core_args
 
     tft.artemis.tasks.task_core(
         doer,
         task_logger,
         db=db,
         session=session,
-        cancel=cancel,
         doer_args=doer_args,
         doer_kwargs=doer_kwargs
     )
 
     run_doer.assert_has_calls([
-        call(task_logger, db, session, cancel, doer, 'test_task_core_ok', *doer_args, **doer_kwargs),
+        call(task_logger, db, session, doer, 'test_task_core_ok', *doer_args, **doer_kwargs),
         call().is_ok.__bool__(),
         call().unwrap()
     ])
@@ -237,7 +224,7 @@ def test_task_core_failure(
     caplog: _pytest.logging.LogCaptureFixture,
     task_core_args: TaskCoreArgsType
 ) -> None:
-    task_logger, cancel, run_doer, doer, doer_args, doer_kwargs = task_core_args
+    task_logger, run_doer, doer, doer_args, doer_kwargs = task_core_args
 
     run_doer.return_value = gluetool.result.Error(tft.artemis.Failure('dummy failure'))
 
@@ -247,7 +234,6 @@ def test_task_core_failure(
             task_logger,
             db=db,
             session=session,
-            cancel=cancel,
             doer_args=doer_args,
             doer_kwargs=doer_kwargs
         )
@@ -263,7 +249,7 @@ def test_task_core_raises(
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
     task_core_args: TaskCoreArgsType
 ) -> None:
-    task_logger, cancel, run_doer, doer, doer_args, doer_kwargs = task_core_args
+    task_logger, run_doer, doer, doer_args, doer_kwargs = task_core_args
 
     run_doer.side_effect = ValueError('dummy exception')
 
@@ -273,7 +259,6 @@ def test_task_core_raises(
             task_logger,
             db=db,
             session=session,
-            cancel=cancel,
             doer_args=doer_args,
             doer_kwargs=doer_kwargs
         )
@@ -295,7 +280,7 @@ def test_task_core_reschedule(
     current_message: dramatiq.MessageProxy,
     task_core_args: TaskCoreArgsType
 ) -> None:
-    task_logger, cancel, run_doer, doer, doer_args, doer_kwargs = task_core_args
+    task_logger, run_doer, doer, doer_args, doer_kwargs = task_core_args
 
     run_doer.return_value = tft.artemis.tasks.RESCHEDULE
 
@@ -321,7 +306,6 @@ def fixture_workspace(
     return tft.artemis.tasks.Workspace(
         logger,
         session,
-        threading.Event(),
         'dummy-guest',
         db=db
     )

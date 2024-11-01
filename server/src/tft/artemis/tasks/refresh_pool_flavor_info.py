@@ -1,7 +1,6 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import threading
 from typing import cast
 
 import gluetool.log
@@ -54,7 +53,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         poolname: str
     ) -> 'Workspace':
         """
@@ -63,11 +61,10 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :returns: newly created workspace.
         """
 
-        workspace = cls(logger, session, cancel, db=db, task=Workspace.TASKNAME)
+        workspace = cls(logger, session, db=db, task=Workspace.TASKNAME)
         workspace.poolname = poolname
 
         return workspace
@@ -78,10 +75,9 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         poolname: str
     ) -> DoerReturnType:
-        return cls.create(logger, db, session, cancel, poolname) \
+        return cls.create(logger, db, session, poolname) \
             .begin() \
             .run() \
             .complete() \

@@ -92,6 +92,13 @@ from ..script import hook_engine
 #
 # When thread B finishes, successfully or by raising an exception, its "return value" is "picked up" by thread A,
 # possibly raising the original exception raised in thread B, giving thread A a chance to react to them even more.
+#
+# 2024-11-01: it turns out we can simplify. After recent changes to how transactions are used, and the fact that
+# the cancellation event was pretty much unused, offloading task code into its own thread no longer looks necessary.
+# Plus, there seem to be some problem with thread A getting stuck when thread B gets spawned while interpreter is
+# quitting. Hard to investigate. Therefore we're dropping the cancellation event, and adding an alternative
+# implementation that can be enabled to run task code directly in thread A.
+
 
 # Initialize our top-level objects, database and logger, shared by all threads and in *this* worker.
 _ROOT_LOGGER = get_logger()
@@ -254,6 +261,15 @@ KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
     default=5
 )
 
+KNOB_OFFLOAD_TASKS: Knob[bool] = Knob(
+    'actor.offload-tasks',
+    'When enabled, tasks will run in their own threads.',
+    has_db=False,
+    envvar='ARTEMIS_OFFLOAD_TASKS',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=True
+)
+
 POOL_DRIVERS = {
     'aws': aws_driver.AWSDriver,
     'beaker': beaker_driver.BeakerDriver,
@@ -315,12 +331,13 @@ NamedActorArgumentsType = Dict[str, ActorArgumentType]
 
 # Task doer type.
 class DoerType(Protocol):
+    __name__: str
+
     def __call__(
         self,
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         *args: ActorArgumentType,
         **kwargs: ActorArgumentType
     ) -> DoerReturnType:
@@ -851,11 +868,10 @@ class task:
         return cast(Actor, dramatiq_actor)
 
 
-def run_doer(
+def run_doer_multithread(
     logger: gluetool.log.ContextAdapter,
     db: DB,
     session: sqlalchemy.orm.session.Session,
-    cancel: threading.Event,
     fn: DoerType,
     actor_name: str,
     *args: ActorArgumentType,
@@ -866,8 +882,8 @@ def run_doer(
     spot for dramatiq control exceptions (e.g. Shutdown).
 
     Control exceptions are delivered to the thread that runs the task. We don't want to interrupt
-    the actual task code, which is hidden in the doer, so we offload it to a separate thread, catch
-    exceptions here, and notify doer via "cancel" event.
+    the actual task code, which is hidden in the doer, so we offload it to a separate thread, and catch
+    exceptions here.
     """
 
     executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
@@ -912,7 +928,7 @@ def run_doer(
             thread_name_prefix=threading.current_thread().name
         )
 
-        logger.debug(f'submitting task doer {fn}')
+        logger.debug(f'submitting task doer {fn.__name__}')
 
         # We need to propagate our current context to newly spawned thread. To do that, we need to copy our context,
         # and then use its `run()` method instead of the function we'd run in our new thread. `run()` would then
@@ -927,7 +943,7 @@ def run_doer(
                 profiler.start()
 
             try:
-                return thread_context.run(fn, logger, db, session, cancel, *args, **kwargs)
+                return thread_context.run(fn, logger, db, session, *args, **kwargs)
 
             finally:
                 if profile_actor:
@@ -948,10 +964,6 @@ def run_doer(
         else:
             assert False, 'Unhandled interrupt exception'
 
-        logger.debug('entering doer cancellation mode')
-
-        cancel.set()
-
         logger.debug('waiting for doer to finish')
 
         _wait('doer finished in cancellation mode')
@@ -965,12 +977,84 @@ def run_doer(
     return doer_future.result()
 
 
+def run_doer_singlethread(
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+    fn: DoerType,
+    actor_name: str,
+    *args: ActorArgumentType,
+    **kwargs: Any
+) -> DoerReturnType:
+    """
+    Run a given function - "doer" - in the current thread.
+
+    Unlike the multithreaded variant, we are using a single thread which needs to take care of
+    catching and handling exceptions as well as doing the work. Control exceptions are delivered to
+    this thread.
+    """
+
+    logger.debug(f'starting {fn.__name__} doer')
+
+    profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
+
+    try:
+        logger.debug(f'submitting task doer {fn.__name__}')
+
+        if profile_actor:
+            profiler = Profiler()
+            profiler.start()
+
+        result = fn(logger, db, session, *args, **kwargs)
+
+    except dramatiq.middleware.Interrupt as exc:
+        logger.debug('doer interrupted')
+
+        if profile_actor:
+            profiler.stop()
+            profiler.log(logger, 'profiling report (inner)')
+
+        if isinstance(exc, dramatiq.middleware.TimeLimitExceeded):
+            failure = Failure.from_exc(
+                'task time depleted',
+                exc
+            )
+
+        elif isinstance(exc, dramatiq.middleware.Shutdown):
+            failure = Failure.from_exc(
+                'worker shutdown requested',
+                exc
+            )
+
+        else:
+            failure = Failure('unhandled interrupt exception')
+
+        failure.handle(logger)
+
+        return Error(failure)
+
+    else:
+        logger.debug(f'doer finished with {result}')
+
+        if profile_actor:
+            profiler.stop()
+            profiler.log(logger, 'profiling report (inner)')
+
+        return result
+
+
+if KNOB_OFFLOAD_TASKS.value:
+    run_doer = run_doer_multithread
+
+else:
+    run_doer = run_doer_singlethread
+
+
 def task_core(
     doer: DoerType,
     logger: TaskLogger,
     db: Optional[DB] = None,
     session: Optional[sqlalchemy.orm.session.Session] = None,
-    cancel: Optional[threading.Event] = None,
     doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None,
     session_isolation: bool = True
@@ -994,7 +1078,6 @@ def task_core(
         profiler.start()
 
     db = db or get_root_db()
-    cancel = cancel or threading.Event()
 
     doer_args = doer_args or tuple()
     doer_kwargs = doer_kwargs or dict()
@@ -1014,7 +1097,6 @@ def task_core(
         SESSION.set(session)
 
         assert db is not None
-        assert cancel is not None
         assert doer_args is not None
         assert doer_kwargs is not None
 
@@ -1022,7 +1104,6 @@ def task_core(
             logger,
             db,
             session,
-            cancel,
             doer,
             actor_name,
             *doer_args,
@@ -1663,7 +1744,6 @@ class Workspace:
 
     logger: gluetool.log.ContextAdapter
     session: sqlalchemy.orm.session.Session
-    cancel: threading.Event
     guestname: Optional[str]
     task: Optional[str]
     db: DB
@@ -1672,7 +1752,6 @@ class Workspace:
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         guestname: Optional[str] = None,
         task: Optional[str] = None,
         db: Optional[DB] = None,
@@ -1681,7 +1760,6 @@ class Workspace:
         self.logger = logger
         self.db = db or get_root_db(logger)
         self.session = session
-        self.cancel = cancel
 
         self.result: Optional[DoerReturnType] = None
 
@@ -2101,13 +2179,12 @@ class GuestRequestWorkspace(Workspace):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         db: DB,
         guestname: str,
         task: Optional[str] = None,
         **default_details: Any
     ) -> None:
-        super().__init__(logger, session, cancel, guestname=guestname, task=task, db=db, **default_details)
+        super().__init__(logger, session, guestname=guestname, task=task, db=db, **default_details)
 
 
 class TailHandler:
@@ -2214,7 +2291,6 @@ class ProvisioningTailHandler(TailHandler):
         workspace = Workspace(
             logger,
             session,
-            threading.Event(),
             db=db,
             task='provisioning-tail',
             **failure_details
@@ -2345,7 +2421,6 @@ class LoggingTailHandler(TailHandler):
         workspace = Workspace(
             logger,
             session,
-            threading.Event(),
             db=db,
             task='logging-tail',
             **failure_details

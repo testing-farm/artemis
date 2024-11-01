@@ -4,7 +4,6 @@
 import base64
 import dataclasses
 import json
-import threading
 from typing import Any, Dict, Optional, Tuple
 
 import gluetool.log
@@ -138,8 +137,7 @@ class RestDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         '''
         Request
@@ -208,8 +206,7 @@ class RestDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         '''
         Request
