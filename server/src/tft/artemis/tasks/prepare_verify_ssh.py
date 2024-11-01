@@ -10,7 +10,6 @@ Verify guest is reachable over SSH.
    MUST preserve consistent and restartable state.
 """
 
-import threading
 from typing import cast
 
 import gluetool.log
@@ -90,7 +89,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         guestname: str
     ) -> 'Workspace':
         """
@@ -99,12 +97,11 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param guestname: name of the request to process.
         :returns: newly created workspace.
         """
 
-        return cls(logger, session, cancel, db=db, guestname=guestname, task='prepare-verify-ssh')
+        return cls(logger, session, db=db, guestname=guestname, task='prepare-verify-ssh')
 
     @classmethod
     def prepare_verify_ssh(
@@ -112,7 +109,6 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event,
         guestname: str
     ) -> DoerReturnType:
         """
@@ -121,12 +117,11 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :param guestname: name of the request to process.
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, cancel, guestname) \
+        return cls.create(logger, db, session, guestname) \
             .begin() \
             .run() \
             .complete() \

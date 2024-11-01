@@ -13,7 +13,6 @@ import re
 import shlex
 import sys
 import tempfile
-import threading
 import time
 from typing import Any, Callable, Dict, Generic, Iterable, Iterator, List, Optional, Pattern, Tuple, Type, TypeVar, \
     Union, cast
@@ -1747,8 +1746,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified by `environment`.
@@ -1762,8 +1760,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         :param logger: logger to use for logging.
         :param guest_request: guest request to provision for.
-        :param cancelled: if provided, and set, method is expected to cancel its work, and release
-            resources it already allocated.
         """
 
         raise NotImplementedError()
@@ -1772,8 +1768,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Update provisioning progress of a given request. The method is expected to check what :py:meth:`acquire_guest`
@@ -1788,8 +1783,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         :param logger: logger to use for logging.
         :param guest_request: guest request to provision for.
-        :param cancelled: if provided, and set, method is expected to cancel its work, and release
-            resources it already allocated.
         """
 
         raise NotImplementedError()
@@ -1902,7 +1895,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         guest_request: GuestRequest,
         snapshot_request: SnapshotRequest,
-        canceled: Optional[threading.Event] = None,
         start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         """

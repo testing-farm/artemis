@@ -1,9 +1,6 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import threading
-from typing import Optional
-
 import gluetool.log
 import gluetool.utils
 import sqlalchemy.orm.session
@@ -25,8 +22,7 @@ class LocalhostDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         self.log_acquisition_attempt(
             logger,

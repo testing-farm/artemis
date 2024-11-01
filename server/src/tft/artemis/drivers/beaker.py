@@ -7,7 +7,6 @@ import math
 import os
 import re
 import stat
-import threading
 from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 
 import bs4
@@ -1642,8 +1641,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
@@ -1651,7 +1649,6 @@ class BeakerDriver(PoolDriver):
         address would schedule yet another call to this method in the future.
 
         :param BeakerGuest guest: Guest that will be updated.
-        :param threading.Event cancelled: if set, method should cancel its operation, release resources, and return.
         :rtype: Result[BeakerGuest, Failure]
         :returns: :py:class:`result.Result` with guest, or specification of error.
         """
@@ -1958,8 +1955,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
@@ -1967,8 +1963,6 @@ class BeakerDriver(PoolDriver):
 
         :param Environment environment: environmental requirements a guest must satisfy.
         :param Key master_key: master key to upload to the guest.
-        :param threading.Event cancelled: if set, method should cancel its operation, release
-            resources, and return.
         :rtype: result.Result[Guest, str]
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.

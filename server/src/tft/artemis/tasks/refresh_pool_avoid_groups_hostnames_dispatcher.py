@@ -10,7 +10,6 @@ Find the most suitable pool for a given request, and dispatch its provisioning.
    MUST preserve consistent and restartable state.
 """
 
-import threading
 from typing import cast
 
 import gluetool.log
@@ -72,8 +71,7 @@ class Workspace(_Workspace):
         cls,
         logger: gluetool.log.ContextAdapter,
         db: DB,
-        session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event
+        session: sqlalchemy.orm.session.Session
     ) -> 'Workspace':
         """
         Create workspace.
@@ -81,19 +79,17 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :returns: newly created workspace.
         """
 
-        return cls(logger, session, cancel, db=db, task=Workspace.TASKNAME)
+        return cls(logger, session, db=db, task=Workspace.TASKNAME)
 
     @classmethod
     def refresh_pool_avoid_groups_hostnames_dispatcher(
         cls,
         logger: gluetool.log.ContextAdapter,
         db: DB,
-        session: sqlalchemy.orm.session.Session,
-        cancel: threading.Event
+        session: sqlalchemy.orm.session.Session
     ) -> DoerReturnType:
         """
         Schedule refresh of hostname groups to avoid for suitable pools.
@@ -106,11 +102,10 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param cancel: when set, task is expected to cancel its work and undo changes it performed.
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, cancel) \
+        return cls.create(logger, db, session) \
             .begin() \
             .run() \
             .complete() \

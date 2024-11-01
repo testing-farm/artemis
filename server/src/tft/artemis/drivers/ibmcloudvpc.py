@@ -5,7 +5,6 @@ import dataclasses
 import os
 import re
 import shutil
-import threading
 from typing import Any, Dict, List, Optional, Pattern, Tuple, TypedDict, cast
 
 import gluetool.log
@@ -523,8 +522,7 @@ class IBMCloudVPCDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
@@ -532,8 +530,6 @@ class IBMCloudVPCDriver(PoolDriver):
 
         :param Environment environment: environmental requirements a guest must satisfy.
         :param Key key: master key to upload to the guest.
-        :param threading.Event cancelled: if set, method should cancel its operation, release
-            resources, and return.
 
         :rtype: result.Result[Guest, Failure]
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
@@ -546,14 +542,13 @@ class IBMCloudVPCDriver(PoolDriver):
             logger,
             session,
             guest_request,
-            cancelled)
+        )
 
     def _do_acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
 
         # FIXME Again, that is massive code duplication -> same flavor/image pairs choosing algo is happeing in
@@ -736,8 +731,7 @@ class IBMCloudVPCDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        cancelled: Optional[threading.Event] = None
+        guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
