@@ -3238,7 +3238,7 @@ class AWSDriver(PoolDriver):
             guest_log,
             timestamp,
             output,
-            lambda guest_log, timestamp, _: timestamp in guest_log.blob_timestamps
+            lambda guest_log, timestamp, content, content_hash: timestamp in guest_log.blob_timestamps
         )
 
         progress.delay_update = KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value

@@ -2231,7 +2231,7 @@ class BeakerDriver(PoolDriver):
             guest_log,
             datetime.datetime.utcnow(),
             response.text,
-            lambda guest_log, _, content: content in guest_log.blob_contents
+            lambda guest_log, timestamp, content, content_hash: content_hash in guest_log.blob_content_hashes
         ))
 
     @guest_log_updater('beaker', 'sys.log:dump', GuestLogContentType.URL)  # type: ignore[arg-type]

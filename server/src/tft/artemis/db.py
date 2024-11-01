@@ -26,7 +26,7 @@ import sqlalchemy.pool
 import sqlalchemy.sql.expression
 from gluetool.result import Error, Ok, Result
 from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import column_property, relationship
+from sqlalchemy.orm import column_property, deferred, relationship
 from sqlalchemy.orm.query import Query as _Query
 from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.schema import ForeignKeyConstraint, PrimaryKeyConstraint
@@ -1252,7 +1252,8 @@ class GuestLogBlob(Base):
     contenttype = Column(Enum(GuestLogContentType), nullable=False)
 
     ctime = Column(DateTime(), nullable=False, default=datetime.datetime.utcnow)
-    content = Column(Text(), nullable=False, server_default='')
+    content = deferred(Column(Text(), nullable=False, server_default=''))  # type: ignore[no-untyped-call]
+    content_hash = Column(Text(), nullable=False, server_default='')
 
     guest_log = relationship('GuestLog', back_populates='blobs')
 
@@ -1298,6 +1299,10 @@ class GuestLog(Base):
     @property
     def blob_contents(self) -> List[str]:
         return [blob.content for blob in self.blobs]
+
+    @property
+    def blob_content_hashes(self) -> List[str]:
+        return [blob.content_hash for blob in self.blobs]
 
 
 class SnapshotRequest(Base):

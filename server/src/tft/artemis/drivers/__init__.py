@@ -6,6 +6,7 @@ import dataclasses
 import datetime
 import enum
 import fcntl
+import hashlib
 import json
 import os
 import random
@@ -962,6 +963,7 @@ def _apply_image_specification(
 class GuestLogBlob:
     ctime: datetime.datetime
     content: str
+    content_hash: str
 
 
 @dataclasses.dataclass
@@ -987,7 +989,7 @@ class GuestLogUpdateProgress:
         log: GuestLog,
         timestamp: Optional[datetime.datetime],
         content: Optional[str],
-        is_known_callback: Callable[[GuestLog, datetime.datetime, str], bool]
+        is_known_callback: Callable[[GuestLog, datetime.datetime, str, str], bool]
     ) -> 'GuestLogUpdateProgress':
         """
         Create guest log progress update from new "snapshot" content.
@@ -1012,30 +1014,32 @@ class GuestLogUpdateProgress:
 
             return GuestLogUpdateProgress(state=GuestLogState.PENDING)
 
+        content_hash = hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
+
         if not log.blobs:
-            logger.info(f'first log content received with timestamp {timestamp}')
+            logger.info(f'first log blob: {timestamp} {content_hash}')
 
             return GuestLogUpdateProgress(
                 state=GuestLogState.IN_PROGRESS,
                 blobs=[
-                    GuestLogBlob(ctime=timestamp, content=content)
+                    GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
                 ]
             )
 
         for blob in log.blobs:
-            logger.debug(f'existing log blob: {blob.ctime}')
+            logger.info(f'existing log blob: {blob.ctime} {blob.content_hash}')
 
-        if is_known_callback(log, timestamp, content):
-            logger.info(f'log content received with timestamp {timestamp}, already known')
+        if is_known_callback(log, timestamp, content, content_hash):
+            logger.info(f'known log blob: {timestamp} {content_hash}')
 
             return GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS)
 
-        logger.info(f'log content received with timestamp {timestamp}, unknown')
+        logger.info(f'new log blob: {timestamp} {content_hash}')
 
         return GuestLogUpdateProgress(
             state=GuestLogState.IN_PROGRESS,
             blobs=[
-                GuestLogBlob(ctime=timestamp, content=content)
+                GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
             ]
         )
 
@@ -1061,28 +1065,29 @@ class GuestLogUpdateProgress:
             return GuestLogUpdateProgress(state=GuestLogState.PENDING, overwrite=True)
 
         timestamp = datetime.datetime.utcnow()
+        content_hash = hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
 
         if not log.blobs:
-            logger.info('first log content received')
+            logger.info(f'first log blob: {timestamp} {content_hash}')
 
             return GuestLogUpdateProgress(
                 state=GuestLogState.IN_PROGRESS,
                 overwrite=True,
                 blobs=[
-                    GuestLogBlob(ctime=timestamp, content=content)
+                    GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
                 ]
             )
 
         for blob in log.blobs:
-            logger.debug(f'existing log blob: {blob.ctime}')
+            logger.info(f'existing log blob: {blob.ctime} {blob.content_hash}')
 
-        logger.info('log content received, overwriting')
+        logger.info(f'overwrite log blob: {timestamp} {content_hash}')
 
         return GuestLogUpdateProgress(
             state=GuestLogState.IN_PROGRESS,
             overwrite=True,
             blobs=[
-                GuestLogBlob(ctime=timestamp, content=content)
+                GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
             ]
         )
 

@@ -1258,7 +1258,7 @@ class OpenStackDriver(PoolDriver):
             guest_log,
             datetime.datetime.utcnow(),
             cast(str, r_output.unwrap()),
-            lambda guest_log, _, content: content in guest_log.blob_contents
+            lambda guest_log, timestamp, content, content_hash: content_hash in guest_log.blob_content_hashes
         )
         progress.delay_update = delay_update
 

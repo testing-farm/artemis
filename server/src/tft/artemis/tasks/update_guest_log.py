@@ -105,7 +105,8 @@ class Workspace(_Workspace):
                         logname=guest_log.logname,
                         contenttype=guest_log.contenttype,
                         ctime=blob.ctime,
-                        content=blob.content
+                        content=blob.content,
+                        content_hash=blob.content_hash
                     )
 
                 r_store = execute_dml(self.logger, self.session, blob_query)
@@ -115,7 +116,7 @@ class Workspace(_Workspace):
 
                 # return SUCCESS
 
-            def _update_blob(blob: GuestLogBlob, content: str) -> None:
+            def _update_blob(blob: GuestLogBlob, content: str, content_hash: str) -> None:
                 assert guest_log is not None
 
                 blob_query = sqlalchemy \
@@ -124,8 +125,10 @@ class Workspace(_Workspace):
                     .where(GuestLogBlob.logname == guest_log.logname) \
                     .where(GuestLogBlob.contenttype == guest_log.contenttype) \
                     .where(GuestLogBlob.ctime == blob.ctime) \
+                    .where(GuestLogBlob.content_hash == blob.content_hash) \
                     .values(
-                        content=content
+                        content=content,
+                        content_hash=content_hash
                     )
 
                 r_store = execute_dml(self.logger, self.session, blob_query)
@@ -166,7 +169,7 @@ class Workspace(_Workspace):
                     new_blob = progress.blobs[0]
 
                     if current_blob:
-                        return _update_blob(current_blob, new_blob.content)
+                        return _update_blob(current_blob, new_blob.content, new_blob.content_hash)
 
                     return _insert_blob(new_blob)
 
