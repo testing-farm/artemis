@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
-import datetime
 import math
 import os
 import re
@@ -2226,12 +2225,10 @@ class BeakerDriver(PoolDriver):
                 url=progress.url
             ))
 
-        return Ok(GuestLogUpdateProgress.from_snapshot(
+        return Ok(GuestLogUpdateProgress.from_unabridged(
             logger,
             guest_log,
-            datetime.datetime.utcnow(),
-            response.text,
-            lambda guest_log, timestamp, content, content_hash: content_hash in guest_log.blob_content_hashes
+            response.text
         ))
 
     @guest_log_updater('beaker', 'sys.log:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
