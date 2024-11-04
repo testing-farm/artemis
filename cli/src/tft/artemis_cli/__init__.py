@@ -735,7 +735,7 @@ def print_guest_logs(
             head = sanitize('\n'.join(log_lines[0:DEFAULT_LOG_LINES_SPLIT]))
             tail = sanitize('\n'.join(log_lines[-DEFAULT_LOG_LINES_SPLIT:]))
 
-            return f'{head}\n--- --- ---\n{tail}'
+            return f'{head}\n\n--- Skipped {len(log_lines) - 2 * DEFAULT_LOG_LINES_SPLIT} lines ---\n\n{tail}'
 
         for log in logs:
             if 'blob' in log:
