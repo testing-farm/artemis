@@ -33,6 +33,7 @@ class Workspace(_Workspace):
     def run(self) -> None:
         # Avoid circular imports
         from ..drivers import copy_to_remote, create_tempfile, run_remote
+        from .prepare_finalize_post_connect import prepare_finalize_post_connect
         from .prepare_verify_ssh import KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT
 
         with self.transaction():
@@ -83,6 +84,8 @@ class Workspace(_Workspace):
 
             if r_ssh.is_error:
                 return self._error(r_ssh, 'failed to execute post-install script successfully')
+
+            self.dispatch_task(prepare_finalize_post_connect, self.guestname)
 
     @classmethod
     def create(
