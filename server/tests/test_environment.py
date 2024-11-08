@@ -1340,6 +1340,8 @@ def test_parse_maximal_constraint() -> None:
             zcrypt:
                 adapter: CEX8C
                 mode: CCA
+            beaker:
+                pool: kernel-hw
         """)
 
 

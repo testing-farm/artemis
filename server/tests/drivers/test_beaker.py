@@ -418,6 +418,8 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                     - type: eth
                 tpm:
                     version: "2.0"
+                beaker:
+                    pool: "kernel-hw"
                 virtualization:
                     is-supported: true
                     is-virtualized: false
@@ -501,6 +503,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
             <hypervisor op="==" value="XEN"/>
            </system>
           </and>
+          <pool value="kernel-hw"/>
          </and>
         </and>
         """

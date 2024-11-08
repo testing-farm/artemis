@@ -625,6 +625,20 @@ def constraint_to_beaker_filter(
                     .get('translations', [])
             )
 
+    if constraint_name.property == 'beaker':
+        if constraint_name.child_property == 'pool':
+            op, value = operator_to_beaker_op(
+                constraint.operator,
+                str(constraint.value)
+            )
+
+            pool_container = _new_tag('pool', value=value)
+            if constraint.operator == Operator.NEQ:
+                group = _new_tag('not')
+                group.append(pool_container)
+                return Ok(group)
+            return Ok(pool_container)
+
     return Error(Failure(
         'constraint not supported by driver',
         constraint=repr(constraint),
@@ -1905,6 +1919,7 @@ class BeakerDriver(PoolDriver):
         # TODO: copy helpers from tmt for this kind of filtering
         supported_constraints: List[str] = [
             'boot.method',
+            'beaker.pool',
             'compatible.distro',
             'cpu.processors',
             'cpu.cores',

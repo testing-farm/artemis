@@ -60,7 +60,7 @@ def create_guest(
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> GuestResponse_v0_0_72:
     return create_guest_request(
-        api_version='v0.0.72',
+        api_version='v0.0.73',
         guest_request=guest_request,
         manager=manager,
         request=request,

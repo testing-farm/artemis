@@ -1927,6 +1927,28 @@ def _parse_system(spec: SpecType) -> ConstraintBase:
     return group
 
 
+def _parse_beaker(spec: SpecType) -> ConstraintBase:
+    """
+    Parse constraints related to the ``system`` HW requirement.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`BaseConstraint` or one of its subclasses.
+    """
+
+    group = And()
+
+    group.constraints += [
+        Constraint.from_specification(
+            f'beaker.{constraint_name.replace("-", "_")}',
+            str(spec[constraint_name]),
+            as_quantity=False)
+        for constraint_name in ('pool',)
+        if constraint_name in spec
+    ]
+
+    return group
+
+
 def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
     """
     Parse actual constraints.
@@ -1975,6 +1997,9 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
 
     if 'zcrypt' in spec:
         group.constraints += [_parse_zcrypt(spec['zcrypt'])]
+
+    if 'beaker' in spec:
+        group.constraints += [_parse_beaker(spec['beaker'])]
 
     if len(group.constraints) == 1:
         return group.constraints[0]
