@@ -24,8 +24,8 @@ ENVIRONMENT_SCHEMAS: Dict[str, JSONSchemaType] = {}
 #: API versions. Based on this list, routers for proper endpoints will be added to the application with appropriate
 #: redirects if specified.
 API_MILESTONES: List[Tuple[str, List[str]]] = [
-    # NEW: allow passing security group rules for guest creation
-    ('v0.0.72', [
+    # NEW: beaker HW requirement
+    ('v0.0.73', [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
         'current',
@@ -35,6 +35,8 @@ API_MILESTONES: List[Tuple[str, List[str]]] = [
         'toplevel'
     ]),
 
+    # NEW: allow passing security group rules for guest creation
+    ('v0.0.72', []),
     # NEW: guest log API adds multiple blobs
     # NEW: dropped boot.method enum
     ('v0.0.70', []),
