@@ -622,9 +622,19 @@ until cancelled and reprovisioned.
 
 5+|A time, in seconds, for which the guest would be initially reserved.
 
-|`beaker.reservation.extension`
+|`beaker.reservation.extension.command-template`
+|`str`
+|`ARTEMIS_BEAKER_RESERVATION_EXTENSION_COMMAND_TEMPLATE`
+|`echo {{ (EXTENSION_TIME / 3600) | int }} | extendtesttime.sh`
+|no
+
+
+
+5+|A template for a command to run to extend Beaker reservation.
+
+|`beaker.reservation.extension.time`
 |`int`
-|`ARTEMIS_BEAKER_RESERVATION_EXTENSION`
+|`ARTEMIS_BEAKER_RESERVATION_EXTENSION_TIME`
 |`28800`
 |no
 

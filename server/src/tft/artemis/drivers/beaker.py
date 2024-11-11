@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
-import math
 import os
 import re
 import stat
@@ -44,11 +43,20 @@ KNOB_RESERVATION_DURATION: Knob[int] = Knob(
     default=86400
 )
 
-KNOB_RESERVATION_EXTENSION: Knob[int] = Knob(
-    'beaker.reservation.extension',
+KNOB_RESERVATION_EXTENSION_COMMAND_TEMPLATE: Knob[str] = Knob(
+    'beaker.reservation.extension.command-template',
+    'A template for a command to run to extend Beaker reservation.',
+    has_db=False,
+    envvar='ARTEMIS_BEAKER_RESERVATION_EXTENSION_COMMAND_TEMPLATE',
+    cast_from_str=str,
+    default='echo {{ (EXTENSION_TIME / 3600) | int }} | extendtesttime.sh'
+)
+
+KNOB_RESERVATION_EXTENSION_TIME: Knob[int] = Knob(
+    'beaker.reservation.extension.time',
     'A time, in seconds, to extend the guest reservation every tick of a watchdog.',
     has_db=False,
-    envvar='ARTEMIS_BEAKER_RESERVATION_EXTENSION',
+    envvar='ARTEMIS_BEAKER_RESERVATION_EXTENSION_TIME',
     cast_from_str=int,
     default=8 * 60 * 60
 )
@@ -1846,10 +1854,19 @@ class BeakerDriver(PoolDriver):
         if r_ssh_timeout.is_error:
             return Error(r_ssh_timeout.unwrap_error())
 
+        r_command = render_template(
+            KNOB_RESERVATION_EXTENSION_COMMAND_TEMPLATE.value,
+            EXTENSION_TIME=KNOB_RESERVATION_EXTENSION_TIME.value,
+            **template_environment(guest_request=guest_request)
+        )
+
+        if r_command.is_error:
+            return Error(r_command.unwrap_error())
+
         r_output = run_remote(
             logger,
             guest_request,
-            ['extendtesttime.sh', str(math.ceil(KNOB_RESERVATION_EXTENSION.value / 3600))],
+            ['sh', '-c', r_command.unwrap()],
             key=r_master_key.unwrap(),
             ssh_timeout=r_ssh_timeout.unwrap(),
             ssh_options=self.ssh_options,
