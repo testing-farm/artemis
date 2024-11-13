@@ -173,12 +173,16 @@ def session(
 
 @pytest.fixture
 def skip_sqlite(session: sqlalchemy.orm.session.Session) -> None:
+    assert session.bind is not None  # narrow type
+
     if session.bind.dialect.name == 'sqlite':
         pytest.skip('Not supported with SQLite')
 
 
 @pytest.fixture
 def skip_postgresql(session: sqlalchemy.orm.session.Session) -> None:
+    assert session.bind is not None  # narrow type
+
     if session.bind.dialect.name == 'postgresql':
         pytest.skip('Not supported with PostgreSQL')
 
@@ -204,8 +208,8 @@ def fixture_schema_initialized_actual(
 ) -> None:
     import tft.artemis.environment
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.User.__table__).values(username='dummy-user', role='ADMIN'))
-    session.execute(sqlalchemy.insert(tft.artemis.db.SSHKey.__table__).values(
+    session.execute(sqlalchemy.insert(tft.artemis.db.User).values(username='dummy-user', role='ADMIN'))
+    session.execute(sqlalchemy.insert(tft.artemis.db.SSHKey).values(
         keyname='dummy-ssh-key',
         enabled=True,
         ownername='dummy-user',
@@ -214,13 +218,13 @@ def fixture_schema_initialized_actual(
         public=''
     ))
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.Pool.__table__).values(
+    session.execute(sqlalchemy.insert(tft.artemis.db.Pool).values(
         poolname='dummy-pool',
         driver='localhost',
         _parameters={}
     ))
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.GuestShelf.__table__).values(
+    session.execute(sqlalchemy.insert(tft.artemis.db.GuestShelf).values(
         shelfname='dummy-shelf',
         ownername='dummy-user',
         state=tft.artemis.guest.GuestState.READY
@@ -253,7 +257,7 @@ def fixture_schema_initialized_actual(
         None
     ))
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest.__table__).values(
+    session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest).values(
         guestname='dummy-guest-with-shelf',
         _environment=tft.artemis.environment.Environment(
             hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
@@ -277,7 +281,7 @@ def fixture_schema_initialized_actual(
         _on_ready=[]
     ))
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest.__table__).values(
+    session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest).values(
         guestname='dummy-shelved-guest',
         _environment=tft.artemis.environment.Environment(
             hw=tft.artemis.environment.HWRequirements(arch='x86_64'),

@@ -17,7 +17,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from ..db import DB, GuestRequest, SafeQuery, execute_dml
+from ..db import DB, DMLResult, GuestRequest, SafeQuery, execute_dml
 from ..guest import GuestState
 from ..metrics import ShelfMetrics
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
@@ -93,12 +93,12 @@ class Workspace(_Workspace):
                         }
                     )
 
-                    r_delete = execute_dml(
+                    r_delete: DMLResult[GuestRequest] = execute_dml(
                         self.logger,
                         self.session,
-                        sqlalchemy.delete(GuestRequest.__table__)
-                            .where(GuestRequest.guestname == selected_guest.guestname)
-                            .where(GuestRequest.state == GuestState.SHELVED)
+                        sqlalchemy.delete(GuestRequest)
+                        .where(GuestRequest.guestname == selected_guest.guestname)
+                        .where(GuestRequest.state == GuestState.SHELVED)
                     )
 
                     if r_delete.is_error:

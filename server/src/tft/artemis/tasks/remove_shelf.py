@@ -15,7 +15,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from ..db import DB, GuestRequest, GuestShelf, SafeQuery, execute_dml
+from ..db import DB, DMLResult, GuestRequest, GuestShelf, SafeQuery, execute_dml
 from ..guest import GuestState
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
 from . import Workspace as _Workspace
@@ -70,20 +70,20 @@ class Workspace(_Workspace):
                 if r.is_error:
                     return self._error(r, f'failed to update guest {guest.guestname} and schedule its release')
 
-            update_query = sqlalchemy.update(GuestRequest.__table__) \
+            update_query = sqlalchemy.update(GuestRequest) \
                 .where(GuestRequest.shelfname == self.shelfname) \
                 .values(shelfname=None)
 
-            r_update = execute_dml(self.logger, self.session, update_query)
+            r_update: DMLResult[GuestRequest] = execute_dml(self.logger, self.session, update_query)
 
             if r_update.is_error:
                 return self._error(r_update, 'failed to remove shelf from active guest requests')
 
-            delete_query = sqlalchemy.delete(GuestShelf.__table__) \
+            delete_query = sqlalchemy.delete(GuestShelf) \
                 .where(GuestShelf.shelfname == self.shelfname) \
                 .where(GuestShelf.state == GuestState.CONDEMNED)
 
-            r_delete = execute_dml(self.logger, self.session, delete_query)
+            r_delete: DMLResult[GuestShelf] = execute_dml(self.logger, self.session, delete_query)
 
             if r_delete.is_error:
                 return self._error(r, 'failed to remove shelf record')

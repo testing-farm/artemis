@@ -412,7 +412,7 @@ task-request:
 
         guest = guests[0]
 
-        assert guest.state == tft.artemis.guest.GuestState.ROUTING  # type: ignore[comparison-overlap]
+        assert guest.state == tft.artemis.guest.GuestState.ROUTING
 
 
 @pytest.mark.skip
@@ -491,4 +491,4 @@ def test_update_guest_state_and_request_task_no_such_guest(
         guest = guests[0]
 
         assert guest.poolname is None
-        assert guest.state == tft.artemis.guest.GuestState.SHELF_LOOKUP  # type: ignore[comparison-overlap]
+        assert guest.state == tft.artemis.guest.GuestState.SHELF_LOOKUP

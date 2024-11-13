@@ -86,9 +86,9 @@ def upgrade() -> None:
     # copy existing state to the temporary column
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            op.get_bind().execute('UPDATE guest_logs SET __tmp_state = state::text::new_guestlogstate')
+            op.get_bind().execute(sa.text('UPDATE guest_logs SET __tmp_state = state::text::new_guestlogstate'))
         else:
-            op.get_bind().execute('UPDATE guest_logs SET __tmp_state = state')
+            op.get_bind().execute(sa.text('UPDATE guest_logs SET __tmp_state = state'))
 
     # drop the current column and the current type
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
@@ -96,7 +96,7 @@ def upgrade() -> None:
 
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute("DROP TYPE guestlogstate;")
+            batch_op.execute(sa.text("DROP TYPE guestlogstate;"))
 
     # re-create the column, with the updated enum
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
@@ -109,9 +109,9 @@ def upgrade() -> None:
 
     # copy saved state to this recreated column
     if op.get_bind().dialect.name == 'postgresql':
-        op.get_bind().execute('UPDATE guest_logs SET state = __tmp_state::text::guestlogstate')
+        op.get_bind().execute(sa.text('UPDATE guest_logs SET state = __tmp_state::text::guestlogstate'))
     else:
-        op.get_bind().execute('UPDATE guest_logs SET state = __tmp_state')
+        op.get_bind().execute(sa.text('UPDATE guest_logs SET state = __tmp_state'))
 
     # drop the temporary column and its type
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
@@ -119,7 +119,7 @@ def upgrade() -> None:
 
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute("DROP TYPE new_guestlogstate;")
+            batch_op.execute(sa.text("DROP TYPE new_guestlogstate;"))
 
 
 def downgrade() -> None:
@@ -135,11 +135,12 @@ def downgrade() -> None:
     # copy existing state to the temporary column - handle UNSUPPORTED downgrade
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            op.get_bind().execute("UPDATE guest_logs SET state = 'ERROR'::guestlogstate WHERE state = 'UNSUPPORTED'")
-            op.get_bind().execute('UPDATE guest_logs SET __tmp_state = state::text::old_guestlogstate')
+            op.get_bind().execute(
+                sa.text("UPDATE guest_logs SET state = 'ERROR'::guestlogstate WHERE state = 'UNSUPPORTED'"))
+            op.get_bind().execute(sa.text('UPDATE guest_logs SET __tmp_state = state::text::old_guestlogstate'))
         else:
-            op.get_bind().execute("UPDATE guest_logs SET state = 'ERROR' WHERE state = 'UNSUPPORTED'")
-            op.get_bind().execute('UPDATE guest_logs SET __tmp_state = state')
+            op.get_bind().execute(sa.text("UPDATE guest_logs SET state = 'ERROR' WHERE state = 'UNSUPPORTED'"))
+            op.get_bind().execute(sa.text('UPDATE guest_logs SET __tmp_state = state'))
 
     # drop the current column and the current type
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
@@ -147,7 +148,7 @@ def downgrade() -> None:
 
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute("DROP TYPE guestlogstate;")
+            batch_op.execute(sa.text("DROP TYPE guestlogstate;"))
 
     # re-create the column, with the updated enum
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
@@ -160,9 +161,9 @@ def downgrade() -> None:
 
     # copy saved state to this recreated column (no cast needed)
     if op.get_bind().dialect.name == 'postgresql':
-        op.get_bind().execute('UPDATE guest_logs SET state = __tmp_state::text::guestlogstate')
+        op.get_bind().execute(sa.text('UPDATE guest_logs SET state = __tmp_state::text::guestlogstate'))
     else:
-        op.get_bind().execute('UPDATE guest_logs SET state = __tmp_state')
+        op.get_bind().execute(sa.text('UPDATE guest_logs SET state = __tmp_state'))
 
     # drop the temporary column and its type
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
@@ -170,4 +171,4 @@ def downgrade() -> None:
 
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute("DROP TYPE old_guestlogstate;")
+            batch_op.execute(sa.text("DROP TYPE old_guestlogstate;"))

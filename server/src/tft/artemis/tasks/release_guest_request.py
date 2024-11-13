@@ -16,7 +16,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from ..db import DB, GuestRequest, execute_dml
+from ..db import DB, DMLResult, GuestRequest, execute_dml
 from ..drivers import PoolData
 from ..guest import GuestState
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
@@ -53,13 +53,13 @@ class Workspace(_Workspace):
                 if r_release.is_error:
                     return self._error(r_release, 'failed to release guest')
 
-            r_delete = execute_dml(
+            r_delete: DMLResult[GuestRequest] = execute_dml(
                 self.logger,
                 self.session,
                 sqlalchemy
-                    .delete(GuestRequest.__table__)
-                    .where(GuestRequest.guestname == self.guestname)
-                    .where(GuestRequest.state == GuestState.CONDEMNED)
+                .delete(GuestRequest)
+                .where(GuestRequest.guestname == self.guestname)
+                .where(GuestRequest.state == GuestState.CONDEMNED)
             )
 
             if r_delete.is_error:

@@ -98,15 +98,15 @@ def upgrade() -> None:
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            op.get_bind().execute('UPDATE guest_requests SET __tmp_state = upper(state)::gueststate')
+            op.get_bind().execute(sa.text('UPDATE guest_requests SET __tmp_state = upper(state)::gueststate'))
         else:
-            op.get_bind().execute('UPDATE guest_requests SET __tmp_state = upper(state)')
+            op.get_bind().execute(sa.text('UPDATE guest_requests SET __tmp_state = upper(state)'))
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.drop_column('state')
         batch_op.add_column(sa.Column('state', state_enum, server_default='ROUTING', nullable=False))
 
-    op.get_bind().execute('UPDATE guest_requests SET state = __tmp_state')
+    op.get_bind().execute(sa.text('UPDATE guest_requests SET state = __tmp_state'))
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.drop_column('__tmp_state')
@@ -118,7 +118,7 @@ def downgrade() -> None:
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.add_column(sa.Column('__tmp_state', state_enum, server_default='ROUTING', nullable=False))
 
-    op.get_bind().execute('UPDATE guest_requests SET __tmp_state = state')
+    op.get_bind().execute(sa.text('UPDATE guest_requests SET __tmp_state = state'))
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.drop_column('state')
@@ -126,13 +126,13 @@ def downgrade() -> None:
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            op.get_bind().execute('UPDATE guest_requests SET state = lower(__tmp_state::text)')
+            op.get_bind().execute(sa.text('UPDATE guest_requests SET state = lower(__tmp_state::text)'))
         else:
-            op.get_bind().execute('UPDATE guest_requests SET state = lower(__tmp_state)')
+            op.get_bind().execute(sa.text('UPDATE guest_requests SET state = lower(__tmp_state)'))
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.drop_column('__tmp_state')
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute("DROP TYPE gueststate;")
+            batch_op.execute(sa.text("DROP TYPE gueststate;"))

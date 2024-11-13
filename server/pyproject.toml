@@ -41,7 +41,8 @@ pyinstrument = "*"
 psycopg2 = "*"
 python-openstackclient = { version = "*", optional = true }
 # See https://github.com/python-poetry/poetry/issues/4402
-sqlalchemy = ">=1.4,<1.4.23"
+# sqlalchemy = ">=1.4,<1.4.23"
+sqlalchemy = { version = "*", extras = [ "mypy", "postgresql", "postgresql-psycopg" ] }
 sqlalchemy-utils = { version = "*", extras = ["encrypted"] }
 stackprinter = "*"
 typing-extensions = "*"
@@ -78,7 +79,7 @@ pytest-flake8 = "*"
 pytest-icdiff = "*"
 pytest-mock = "*"
 redislite = "*"
-sqlalchemy-stubs = "*"
+# sqlalchemy-stubs = "*"
 types-Pillow = "*"
 types-mock = "*"
 types-setuptools = "*"

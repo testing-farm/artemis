@@ -248,6 +248,7 @@ def config_to_db(
                         GuestTag.poolname: poolname,
                         GuestTag.tag: tag
                     },
+                    GuestTag.__table_args__[0],
                     insert_data={
                         GuestTag.value: value
                     },
@@ -283,6 +284,7 @@ def config_to_db(
                 {
                     PriorityGroup.name: priority_group_config['name']
                 },
+                PriorityGroup.__table_args__[0],
                 # TODO: `ON CONFLICT DO NOTHING` UPSERT makes the mess out of expected rows, both 0 and 1 are valid.
                 expected_records=(0, 1)
             )
@@ -318,6 +320,7 @@ def config_to_db(
                 {
                     Pool.poolname: poolname
                 },
+                Pool.__table_args__[0],
                 insert_data={
                     Pool.driver: pool_config['driver'],
                     Pool._parameters: pool_parameters
@@ -347,6 +350,7 @@ def config_to_db(
                 {
                     User.username: username
                 },
+                User.__table_args__[0],
                 insert_data={
                     User.admin_token: admin_token_hash,
                     User.provisioning_token: provisioning_token_hash
@@ -392,6 +396,7 @@ def config_to_db(
                 {
                     GuestShelf.shelfname: shelfname
                 },
+                GuestShelf.__table_args__[0],
                 insert_data={
                     GuestShelf.ownername: shelf_config['owner'],
                     GuestShelf.state: GuestState.READY
@@ -416,6 +421,7 @@ def config_to_db(
                 {
                     SSHKey.keyname: key_config['name']
                 },
+                SSHKey.__table_args__[0],
                 insert_data={
                     SSHKey.enabled: True,
                     SSHKey.ownername: key_config['owner'],

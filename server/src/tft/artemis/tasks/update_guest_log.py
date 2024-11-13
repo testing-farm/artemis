@@ -18,7 +18,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Ok, Result
 
 from .. import Failure
-from ..db import DB, GuestLog, GuestLogBlob, GuestLogContentType, GuestLogState, SafeQuery, execute_dml
+from ..db import DB, DMLResult, GuestLog, GuestLogBlob, GuestLogContentType, GuestLogState, SafeQuery, execute_dml
 from ..drivers import GuestLogBlob as GuestLogBlobProgress
 from ..drivers import GuestLogUpdateProgress
 from ..guest import GuestState
@@ -88,10 +88,8 @@ class Workspace(_Workspace):
                 self._event(
                     'guest-log-updated',
                     logname=guest_log.logname,
-                    # ignore[attr-defined]: some issue with annotations of SafeQuery, the real type
-                    # seems to be hidden :/
-                    contenttype=guest_log.contenttype.value,  # type: ignore[attr-defined]
-                    current_state=guest_log.state.value,  # type: ignore[attr-defined]
+                    contenttype=guest_log.contenttype.value,
+                    current_state=guest_log.state.value,
                     **kwargs
                 )
 
@@ -99,7 +97,7 @@ class Workspace(_Workspace):
                 assert guest_log is not None
 
                 blob_query = sqlalchemy \
-                    .insert(GuestLogBlob.__table__) \
+                    .insert(GuestLogBlob) \
                     .values(
                         guestname=guest_log.guestname,
                         logname=guest_log.logname,
@@ -109,7 +107,7 @@ class Workspace(_Workspace):
                         content_hash=blob.content_hash
                     )
 
-                r_store = execute_dml(self.logger, self.session, blob_query)
+                r_store: DMLResult[GuestLogBlob] = execute_dml(self.logger, self.session, blob_query)
 
                 if r_store.is_error:
                     return self._error(r_store, 'failed to store guest log blob')
@@ -120,7 +118,7 @@ class Workspace(_Workspace):
                 assert guest_log is not None
 
                 blob_query = sqlalchemy \
-                    .update(GuestLogBlob.__table__) \
+                    .update(GuestLogBlob) \
                     .where(GuestLogBlob.guestname == guest_log.guestname) \
                     .where(GuestLogBlob.logname == guest_log.logname) \
                     .where(GuestLogBlob.contenttype == guest_log.contenttype) \
@@ -131,7 +129,7 @@ class Workspace(_Workspace):
                         content_hash=content_hash
                     )
 
-                r_store = execute_dml(self.logger, self.session, blob_query)
+                r_store: DMLResult[GuestLogBlob] = execute_dml(self.logger, self.session, blob_query)
 
                 if r_store.is_error:
                     return self._error(r_store, 'failed to update guest log blob')
@@ -139,11 +137,11 @@ class Workspace(_Workspace):
                 # return SUCCESS
 
             def _update_log(progress: GuestLogUpdateProgress) -> None:
-                assert guest_log is not None
+                assert isinstance(guest_log, GuestLog)
                 assert self.gr is not None
 
                 query = sqlalchemy \
-                    .update(GuestLog.__table__) \
+                    .update(GuestLog) \
                     .where(GuestLog.guestname == self.gr.guestname) \
                     .where(GuestLog.logname == guest_log.logname) \
                     .where(GuestLog.contenttype == guest_log.contenttype) \
@@ -157,7 +155,7 @@ class Workspace(_Workspace):
                         expires=progress.expires
                     )
 
-                r_store = execute_dml(self.logger, self.session, query)
+                r_store: DMLResult[GuestLog] = execute_dml(self.logger, self.session, query)
 
                 if r_store.is_error:
                     return self._error(r_store, 'failed to update guest log')
@@ -187,7 +185,7 @@ class Workspace(_Workspace):
                     'no such guest log'
                 )
 
-            if guest_log.state == GuestLogState.ERROR:  # type: ignore[comparison-overlap]
+            if guest_log.state == GuestLogState.ERROR:
                 # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
                 # to different pool, and here the could succeed - but it's never going to be tried again since it's
                 # in ERROR state and there's no way to "reset" the state - possibly do that in API via POST.
@@ -195,7 +193,7 @@ class Workspace(_Workspace):
                 return _log_state_event(resolution='guest-log-in-error-state')
 
             # TODO logs: it'd be nice to change logs' state to something final
-            if self.gr.state in (GuestState.CONDEMNED, GuestState.ERROR):  # type: ignore[comparison-overlap]
+            if self.gr.state in (GuestState.CONDEMNED, GuestState.ERROR):
                 # logger.warning('guest can no longer provide any useful logs')
 
                 _log_state_event(resolution='guest-condemned')
@@ -230,7 +228,7 @@ class Workspace(_Workspace):
             if not capabilities.supports_guest_log(self.logname, self.contenttype):
                 # If the guest request reached its final states, there's no chance for a pool change in the future,
                 # therefore UNSUPPORTED becomes final state as well.
-                if self.gr.state in (GuestState.READY.value, GuestState.CONDEMNED.value):
+                if self.gr.state in (GuestState.READY, GuestState.CONDEMNED):
                     _log_state_event(resolution='unsupported-and-guest-complete')
 
                     return _update_log(GuestLogUpdateProgress(
@@ -243,10 +241,10 @@ class Workspace(_Workspace):
                     state=GuestLogState.UNSUPPORTED
                 ))
 
-            elif guest_log.state == GuestLogState.UNSUPPORTED:  # type: ignore[comparison-overlap]
+            elif guest_log.state == GuestLogState.UNSUPPORTED:
                 # If the guest request reached its final states, there's no chance for a pool change in the future,
                 # therefore UNSUPPORTED becomes final state as well.
-                if self.gr.state in (GuestState.READY.value, GuestState.CONDEMNED.value):
+                if self.gr.state in (GuestState.READY, GuestState.CONDEMNED):
                     _log_state_event(resolution='unsupported-and-guest-complete')
 
                     return _update_log(GuestLogUpdateProgress(
@@ -261,7 +259,7 @@ class Workspace(_Workspace):
                     guest_log
                 )
 
-            elif guest_log.state == GuestLogState.COMPLETE:  # type: ignore[comparison-overlap]
+            elif guest_log.state == GuestLogState.COMPLETE:
                 if not guest_log.is_expired:
                     _log_state_event(resolution='complete-not-expired')
 
@@ -273,14 +271,14 @@ class Workspace(_Workspace):
                     guest_log
                 )
 
-            elif guest_log.state == GuestLogState.PENDING:  # type: ignore[comparison-overlap]
+            elif guest_log.state == GuestLogState.PENDING:
                 r_update = self.pool.update_guest_log(
                     self.logger,
                     self.gr,
                     guest_log
                 )
 
-            elif guest_log.state == GuestLogState.IN_PROGRESS:  # type: ignore[comparison-overlap]
+            elif guest_log.state == GuestLogState.IN_PROGRESS:
                 r_update = self.pool.update_guest_log(
                     self.logger,
                     self.gr,

@@ -24,7 +24,7 @@ import os
 import platform
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union, cast
 
 import gluetool.log
 import prometheus_client.utils
@@ -276,7 +276,7 @@ class DBPoolMetrics(MetricsBase):
 
         db = DATABASE.get()
 
-        if not hasattr(db.engine.pool, 'size') or not callable(db.engine.pool.size):
+        if not isinstance(db.engine.pool, sqlalchemy.pool.impl.QueuePool):
             self.size = 0
             self.checked_in_connections = 0
             self.checked_out_connections = 0
@@ -3388,88 +3388,6 @@ class Metrics(MetricsBase):
             return cast(bytes, generate_latest(registry=self._registry))
 
         return safe_call(_render)
-
-
-def upsert_metric(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    model: Type[artemis_db.Base],
-    primary_keys: Dict[Any, Any],
-    change: int
-) -> None:
-    """
-    Update a stored value of a given metric.
-
-    Wrapper for :py:func:`tft.artemis.db.upsert` to simplify its use when it comes to metrics. With metrics, we work
-    with the following assumptions:
-
-    * model (table) has one or more primary keys,
-    * model has a "counter" column (called ``count``) which holds the value of the metric specified by primary keys.
-
-    Therefore, this helper focuses on changing the counter, using primary keys to limit the change, or initialize
-    the row if it doesn't exist yet.
-
-    :param logger: logger to use for logging.
-    :param session: DB session to use for DB access.
-    :param model: SQLAlchemy model representing the metrics table we need to update.
-    :param primary_keys: mapping of primary keys and their expected values. This mapping is used to limit
-        the update to a particular record, or initialize new record if it doesn't exist yet.
-
-        Primary keys - keys of the mapping - should be the columns of the given model.
-    :param change: amount to add to ``count``.
-    """
-
-    # TODO: actually check if result of upsert was sucessful
-    artemis_db.upsert(
-        logger,
-        session,
-        model,
-        primary_keys,
-        insert_data={getattr(model, 'count'): 1},
-        update_data={'count': getattr(model, 'count') + change}
-    )
-
-
-def upsert_inc_metric(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    model: Type[artemis_db.Base],
-    primary_keys: Dict[Any, Any]
-) -> None:
-    """
-    Increment a metric counter by 1.
-
-    Implemented as a thin wrapper for :py:func:`upsert_metric`, therefore the parameters share their meaning.
-
-    :param logger: logger to use for logging.
-    :param session: DB session to use for DB access.
-    :param model: SQLAlchemy model representing the metrics table we need to update.
-    :param primary_keys: mapping of primary keys and their expected values. See :py:func:`upsert_metric`
-        for more details.
-    """
-
-    upsert_metric(logger, session, model, primary_keys, 1)
-
-
-def upsert_dec_metric(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    model: Type[artemis_db.Base],
-    primary_keys: Dict[Any, Any]
-) -> None:
-    """
-    Decrement a metric counter by 1.
-
-    Implemented as a thin wrapper for :py:func:`upsert_metric`, therefore the parameters share their meaning.
-
-    :param logger: logger to use for logging.
-    :param session: DB session to use for DB access.
-    :param model: SQLAlchemy model representing the metrics table we need to update.
-    :param primary_keys: mapping of primary keys and their expected values. See :py:func:`upsert_metric`
-        for more details.
-    """
-
-    upsert_metric(logger, session, model, primary_keys, -1)
 
 
 def inc_metric(

@@ -10,7 +10,7 @@ import sqlalchemy.orm.session
 
 from . import Failure, get_db, get_logger
 from .context import DATABASE, LOGGER, SESSION
-from .db import SafeQuery, TaskRequest, execute_dml, transaction
+from .db import DMLResult, SafeQuery, TaskRequest, execute_dml, transaction
 from .tasks import TaskLogger, dispatch_task, resolve_actor
 
 # Some tasks may seem to be unused, but they *must* be imported and known to broker
@@ -66,10 +66,10 @@ def handle_task_request(
     if r_dispatch.is_error:
         return _log_failure(r_dispatch.unwrap_error(), 'failed to dispatch task')
 
-    r_delete = execute_dml(
+    r_delete: DMLResult[TaskRequest] = execute_dml(
         logger,
         session,
-        sqlalchemy.delete(TaskRequest.__table__).where(TaskRequest.id == task_request.id)
+        sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_request.id)
     )
 
     if r_delete.is_error:

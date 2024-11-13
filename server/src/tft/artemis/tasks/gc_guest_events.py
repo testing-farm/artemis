@@ -8,7 +8,7 @@ import gluetool.log
 import periodiq
 import sqlalchemy.orm.session
 
-from ..db import DB, GuestEvent, GuestRequest, execute_dml
+from ..db import DB, DMLResult, GuestEvent, GuestRequest, execute_dml
 from ..knobs import Knob
 from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger, TaskPriority, TaskQueue
 from . import Workspace as _Workspace
@@ -52,19 +52,17 @@ class Workspace(_Workspace):
             # this would have to be rewritten.
             guest_count_subquery = self.session.query(
                 GuestRequest.guestname
-            ).subquery('t')
+            )
 
             query = sqlalchemy \
-                .delete(
-                    GuestEvent.__table__    # type: ignore[attr-defined]  # GuestRequest *has* __table__
-                ) \
-                .where(GuestEvent.guestname.notin_(guest_count_subquery)) \
+                .delete(GuestEvent) \
+                .where(GuestEvent.guestname.not_in(guest_count_subquery)) \
                 .where(sqlalchemy.func.age(GuestEvent.updated) >= sqlalchemy.func.cast(
-                    f'{KNOB_GC_EVENTS_THRESHOLD.value} SECONDS',
+                    sqlalchemy.text(f'{KNOB_GC_EVENTS_THRESHOLD.value} SECONDS'),
                     sqlalchemy.dialects.postgresql.INTERVAL
                 ))
 
-            r_execute = execute_dml(self.logger, self.session, query)
+            r_execute: DMLResult[GuestEvent] = execute_dml(self.logger, self.session, query)
 
             if r_execute.is_error:
                 return self._error(r_execute, 'failed to select')

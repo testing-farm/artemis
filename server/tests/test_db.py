@@ -3,7 +3,7 @@
 
 import datetime
 import threading
-from typing import Dict, cast
+from typing import Dict
 from unittest.mock import MagicMock
 
 import _pytest.logging
@@ -14,6 +14,7 @@ import sqlalchemy
 import sqlalchemy.ext.declarative
 import sqlalchemy.orm.session
 from sqlalchemy import Column, Integer, Text
+from sqlalchemy.schema import PrimaryKeyConstraint
 
 import tft.artemis.db
 import tft.artemis.tasks
@@ -32,12 +33,16 @@ class Counters(Base):
 
     __tablename__ = 'counters'
 
-    name = Column(Text(), primary_key=True, nullable=False)
+    name = Column(Text(), nullable=False)
     count = Column(Integer, default=0)
 
     # Used to verify compound keys and multiple values work.
     subname = Column(Text(), default='')
     subcount = Column(Integer, default=0)
+
+    __table_args__ = (
+        PrimaryKeyConstraint('name'),
+    )
 
 
 @pytest.fixture
@@ -46,7 +51,7 @@ def _schema_test_db_Counters(db: DB, session: sqlalchemy.orm.session.Session) ->
     Initialize database: create Counters table.
     """
 
-    Counters.__table__.create(db.engine)
+    Counters.__table__.create(db.engine)  # type: ignore[attr-defined]
 
     session.commit()
 
@@ -157,6 +162,7 @@ def test_upsert(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.ses
         {
             Counters.name: 'foo'
         },
+        Counters.__table_args__[0],
         insert_data={
             Counters.count: 1
         },
@@ -180,6 +186,7 @@ def test_upsert_no_update(logger: gluetool.log.ContextAdapter, session: sqlalche
         {
             Counters.name: 'foo'
         },
+        Counters.__table_args__[0],
         insert_data={
             Counters.count: 1
         }
@@ -201,6 +208,7 @@ def test_upsert_compound_key(logger: gluetool.log.ContextAdapter, session: sqlal
             Counters.name: 'foo',
             Counters.subname: 'bar'
         },
+        Counters.__table_args__[0],
         insert_data={
             Counters.count: 1
         },
@@ -224,6 +232,7 @@ def test_upsert_multiple_values(logger: gluetool.log.ContextAdapter, session: sq
         {
             Counters.name: 'foo'
         },
+        Counters.__table_args__[0],
         insert_data={
             Counters.count: 1,
             Counters.subcount: 1
@@ -250,6 +259,7 @@ def test_upsert_multiple_upserts(logger: gluetool.log.ContextAdapter, session: s
             {
                 Counters.name: 'foo'
             },
+            Counters.__table_args__[0],
             insert_data={
                 Counters.count: 1
             },
@@ -278,6 +288,7 @@ def test_upsert_multiple_commits(logger: gluetool.log.ContextAdapter, session: s
             {
                 Counters.name: 'foo'
             },
+            Counters.__table_args__[0],
             insert_data={
                 Counters.count: 1
             },
@@ -410,12 +421,12 @@ def test_transaction_no_transactions(
     Test whether :py:func:`transaction` behaves correctly when facing non-transactional session.
     """
 
-    query1 = sqlalchemy.insert(Counters.__table__).values(
+    query1 = sqlalchemy.insert(Counters).values(
         name='counter1',
         count=1
     )
 
-    query2 = sqlalchemy.insert(Counters.__table__).values(
+    query2 = sqlalchemy.insert(Counters).values(
         name='counter2',
         count=2
     )
@@ -452,7 +463,7 @@ def test_transaction(
             current_state=GuestState.SHELF_LOOKUP
         ).unwrap()
 
-        insert = sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
+        insert = sqlalchemy.insert(GuestEvent).values(
             updated=datetime.datetime.utcnow(),
             guestname='dummy-guest',
             eventname='dummy-event'
@@ -471,7 +482,7 @@ def test_transaction(
 
         assert len(requests) == 1
         # TODO: cast shouldn't be needed, sqlalchemy should annouce .state as enum - maybe with more recent stubs?
-        assert cast(GuestState, requests[0].state) == GuestState.PROVISIONING
+        assert requests[0].state == GuestState.PROVISIONING
 
         events = SafeQuery.from_session(session, GuestEvent).all().unwrap()
 
@@ -504,7 +515,7 @@ def test_transaction_conflict(
                 current_state=GuestState.SHELF_LOOKUP
             ).unwrap()
 
-            insert = sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
+            insert = sqlalchemy.insert(GuestEvent).values(
                 updated=datetime.datetime.utcnow(),
                 guestname='dummy-guest',
                 eventname='dummy-event'
@@ -530,7 +541,7 @@ def test_transaction_conflict(
                 current_state=GuestState.SHELF_LOOKUP
             ).unwrap()
 
-            insert = sqlalchemy.insert(GuestEvent.__table__).values(  # type: ignore[attr-defined]
+            insert = sqlalchemy.insert(GuestEvent).values(
                 updated=datetime.datetime.utcnow(),
                 guestname='dummy-guest',
                 eventname='another-dummy-event'
@@ -576,7 +587,7 @@ def test_transaction_conflict(
 
         assert len(requests) == 1
         # TODO: cast shouldn't be needed, sqlalchemy should annouce .state as enum - maybe with more recent stubs?
-        assert cast(GuestState, requests[0].state) == GuestState.PROVISIONING
+        assert requests[0].state == GuestState.PROVISIONING
 
         events = SafeQuery.from_session(session, GuestEvent).all().unwrap()
 

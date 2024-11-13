@@ -33,8 +33,8 @@ from typing_extensions import Protocol, TypedDict
 from .. import Failure, RSSWatcher, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, \
     safe_call
 from ..context import CURRENT_MESSAGE, CURRENT_TASK, DATABASE, LOGGER, SESSION, with_context
-from ..db import DB, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, SafeQuery, \
-    SnapshotRequest, SSHKey, TaskRequest, TransactionResult, execute_dml, transaction
+from ..db import DB, DMLResult, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, \
+    SafeQuery, SnapshotRequest, SSHKey, TaskRequest, TransactionResult, execute_dml, transaction
 from ..drivers import PoolData, PoolDriver, PoolLogger
 from ..drivers import aws as aws_driver
 from ..drivers import azure as azure_driver
@@ -1456,7 +1456,7 @@ def _guest_state_update_query(
     current_state: Optional[GuestState] = None,
     set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
     current_pool_data: Optional[str] = None
-) -> Result[sqlalchemy.update, Failure]:
+) -> Result[sqlalchemy.Update, Failure]:
     """
     Create an ``UPDATE`` query for guest request state change.
 
@@ -1473,7 +1473,7 @@ def _guest_state_update_query(
     now = datetime.datetime.utcnow()
 
     query = sqlalchemy \
-        .update(GuestRequest.__table__) \
+        .update(GuestRequest) \
         .where(GuestRequest.guestname == guestname)
 
     if current_state is not None:
@@ -1538,7 +1538,7 @@ def _update_guest_state(
     if r_query.is_error:
         return handle_error(r_query, 'failed to create state update query')
 
-    r_execute = execute_dml(logger, session, r_query.unwrap())
+    r_execute: DMLResult[GuestRequest] = execute_dml(logger, session, r_query.unwrap())
 
     if r_execute.is_error:
         return handle_error(r_execute, 'failed to switch guest state')
@@ -1605,7 +1605,7 @@ def _update_guest_state_and_request_task(
     if r_state_update_query.is_error:
         return handle_error(r_state_update_query, 'failed to create state update query')
 
-    r_execute = execute_dml(logger, session, r_state_update_query.unwrap())
+    r_execute: DMLResult[GuestRequest] = execute_dml(logger, session, r_state_update_query.unwrap())
 
     if r_execute.is_error:
         return handle_error(r_execute, 'failed to switch guest state')
@@ -2448,7 +2448,7 @@ class LoggingTailHandler(TailHandler):
         contenttype = GuestLogContentType(_contenttype)
 
         query = sqlalchemy \
-            .update(GuestLog.__table__) \
+            .update(GuestLog) \
             .where(GuestLog.guestname == guestname) \
             .where(GuestLog.logname == logname) \
             .where(GuestLog.contenttype == contenttype) \
@@ -2457,7 +2457,7 @@ class LoggingTailHandler(TailHandler):
                 state=GuestLogState.ERROR
             )
 
-        r_store = execute_dml(logger, workspace.session, query)
+        r_store: DMLResult[GuestLog] = execute_dml(logger, workspace.session, query)
 
         if r_store.is_error:
             workspace._error(r_store, 'failed to update the log')

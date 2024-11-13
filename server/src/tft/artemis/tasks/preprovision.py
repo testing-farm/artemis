@@ -21,7 +21,7 @@ import sqlalchemy.orm.session
 from .. import Failure
 from ..api.environment import DEFAULT_SSH_PORT, DEFAULT_SSH_USERNAME
 from ..api.models import GuestRequest as GuestRequestSchema
-from ..db import DB, GuestLogContentType, GuestRequest, execute_dml
+from ..db import DB, DMLResult, GuestLogContentType, GuestRequest, execute_dml
 from ..environment import Environment
 from ..guest import GuestState
 from . import _ROOT_LOGGER, DoerReturnType, DoerType
@@ -126,7 +126,7 @@ class Workspace(_Workspace):
                     security_group_rules_egress=None
                 )
 
-                r_create = execute_dml(
+                r_create: DMLResult[GuestRequest] = execute_dml(
                     self.logger,
                     self.session,
                     stmt

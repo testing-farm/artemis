@@ -98,6 +98,7 @@ def mock_inputs() -> MockInputs:
 
     # We need `dialect` mock to have attribute `name` but it cannot be done by passing `name=...` to `MagiMock()`,
     # it must be done afterward.
+    assert inputs.session.bind is not None  # narrow type
     inputs.session.bind.dialect.name = 'postgresql'
 
     return inputs

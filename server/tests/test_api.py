@@ -314,7 +314,7 @@ def test_auth_context_extract_credentials_basic(auth_context: AuthContext) -> No
 def _schema_test_db_Users(db: tft.artemis.db.DB, session: sqlalchemy.orm.session.Session) -> None:
     from tft.artemis.db import User
 
-    User.__table__.create(db.engine)
+    User.__table__.create(db.engine)  # type: ignore[attr-defined]
 
     session.commit()
 

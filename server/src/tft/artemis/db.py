@@ -19,14 +19,20 @@ import gluetool.glue
 import gluetool.log
 import psycopg2.errors
 import sqlalchemy
+import sqlalchemy.engine
 import sqlalchemy.event
 import sqlalchemy.exc
 import sqlalchemy.ext.declarative
+import sqlalchemy.inspection
+import sqlalchemy.orm.session
 import sqlalchemy.pool
+import sqlalchemy.sql.base
+import sqlalchemy.sql.dml
+import sqlalchemy.sql.elements
 import sqlalchemy.sql.expression
 from gluetool.result import Error, Ok, Result
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import column_property, deferred, relationship
+from sqlalchemy import JSON, Column, ForeignKey, String, Text
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 from sqlalchemy.orm.query import Query as _Query
 from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.schema import ForeignKeyConstraint, PrimaryKeyConstraint
@@ -57,7 +63,9 @@ TOKEN_SIZE = 32
 TOKEN_HASH_SIZE = 64
 
 
-Base = sqlalchemy.ext.declarative.declarative_base()
+# Base = sqlalchemy.ext.declarative.declarative_base()
+class Base(sqlalchemy.orm.DeclarativeBase):
+    pass
 
 
 # "Safe" query - a query-like class, adapted to return Result instances instead of the raw data.
@@ -239,7 +247,7 @@ class SafeQuery(Generic[T]):
         )()
 
 
-def stringify_query(session: sqlalchemy.orm.session.Session, query: Any) -> str:
+def stringify_query(session: sqlalchemy.orm.session.Session, query: sqlalchemy.sql.elements.ClauseElement) -> str:
     """
     Return string representation of a given DB query.
 
@@ -248,6 +256,8 @@ def stringify_query(session: sqlalchemy.orm.session.Session, query: Any) -> str:
     when compiling the query. "Compilation" is what happens when we ask SQLAlchemy to transform the query
     to string.
     """
+
+    assert session.bind is not None  # narrow type
 
     return str(query.compile(dialect=session.bind.dialect))
 
@@ -269,11 +279,14 @@ def assert_not_in_transaction(
     return False
 
 
+DMLResult = Result[sqlalchemy.engine.cursor.CursorResult[T], 'Failure']
+
+
 def execute_dml(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    statement: Any,
-) -> Result[sqlalchemy.engine.ResultProxy, 'Failure']:
+    statement: sqlalchemy.sql.dml.UpdateBase
+) -> DMLResult[T]:
     """
     Execute a given DML statement, ``INSERT``, ``UPDATE`` or ``DELETE``.
 
@@ -282,20 +295,21 @@ def execute_dml(
 
     logger.debug(f'execute DML: {stringify_query(session, statement)}')
 
-    from . import Failure, safe_call
+    try:
+        result: sqlalchemy.engine.cursor.CursorResult[T] = session.execute(statement)
 
-    r = safe_call(session.execute, statement)
+        return Ok(result)
 
-    if r.is_error:
+    except Exception as exc:
+        from . import Failure
+
         return Error(
-            Failure.from_failure(
+            Failure.from_exc(
                 'failed to execute DML statement',
-                r.unwrap_error(),
+                exc,
                 query=stringify_query(session, statement)
             )
         )
-
-    return Ok(r.unwrap())
 
 
 def upsert(
@@ -303,6 +317,7 @@ def upsert(
     session: sqlalchemy.orm.session.Session,
     model: Type[Base],
     primary_keys: Dict[Any, Any],
+    constraint: PrimaryKeyConstraint,
     *,
     update_data: Optional[Dict[Any, Any]] = None,
     insert_data: Optional[Dict[Any, Any]] = None,
@@ -333,6 +348,8 @@ def upsert(
     :param update_data: mapping of columns and update actions applied when the record does exist.
     :param insert_data: mapping of columns and initial values applied when the record is created.
     """
+
+    assert session.bind is not None  # narrow type
 
     if session.bind.dialect.name != 'postgresql':
         raise gluetool.glue.GlueError(f'UPSERT is not support for dialect "{session.bind.dialect.name}"')
@@ -372,7 +389,7 @@ def upsert(
 
     if update_data is None:
         statement = statement.on_conflict_do_nothing(
-            constraint=model.__table__.primary_key  # type: ignore[attr-defined]
+            constraint=constraint
         )
 
         # INSERT part of the query is still valid, but there's no ON CONFLICT UPDATE... Unfortunatelly,
@@ -381,7 +398,7 @@ def upsert(
 
     else:
         statement = statement.on_conflict_do_update(
-            constraint=model.__table__.primary_key,  # type: ignore[attr-defined]
+            constraint=constraint,
             set_=update_data,
             where=where
         )
@@ -392,7 +409,7 @@ def upsert(
 
     from . import Failure
 
-    r = execute_dml(logger, session, statement)
+    r: DMLResult[Base] = execute_dml(logger, session, statement)
 
     if r.is_error:
         return Error(
@@ -542,9 +559,9 @@ class GuestLogContentType(enum.Enum):
 class User(Base):
     __tablename__ = 'users'
 
-    username = Column(String(250), primary_key=True, nullable=False)
+    username: Mapped[str]
 
-    role = Column(Enum(UserRoles), nullable=False, server_default=UserRoles.USER.value)
+    role: Mapped[UserRoles] = mapped_column(nullable=False, server_default=UserRoles.USER.value)
     """
     User role.
     """
@@ -553,13 +570,13 @@ class User(Base):
     # in the database, only their SHA256 hashes, and there's no possible token whose hash would be "undefined".
     # This makes newly created users safe from leaking any tokens by accident, user's tokens must be explicitly
     # initialized by ADMIN-level account first.
-    admin_token = Column(String(TOKEN_HASH_SIZE), nullable=False, server_default='undefined')
+    admin_token: Mapped[str] = mapped_column(String(TOKEN_HASH_SIZE), nullable=False, server_default='undefined')
     """
     Token used to authenticate actions not related to guests and provisioning. Stored as a SHA256
     hash of the actual token.
     """
 
-    provisioning_token = Column(String(TOKEN_HASH_SIZE), nullable=False, server_default='undefined')
+    provisioning_token: Mapped[str] = mapped_column(String(TOKEN_HASH_SIZE), nullable=False, server_default='undefined')
     """
     Token used to authenticate actions related to guests and provisioning. Stored as a SHA256
     hash of the actual token.
@@ -567,6 +584,10 @@ class User(Base):
 
     sshkeys = relationship('SSHKey', back_populates='owner')
     guests = relationship('GuestRequest', back_populates='owner')
+
+    __table_args__ = (
+        PrimaryKeyConstraint('username'),
+    )
 
     @staticmethod
     def hash_token(token: str) -> str:
@@ -598,44 +619,62 @@ class User(Base):
 
     @property
     def is_admin(self) -> bool:
-        return self.role == UserRoles.ADMIN  # type: ignore[comparison-overlap]
+        return self.role == UserRoles.ADMIN
 
 
 class SSHKey(Base):
     __tablename__ = 'sshkeys'
 
-    keyname = Column(String(250), primary_key=True, nullable=False)
-    enabled = Column(Boolean())
-    ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
+    keyname: Mapped[str]
+    enabled: Mapped[bool]
+    ownername: Mapped[str] = mapped_column(String(250), ForeignKey('users.username'), nullable=False)
 
     # DEPRECATED: but kept for easier schema rollback. Once we're sure things work, we will drop the column.
-    file = Column(String(250), nullable=False)
+    file: Mapped[str] = mapped_column(String(250), nullable=False)
 
-    private = Column(EncryptedType(String, get_vault_password(), AesEngine, 'pkcs5'), nullable=False)
-    public = Column(EncryptedType(String, get_vault_password(), AesEngine, 'pkcs5'), nullable=False)
+    private: Mapped[str] = mapped_column(
+        EncryptedType(String, get_vault_password(), AesEngine, 'pkcs5'),
+        nullable=False
+    )
+    public: Mapped[str] = mapped_column(
+        EncryptedType(String, get_vault_password(), AesEngine, 'pkcs5'),
+        nullable=False
+    )
 
     owner = relationship('User', back_populates='sshkeys')
     guests = relationship('GuestRequest', back_populates='ssh_key')
+
+    __table_args__ = (
+        PrimaryKeyConstraint('keyname'),
+    )
 
 
 class PriorityGroup(Base):
     __tablename__ = 'priority_groups'
 
-    name = Column(String(250), primary_key=True, nullable=False)
+    name: Mapped[str]
 
     guests = relationship('GuestRequest', back_populates='priority_group')
+
+    __table_args__ = (
+        PrimaryKeyConstraint('name'),
+    )
 
 
 class Pool(Base):
     __tablename__ = 'pools'
 
-    poolname = Column(String(250), primary_key=True, nullable=False)
-    driver = Column(String(250), nullable=False)
-    _parameters = Column(JSON(), nullable=False)
+    poolname: Mapped[str]
+    driver: Mapped[str] = mapped_column(String(250), nullable=False)
+    _parameters: Mapped[Dict[str, Any]] = mapped_column(JSON(), nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint('poolname'),
+    )
 
     @property
     def parameters(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self._parameters)
+        return self._parameters
 
     guests = relationship('GuestRequest', back_populates='pool')
 
@@ -661,10 +700,10 @@ class TaskRequest(Base):
 
     __tablename__ = 'task_requests'
 
-    id = Column(Integer(), primary_key=True, autoincrement=True)
-    taskname = Column(Text(), nullable=False)
-    arguments = Column(JSON(), nullable=False)
-    delay = Column(Integer(), nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    taskname: Mapped[str]
+    arguments: Mapped[Any] = mapped_column(JSON(), nullable=False)
+    delay: Mapped[Optional[int]]
 
     @classmethod
     def create_query(
@@ -672,11 +711,11 @@ class TaskRequest(Base):
         task: 'Actor',
         *args: 'ActorArgumentType',
         delay: Optional[int] = None
-    ) -> sqlalchemy.insert:
+    ) -> sqlalchemy.Insert:
         """
         """
 
-        return sqlalchemy.insert(cls.__table__).values(
+        return sqlalchemy.insert(cls).values(
             taskname=task.actor_name,
             arguments=list(args),
             delay=delay
@@ -693,7 +732,7 @@ class TaskRequest(Base):
     ) -> Result[int, 'Failure']:
         stmt = cls.create_query(task, *args, delay=delay)
 
-        r = execute_dml(logger, session, stmt)
+        r: DMLResult[TaskRequest] = execute_dml(logger, session, stmt)
 
         if r.is_error:
             return Error(r.unwrap_error())
@@ -704,19 +743,23 @@ class TaskRequest(Base):
 class GuestShelf(Base):
     __tablename__ = 'guest_shelves'
 
-    shelfname = Column(String(250), primary_key=True, nullable=False)
-    ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
-    state = Column(Enum(GuestState), nullable=False)
+    shelfname: Mapped[str]
+    ownername: Mapped[str] = mapped_column(String(250), ForeignKey('users.username'), nullable=False)
+    state: Mapped[GuestState]
 
     guests = relationship('GuestRequest', back_populates='shelf')
+
+    __table_args__ = (
+        PrimaryKeyConstraint('shelfname'),
+    )
 
     @classmethod
     def create_query(
         cls,
         shelfname: str,
         ownername: str
-    ) -> sqlalchemy.insert:
-        return sqlalchemy.insert(cls.__table__).values(
+    ) -> sqlalchemy.Insert:
+        return sqlalchemy.insert(cls).values(
             shelfname=shelfname,
             ownername=ownername,
             state=GuestState.READY
@@ -726,15 +769,15 @@ class GuestShelf(Base):
 class GuestEvent(Base):
     __tablename__ = 'guest_events'
 
-    _id = Column(Integer(), primary_key=True)
-    updated = Column(DateTime, default=datetime.datetime.utcnow)
-    guestname = Column(String(250), nullable=False, index=True)
-    eventname = Column(String(250), nullable=False)
+    _id: Mapped[int] = mapped_column(primary_key=True)
+    updated: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
+    guestname: Mapped[str] = mapped_column(String(250), nullable=False, index=True)
+    eventname: Mapped[str] = mapped_column(String(250), nullable=False)
 
     # Details are stored as JSON blob, in a "hidden" column - when accessing event details, we'd like to cast them to
     # proper type, and there will never ever be an event having a list or an integer as a detail, it will always
     # be a mapping. Therefore `_details` column and `details` property to apply proper cast call.
-    _details = Column(JSON(), nullable=False, server_default='{}')
+    _details: Mapped[Dict[str, Any]] = mapped_column(JSON(), nullable=False, server_default='{}')
 
     def __init__(
         self,
@@ -750,7 +793,7 @@ class GuestEvent(Base):
 
     @property
     def details(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self._details)
+        return self._details
 
     @classmethod
     def fetch(
@@ -808,15 +851,15 @@ UserDataType = Dict[str, Optional[str]]
 class GuestRequest(Base):
     __tablename__ = 'guest_requests'
 
-    guestname = Column(String(250), primary_key=True, nullable=False)
-    _environment = Column(JSON(), nullable=False)
-    ownername = Column(String(250), ForeignKey('users.username'), nullable=False)
-    shelfname = Column(String(250), ForeignKey('guest_shelves.shelfname'), nullable=True)
-    priorityname = Column(String(250), ForeignKey('priority_groups.name'), nullable=True)
-    poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
-    last_poolname = Column(String(250), nullable=True)
-    _security_group_rules_ingress = Column(JSON(), nullable=True)
-    _security_group_rules_egress = Column(JSON(), nullable=True)
+    guestname: Mapped[str] = mapped_column(primary_key=True, nullable=False)
+    _environment: Mapped[Dict[str, Any]] = mapped_column(JSON(), nullable=False)
+    ownername: Mapped[str] = mapped_column(String(250), ForeignKey('users.username'), nullable=False)
+    shelfname: Mapped[Optional[str]] = mapped_column(String(250), ForeignKey('guest_shelves.shelfname'), nullable=True)
+    priorityname: Mapped[Optional[str]] = mapped_column(String(250), ForeignKey('priority_groups.name'), nullable=True)
+    poolname: Mapped[Optional[str]] = mapped_column(String(250), ForeignKey('pools.poolname'), nullable=True)
+    last_poolname: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    _security_group_rules_ingress: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON(), nullable=True)
+    _security_group_rules_egress: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON(), nullable=True)
 
     @property
     def environment(self) -> 'Environment':
@@ -826,9 +869,9 @@ class GuestRequest(Base):
         # v0.0.53: added Kickstart specification. For backward compatibility,
         # add `kickstart` key if it's missing.
         if 'kickstart' not in self._environment:
-            self._environment['kickstart'] = {}  # type: ignore[call-overload]
+            self._environment['kickstart'] = {}
 
-        return Environment.unserialize(cast(Dict[str, Any], self._environment))
+        return Environment.unserialize(self._environment)
 
     @property
     def security_group_rules_ingress(self) -> List['SecurityGroupRule']:
@@ -875,59 +918,59 @@ class GuestRequest(Base):
     #
     # This needs more attention in general, guest events and some metrics also have these datetime-ish columns,
     # we should use the same approach. Maybe it's possible to limit the static default to SQLite only.
-    ctime = Column(DateTime(), nullable=False, default=datetime.datetime.utcnow)
+    ctime: Mapped[datetime.datetime] = mapped_column(nullable=False, default=datetime.datetime.utcnow)
 
-    state = Column(Enum(GuestState), nullable=False)
-    state_mtime = Column(DateTime(), nullable=True)
+    state: Mapped[GuestState]
+    state_mtime: Mapped[Optional[datetime.datetime]]
 
-    mtime: datetime.datetime = column_property(  # type: ignore[assignment]
-        sqlalchemy  # type: ignore[attr-defined]
+    mtime: Mapped[datetime.datetime] = column_property(
+        sqlalchemy
         .select(sqlalchemy.func.max(GuestEvent.updated))
         .where(GuestEvent.guestname == guestname)
         .scalar_subquery(),
         deferred=True
     )
 
-    address = Column(String(250), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
 
     # SSH info
-    ssh_keyname = Column(String(250), ForeignKey('sshkeys.keyname'), nullable=False)
-    ssh_port = Column(Integer(), nullable=False)
-    ssh_username = Column(String(250), nullable=False)
+    ssh_keyname: Mapped[str] = mapped_column(String(250), ForeignKey('sshkeys.keyname'), nullable=False)
+    ssh_port: Mapped[int]
+    ssh_username: Mapped[str] = mapped_column(String(250), nullable=False)
 
     # Pool-specific data.
-    pool_data = Column(Text(), nullable=False)
+    pool_data: Mapped[str]
 
     # User specified data
-    _user_data = Column(JSON(), nullable=False)
+    _user_data: Mapped[UserDataType] = mapped_column(JSON(), nullable=False)
 
     @property
     def user_data(self) -> UserDataType:
-        return cast(UserDataType, self._user_data)
+        return self._user_data
 
     #: If set, the shelf will be bypassed during provisioning ensuring a completely new guest is provisioned.
-    bypass_shelf_lookup = Column(Boolean(), nullable=False, server_default='false')
+    bypass_shelf_lookup: Mapped[bool] = mapped_column(nullable=False, server_default='false')
 
     #: If set, the provisioning will skip preparation steps and assume the guest is reachable as soon as it becomes
     #: active.
-    skip_prepare_verify_ssh = Column(Boolean(), nullable=False, server_default='false')
+    skip_prepare_verify_ssh: Mapped[bool] = mapped_column(nullable=False, server_default='false')
 
     # Contents of a script to be run when the guest becomes active
-    post_install_script = Column(Text(), nullable=True)
+    post_install_script: Mapped[Optional[str]]
 
     # User specified watchdog delay
-    watchdog_dispatch_delay = Column(Integer(), nullable=True)
-    watchdog_period_delay = Column(Integer(), nullable=True)
+    watchdog_dispatch_delay: Mapped[Optional[int]]
+    watchdog_period_delay: Mapped[Optional[int]]
 
     # Console url if it was requested by the user
-    console_url = Column(String(250), nullable=True)
-    console_url_expires = Column(DateTime(), nullable=True)
+    console_url: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    console_url_expires: Mapped[Optional[datetime.datetime]] = mapped_column(nullable=True)
 
     # Log types specifically to be supported as requested by the user (colon-separated string of logtype:contenttype)
-    _log_types = Column(JSON(), nullable=True)
+    _log_types: Mapped[Any] = mapped_column(JSON(), nullable=True)
 
     # Tasks to be dispatched upon guest reaching ready state (list of tuples of taskname, args)
-    _on_ready = Column(JSON())
+    _on_ready: Mapped[Any] = mapped_column(JSON())
 
     owner = relationship('User', back_populates='guests')
     shelf = relationship('GuestShelf', back_populates='guests')
@@ -956,8 +999,8 @@ class GuestRequest(Base):
         on_ready: Optional[List[Tuple['Actor', List['ActorArgumentType']]]],
         security_group_rules_ingress: Optional[List['SecurityGroupRule']],
         security_group_rules_egress: Optional[List['SecurityGroupRule']]
-    ) -> sqlalchemy.insert:
-        return sqlalchemy.insert(cls.__table__).values(
+    ) -> sqlalchemy.Insert:
+        return sqlalchemy.insert(cls).values(
             guestname=guestname,
             _environment=environment.serialize(),
             ownername=ownername,
@@ -1012,11 +1055,11 @@ class GuestRequest(Base):
 
         from . import log_dict_yaml
 
-        r = execute_dml(
+        r: DMLResult['GuestEvent'] = execute_dml(
             logger,
             session,
             sqlalchemy
-            .insert(GuestEvent.__table__)  # type: ignore[attr-defined]
+            .insert(GuestEvent)
             .values(
                 guestname=guestname,
                 eventname=eventname,
@@ -1247,13 +1290,13 @@ class GuestRequest(Base):
 class GuestLogBlob(Base):
     __tablename__ = 'guest_log_blobs'
 
-    guestname = Column(String(), nullable=False)
-    logname = Column(String(), nullable=False)
-    contenttype = Column(Enum(GuestLogContentType), nullable=False)
+    guestname: Mapped[str]
+    logname: Mapped[str]
+    contenttype: Mapped[GuestLogContentType]
 
-    ctime = Column(DateTime(), nullable=False, default=datetime.datetime.utcnow)
-    content = deferred(Column(Text(), nullable=False, server_default=''))  # type: ignore[no-untyped-call]
-    content_hash = Column(Text(), nullable=False, server_default='')
+    ctime: Mapped[datetime.datetime] = mapped_column(nullable=False, default=datetime.datetime.utcnow)
+    content: Mapped[str] = mapped_column(nullable=False, server_default='', deferred=True)
+    content_hash: Mapped[str] = mapped_column(nullable=False, server_default='')
 
     guest_log = relationship('GuestLog', back_populates='blobs')
 
@@ -1269,21 +1312,21 @@ class GuestLogBlob(Base):
 class GuestLog(Base):
     __tablename__ = 'guest_logs'
 
-    guestname = Column(String(), nullable=False)
-    logname = Column(String(), nullable=False)
-    contenttype = Column(Enum(GuestLogContentType), nullable=False)
+    guestname: Mapped[str]
+    logname: Mapped[str]
+    contenttype: Mapped[GuestLogContentType]
 
     __table_args__ = (
         PrimaryKeyConstraint('guestname', 'logname', 'contenttype'),
     )
 
-    state = Column(Enum(GuestLogState), nullable=False, default=GuestLogState.PENDING.value)
+    state: Mapped[GuestLogState] = mapped_column(nullable=False, default=GuestLogState.PENDING.value)
 
-    url = Column(String(), nullable=True)
-    blobs: List[GuestLogBlob] = relationship('GuestLogBlob', back_populates='guest_log')  # type: ignore[assignment]
+    url: Mapped[Optional[str]]
+    blobs: Mapped[List[GuestLogBlob]] = relationship('GuestLogBlob', back_populates='guest_log')
 
-    updated = Column(DateTime(), nullable=True)
-    expires = Column(DateTime(), nullable=True)
+    updated: Mapped[Optional[datetime.datetime]]
+    expires: Mapped[Optional[datetime.datetime]]
 
     @property
     def is_expired(self) -> bool:
@@ -1308,13 +1351,13 @@ class GuestLog(Base):
 class SnapshotRequest(Base):
     __tablename__ = 'snapshot_requests'
 
-    snapshotname = Column(String(250), primary_key=True, nullable=False)
-    guestname = Column(String(250), ForeignKey('guest_requests.guestname'), nullable=False)
-    poolname = Column(String(250), ForeignKey('pools.poolname'), nullable=True)
+    snapshotname: Mapped[str] = mapped_column(String(250), primary_key=True, nullable=False)
+    guestname: Mapped[str] = mapped_column(String(250), ForeignKey('guest_requests.guestname'), nullable=False)
+    poolname: Mapped[Optional[str]] = mapped_column(String(250), ForeignKey('pools.poolname'), nullable=True)
 
-    state = Column(Enum(GuestState), nullable=False)
+    state: Mapped[GuestState]
 
-    start_again = Column(Boolean(), nullable=False)
+    start_again: Mapped[bool]
 
 
 class GuestTag(Base):
@@ -1323,9 +1366,13 @@ class GuestTag(Base):
     #: Used as a poolname to represent system-wide tags.
     SYSTEM_POOL_ALIAS = '__system__'
 
-    poolname = Column(String(), primary_key=True, nullable=False)
-    tag = Column(String(), primary_key=True, nullable=False)
-    value = Column(String(), nullable=False)
+    poolname: Mapped[str]
+    tag: Mapped[str]
+    value: Mapped[str]
+
+    __table_args__ = (
+        PrimaryKeyConstraint('poolname', 'tag'),
+    )
 
     @classmethod
     def fetch_system_tags(
@@ -1358,16 +1405,20 @@ class GuestTag(Base):
 class Metrics(Base):
     __tablename__ = 'metrics'
 
-    metric = Column(String(250), primary_key=True, nullable=False)
-    count = Column(Integer, default=0)
-    updated = Column(DateTime, default=datetime.datetime.utcnow)
+    metric: Mapped[str] = mapped_column(String(250), primary_key=True, nullable=False)
+    count: Mapped[int] = mapped_column(default=0)
+    updated: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
 
 
 class Knob(Base):
     __tablename__ = 'knobs'
 
-    knobname = Column(String(), primary_key=True, nullable=False)
-    value = Column(JSON(), nullable=False)
+    knobname: Mapped[str]
+    value: Mapped[Any] = mapped_column(JSON(), nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint('knobname'),
+    )
 
 
 # TODO: shuffle a bit with files to avoid local imports and to set this up conditionaly. It's probably not
@@ -1400,7 +1451,7 @@ def _log_db_statement(statement: str) -> None:
     logger.info(statement)
 
 
-@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'before_cursor_execute')  # type: ignore[no-untyped-call,misc]
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'before_cursor_execute')
 def before_cursor_execute(
     conn: sqlalchemy.engine.Connection,
     cursor: Any,
@@ -1414,7 +1465,7 @@ def before_cursor_execute(
     conn.info.setdefault('query_start_time', []).append(time.time())
 
 
-@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'after_cursor_execute')  # type: ignore[no-untyped-call,misc]
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'after_cursor_execute')
 def after_cursor_execute(
     conn: sqlalchemy.engine.Connection,
     cursor: Any,
@@ -1443,14 +1494,14 @@ def after_cursor_execute(
     ).handle(LOGGER.get())
 
 
-@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'commit')  # type: ignore[no-untyped-call,misc]
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'commit')
 def before_commit(
     conn: sqlalchemy.engine.Connection,
 ) -> None:
     _log_db_statement('COMMIT')
 
 
-@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'rollback')  # type: ignore[no-untyped-call,misc]
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'rollback')
 def before_rollback(
     conn: sqlalchemy.engine.Connection,
 ) -> None:
@@ -1468,13 +1519,13 @@ class DB:
     engine_autocommit: sqlalchemy.engine.Engine
     #: Session factory on top of auto-commit :py:attr:`engine_autocommit` engine: ``AUTOCOMMIT`` isolation level
     #: is applied to each and every query.
-    sessionmaker_autocommit: sessionmaker
+    sessionmaker_autocommit: sessionmaker[sqlalchemy.orm.session.Session]
 
     #: Engine derived from :py:attr:`engine`, configured to transactions with ``REPEATABLE READ`` isolation level.
     engine_transactional: sqlalchemy.engine.Engine
     #: Session factory on top of auto-commit :py:attr:`engine_treansactional` engine: every session spawns
     #: a transaction with ``REPEATABLE READ`` isolation level.
-    sessionmaker_transactional: sessionmaker
+    sessionmaker_transactional: sessionmaker[sqlalchemy.orm.session.Session]
 
     def _setup_instance(
         self,
@@ -1651,9 +1702,9 @@ def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_
 
     # copy data from the existing column to the temporary one, and cast them to JSON type
     if op.get_bind().dialect.name == 'postgresql':
-        op.get_bind().execute(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::json')
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::json'))
     else:
-        op.get_bind().execute(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}')
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))
 
     # drop the original column, and create it as JSON
     with op.batch_alter_table(tablename, schema=None) as batch_op:
@@ -1661,7 +1712,7 @@ def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_
         batch_op.add_column(Column(final_columnname, JSON(), nullable=False, server_default='{}'))
 
     # copy data from the temporary column to its final location (no casting needed, they have the very same type)
-    op.get_bind().execute(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}')
+    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))
 
     # drop the temporary column
     with op.batch_alter_table(tablename, schema=None) as batch_op:
@@ -1690,9 +1741,9 @@ def convert_column_json_to_str(op: Any, tablename: str, columnname: str, rename_
 
     # copy data from the existing column to the temporary one, and them to text
     if op.get_bind().dialect.name == 'postgresql':
-        op.get_bind().execute(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::text')
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::text'))
     else:
-        op.get_bind().execute(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}')
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))
 
     # drop the original column, and create it as text
     with op.batch_alter_table(tablename, schema=None) as batch_op:
@@ -1700,7 +1751,7 @@ def convert_column_json_to_str(op: Any, tablename: str, columnname: str, rename_
         batch_op.add_column(Column(final_columnname, Text(), nullable=False, server_default='{}'))
 
     # copy data from the temporary column to its final location (no casting needed, they have the very same type)
-    op.get_bind().execute(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}')
+    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))
 
     # drop the temporary column
     with op.batch_alter_table(tablename, schema=None) as batch_op:

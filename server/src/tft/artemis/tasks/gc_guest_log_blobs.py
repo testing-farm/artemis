@@ -17,7 +17,7 @@ import gluetool.log
 import periodiq
 import sqlalchemy.orm.session
 
-from ..db import DB, GuestLogBlob, GuestRequest, execute_dml
+from ..db import DB, DMLResult, GuestLogBlob, GuestRequest, execute_dml
 from ..knobs import Knob
 from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger
 from . import Workspace as _Workspace
@@ -63,17 +63,14 @@ class Workspace(_Workspace):
                 GuestRequest.guestname
             ).subquery('t')
 
-            query = sqlalchemy \
-                .delete(
-                    GuestLogBlob.__table__
-                ) \
-                .where(GuestLogBlob.guestname.notin_(guest_count_subquery)) \
-                .where(sqlalchemy.func.age(GuestLogBlob.ctime) >= sqlalchemy.func.cast(
-                    f'{KNOB_GC_GUEST_LOG_BLOBS_THRESHOLD.value} SECONDS',
-                    sqlalchemy.dialects.postgresql.INTERVAL
-                ))
+            query = sqlalchemy.delete(GuestLogBlob)
+            query = query.where(GuestLogBlob.guestname.not_in(guest_count_subquery))  # type: ignore[arg-type]
+            query = query.where(sqlalchemy.func.age(GuestLogBlob.ctime) >= sqlalchemy.func.cast(
+                f'{KNOB_GC_GUEST_LOG_BLOBS_THRESHOLD.value} SECONDS',  # type: ignore[arg-type]
+                sqlalchemy.dialects.postgresql.INTERVAL
+            ))
 
-            r = execute_dml(self.logger, self.session, query)
+            r: DMLResult[GuestLogBlob] = execute_dml(self.logger, self.session, query)
 
             if r.is_error:
                 return self._error(r, 'failed to remove guest log blobs')

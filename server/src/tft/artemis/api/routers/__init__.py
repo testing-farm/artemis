@@ -254,11 +254,11 @@ class GuestRequestManager:
             guest_delete_task = release_guest_request
             extra_actor_args = []
 
-            if guest_request.state == GuestState.READY:  # type: ignore[comparison-overlap]
+            if guest_request.state == GuestState.READY:
                 guest_delete_task = return_guest_to_shelf
                 extra_actor_args = [GuestState.CONDEMNED.value]
 
-            if guest_request.state != GuestState.CONDEMNED:  # type: ignore[comparison-overlap]
+            if guest_request.state != GuestState.CONDEMNED:
                 snapshot_count_subquery = session.query(
                     sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
                 ).filter(
@@ -266,12 +266,13 @@ class GuestRequestManager:
                 ).subquery('t')
 
                 query = sqlalchemy \
-                    .update(artemis_db.GuestRequest.__table__) \
+                    .update(artemis_db.GuestRequest) \
                     .where(artemis_db.GuestRequest.guestname == guestname) \
                     .where(snapshot_count_subquery.c.snapshot_count == 0) \
                     .values(state=GuestState.CONDEMNED)
 
-                r_state = artemis_db.execute_dml(guest_logger, session, query)
+                r_state: artemis_db.DMLResult[artemis_db.GuestRequest] \
+                    = artemis_db.execute_dml(guest_logger, session, query)
 
                 # The query can miss either with existing snapshots, or when the guest request has been
                 # removed from DB already. The "gone already" situation could be better expressed by
@@ -694,7 +695,7 @@ def execute_dml(
     * do nothing and return when the query didn't fail and changed expected number of records.
     """
 
-    r_change = artemis_db.execute_dml(logger, session, query)
+    r_change: artemis_db.DMLResult[artemis_db.Base] = artemis_db.execute_dml(logger, session, query)
 
     if r_change.is_error:
         raise errors.InternalServerError(
@@ -904,11 +905,11 @@ class GuestShelfManager:
                     failure_details=failure_details
                 )
 
-            query = sqlalchemy.update(artemis_db.GuestShelf.__table__) \
+            query = sqlalchemy.update(artemis_db.GuestShelf) \
                 .where(artemis_db.GuestShelf.shelfname == shelfname) \
                 .values(state=GuestState.CONDEMNED)
 
-            r_state = artemis_db.execute_dml(logger, session, query)
+            r_state: artemis_db.DMLResult[artemis_db.GuestShelf] = artemis_db.execute_dml(logger, session, query)
 
             if r_state.is_error:
                 raise errors.InternalServerError(
@@ -1044,7 +1045,7 @@ class SnapshotRequestManager:
             execute_dml(
                 snapshot_logger,
                 session,
-                sqlalchemy.insert(artemis_db.SnapshotRequest.__table__).values(
+                sqlalchemy.insert(artemis_db.SnapshotRequest).values(
                     snapshotname=snapshotname,
                     guestname=guestname,
                     poolname=None,
@@ -1083,7 +1084,7 @@ class SnapshotRequestManager:
 
         with get_session(logger, self.db) as (session, _):
             query = sqlalchemy \
-                .update(artemis_db.SnapshotRequest.__table__) \
+                .update(artemis_db.SnapshotRequest) \
                 .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
                 .where(artemis_db.SnapshotRequest.guestname == guestname) \
                 .values(state=GuestState.CONDEMNED)
@@ -1112,7 +1113,7 @@ class SnapshotRequestManager:
 
         with get_session(logger, self.db) as (session, _):
             query = sqlalchemy \
-                .update(artemis_db.SnapshotRequest.__table__) \
+                .update(artemis_db.SnapshotRequest) \
                 .where(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
                 .where(artemis_db.SnapshotRequest.guestname == guestname) \
                 .where(artemis_db.SnapshotRequest.state != GuestState.CONDEMNED) \
@@ -1346,6 +1347,7 @@ class KnobManager:
                     # using `knobname`, i.e. changing the original knob, not the parent
                     artemis_db.Knob.knobname: knobname
                 },
+                artemis_db.Knob.__table_args__[0],
                 insert_data={
                     artemis_db.Knob.value: casted_value
                 },
@@ -1361,7 +1363,7 @@ class KnobManager:
             execute_dml(
                 logger,
                 session,
-                sqlalchemy.delete(artemis_db.Knob.__table__).where(artemis_db.Knob.knobname == knobname)
+                sqlalchemy.delete(artemis_db.Knob).where(artemis_db.Knob.knobname == knobname)
             )
 
 
@@ -1631,7 +1633,7 @@ class UserManager:
             execute_dml(
                 logger,
                 session,
-                sqlalchemy.insert(artemis_db.User.__table__).values(
+                sqlalchemy.insert(artemis_db.User).values(
                     username=username,
                     role=role.value
                 )
@@ -1649,7 +1651,7 @@ class UserManager:
             execute_dml(
                 logger,
                 session,
-                sqlalchemy.delete(artemis_db.User.__table__).where(
+                sqlalchemy.delete(artemis_db.User).where(
                     artemis_db.User.username == username
                 ),
                 failure_details={
@@ -1669,7 +1671,7 @@ class UserManager:
 
             token, token_hash = artemis_db.User.generate_token()
 
-            query = sqlalchemy.update(artemis_db.User.__table__) \
+            query = sqlalchemy.update(artemis_db.User) \
                 .where(artemis_db.User.username == username)
 
             if tokentype == TokenTypes.ADMIN:
@@ -1799,11 +1801,12 @@ def create_guest_request_log(
             guest_logger,
             session,
             artemis_db.GuestLog,
-            primary_keys={
+            {
                 artemis_db.GuestLog.guestname: guestname,
                 artemis_db.GuestLog.logname: logname,
                 artemis_db.GuestLog.contenttype: artemis_db.GuestLogContentType(contenttype)
             },
+            artemis_db.GuestLog.__table_args__[0],
             insert_data={
                 artemis_db.GuestLog.state: artemis_db.GuestLogState.PENDING
             }
