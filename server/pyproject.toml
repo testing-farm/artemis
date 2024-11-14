@@ -21,8 +21,8 @@ include = ["artemis/schema"]
 python = "~3.9.0"
 # New mypy vs. new Alembic: https://github.com/python/mypy/issues/11038 - Alembic 1.7.4 adds a workaround
 alembic = "1.8.1"
-awscli = { version = "^1.27.24", optional = true }
-azure-cli = { version = "^2.0.77", optional = true }
+awscli = { version = "*", optional = true }
+azure-cli = { version = "*", optional = true }
 beaker-client = { version = "*", optional = true }
 # BeautifulSoup could be updated but it's pinned by gluetool to an older version...
 # beautifulsoup4 = "^4.9.3"
@@ -54,6 +54,7 @@ setuptools = "*"
 python-glanceclient = "*"
 python-novaclient = "*"
 fastapi = "*"
+uvicorn = "*"
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient" ]
@@ -68,6 +69,7 @@ darglint = "*"
 flake8 = "<5.0.0"
 flake8-docstrings = "*"
 flake8-use-fstring = "*"
+httpx = "*"
 isort = "*"
 # This will be trimmed down to 0.730 or something because of much more specific mypy-extensions bellow. Blocked
 # by Gluetool.
