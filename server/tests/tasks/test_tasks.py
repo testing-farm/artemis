@@ -174,7 +174,7 @@ def task_core_args(
     monkeypatch.setattr(tft.artemis.tasks, 'run_doer_multithread', run_doer)
     monkeypatch.setattr(tft.artemis.tasks, 'run_doer_singlethread', run_doer)
 
-    doer = MagicMock(name='mock_doer', actor_name='dummy-actor-name')
+    doer = MagicMock(name='mock_doer', actor_name='dummy-actor-name', __name__='mock_doer')
     doer_args = (
         MagicMock(name='mock_doer_arg1'),
         MagicMock(name='mock_doer_arg2')

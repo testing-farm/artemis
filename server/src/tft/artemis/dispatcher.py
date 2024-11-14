@@ -8,10 +8,10 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from . import Failure, get_db, get_logger
+from . import Failure, Sentry, get_db, get_logger
 from .context import DATABASE, LOGGER, SESSION
 from .db import DMLResult, SafeQuery, TaskRequest, execute_dml, transaction
-from .tasks import TaskLogger, dispatch_task, resolve_actor
+from .tasks import BROKER, TaskCall, TaskLogger, dispatch_task, resolve_actor
 
 # Some tasks may seem to be unused, but they *must* be imported and known to broker
 # for transactional outbox to work correctly.
@@ -84,7 +84,8 @@ def pick_task_request(
 ) -> bool:
     LOGGER.set(logger)
 
-    with transaction(logger, session) as transaction_result:
+    with Sentry.start_span('pick_task_request', op='function') as tracing_span, \
+            transaction(logger, session) as transaction_result:
         r_pending_task = SafeQuery.from_session(session, TaskRequest) \
             .limit(1) \
             .one_or_none()
@@ -101,6 +102,8 @@ def pick_task_request(
 
         if task_request is None:
             return False
+
+        tracing_span.set_tag('task_call', TaskCall.from_task_request(BROKER, task_request))
 
         handle_task_request(logger, session, task_request)
 
@@ -127,7 +130,7 @@ def main() -> None:
     while True:
         logger.info('tick...')
 
-        with db.get_session(logger) as session:
+        with Sentry.start_transaction(op='function', name='dispatcher_session'), db.get_session(logger) as session:
             SESSION.set(session)
 
             while pick_task_request(logger, session):
