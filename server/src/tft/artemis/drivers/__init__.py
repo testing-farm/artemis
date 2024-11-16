@@ -2614,7 +2614,8 @@ def run_cli_tool(
         'scrubbed_command': command_scrubber(command),
         'poolname': poolname,
         'commandname': commandname,
-        'environ': env
+        # TODO: logging complete environ is a security hole. Needs to be scrubbed first.
+        # 'environ': env
     }
 
     start_time = time.monotonic()
