@@ -98,8 +98,8 @@ DATETIME_FMT: str = '%Y-%m-%dT%H:%M:%S.%f'
 ExceptionInfoType = Union[
     # returned by sys.exc_info()
     Tuple[
-        Optional[type],
-        Optional[BaseException],
+        Type[BaseException],
+        BaseException,
         Optional[TracebackType]
     ],
 

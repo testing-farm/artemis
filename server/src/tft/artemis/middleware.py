@@ -123,7 +123,14 @@ def _retry_message(
     message.options['retries'] = message.options.get('retries', 0) + 1
 
     if exc_info:
-        message.options['traceback'] = '\n'.join(traceback.format_exception(*exc_info, limit=30))
+        message.options['traceback'] = '\n'.join(
+            traceback.format_exception(
+                exc_info[0],
+                value=exc_info[1],
+                tb=exc_info[2],
+                limit=30
+            )
+        )
 
     retries = cast(int, message.options['retries'])
     max_retries = _message_max_retries(message, task_call.actor)
