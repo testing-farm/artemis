@@ -223,7 +223,7 @@ def _yaml_to_string(data: Any, indent: Optional[int] = 2) -> str:
 def _string_to_yaml(yaml: str) -> Any:
     stream = ruamel.yaml.compat.StringIO(yaml)
 
-    return ruamel.yaml.safe_load(stream)
+    return ruamel.yaml.YAML(typ='safe', pure=True).load(stream)
 
 
 # A full-fledged YAML highlighter would be better...
@@ -272,7 +272,7 @@ class RichYAML:
 
 def load_yaml(filepath: str) -> Any:
     with open(filepath) as f:
-        return ruamel.yaml.safe_load(f)
+        return ruamel.yaml.YAML(typ='safe', pure=True).load(f)
 
 
 def save_yaml(data: Any, filepath: str) -> None:
@@ -539,12 +539,13 @@ def print_collection(
 
 
 GUEST_STATE_COLORS = {
+    'shelf-lookup': 'yellow',
     'routing': 'yellow',
     'provisioning': 'magenta',
     'promised': 'blue',
     'preparing': 'cyan',
     'ready': 'green',
-    'cancelled': 'red',
+    'condemned': 'red',
     'error': 'red'
 }
 
