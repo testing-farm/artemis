@@ -261,7 +261,8 @@ class Sentry:
         if KNOB_SENTRY_DISABLE_CERT_VERIFICATION.value is True:
             def _get_pool_options(
                 self: sentry_sdk.transport.HttpTransport,
-                ca_certs: Any
+                *args: Any,
+                **kwargs: Any
             ) -> Dict[str, Any]:
                 return {
                     # num_pools is a bit cryptic, btu comes from the original method
