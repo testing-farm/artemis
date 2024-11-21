@@ -46,6 +46,8 @@ sqlalchemy = { version = "*", extras = [ "mypy", "postgresql", "postgresql-psyco
 sqlalchemy-utils = { version = "*", extras = ["encrypted"] }
 stackprinter = "*"
 typing-extensions = "*"
+# pendulum 3.x has an ugly bug when timezone is not specified, https://github.com/sdispater/pendulum/issues/791
+pendulum = "^2.0"
 periodiq = "*"
 redis = "*"
 jsonschema = "*"
