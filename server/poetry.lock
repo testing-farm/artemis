@@ -4819,26 +4819,27 @@ stevedore = ">=2.0.1"
 
 [[package]]
 name = "python-openstackclient"
-version = "7.2.1"
+version = "6.6.1"
 description = "OpenStack Command-line Client"
 optional = true
-python-versions = ">=3.9"
+python-versions = ">=3.8"
 files = [
-    {file = "python-openstackclient-7.2.1.tar.gz", hash = "sha256:eb9abe56b52726245b99bdfb539a6cd5196c052039809703c65c69049e44ca39"},
-    {file = "python_openstackclient-7.2.1-py3-none-any.whl", hash = "sha256:94492f2d5877219f3d30d36112901ec3679861740f61f4e9716a9fd2579856af"},
+    {file = "python-openstackclient-6.6.1.tar.gz", hash = "sha256:23b486ecdf90d7388db91d1a89546e357fb92fd94a2ca8bfafe22ac8ec0196c4"},
+    {file = "python_openstackclient-6.6.1-py3-none-any.whl", hash = "sha256:99963dea828483744115d6b629ed14052e7e75886d52c9ef81d234cc0d457fe7"},
 ]
 
 [package.dependencies]
 cliff = ">=3.5.0"
 cryptography = ">=2.7"
 iso8601 = ">=0.1.11"
-openstacksdk = ">=3.3.0"
+openstacksdk = ">=2.0.0"
 osc-lib = ">=2.3.0"
 "oslo.i18n" = ">=3.15.3"
 pbr = ">=2.0.0,<2.1.0 || >2.1.0"
 python-cinderclient = ">=3.3.0"
 python-keystoneclient = ">=3.22.0"
-requests = ">=2.27.0"
+python-novaclient = ">=18.1.0"
+requests = ">=2.14.2"
 stevedore = ">=2.0.1"
 
 [[package]]
@@ -6057,4 +6058,4 @@ full = ["awscli", "azure-cli", "beaker-client", "python-openstackclient"]
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.9.0"
-content-hash = "9dfd96a683c5b091c68057203625545d13c05180007174e071595e3d6a18cfb7"
+content-hash = "f0c2e0a540bb92cfa41c8d7d36620e0b6613738865e7f88554cd76c33bfe5439"
