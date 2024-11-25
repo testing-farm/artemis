@@ -178,3 +178,13 @@ pages:preview:stop:
     action: stop
   script:
     - echo "bye"
+
+publish_cli:
+  stage: deploy
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "cli/pyproject.toml"
+    - when: never
+  script:
+    - make -C cli/ publish
