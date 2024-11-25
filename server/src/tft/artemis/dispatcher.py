@@ -89,35 +89,36 @@ def pick_task_request(
 ) -> bool:
     LOGGER.set(logger)
 
-    with Sentry.start_span('pick_task_request', op='function'), \
-            transaction(logger, session) as transaction_result:
-        r_pending_task = SafeQuery.from_session(session, TaskRequest) \
-            .limit(1) \
-            .one_or_none()
+    with Sentry.start_transaction(op='function', name='dispatcher'):
+        with Sentry.start_span('handle_task_request', op='function'), \
+                transaction(logger, session) as transaction_result:
+            r_pending_task = SafeQuery.from_session(session, TaskRequest) \
+                .limit(1) \
+                .one_or_none()
 
-        if r_pending_task.is_error:
-            Failure.from_failure(
-                'failed to fetch pending task',
-                r_pending_task.unwrap_error()
-            ).handle(logger)
+            if r_pending_task.is_error:
+                Failure.from_failure(
+                    'failed to fetch pending task',
+                    r_pending_task.unwrap_error()
+                ).handle(logger)
 
-            return False
+                return False
 
-        task_request: Optional[TaskRequest] = r_pending_task.unwrap()
+            task_request: Optional[TaskRequest] = r_pending_task.unwrap()
 
-        if task_request is None:
-            return False
+            if task_request is None:
+                return False
 
-        handle_task_request(logger, session, task_request)
+            handle_task_request(logger, session, task_request)
 
-        LOGGER.set(logger)
+            LOGGER.set(logger)
 
-    if not transaction_result.complete:
-        assert transaction_result.failure is not None
+        if not transaction_result.complete:
+            assert transaction_result.failure is not None
 
-        transaction_result.failure.handle(logger)
+            transaction_result.failure.handle(logger)
 
-    return transaction_result.complete
+        return transaction_result.complete
 
 
 def main() -> None:
@@ -133,7 +134,7 @@ def main() -> None:
     while True:
         logger.info('tick...')
 
-        with Sentry.start_transaction(op='function', name='dispatcher_session'), db.get_session(logger) as session:
+        with db.get_session(logger) as session:
             SESSION.set(session)
 
             while pick_task_request(logger, session):
