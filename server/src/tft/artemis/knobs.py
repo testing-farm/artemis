@@ -825,6 +825,16 @@ KNOB_SENTRY_INTEGRATIONS: Knob[str] = Knob(
     default='logging,stdlib,excepthook,dedupe,atexit,modules,argv,threading'
 )
 
+KNOB_TRACING_ENABLED: Knob[bool] = Knob(
+    'tracing.enabled',
+    'When enabled, Artemis would log tracing transactions to Sentry.',
+    has_db=False,
+    envvar='ARTEMIS_TRACING_ENABLED',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+
 KNOB_LOGGING_SENTRY: Knob[bool] = Knob(
     'logging.sentry',
     'When enabled, Artemis would log more Sentry-related debug info.',

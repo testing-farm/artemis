@@ -174,7 +174,8 @@ def chain_get(fn: 'SafeQueryRawGetType[T, S]') -> 'SafeQueryGetType[T, S]':
 
 
 class SafeQuery(Generic[T]):
-    def __init__(self, query: '_Query[T]') -> None:
+    def __init__(self, session: sqlalchemy.orm.session.Session, query: '_Query[T]') -> None:
+        self._session = session
         self.query = query
 
         self.failure: Optional[Failure] = None
@@ -182,6 +183,7 @@ class SafeQuery(Generic[T]):
     @staticmethod
     def from_session(session: sqlalchemy.orm.session.Session, klass: Type[T]) -> 'SafeQuery[T]':
         query_proxy: SafeQuery[T] = SafeQuery(
+            session,
             cast(
                 Callable[[Type[T]], '_Query[T]'],
                 session.query
@@ -220,31 +222,51 @@ class SafeQuery(Generic[T]):
 
     @chain_get
     def one(self) -> T:
-        return cast(
-            Callable[[], T],
-            self.query.one
-        )()
+        from . import Sentry
+
+        stringified = stringify_query(self._session, self.query.statement)
+
+        with Sentry.start_span('query_one', op='db.dql', query=stringified):
+            return cast(
+                Callable[[], T],
+                self.query.one
+            )()
 
     @chain_get
     def one_or_none(self) -> Optional[T]:
-        return cast(
-            Callable[[], T],
-            self.query.one_or_none
-        )()
+        from . import Sentry
+
+        stringified = stringify_query(self._session, self.query.statement)
+
+        with Sentry.start_span('query_one_or_none', op='db.dql', query=stringified):
+            return cast(
+                Callable[[], T],
+                self.query.one_or_none
+            )()
 
     @chain_get
     def all(self) -> List[T]:
-        return cast(
-            Callable[[], List[T]],
-            self.query.all
-        )()
+        from . import Sentry
+
+        stringified = stringify_query(self._session, self.query.statement)
+
+        with Sentry.start_span('query_all', op='db.dql', query=stringified):
+            return cast(
+                Callable[[], List[T]],
+                self.query.all
+            )()
 
     @chain_get
     def count(self) -> int:
-        return cast(
-            Callable[[], int],
-            self.query.count
-        )()
+        from . import Sentry
+
+        stringified = stringify_query(self._session, self.query.statement)
+
+        with Sentry.start_span('query_count', op='db.dql', query=stringified):
+            return cast(
+                Callable[[], int],
+                self.query.count
+            )()
 
 
 def stringify_query(session: sqlalchemy.orm.session.Session, query: sqlalchemy.sql.elements.ClauseElement) -> str:
@@ -293,23 +315,28 @@ def execute_dml(
     :returns: ``None`` if the statement was executed correctly, :py:class:`Failure` otherwise.
     """
 
-    logger.debug(f'execute DML: {stringify_query(session, statement)}')
+    from . import Sentry
 
-    try:
-        result: sqlalchemy.engine.cursor.CursorResult[T] = session.execute(statement)
+    stringified = stringify_query(session, statement)
 
-        return Ok(result)
+    logger.debug(f'execute DML: {stringified}')
 
-    except Exception as exc:
-        from . import Failure
+    with Sentry.start_span('query_dml', op='db.dml', query=stringified):
+        try:
+            result: sqlalchemy.engine.cursor.CursorResult[T] = session.execute(statement)
 
-        return Error(
-            Failure.from_exc(
-                'failed to execute DML statement',
-                exc,
-                query=stringify_query(session, statement)
+            return Ok(result)
+
+        except Exception as exc:
+            from . import Failure
+
+            return Error(
+                Failure.from_exc(
+                    'failed to execute DML statement',
+                    exc,
+                    query=stringify_query(session, statement)
+                )
             )
-        )
 
 
 def upsert(

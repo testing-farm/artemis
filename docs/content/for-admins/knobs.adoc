@@ -1334,6 +1334,16 @@ Useful when Artemis deployment renders templates that Artemis itself is supposed
 The value shall be comma-separated list of two strings, the start and end delimiter
 of a variable to render in a template.
 
+|`tracing.enabled`
+|`bool`
+|`ARTEMIS_TRACING_ENABLED`
+|`no`
+|no
+
+
+
+5+|When enabled, Artemis would log tracing transactions to Sentry.
+
 |`vault.password`
 |`str`
 |`ARTEMIS_VAULT_PASSWORD`

@@ -30,8 +30,8 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol, TypedDict
 
-from .. import Failure, RSSWatcher, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, metrics, \
-    safe_call
+from .. import Failure, RSSWatcher, Sentry, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, \
+    metrics, safe_call
 from ..context import CURRENT_MESSAGE, CURRENT_TASK, DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, DMLResult, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, \
     SafeQuery, SnapshotRequest, SSHKey, TaskRequest, TransactionResult, execute_dml, transaction
@@ -565,6 +565,19 @@ class TaskCall(SerializableContainer):
     ) -> 'TaskCall':
         return cls._construct(actor, *args, delay=delay, task_request_id=task_request_id)
 
+    @classmethod
+    def from_task_request(
+        cls,
+        broker: dramatiq.broker.Broker,
+        request: TaskRequest
+    ) -> 'TaskCall':
+        return cls._construct(
+            cast('Actor', broker.get_actor(request.taskname)),
+            *request.arguments,
+            delay=request.delay,
+            task_request_id=request.id
+        )
+
     def serialize(self) -> Dict[str, Any]:
         return {
             'actor': self.actor.actor_name,
@@ -1005,7 +1018,8 @@ def run_doer_singlethread(
             profiler = Profiler()
             profiler.start()
 
-        result = fn(logger, db, session, *args, **kwargs)
+        with Sentry.start_span('run_doer', op='function', doer=fn.__name__, doer_args=args):
+            result = fn(logger, db, session, *args, **kwargs)
 
     except dramatiq.middleware.Interrupt as exc:
         logger.debug('doer interrupted')
@@ -1050,7 +1064,7 @@ else:
     run_doer = run_doer_singlethread
 
 
-def task_core(
+def _task_core(
     doer: DoerType,
     logger: TaskLogger,
     db: Optional[DB] = None,
@@ -1067,7 +1081,7 @@ def task_core(
 
     # TODO: implement a proper decorator, or merge this into @task decorator - but @task seems to be flawed,
     # which requires a fix, therefore merge this into @task once it gets fixed.
-    caller_frame = inspect.stack()[1]
+    caller_frame = inspect.stack()[2]
 
     actor_name = caller_frame.frame.f_code.co_name
 
@@ -1210,6 +1224,36 @@ def task_core(
     raise Exception(f'message processing failed: {doer_result.unwrap_error().message}')
 
 
+def task_core(
+    doer: DoerType,
+    logger: TaskLogger,
+    db: Optional[DB] = None,
+    session: Optional[sqlalchemy.orm.session.Session] = None,
+    doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
+    doer_kwargs: Optional[Dict[str, Any]] = None,
+    session_isolation: bool = True
+) -> None:
+    with Sentry.start_transaction('task', 'task') as tracing_transaction:
+        tracing_transaction.set_context(
+            'task_call',
+            {
+                'actor': doer.__name__,
+                'args': doer_args
+            }
+        )
+
+        with Sentry.start_span('run_task', op='function', doer=doer.__name__, doer_args=doer_args):
+            _task_core(
+                doer,
+                logger,
+                db,
+                session=session,
+                doer_args=doer_args,
+                doer_kwargs=doer_kwargs,
+                session_isolation=session_isolation
+            )
+
+
 def _randomize_delay(delay: int) -> int:
     """
     Modify a given delay by a randomized value withing spread specified by :py:const:`KNOB_DELAY_UNIFORM_SPREAD`.
@@ -1271,7 +1315,8 @@ def dispatch_task(
 
     task_call = TaskCall.from_message(BROKER, message, delay=delay, task_request_id=task_request_id)
 
-    r = safe_call(BROKER.enqueue, message, delay=actual_delay)
+    with Sentry.start_span('dispatch_task', op='function', task_call=task_call.serialize()):
+        r = safe_call(BROKER.enqueue, message, delay=actual_delay)
 
     if r.is_error:
         return Error(Failure.from_failure(

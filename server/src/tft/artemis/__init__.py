@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
 import dataclasses
 import importlib
 import inspect
@@ -48,6 +49,7 @@ import sentry_sdk.integrations.modules
 import sentry_sdk.integrations.stdlib
 import sentry_sdk.integrations.threading
 import sentry_sdk.serializer
+import sentry_sdk.tracing
 import sentry_sdk.transport
 import sentry_sdk.types
 import sentry_sdk.utils
@@ -71,7 +73,7 @@ from .knobs import KNOB_TEMPLATE_BLOCK_DELIMITERS  # noqa: E402
 from .knobs import KNOB_TEMPLATE_VARIABLE_DELIMITERS  # noqa: E402
 from .knobs import Knob  # noqa: E402
 from .knobs import KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_SENTRY, KNOB_SENTRY_DISABLE_CERT_VERIFICATION, \
-    KNOB_SENTRY_DSN, KNOB_SENTRY_EVENT_URL_TEMPLATE, KNOB_SENTRY_INTEGRATIONS  # noqa: E402
+    KNOB_SENTRY_DSN, KNOB_SENTRY_EVENT_URL_TEMPLATE, KNOB_SENTRY_INTEGRATIONS, KNOB_TRACING_ENABLED  # noqa: E402
 
 if TYPE_CHECKING:
     from .environment import Environment, SizeType
@@ -251,6 +253,8 @@ class Sentry:
         return integrations
 
     def __init__(self) -> None:
+        logger = get_logger()
+
         self.enabled = False
 
         if KNOB_SENTRY_DSN.value in (None, 'undefined'):
@@ -265,14 +269,14 @@ class Sentry:
                 **kwargs: Any
             ) -> Dict[str, Any]:
                 return {
-                    # num_pools is a bit cryptic, btu comes from the original method
+                    # num_pools is a bit cryptic, but comes from the original method
                     'num_pools': 2,
                     'cert_reqs': 'CERT_NONE'
                 }
 
             sentry_sdk.transport.HttpTransport._get_pool_options = _get_pool_options  # type: ignore[assignment]
 
-        integrations = Sentry._ingest_integrations(get_logger())
+        integrations = Sentry._ingest_integrations(logger)
 
         # Controls how many variables and other items are captured in event and stack frames. The default
         # value of 10 is pretty small, 1000 should be more than enough for anything we ever encounter.
@@ -286,7 +290,6 @@ class Sentry:
             debug=KNOB_LOGGING_SENTRY.value,
             # log all issues - if we ever decide we need less, we can add knobs to control these
             sample_rate=1.0,
-            traces_sample_rate=1.0,
             # We need to override one parameter of on of the default integrations,
             # so we're doomed to list all of them.
             integrations=integrations,
@@ -294,8 +297,89 @@ class Sentry:
             # already listing default integrations ourselves and having some form of control is useful to prevent
             # surprises like extensive sentry communication per normal request with middleware for fastapi/starlette
             # integrations.
-            default_integrations=False
+            default_integrations=False,
+
+            # Tracing
+            enable_tracing=KNOB_TRACING_ENABLED.value,
+            traces_sample_rate=1.0,
+            enable_db_query_source=False,
+
+            profiles_sample_rate=0.0,
         )
+
+    @classmethod
+    def get_default_tags(cls) -> Dict[str, Any]:
+        from .knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT
+
+        tags: Dict[str, str] = {}
+
+        # Special tag, "server_name", is used by Sentry for tracking issues per servers.
+        tags['server_name'] = platform.node()
+
+        if KNOB_DEPLOYMENT.value:
+            tags['deployment'] = KNOB_DEPLOYMENT.value
+
+        # Special tag, "environment", is used by Sentry for tracking issues per environment.
+        if KNOB_DEPLOYMENT_ENVIRONMENT.value:
+            tags['environment'] = KNOB_DEPLOYMENT_ENVIRONMENT.value
+
+        return tags
+
+    @classmethod
+    def get_default_contexts(self) -> Dict[str, Dict[str, Any]]:
+        from .knobs import KNOB_COMPONENT
+
+        contexts: Dict[str, Dict[str, Any]] = {}
+
+        # App https://develop.sentry.dev/sdk/event-payloads/contexts/#app-context
+        contexts['app'] = {
+            'type': 'app',
+            'app_identifier': KNOB_COMPONENT.value,
+            'app_name': 'Artemis',
+            'app_version': get_release(),
+        }
+
+        return contexts
+
+    @classmethod
+    @contextlib.contextmanager
+    def start_transaction(
+        cls,
+        op: Optional[str] = None,
+        name: Optional[str] = None,
+        guestname: Optional[str] = None,
+        poolname: Optional[str] = None
+    ) -> Generator[sentry_sdk.tracing.Transaction, None, None]:
+        with sentry_sdk.get_current_scope().start_transaction(op=op, name=name) as transaction:
+            assert isinstance(transaction, sentry_sdk.tracing.Transaction)
+
+            for name, value in cls.get_default_tags().items():
+                transaction.set_tag(name, value)
+
+            for name, value in cls.get_default_contexts().items():
+                transaction.set_context(name, value)
+
+            if guestname:
+                transaction.set_tag('guestname', guestname)
+
+            if poolname:
+                transaction.set_tag('poolname', poolname)
+
+            yield transaction
+
+    @classmethod
+    @contextlib.contextmanager
+    def start_span(
+        cls,
+        name: str,
+        op: Optional[str] = None,
+        **tags: Any
+    ) -> Generator[sentry_sdk.tracing.Span, None, None]:
+        with sentry_sdk.get_current_scope().start_span(name=name, op=op) as span:
+            for name, value in tags.items():
+                span.set_tag(name, value)
+
+            yield span
 
 
 SENTRY = Sentry()
@@ -852,17 +936,7 @@ class Failure:
         }
 
     def get_sentry_contexts(self) -> Dict[str, Dict[str, Any]]:
-        from .knobs import KNOB_COMPONENT
-
-        contexts: Dict[str, Dict[str, Any]] = {}
-
-        # App https://develop.sentry.dev/sdk/event-payloads/contexts/#app-context
-        contexts['app'] = {
-            'type': 'app',
-            'app_identifier': KNOB_COMPONENT.value,
-            'app_name': 'Artemis',
-            'app_version': get_release(),
-        }
+        contexts: Dict[str, Dict[str, Any]] = Sentry.get_default_contexts()
 
         # https://docs.sentry.io/platforms/python/enriching-events/context/#structured-context
         contexts['contexts'] = {
@@ -878,10 +952,8 @@ class Failure:
         Returns three mappings, data, tags and extra, accepted by Sentry as issue details.
         """
 
-        from .knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT
-
         event: Dict[str, Any] = {}
-        tags: Dict[str, str] = {}
+        tags: Dict[str, str] = Sentry.get_default_tags()
         extra: Dict[str, Any] = self.details.copy()
 
         extra['message'] = self.message
@@ -928,16 +1000,6 @@ class Failure:
 
         if 'task_call' in extra:
             extra['task_call'] = extra['task_call'].serialize()
-
-        # Special tag, "server_name", is used by Sentry for tracking issues per servers.
-        tags['server_name'] = platform.node()
-
-        if KNOB_DEPLOYMENT.value:
-            tags['deployment'] = KNOB_DEPLOYMENT.value
-
-        # Special tag, "environment", is used by Sentry for tracking issues per environment.
-        if KNOB_DEPLOYMENT_ENVIRONMENT.value:
-            tags['environment'] = KNOB_DEPLOYMENT_ENVIRONMENT.value
 
         event.update({
             'message': f'Failure: {self.message}'
