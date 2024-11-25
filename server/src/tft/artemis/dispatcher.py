@@ -94,6 +94,7 @@ def pick_task_request(
                 transaction(logger, session) as transaction_result:
             r_pending_task = SafeQuery.from_session(session, TaskRequest) \
                 .limit(1) \
+                .with_for_update(skip_locked=True) \
                 .one_or_none()
 
             if r_pending_task.is_error:
