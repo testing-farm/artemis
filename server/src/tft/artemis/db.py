@@ -234,6 +234,13 @@ class SafeQuery(Generic[T]):
             self.query.offset
         )(offset)
 
+    @chain_update_va
+    def with_for_update(self, skip_locked: bool = False) -> '_Query[T]':
+        return cast(
+            Callable[..., '_Query[T]'],
+            self.query.with_for_update
+        )(skip_locked=skip_locked)
+
     @chain_get
     def one(self) -> T:
         from . import Sentry
