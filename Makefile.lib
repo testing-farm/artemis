@@ -68,7 +68,8 @@ docs-autodocs:  ## Generate source code documentation
 ##@ Release
 
 publish:  ## Publish component as PyPI package
-	@poetry publish --username $(PYPI_USERNAME) --password $(PYPI_PASSWORD) --build $$POETRY_ADDOPTS
+	@poetry config pypi-token.pypi $(PYPI_TOKEN) $$POETRY_ADDOPTS
+	@poetry publish --skip-existing --build $$POETRY_ADDOPTS
 
 ##@ Utility
 
