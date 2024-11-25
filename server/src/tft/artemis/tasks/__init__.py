@@ -568,15 +568,19 @@ class TaskCall(SerializableContainer):
     @classmethod
     def from_task_request(
         cls,
-        broker: dramatiq.broker.Broker,
         request: TaskRequest
-    ) -> 'TaskCall':
-        return cls._construct(
-            cast('Actor', broker.get_actor(request.taskname)),
+    ) -> Result['TaskCall', Failure]:
+        r_actor = resolve_actor(request.taskname)
+
+        if r_actor.is_error:
+            return Error(r_actor.unwrap_error())
+
+        return Ok(cls._construct(
+            r_actor.unwrap(),
             *request.arguments,
             delay=request.delay,
             task_request_id=request.id
-        )
+        ))
 
     def serialize(self) -> Dict[str, Any]:
         return {
