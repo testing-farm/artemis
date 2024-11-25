@@ -799,9 +799,15 @@ def print_tasks(
             table.add_column(header)
 
         for task in tasks:
+            actor = task['actor'].replace('_', '-')
+            args = task['args']
+
+            if actor == 'release-pool-resources' and 'resource_ids' in args:
+                args['resource_ids'] = json.loads(args['resource_ids'])
+
             table.add_row(
-                task['actor'].replace('_', '-'),
-                RichYAML.from_data(task['args']) if task['args'] else '',
+                actor,
+                RichYAML.from_data(args) if args else '',
                 task['ctime']
             )
 
