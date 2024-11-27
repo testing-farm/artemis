@@ -6,6 +6,8 @@ from typing import cast
 
 import gluetool.log
 import periodiq
+import sqlalchemy.dialects
+import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm.session
 
 from ..db import DB, DMLResult, GuestEvent, GuestRequest, execute_dml
@@ -57,10 +59,12 @@ class Workspace(_Workspace):
             query = sqlalchemy \
                 .delete(GuestEvent) \
                 .where(GuestEvent.guestname.not_in(guest_count_subquery)) \
-                .where(sqlalchemy.func.age(GuestEvent.updated) >= sqlalchemy.func.cast(
-                    sqlalchemy.text(f'{KNOB_GC_EVENTS_THRESHOLD.value} SECONDS'),
-                    sqlalchemy.dialects.postgresql.INTERVAL
-                ))
+                .where(
+                    sqlalchemy.func.age(GuestEvent.updated) >= sqlalchemy.func.cast(
+                        sqlalchemy.func.concat(str(KNOB_GC_EVENTS_THRESHOLD.value), ' SECONDS'),
+                        sqlalchemy.dialects.postgresql.INTERVAL
+                    )
+                )
 
             r_execute: DMLResult[GuestEvent] = execute_dml(self.logger, self.session, query)
 
