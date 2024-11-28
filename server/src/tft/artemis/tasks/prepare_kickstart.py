@@ -21,8 +21,9 @@ import gluetool.log
 import sqlalchemy.orm.session
 
 from .. import Failure, render_template
-from ..db import DB
-from ..drivers import copy_from_remote, copy_to_remote, create_tempfile, run_cli_tool, run_remote
+from ..db import DB, GuestLogContentType, GuestLogState
+from ..drivers import GuestLogBlob, GuestLogUpdateProgress, copy_from_remote, copy_to_remote, create_tempfile, \
+    guest_log_update_log, run_cli_tool, run_remote
 from ..drivers.hooks import KNOB_CACHE_PATTERN_MAPS, get_pattern_map
 from ..guest import GuestState
 from ..knobs import KNOB_CONFIG_DIRPATH, Knob
@@ -282,8 +283,28 @@ class Workspace(_Workspace):
                         'failed to read the kickstart template'
                     )
 
+                kickstart_script = r_kickstart.unwrap()
+                r_log_update = guest_log_update_log(
+                    self.logger,
+                    self.session,
+                    self.gr.guestname,
+                    'ks.cfg:dump',
+                    GuestLogContentType.BLOB,
+                    GuestLogUpdateProgress(
+                        state=GuestLogState.COMPLETE,
+                        overwrite=True,
+                        blobs=[GuestLogBlob.from_content(kickstart_script)]
+                    ),
+                    create=True
+                )
+
+                if r_log_update.is_error:
+                    # Failing to log the generated kickstart is not a critical error but may make debugging
+                    # installation issues more difficult.
+                    self._error(r_log_update, 'failed to log the generated kickstart', no_effect=True)
+
                 # Copy the templated kickstart script to guest
-                with create_tempfile(file_contents=r_kickstart.unwrap()) as kickstart_filepath:
+                with create_tempfile(file_contents=kickstart_script) as kickstart_filepath:
                     # Validate the generated ks
                     # TODO: Validate against concrete kickstart version? (ksvalidator -v VERSION ...)
                     r_validator = run_cli_tool(

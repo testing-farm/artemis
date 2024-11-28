@@ -973,6 +973,20 @@ class GuestLogBlob:
     content: str
     content_hash: str
 
+    @classmethod
+    def from_content(cls, content: str) -> 'GuestLogBlob':
+        """
+        Populate GuestLogBlob from the contents and infer/calculate remaining fields.
+
+        :param content: log content string.
+        """
+
+        return cls(
+            ctime=datetime.datetime.utcnow(),
+            content=content,
+            content_hash=hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
+        )
+
 
 @dataclasses.dataclass
 class GuestLogUpdateProgress:
@@ -1072,31 +1086,26 @@ class GuestLogUpdateProgress:
 
             return GuestLogUpdateProgress(state=GuestLogState.PENDING, overwrite=True)
 
-        timestamp = datetime.datetime.utcnow()
-        content_hash = hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
+        blob = GuestLogBlob.from_content(content)
 
         if not log.blobs:
-            logger.info(f'first log blob: {timestamp} {content_hash}')
+            logger.info(f'first log blob: {blob.ctime} {blob.content_hash}')
 
             return GuestLogUpdateProgress(
                 state=GuestLogState.IN_PROGRESS,
                 overwrite=True,
-                blobs=[
-                    GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
-                ]
+                blobs=[blob]
             )
 
-        for blob in log.blobs:
-            logger.info(f'existing log blob: {blob.ctime} {blob.content_hash}')
+        for existing_blob in log.blobs:
+            logger.info(f'existing log blob: {existing_blob.ctime} {existing_blob.content_hash}')
 
-        logger.info(f'overwrite log blob: {timestamp} {content_hash}')
+        logger.info(f'overwrite log blob: {blob.ctime} {blob.content_hash}')
 
         return GuestLogUpdateProgress(
             state=GuestLogState.IN_PROGRESS,
             overwrite=True,
-            blobs=[
-                GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
-            ]
+            blobs=[blob]
         )
 
 
