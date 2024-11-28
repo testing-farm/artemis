@@ -5,10 +5,12 @@ import dataclasses
 import datetime
 import re
 import sys
-from typing import Any, Dict, List, Optional, Pattern, Tuple, Union, cast
+from typing import Any, Dict, Iterator, List, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
 import keystoneauth1
+import novaclient.v2.client
+import novaclient.v2.flavors
 import novaclient.v2.servers
 import sqlalchemy.orm.session
 from glanceclient import Client as gcl
@@ -1135,48 +1137,44 @@ class OpenStackDriver(PoolDriver):
         #   ...
         # ]
 
-        r_nova = self._get_nova()
-        if r_nova.is_error:
-            return Error(r_nova.unwrap_error())
-        flavors = safe_call(r_nova.unwrap().flavors.list).unwrap()
+        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[novaclient.v2.flavors.Flavor], Failure]:
+            r_nova = self._get_nova()
 
-        if self.pool_config.get('flavor-regex'):
-            flavor_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['flavor-regex'])
+            if r_nova.is_error:
+                return Error(r_nova.unwrap_error())
 
-        else:
-            flavor_name_pattern = None
+            return safe_call(r_nova.unwrap().flavors.list)
 
-        try:
-            return Ok([
-                Flavor(
-                    name=flavor.name,
-                    id=flavor.id,
-                    cpu=FlavorCpu(
-                        processors=int(flavor.vcpus)
-                    ),
-                    # memory is reported in MiB
-                    memory=UNITS.Quantity(int(flavor.ram), UNITS.mebibytes),
-                    disk=FlavorDisks([
-                        FlavorDisk(
-                            # diskspace is reported in GiB
-                            size=UNITS.Quantity(int(flavor.disk), UNITS.gibibytes)
-                        )
-                    ]),
-                    network=FlavorNetworks([FlavorNetwork(type='eth')]),
-                    virtualization=FlavorVirtualization(
-                        is_virtualized=True
+        def _constructor(
+            logger: gluetool.log.ContextAdapter,
+            raw_flavor: novaclient.v2.flavors.Flavor
+        ) -> Iterator[Result[Flavor, Failure]]:
+            yield Ok(Flavor(
+                name=raw_flavor.name,
+                id=raw_flavor.id,
+                cpu=FlavorCpu(
+                    processors=int(raw_flavor.vcpus)
+                ),
+                # memory is reported in MiB
+                memory=UNITS.Quantity(int(raw_flavor.ram), UNITS.mebibytes),
+                disk=FlavorDisks([
+                    FlavorDisk(
+                        # diskspace is reported in GiB
+                        size=UNITS.Quantity(int(raw_flavor.disk), UNITS.gibibytes)
                     )
+                ]),
+                network=FlavorNetworks([FlavorNetwork(type='eth')]),
+                virtualization=FlavorVirtualization(
+                    is_virtualized=True
                 )
-                for flavor in flavors
-                if flavor_name_pattern is None or flavor_name_pattern.match(flavor.name)
-            ])
-
-        except KeyError as exc:
-            return Error(Failure.from_exc(
-                'malformed flavor description',
-                exc,
-                flavor_info=flavors
             ))
+
+        return self.do_fetch_pool_flavor_info(
+            self.logger,
+            _fetch,
+            lambda raw_flavor: cast(str, raw_flavor.name),  # type: ignore[attr-defined]
+            _constructor
+        )
 
     def _do_fetch_console(
         self,

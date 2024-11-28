@@ -8,7 +8,7 @@ import ipaddress
 import json
 import os
 import re
-from typing import Any, Dict, Generator, List, MutableSequence, Optional, Pattern, Tuple, Union, cast
+from typing import Any, Dict, Generator, Iterator, List, MutableSequence, Optional, Pattern, Tuple, Union, cast
 
 import gluetool.log
 import gluetool.utils
@@ -2985,96 +2985,85 @@ class AWSDriver(PoolDriver):
 
         capabilities = r_capabilities.unwrap()
 
-        r_flavors = self._aws_command(
-            ['ec2', 'describe-instance-types'],
-            key='InstanceTypes',
-            commandname='aws.ec2-describe-instance-types'
-        )
+        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+            r_raw_flavors = self._aws_command(
+                ['ec2', 'describe-instance-types'],
+                key='InstanceTypes',
+                commandname='aws.ec2-describe-instance-types'
+            )
 
-        if r_flavors.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch instance type information',
-                r_flavors.unwrap_error()
-            ))
+            if r_raw_flavors.is_error:
+                return Error(r_raw_flavors.unwrap_error())
 
-        if self.pool_config.get('flavor-regex'):
-            flavor_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['flavor-regex'])
+            return Ok(cast(List[Dict[str, Any]], r_raw_flavors.unwrap()))
 
-        else:
-            flavor_name_pattern = None
-
-        flavors: List[Flavor] = []
-
-        # Here we covert instance types retrieved from API into flavors. We filter out instance types
-        # whose names don't match a flavor name patter, if specified. Then we take a look at architectures
+        # Here we covert instance types retrieved from API into flavors. We take a look at architectures
         # supported by instance type, and create distinct flavors for each architecture. That way, we can
         # have pools supporting more than one architecture, and let Artemis match flavors and requestes
         # based on their attributes, not because maintainers "hide" the instance types with wrong parameters.
-        try:
-            for flavor in cast(List[Dict[str, Any]], r_flavors.unwrap()):
-                if flavor_name_pattern is not None and not flavor_name_pattern.match(flavor['InstanceType']):
+        def _constructor(
+            logger: gluetool.log.ContextAdapter,
+            raw_flavor: Dict[str, Any]
+        ) -> Iterator[Result[Flavor, Failure]]:
+            for arch in cast(APIInstanceTypeProcessorInfo, raw_flavor['ProcessorInfo'])['SupportedArchitectures']:
+                artemis_arch = _aws_arch_to_arch(arch)
+
+                if not capabilities.supports_arch(artemis_arch):
                     continue
 
-                for arch in cast(APIInstanceTypeProcessorInfo, flavor['ProcessorInfo'])['SupportedArchitectures']:
-                    artemis_arch = _aws_arch_to_arch(arch)
+                try:
+                    boot_methods: List[FlavorBootMethodType] = [
+                        _aws_boot_to_boot(boot_method)
+                        for boot_method in JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES.input(raw_flavor).all()
+                    ]
 
-                    if not capabilities.supports_arch(artemis_arch):
-                        continue
-
-                    try:
-                        boot_methods: List[FlavorBootMethodType] = [
-                            _aws_boot_to_boot(boot_method)
-                            for boot_method in JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES.input(flavor).all()
-                        ]
-
-                    except Exception as exc:
-                        return Error(Failure.from_exc(
-                            'failed to parse AWS output',
-                            exc
-                        ))
-
-                    vcpus = int(flavor['VCpuInfo']['DefaultVCpus'])
-                    cores = int(flavor['VCpuInfo']['DefaultCores'])
-                    threads_per_core = int(flavor['VCpuInfo']['DefaultThreadsPerCore'])
-
-                    network = FlavorNetworks([FlavorNetwork(type='eth')])
-
-                    nic_limit = flavor['NetworkInfo']['MaximumNetworkInterfaces']
-
-                    if nic_limit > 1:
-                        network.items += [
-                            FlavorNetwork(type='eth', is_expansion=True, max_additional_items=nic_limit - 1)
-                        ]
-
-                    flavors.append(AWSFlavor(
-                        name=flavor['InstanceType'],
-                        id=flavor['InstanceType'],
-                        arch=artemis_arch,
-                        boot=FlavorBoot(method=boot_methods),
-                        cpu=FlavorCpu(
-                            cores=cores,
-                            threads=cores * threads_per_core,
-                            processors=vcpus,
-                            threads_per_core=threads_per_core
-                        ),
-                        network=network,
-                        # memory is reported in MB
-                        memory=UNITS.Quantity(int(flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
-                        virtualization=FlavorVirtualization(
-                            hypervisor=flavor.get('Hypervisor', None),
-                            is_virtualized=True if flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS else False
-                        ),
-                        ena_support=flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported')
+                except Exception as exc:
+                    return Error(Failure.from_exc(
+                        'malformed flavor description',
+                        exc
                     ))
 
-        except KeyError as exc:
-            return Error(Failure.from_exc(
-                'malformed flavor description',
-                exc,
-                flavor_info=r_flavors.unwrap()
-            ))
+                vcpus = int(raw_flavor['VCpuInfo']['DefaultVCpus'])
+                cores = int(raw_flavor['VCpuInfo']['DefaultCores'])
+                threads_per_core = int(raw_flavor['VCpuInfo']['DefaultThreadsPerCore'])
 
-        return Ok(flavors)
+                network = FlavorNetworks([FlavorNetwork(type='eth')])
+
+                nic_limit = raw_flavor['NetworkInfo']['MaximumNetworkInterfaces']
+
+                if nic_limit > 1:
+                    network.items += [
+                        FlavorNetwork(type='eth', is_expansion=True, max_additional_items=nic_limit - 1)
+                    ]
+
+                yield Ok(AWSFlavor(
+                    name=raw_flavor['InstanceType'],
+                    id=raw_flavor['InstanceType'],
+                    arch=artemis_arch,
+                    boot=FlavorBoot(method=boot_methods),
+                    cpu=FlavorCpu(
+                        cores=cores,
+                        threads=cores * threads_per_core,
+                        processors=vcpus,
+                        threads_per_core=threads_per_core
+                    ),
+                    network=network,
+                    # memory is reported in MB
+                    memory=UNITS.Quantity(int(raw_flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
+                    virtualization=FlavorVirtualization(
+                        hypervisor=raw_flavor.get('Hypervisor', None),
+                        is_virtualized=True if raw_flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS else False
+                    ),
+                    ena_support=raw_flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported')
+                ))
+
+        return self.do_fetch_pool_flavor_info(
+            self.logger,
+            _fetch,
+            # ignore[index]: for some reason, mypy does not detect the type correctly
+            lambda raw_flavor: cast(str, raw_flavor['InstanceType']),  # type: ignore[index]
+            _constructor
+        )
 
     def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
         return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
