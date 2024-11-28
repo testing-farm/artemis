@@ -10,7 +10,6 @@ Inspect the provisioning progress of a given request, and update info Artemis ho
    MUST preserve consistent and restartable state.
 """
 
-import datetime
 from typing import Any, Dict, Optional, cast
 
 import gluetool.log
@@ -18,8 +17,8 @@ import sqlalchemy.orm.session
 from gluetool.result import Ok, Result
 
 from .. import Failure
-from ..db import DB, DMLResult, GuestLog, GuestLogBlob, GuestLogContentType, GuestLogState, SafeQuery, execute_dml
-from ..drivers import GuestLogBlob as GuestLogBlobProgress, GuestLogUpdateProgress, guest_log_update_log
+from ..db import DB, GuestLog, GuestLogContentType, GuestLogState, SafeQuery
+from ..drivers import GuestLogUpdateProgress, guest_log_update_log
 from ..guest import GuestState
 from ..knobs import Knob
 from . import (
