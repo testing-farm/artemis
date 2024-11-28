@@ -29,7 +29,7 @@ beaker-client = { version = "*", optional = true }
 click = "*"
 # TODO: 1.13.0 and newer add typing support, way bigger patch
 dramatiq = { version = "1.13.0", extras = ["rabbitmq"] }
-gluetool = "*"
+gluetool = "^2.5"
 gunicorn = "*"
 jinja2-ansible-filters = "*"
 jq = "*"
@@ -47,13 +47,15 @@ python-openstackclient = { version = "^6.0.0", optional = true }
 sqlalchemy = { version = "*", extras = [ "mypy", "postgresql", "postgresql-psycopg" ] }
 sqlalchemy-utils = { version = "*", extras = ["encrypted"] }
 stackprinter = "*"
+# Bumping just one minor version of starlette seems to mess with mypy
+starlette = "0.41.2"
 typing-extensions = "*"
 # pendulum 3.x has an ugly bug when timezone is not specified, https://github.com/sdispater/pendulum/issues/791
 pendulum = "^2.0"
 periodiq = "*"
 redis = "*"
 jsonschema = "*"
-sentry-sdk = "*"
+sentry-sdk = "^2.18"
 setuptools = "*"
 python-glanceclient = "*"
 python-novaclient = "*"
