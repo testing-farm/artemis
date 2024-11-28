@@ -10,7 +10,6 @@ Inspect the provisioning progress of a given request, and update info Artemis ho
    MUST preserve consistent and restartable state.
 """
 
-import datetime
 from typing import Any, Dict, Optional, cast
 
 import gluetool.log
