@@ -30,8 +30,10 @@ from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_
     render_template, safe_call, template_environment
 from ..cache import get_cached_mapping_item, get_cached_mapping_values, refresh_cached_mapping
 from ..context import CACHE, LOGGER
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
-    SnapshotRequest, SSHKey
+from ..db import DMLResult, GuestLog
+from ..db import GuestLogBlob as GuestLogBlobDB
+from ..db import GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, SnapshotRequest, SSHKey, \
+    execute_dml
 from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorBootMethodType, FlavorDisk, FlavorDisks, \
     MeasurableConstraintValueType, SizeType
 from ..knobs import KNOB_POOL_ENABLED, Knob
@@ -1215,6 +1217,127 @@ def guest_log_updater(
         return func
 
     return wrapper
+
+
+def guest_log_update_log(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.Session,
+    guestname: str,
+    logname: str,
+    contenttype: GuestLogContentType,
+    progress: GuestLogUpdateProgress,
+    create: bool = False
+) -> Result[None, Failure]:
+    """
+    """
+
+    # This is a redundant query when used within guest_update_log task
+    r_guest_log = SafeQuery.from_session(session, GuestLog) \
+        .filter(GuestLog.guestname == guestname) \
+        .filter(GuestLog.logname == logname) \
+        .filter(GuestLog.contenttype == contenttype) \
+        .one_or_none()
+
+    if r_guest_log.is_error:
+        return Error(Failure.from_failure('failed to fetch the log', r_guest_log.unwrap_error()))
+
+    guest_log: Optional[GuestLog] = r_guest_log.unwrap()
+
+    def _insert_blob(blob: GuestLogBlob) -> Result[None, Failure]:
+        blob_query = sqlalchemy \
+            .insert(GuestLogBlobDB) \
+            .values(
+                guestname=guestname,
+                logname=logname,
+                contenttype=contenttype,
+                ctime=blob.ctime,
+                content=blob.content,
+                content_hash=blob.content_hash
+            )
+
+        r_store: DMLResult[GuestLogBlobDB] = execute_dml(logger, session, blob_query)
+
+        if r_store.is_error:
+            return Error(Failure.from_failure('failed to store guest log blob', r_store.unwrap_error()))
+
+        return Ok(None)
+
+    def _update_blob(blob: GuestLogBlobDB, content: str, content_hash: str) -> Result[None, Failure]:
+        blob_query = sqlalchemy \
+            .update(GuestLogBlob) \
+            .where(GuestLogBlobDB.guestname == guestname) \
+            .where(GuestLogBlobDB.logname == logname) \
+            .where(GuestLogBlobDB.contenttype == contenttype) \
+            .where(GuestLogBlobDB.ctime == blob.ctime) \
+            .where(GuestLogBlobDB.content_hash == blob.content_hash) \
+            .values(
+                content=content,
+                content_hash=content_hash
+            )
+
+        r_store: DMLResult[GuestLogBlobDB] = execute_dml(logger, session, blob_query)
+
+        if r_store.is_error:
+            return Error(Failure.from_failure('failed to update guest log blob', r_store.unwrap_error()))
+
+        return Ok(None)
+
+    if guest_log is not None:
+        query: sqlalchemy.sql.dml.UpdateBase = sqlalchemy \
+            .update(GuestLog) \
+            .where(GuestLog.guestname == guest_log.guestname) \
+            .where(GuestLog.logname == guest_log.logname) \
+            .where(GuestLog.contenttype == guest_log.contenttype) \
+            .where(GuestLog.state == guest_log.state) \
+            .where(GuestLog.updated == guest_log.updated) \
+            .where(GuestLog.url == guest_log.url) \
+            .values(
+                url=progress.url,
+                updated=datetime.datetime.utcnow(),
+                state=progress.state,
+                expires=progress.expires
+            )
+    else:
+        if create:
+            query = sqlalchemy \
+                .insert(GuestLog) \
+                .values(
+                    guestname=guestname,
+                    logname=logname,
+                    contenttype=contenttype,
+                    state=progress.state,
+                    updated=datetime.datetime.utcnow(),
+                    url=progress.url
+                )
+        else:
+            return Error(Failure('no such guest log'))
+
+    r_store: DMLResult[GuestLog] = execute_dml(logger, session, query)
+
+    if r_store.is_error:
+        return Error(r_store.unwrap_error())
+
+    if progress.overwrite:
+        assert progress.blobs
+
+        current_blob: Optional[GuestLogBlobDB] = None
+        if guest_log is not None:
+            current_blob = guest_log.blobs[0] if guest_log.blobs else None
+
+        new_blob = progress.blobs[0]
+
+        if current_blob:
+            return _update_blob(current_blob, new_blob.content, new_blob.content_hash)
+
+        return _insert_blob(new_blob)
+
+    for blob in progress.blobs:
+        r_blob = _insert_blob(blob)
+
+        if r_blob.is_error:
+            return r_blob
+
+    return Ok(None)
 
 
 def render_tags(
