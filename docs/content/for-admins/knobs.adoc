@@ -803,6 +803,38 @@ for full list of connection parameters that can be specified via URL.
 
 5+|How old must the guest log blobs be to be removed, in seconds.
 
+|`gcp.mapping.environment-to-image.pattern-map.filepath`
+|`str`
+|`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
+|`configuration/artemis-image-map-gcp.yaml`
+|no
+
+
+|`gcp.mapping.environment-to-image.pattern-map.filepath:$entityname`
+|
+|`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$entityname`
+|
+|
+
+
+5+|Path to a pattern map file with environment to image mapping.
+
+|`gcp.mapping.environment-to-image.pattern-map.needle`
+|`str`
+|`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE`
+|`{{ os.compose }}`
+|no
+
+
+|`gcp.mapping.environment-to-image.pattern-map.needle:$entityname`
+|
+|`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$entityname`
+|
+|
+
+
+5+|A pattern for needle to match in environment to image mapping file.
+
 |`http_timeout`
 |`int`
 |`ARTEMIS_HTTP_TIMEOUT`
@@ -826,29 +858,12 @@ for full list of connection parameters that can be specified via URL.
 |
 |
 
-|`gcp.mapping.environment-to-image.pattern-map.filepath`
-|`str`
-|`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
-|`configuration/artemis-image-map-gcp.yaml`
-|no
-
-|`gcp.mapping.environment-to-image.pattern-map.filepath:$poolname`
-|
-|`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH_$poolname`
-|
-|
 
 5+|Path to a pattern map file with environment to image mapping.
 
 |`ibmcloud-power.mapping.environment-to-image.pattern-map.needle`
 |`str`
 |`ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE`
-|`{{ os.compose }}`
-|no
-
-|`gcp.mapping.environment-to-image.pattern-map.needle`
-|`str`
-|`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE`
 |`{{ os.compose }}`
 |no
 
@@ -888,12 +903,6 @@ for full list of connection parameters that can be specified via URL.
 |`ibmcloud.mapping.environment-to-image.pattern-map.needle:$entityname`
 |
 |`ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$entityname`
-|
-|
-
-|`gcp.mapping.environment-to-image.pattern-map.needle:$poolname`
-|
-|`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE_$poolname`
 |
 |
 

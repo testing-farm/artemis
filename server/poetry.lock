@@ -128,22 +128,21 @@ files = [
 
 [[package]]
 name = "attrs"
-version = "23.2.0"
+version = "22.2.0"
 description = "Classes Without Boilerplate"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.6"
 files = [
-    {file = "attrs-23.2.0-py3-none-any.whl", hash = "sha256:99b87a485a5820b23b879f04c2305b44b951b502fd64be915879d77a7e8fc6f1"},
-    {file = "attrs-23.2.0.tar.gz", hash = "sha256:935dc3b529c262f6cf76e50877d35a4bd3c1de194fd41f47a2b7ae8f19971f30"},
+    {file = "attrs-22.2.0-py3-none-any.whl", hash = "sha256:29e95c7f6778868dbd49170f98f8818f78f3dc5e0e37c0b1f474e3561b240836"},
+    {file = "attrs-22.2.0.tar.gz", hash = "sha256:c9227bfc2f01993c03f68db37d1d15c9690188323c067c641f1a35ca58185f99"},
 ]
 
 [package.extras]
-cov = ["attrs[tests]", "coverage[toml] (>=5.3)"]
-dev = ["attrs[tests]", "pre-commit"]
-docs = ["furo", "myst-parser", "sphinx", "sphinx-notfound-page", "sphinxcontrib-towncrier", "towncrier", "zope-interface"]
-tests = ["attrs[tests-no-zope]", "zope-interface"]
-tests-mypy = ["mypy (>=1.6)", "pytest-mypy-plugins"]
-tests-no-zope = ["attrs[tests-mypy]", "cloudpickle", "hypothesis", "pympler", "pytest (>=4.3.0)", "pytest-xdist[psutil]"]
+cov = ["attrs[tests]", "coverage-enable-subprocess", "coverage[toml] (>=5.3)"]
+dev = ["attrs[docs,tests]"]
+docs = ["furo", "myst-parser", "sphinx", "sphinx-notfound-page", "sphinxcontrib-towncrier", "towncrier", "zope.interface"]
+tests = ["attrs[tests-no-zope]", "zope.interface"]
+tests-no-zope = ["cloudpickle", "cloudpickle", "hypothesis", "hypothesis", "mypy (>=0.971,<0.990)", "mypy (>=0.971,<0.990)", "pympler", "pympler", "pytest (>=4.3.0)", "pytest (>=4.3.0)", "pytest-mypy-plugins", "pytest-mypy-plugins", "pytest-xdist[psutil]", "pytest-xdist[psutil]"]
 
 [[package]]
 name = "autopage"
@@ -1778,6 +1777,21 @@ files = [
 ]
 
 [[package]]
+name = "cattrs"
+version = "22.2.0"
+description = "Composable complex class support for attrs and dataclasses."
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "cattrs-22.2.0-py3-none-any.whl", hash = "sha256:bc12b1f0d000b9f9bee83335887d532a1d3e99a833d1bf0882151c97d3e68c21"},
+    {file = "cattrs-22.2.0.tar.gz", hash = "sha256:f0eed5642399423cf656e7b66ce92cdc5b963ecafd041d1b24d136fdde7acf6d"},
+]
+
+[package.dependencies]
+attrs = ">=20"
+exceptiongroup = {version = "*", markers = "python_version < \"3.11\""}
+
+[[package]]
 name = "certifi"
 version = "2024.8.30"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -2462,17 +2476,19 @@ test = ["coverage (==4.*)", "flake8-builtins", "flake8-commas", "flake8-fixme", 
 
 [[package]]
 name = "gluetool"
-version = "2.3"
+version = "2.5"
 description = "Python framework for constructing command-line pipelines."
 optional = false
 python-versions = ">=3.7.2,<3.10"
 files = [
-    {file = "gluetool-2.3-py3-none-any.whl", hash = "sha256:ec182e62a0d2c7bf7fb008a15bf048928baebfb971ed04dc4b68df4483875ed0"},
-    {file = "gluetool-2.3.tar.gz", hash = "sha256:3caa8164c1492a6f70b62e37e5aee011b72c31a5ed3631814620217ea5b2821f"},
+    {file = "gluetool-2.5-py3-none-any.whl", hash = "sha256:63c7c3f27337abcd1da1e5048d74dc7f8cb2a83057e6ddb4cd407021c5fbd788"},
+    {file = "gluetool-2.5.tar.gz", hash = "sha256:68c6dcd31a0c552d129de87c303405bc7e8c53c234573922780240db56f3ddd1"},
 ]
 
 [package.dependencies]
+attrs = ">=22.2.0,<23.0.0"
 beautifulsoup4 = "*"
+cattrs = ">=22.2.0,<23.0.0"
 colorama = "*"
 configparser = "*"
 docutils = "*"
@@ -2482,6 +2498,7 @@ MarkupSafe = ">=2.0.0,<3.0.0"
 mock = "*"
 mypy-extensions = "*"
 packaging = "*"
+psutil = ">=5.9.5,<6.0.0"
 raven = "*"
 requests = "*"
 requests-toolbelt = "*"
@@ -6306,4 +6323,4 @@ full = ["awscli", "azure-cli", "beaker-client", "python-openstackclient"]
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.9.0"
-content-hash = "f323de6b56211329c4a937705e91a35aa402c3399cb8fb35b2ff4c4f5f6c2d20"
+content-hash = "474bc69ebf8df459ee27a40417c9777d25b04435b7d8a245a11bdb9d5f2e5ede"
