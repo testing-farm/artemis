@@ -2,28 +2,26 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
-from functools import cached_property
-import json
-import proto
 import re
 import threading
-from typing import Any, Dict, List, Optional, Union, Tuple
+from functools import cached_property
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import gluetool.log
+import google.api_core
+import google.api_core.exceptions
+import proto
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
-
 from google.cloud import compute_v1
-import google.api_core
 
-from .. import Failure, JSONType, log_dict_yaml
+from .. import Failure, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
-from ..environment import FlavorBoot, SizeType, UNITS
+from ..environment import UNITS, FlavorBoot, SizeType
 from ..knobs import Knob
-from ..metrics import ResourceType
 from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, \
     PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs, create_tempfile, run_cli_tool, vm_info_to_ip
+    SerializedPoolResourcesIDs
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'gcp.mapping.environment-to-image.pattern-map.filepath',
@@ -79,9 +77,11 @@ class GCPDriver(PoolDriver):
         return HookImageInfoMapper(self, 'GCP_ENVIRONMENT_TO_IMAGE')
 
     @property
-    def _instances_client(self) -> compute_v1.ImagesClient:
-        sa_info = self._service_account_info
-        return compute_v1.InstancesClient.from_service_account_info(sa_info)
+    def _instances_client(self) -> compute_v1.InstancesClient:
+        return cast(
+            compute_v1.InstancesClient,
+            compute_v1.InstancesClient.from_service_account_info(self._service_account_info)
+        )
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supported_architectures = ['x86_64']
@@ -95,19 +95,17 @@ class GCPDriver(PoolDriver):
         return Ok(capabilities)
 
     @cached_property
-    def _service_account_info(self):
-        sa_info = self.pool_config['service_account_info']
-        return sa_info
+    def _service_account_info(self) -> Any:
+        return self.pool_config['service-account-info']
 
     def map_image_name_to_image_info(self,
                                      logger: gluetool.log.ContextAdapter,
                                      image_name: str) -> Result[PoolImageInfo, Failure]:
 
-        image_project = self.pool_config['image_project']
+        image_project = self.pool_config['image-project']
 
         try:
-            sa_info = self._service_account_info
-            images_client = compute_v1.ImagesClient.from_service_account_info(sa_info)
+            images_client = compute_v1.ImagesClient.from_service_account_info(self._service_account_info)
             image_description = images_client.get_from_family(project=image_project, family=image_name)
         except google.api_core.exceptions.NotFound as exc:
             return Error(Failure.from_exc('The given imagename was not found.', exc, imagename=image_name))
@@ -151,7 +149,7 @@ class GCPDriver(PoolDriver):
 
         return Ok((True, None))
 
-    def _query_instance_id(self, instance_name, project, zone) -> Result[int, Failure]:
+    def _query_instance_id(self, instance_name: str, project: str, zone: str) -> Result[int, Failure]:
         """ Perform API call to GCP, asking about the given instance """
         request = compute_v1.GetInstanceRequest()
         request.instance = instance_name
@@ -224,11 +222,11 @@ class GCPDriver(PoolDriver):
             return Error(r_cleanup.unwrap_error())
         return Ok(True)
 
-
     def release_pool_resources(
         self,
         logger: gluetool.log.ContextAdapter,
-        raw_resource_ids: SerializedPoolResourcesIDs) -> Result[None, Failure]:
+        raw_resource_ids: SerializedPoolResourcesIDs
+    ) -> Result[None, Failure]:
         resource_ids = GCPPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
         request = compute_v1.DeleteInstanceRequest(instance=resource_ids.name,
                                                    project=resource_ids.project,
@@ -267,12 +265,10 @@ class GCPDriver(PoolDriver):
 
         return boot_disk
 
-
     def _ensure_machine_type_is_canonical(self, machine_type: str, zone: str) -> str:
         if re.match(r"^zones/[a-z\d\-]+/machineTypes/[a-z\d\-]+$", machine_type):
             return machine_type
         return f'zones/{zone}/machineTypes/{machine_type}'
-
 
     def _create_instance(self,
                          client: compute_v1.InstancesClient,
@@ -286,17 +282,17 @@ class GCPDriver(PoolDriver):
                          network_link: Optional[str] = None,
                          delete_protection: bool = False) -> Result[compute_v1.Instance, Failure]:
 
-        network_link = network_link or self.pool_config['network_resource_url']
-        machine_type = machine_type or self.pool_config['machine_type']
+        network_link = network_link or self.pool_config['network-resourceurl']
+        machine_type = machine_type or self.pool_config['machine-type']
 
         network_interface = compute_v1.NetworkInterface()
         network_interface.network = network_link
 
         # Configure external access - external IP will be auto assigned
         access = compute_v1.AccessConfig()
-        access.type_ = compute_v1.AccessConfig.Type.ONE_TO_ONE_NAT.name
+        access.type_ = compute_v1.AccessConfig.Type.ONE_TO_ONE_NAT.name  # type: ignore[attr-defined]
         access.name = "External NAT"
-        access.network_tier = access.NetworkTier.PREMIUM.name
+        access.network_tier = access.NetworkTier.PREMIUM.name  # type: ignore[attr-defined]
         network_interface.access_configs = [access]
 
         # Collect information into the Instance object.
@@ -339,7 +335,6 @@ class GCPDriver(PoolDriver):
             )
         return Ok(created_instance)
 
-
     def acquire_guest(self,
                       logger: gluetool.log.ContextAdapter,
                       session: sqlalchemy.orm.session.Session,
@@ -374,25 +369,29 @@ class GCPDriver(PoolDriver):
         from ..tasks import _get_ssh_key  # Late import as top-level import leads to circular imports
         r_ssh_key = _get_ssh_key(guest_request.ownername, guest_request.ssh_keyname)
         if r_ssh_key.is_error:
-            return Error(Failure.from_failure('failed to get SSH key', keyname=guest_request.ssh_keyname))
+            return Error(Failure.from_failure(
+                'failed to get SSH key',
+                r_ssh_key.unwrap_error(),
+                keyname=guest_request.ssh_keyname
+            ))
 
         ssh_key = r_ssh_key.unwrap()
         if not ssh_key:
-            return Error(Failure.from_failure('failed to get SSH key', keyname=guest_request.ssh_keyname))
+            return Error(Failure('failed to get SSH key', keyname=guest_request.ssh_keyname))
 
         r_instance = self._create_instance(self._instances_client, image, ssh_key.public,
                                            project_id, zone, instance_name, disks=[boot_disk])
         if r_instance.is_error:
-            failure = r_instance.error()
+            failure = r_instance.unwrap_error()
             if not failure.exc_info:
-                return Error(r_instance.unwrap_error())
+                return Error(failure)
 
             exc_instance = failure.exc_info[1]
             if isinstance(exc_instance, google.api_core.exceptions.AlreadyExists):
                 # The instance already exists, do not try creating it again
                 r_instance_id = self._query_instance_id(instance_name, project_id, zone)
                 if r_instance_id.is_error:
-                    return r_instance_id
+                    return Error(r_instance_id.unwrap_error())
 
                 return Ok(ProvisioningProgress(
                     state=ProvisioningState.PENDING,  # Check the VM state again - schedule update_guest()
@@ -443,7 +442,6 @@ class GCPDriver(PoolDriver):
     def update_snapshot(self,
                         guest_request: GuestRequest,
                         snapshot_request: SnapshotRequest,
-                        canceled: Optional[threading.Event] = None,
                         start_again: bool = True) -> Result[ProvisioningProgress, Failure]:
         raise NotImplementedError()
 

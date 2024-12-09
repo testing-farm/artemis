@@ -39,9 +39,9 @@ from ..drivers import PoolData, PoolDriver, PoolLogger
 from ..drivers import aws as aws_driver
 from ..drivers import azure as azure_driver
 from ..drivers import beaker as beaker_driver
+from ..drivers import gcp as gcp_driver
 from ..drivers import ibmcloudpower as ibmcloud_power_driver
 from ..drivers import ibmcloudvpc as ibmcloud_vpc_driver
-from ..drivers import gcp as gcp_driver
 from ..drivers import localhost as localhost_driver
 from ..drivers import openstack as openstack_driver
 from ..drivers import rest as rest_driver
