@@ -199,7 +199,7 @@ class Workspace(_Workspace):
             .final_result
 
 
-@task(tail_handler=ProvisioningTailHandler(GuestState.PROMISED, GuestState.SHELF_LOOKUP))
+@task(tail_handler=ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.SHELF_LOOKUP))
 def acquire_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.acquire_guest_request),
