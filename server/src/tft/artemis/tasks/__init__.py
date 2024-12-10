@@ -2296,6 +2296,8 @@ class ProvisioningTailHandler(TailHandler):
             **failure_details
         )
 
+        workspace._begin()
+
         # Chicken and egg problem: we need guestname for logging context, but if it's missing,
         # we need to report the failure, and that's usually done by calling `error`.
         # Which needs guestname...
@@ -2379,7 +2381,9 @@ class ProvisioningTailHandler(TailHandler):
 
         workspace._progress(f'reverted to {self.new_state.value}')
 
-        return workspace.result or SUCCESS
+        workspace._complete()
+
+        return SUCCESS
 
 
 class LoggingTailHandler(TailHandler):
@@ -2426,6 +2430,8 @@ class LoggingTailHandler(TailHandler):
             **failure_details
         )
 
+        workspace._begin()
+
         # Chicken and egg problem: we need guestname for logging context, but if it's missing,
         # we need to report the failure, and that's usually done by calling `error`.
         # Which needs guestname...
@@ -2462,4 +2468,9 @@ class LoggingTailHandler(TailHandler):
         if r_store.is_error:
             workspace._error(r_store, 'failed to update the log')
 
-        return workspace.result or SUCCESS
+        if workspace.result:
+            return workspace.result
+
+        workspace._complete()
+
+        return SUCCESS
