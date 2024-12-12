@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 # Check we have the correct number of arguments
 [ $# -ge 2 ] && [ $# -le 3 ] || exit 1
