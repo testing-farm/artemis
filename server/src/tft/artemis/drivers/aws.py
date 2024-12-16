@@ -1502,10 +1502,14 @@ class AWSDriver(PoolDriver):
                 commandname='aws.ec2-delete-security=group')
 
             if r_output.is_error:
-                return Error(Failure.from_failure(
-                    'failed to delete a guest security group',
-                    r_output.unwrap_error()
-                ))
+                # If the error is here solely because security group has already been deleted -> do not treat this as
+                # a failure
+                reason = r_output.unwrap_error()
+                if 'InvalidGroup.NotFound' not in reason:
+                    return Error(Failure.from_failure(
+                        'failed to delete a guest security group',
+                        reason
+                    ))
 
             self.inc_costs(logger, ResourceType.SECURITY_GROUP, resource_ids.ctime)
 
@@ -2815,7 +2819,10 @@ class AWSDriver(PoolDriver):
         if pool_data.spot_instance_id is not None:
             resource_ids.append(AWSPoolResourcesIDs(spot_instance_id=pool_data.spot_instance_id))
 
-        if not resource_ids:
+        # NOTE(ivasilev) We are not adding the security_group to the resources-to-cleanup-list as instance deletion
+        # takes time and when run together security group deletion will most definitely fail. So let's clean up in 2
+        # stages -> first dispatch resource cleanup for the instance and then for the security group.
+        if not resource_ids and not pool_data.security_group:
             return Error(Failure('guest has no identification'))
 
         r_cleanup = self.dispatch_resource_cleanup(logger, *resource_ids, guest_request=guest_request)
