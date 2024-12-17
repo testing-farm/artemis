@@ -89,7 +89,9 @@ class IBMCloudSession(CLISessionPermanentDir):
             [
                 'login',
                 '--apikey', self.pool.pool_config['api-key'],
-                '-r', self.pool.pool_config['default-region']
+                '-r', self.pool.pool_config['default-region'],
+                # Do not ask if existing plugins need update, trust the process
+                '-q'
             ],
             json_format=False,
             commandname='ibmcloud.login'
