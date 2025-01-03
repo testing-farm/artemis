@@ -283,7 +283,7 @@ class GCPDriver(PoolDriver):
                          delete_protection: bool = False) -> Result[compute_v1.Instance, Failure]:
 
         network_link = network_link or self.pool_config['network-resourceurl']
-        machine_type = machine_type or self.pool_config['machine-type']
+        machine_type = machine_type or self.pool_config['default-flavor']
 
         network_interface = compute_v1.NetworkInterface()
         network_interface.network = network_link
