@@ -49,4 +49,4 @@ properties:
 
 additionalProperties: false
 
-required: [service-account-info, zone, project, image-project, network-resource-url, machine-type]
+required: [service-account-info, zone, project, image-project, network-resource-url, default-flavor]
