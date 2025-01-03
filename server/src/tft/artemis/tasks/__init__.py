@@ -34,7 +34,7 @@ from .. import Failure, RSSWatcher, Sentry, SerializableContainer, get_broker, g
     metrics, safe_call
 from ..context import CURRENT_MESSAGE, CURRENT_TASK, DATABASE, LOGGER, SESSION, with_context
 from ..db import DB, DMLResult, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, \
-    SafeQuery, SnapshotRequest, SSHKey, TaskRequest, TransactionResult, execute_dml, transaction
+    SafeQuery, SnapshotRequest, SSHKey, TaskRequest, TaskSequenceRequest, TransactionResult, execute_dml, transaction
 from ..drivers import PoolData, PoolDriver, PoolLogger
 from ..drivers import aws as aws_driver
 from ..drivers import azure as azure_driver
@@ -426,6 +426,7 @@ class TaskCall(SerializableContainer):
     # For tracking messages through logs
     broker_message: Optional[dramatiq.Message] = None
     task_request_id: Optional[int] = None
+    task_sequence_request_id: Optional[int] = None
 
     _named_args: Optional[NamedActorArgumentsType] = None
     _tail_handler: Optional['TailHandler'] = None
@@ -525,7 +526,8 @@ class TaskCall(SerializableContainer):
         *args: ActorArgumentType,
         delay: Optional[int] = None,
         broker_message: Optional[dramatiq.Message] = None,
-        task_request_id: Optional[int] = None
+        task_request_id: Optional[int] = None,
+        task_sequence_request_id: Optional[int] = None
     ) -> 'TaskCall':
         signature = inspect.signature(actor.fn)
         arg_names = tuple(name for name in signature.parameters.keys())
@@ -538,7 +540,8 @@ class TaskCall(SerializableContainer):
             arg_names=arg_names,
             delay=delay,
             broker_message=broker_message,
-            task_request_id=task_request_id
+            task_request_id=task_request_id,
+            task_sequence_request_id=task_sequence_request_id
         )
 
     @classmethod
@@ -547,14 +550,16 @@ class TaskCall(SerializableContainer):
         broker: dramatiq.broker.Broker,
         broker_message: dramatiq.Message,
         delay: Optional[int] = None,
-        task_request_id: Optional[int] = None
+        task_request_id: Optional[int] = None,
+        task_sequence_request_id: Optional[int] = None
     ) -> 'TaskCall':
         return cls._construct(
             cast('Actor', broker.get_actor(broker_message.actor_name)),
             *broker_message.args,
             delay=delay,
             broker_message=broker_message,
-            task_request_id=task_request_id
+            task_request_id=task_request_id,
+            task_sequence_request_id=task_sequence_request_id
         )
 
     @classmethod
@@ -563,9 +568,16 @@ class TaskCall(SerializableContainer):
         actor: Actor,
         *args: ActorArgumentType,
         delay: Optional[int] = None,
-        task_request_id: Optional[int] = None
+        task_request_id: Optional[int] = None,
+        task_sequence_request_id: Optional[int] = None
     ) -> 'TaskCall':
-        return cls._construct(actor, *args, delay=delay, task_request_id=task_request_id)
+        return cls._construct(
+            actor,
+            *args,
+            delay=delay,
+            task_request_id=task_request_id,
+            task_sequence_request_id=task_sequence_request_id
+        )
 
     @classmethod
     def from_task_request(
@@ -581,7 +593,8 @@ class TaskCall(SerializableContainer):
             r_actor.unwrap(),
             *request.arguments,
             delay=request.delay,
-            task_request_id=request.id
+            task_request_id=request.id,
+            task_sequence_request_id=request.task_sequence_request_id
         ))
 
     def serialize(self) -> Dict[str, Any]:
@@ -596,7 +609,8 @@ class TaskCall(SerializableContainer):
                 'options': self.broker_message.options if self.broker_message else {}
             },
             'task-request': {
-                'id': self.task_request_id
+                'id': self.task_request_id,
+                'sequence-id': self.task_sequence_request_id
             }
         }
 
@@ -1410,9 +1424,10 @@ def dispatch_group(
 
 def dispatch_sequence(
     logger: gluetool.log.ContextAdapter,
-    tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]],
+    tasks: List[Tuple[Optional[int], Actor, Tuple[ActorArgumentType, ...]]],
     on_complete: Optional[Tuple[Actor, Tuple[ActorArgumentType, ...]]] = None,
-    delay: Optional[int] = None
+    delay: Optional[int] = None,
+    task_sequence_request_id: Optional[int] = None
 ) -> Result[None, Failure]:
     """
     Dispatch given tasks as a pipeline.
@@ -1429,48 +1444,56 @@ def dispatch_sequence(
     # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
     actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
 
-    try:
-        # Add `pipe_ignore` to disable result propagation. We ignore task results.
-        messages = [
-            task.message_with_options(args=args, pipe_ignore=True)
-            for task, args in tasks
-        ]
+    # Add `pipe_ignore` to disable result propagation. We ignore task results.
+    messages = [
+        task.message_with_options(args=args, pipe_ignore=True)
+        for _, task, args in tasks
+    ]
 
-        task_calls: List[TaskCall] = [
-            TaskCall.from_message(BROKER, message, delay=delay)
-            for message in messages
-        ]
-
-        on_complete_task_call: Optional[TaskCall] = None
-
-        pipeline = dramatiq.pipeline(messages)
-
-        if on_complete:
-            on_complete_message = on_complete[0].message_with_options(args=on_complete[1], pipe_ignore=True)
-            on_complete_task_call = TaskCall.from_message(BROKER, on_complete_message)
-
-            pipeline = pipeline | on_complete_message
-
-        pipeline.run(delay=actual_delay)
-
-        log_dict_yaml(
-            logger.info,
-            'scheduled sequence',
-            serialize_task_sequence_invocation(task_calls, on_complete=on_complete_task_call)
+    task_calls: List[TaskCall] = [
+        TaskCall.from_message(
+            BROKER,
+            message,
+            task_request_id=task_request_id,
+            task_sequence_request_id=task_sequence_request_id
         )
+        for (task_request_id, _, _), message in zip(tasks, messages)
+    ]
 
-        if KNOB_CLOSE_AFTER_DISPATCH.value:
-            logger.debug('closing broker connection as requested')
+    on_complete_task_call: Optional[TaskCall] = None
 
-            BROKER.connection.close()
+    pipeline = dramatiq.pipeline(messages)
 
-    except Exception as exc:
-        return Error(Failure.from_exc(
-            'failed to dispatch sequence',
-            exc,
-            sequence_tasks=task_calls,
-            sequence_on_complete=on_complete_task_call
+    if on_complete:
+        on_complete_message = on_complete[0].message_with_options(args=on_complete[1], pipe_ignore=True)
+        on_complete_task_call = TaskCall.from_message(BROKER, on_complete_message)
+
+        pipeline = pipeline | on_complete_message
+
+    with Sentry.start_span(
+        'dispatch_sequence',
+        op='function',
+        task_calls=serialize_task_sequence_invocation(task_calls, on_complete_task_call)
+    ):
+        r = safe_call(pipeline.run, delay=actual_delay)
+
+    if r.is_error:
+        return Error(Failure.from_failure(
+            'failed to dispatch task sequence',
+            r.unwrap_error(),
+            task_calls=serialize_task_sequence_invocation(task_calls, on_complete_task_call)
         ))
+
+    log_dict_yaml(
+        logger.info,
+        'scheduled sequence',
+        serialize_task_sequence_invocation(task_calls, on_complete=on_complete_task_call)
+    )
+
+    if KNOB_CLOSE_AFTER_DISPATCH.value:
+        logger.debug('closing broker connection as requested')
+
+        BROKER.connection.close()
 
     return Ok(None)
 
@@ -1480,25 +1503,89 @@ def _request_task(
     session: sqlalchemy.orm.session.Session,
     task: Actor,
     *task_arguments: ActorArgumentType,
-    delay: Optional[int]
+    delay: Optional[int] = None,
+    task_sequence_request_id: Optional[int] = None
 ) -> Result[None, Failure]:
-    r = TaskRequest.create(logger, session, task, *task_arguments, delay=delay)
+    r = TaskRequest.create(
+        logger,
+        session,
+        task,
+        *task_arguments,
+        delay=delay,
+        task_sequence_request_id=task_sequence_request_id
+    )
 
     if r.is_error:
         return Error(Failure.from_failure(
             'failed to add task request',
             r.unwrap_error(),
             task_name=task.actor_name,
-            task_args=task_arguments
+            task_args=task_arguments,
+            task_sequence_request_id=task_sequence_request_id
         ))
 
     task_request_id = r.unwrap()
 
-    log_dict_yaml(
-        logger.info,
-        f'requested task #{task_request_id}',
-        TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
-    )
+    if task_sequence_request_id is None:
+        log_dict_yaml(
+            logger.info,
+            f'requested task #{task_request_id}',
+            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
+        )
+
+    else:
+        log_dict_yaml(
+            logger.info,
+            f'requested task #{task_sequence_request_id}/#{task_request_id}',
+            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
+        )
+
+    return Ok(None)
+
+
+def _request_task_sequence(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]],
+    delay: Optional[int] = None
+) -> Result[None, Failure]:
+    r = TaskSequenceRequest.create(logger, session)
+
+    if r.is_error:
+        return Error(Failure.from_failure(
+            'failed to add task sequence request',
+            r.unwrap_error()
+        ))
+
+    task_sequence_request_id = r.unwrap()
+
+    logger.info(f'requested task sequence #{task_sequence_request_id}')
+
+    for i, (task, task_arguments) in enumerate(tasks):
+        if i == 0:
+            r_task = _request_task(
+                logger,
+                session,
+                task,
+                *task_arguments,
+                delay=delay,
+                task_sequence_request_id=task_sequence_request_id
+            )
+
+        else:
+            r_task = _request_task(
+                logger,
+                session,
+                task,
+                *task_arguments,
+                task_sequence_request_id=task_sequence_request_id
+            )
+
+        if r_task.is_error:
+            return Error(Failure.from_failure(
+                'failed to add task request',
+                r_task.unwrap_error()
+            ))
 
     return Ok(None)
 
@@ -2125,7 +2212,12 @@ class Workspace:
         if r.is_error:
             self._error(r, 'failed to dispatch task')
 
-    def request_task(self, task: Actor, *task_arguments: ActorArgumentType, delay: Optional[int] = None) -> None:
+    def request_task(
+        self,
+        task: Actor,
+        *task_arguments: ActorArgumentType,
+        delay: Optional[int] = None
+    ) -> None:
         if self.result:
             return
 
@@ -2133,6 +2225,19 @@ class Workspace:
 
         if r.is_error:
             self._error(r, 'failed to create task request')
+
+    def request_task_sequence(
+        self,
+        tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]],
+        delay: Optional[int] = None
+    ) -> None:
+        if self.result:
+            return
+
+        r = _request_task_sequence(self.logger, self.session, tasks, delay=delay)
+
+        if r.is_error:
+            self._error(r, 'failed to create task sequence request')
 
     def run_hook(self, hook_name: str, **kwargs: Any) -> Result[Any, Failure]:
         r_engine = hook_engine(hook_name)

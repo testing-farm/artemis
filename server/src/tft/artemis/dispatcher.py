@@ -8,10 +8,10 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from . import Failure, Sentry, get_db, get_logger
+from . import Failure, Sentry, get_db, get_logger, log_dict_yaml
 from .context import DATABASE, LOGGER, SESSION
-from .db import DMLResult, SafeQuery, TaskRequest, execute_dml, transaction
-from .tasks import TaskCall, TaskLogger, dispatch_task
+from .db import DMLResult, SafeQuery, TaskRequest, TaskSequenceRequest, execute_dml, transaction
+from .tasks import TaskCall, TaskLogger, dispatch_sequence, dispatch_task
 
 # Some tasks may seem to be unused, but they *must* be imported and known to broker
 # for transactional outbox to work correctly.
@@ -83,6 +83,90 @@ def handle_task_request(
         logger.finished()
 
 
+def handle_task_sequence_request(
+    root_logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    task_sequence_request: TaskSequenceRequest
+) -> None:
+    with Sentry.start_span('dispatch_task_sequence_request', op='function') as tracing_span:
+        logger = TaskLogger(root_logger, f'task-sequence-request#{task_sequence_request.id}')
+
+        LOGGER.set(logger)
+
+        logger.begin()
+
+        r_task_requests = SafeQuery.from_session(session, TaskRequest) \
+            .filter(TaskRequest.task_sequence_request_id == task_sequence_request.id) \
+            .all()
+
+        if r_task_requests.is_error:
+            Failure.from_failure(
+                'failed to fetch task requests',
+                r_task_requests.unwrap_error()
+            ).handle(logger)
+
+            return
+
+        def _log_failure(failure: Failure, message: str) -> None:
+            failure.handle(logger, message)
+
+            logger.finished()
+
+        task_calls: list[TaskCall] = []
+
+        for task_request in r_task_requests.unwrap():
+            r_task_call = TaskCall.from_task_request(task_request)
+
+            if r_task_call.is_error:
+                return _log_failure(r_task_call.unwrap_error(), 'failed to find task')
+
+            task_calls.append(r_task_call.unwrap())
+
+        log_dict_yaml(
+            logger.info,
+            f'about to schedule task sequence #{task_sequence_request.id}',
+            [
+                repr(task_call) for task_call in task_calls
+            ]
+        )
+
+        tracing_span.set_tag('task_sequence_call', [task_call.serialize() for task_call in task_calls])
+
+        r_dispatch = dispatch_sequence(
+            logger,
+            [
+                (task_call.task_request_id, task_call.actor, task_call.args)
+                for task_call in task_calls
+            ],
+            delay=task_calls[0].delay,
+            task_sequence_request_id=task_sequence_request.id
+        )
+
+        if r_dispatch.is_error:
+            return _log_failure(r_dispatch.unwrap_error(), 'failed to dispatch task sequence')
+
+        for task_call in task_calls:
+            r_delete: DMLResult[TaskRequest] = execute_dml(
+                logger,
+                session,
+                sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_call.task_request_id)
+            )
+
+            if r_delete.is_error:
+                return _log_failure(r_dispatch.unwrap_error(), 'failed to remove task request')
+
+        r_sequence_delete: DMLResult[TaskSequenceRequest] = execute_dml(
+            logger,
+            session,
+            sqlalchemy.delete(TaskSequenceRequest).where(TaskSequenceRequest.id == task_sequence_request.id)
+        )
+
+        if r_sequence_delete.is_error:
+            return _log_failure(r_dispatch.unwrap_error(), 'failed to remove task sequence request')
+
+        logger.finished()
+
+
 def pick_task_request(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -93,6 +177,7 @@ def pick_task_request(
         with Sentry.start_span('handle_task_request', op='function'), \
                 transaction(logger, session) as transaction_result:
             r_pending_task = SafeQuery.from_session(session, TaskRequest) \
+                .filter(TaskRequest.task_sequence_request_id.is_(None)) \
                 .limit(1) \
                 .one_or_none()
 
@@ -121,6 +206,44 @@ def pick_task_request(
         return transaction_result.complete
 
 
+def pick_task_sequence_request(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+) -> bool:
+    LOGGER.set(logger)
+
+    with Sentry.start_transaction(op='function', name='dispatcher'):
+        with Sentry.start_span('handle_task_sequence_request', op='function'), \
+                transaction(logger, session) as transaction_result:
+            r_pending_task_sequence = SafeQuery.from_session(session, TaskSequenceRequest) \
+                .limit(1) \
+                .one_or_none()
+
+            if r_pending_task_sequence.is_error:
+                Failure.from_failure(
+                    'failed to fetch task sequence request',
+                    r_pending_task_sequence.unwrap_error()
+                ).handle(logger)
+
+                return False
+
+            task_sequence_request: Optional[TaskSequenceRequest] = r_pending_task_sequence.unwrap()
+
+            if task_sequence_request is None:
+                return False
+
+            handle_task_sequence_request(logger, session, task_sequence_request)
+
+            LOGGER.set(logger)
+
+        if not transaction_result.complete:
+            assert transaction_result.failure is not None
+
+            transaction_result.failure.handle(logger)
+
+        return transaction_result.complete
+
+
 def main() -> None:
     logger = TaskLogger(get_logger(), 'dispatcher')
     db = get_db(logger, application_name='artemis-dispatcher')
@@ -136,6 +259,9 @@ def main() -> None:
 
         with db.get_session(logger) as session:
             SESSION.set(session)
+
+            while pick_task_sequence_request(logger, session):
+                pass
 
             while pick_task_request(logger, session):
                 pass
