@@ -1480,6 +1480,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             logger,
             [
                 (
+                    None,
                     release_pool_resources,
                     (self.poolname, resource_id.serialize_to_json(), guest_request.guestname if guest_request else None)
                 )

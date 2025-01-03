@@ -4,6 +4,7 @@
 import logging
 import uuid
 from typing import Any, List
+from unittest.mock import MagicMock
 
 import _pytest.logging
 import _pytest.monkeypatch
@@ -37,10 +38,12 @@ def test_sequence(
     monkeypatch: _pytest.monkeypatch.MonkeyPatch
 ) -> None:
     results: List[str] = []
-    mock_uuids = ['uuid1', 'uuid2', 'uuid3', 'uuid4']
+    mock_uuids = ['uuid1', 'uuid2', 'uuid3', 'uuid4', 'uuid5', 'uuid6']
 
     def mock_uuid4() -> str:
-        return mock_uuids.pop(0)
+        uuid = mock_uuids.pop(0)
+
+        return MagicMock(hex=uuid, __str__=lambda x: uuid)
 
     monkeypatch.setattr(uuid, 'uuid4', mock_uuid4)
 
@@ -53,9 +56,9 @@ def test_sequence(
     r = dispatch_sequence(
         logger,
         [
-            (actor, ('foo1', 'bar1')),
-            (actor, ('foo2', 'bar2')),
-            (actor, ('foo3', 'bar3')),
+            (1, actor, ('foo1', 'bar1')),
+            (2, actor, ('foo2', 'bar2')),
+            (3, actor, ('foo3', 'bar3')),
         ],
         on_complete=(actor, ('foo4', 'bar4'))
     )
@@ -79,7 +82,8 @@ sequence:
         options:
             pipe_ignore: true
     task-request:
-        id:
+        id: 1
+        sequence-id:
   - actor: dummy_actor
     args:
         foo: foo2
@@ -92,7 +96,8 @@ sequence:
         options:
             pipe_ignore: true
     task-request:
-        id:
+        id: 2
+        sequence-id:
   - actor: dummy_actor
     args:
         foo: foo3
@@ -105,7 +110,8 @@ sequence:
         options:
             pipe_ignore: true
     task-request:
-        id:
+        id: 3
+        sequence-id:
 on-complete:
     actor: dummy_actor
     args:
@@ -119,7 +125,8 @@ on-complete:
         options:
             pipe_ignore: true
     task-request:
-        id:""")
+        id:
+        sequence-id:""")
     )
 
     broker.join(actor.queue_name)
