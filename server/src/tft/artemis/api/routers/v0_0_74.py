@@ -185,6 +185,15 @@ def get_guest_log(
     return get_guest_request_log(guestname, logname, contenttype, manager, logger)
 
 
+@router_guests.post("/{guestname}/reboot", status_code=status.HTTP_202_ACCEPTED)
+def trigger_guest_reboot(
+    guestname: str,
+    manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+) -> None:
+    return manager.trigger_reboot(guestname, logger)
+
+
 def register_routes(app: fastapi.FastAPI) -> None:
     app.include_router(router_guests)
     app.include_router(router_shelves)

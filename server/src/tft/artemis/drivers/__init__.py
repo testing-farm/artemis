@@ -2001,6 +2001,17 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return updater(logger, guest_request, guest_log)
 
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        """
+        Trigger a hard reboot of a guest.
+        """
+
+        raise NotImplementedError
+
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         """
         Allows pool drivers to modify pool capabilities extracted from configuration.

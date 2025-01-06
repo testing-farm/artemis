@@ -3273,5 +3273,28 @@ class AWSDriver(PoolDriver):
             url=output
         ))
 
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        pool_data = AWSPoolData.unserialize(guest_request)
+
+        assert pool_data.instance_id is not None
+
+        r = self._aws_command([
+            'ec2',
+            'reboot-instances',
+            '--instance-ids', pool_data.instance_id
+        ], json_output=False, commandname='awc.ec2-reboot-instance')
+
+        if r.is_error:
+            return Error(Failure.from_failure(
+                'failed to trigger instance reboot',
+                r.unwrap_error()
+            ))
+
+        return Ok(None)
+
 
 PoolDriver._drivers_registry['aws'] = AWSDriver
