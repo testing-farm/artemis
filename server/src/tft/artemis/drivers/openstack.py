@@ -1298,5 +1298,28 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(progress)
 
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        pool_data = OpenStackPoolData.unserialize(guest_request)
+
+        assert pool_data.instance_id is not None
+
+        r_nova = self._get_nova()
+        if r_nova.is_error:
+            return Error(r_nova.unwrap_error())
+
+        r_output = safe_call(r_nova.unwrap().servers.reboot, pool_data.instance_id, reboot_type='HARD')
+
+        if r_output.is_error:
+            return Error(Failure.from_failure(
+                'failed to trigger instance reboot',
+                r_output.unwrap_error()
+            ))
+
+        return Ok(None)
+
 
 PoolDriver._drivers_registry['openstack'] = OpenStackDriver
