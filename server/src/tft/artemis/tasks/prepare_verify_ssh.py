@@ -24,6 +24,7 @@ from . import _ROOT_LOGGER, DoerReturnType, DoerType
 from . import GuestRequestWorkspace as _Workspace
 from . import ProvisioningTailHandler, get_guest_logger, step, task, task_core
 from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
+from .prepare_kickstart import prepare_kickstart
 
 KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     'actor.verify-ssh.connect-timeout',
@@ -81,7 +82,18 @@ class Workspace(_Workspace):
                     'failed to verify SSH'
                 )
 
-            self.request_task(prepare_finalize_pre_connect, self.guestname)
+            next_task = prepare_finalize_pre_connect
+
+            # If we need to perform kickstart setup, divert into this task instead
+            r_capabilities = self.pool.capabilities()
+
+            if r_capabilities.is_error:
+                return self._error(r_capabilities, 'could not get pool capabilities')
+
+            if self.gr.environment.has_ks_specification and not r_capabilities.unwrap().supports_kickstart:
+                next_task = prepare_kickstart
+
+            self.request_task(next_task, self.guestname)
 
     @classmethod
     def create(

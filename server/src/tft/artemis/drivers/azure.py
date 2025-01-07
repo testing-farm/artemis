@@ -495,6 +495,12 @@ class AzureDriver(PoolDriver):
         if not images:
             return Ok((False, 'compose not supported'))
 
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
+            if not images:
+                return Ok((False, 'compose does not support kickstart'))
+
         return Ok((True, None))
 
     def update_guest(
@@ -814,7 +820,8 @@ class AzureDriver(PoolDriver):
                         version=image['version'],
                         arch=_azure_arch_to_arch(image['architecture']),
                         boot=FlavorBoot(),
-                        ssh=PoolImageSSHInfo()
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False
                     ))
                 except KeyError as exc:
                     return Error(Failure.from_exc(
@@ -866,6 +873,10 @@ class AzureDriver(PoolDriver):
             return Error(r_images.unwrap_error())
 
         images = r_images.unwrap()
+
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
         pairs: List[Tuple[AzurePoolImageInfo, AzureFlavor]] = []
 
         for image in images:

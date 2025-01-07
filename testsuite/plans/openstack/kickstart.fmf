@@ -1,1 +1,35 @@
-enabled: false
+
+/basic:
+  provision+:
+    arch: x86_64
+    kickstart:
+      script: |
+        user --name=ksuser --shell=/bin/bash --homedir=/home/ksuser_homedir
+        %packages
+        bind-utils
+        %end
+      post-install: |
+        %post --log=/var/log/kickstart_post.log
+        echo "post-install script output"
+        df -Th
+        %end
+  discover+:
+    test:
+      - kickstart/basic
+
+/partitioning:
+  provision+:
+    arch: x86_64
+    kickstart:
+      metadata: no_autopart
+      script: |
+        zerombr
+        clearpart --all
+        reqpart
+        part /boot --fstype=ext4 --size=512
+        part / --fstype=ext4 --size=4096 --grow
+        part /test --fstype=xfs --size=1024
+        part swap --size=2048
+  discover+:
+    test:
+      - kickstart/partitioning

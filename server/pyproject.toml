@@ -62,6 +62,7 @@ python-novaclient = "*"
 fastapi = "*"
 uvicorn = "*"
 google-cloud-compute = "*"
+pykickstart = "^3.58"
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient", "google-cloud-compute" ]

@@ -115,7 +115,8 @@ class GCPDriver(PoolDriver):
                                    id=image_description.self_link,
                                    arch=image_description.architecture,
                                    boot=FlavorBoot(),
-                                   ssh=ssh_info)
+                                   ssh=ssh_info,
+                                   supports_kickstart=False)
 
         return Ok(image_info)
 

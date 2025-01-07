@@ -1,0 +1,117 @@
+# Use text mode install
+text
+
+eula --agreed
+
+{% if 'auth' in metadata %}
+auth {{ metadata.auth }}
+{% endif %}
+
+# Network configuration with DHCP
+network --bootproto=dhcp --onboot=on --activate
+
+# Configure install tree and repos
+url --url={{ install_tree }} --noverifyssl
+
+{%- for name, opts in repos.items() %}
+repo --name={{ name }}
+{%- for type in ['baseurl', 'mirrorlist', 'metalink'] %}
+{%- if opts[type] -%}
+{{ ' ' }}--{{ type }}={{ opts[type] }}
+{%- endif %}
+{%- endfor %}
+{%- if opts['sslverify'] == '0' %} --noverifyssl{% endif %}
+{%- endfor %}
+
+# Disable firstboot
+firstboot --disable
+
+# Keyboard layouts
+keyboard --vckeymap=us --xlayouts='us'
+
+# System language
+lang {{ metadata.lang | default('en_US.UTF-8') }}
+
+# Firewall configuration
+firewall --enabled --ssh
+
+# SELinux configuration
+selinux --enforcing
+
+# Timezone
+timezone UTC --utc
+
+# System bootloader configuration
+bootloader --location=mbr {% if kernel_options_post %} --append="{{ kernel_options_post }}"{% endif %}
+
+{%- if 'ignoredisk' in metadata %}
+# Ignore additional drives
+ignoredisk {{ metadata.ignoredisk }}
+{%- endif %}
+
+# Clear the Master Boot Record
+zerombr
+
+# Use all available space
+clearpart --all --initlabel
+
+{%- if 'no_autopart' not in metadata %}
+# Automatically partitioning
+autopart {% if 'autopart_type' in metadata %} --type {{ metadata.autopart_type }}{% endif %}
+{%- endif %}
+
+# Enable and configure services, including cloud-init
+services --enabled=cloud-init,cloud-config,cloud-final,cloud-init-local
+
+# Lock the root password
+rootpw --lock
+
+# List of packages to install
+# note the '--ignoremissing' flag
+%packages --ignoremissing
+{%- for package in packages %}
+{{ package }}
+{%- endfor %}
+
+{%- if 'packages' in metadata %}
+{%- for pkg in metadata.packages.split(':') %}
+{{ pkg }}
+{%- endfor %}
+{%- endif %}
+%end
+
+%pre --log=/dev/console
+touch /.ksinstall /.ksinprogress
+%end
+
+{%- if pre_install %}
+{{ pre_install }}
+{%- endif %}
+
+# Restore important files
+%post --log=/dev/console
+{%- for filename, contents in files.items() %}
+cat >> /{{ filename }} <<__EOF__
+{{ contents }}
+__EOF__
+restorecon -R /{{ filename }}
+{%- endfor %}
+
+# Indicator of installation completion
+touch /.ksinstall
+%end
+
+{% if post_install %}
+{{ post_install }}
+{%- endif %}
+
+%onerror
+touch /.kserror
+%end
+
+{% if script %}
+{{ script }}
+{% endif %}
+
+# Reboot after installation
+reboot --eject

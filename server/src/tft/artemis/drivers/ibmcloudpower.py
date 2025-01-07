@@ -168,7 +168,8 @@ class IBMCloudPowerDriver(PoolDriver):
                         name=image['name'],
                         arch=arch,
                         boot=FlavorBoot(),
-                        ssh=PoolImageSSHInfo()
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False
                     ))
                 except KeyError as exc:
                     return Error(Failure.from_exc(

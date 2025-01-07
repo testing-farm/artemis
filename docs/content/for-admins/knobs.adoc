@@ -171,6 +171,84 @@ guest request watchdog tasks.
 
 5+|A delay, in seconds, after which new guest request watchdog task is scheduled.
 
+|`actor.kickstart-wait.initial-delay`
+|`int`
+|`ARTEMIS_PREPARE_KICKSTART_WAIT_INITIAL_DELAY`
+|`300`
+|yes
+
+
+|`actor.kickstart-wait.initial-delay:$entityname`
+|
+|`ARTEMIS_PREPARE_KICKSTART_WAIT_INITIAL_DELAY_$entityname`
+|
+|
+
+
+5+|Delay before attempting to check the kickstart installation completion.
+
+|`actor.kickstart-wait.retry-delay`
+|`int`
+|`ARTEMIS_PREPARE_KICKSTART_WAIT_RETRY_DELAY`
+|`120`
+|yes
+
+
+|`actor.kickstart-wait.retry-delay:$entityname`
+|
+|`ARTEMIS_PREPARE_KICKSTART_WAIT_RETRY_DELAY_$entityname`
+|
+|
+
+
+5+|Delay between kickstart installation completion checks.
+
+|`actor.kickstart.boot-installer-script-filepath`
+|`str`
+|`ARTEMIS_PREPARE_KICKSTART_BOOT_INSTALLER_SCRIPT_FILEPATH`
+|`artemis-kickstart-kexec.sh`
+|no
+
+
+
+5+|Script to prepare and boot the installer image.
+
+|`actor.kickstart.compose-repo-mapping`
+|`str`
+|`ARTEMIS_PREPARE_KICKSTART_COMPOSE_REPO_MAPPING_FILEPATH`
+|`artemis-kickstart-compose-repo-map.yaml`
+|no
+
+
+
+5+|Map of compose names to source repo name for installation.
+
+|`actor.kickstart.ssh-timeout`
+|`int`
+|`ARTEMIS_PREPARE_KICKSTART_SSH_TIMEOUT`
+|`15`
+|yes
+
+
+|`actor.kickstart.ssh-timeout:$entityname`
+|
+|`ARTEMIS_PREPARE_KICKSTART_SSH_TIMEOUT_$entityname`
+|
+|
+
+
+5+|Kickstart installation SSH connection timeout.
+
+|`actor.kickstart.template`
+|`str`
+|`ARTEMIS_PREPARE_KICKSTART_TEMPLATE_FILEPATH`
+|`artemis-kickstart.ks.j2`
+|no
+
+
+
+5+|Kickstart config template path.
+
 |`actor.offload-tasks`
 |`bool`
 |`ARTEMIS_OFFLOAD_TASKS`
