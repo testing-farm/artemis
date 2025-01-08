@@ -1221,5 +1221,29 @@ class AzureDriver(PoolDriver):
 
         return Ok(progress)
 
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        pool_data = AzurePoolData.unserialize(guest_request)
+
+        assert pool_data.instance_id is not None
+
+        with AzureSession(logger, self) as session:
+            r_output = session.run_az(
+                logger,
+                ['vm', 'restart', '--force', '--ids', pool_data.instance_id],
+                commandname='az.vm-reboot'
+            )
+
+        if r_output.is_error:
+            return Error(Failure.from_failure(
+                'failed to trigger instance reboot',
+                r_output.unwrap_error()
+            ))
+
+        return Ok(None)
+
 
 PoolDriver._drivers_registry['azure'] = AzureDriver
