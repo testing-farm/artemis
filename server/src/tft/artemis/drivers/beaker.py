@@ -2304,5 +2304,27 @@ class BeakerDriver(PoolDriver):
     ) -> Result[GuestLogUpdateProgress, Failure]:
         return self._update_guest_log_url(logger, guest_request, guest_log, 'sys.log')
 
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+
+        assert guest_request.address is not None
+
+        r_output = self._run_bkr(
+            logger,
+            ['system-power', '--action=reboot', guest_request.address],
+            commandname='bkr.system-reboot'
+        )
+
+        if r_output.is_error:
+            return Error(Failure.from_failure(
+                'failed to trigger instance reboot',
+                r_output.unwrap_error()
+            ))
+
+        return Ok(None)
+
 
 PoolDriver._drivers_registry['beaker'] = BeakerDriver
