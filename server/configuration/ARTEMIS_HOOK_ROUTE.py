@@ -17,6 +17,9 @@ import sqlalchemy
 
 import tft.artemis.drivers.aws
 import tft.artemis.drivers.azure
+import tft.artemis.drivers.gcp
+import tft.artemis.drivers.ibmcloudpower
+import tft.artemis.drivers.ibmcloudvpc
 import tft.artemis.drivers.openstack
 from tft.artemis.db import GuestRequest
 from tft.artemis.drivers import PoolDriver
@@ -48,6 +51,9 @@ policy_prefer_clouds = create_preferrence_filter_by_driver_class(
     'prefer-clouds',
     tft.artemis.drivers.aws.AWSDriver,
     tft.artemis.drivers.azure.AzureDriver,
+    tft.artemis.drivers.gcp.GCPDriver,
+    tft.artemis.drivers.ibmcloudpower.IBMCloudPowerDriver,
+    tft.artemis.drivers.ibmcloudvpc.IBMCloudVPCDriver,
     tft.artemis.drivers.openstack.OpenStackDriver
 )
 
