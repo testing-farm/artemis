@@ -491,6 +491,11 @@ class GuestLogBlobResponse:
 
 
 @dataclasses.dataclass
+class GuestLogTypesResponse:
+    log_types: List[str]
+
+
+@dataclasses.dataclass
 class GuestLogResponse:
     state: artemis_db.GuestLogState
     contenttype: artemis_db.GuestLogContentType

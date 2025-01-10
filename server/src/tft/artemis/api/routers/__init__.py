@@ -53,6 +53,7 @@ from ..models import (
     EventSearchParameters,
     GuestEvent,
     GuestLogResponse,
+    GuestLogTypesResponse,
     GuestRequest,
     GuestResponse,
     GuestShelfResponse,
@@ -473,6 +474,63 @@ class GuestRequestManager:
 
             if r_dispatch.is_error:
                 raise errors.InternalServerError(caused_by=r_dispatch.unwrap_error(), logger=logger)
+
+    def get_guest_log_types(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guestname: str
+    ) -> GuestLogTypesResponse:
+        failure_details = {
+            'guestname': guestname
+        }
+
+        with get_session(logger, self.db) as (session, _):
+            r_guest_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest) \
+                .filter(artemis_db.GuestRequest.guestname == guestname) \
+                .one_or_none()
+
+            if r_guest_request_record.is_error:
+                raise errors.InternalServerError(
+                    logger=logger,
+                    caused_by=r_guest_request_record.unwrap_error(),
+                    failure_details=failure_details
+                )
+
+            guest_request_record = r_guest_request_record.unwrap()
+
+            if guest_request_record is None:
+                raise errors.NoSuchEntityError(logger=logger, failure_details=failure_details)
+
+            if guest_request_record.poolname is None:
+                return GuestLogTypesResponse(log_types=[])
+
+            r_pool = PoolDriver.load_or_none(logger, session, guest_request_record.poolname)
+
+            if r_pool.is_error:
+                raise errors.InternalServerError(
+                    logger=logger,
+                    caused_by=r_pool.unwrap_error(),
+                    failure_details=failure_details
+                )
+
+            pool = r_pool.unwrap()
+
+            if pool is None:
+                # Without being routed to a pool, we have no way to tell, which logs might be supported
+                return GuestLogTypesResponse(log_types=[])
+
+            r_capabilities = pool.capabilities()
+
+            if r_capabilities.is_error:
+                raise errors.InternalServerError(
+                    logger=logger,
+                    caused_by=r_capabilities.unwrap_error(),
+                    failure_details={**failure_details, 'poolname': guest_request_record.poolname}
+                )
+
+            return GuestLogTypesResponse(
+                log_types=[log_type for log_type, _ in r_capabilities.unwrap().supported_guest_logs]
+            )
 
 
 def acquire_guest_console_url(
