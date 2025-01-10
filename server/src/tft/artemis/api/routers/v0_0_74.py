@@ -17,8 +17,8 @@ from ... import metrics
 from .. import environment, errors
 from ..dependencies import get_auth_context, get_logger
 from ..models import AboutResponse, AuthContext, CreateUserRequest, EventSearchParameters, GuestEvent, \
-    GuestLogResponse, GuestShelfResponse, KnobResponse, KnobUpdateRequest, PreprovisioningRequest, SnapshotRequest, \
-    SnapshotResponse, TokenResetResponse, UserResponse
+    GuestLogResponse, GuestLogTypesResponse, GuestShelfResponse, KnobResponse, KnobUpdateRequest, \
+    PreprovisioningRequest, SnapshotRequest, SnapshotResponse, TokenResetResponse, UserResponse
 from ..models.v0_0_72 import GuestRequest_v0_0_72, GuestResponse_v0_0_72
 from . import CacheManager, GuestEventManager, GuestRequestManager, GuestResponseType, GuestShelfManager, KnobManager, \
     SnapshotRequestManager, StatusManager, UserManager, create_guest_request, create_guest_request_log
@@ -161,6 +161,15 @@ def restore_snapshot_request(
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
 ) -> SnapshotResponse:
     return manager.restore_snapshot(guestname, snapshotname, logger)
+
+
+@router_guests.get("/{guestname}/logs", status_code=status.HTTP_200_OK)
+def get_guest_log_types(
+    guestname: str,
+    manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+) -> GuestLogTypesResponse:
+    return manager.get_guest_log_types(logger, guestname)
 
 
 @router_guests.post("/{guestname}/logs/{logname}/{contenttype}", status_code=status.HTTP_202_ACCEPTED)
