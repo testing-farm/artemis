@@ -48,6 +48,7 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('guest-reboot', '0.0.74'),
         ('security-group-rules', '0.0.72'),
         ('hw-constraints-disk-model-name', '0.0.69'),
         ('hw-constraints-zcrypt', '0.0.69'),
@@ -836,6 +837,10 @@ def cmd_trigger_reboot(
         cfg: Configuration,
         guestname: str
 ) -> None:
+    if cfg.artemis_api_version < API_FEATURE_VERSIONS['guest-reboot']:
+        cfg.logger.error(
+            f'guest reboot is available with API {API_FEATURE_VERSIONS["guest-reboot"]} and newer')
+
     response = fetch_artemis(
         cfg,
         f'/guests/{guestname}/reboot',

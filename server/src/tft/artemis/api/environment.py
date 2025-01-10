@@ -24,6 +24,7 @@ ENVIRONMENT_SCHEMAS: Dict[str, JSONSchemaType] = {}
 #: API versions. Based on this list, routers for proper endpoints will be added to the application with appropriate
 #: redirects if specified.
 API_MILESTONES: List[Tuple[str, List[str]]] = [
+    # NEW: guest reboot
     ('v0.0.74', [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
