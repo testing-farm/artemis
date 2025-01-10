@@ -97,6 +97,7 @@ def handle_task_sequence_request(
 
         r_task_requests = SafeQuery.from_session(session, TaskRequest) \
             .filter(TaskRequest.task_sequence_request_id == task_sequence_request.id) \
+            .order_by(TaskRequest.id.asc()) \
             .all()
 
         if r_task_requests.is_error:
