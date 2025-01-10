@@ -56,6 +56,7 @@ ConfigFlavorCPUSpecType = TypedDict(
         'family-name': Optional[str],
         'model': Optional[int],
         'model-name': Optional[str],
+        'stepping': Optional[int],
         'flag': Optional[List[str]]
     }
 )
@@ -722,6 +723,9 @@ def _apply_flavor_specification(
 
         if 'model-name' in cpu_patch:
             flavor.cpu.model_name = cpu_patch['model-name']
+
+        if 'stepping' in cpu_patch:
+            flavor.cpu.stepping = cpu_patch['stepping']
 
         if 'flag' in cpu_patch:
             flavor.cpu.flag = cpu_patch['flag'] or []

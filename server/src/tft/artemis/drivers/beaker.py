@@ -416,6 +416,13 @@ def constraint_to_beaker_filter(
 
             cpu.append(model_name)
 
+        elif constraint_name.child_property == 'stepping':
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+            stepping = _new_tag('stepping', op=op, value=value)
+
+            cpu.append(stepping)
+
         elif constraint_name.child_property == 'flag':
             op, value = operator_to_beaker_op(
                 Operator.EQ if constraint.operator is Operator.CONTAINS else Operator.NEQ,
@@ -1944,6 +1951,7 @@ class BeakerDriver(PoolDriver):
             'cpu.family',
             'cpu.model',
             'cpu.model_name',
+            'cpu.stepping',
             'cpu.flag',
             'disk[].size',
             'disk[].model_name',
