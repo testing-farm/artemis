@@ -663,5 +663,28 @@ class IBMCloudPowerDriver(PoolDriver):
 
         return Ok(None)
 
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        pool_data = IBMCloudPoolData.unserialize(guest_request)
+
+        assert pool_data.instance_id is not None
+
+        with IBMCloudPowerSession(logger, self) as session:
+            r_output = session.run(
+                logger,
+                ['pi', 'instance', 'action', '-o', 'hard-reboot', pool_data.instance_id],
+                commandname='ibmcloud.pi.vm-reboot')
+
+        if r_output.is_error:
+            return Error(Failure.from_failure(
+                'failed to trigger instance reboot',
+                r_output.unwrap_error()
+            ))
+
+        return Ok(None)
+
 
 PoolDriver._drivers_registry['ibmcloud-power'] = IBMCloudPowerDriver
