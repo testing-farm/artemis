@@ -789,6 +789,27 @@ def print_users(
     print_collection(cfg, users, tabulate, jq_filter=jq_filter, console=console)
 
 
+def print_guest_logs_available(
+    cfg: Configuration,
+    logs_available: CollectionType,
+    console: Optional[rich.console.Console] = None
+) -> None:
+    def tabulate(logs_available: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
+
+        for header in ['Log type']:
+            table.add_column(header)
+
+        for log in logs_available:
+            table.add_row(
+                log['name']
+            )
+
+        return table
+
+    print_collection(cfg, logs_available, tabulate, console=console)
+
+
 def print_guest_logs(
     cfg: Configuration,
     logs: CollectionType,

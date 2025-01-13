@@ -33,9 +33,9 @@ from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
                RichYAML, artemis_create, artemis_delete, artemis_inspect,
                artemis_update, confirm, fetch_artemis, load_yaml,
                print_broker_tasks, print_events, print_guest_logs,
-               print_guests, print_json, print_knobs, print_shelves,
-               print_table, print_tasks, print_users, print_yaml,
-               validate_struct)
+               print_guest_logs_available, print_guests, print_json,
+               print_knobs, print_shelves, print_table, print_tasks,
+               print_users, print_yaml, validate_struct)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000
@@ -741,7 +741,34 @@ def cmd_guest_events(
     print_events(cfg, events)
 
 
-@cmd_guest.command(name='logs', short_help='Get specific logs from the guest')
+@cmd_guest.group(name='logs', short_help='Commands for reading logs from the guest')
+@click.pass_obj
+def cmd_guest_logs(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_guest_logs.command(name='list', short_help='List logs available')
+@click.argument('guestname', metavar='ID', default=None,)
+@click.pass_obj
+def cmd_guest_log(
+    cfg: Configuration,
+    guestname: str
+) -> None:
+    response = fetch_artemis(
+        cfg,
+        f'/guests/{guestname}/logs',
+        allow_statuses=[200]
+    )
+
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
+
+    logs = [{'name': name} for name in response.json().get('log_types', [])]
+
+    print_guest_logs_available(cfg, logs)
+
+
+@cmd_guest_logs.command(name='fetch', short_help='Get specific logs from the guest')
 @click.argument('guestname', metavar='ID', default=None,)
 @click.option(
     '--log',
@@ -755,7 +782,7 @@ def cmd_guest_events(
 @click.option('--wait', is_flag=True, default=False, help='Poll the server till the log is ready')
 @click.option('--force', is_flag=True, default=False, help='Force request')
 @click.pass_obj
-def cmd_guest_log(
+def cmd_guest_logs_fetch(
         cfg: Configuration,
         guestname: str,
         logname: str,
