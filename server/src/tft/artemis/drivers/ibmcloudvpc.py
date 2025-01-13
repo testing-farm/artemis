@@ -903,5 +903,28 @@ class IBMCloudVPCDriver(PoolDriver):
 
         return Ok(None)
 
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        pool_data = IBMCloudPoolData.unserialize(guest_request)
+
+        assert pool_data.instance_id is not None
+
+        with IBMCloudSession(logger, self) as session:
+            r_output = session.run(
+                logger,
+                ['is', 'instance-reboot', pool_data.instance_id, '--force', '--now-wait'],
+                commandname='ibmcloud.instance-reboot')
+
+        if r_output.is_error:
+            return Error(Failure.from_failure(
+                'failed to trigger instance reboot',
+                r_output.unwrap_error()
+            ))
+
+        return Ok(None)
+
 
 PoolDriver._drivers_registry['ibmcloud-vpc'] = IBMCloudVPCDriver
