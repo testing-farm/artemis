@@ -192,6 +192,11 @@ lint.ignore = [
     # "SIM103",  # Return the condition directly - can hurt readability
     ]
 
+lint.logger-objects = ["gluetool.log.ContextAdapter"]
+
+[tool.ruff.lint.flake8-builtins]
+# builtins-ignorelist = ["help", "format", "input", "filter", "copyright", "max"]
+
 [tool.ruff.lint.isort]
 combine-as-imports = true
 force-sort-within-sections = false
