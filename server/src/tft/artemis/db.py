@@ -732,20 +732,25 @@ class TaskRequest(Base):
     arguments: Mapped[Any] = mapped_column(JSON(), nullable=False)
     delay: Mapped[Optional[int]]
 
+    task_sequence_request_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey('task_sequence_requests.id'),
+        nullable=True
+    )
+    task_sequence_request = relationship('TaskSequenceRequest', back_populates='task_requests')
+
     @classmethod
     def create_query(
         cls,
         task: 'Actor',
         *args: 'ActorArgumentType',
-        delay: Optional[int] = None
+        delay: Optional[int] = None,
+        task_sequence_request_id: Optional[int] = None
     ) -> sqlalchemy.Insert:
-        """
-        """
-
         return sqlalchemy.insert(cls).values(
             taskname=task.actor_name,
             arguments=list(args),
-            delay=delay
+            delay=delay,
+            task_sequence_request_id=task_sequence_request_id
         )
 
     @classmethod
@@ -755,11 +760,33 @@ class TaskRequest(Base):
         session: sqlalchemy.orm.session.Session,
         task: 'Actor',
         *args: 'ActorArgumentType',
-        delay: Optional[int] = None
+        delay: Optional[int] = None,
+        task_sequence_request_id: Optional[int] = None
     ) -> Result[int, 'Failure']:
-        stmt = cls.create_query(task, *args, delay=delay)
+        stmt = cls.create_query(task, *args, delay=delay, task_sequence_request_id=task_sequence_request_id)
 
         r: DMLResult[TaskRequest] = execute_dml(logger, session, stmt)
+
+        if r.is_error:
+            return Error(r.unwrap_error())
+
+        return Ok(r.unwrap().inserted_primary_key[0])
+
+
+class TaskSequenceRequest(Base):
+    __tablename__ = 'task_sequence_requests'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    task_requests = relationship('TaskRequest', back_populates='task_sequence_request')
+
+    @classmethod
+    def create(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session
+    ) -> Result[int, 'Failure']:
+        r: DMLResult[TaskSequenceRequest] = execute_dml(logger, session, sqlalchemy.insert(cls))
 
         if r.is_error:
             return Error(r.unwrap_error())
