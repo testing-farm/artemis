@@ -837,6 +837,8 @@ def cmd_trigger_reboot(
         cfg: Configuration,
         guestname: str
 ) -> None:
+    assert cfg.artemis_api_version is not None
+
     if cfg.artemis_api_version < API_FEATURE_VERSIONS['guest-reboot']:
         cfg.logger.error(
             f'guest reboot is available with API {API_FEATURE_VERSIONS["guest-reboot"]} and newer')
