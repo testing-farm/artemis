@@ -514,5 +514,41 @@ class RestDriver(PoolDriver):
             self._get_guest_log_url(guest_request, 'console')
         )
 
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        '''
+        Request
+        """""""
+
+        .. code-block:: json
+
+        POST /guests/{guest_id}/reboot
+
+        Response
+        """"""""
+
+        The response is expected to be empty.
+        '''
+        pool_data = RestPoolData.unserialize(guest_request)
+
+        try:
+            response = requests.post(
+                f"{self.url}/guests/{pool_data.guest_id}/reboot",
+                headers=self._get_headers(guestname=guest_request.guestname),
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                timeout=KNOB_HTTP_TIMEOUT.value
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as exc:
+            return Error(Failure.from_exc(
+                'failed to trigger guest reboot',
+                exc
+            ))
+
+        return Ok(None)
+
 
 PoolDriver._drivers_registry['rest'] = RestDriver
