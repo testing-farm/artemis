@@ -82,21 +82,21 @@ jinja2.filters.FILTERS.update(
 )
 
 # Now we can import our stuff without any fear we'd miss DEFAULT_FILTERS update
-from . import (
-    db as artemis_db,  # noqa: E402
-    middleware as artemis_middleware,  # noqa: E402
+from . import (  # noqa: E402
+    db as artemis_db,
+    middleware as artemis_middleware,
 )
-from .knobs import (
+from .knobs import (  # noqa: E402
     KNOB_DEPLOYMENT_ENVIRONMENT,
     KNOB_LOGGING_SENTRY,
     KNOB_SENTRY_DISABLE_CERT_VERIFICATION,
-    KNOB_SENTRY_DSN,  # noqa: E402
+    KNOB_SENTRY_DSN,
     KNOB_SENTRY_EVENT_URL_TEMPLATE,
     KNOB_SENTRY_INTEGRATIONS,
-    KNOB_TEMPLATE_BLOCK_DELIMITERS,  # noqa: E402
-    KNOB_TEMPLATE_VARIABLE_DELIMITERS,  # noqa: E402
+    KNOB_TEMPLATE_BLOCK_DELIMITERS,
+    KNOB_TEMPLATE_VARIABLE_DELIMITERS,
     KNOB_TRACING_ENABLED,
-    Knob,  # noqa: E402
+    Knob,
 )
 
 if TYPE_CHECKING:
