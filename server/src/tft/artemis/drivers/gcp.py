@@ -462,5 +462,30 @@ class GCPDriver(PoolDriver):
     def restore_snapshot(self, guest_request: GuestRequest, snapshot_request: SnapshotRequest) -> Result[bool, Failure]:
         raise NotImplementedError()
 
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        """
+        Trigger hard reboot of a GCP instance.
+        """
+        pool_data = GCPPoolData.unserialize(guest_request)
+
+        request = compute_v1.ResetInstanceRequest(
+            instance=pool_data.name,
+            project=pool_data.project,
+            zone=pool_data.zone
+        )
+
+        try:
+            self._instances_client.reset(request=request)
+        except google.api_core.exceptions.NotFound as exc:
+            return Error(Failure.from_exc('Instance to reboot was not found', exc))
+        except google.api_core.exceptions.ClientError as exc:
+            return Error(Failure.from_exc('Failed to reboot instance', exc))
+
+        return Ok(None)
+
 
 PoolDriver._drivers_registry['gcp'] = GCPDriver
