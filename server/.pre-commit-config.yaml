@@ -1,11 +1,6 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
-  - repo: https://github.com/PyCQA/isort
-    rev: "5.12.0"
-    hooks:
-      - id: isort
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
     hooks:
@@ -67,3 +62,11 @@ repos:
         args:
           - --license-filepath
           - LICENSE_SPDX
+
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.9.1
+    hooks:
+      - id: ruff
+        args:
+          - '--fix'
+          - '--show-fixes'

@@ -24,9 +24,7 @@ from ..api.models import GuestRequest as GuestRequestSchema
 from ..db import DB, DMLResult, GuestLogContentType, GuestRequest, execute_dml
 from ..environment import Environment
 from ..guest import GuestState
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import Workspace as _Workspace
-from . import get_shelf_logger, step, task, task_core
+from . import _ROOT_LOGGER, DoerReturnType, DoerType, Workspace as _Workspace, get_shelf_logger, step, task, task_core
 from .guest_shelf_lookup import guest_shelf_lookup
 
 

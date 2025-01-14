@@ -18,13 +18,38 @@ from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
 from .. import Failure, JSONType, log_dict_yaml, render_template
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
-from ..environment import UNITS, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, FlavorNetwork, \
-    FlavorNetworks, FlavorVirtualization, SizeType
+from ..environment import (
+    UNITS,
+    Flavor,
+    FlavorBoot,
+    FlavorCpu,
+    FlavorDisk,
+    FlavorDisks,
+    FlavorNetwork,
+    FlavorNetworks,
+    FlavorVirtualization,
+    SizeType,
+)
 from ..knobs import Knob
 from ..metrics import ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, HookImageInfoMapper, PoolCapabilities, PoolData, \
-    PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, run_cli_tool, vm_info_to_ip
+from . import (
+    KNOB_UPDATE_GUEST_REQUEST_TICK,
+    GuestLogUpdateProgress,
+    HookImageInfoMapper,
+    PoolCapabilities,
+    PoolData,
+    PoolDriver,
+    PoolImageInfo,
+    PoolImageSSHInfo,
+    PoolResourcesIDs,
+    ProvisioningProgress,
+    ProvisioningState,
+    SerializedPoolResourcesIDs,
+    create_tempfile,
+    guest_log_updater,
+    run_cli_tool,
+    vm_info_to_ip,
+)
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'azure.mapping.environment-to-image.pattern-map.filepath',

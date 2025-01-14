@@ -30,21 +30,51 @@ import stackprinter
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol, TypedDict
 
-from .. import Failure, RSSWatcher, Sentry, SerializableContainer, get_broker, get_db, get_logger, log_dict_yaml, \
-    metrics, safe_call
+from .. import (
+    Failure,
+    RSSWatcher,
+    Sentry,
+    SerializableContainer,
+    get_broker,
+    get_db,
+    get_logger,
+    log_dict_yaml,
+    metrics,
+    safe_call,
+)
 from ..context import CURRENT_MESSAGE, CURRENT_TASK, DATABASE, LOGGER, SESSION, with_context
-from ..db import DB, DMLResult, GuestEvent, GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestShelf, \
-    SafeQuery, SnapshotRequest, SSHKey, TaskRequest, TaskSequenceRequest, TransactionResult, execute_dml, transaction
-from ..drivers import PoolData, PoolDriver, PoolLogger
-from ..drivers import aws as aws_driver
-from ..drivers import azure as azure_driver
-from ..drivers import beaker as beaker_driver
-from ..drivers import gcp as gcp_driver
-from ..drivers import ibmcloudpower as ibmcloud_power_driver
-from ..drivers import ibmcloudvpc as ibmcloud_vpc_driver
-from ..drivers import localhost as localhost_driver
-from ..drivers import openstack as openstack_driver
-from ..drivers import rest as rest_driver
+from ..db import (
+    DB,
+    DMLResult,
+    GuestEvent,
+    GuestLog,
+    GuestLogContentType,
+    GuestLogState,
+    GuestRequest,
+    GuestShelf,
+    SafeQuery,
+    SnapshotRequest,
+    SSHKey,
+    TaskRequest,
+    TaskSequenceRequest,
+    TransactionResult,
+    execute_dml,
+    transaction,
+)
+from ..drivers import (
+    PoolData,
+    PoolDriver,
+    PoolLogger,
+    aws as aws_driver,
+    azure as azure_driver,
+    beaker as beaker_driver,
+    gcp as gcp_driver,
+    ibmcloudpower as ibmcloud_power_driver,
+    ibmcloudvpc as ibmcloud_vpc_driver,
+    localhost as localhost_driver,
+    openstack as openstack_driver,
+    rest as rest_driver,
+)
 from ..guest import GuestLogger, GuestState, ShelfLogger, SnapshotLogger
 from ..knobs import Knob
 from ..profile import Profiler

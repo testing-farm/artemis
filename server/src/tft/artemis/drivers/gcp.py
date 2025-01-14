@@ -19,9 +19,19 @@ from .. import Failure, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
 from ..environment import UNITS, FlavorBoot, SizeType
 from ..knobs import Knob
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, \
-    PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, \
-    SerializedPoolResourcesIDs
+from . import (
+    KNOB_UPDATE_GUEST_REQUEST_TICK,
+    HookImageInfoMapper,
+    PoolCapabilities,
+    PoolData,
+    PoolDriver,
+    PoolImageInfo,
+    PoolImageSSHInfo,
+    PoolResourcesIDs,
+    ProvisioningProgress,
+    ProvisioningState,
+    SerializedPoolResourcesIDs,
+)
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'gcp.mapping.environment-to-image.pattern-map.filepath',

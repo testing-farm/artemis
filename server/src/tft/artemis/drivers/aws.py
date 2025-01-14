@@ -20,20 +20,54 @@ from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 from typing_extensions import Literal, TypedDict
 
-from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str, \
-    render_template
+from .. import (
+    Failure,
+    JSONType,
+    SerializableContainer,
+    log_dict_yaml,
+    logging_filter,
+    process_output_to_str,
+    render_template,
+)
 from ..cache import get_cached_mapping_item, get_cached_mapping_values
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Constraint, Flavor, FlavorBoot, FlavorBootMethodType, FlavorCpu, FlavorNetwork, \
-    FlavorNetworks, FlavorVirtualization, Operator, SizeType
+from ..environment import (
+    UNITS,
+    Constraint,
+    Flavor,
+    FlavorBoot,
+    FlavorBootMethodType,
+    FlavorCpu,
+    FlavorNetwork,
+    FlavorNetworks,
+    FlavorVirtualization,
+    Operator,
+    SizeType,
+)
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
-    HookImageInfoMapper, ImageInfoMapperResultType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
-    PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
-    WatchdogState, guest_log_updater, run_cli_tool
+from . import (
+    KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CLIErrorCauses,
+    GuestLogUpdateProgress,
+    GuestTagsType,
+    HookImageInfoMapper,
+    ImageInfoMapperResultType,
+    PoolCapabilities,
+    PoolData,
+    PoolDriver,
+    PoolImageInfo,
+    PoolImageSSHInfo,
+    PoolResourcesIDs,
+    ProvisioningProgress,
+    ProvisioningState,
+    SerializedPoolResourcesIDs,
+    WatchdogState,
+    guest_log_updater,
+    run_cli_tool,
+)
 
 #
 # Custom typing types

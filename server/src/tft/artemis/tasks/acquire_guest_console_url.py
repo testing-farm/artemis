@@ -8,9 +8,16 @@ import sqlalchemy.orm.session
 
 from ..db import DB
 from ..guest import GuestState
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import GuestRequestWorkspace as _Workspace
-from . import get_guest_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    GuestRequestWorkspace as _Workspace,
+    get_guest_logger,
+    step,
+    task,
+    task_core,
+)
 
 
 class Workspace(_Workspace):

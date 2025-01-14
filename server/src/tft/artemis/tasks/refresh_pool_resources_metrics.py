@@ -8,9 +8,18 @@ import sqlalchemy.orm.session
 
 from ..db import DB
 from ..drivers import PoolDriver
-from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskPriority, TaskQueue
-from . import Workspace as _Workspace
-from . import get_pool_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    TaskPriority,
+    TaskQueue,
+    Workspace as _Workspace,
+    get_pool_logger,
+    step,
+    task,
+    task_core,
+)
 
 
 # TODO: this belongs to Beaker driver, but there's no mechanism in place for easy custom tasks.

@@ -20,14 +20,39 @@ from novaclient import client as nocl
 
 from .. import Failure, JSONType, log_dict_yaml, process_output_to_str, safe_call
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
-from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, FlavorNetwork, \
-    FlavorNetworks, FlavorVirtualization
+from ..environment import (
+    UNITS,
+    Environment,
+    Flavor,
+    FlavorBoot,
+    FlavorCpu,
+    FlavorDisk,
+    FlavorDisks,
+    FlavorNetwork,
+    FlavorNetworks,
+    FlavorVirtualization,
+)
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, ConsoleUrlData, GuestLogUpdateProgress, \
-    HookImageInfoMapper, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, \
-    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile, guest_log_updater, \
-    run_cli_tool
+from . import (
+    KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CLIErrorCauses,
+    ConsoleUrlData,
+    GuestLogUpdateProgress,
+    HookImageInfoMapper,
+    PoolCapabilities,
+    PoolData,
+    PoolDriver,
+    PoolImageInfo,
+    PoolImageSSHInfo,
+    PoolResourcesIDs,
+    ProvisioningProgress,
+    ProvisioningState,
+    SerializedPoolResourcesIDs,
+    create_tempfile,
+    guest_log_updater,
+    run_cli_tool,
+)
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',

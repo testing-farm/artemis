@@ -10,10 +10,10 @@ Create Date: 2021-09-10 16:22:29.231313
 
 """
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 
-from alembic import op
 from tft.artemis.knobs import get_vault_password
 
 # revision identifiers, used by Alembic.

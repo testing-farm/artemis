@@ -9,8 +9,11 @@ from gluetool.result import Error
 
 from tft.artemis.drivers import ImageInfoMapperResultType, PoolImageInfo
 from tft.artemis.drivers.hooks import map_environment_to_image_info
-from tft.artemis.drivers.openstack import KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH, \
-    KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE, OpenStackDriver
+from tft.artemis.drivers.openstack import (
+    KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH,
+    KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE,
+    OpenStackDriver,
+)
 from tft.artemis.environment import Environment
 
 

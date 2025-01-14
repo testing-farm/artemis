@@ -6,6 +6,7 @@ from logging.config import fileConfig
 from typing import Any, List
 
 from alembic import context
+
 from tft.artemis import db, get_db, get_logger
 
 # this is the Alembic Config object, which provides

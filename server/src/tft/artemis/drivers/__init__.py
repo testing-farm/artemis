@@ -15,8 +15,22 @@ import shlex
 import sys
 import tempfile
 import time
-from typing import Any, Callable, Dict, Generic, Iterable, Iterator, List, Optional, Pattern, Tuple, Type, TypeVar, \
-    Union, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Pattern,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import gluetool
 import gluetool.log
@@ -26,14 +40,41 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Literal, Protocol, TypedDict
 
-from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str, \
-    render_template, safe_call, template_environment
+from .. import (
+    Failure,
+    JSONType,
+    SerializableContainer,
+    log_dict_yaml,
+    logging_filter,
+    process_output_to_str,
+    render_template,
+    safe_call,
+    template_environment,
+)
 from ..cache import get_cached_mapping_item, get_cached_mapping_values, refresh_cached_mapping
 from ..context import CACHE, LOGGER
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, GuestTag, Pool, SafeQuery, \
-    SnapshotRequest, SSHKey
-from ..environment import UNITS, Environment, Flavor, FlavorBoot, FlavorBootMethodType, FlavorDisk, FlavorDisks, \
-    MeasurableConstraintValueType, SizeType
+from ..db import (
+    GuestLog,
+    GuestLogContentType,
+    GuestLogState,
+    GuestRequest,
+    GuestTag,
+    Pool,
+    SafeQuery,
+    SnapshotRequest,
+    SSHKey,
+)
+from ..environment import (
+    UNITS,
+    Environment,
+    Flavor,
+    FlavorBoot,
+    FlavorBootMethodType,
+    FlavorDisk,
+    FlavorDisks,
+    MeasurableConstraintValueType,
+    SizeType,
+)
 from ..knobs import KNOB_POOL_ENABLED, Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
 from ..script import hook_engine

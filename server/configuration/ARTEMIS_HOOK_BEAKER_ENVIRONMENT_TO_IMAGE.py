@@ -9,8 +9,12 @@ import gluetool.log
 from gluetool.result import Error
 
 from tft.artemis.drivers import ImageInfoMapperResultType
-from tft.artemis.drivers.beaker import KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH, \
-    KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE, BeakerDriver, BeakerPoolImageInfo
+from tft.artemis.drivers.beaker import (
+    KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH,
+    KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE,
+    BeakerDriver,
+    BeakerPoolImageInfo,
+)
 from tft.artemis.drivers.hooks import map_environment_to_image_info
 from tft.artemis.environment import Environment
 

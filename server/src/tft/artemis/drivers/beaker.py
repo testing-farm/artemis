@@ -18,18 +18,41 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import ProcessOutput
 from typing_extensions import TypedDict
 
-from .. import Failure, SerializableContainer, log_dict_yaml, process_output_to_str, render_template, \
-    template_environment
+from .. import (
+    Failure,
+    SerializableContainer,
+    log_dict_yaml,
+    process_output_to_str,
+    render_template,
+    template_environment,
+)
 from ..cache import get_cached_mapping, refresh_cached_mapping
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Kickstart, Operator, Or, SizeType
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT, Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, CLIOutput, GuestLogUpdateProgress, HookImageInfoMapper, \
-    PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, WatchdogState, create_tempfile, guest_log_updater, run_cli_tool, \
-    run_remote
+from . import (
+    KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CLIErrorCauses,
+    CLIOutput,
+    GuestLogUpdateProgress,
+    HookImageInfoMapper,
+    PoolCapabilities,
+    PoolData,
+    PoolDriver,
+    PoolImageInfo,
+    PoolImageSSHInfo,
+    PoolResourcesIDs,
+    ProvisioningProgress,
+    ProvisioningState,
+    SerializedPoolResourcesIDs,
+    WatchdogState,
+    create_tempfile,
+    guest_log_updater,
+    run_cli_tool,
+    run_remote,
+)
 
 NodeRefType = Any
 

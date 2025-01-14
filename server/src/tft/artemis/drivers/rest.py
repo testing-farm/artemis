@@ -17,8 +17,18 @@ from .. import Failure
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, GuestLogUpdateProgress, PoolCapabilities, PoolData, PoolDriver, \
-    PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, guest_log_updater
+from . import (
+    KNOB_UPDATE_GUEST_REQUEST_TICK,
+    GuestLogUpdateProgress,
+    PoolCapabilities,
+    PoolData,
+    PoolDriver,
+    PoolResourcesIDs,
+    ProvisioningProgress,
+    ProvisioningState,
+    SerializedPoolResourcesIDs,
+    guest_log_updater,
+)
 
 ARTEMIS_GUESTNAME_HEADER = "Artemis-guestname"
 

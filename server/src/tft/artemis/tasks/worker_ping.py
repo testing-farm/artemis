@@ -19,9 +19,7 @@ import sqlalchemy.orm.session
 from ..db import DB
 from ..knobs import Knob
 from ..metrics import WorkerMetrics
-from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger
-from . import Workspace as _Workspace
-from . import step, task, task_core
+from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger, Workspace as _Workspace, step, task, task_core
 
 KNOB_WORKER_PING_TASK_SCHEDULE: Knob[str] = Knob(
     'actor.worker-ping.schedule',

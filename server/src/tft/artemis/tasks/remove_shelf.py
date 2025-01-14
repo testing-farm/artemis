@@ -17,9 +17,18 @@ import sqlalchemy.orm.session
 
 from ..db import DB, DMLResult, GuestRequest, GuestShelf, SafeQuery, execute_dml
 from ..guest import GuestState
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import Workspace as _Workspace
-from . import _update_guest_state_and_request_task, get_guest_logger, get_shelf_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    Workspace as _Workspace,
+    _update_guest_state_and_request_task,
+    get_guest_logger,
+    get_shelf_logger,
+    step,
+    task,
+    task_core,
+)
 
 
 class Workspace(_Workspace):

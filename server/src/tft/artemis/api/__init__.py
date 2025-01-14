@@ -20,8 +20,12 @@ from starlette.middleware import Middleware
 from starlette.responses import RedirectResponse
 
 from .. import get_logger, metrics
-from ..knobs import KNOB_LOGGING_JSON, KNOB_WORKER_PROCESS_METRICS_ENABLED, KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK, \
-    Knob
+from ..knobs import (
+    KNOB_LOGGING_JSON,
+    KNOB_WORKER_PROCESS_METRICS_ENABLED,
+    KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK,
+    Knob,
+)
 from ..script import hook_engine
 from . import environment
 from .middleware import AuthorizationMiddleware, ErrorHandlerMiddleware, PrometheusMiddleware, RSSWatcherMiddleware

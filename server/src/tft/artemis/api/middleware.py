@@ -8,8 +8,7 @@ import re
 import time
 from typing import Awaitable, Callable
 
-from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi import status as http_status
+from fastapi import FastAPI, HTTPException, Request, Response, status as http_status
 from gluetool.utils import normalize_bool_option
 from starlette.middleware.base import BaseHTTPMiddleware
 

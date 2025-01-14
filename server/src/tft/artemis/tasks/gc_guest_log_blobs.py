@@ -19,9 +19,7 @@ import sqlalchemy.orm.session
 
 from ..db import DB, DMLResult, GuestLogBlob, GuestRequest, execute_dml
 from ..knobs import Knob
-from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger
-from . import Workspace as _Workspace
-from . import step, task, task_core
+from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger, Workspace as _Workspace, step, task, task_core
 
 KNOB_GC_GUEST_LOG_BLOBS_SCHEDULE: Knob[str] = Knob(
     'gc.guest-log-blobs.schedule',

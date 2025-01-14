@@ -12,7 +12,6 @@ Create Date: 2021-02-03 14:45:59.275145
 import datetime
 
 import sqlalchemy as sa
-
 from alembic import op
 
 # revision identifiers, used by Alembic.

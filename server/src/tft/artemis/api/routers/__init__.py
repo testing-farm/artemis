@@ -18,9 +18,16 @@ import sqlalchemy.orm.exc
 from fastapi import Depends, Request, Response, status
 from typing_extensions import Annotated
 
-from ... import __VERSION__, Failure, FailureDetailsType, JSONSchemaType
-from ... import db as artemis_db
-from ... import log_dict_yaml, metrics, validate_data
+from ... import (
+    __VERSION__,
+    Failure,
+    FailureDetailsType,
+    JSONSchemaType,
+    db as artemis_db,
+    log_dict_yaml,
+    metrics,
+    validate_data,
+)
 from ...cache import get_cache_value, iter_cache_keys
 from ...context import DATABASE, LOGGER, SESSION
 from ...drivers import PoolDriver
@@ -29,12 +36,28 @@ from ...guest import GuestState
 from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, Knob
 from ...security_group_rules import SecurityGroupRule
 from ...tasks import Actor, TaskCall, _get_ssh_key, get_snapshot_logger
-from .. import environment as global_env
-from .. import errors
+from .. import environment as global_env, errors
 from ..dependencies import get_db
-from ..models import AboutResponse, AuthContext, ConsoleUrlResponse, CreateUserRequest, EventSearchParameters, \
-    GuestEvent, GuestLogResponse, GuestRequest, GuestResponse, GuestShelfResponse, KnobResponse, KnobUpdateRequest, \
-    PreprovisioningRequest, SnapshotRequest, SnapshotResponse, TokenResetResponse, TokenTypes, UserResponse
+from ..models import (
+    AboutResponse,
+    AuthContext,
+    ConsoleUrlResponse,
+    CreateUserRequest,
+    EventSearchParameters,
+    GuestEvent,
+    GuestLogResponse,
+    GuestRequest,
+    GuestResponse,
+    GuestShelfResponse,
+    KnobResponse,
+    KnobUpdateRequest,
+    PreprovisioningRequest,
+    SnapshotRequest,
+    SnapshotResponse,
+    TokenResetResponse,
+    TokenTypes,
+    UserResponse,
+)
 from ..models.v0_0_69 import GuestLogResponse_v0_0_69
 from ..models.v0_0_72 import GuestRequest_v0_0_72, GuestResponse_v0_0_72
 

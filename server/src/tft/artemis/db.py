@@ -12,8 +12,22 @@ import secrets
 import threading
 import time
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Generic, Iterator, List, Optional, Tuple, Type, \
-    TypeVar, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import gluetool.glue
 import gluetool.log

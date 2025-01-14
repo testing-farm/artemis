@@ -20,9 +20,17 @@ import sqlalchemy.orm.session
 from ..db import DB, DMLResult, GuestRequest, SafeQuery, execute_dml
 from ..guest import GuestState
 from ..metrics import ShelfMetrics
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import GuestRequestWorkspace as _Workspace
-from . import ProvisioningTailHandler, get_guest_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    GuestRequestWorkspace as _Workspace,
+    ProvisioningTailHandler,
+    get_guest_logger,
+    step,
+    task,
+    task_core,
+)
 from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
 from .route_guest_request import route_guest_request
 

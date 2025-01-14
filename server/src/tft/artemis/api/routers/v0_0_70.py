@@ -11,18 +11,45 @@ import redis
 from fastapi import APIRouter, Depends, Request, Response, status
 from typing_extensions import Annotated
 
-from ... import JSONSchemaType
-from ... import db as artemis_db
-from ... import metrics
+from ... import JSONSchemaType, db as artemis_db, metrics
 from .. import environment, errors
 from ..dependencies import get_auth_context, get_logger
-from ..models import AboutResponse, AuthContext, CreateUserRequest, EventSearchParameters, GuestEvent, \
-    GuestLogResponse, GuestRequest, GuestResponse, GuestShelfResponse, KnobResponse, KnobUpdateRequest, \
-    PreprovisioningRequest, SnapshotRequest, SnapshotResponse, TokenResetResponse, UserResponse
-from . import CacheManager, GuestEventManager, GuestRequestManager, GuestShelfManager, KnobManager, \
-    SnapshotRequestManager, StatusManager, UserManager, create_guest_request, create_guest_request_log
-from . import delete_guest as delete_artemis_guest
-from . import get_about, get_guest_request, get_guest_request_log, get_guest_requests, preprovision_guest
+from ..models import (
+    AboutResponse,
+    AuthContext,
+    CreateUserRequest,
+    EventSearchParameters,
+    GuestEvent,
+    GuestLogResponse,
+    GuestRequest,
+    GuestResponse,
+    GuestShelfResponse,
+    KnobResponse,
+    KnobUpdateRequest,
+    PreprovisioningRequest,
+    SnapshotRequest,
+    SnapshotResponse,
+    TokenResetResponse,
+    UserResponse,
+)
+from . import (
+    CacheManager,
+    GuestEventManager,
+    GuestRequestManager,
+    GuestShelfManager,
+    KnobManager,
+    SnapshotRequestManager,
+    StatusManager,
+    UserManager,
+    create_guest_request,
+    create_guest_request_log,
+    delete_guest as delete_artemis_guest,
+    get_about,
+    get_guest_request,
+    get_guest_request_log,
+    get_guest_requests,
+    preprovision_guest,
+)
 from .common import router__status, router_default, router_knobs, router_users
 from .v0_0_27 import router__cache
 from .v0_0_58 import router_shelves
