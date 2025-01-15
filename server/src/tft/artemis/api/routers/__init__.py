@@ -352,6 +352,47 @@ class GuestRequestManager:
 
         return ConsoleUrlResponse(url=None, expires=None)
 
+    def trigger_reboot(
+        self,
+        guestname: str,
+        logger: gluetool.log.ContextAdapter
+    ) -> None:
+        from ...tasks import dispatch_task, get_guest_logger
+        from ...tasks.trigger_guest_reboot import trigger_guest_reboot
+
+        failure_details = {
+            'guestname': guestname
+        }
+
+        guest_logger = get_guest_logger('trigger-guest-reboot', logger, guestname)
+
+        with get_session(logger, self.db) as (session, _):
+            r_guest_request = artemis_db.SafeQuery \
+                .from_session(session, artemis_db.GuestRequest) \
+                .filter(artemis_db.GuestRequest.guestname == guestname) \
+                .filter(artemis_db.GuestRequest.state == GuestState.READY) \
+                .one_or_none()
+
+            if r_guest_request.is_error:
+                raise errors.InternalServerError(
+                    logger=guest_logger,
+                    caused_by=r_guest_request.unwrap_error(),
+                    failure_details=failure_details
+                )
+
+            guest_request = r_guest_request.unwrap()
+
+            if guest_request is None:
+                raise errors.NoSuchEntityError(
+                    logger=guest_logger,
+                    failure_details=failure_details
+                )
+
+            r_dispatch = dispatch_task(logger, trigger_guest_reboot, guestname)
+
+            if r_dispatch.is_error:
+                raise errors.InternalServerError(caused_by=r_dispatch.unwrap_error(), logger=logger)
+
 
 def acquire_guest_console_url(
         guestname: str,

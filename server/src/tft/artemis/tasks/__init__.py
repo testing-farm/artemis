@@ -806,6 +806,7 @@ def resolve_actor(actorname: str) -> Result[Actor, Failure]:
     from . import return_guest_to_shelf  # noqa: F401, isort:skip
     from . import route_guest_request  # noqa: F401, isort:skip
     from . import shelved_guest_watchdog  # noqa: F401, isort:skip
+    from . import trigger_guest_reboot  # noqa: F401, isort:skip
     from . import update_guest_log  # noqa: F401, isort:skip
     from . import update_guest_request  # noqa: F401, isort:skip
     from . import worker_ping  # noqa: F401, isort:skip

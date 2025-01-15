@@ -48,6 +48,7 @@ click_completion.init()
 API_FEATURE_VERSIONS = {
     feature: semver.VersionInfo.parse(version)
     for feature, version in (
+        ('guest-reboot', '0.0.74'),
         ('security-group-rules', '0.0.72'),
         ('hw-constraints-disk-model-name', '0.0.69'),
         ('hw-constraints-zcrypt', '0.0.69'),
@@ -827,6 +828,32 @@ def cmd_guest_log(
 
         if log['state'] in ('completed', 'in-progress'):
             cfg.logger.success('guest log obtained')
+
+
+@cmd_guest.command(name='reboot', short_help='Trigger hard reboot of the guest')
+@click.argument('guestname', metavar='ID', default=None,)
+@click.pass_obj
+def cmd_trigger_reboot(
+        cfg: Configuration,
+        guestname: str
+) -> None:
+    assert cfg.artemis_api_version is not None
+
+    if cfg.artemis_api_version < API_FEATURE_VERSIONS['guest-reboot']:
+        cfg.logger.error(
+            f'guest reboot is available with API {API_FEATURE_VERSIONS["guest-reboot"]} and newer')
+
+    response = fetch_artemis(
+        cfg,
+        f'/guests/{guestname}/reboot',
+        method='post',
+        allow_statuses=[202]
+    )
+
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
+
+    cfg.logger.success(f'reboot of guest {guestname} has been triggered')
 
 
 # XXX FIXME(ivasilev) Switch to the generalized guest logs approach with console url being a special log type
