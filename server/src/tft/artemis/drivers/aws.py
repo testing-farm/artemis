@@ -2170,16 +2170,20 @@ class AWSDriver(PoolDriver):
         subnet_details = cast(List[Dict[str, str]], r_subnet_details.unwrap())
         vpc_id = subnet_details[0]['VpcId']
 
+        command = [
+            'ec2', 'create-security-group',
+            '--group-name', security_group_name,
+            '--description', 'Autocreated artemis guest security group',
+            '--vpc-id', vpc_id
+        ]
+
+        if tags:
+            command += [
+                '--tag-specifications'
+            ] + _tags_to_tag_specifications(tags, 'security-group')
+
         # Create a new security group and retrieve it's id
-        r_create_sg = self._aws_command(
-            [
-                'ec2', 'create-security-group',
-                '--group-name', security_group_name,
-                '--description', 'Autocreated artemis guest security group',
-                '--vpc-id', vpc_id
-            ],
-            key='GroupId', commandname='aws.ec2-create-security-group'
-        )
+        r_create_sg = self._aws_command(command, key='GroupId', commandname='aws.ec2-create-security-group')
 
         if r_create_sg.is_error:
             return Error(Failure.from_failure(
