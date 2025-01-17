@@ -285,6 +285,9 @@ class Workspace(_Workspace):
                     'failed to read the kickstart template'
                 )
 
+            if r_kickstart.is_error:
+                return self._error(r_kickstart, 'failed to render kickstart script')
+
             # Copy the templated kickstart script to guest
             with create_tempfile(file_contents=r_kickstart.unwrap()) as kickstart_filepath:
                 # Validate the generated ks
