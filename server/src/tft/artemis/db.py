@@ -118,6 +118,9 @@ SafeQueryUpdateVAType = Callable[['SafeQuery[T]', 'VarArg(Any)'], 'SafeQuery[T]'
 SafeQueryRawUpdateIType = Callable[['SafeQuery[T]', int], _Query]
 SafeQueryUpdateIType = Callable[['SafeQuery[T]', int], 'SafeQuery[T]']
 
+SafeQueryRawUpdateType = Callable[['SafeQuery[T]'], _Query]
+SafeQueryUpdateType = Callable[['SafeQuery[T]'], 'SafeQuery[T]']
+
 SafeQueryRawGetType = Callable[['SafeQuery[T]'], S]
 SafeQueryGetType = Callable[['SafeQuery[T]'], Result[S, 'Failure']]
 
@@ -144,13 +147,35 @@ def chain_update_va(fn: 'SafeQueryRawUpdateVAType[T]') -> 'SafeQueryUpdateVAType
     return wrapper
 
 
-# ... and a decorator for methods with just a single integer argument (I).
+# ... and a decorator for methods with just a single integer argument (I)...
 def chain_update_i(fn: 'SafeQueryRawUpdateIType[T]') -> 'SafeQueryUpdateIType[T]':
     @functools.wraps(fn)
     def wrapper(self: 'SafeQuery[T]', arg: int) -> 'SafeQuery[T]':
         if self.failure is None:
             try:
                 self.query = fn(self, arg)
+
+            except Exception as exc:
+                from . import Failure
+
+                self.failure = Failure.from_exc(
+                    'failed to update query',
+                    exc,
+                    query=str(self.query)
+                )
+
+        return self
+
+    return wrapper
+
+
+# ... and a decorator for methods without any argument.
+def chain_update(fn: 'SafeQueryRawUpdateType[T]') -> 'SafeQueryUpdateType[T]':
+    @functools.wraps(fn)
+    def wrapper(self: 'SafeQuery[T]') -> 'SafeQuery[T]':
+        if self.failure is None:
+            try:
+                self.query = fn(self)
 
             except Exception as exc:
                 from . import Failure
@@ -234,12 +259,12 @@ class SafeQuery(Generic[T]):
             self.query.offset
         )(offset)
 
-    @chain_update_va
-    def with_for_update(self, skip_locked: bool = False) -> '_Query[T]':
+    @chain_update
+    def with_skip_locked(self) -> '_Query[T]':
         return cast(
             Callable[..., '_Query[T]'],
             self.query.with_for_update
-        )(skip_locked=skip_locked)
+        )(skip_locked=True)
 
     @chain_get
     def one(self) -> T:
