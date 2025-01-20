@@ -726,8 +726,16 @@ class IBMCloudVPCDriver(PoolDriver):
         if r_base_tags.is_error:
             return {}
 
+        def _sanitize(a_tag: str) -> str:
+            # NOTE(ivasilev) IBMCloud is petty about allowed characters in tags - only [A-Z][0-9] _-.: are allowed.
+            # COLDSTORE_URL is the one of our typical tags that it doesn't play nice with, so will be replacing all
+            # forbidden characters with prefixes.
+            for char in [',', ':', '/']:
+                a_tag = a_tag.replace(char, '_')
+            return a_tag
+
         return {
-            **r_base_tags.unwrap(),
+            _sanitize(t): _sanitize(v) for t, v in r_base_tags.unwrap().items()
         }
 
     def update_guest(
