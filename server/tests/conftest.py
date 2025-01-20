@@ -187,7 +187,7 @@ def skip_postgresql(session: sqlalchemy.orm.session.Session) -> None:
         pytest.skip('Not supported with PostgreSQL')
 
 
-@pytest.fixture(name='_schema_actual')
+@pytest.fixture(name='schema_actual')
 def fixture_schema_actual(
     request: _pytest.fixtures.FixtureRequest,
     logger: gluetool.log.ContextAdapter,
@@ -204,7 +204,7 @@ def fixture_schema_actual(
 def fixture_schema_initialized_actual(
     session: sqlalchemy.orm.session.Session,
     # TODO: cannot use `usefixtures` for a fixture - find a pytest issue where this is tracked
-    _schema_actual: Any
+    schema_actual: Any
 ) -> None:
     import tft.artemis.environment
 

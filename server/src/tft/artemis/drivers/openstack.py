@@ -7,13 +7,13 @@ import re
 import sys
 from typing import Any, Dict, Iterator, List, Optional, Pattern, Tuple, Union, cast
 
+import glanceclient
 import gluetool.log
 import keystoneauth1
 import novaclient.v2.client
 import novaclient.v2.flavors
 import novaclient.v2.servers
 import sqlalchemy.orm.session
-from glanceclient import Client as gcl
 from gluetool.result import Error, Ok, Result
 from keystoneauth1.identity import v3
 from novaclient import client as nocl
@@ -432,13 +432,13 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(r_output.unwrap())
 
-    def _get_glance(self) -> Result[gcl, Failure]:
+    def _get_glance(self) -> Result[glanceclient.Client, Failure]:
 
         sess = self.login_session(self.logger)
         if sess.is_error:
             return Error(sess.unwrap_error())
         try:
-            glance = gcl(self.pool_config['glance-version'], session=sess.unwrap())
+            glance = glanceclient.Client(self.pool_config['glance-version'], session=sess.unwrap())
             return Ok(glance)
         except Exception as exc:
             return Error(Failure.from_exc(

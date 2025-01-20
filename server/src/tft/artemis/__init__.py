@@ -161,12 +161,12 @@ def get_yaml() -> ruamel.yaml.main.YAML:
     Return a fully initialized instance of YAML processor.
     """
 
-    YAML = gluetool.utils.YAML()
+    yaml = gluetool.utils.YAML()
 
     for cls in _YAML_DUMPABLE_CLASSES:
-        YAML.register_class(cls)
+        yaml.register_class(cls)
 
-    return YAML
+    return yaml
 
 
 def get_logger() -> gluetool.log.ContextAdapter:
@@ -350,7 +350,7 @@ class Sentry:
         return tags
 
     @classmethod
-    def get_default_contexts(self) -> Dict[str, Dict[str, Any]]:
+    def get_default_contexts(cls) -> Dict[str, Dict[str, Any]]:
         from .knobs import KNOB_COMPONENT
 
         contexts: Dict[str, Dict[str, Any]] = {}
@@ -560,7 +560,7 @@ class SerializableContainer:
 def format_dict_yaml(data: Any) -> str:
     stream = ruamel.yaml.compat.StringIO()
 
-    YAML = get_yaml()
+    yaml = get_yaml()
 
     ruamel.yaml.scalarstring.walk_tree(data)
 
@@ -570,7 +570,7 @@ def format_dict_yaml(data: Any) -> str:
 
         return s.strip()
 
-    YAML.dump(data, stream, transform=strip_document_end_marker)
+    yaml.dump(data, stream, transform=strip_document_end_marker)
 
     return stream.getvalue()
 
@@ -706,7 +706,7 @@ class Failure:
 
     @classmethod
     def from_exc(
-        self,
+        cls,
         message: str,
         exc: Exception,
         caused_by: Optional['Failure'] = None,
@@ -739,7 +739,7 @@ class Failure:
 
     @classmethod
     def from_failure(
-        self,
+        cls,
         message: str,
         caused_by: 'Failure',
         sentry: Optional[bool] = True,

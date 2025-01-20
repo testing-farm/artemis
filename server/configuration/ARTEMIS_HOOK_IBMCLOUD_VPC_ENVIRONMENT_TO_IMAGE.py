@@ -17,7 +17,7 @@ from tft.artemis.drivers.ibmcloudvpc import (
 from tft.artemis.environment import Environment
 
 
-def hook_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE(
+def hook_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE(  # noqa: N802
     *,
     logger: gluetool.log.ContextAdapter,
     pool: IBMCloudVPCDriver,

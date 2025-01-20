@@ -1703,7 +1703,7 @@ class ProvisioningMetrics(MetricsBase):
 
         super().sync()
 
-        NOW = datetime.datetime.utcnow()
+        now = datetime.datetime.utcnow()
 
         current_record = session.query(
             sqlalchemy.func.count(artemis_db.GuestRequest.guestname)
@@ -1732,7 +1732,7 @@ class ProvisioningMetrics(MetricsBase):
         # Using `query` directly, because we need just limited set of fields, and we need our `Query`
         # and `SafeQuery` to support this functionality (it should be just a matter of correct types).
         self.guest_ages = [
-            (record[0], record[1], NOW - record[2])
+            (record[0], record[1], now - record[2])
             for record in cast(
                 List[Tuple[GuestState, Optional[str], datetime.datetime]],
                 session.query(

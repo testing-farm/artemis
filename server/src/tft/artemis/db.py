@@ -1705,9 +1705,9 @@ class DB:
         :returns: new DB session.
         """
 
-        Session = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional)
+        session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional)
 
-        session = Session(
+        session = session_factory(
             autoflush=True,
             # autobegin=False,
             expire_on_commit=True,
@@ -1734,7 +1734,7 @@ class DB:
             raise
 
         finally:
-            cast(Callable[[], None], Session.remove)()
+            cast(Callable[[], None], session_factory.remove)()
 
     @contextmanager
     def transaction(
@@ -1748,8 +1748,8 @@ class DB:
         """
 
         with self.get_session(logger) as session:
-            with transaction(logger, session) as T:
-                yield (session, T)
+            with transaction(logger, session) as t:
+                yield (session, t)
 
 
 def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:

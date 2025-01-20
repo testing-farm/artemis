@@ -9,7 +9,7 @@ from ... import db as artemis_db
 
 
 @dataclasses.dataclass
-class GuestLogResponse_v0_0_69:
+class GuestLogResponse_v0_0_69:  # noqa: N801
     state: artemis_db.GuestLogState
     contenttype: artemis_db.GuestLogContentType
 

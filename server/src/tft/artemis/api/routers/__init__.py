@@ -778,21 +778,21 @@ def get_session(
     db: artemis_db.DB
 ) -> Generator[Tuple[sqlalchemy.orm.session.Session, artemis_db.TransactionResult], None, None]:
     with db.get_session(logger) as session:
-        with artemis_db.transaction(logger, session) as T:
-            yield session, T
+        with artemis_db.transaction(logger, session) as t:
+            yield session, t
 
-        if not T.complete:
-            assert T.failure is not None  # narrow type
+        if not t.complete:
+            assert t.failure is not None  # narrow type
 
-            if T.conflict:
-                raise errors.ConflictError(logger=logger, caused_by=T.failure)
+            if t.conflict:
+                raise errors.ConflictError(logger=logger, caused_by=t.failure)
 
-            if T.failure.exception is not None and isinstance(T.failure.exception, errors.ArtemisHTTPError):
-                raise T.failure.exception
+            if t.failure.exception is not None and isinstance(t.failure.exception, errors.ArtemisHTTPError):
+                raise t.failure.exception
 
             raise errors.InternalServerError(
                 logger=logger,
-                caused_by=T.failure
+                caused_by=t.failure
             )
 
 

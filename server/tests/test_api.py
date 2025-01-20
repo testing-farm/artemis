@@ -108,7 +108,7 @@ def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
     assert response.status_code == 200
 
 
-@pytest.mark.usefixtures('_schema_actual')
+@pytest.mark.usefixtures('schema_actual')
 def test_metrics(
     api_client: fastapi.testclient.TestClient,
     db: tft.artemis.db.DB,
@@ -311,7 +311,7 @@ def test_auth_context_extract_credentials_basic(auth_context: AuthContext) -> No
 
 
 @pytest.fixture
-def _schema_test_db_Users(db: tft.artemis.db.DB, session: sqlalchemy.orm.session.Session) -> None:
+def schema_test_db_user(db: tft.artemis.db.DB, session: sqlalchemy.orm.session.Session) -> None:
     from tft.artemis.db import User
 
     User.__table__.create(db.engine)  # type: ignore[attr-defined]
@@ -320,7 +320,7 @@ def _schema_test_db_Users(db: tft.artemis.db.DB, session: sqlalchemy.orm.session
 
 
 @pytest.fixture
-def _schema_test_db_Users_user(session: sqlalchemy.orm.session.Session, _schema_test_db_Users: None) -> None:
+def schema_test_db_user_user(session: sqlalchemy.orm.session.Session, schema_test_db_user: None) -> None:
     from tft.artemis.db import User, UserRoles
 
     session.add(User(
@@ -334,7 +334,7 @@ def _schema_test_db_Users_user(session: sqlalchemy.orm.session.Session, _schema_
 
 
 @pytest.fixture
-def _schema_test_db_Users_admin(session: sqlalchemy.orm.session.Session, _schema_test_db_Users: None) -> None:
+def schema_test_db_user_admin(session: sqlalchemy.orm.session.Session, schema_test_db_user: None) -> None:
     from tft.artemis.db import User, UserRoles
 
     session.add(User(
@@ -380,7 +380,7 @@ def test_auth_context_verify_auth_basic_invalid(
     assert auth_context.token is None
 
 
-@pytest.mark.usefixtures('_schema_test_db_Users')
+@pytest.mark.usefixtures('schema_test_db_user')
 def test_auth_context_verify_auth_basic_no_such_user(
     session: sqlalchemy.orm.session.Session,
     auth_context: AuthContext
@@ -400,7 +400,7 @@ def test_auth_context_verify_auth_basic_no_such_user(
     assert auth_context.token == 'dummy-password'
 
 
-@pytest.mark.usefixtures('_schema_test_db_Users_user')
+@pytest.mark.usefixtures('schema_test_db_user_user')
 def test_auth_context_verify_auth_basic_provisioning_valid(
     session: sqlalchemy.orm.session.Session,
     auth_context: AuthContext
@@ -419,7 +419,7 @@ def test_auth_context_verify_auth_basic_provisioning_valid(
     assert auth_context.token == 'dummy-user-provisioning-token'
 
 
-@pytest.mark.usefixtures('_schema_test_db_Users_user')
+@pytest.mark.usefixtures('schema_test_db_user_user')
 def test_auth_context_verify_auth_basic_provisioning_invalid_type(
     session: sqlalchemy.orm.session.Session,
     auth_context: AuthContext
@@ -439,7 +439,7 @@ def test_auth_context_verify_auth_basic_provisioning_invalid_type(
     assert auth_context.token == 'dummy-user-provisioning-token'
 
 
-@pytest.mark.usefixtures('_schema_test_db_Users_user')
+@pytest.mark.usefixtures('schema_test_db_user_user')
 def test_auth_context_verify_auth_basic_provisioning_invalid_token(
     session: sqlalchemy.orm.session.Session,
     auth_context: AuthContext
@@ -459,7 +459,7 @@ def test_auth_context_verify_auth_basic_provisioning_invalid_token(
     assert auth_context.token == 'wrong-password'
 
 
-@pytest.mark.usefixtures('_schema_test_db_Users_admin')
+@pytest.mark.usefixtures('schema_test_db_user_admin')
 def test_auth_context_verify_auth_basic_admin_valid(
     session: sqlalchemy.orm.session.Session,
     auth_context: AuthContext
@@ -479,7 +479,7 @@ def test_auth_context_verify_auth_basic_admin_valid(
     assert auth_context.token == 'dummy-admin-admin-token'
 
 
-@pytest.mark.usefixtures('_schema_test_db_Users_user')
+@pytest.mark.usefixtures('schema_test_db_user_user')
 def test_auth_context_verify_auth_basic_admin_invalid_type(
     session: sqlalchemy.orm.session.Session,
     auth_context: AuthContext
@@ -499,7 +499,7 @@ def test_auth_context_verify_auth_basic_admin_invalid_type(
     assert auth_context.token == 'dummy-admin-admin-token'
 
 
-@pytest.mark.usefixtures('_schema_test_db_Users_admin')
+@pytest.mark.usefixtures('schema_test_db_user_admin')
 def test_auth_context_verify_auth_basic_admin_invalid_token(
     session: sqlalchemy.orm.session.Session,
     auth_context: AuthContext
