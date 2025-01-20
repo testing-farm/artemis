@@ -272,16 +272,6 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(cli_output.stdout)
 
-    def _dispatch_resource_cleanup(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        instance_id: Optional[str] = None,
-        guest_request: Optional[GuestRequest] = None
-    ) -> Result[None, Failure]:
-        resource_ids = OpenStackPoolResourcesIDs(instance_id=instance_id)
-
-        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
-
     def map_image_name_to_image_info(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -945,30 +935,27 @@ class OpenStackDriver(PoolDriver):
             address=ip_address
         ))
 
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+    def release_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
         """
-        Release guest and its resources back to the pool.
-
-        :param Guest guest: a guest to be destroyed.
-        :rtype: result.Result[bool, str]
+        Release resources allocated for the guest back to the pool infrastructure.
         """
 
         if OpenStackPoolData.is_empty(guest_request):
-            return Ok(True)
+            return Ok(None)
 
-        if guest_request.poolname != self.poolname:
-            return Error(Failure('guest is not owned by this pool'))
+        pool_data = OpenStackPoolData.unserialize(guest_request)
 
-        r_cleanup = self._dispatch_resource_cleanup(
+        return self.dispatch_resource_cleanup(
             logger,
-            instance_id=OpenStackPoolData.unserialize(guest_request).instance_id,
+            session,
+            OpenStackPoolResourcesIDs(instance_id=pool_data.instance_id),
             guest_request=guest_request
         )
-
-        if r_cleanup.is_error:
-            return Error(r_cleanup.unwrap_error())
-
-        return Ok(True)
 
     def release_pool_resources(
         self,

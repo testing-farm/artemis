@@ -2839,16 +2839,18 @@ class AWSDriver(PoolDriver):
 
         return self._request_instance(logger, session, guest_request, instance_type, image)
 
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+    def release_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
         """
-        Release guest and its resources back to the pool.
-
-        :param Guest guest: a guest to be destroyed.
-        :rtype: result.Result[bool, str]
+        Release resources allocated for the guest back to the pool infrastructure.
         """
 
         if AWSPoolData.is_empty(guest_request):
-            return Ok(True)
+            return Ok(None)
 
         pool_data = AWSPoolData.unserialize(guest_request)
 
@@ -2862,32 +2864,13 @@ class AWSDriver(PoolDriver):
         if pool_data.spot_instance_id is not None:
             resource_ids.append(AWSPoolResourcesIDs(spot_instance_id=pool_data.spot_instance_id))
 
+        if pool_data.security_group is not None:
+            resource_ids.append(AWSPoolResourcesIDs(security_group=pool_data.security_group))
+
         if not resource_ids:
             return Error(Failure('guest has no identification'))
 
-        r_cleanup = self.dispatch_resource_cleanup(logger, *resource_ids, guest_request=guest_request)
-
-        if r_cleanup.is_error:
-            return Error(r_cleanup.unwrap_error())
-
-        # Security group can be cleaned up after all instance resources are freed. To avoid most certain retries let's
-        # introduce a delay
-        if pool_data.security_group is not None:
-            r_delay = KNOB_REMOVE_SECURITY_GROUP_DELAY.get_value(entityname=self.poolname)
-
-            if r_delay.is_error:
-                return Error(r_delay.unwrap_error())
-
-            r_secgroup_cleanup = self.dispatch_resource_cleanup(
-                logger,
-                AWSPoolResourcesIDs(security_group=pool_data.security_group),
-                guest_request=guest_request,
-                delay=r_delay.unwrap())
-
-            if r_secgroup_cleanup.is_error:
-                return Error(r_cleanup.unwrap_error())
-
-        return Ok(True)
+        return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
         def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:
