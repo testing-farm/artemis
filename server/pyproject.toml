@@ -135,7 +135,7 @@ target-version = "py39"
 # The following comes from the tmt project - pretty much everything is disabled for now, and we
 # will enable them one by one or in groups, to keep patches reviewable.
 lint.select = [
-    # "F",  # pyflakes
+    "F",  # pyflakes
     # "E",  # pycodestyle error
     # "W",  # pycodestyle warning
     "I",  # isort
