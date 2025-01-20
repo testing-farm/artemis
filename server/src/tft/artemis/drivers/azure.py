@@ -31,7 +31,7 @@ from ..environment import (
     SizeType,
 )
 from ..knobs import Knob
-from ..metrics import ResourceType
+from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     GuestLogUpdateProgress,
@@ -722,6 +722,57 @@ class AzureDriver(PoolDriver):
                 r_output.unwrap_error()
             ))
         return Ok(r_output.unwrap())
+
+    def fetch_pool_resources_metrics(
+        self,
+        logger: gluetool.log.ContextAdapter
+    ) -> Result[PoolResourcesMetrics, Failure]:
+        r_resources = super().fetch_pool_resources_metrics(logger)
+
+        if r_resources.is_error:
+            return Error(r_resources.unwrap_error())
+
+        resources = r_resources.unwrap()
+
+        with AzureSession(logger, self) as session:
+            # Resource usage - instances and flavors
+            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Any], Failure]:
+                return cast(
+                    Result[List[Any], Failure],
+                    session.run_az(
+                        logger,
+                        [
+                            'vm', 'list'
+                        ],
+                        commandname='az.vm-list'
+                    )
+                )
+
+            def _update_instance_usage(
+                logger: gluetool.log.ContextAdapter,
+                usage: PoolResourcesUsage,
+                raw_instance: Any,
+                flavor: Optional[Flavor]
+            ) -> Result[None, Failure]:
+                assert usage.instances is not None  # narrow type
+
+                usage.instances += 1
+
+                return Ok(None)
+
+            r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+                logger,
+                resources.usage,
+                _fetch_instances,
+                # TODO: once we find the flavor name, we can update its usage.
+                lambda raw_instance: 'dummy-flavor-name-does-not-exist',
+                _update_instance_usage
+            )
+
+        if r_instances_usage.is_error:
+            return Error(r_instances_usage.unwrap_error())
+
+        return Ok(resources)
 
     def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         # Flavors are described by az cli as

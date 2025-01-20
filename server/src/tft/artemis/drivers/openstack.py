@@ -33,7 +33,7 @@ from ..environment import (
     FlavorVirtualization,
 )
 from ..knobs import Knob
-from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
+from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     CLIErrorCauses,
@@ -1083,25 +1083,50 @@ class OpenStackDriver(PoolDriver):
             resources.usage.networks[network_name] = PoolNetworkResources(addresses=int(network['Used IPs']))
             resources.limits.networks[network_name] = PoolNetworkResources(addresses=int(network['Total IPs']))
 
-        r_servers = self._run_os([
-            'server',
-            'list',
-            '--user', self.pool_config['username']
-        ], json_format=True, commandname='os.server-list')
+        # Resource usage - instances and flavors
+        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, str]], Failure]:
+            r_servers = self._run_os([
+                'server',
+                'list',
+                '--user', self.pool_config['username']
+            ], json_format=True, commandname='os.server-list')
 
-        if r_servers.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch server list',
-                r_servers.unwrap_error()
-            ))
+            if r_servers.is_error:
+                return Error(Failure.from_failure(
+                    'failed to fetch server list',
+                    r_servers.unwrap_error()
+                ))
 
-        for server in cast(List[Dict[str, str]], r_servers.unwrap()):
-            flavorname = server['Flavor']
+            return Ok(cast(List[Dict[str, str]], r_servers.unwrap()))
 
-            if flavorname not in resources.usage.flavors:
-                resources.usage.flavors[flavorname] = 0
+        def _update_instance_usage(
+            logger: gluetool.log.ContextAdapter,
+            usage: PoolResourcesUsage,
+            raw_instance: Dict[str, str],
+            flavor: Optional[Flavor]
+        ) -> Result[None, Failure]:
+            assert usage.instances is not None  # narrow type
 
-            resources.usage.flavors[flavorname] += 1
+            usage.instances += 1
+
+            if flavor is not None:
+                if flavor.name not in usage.flavors:
+                    usage.flavors[flavor.name] = 0
+
+                usage.flavors[flavor.name] += 1
+
+            return Ok(None)
+
+        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+            logger,
+            resources.usage,
+            _fetch_instances,
+            lambda raw_instance: raw_instance['Flavor'],  # type: ignore[index,no-any-return]
+            _update_instance_usage
+        )
+
+        if r_instances_usage.is_error:
+            return Error(r_instances_usage.unwrap_error())
 
         return Ok(resources)
 
