@@ -35,7 +35,7 @@ from sqlalchemy import JSON, Column, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 from sqlalchemy.orm.query import Query as _Query
 from sqlalchemy.orm.session import sessionmaker
-from sqlalchemy.schema import ForeignKeyConstraint, PrimaryKeyConstraint
+from sqlalchemy.schema import ForeignKeyConstraint, Index, PrimaryKeyConstraint
 from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 
@@ -832,6 +832,10 @@ class GuestEvent(Base):
     # proper type, and there will never ever be an event having a list or an integer as a detail, it will always
     # be a mapping. Therefore `_details` column and `details` property to apply proper cast call.
     _details: Mapped[Dict[str, Any]] = mapped_column(JSON(), nullable=False, server_default='{}')
+
+    __table_args__ = (
+        Index('ix_guest_events_guestname_updated', guestname, updated.asc()),
+    )
 
     def __init__(
         self,
