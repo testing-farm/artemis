@@ -15,6 +15,8 @@ import _pytest.fixtures
 import _pytest.logging
 import _pytest.monkeypatch
 import _pytest.python
+import alembic
+import alembic.config
 import dramatiq
 import dramatiq.brokers.rabbitmq
 import gluetool.log
@@ -27,8 +29,6 @@ import sqlalchemy.engine.interfaces
 import sqlalchemy.engine.url
 import sqlalchemy_utils.functions
 
-import alembic
-import alembic.config
 import tft.artemis
 import tft.artemis.context
 import tft.artemis.db

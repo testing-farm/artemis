@@ -25,9 +25,17 @@ from ..drivers import copy_from_remote, copy_to_remote, create_tempfile, run_cli
 from ..drivers.hooks import KNOB_CACHE_PATTERN_MAPS, get_pattern_map
 from ..guest import GuestState
 from ..knobs import KNOB_CONFIG_DIRPATH, Knob
-from . import _ROOT_LOGGER, DoerReturnType, DoerType, ProvisioningTailHandler
-from . import Workspace as _Workspace
-from . import get_guest_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    ProvisioningTailHandler,
+    Workspace as _Workspace,
+    get_guest_logger,
+    step,
+    task,
+    task_core,
+)
 
 TASK_NAME = 'prepare-kickstart'
 

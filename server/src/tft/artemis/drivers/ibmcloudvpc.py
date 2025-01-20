@@ -15,12 +15,28 @@ from tft.artemis.drivers import CLISessionPermanentDir, PoolData, PoolDriver, Po
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest
-from ..environment import UNITS, Flavor, FlavorBoot, FlavorCpu, FlavorDisk, FlavorDisks, FlavorNetwork, \
-    FlavorNetworks, FlavorVirtualization
+from ..environment import (
+    UNITS,
+    Flavor,
+    FlavorBoot,
+    FlavorCpu,
+    FlavorDisk,
+    FlavorDisks,
+    FlavorNetwork,
+    FlavorNetworks,
+    FlavorVirtualization,
+)
 from ..knobs import Knob
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics, ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolImageSSHInfo, ProvisioningProgress, \
-    ProvisioningState, SerializedPoolResourcesIDs, create_tempfile
+from . import (
+    KNOB_UPDATE_GUEST_REQUEST_TICK,
+    HookImageInfoMapper,
+    PoolImageSSHInfo,
+    ProvisioningProgress,
+    ProvisioningState,
+    SerializedPoolResourcesIDs,
+    create_tempfile,
+)
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'ibmcloud.mapping.environment-to-image.pattern-map.filepath',

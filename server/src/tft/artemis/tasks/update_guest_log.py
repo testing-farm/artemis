@@ -19,13 +19,20 @@ from gluetool.result import Ok, Result
 
 from .. import Failure
 from ..db import DB, DMLResult, GuestLog, GuestLogBlob, GuestLogContentType, GuestLogState, SafeQuery, execute_dml
-from ..drivers import GuestLogBlob as GuestLogBlobProgress
-from ..drivers import GuestLogUpdateProgress
+from ..drivers import GuestLogBlob as GuestLogBlobProgress, GuestLogUpdateProgress
 from ..guest import GuestState
 from ..knobs import Knob
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import GuestRequestWorkspace as _Workspace
-from . import LoggingTailHandler, get_guest_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    GuestRequestWorkspace as _Workspace,
+    LoggingTailHandler,
+    get_guest_logger,
+    step,
+    task,
+    task_core,
+)
 
 #: A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks.
 KNOB_UPDATE_GUEST_LOG_DELAY: Knob[int] = Knob(

@@ -16,8 +16,7 @@ from fastapi import Request
 from gluetool.result import Error, Ok, Result
 from pydantic import BaseModel
 
-from ... import Failure
-from ... import db as artemis_db
+from ... import Failure, db as artemis_db
 from ...guest import GuestState
 from ...security_group_rules import SecurityGroupRulesInput
 from .. import errors

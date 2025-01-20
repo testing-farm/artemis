@@ -20,9 +20,17 @@ from ..db import DB
 from ..drivers import ping_shell_remote
 from ..guest import GuestState
 from ..knobs import Knob
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import GuestRequestWorkspace as _Workspace
-from . import ProvisioningTailHandler, get_guest_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    GuestRequestWorkspace as _Workspace,
+    ProvisioningTailHandler,
+    get_guest_logger,
+    step,
+    task,
+    task_core,
+)
 from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
 from .prepare_kickstart import prepare_kickstart
 

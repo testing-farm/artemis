@@ -7,10 +7,7 @@ import redis
 from fastapi import Depends, Request
 from prometheus_client import CollectorRegistry
 
-from .. import get_cache as get_artemis_cache
-from .. import get_db as get_artemis_db
-from .. import get_logger as get_artemis_logger
-from .. import metrics
+from .. import get_cache as get_artemis_cache, get_db as get_artemis_db, get_logger as get_artemis_logger, metrics
 from ..db import DB
 from .models import AuthContext
 

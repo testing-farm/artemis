@@ -19,9 +19,18 @@ import sqlalchemy.orm.session
 from .. import metrics
 from ..db import DB
 from ..guest import GuestState
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import GuestRequestWorkspace as _Workspace
-from . import ProvisioningTailHandler, get_guest_logger, resolve_actor, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    GuestRequestWorkspace as _Workspace,
+    ProvisioningTailHandler,
+    get_guest_logger,
+    resolve_actor,
+    step,
+    task,
+    task_core,
+)
 from .guest_request_watchdog import KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY, guest_request_watchdog
 
 

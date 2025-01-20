@@ -13,8 +13,20 @@ from gluetool.result import Result
 import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS, Constraint, ConstraintBase, Environment, Flavor, FlavorBoot, \
-    FlavorCompatible, FlavorCpu, FlavorNetwork, FlavorNetworks, FlavorVirtualization, Operator
+from tft.artemis.environment import (
+    UNITS,
+    Constraint,
+    ConstraintBase,
+    Environment,
+    Flavor,
+    FlavorBoot,
+    FlavorCompatible,
+    FlavorCpu,
+    FlavorNetwork,
+    FlavorNetworks,
+    FlavorVirtualization,
+    Operator,
+)
 
 
 @pytest.fixture(name='schema_v0_0_19')

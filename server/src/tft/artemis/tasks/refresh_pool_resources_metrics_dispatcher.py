@@ -18,9 +18,19 @@ import sqlalchemy.orm.session
 
 from ..db import DB
 from ..knobs import Knob
-from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger, TaskPriority, TaskQueue
-from . import Workspace as _Workspace
-from . import get_pool_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    TaskLogger,
+    TaskPriority,
+    TaskQueue,
+    Workspace as _Workspace,
+    get_pool_logger,
+    step,
+    task,
+    task_core,
+)
 from .refresh_pool_resources_metrics import refresh_pool_resources_metrics
 
 KNOB_REFRESH_POOL_RESOURCES_METRICS_SCHEDULE: Knob[str] = Knob(

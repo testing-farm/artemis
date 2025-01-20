@@ -10,8 +10,17 @@ import gluetool.log
 import requests
 from gluetool.result import Error, Ok, Result
 
-from .. import Failure, JSONSchemaType, construct_validation_schema, get_config, get_db, get_logger, \
-    load_packaged_validation_schema, load_validation_schema, validate_data
+from .. import (
+    Failure,
+    JSONSchemaType,
+    construct_validation_schema,
+    get_config,
+    get_db,
+    get_logger,
+    load_packaged_validation_schema,
+    load_validation_schema,
+    validate_data,
+)
 from ..db import DB, GuestShelf, GuestTag, Pool, PriorityGroup, SSHKey, User, UserRoles, upsert
 from ..drivers import GuestTagsType, PoolDriver
 from ..guest import GuestState

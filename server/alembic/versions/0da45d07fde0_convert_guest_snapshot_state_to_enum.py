@@ -12,9 +12,8 @@ Create Date: 2021-07-27 18:38:03.569577
 from typing import Union
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '0da45d07fde0'

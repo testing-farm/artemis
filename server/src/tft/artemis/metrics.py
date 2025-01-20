@@ -35,11 +35,17 @@ import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
 
-from . import __VERSION__, DATETIME_FMT, Failure, SerializableContainer
-from . import db as artemis_db
-from . import safe_call
-from .cache import dec_cache_field, dec_cache_value, get_cache_value, inc_cache_field, inc_cache_value, \
-    iter_cache_fields, iter_cache_keys, set_cache_value
+from . import __VERSION__, DATETIME_FMT, Failure, SerializableContainer, db as artemis_db, safe_call
+from .cache import (
+    dec_cache_field,
+    dec_cache_value,
+    get_cache_value,
+    inc_cache_field,
+    inc_cache_value,
+    iter_cache_fields,
+    iter_cache_keys,
+    set_cache_value,
+)
 from .context import DATABASE, SESSION, with_context
 from .guest import GuestState
 from .knobs import KNOB_POOL_ENABLED, KNOB_SHELF_MAX_GUESTS, KNOB_WORKER_PROCESS_METRICS_TTL

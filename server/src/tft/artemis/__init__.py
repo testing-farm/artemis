@@ -13,8 +13,23 @@ import resource
 import sys
 import traceback as _traceback
 from types import FrameType, TracebackType
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Iterable, List, MutableSet, NoReturn, Optional, \
-    Tuple, Type, TypeVar, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    MutableSet,
+    NoReturn,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import dramatiq
 import dramatiq.brokers.rabbitmq
@@ -67,13 +82,22 @@ jinja2.filters.FILTERS.update(
 )
 
 # Now we can import our stuff without any fear we'd miss DEFAULT_FILTERS update
-from . import db as artemis_db  # noqa: E402
-from . import middleware as artemis_middleware  # noqa: E402
-from .knobs import KNOB_TEMPLATE_BLOCK_DELIMITERS  # noqa: E402
-from .knobs import KNOB_TEMPLATE_VARIABLE_DELIMITERS  # noqa: E402
-from .knobs import Knob  # noqa: E402
-from .knobs import KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_LOGGING_SENTRY, KNOB_SENTRY_DISABLE_CERT_VERIFICATION, \
-    KNOB_SENTRY_DSN, KNOB_SENTRY_EVENT_URL_TEMPLATE, KNOB_SENTRY_INTEGRATIONS, KNOB_TRACING_ENABLED  # noqa: E402
+from . import (  # noqa: E402
+    db as artemis_db,
+    middleware as artemis_middleware,
+)
+from .knobs import (  # noqa: E402
+    KNOB_DEPLOYMENT_ENVIRONMENT,
+    KNOB_LOGGING_SENTRY,
+    KNOB_SENTRY_DISABLE_CERT_VERIFICATION,
+    KNOB_SENTRY_DSN,
+    KNOB_SENTRY_EVENT_URL_TEMPLATE,
+    KNOB_SENTRY_INTEGRATIONS,
+    KNOB_TEMPLATE_BLOCK_DELIMITERS,
+    KNOB_TEMPLATE_VARIABLE_DELIMITERS,
+    KNOB_TRACING_ENABLED,
+    Knob,
+)
 
 if TYPE_CHECKING:
     from .environment import Environment, SizeType
@@ -1164,8 +1188,12 @@ def get_config() -> Dict[str, Any]:
 
 
 def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.Middleware]:
-    from .knobs import KNOB_COMPONENT, KNOB_WORKER_MAX_TASKS_PER_PROCESS, KNOB_WORKER_PROCESS_METRICS_ENABLED, \
-        KNOB_WORKER_TRAFFIC_METRICS_ENABLED
+    from .knobs import (
+        KNOB_COMPONENT,
+        KNOB_WORKER_MAX_TASKS_PER_PROCESS,
+        KNOB_WORKER_PROCESS_METRICS_ENABLED,
+        KNOB_WORKER_TRAFFIC_METRICS_ENABLED,
+    )
 
     middleware: List[dramatiq.Middleware] = []
 

@@ -19,9 +19,17 @@ from ..db import DB
 from ..drivers import PoolData, WatchdogState
 from ..guest import GuestState
 from ..knobs import Knob
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import GuestRequestWorkspace as _Workspace
-from . import ProvisioningTailHandler, get_guest_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    GuestRequestWorkspace as _Workspace,
+    ProvisioningTailHandler,
+    get_guest_logger,
+    step,
+    task,
+    task_core,
+)
 
 KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY: Knob[int] = Knob(
     'actor.guest-request-watchdog.dispatch.delay',

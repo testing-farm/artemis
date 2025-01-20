@@ -17,8 +17,16 @@ from ..db import GuestRequest
 from ..environment import And, Constraint, ConstraintBase, FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics, ResourceType
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, HookImageInfoMapper, PoolCapabilities, PoolImageSSHInfo, \
-    ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, create_tempfile
+from . import (
+    KNOB_UPDATE_GUEST_REQUEST_TICK,
+    HookImageInfoMapper,
+    PoolCapabilities,
+    PoolImageSSHInfo,
+    ProvisioningProgress,
+    ProvisioningState,
+    SerializedPoolResourcesIDs,
+    create_tempfile,
+)
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'ibmcloud-power.mapping.environment-to-image.pattern-map.filepath',

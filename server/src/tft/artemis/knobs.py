@@ -168,8 +168,7 @@ class KnobSourceDB(KnobSource[T]):
 
     def _fetch_from_db(self, session: Session, knobname: str) -> Result[Optional[T], 'Failure']:
         from . import Failure
-        from .db import Knob as KnobRecord
-        from .db import SafeQuery
+        from .db import Knob as KnobRecord, SafeQuery
 
         r = SafeQuery.from_session(session, KnobRecord) \
             .filter(KnobRecord.knobname == knobname) \

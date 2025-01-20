@@ -20,9 +20,18 @@ from ..db import DB
 from ..drivers import ping_shell_remote, run_remote
 from ..guest import GuestState
 from ..knobs import Knob
-from . import _ROOT_LOGGER, SUCCESS, DoerReturnType, DoerType, ProvisioningTailHandler
-from . import Workspace as _Workspace
-from . import get_guest_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    SUCCESS,
+    DoerReturnType,
+    DoerType,
+    ProvisioningTailHandler,
+    Workspace as _Workspace,
+    get_guest_logger,
+    step,
+    task,
+    task_core,
+)
 from .prepare_kickstart import KNOB_PREPARE_KICKSTART_SSH_TIMEOUT
 
 TASK_NAME = 'prepare-kickstart-wait'

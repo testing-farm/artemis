@@ -19,9 +19,16 @@ import sqlalchemy.orm.session
 from ..db import DB, GuestRequest, GuestShelf, SafeQuery
 from ..guest import GuestState
 from ..knobs import KNOB_SHELF_MAX_GUESTS
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import GuestRequestWorkspace as _Workspace
-from . import get_guest_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    GuestRequestWorkspace as _Workspace,
+    get_guest_logger,
+    step,
+    task,
+    task_core,
+)
 
 
 class Workspace(_Workspace):

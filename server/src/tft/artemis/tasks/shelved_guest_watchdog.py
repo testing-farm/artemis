@@ -20,9 +20,17 @@ from ..drivers import ping_shell_remote
 from ..guest import GuestState
 from ..knobs import Knob
 from ..metrics import ShelfMetrics
-from . import _ROOT_LOGGER, DoerReturnType, DoerType
-from . import GuestRequestWorkspace as _Workspace
-from . import ProvisioningTailHandler, get_guest_logger, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    GuestRequestWorkspace as _Workspace,
+    ProvisioningTailHandler,
+    get_guest_logger,
+    step,
+    task,
+    task_core,
+)
 
 KNOB_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD: Knob[int] = Knob(
     'actor.shelved-guest-watchdog.dispatch.delay',

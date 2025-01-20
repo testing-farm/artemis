@@ -14,13 +14,32 @@ from typing_extensions import Annotated
 
 from .. import errors
 from ..dependencies import get_auth_context, get_logger
-from ..models import AuthContext, EventSearchParameters, GuestEvent, GuestRequest, GuestResponse, GuestShelfResponse, \
-    PreprovisioningRequest, SnapshotRequest, SnapshotResponse
+from ..models import (
+    AuthContext,
+    EventSearchParameters,
+    GuestEvent,
+    GuestRequest,
+    GuestResponse,
+    GuestShelfResponse,
+    PreprovisioningRequest,
+    SnapshotRequest,
+    SnapshotResponse,
+)
 from ..models.v0_0_69 import GuestLogResponse_v0_0_69
-from . import CacheManager, GuestEventManager, GuestRequestManager, GuestShelfManager, SnapshotRequestManager, \
-    create_guest_request, create_guest_request_log
-from . import delete_guest as delete_artemis_guest
-from . import get_guest_request, get_guest_request_log, get_guest_requests, preprovision_guest
+from . import (
+    CacheManager,
+    GuestEventManager,
+    GuestRequestManager,
+    GuestShelfManager,
+    SnapshotRequestManager,
+    create_guest_request,
+    create_guest_request_log,
+    delete_guest as delete_artemis_guest,
+    get_guest_request,
+    get_guest_request_log,
+    get_guest_requests,
+    preprovision_guest,
+)
 from .common import router__status, router_default, router_knobs, router_users
 from .v0_0_27 import router__cache
 from .v0_0_58 import router_shelves

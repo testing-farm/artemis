@@ -12,9 +12,18 @@ import sqlalchemy.orm.session
 
 from ..db import DB, DMLResult, GuestEvent, GuestRequest, execute_dml
 from ..knobs import Knob
-from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger, TaskPriority, TaskQueue
-from . import Workspace as _Workspace
-from . import step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    TaskLogger,
+    TaskPriority,
+    TaskQueue,
+    Workspace as _Workspace,
+    step,
+    task,
+    task_core,
+)
 
 KNOB_GC_EVENTS_SCHEDULE: Knob[str] = Knob(
     'gc.events.schedule',
