@@ -17,8 +17,9 @@ from google.cloud import compute_v1
 
 from .. import Failure, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
-from ..environment import UNITS, FlavorBoot, SizeType
+from ..environment import UNITS, Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
+from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     HookImageInfoMapper,
@@ -508,6 +509,52 @@ class GCPDriver(PoolDriver):
             return Error(Failure.from_exc('Failed to reboot instance', exc))
 
         return Ok(None)
+
+    def fetch_pool_resources_metrics(
+        self,
+        logger: gluetool.log.ContextAdapter
+    ) -> Result[PoolResourcesMetrics, Failure]:
+        r_resources = super().fetch_pool_resources_metrics(logger)
+
+        if r_resources.is_error:
+            return Error(r_resources.unwrap_error())
+
+        resources = r_resources.unwrap()
+
+        # Resource usage - instances and flavors
+        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[compute_v1.Instance], Failure]:
+            return Ok([
+                instance for instance in self._instances_client.list(
+                    project=self.pool_config['project'],
+                    zone=self.pool_config['zone']
+                )
+            ])
+
+        def _update_instance_usage(
+            logger: gluetool.log.ContextAdapter,
+            usage: PoolResourcesUsage,
+            raw_instance: compute_v1.Instance,
+            flavor: Optional[Flavor]
+        ) -> Result[None, Failure]:
+            assert usage.instances is not None  # narrow type
+
+            usage.instances += 1
+
+            return Ok(None)
+
+        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+            logger,
+            resources.usage,
+            _fetch_instances,
+            # TODO: once we find the flavor name, we can update its usage.
+            lambda raw_instance: 'dummy-flavor-name-does-not-exist',
+            _update_instance_usage
+        )
+
+        if r_instances_usage.is_error:
+            return Error(r_instances_usage.unwrap_error())
+
+        return Ok(resources)
 
 
 PoolDriver._drivers_registry['gcp'] = GCPDriver

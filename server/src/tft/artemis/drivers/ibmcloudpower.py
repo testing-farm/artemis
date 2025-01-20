@@ -14,9 +14,9 @@ from tft.artemis.drivers.ibmcloudvpc import IBMCloudPoolData, IBMCloudPoolResour
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest
-from ..environment import And, Constraint, ConstraintBase, FlavorBoot, SizeType
+from ..environment import UNITS, And, Constraint, ConstraintBase, Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
-from ..metrics import PoolNetworkResources, PoolResourcesMetrics, ResourceType
+from ..metrics import PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     HookImageInfoMapper,
@@ -379,40 +379,80 @@ class IBMCloudPowerDriver(PoolDriver):
 
         resources = r_resources.unwrap()
 
-        resources.usage.instances = 0
-        resources.usage.cores = 0
-        resources.usage.memory = 0
-
         subnet_id = self.pool_config['subnet-id']
 
         with IBMCloudPowerSession(logger, self) as session:
-            # Let's count instances on pool network
-            r_list_instances = session.run(
-                logger,
-                ['pi', 'instance', 'list', '--json'],
-                commandname='ibmcloud.power.instances-list'
-            )
-            if r_list_instances.is_error:
-                return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
+            # Resource usage - instances and flavors
+            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+                r_list_instances = session.run(
+                    logger,
+                    ['pi', 'instance', 'list', '--json'],
+                    commandname='ibmcloud.power.instances-list'
+                )
 
-            instances = cast(List[Dict[str, Any]], cast(Dict[str, Any],
-                                                        r_list_instances.unwrap()).get('pwmInstances', []))
-            # To get network details need to additionally get instance details
-            for instance in instances:
-                r_show_instance = self._show_guest(logger, instance['id'])
-                if r_show_instance.is_error:
-                    return Error(Failure.from_failure('Could not get instance details',
-                                                      r_show_instance.unwrap_error()))
+                if r_list_instances.is_error:
+                    return Error(Failure.from_failure(
+                        'Could not list instances',
+                        r_list_instances.unwrap_error()
+                    ))
 
-                instance = r_show_instance.unwrap()
-                # Filter out instances not on pool network
-                if subnet_id not in instance['networkIDs']:
-                    continue
+                raw_instances: List[Dict[str, Any]] = []
 
-                resources.usage.instances += 1
-                resources.usage.cores += int(instance.get('virtualCores', {}).get('assigned', 0))
+                for raw_instance_entry in cast(
+                    List[Dict[str, Any]],
+                    cast(Dict[str, Any], r_list_instances.unwrap()).get('pwmInstances', [])
+                ):
+                    # To get network details need to additionally get instance details
+                    r_show_instance = self._show_guest(logger, raw_instance_entry['id'])
+
+                    if r_show_instance.is_error:
+                        return Error(Failure.from_failure(
+                            'Could not get instance details',
+                            r_show_instance.unwrap_error(),
+                            raw_instance_entry=raw_instance_entry
+                        ))
+
+                    raw_instance = r_show_instance.unwrap()
+
+                    # Filter out instances not on pool network
+                    if subnet_id not in raw_instance['networkIDs']:
+                        continue
+
+                    raw_instances.append(raw_instance)
+
+                return Ok(raw_instances)
+
+            def _update_instance_usage(
+                logger: gluetool.log.ContextAdapter,
+                usage: PoolResourcesUsage,
+                raw_instance: Dict[str, Any],
+                flavor: Optional[Flavor]
+            ) -> Result[None, Failure]:
+                assert usage.instances is not None  # narrow type
+                assert usage.cores is not None  # narrow type
+                assert usage.memory is not None  # narrow type
+
+                usage.instances += 1
+
+                usage.cores += int(raw_instance.get('virtualCores', {}).get('assigned', 0))
                 # Instance memory is in GB
-                resources.usage.memory += int(instance['memory']) * 1073741824
+                usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
+
+                # TODO: once we find the flavor name, we can update its usage.
+
+                return Ok(None)
+
+            r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+                logger,
+                resources.usage,
+                _fetch_instances,
+                # TODO: once we find the flavor name, we can update its usage.
+                lambda raw_instance: 'dummy-flavor-name-does-not-exist',
+                _update_instance_usage
+            )
+
+            if r_instances_usage.is_error:
+                return Error(r_instances_usage.unwrap_error())
 
             # Get pool network metrics
             r_show_network = session.run(
