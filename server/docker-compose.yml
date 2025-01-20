@@ -9,7 +9,7 @@ services:
     network_mode: host
 
   rabbitmq:
-    image: "docker.io/bitnami/rabbitmq:4.0"
+    image: docker.io/library/rabbitmq:3
     ports:
       - "5672:5672"
     network_mode: host
@@ -35,7 +35,7 @@ services:
       - "9090:9090"
     network_mode: host
     volumes:
-      - ./.local-data/config/prometheus:/etc/prometheus:ro
+      - ./configuration/prometheus:/etc/prometheus:ro
       - prometheus_data:/opt/bitnami/prometheus/data
     privileged: true
 
