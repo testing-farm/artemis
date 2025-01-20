@@ -335,6 +335,9 @@ class FlavorCpu(_FlavorSubsystemContainer):
     #: CPU model name.
     model_name: Optional[str] = None
 
+    #: CPU stepping.
+    stepping: Optional[int] = None
+
     #: CPU flags.
     flag: List[str] = dataclasses.field(default_factory=list)
 
@@ -1578,6 +1581,7 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
             'cores-per-socket',
             'threads-per-core',
             'model',
+            'stepping',
             'family'
         )
         if constraint_name in spec

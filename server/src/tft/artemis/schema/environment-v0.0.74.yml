@@ -78,6 +78,11 @@ definitions:
       model-name:
         type: string
 
+      stepping:
+        anyOf:
+          - type: string
+          - type: integer
+
       flag:
         type: array
         items:

@@ -25,6 +25,7 @@ ENVIRONMENT_SCHEMAS: Dict[str, JSONSchemaType] = {}
 #: redirects if specified.
 API_MILESTONES: List[Tuple[str, List[str]]] = [
     # NEW: guest reboot
+    # NEW: cpu.stepping HW requirement
     ('v0.0.74', [
         # For lazy clients who don't care about the version, our most current API version should add
         # `/current` redirected to itself.
