@@ -96,7 +96,7 @@ POLICIES = [
 ]
 
 
-def hook_ROUTE(
+def hook_ROUTE(  # noqa: N802
     *,
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,

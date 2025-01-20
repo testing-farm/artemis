@@ -19,7 +19,7 @@ from tft.artemis.drivers.hooks import map_environment_to_image_info
 from tft.artemis.environment import Environment
 
 
-def hook_AWS_ENVIRONMENT_TO_IMAGE(
+def hook_AWS_ENVIRONMENT_TO_IMAGE(  # noqa: N802
     *,
     logger: gluetool.log.ContextAdapter,
     pool: AWSDriver,

@@ -278,9 +278,11 @@ class IBMCloudPowerDriver(PoolDriver):
                                      constraint_name=constraint.name))
         elif constraint_name.property == 'memory':
             # Although not mentioned in the docs, there are minimal constraints here, the amount of memory cannot be
-            # less than 2 Gb. So need to take that into consideration.
-            memory_in_Gb = max(float(cast(SizeType, constraint.value).to('GB').magnitude), 2)
-            return Ok(['--memory', str(memory_in_Gb)])
+            # less than 2 GB. So need to take that into consideration.
+            return Ok([
+                '--memory',
+                str(max(float(cast(SizeType, constraint.value).to('GB').magnitude), 2))
+            ])
         else:
             # Nothing else is supported yet
             return Error(Failure('constraint not supported by driver', constraint=repr(constraint),
