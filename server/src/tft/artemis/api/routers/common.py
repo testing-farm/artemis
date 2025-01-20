@@ -3,53 +3,30 @@
 
 # flake8: noqa: FS003 f-string missing prefix
 
-from typing import Any, Dict, List, Optional
+from typing import List
 
-import fastapi
 import gluetool.log
 import redis
 from fastapi import APIRouter, Depends, Request, Response, status
 from typing_extensions import Annotated
 
-from ... import JSONSchemaType, db as artemis_db, metrics
-from .. import environment, errors
+from ... import db as artemis_db, metrics
 from ..dependencies import get_cache, get_db, get_logger, get_metrics_tree
 from ..models import (
     AboutResponse,
-    AuthContext,
     CreateUserRequest,
-    EventSearchParameters,
-    GuestEvent,
-    GuestLogResponse,
-    GuestRequest,
-    GuestResponse,
-    GuestShelfResponse,
     KnobResponse,
     KnobUpdateRequest,
-    PreprovisioningRequest,
-    SnapshotRequest,
-    SnapshotResponse,
     TokenResetResponse,
     UserResponse,
 )
 from . import (
     CacheManager,
-    GuestEventManager,
-    GuestRequestManager,
-    GuestShelfManager,
     KnobManager,
-    SnapshotRequestManager,
     StatusManager,
     UserManager,
-    create_guest_request,
-    create_guest_request_log,
-    delete_guest as delete_artemis_guest,
     get_about,
-    get_guest_request,
-    get_guest_request_log,
-    get_guest_requests,
     get_metrics,
-    preprovision_guest,
 )
 
 router_knobs = APIRouter(

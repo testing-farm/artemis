@@ -4,15 +4,14 @@
 # flake8: noqa: FS003 f-string missing prefix
 # NEW: /{guestname}/console/url
 
-from typing import Any, Dict, List
+from typing import List
 
 import fastapi
 import gluetool.log
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Request, status
 from typing_extensions import Annotated
 
-from ... import JSONSchemaType
-from .. import environment, errors
+from .. import errors
 from ..dependencies import get_auth_context, get_logger
 from ..models import (
     AuthContext,
@@ -25,7 +24,6 @@ from ..models import (
     SnapshotResponse,
 )
 from . import (
-    CacheManager,
     GuestEventManager,
     GuestRequestManager,
     SnapshotRequestManager,

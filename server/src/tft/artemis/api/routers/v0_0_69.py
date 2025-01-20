@@ -5,11 +5,11 @@
 # NEW: zcrypt HW requirement
 # NEW: disk.model-name HW requirement
 
-from typing import List, Optional
+from typing import List
 
 import fastapi
 import gluetool.log
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Request, status
 from typing_extensions import Annotated
 
 from .. import errors
@@ -20,17 +20,13 @@ from ..models import (
     GuestEvent,
     GuestRequest,
     GuestResponse,
-    GuestShelfResponse,
-    PreprovisioningRequest,
     SnapshotRequest,
     SnapshotResponse,
 )
 from ..models.v0_0_69 import GuestLogResponse_v0_0_69
 from . import (
-    CacheManager,
     GuestEventManager,
     GuestRequestManager,
-    GuestShelfManager,
     SnapshotRequestManager,
     create_guest_request,
     create_guest_request_log,
@@ -38,7 +34,6 @@ from . import (
     get_guest_request,
     get_guest_request_log,
     get_guest_requests,
-    preprovision_guest,
 )
 from .common import router__status, router_default, router_knobs, router_users
 from .v0_0_27 import router__cache
