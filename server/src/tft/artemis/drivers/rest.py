@@ -284,34 +284,27 @@ class RestDriver(PoolDriver):
     def release_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
-        if RestPoolData.is_empty(guest_request):
-            return Ok(True)
+    ) -> Result[None, Failure]:
+        """
+        Release resources allocated for the guest back to the pool infrastructure.
+        """
 
-        r_job_cancel = self._dispatch_resource_cleanup(
+        if RestPoolData.is_empty(guest_request):
+            return Ok(None)
+
+        pool_data = RestPoolData.unserialize(guest_request)
+
+        return self.dispatch_resource_cleanup(
             logger,
-            guest_id=RestPoolData.unserialize(guest_request).guest_id,
+            session,
+            RestPoolResourcesIDs(
+                guest_id=pool_data.guest_id,
+                guestname=guest_request.guestname
+            ),
             guest_request=guest_request
         )
-
-        if r_job_cancel.is_error:
-            return Error(r_job_cancel.unwrap_error())
-
-        return Ok(True)
-
-    def _dispatch_resource_cleanup(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_id: Optional[str],
-        guest_request: Optional[GuestRequest]
-    ) -> Result[None, Failure]:
-        resource_ids = RestPoolResourcesIDs(guest_id=guest_id)
-
-        if guest_request is not None:
-            resource_ids.guestname = guest_request.guestname
-
-        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def release_pool_resources(
         self,

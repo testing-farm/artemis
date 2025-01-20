@@ -1536,17 +1536,20 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def dispatch_resource_cleanup(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         *resource_ids: PoolResourcesIDs,
         guest_request: Optional[GuestRequest] = None,
         delay: Optional[int] = None
     ) -> Result[None, Failure]:
         """
-        Schedule removal of given resources. Resources are identified by keys and values which are passed
-        to :py:meth:`release_pool_resource` method. The actual keys are completely under control of the
-        driver.
+        Schedule a removal of pool resources.
+
+        Resources are identified by a sequence of :py:class:`PoolResourceIDs` containers. Containers are processed
+        in sequence, and for each a dedicated ``release-pool-resources`` task is scheduled, but only after the previous
+        one finished.
         """
 
-        if all(resource_id.is_empty() for resource_id in resource_ids):
+        if not resource_ids or all(resource_id.is_empty() for resource_id in resource_ids):
             return Ok(None)
 
         if delay is None:
@@ -1561,16 +1564,31 @@ class PoolDriver(gluetool.log.LoggerMixin):
             resource_id.ctime = guest_request.ctime if guest_request else None
 
         # Local import, to avoid circular imports
-        from ..tasks import dispatch_sequence
+        from ..tasks import _request_task, _request_task_sequence
         from ..tasks.release_pool_resources import release_pool_resources
 
-        return dispatch_sequence(
+        if len(resource_ids) == 1:
+            return _request_task(
+                logger,
+                session,
+                release_pool_resources,
+                self.poolname,
+                resource_id.serialize_to_json(),
+                guest_request.guestname if guest_request else None,
+                delay=delay
+            )
+
+        return _request_task_sequence(
             logger,
+            session,
             [
                 (
-                    None,
                     release_pool_resources,
-                    (self.poolname, resource_id.serialize_to_json(), guest_request.guestname if guest_request else None)
+                    (
+                        self.poolname,
+                        resource_id.serialize_to_json(),
+                        guest_request.guestname if guest_request else None
+                    )
                 )
                 for resource_id in resource_ids
             ],
@@ -1953,12 +1971,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def release_guest(
         self,
         logger: gluetool.log.ContextAdapter,
-        guest: GuestRequest
-    ) -> Result[bool, Failure]:
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
         """
-        Release guest and its resources back to the pool.
-
-        :rtype: result.Result[bool, Failure]
+        Release resources allocated for the guest back to the pool infrastructure.
         """
 
         raise NotImplementedError()
