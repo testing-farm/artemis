@@ -27,7 +27,7 @@ from ..environment import (
     FlavorVirtualization,
 )
 from ..knobs import Knob
-from ..metrics import PoolNetworkResources, PoolResourcesMetrics, ResourceType
+from ..metrics import PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     GuestTagsType,
@@ -433,35 +433,66 @@ class IBMCloudVPCDriver(PoolDriver):
 
         resources = r_resources.unwrap()
 
-        resources.usage.instances = 0
-        resources.usage.cores = 0
-        resources.usage.memory = 0
-
         subnet_id = self.pool_config['subnet-id']
 
         with IBMCloudSession(logger, self) as session:
-            # Let's count instances on pool network
-            r_list_instances = session.run(
-                logger,
-                ['is', 'instances', '--json'],
-                commandname='ibm.is.instances-list'
-            )
-            if r_list_instances.is_error:
-                return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
+            # Resource usage - instances and flavors
+            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+                r_list_instances = session.run(
+                    logger,
+                    ['is', 'instances', '--json'],
+                    commandname='ibm.is.instances-list'
+                )
 
-            instances = cast(List[Dict[str, Any]], r_list_instances.unwrap())
-            for instance in instances:
-                # Filter out instances not on pool network
-                if subnet_id not in [nic.get('subnet', {}).get('id')
-                                     for nic in instance.get('network_interfaces', [])]:
-                    continue
+                if r_list_instances.is_error:
+                    return Error(Failure.from_failure(
+                        'Could not list instances',
+                        r_list_instances.unwrap_error()
+                    ))
 
-                resources.usage.instances += 1
+                return Ok([
+                    raw_instance
+                    for raw_instance in cast(List[Dict[str, Any]], r_list_instances.unwrap())
+                    if subnet_id in [
+                        nics.get('subnet', {}).get('id')
+                        for nics in raw_instance.get('network_interfaces', [])
+                    ]
+                ])
+
+            def _update_instance_usage(
+                logger: gluetool.log.ContextAdapter,
+                usage: PoolResourcesUsage,
+                raw_instance: Dict[str, Any],
+                flavor: Optional[Flavor]
+            ) -> Result[None, Failure]:
+                assert usage.instances is not None  # narrow type
+                assert usage.cores is not None  # narrow type
+                assert usage.memory is not None  # narrow type
+
+                usage.instances += 1
+
                 # ibmcloud is doesn't have info about cores per instance, but rather vcpus per instance. Anyway, will
                 # be storing this info under cores
-                resources.usage.cores += int(instance.get('vcpu', {}).get('count', 0))
+                usage.cores += int(raw_instance.get('vcpu', {}).get('count', 0))
+
                 # Instance memory is in GB
-                resources.usage.memory += int(instance['memory']) * 1073741824
+                usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
+
+                # TODO: once we find the flavor name, we can update its usage.
+
+                return Ok(None)
+
+            r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+                logger,
+                resources.usage,
+                _fetch_instances,
+                # TODO: once we find the flavor name, we can update its usage.
+                lambda raw_instance: 'dummy-flavor-name-does-not-exist',
+                _update_instance_usage
+            )
+
+            if r_instances_usage.is_error:
+                return Error(r_instances_usage.unwrap_error())
 
             # Get pool network metrics
             r_show_network = session.run(
