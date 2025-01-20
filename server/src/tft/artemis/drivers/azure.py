@@ -318,37 +318,6 @@ class AzureDriver(PoolDriver):
 
         return Ok(capabilities)
 
-    def _dispatch_resource_cleanup(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        *other_resources: Any,
-        instance_id: Optional[str] = None,
-        resource_group: Optional[str] = None,
-        guest_request: Optional[GuestRequest] = None
-    ) -> Result[None, Failure]:
-        boot_log_container_name = None
-
-        if guest_request:
-            r_boot_log_storage = self._find_boot_log_storage_container(logger, guest_request)
-            if r_boot_log_storage.is_error:
-                # NOTE(ivasilev) We can't raise error here and exit as in this case other resources won't be cleaned
-                # up. If we are killing the guest early (before it entered preparing/ready state) absence of log
-                # storage container is to be expected. So let's log the error and move on, imho that's the best we
-                # can do here.
-                Failure('Could not get the name of log storage container for cleanup').handle(logger)
-                boot_log_container_name = None
-            else:
-                boot_log_container_name = r_boot_log_storage.unwrap()['name']
-
-        resource_ids = AzurePoolResourcesIDs(
-            instance_id=instance_id,
-            assorted_resource_ids=list(other_resources) if other_resources else None,
-            resource_group=resource_group,
-            boot_log_container=boot_log_container_name
-        )
-
-        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
-
     def map_image_name_to_image_info(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -574,22 +543,30 @@ class AzureDriver(PoolDriver):
             address=r_ip_address.unwrap()
         ))
 
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+    def release_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
         """
-        Release guest and its resources back to the pool.
+        Release resources allocated for the guest back to the pool infrastructure.
+        """
 
-        :param Guest guest: a guest to be destroyed.
-        :rtype: result.Result[bool, Failure]
-        """
         if AzurePoolData.is_empty(guest_request):
-            return Ok(True)
+            return Ok(None)
 
         pool_data = AzurePoolData.unserialize(guest_request)
 
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
-        with AzureSession(logger, self) as session:
-            r_tagged_resources = session.run_az(
+        resource_ids: List[AzurePoolResourcesIDs] = []
+
+        if pool_data.instance_id is not None:
+            resource_ids.append(AzurePoolResourcesIDs(instance_id=pool_data.instance_id))
+
+        with AzureSession(logger, self) as az_session:
+            r_tagged_resources = az_session.run_az(
                 logger,
                 ['resource', 'list', '--tag', f'uid={pool_data.instance_name}'],
                 commandname='az.resource-list'
@@ -598,27 +575,38 @@ class AzureDriver(PoolDriver):
         if r_tagged_resources.is_error:
             return Error(r_tagged_resources.unwrap_error())
 
-        tagged_resources = r_tagged_resources.unwrap()
-
-        # delete vm first, resources second
         assorted_resource_ids = [
             res
-            for res in cast(List[Dict[str, str]], tagged_resources)
+            for res in cast(List[Dict[str, str]], r_tagged_resources.unwrap())
             if res['type'] != 'Microsoft.Compute/virtualMachines'
         ]
 
-        r_cleanup = self._dispatch_resource_cleanup(
+        if assorted_resource_ids:
+            resource_ids.append(AzurePoolResourcesIDs(
+                assorted_resource_ids=assorted_resource_ids,
+                resource_group=pool_data.resource_group
+            ))
+
+        r_boot_log_storage = self._find_boot_log_storage_container(logger, guest_request)
+
+        if r_boot_log_storage.is_error:
+            # NOTE(ivasilev) We can't raise error here and exit as in this case other resources won't be cleaned
+            # up. If we are killing the guest early (before it entered preparing/ready state) absence of log
+            # storage container is to be expected. So let's log the error and move on, imho that's the best we
+            # can do here.
+            Failure('Could not get the name of log storage container for cleanup').handle(logger)
+
+        else:
+            resource_ids.append(AzurePoolResourcesIDs(
+                boot_log_container=r_boot_log_storage.unwrap()['name']
+            ))
+
+        return self.dispatch_resource_cleanup(
             logger,
-            *assorted_resource_ids,
-            instance_id=pool_data.instance_id,
-            resource_group=pool_data.resource_group,
+            session,
+            *resource_ids,
             guest_request=guest_request
         )
-
-        if r_cleanup.is_error:
-            return Error(r_cleanup.unwrap_error())
-
-        return Ok(True)
 
     def create_snapshot(
         self,

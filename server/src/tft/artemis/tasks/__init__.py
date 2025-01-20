@@ -2545,7 +2545,7 @@ class ProvisioningTailHandler(TailHandler):
 
             # Don't release the guests if preserve-for-investigation is set
             if not workspace.pool.preserve_for_investigation:
-                r_release = workspace.pool.release_guest(logger, workspace.gr)
+                r_release = workspace.pool.release_guest(logger, workspace.session, workspace.gr)
 
                 if r_release.is_error:
                     workspace._error(r_release, 'failed to release guest resources')

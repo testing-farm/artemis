@@ -1221,16 +1221,6 @@ class BeakerDriver(PoolDriver):
             pool_failures=[failure]
         ))
 
-    def _dispatch_resource_cleanup(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        job_id: Optional[str] = None,
-        guest_request: Optional[GuestRequest] = None
-    ) -> Result[None, Failure]:
-        resource_ids = BeakerPoolResourcesIDs(job_id=job_id)
-
-        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
-
     def release_pool_resources(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -2062,28 +2052,24 @@ class BeakerDriver(PoolDriver):
     def release_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    ) -> Result[None, Failure]:
         """
-        Release guest and its resources back to the pool.
-
-        :param Guest guest: a guest to be destroyed.
-        :rtype: result.Result[bool, str]
+        Release resources allocated for the guest back to the pool infrastructure.
         """
 
         if BeakerPoolData.is_empty(guest_request):
-            return Ok(True)
+            return Ok(None)
 
-        r_job_cancel = self._dispatch_resource_cleanup(
+        pool_data = BeakerPoolData.unserialize(guest_request)
+
+        return self.dispatch_resource_cleanup(
             logger,
-            job_id=BeakerPoolData.unserialize(guest_request).job_id,
+            session,
+            BeakerPoolResourcesIDs(job_id=pool_data.job_id),
             guest_request=guest_request
         )
-
-        if r_job_cancel.is_error:
-            return Error(r_job_cancel.unwrap_error())
-
-        return Ok(True)
 
     def fetch_pool_resources_metrics(
         self,
