@@ -180,6 +180,7 @@ def pick_task_request(
             r_pending_task = SafeQuery.from_session(session, TaskRequest) \
                 .filter(TaskRequest.task_sequence_request_id.is_(None)) \
                 .limit(1) \
+                .with_skip_locked() \
                 .one_or_none()
 
             if r_pending_task.is_error:
