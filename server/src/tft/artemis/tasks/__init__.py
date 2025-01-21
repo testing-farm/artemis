@@ -713,8 +713,12 @@ class TaskLogger(gluetool.log.ContextAdapter):
     def taskname(self) -> str:
         return cast(str, self._contexts['task_name'][1])
 
-    def begin(self) -> None:
-        self.info('beginning')
+    def begin(self, actor_args: Optional[Tuple[ActorArgumentType, ...]] = None) -> None:
+        if actor_args is not None:
+            self.info(f'beginning: ({", ".join(str(arg) for arg in actor_args)})')
+
+        else:
+            self.info('beginning')
 
     def finished(self) -> None:
         self.info('finished')
@@ -1128,7 +1132,7 @@ def _task_core(
 ) -> None:
     rss = RSSWatcher()
 
-    logger.begin()
+    logger.begin(actor_args=doer_args)
 
     logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
 

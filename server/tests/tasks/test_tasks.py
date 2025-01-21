@@ -213,7 +213,11 @@ def test_task_core_ok(
         call().unwrap()
     ])
 
-    assert_log(caplog, message='beginning', levelno=logging.INFO)
+    assert_log(
+        caplog,
+        message=MATCH(r"beginning: \(<MagicMock name='mock_doer_arg1' id='.+'>, <MagicMock name='mock_doer_arg2' id='.+'>\)"),  # noqa: E501
+        levelno=logging.INFO
+    )
     assert_log(caplog, message='finished', levelno=logging.INFO)
 
 
@@ -238,7 +242,11 @@ def test_task_core_failure(
             doer_kwargs=doer_kwargs
         )
 
-    assert_log(caplog, message='beginning', levelno=logging.INFO)
+    assert_log(
+        caplog,
+        message=MATCH(r"beginning: \(<MagicMock name='mock_doer_arg1' id='.+'>, <MagicMock name='mock_doer_arg2' id='.+'>\)"),  # noqa: E501
+        levelno=logging.INFO
+    )
 
 
 def test_task_core_raises(
@@ -263,7 +271,11 @@ def test_task_core_raises(
             doer_kwargs=doer_kwargs
         )
 
-    assert_log(caplog, message='beginning', levelno=logging.INFO)
+    assert_log(
+        caplog,
+        message=MATCH(r"beginning: \(<MagicMock name='mock_doer_arg1' id='.+'>, <MagicMock name='mock_doer_arg2' id='.+'>\)"),  # noqa: E501
+        levelno=logging.INFO
+    )
     assert_log(
         caplog,
         message=MATCH(r'(?m)failure\n\nmessage: unhandled doer exception\n(?:.*\n)+    ValueError: dummy exception'),
@@ -293,7 +305,11 @@ def test_task_core_reschedule(
             doer_kwargs=doer_kwargs
         )
 
-    assert_log(caplog, message='beginning', levelno=logging.INFO)
+    assert_log(
+        caplog,
+        message=MATCH(r"beginning: \(<MagicMock name='mock_doer_arg1' id='.+'>, <MagicMock name='mock_doer_arg2' id='.+'>\)"),  # noqa: E501
+        levelno=logging.INFO
+    )
 
 
 @pytest.fixture(name='workspace')
