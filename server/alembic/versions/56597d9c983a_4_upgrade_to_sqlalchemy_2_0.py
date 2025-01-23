@@ -11,7 +11,6 @@ Create Date: 2024-11-13 11:37:41.404810
 """
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import sqlite
 
 # revision identifiers, used by Alembic.
 revision = '56597d9c983a_4'
