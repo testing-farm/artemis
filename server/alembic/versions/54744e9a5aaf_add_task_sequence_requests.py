@@ -5,7 +5,7 @@
 Add task sequence requests
 
 Revision ID: 54744e9a5aaf
-Revises: 56597d9c983a
+Revises: 56597d9c983a_4
 Create Date: 2025-01-03 14:44:37.644329
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = '54744e9a5aaf'
-down_revision = '56597d9c983a'
+down_revision = '56597d9c983a_4'
 branch_labels = None
 depends_on = None
 
