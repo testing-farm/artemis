@@ -2569,6 +2569,19 @@ class ProvisioningTailHandler(TailHandler):
                 }
             )
 
+        else:
+            workspace.update_guest_state(
+                self.new_state,
+                current_state=self.current_state,
+                current_pool_data=workspace.gr.pool_data,
+                set_values={
+                    'poolname': None,
+                    'last_poolname': workspace.gr.poolname,
+                    'pool_data': json.dumps({}),
+                    'address': None
+                }
+            )
+
         if workspace.result:
             return workspace.result
 
