@@ -801,7 +801,12 @@ class IBMCloudVPCDriver(PoolDriver):
                     logger,
                     [
                         'resource', 'tag-attach',
-                        '--tag-names', ','.join([f'{tag}:{value}' for tag, value in tags.items()]),
+                        '--tag-names', ','.join(
+                            # Avoid adding `:` when there is no value
+                            (f'{tag}:{value}' if value else tag)
+                            for tag, value
+                            in tags.items()
+                        ),
                         '--resource-name', output['name'],
                     ],
                     json_format=False,
