@@ -18,6 +18,7 @@ import rich.console
 import rich.highlighter
 import rich.json
 import rich.markup
+import rich.panel
 import rich.syntax
 import rich.table
 import rich.text
@@ -487,6 +488,10 @@ def confirm(
     return False
 
 
+def print_panel(panel: rich.panel.Panel, console: Optional[rich.console.Console] = None) -> None:
+    (console or DEFAULT_CONSOLE).print(panel)
+
+
 def print_table(table: rich.table.Table, console: Optional[rich.console.Console] = None) -> None:
     (console or DEFAULT_CONSOLE).print(table)
 
@@ -524,12 +529,24 @@ def print_collection(
     collection: CollectionType,
     tabulate: Callable[[CollectionType], rich.table.Table],
     jq_filter: Optional[str] = None,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
+    panel_title: Optional[str] = None
 ) -> None:
     collection = apply_jq_filter(cfg, collection, jq_filter=jq_filter)
 
     if cfg.output_format == 'table':
-        print_table(tabulate(collection), console=console)
+        if panel_title:
+            print_panel(
+                rich.panel.Panel(
+                    tabulate(collection),
+                    title=panel_title,
+                    title_align='left'
+                ),
+                console=console
+            )
+
+        else:
+            print_table(tabulate(collection), console=console)
 
     elif cfg.output_format == 'json':
         print_json(collection, console=console)
@@ -802,6 +819,9 @@ def print_tasks(
             actor = task['actor'].replace('_', '-')
             args = task['args']
 
+            if actor == '<empty>':
+                continue
+
             if actor == 'release-pool-resources' and 'resource_ids' in args:
                 args['resource_ids'] = json.loads(args['resource_ids'])
 
@@ -813,7 +833,24 @@ def print_tasks(
 
         return table
 
-    print_collection(cfg, tasks, tabulate, console=console)
+    if cfg.output_format == 'table':
+        all_slots = len(tasks)
+        occupied_slots = len([task for task in tasks if task['actor'] != '<empty>'])
+        free_slots = len([task for task in tasks if task['actor'] == '<empty>'])
+
+        panel = rich.panel.Panel(
+            ' | '.join([
+                f'[yellow]{all_slots} total[/yellow]',
+                f'[blue]{occupied_slots} occupied[/blue]',
+                f'[green]{free_slots} free[/green]',
+            ]),
+            title='Worker slots',
+            title_align='left'
+        )
+
+        (console or DEFAULT_CONSOLE).print(panel)
+
+    print_collection(cfg, tasks, tabulate, console=console, panel_title='Tasks')
 
 
 def print_broker_tasks(
