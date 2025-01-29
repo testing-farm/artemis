@@ -12,7 +12,7 @@ from typing import List
 
 import fastapi
 import gluetool.log
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Request, status
 from typing_extensions import Annotated
 
 from .. import errors
@@ -28,7 +28,6 @@ from ..models import (
     SnapshotResponse,
 )
 from . import (
-    CacheManager,
     GuestEventManager,
     GuestRequestManager,
     SnapshotRequestManager,
