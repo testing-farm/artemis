@@ -13,7 +13,7 @@ import json
 import os
 import random
 import threading
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Generator, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
 import dramatiq
 import dramatiq.broker
@@ -2448,7 +2448,24 @@ class TailHandler:
 
 
 class ProvisioningTailHandler(TailHandler):
-    def __init__(self, current_state: GuestState, new_state: GuestState) -> None:
+    def __init__(
+        self,
+        current_state: Literal[
+            GuestState.SHELF_LOOKUP,
+            GuestState.ROUTING,
+            GuestState.PROVISIONING,
+            GuestState.PROMISED,
+            GuestState.PREPARING,
+            GuestState.READY
+        ],
+        # Note: when adding newly supported new state, be sure to add a corresponding reaction to the `do_handle_tail()`
+        # method.
+        new_state: Literal[
+            GuestState.SHELF_LOOKUP,
+            GuestState.ROUTING,
+            GuestState.ERROR
+        ]
+    ) -> None:
         self.current_state = current_state
         self.new_state = new_state
 
@@ -2568,6 +2585,30 @@ class ProvisioningTailHandler(TailHandler):
                     'address': None
                 }
             )
+
+        elif self.new_state == GuestState.ERROR:
+            workspace.update_guest_state(
+                self.new_state,
+                current_state=self.current_state,
+                current_pool_data=workspace.gr.pool_data,
+                set_values={
+                    'poolname': None,
+                    'last_poolname': workspace.gr.poolname,
+                    'pool_data': json.dumps({}),
+                    'address': None
+                }
+            )
+
+        else:
+            workspace._fail(
+                Failure(
+                    'unhandled new state in provisioning tail handler',
+                    new_state=self.new_state.value
+                ),
+                'unhandled new state in provisioning tail handler'
+            )
+
+            return workspace.result
 
         if workspace.result:
             return workspace.result
