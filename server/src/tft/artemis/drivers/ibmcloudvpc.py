@@ -5,7 +5,7 @@ import dataclasses
 import os
 import re
 import shutil
-from typing import Any, Dict, List, Optional, Pattern, Tuple, TypedDict, cast
+from typing import Any, Dict, Generator, List, Optional, Pattern, Tuple, TypedDict, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -30,6 +30,7 @@ from ..knobs import Knob
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
+    GuestTagsType,
     HookImageInfoMapper,
     PoolImageSSHInfo,
     ProvisioningProgress,
@@ -65,6 +66,60 @@ IBMCLOUD_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'floating-ip': ResourceType.STATIC_IP,
     'security-group': ResourceType.SECURITY_GROUP
 }
+
+
+# Limits imposed on tags in IBM VPC cloud.
+# https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui#limits
+#
+# The length limit includes the name and colon!
+TAG_MAX_LENGTH = 128
+# NOTE(ivasilev) IBMCloud is petty about allowed characters in tags - only [A-Z][0-9] _-.: are allowed.
+# COLDSTORE_URL is the one of our typical tags that it doesn't play nice with, so will be replacing all
+# forbidden characters with prefixes.
+TAG_FORBIDDEN_CHARACTERS_PATTERN = re.compile(r'[^.a-zA-Z0-9 _\-]')
+
+
+def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None]:
+    """
+    Sanitize tags to make their values acceptable for IBM API and CLI.
+
+    Namely replace forbidden characters with more acceptable ones.
+    """
+
+    def _sanitize_string(s: str) -> str:
+        return TAG_FORBIDDEN_CHARACTERS_PATTERN.sub('_', s)
+
+    for name, value in tags.items():
+        name = _sanitize_string(name)
+        value = _sanitize_string(value or '')
+
+        if len(name) >= TAG_MAX_LENGTH:
+            yield name[:TAG_MAX_LENGTH], ''
+
+        elif value:
+            yield name, value[:TAG_MAX_LENGTH - len(name) - 1]
+
+        else:
+            yield name, ''
+
+
+def _serialize_tags(tags: GuestTagsType) -> List[str]:
+    """
+    Serialize tags to make them acceptable for IBM CLI.
+
+    IBM accepts tags in form of ``key:value`` items, separated by comma:
+
+    .. code-block:: python
+
+       foo:bar,baz,...
+
+    See https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui for more details.
+    """
+
+    return [
+        f'{name}:{value}' if value else name
+        for name, value in _sanitize_tags(tags)
+    ]
 
 
 class APIImageType(TypedDict):
@@ -611,9 +666,12 @@ class IBMCloudVPCDriver(PoolDriver):
             image=image
         )
 
-        tags = self._get_instance_tags(logger, session, guest_request)
-        if not tags:
-            return Error(Failure('Could not determine instance name from tags'))
+        r_tags = self.get_guest_tags(logger, session, guest_request)
+
+        if r_tags.is_error:
+            return Error(r_tags.unwrap_error())
+
+        tags = r_tags.unwrap()
 
         # A combination of ArtemisGuestLabel-ArtemisGuestName doesn't pass the ibmcloud max name length, so let's cut
         # ArtemisGuestName to the first section and use this fragment together with ArtemisGuestLabel. This way the
@@ -731,29 +789,6 @@ class IBMCloudVPCDriver(PoolDriver):
 
         return Ok(res)
 
-    def _get_instance_tags(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
-    ) -> Dict[str, str]:
-        r_base_tags = self.get_guest_tags(logger, session, guest_request)
-
-        if r_base_tags.is_error:
-            return {}
-
-        def _sanitize(a_tag: str) -> str:
-            # NOTE(ivasilev) IBMCloud is petty about allowed characters in tags - only [A-Z][0-9] _-.: are allowed.
-            # COLDSTORE_URL is the one of our typical tags that it doesn't play nice with, so will be replacing all
-            # forbidden characters with prefixes.
-            for char in [',', ':', '/']:
-                a_tag = a_tag.replace(char, '_')
-            return a_tag
-
-        return {
-            _sanitize(t): _sanitize(v) for t, v in r_base_tags.unwrap().items()
-        }
-
     def update_guest(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -788,9 +823,12 @@ class IBMCloudVPCDriver(PoolDriver):
             # create command, and updating the instance via resource api during guest acquisition seems prone to
             # 'The resource is not found' errors. So will be tagging the instance that has no tags yet
 
-            tags = self._get_instance_tags(logger, session, guest_request)
-            if not tags:
-                return Error(Failure('Could not determine instance tags'))
+            r_tags = self.get_guest_tags(logger, session, guest_request)
+
+            if r_tags.is_error:
+                return Error(r_tags.unwrap_error())
+
+            tags = r_tags.unwrap()
 
             # This tag links our VM and its resources, which comes handy when we want to remove everything
             # leaving no leaks.
@@ -801,12 +839,7 @@ class IBMCloudVPCDriver(PoolDriver):
                     logger,
                     [
                         'resource', 'tag-attach',
-                        '--tag-names', ','.join(
-                            # Avoid adding `:` when there is no value
-                            (f'{tag}:{value}' if value else tag)
-                            for tag, value
-                            in tags.items()
-                        ),
+                        '--tag-names', ','.join(_serialize_tags(tags)),
                         '--resource-name', output['name'],
                     ],
                     json_format=False,
