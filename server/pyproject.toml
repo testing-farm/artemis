@@ -136,10 +136,10 @@ target-version = "py39"
 # will enable them one by one or in groups, to keep patches reviewable.
 lint.select = [
     "F",  # pyflakes
-    # "E",  # pycodestyle error
-    # "W",  # pycodestyle warning
+    "E",  # pycodestyle error
+    "W",  # pycodestyle warning
     "I",  # isort
-    # "N",  # pep8-naming
+    "N",  # pep8-naming
     # "UP",  # pyupgrade
     # "YTT",  # flake8-2020
     # "ASYNC",  # flake8-async

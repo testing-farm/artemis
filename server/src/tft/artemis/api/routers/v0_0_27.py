@@ -214,7 +214,12 @@ def refresh_pool_image_info(
     manager: Annotated[CacheManager, Depends(CacheManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
 ) -> None:
-    return CacheManager.entry_refresh_pool_image_info(poolname=poolname, manager=manager, logger=logger, request=request)
+    return CacheManager.entry_refresh_pool_image_info(
+        poolname=poolname,
+        manager=manager,
+        logger=logger,
+        request=request
+    )
 
 
 @router__cache.post('/pools/{poolname}/flavor-info', status_code=status.HTTP_204_NO_CONTENT)
@@ -224,7 +229,12 @@ def refresh_pool_flavor_info(
     manager: Annotated[CacheManager, Depends(CacheManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
 ) -> None:
-    return CacheManager.entry_refresh_pool_flavor_info(poolname=poolname, manager=manager, logger=logger, request=request)
+    return CacheManager.entry_refresh_pool_flavor_info(
+        poolname=poolname,
+        manager=manager,
+        logger=logger,
+        request=request
+    )
 
 
 def register_routes(app: fastapi.FastAPI) -> None:

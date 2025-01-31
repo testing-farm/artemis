@@ -49,7 +49,7 @@ class PolicyRuling:
 
     @classmethod
     def from_pools(
-        self,
+        cls,
         pools: List[PoolDriver],
         predicate: Optional[Callable[[PoolDriver], PoolPolicyRuling]] = None
     ) -> 'PolicyRuling':

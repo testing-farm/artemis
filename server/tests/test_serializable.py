@@ -11,7 +11,7 @@ import ruamel.yaml.main
 import tft.artemis
 
 
-@pytest.fixture(name='YAML')
+@pytest.fixture(name='yaml')
 def fixture_yaml() -> ruamel.yaml.main.YAML:
     return tft.artemis.get_yaml()
 
@@ -120,10 +120,10 @@ def test_nesting(nesting_container: NestingContainer) -> None:
     assert type(nesting_container) is type(bar)
 
 
-def test_to_yaml(YAML: ruamel.yaml.main.YAML, nesting_container: NestingContainer) -> None:
+def test_to_yaml(yaml: ruamel.yaml.main.YAML, nesting_container: NestingContainer) -> None:
     assert tft.artemis.format_dict_yaml(nesting_container) == NESTING_CONTAINER_AS_STRING
 
 
-def test_to_str(YAML: ruamel.yaml.main.YAML, nesting_container: NestingContainer) -> None:
+def test_to_str(yaml: ruamel.yaml.main.YAML, nesting_container: NestingContainer) -> None:
     assert str(nesting_container) == NESTING_CONTAINER_AS_STRING
     assert repr(nesting_container) == NESTING_CONTAINER_AS_STRING

@@ -105,9 +105,12 @@ AZURE_SIZE_LIST = [
 
 
 class AzureSessionMock:
-    def run_az(logger: gluetool.log.ContextAdapter,  # type: ignore[misc]
-               options: List[str],
-               commandname: Optional[str] = None) -> Result[List[dict[str, Any]], Failure]:
+    def run_az(  # type: ignore[misc]
+        logger: gluetool.log.ContextAdapter,  # noqa: N805
+        options: List[str],
+        commandname: Optional[str] = None
+    ) -> Result[List[dict[str, Any]], Failure]:
+
         if commandname == 'az.vm-image-list':
             return Ok(AZURE_IMAGE_LIST)
         elif commandname == 'az.vm-flavors-list':

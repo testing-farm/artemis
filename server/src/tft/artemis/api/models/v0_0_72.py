@@ -13,7 +13,7 @@ from . import GuestSSHInfo
 
 
 @dataclasses.dataclass
-class GuestRequest_v0_0_72:
+class GuestRequest_v0_0_72:  # noqa: N801
     keyname: str
     environment: Dict[str, Optional[Any]]
     priority_group: Optional[str] = None
@@ -29,7 +29,7 @@ class GuestRequest_v0_0_72:
     security_group_rules_egress: Optional[List[Dict[str, Any]]] = None
 
 
-class GuestResponse_v0_0_72(BaseModel):
+class GuestResponse_v0_0_72(BaseModel):  # noqa: N801
     guestname: str
     owner: str
     shelf: Optional[str]

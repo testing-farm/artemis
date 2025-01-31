@@ -343,11 +343,11 @@ def is_ignore_result(result: DoerReturnType) -> bool:
     return result.is_ok and isinstance(result.unwrap(), _IgnoreType)
 
 
-def IGNORE(result: Result[Any, Failure]) -> DoerReturnType:
+def IGNORE(result: Result[Any, Failure]) -> DoerReturnType:  # noqa: N802
     return Ok(_IgnoreType(result.unwrap_error()))
 
 
-def FAIL(result: Result[Any, Failure]) -> DoerReturnType:
+def FAIL(result: Result[Any, Failure]) -> DoerReturnType:  # noqa: N802
     return Error(result.unwrap_error())
 
 
@@ -898,7 +898,7 @@ def step(fn: Callable[[WorkspaceBound], None]) -> Callable[[WorkspaceBound], Wor
 
 # Implementing the decorator as a class on purpose - it plays nicely with type annotations when used without
 # any arguments.
-class task:
+class task:  # noqa: N801
     def __init__(
         self,
         priority: TaskPriority = TaskPriority.DEFAULT,
@@ -1988,13 +1988,13 @@ class Workspace:
 
     @contextlib.contextmanager
     def transaction(self) -> Generator[TransactionResult, None, None]:
-        with transaction(self.logger, self.session) as T:
-            yield T
+        with transaction(self.logger, self.session) as t:
+            yield t
 
-        if not T.complete:
-            assert T.failure is not None  # narrow type
+        if not t.complete:
+            assert t.failure is not None  # narrow type
 
-            self.fail(T.failure, 'failed to complete transaction')
+            self.fail(t.failure, 'failed to complete transaction')
 
     def _begin(self) -> None:
         if self.guestname:
@@ -2398,7 +2398,7 @@ class TailHandler:
         return logger
 
     def do_handle_tail(
-        cls,
+        self,
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,

@@ -40,23 +40,23 @@ from . import MockPatcher
 
 # Routing knobs do have a DB source, therefore we cannot acquire their value right away
 # but we have to rather query them when needed.
-def TIMEOUT_REACHED_AGE_TOO_YOUNG(session: sqlalchemy.orm.session.Session) -> int:
+def timeout_reached_age_too_young(session: sqlalchemy.orm.session.Session) -> int:
     return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session=session).unwrap() // 2
 
 
-def TIMEOUT_REACHED_AGE_TOO_OLD(session: sqlalchemy.orm.session.Session) -> int:
+def timeout_reached_age_too_old(session: sqlalchemy.orm.session.Session) -> int:
     return tft.artemis.routing_policies.KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session=session).unwrap() * 2
 
 
-def ONE_ATTEMPT_FORGIVING_TOO_YOUNG(session: sqlalchemy.orm.session.Session) -> int:
+def one_attempt_forgiving_too_young(session: sqlalchemy.orm.session.Session) -> int:
     return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session=session).unwrap() // 2
 
 
-def ONE_ATTEMPT_FORGIVING_TOO_OLD(session: sqlalchemy.orm.session.Session) -> int:
+def one_attempt_forgiving_too_old(session: sqlalchemy.orm.session.Session) -> int:
     return tft.artemis.routing_policies.KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session=session).unwrap() * 2
 
 
-def ENOUGH_RESOURCES_EXCESS_MULTIPLIER(session: sqlalchemy.orm.session.Session) -> float:
+def enough_resources_excess_multiplier(session: sqlalchemy.orm.session.Session) -> float:
     return tft.artemis.routing_policies.KNOB_ROUTE_POOL_RESOURCE_THRESHOLD.get_value(session=session).unwrap() + 10
 
 
@@ -690,11 +690,11 @@ def do_test_policy_timeout_reached(
 
     assert isinstance(ruling, tft.artemis.routing_policies.PolicyRuling)
 
-    if age == TIMEOUT_REACHED_AGE_TOO_OLD(mock_session):
+    if age == timeout_reached_age_too_old(mock_session):
         assert ruling.cancel is True
         assert ruling.allowed_pools == []
 
-    elif age == TIMEOUT_REACHED_AGE_TOO_YOUNG(mock_session):
+    elif age == timeout_reached_age_too_young(mock_session):
         assert ruling.cancel is False
         assert ruling.allowed_pools == mock_pools
 
@@ -706,14 +706,14 @@ def do_test_policy_timeout_reached(
 def test_policy_timeout_reached(logger: gluetool.log.ContextAdapter, mock_inputs: MockInputs) -> None:
     do_test_policy_timeout_reached(
         mock_inputs,
-        age=TIMEOUT_REACHED_AGE_TOO_OLD(mock_inputs.session)
+        age=timeout_reached_age_too_old(mock_inputs.session)
     )
 
 
 def test_policy_timeout_reached_no_trigger(mock_inputs: MockInputs) -> None:
     do_test_policy_timeout_reached(
         mock_inputs,
-        age=TIMEOUT_REACHED_AGE_TOO_YOUNG(mock_inputs.session)
+        age=timeout_reached_age_too_young(mock_inputs.session)
     )
 
 
@@ -754,10 +754,10 @@ def do_policy_one_attempt_forgiving(
     assert isinstance(ruling, tft.artemis.routing_policies.PolicyRuling)
     assert ruling.cancel is False
 
-    if age == ONE_ATTEMPT_FORGIVING_TOO_OLD(mock_session):
+    if age == one_attempt_forgiving_too_old(mock_session):
         assert ruling.allowed_pools == mock_pools
 
-    elif age == ONE_ATTEMPT_FORGIVING_TOO_YOUNG(mock_session):
+    elif age == one_attempt_forgiving_too_young(mock_session):
         assert ruling.allowed_pools == [mock_pools[1], mock_pools[2]]
 
     elif empty_events:
@@ -767,14 +767,14 @@ def do_policy_one_attempt_forgiving(
 def test_policy_one_attempt_forgiving(mock_inputs: MockInputs) -> None:
     do_policy_one_attempt_forgiving(
         mock_inputs,
-        age=ONE_ATTEMPT_FORGIVING_TOO_YOUNG(mock_inputs.session)
+        age=one_attempt_forgiving_too_young(mock_inputs.session)
     )
 
 
 def test_policy_one_attempt_forgiving_no_trigger(mock_inputs: MockInputs) -> None:
     do_policy_one_attempt_forgiving(
         mock_inputs,
-        age=ONE_ATTEMPT_FORGIVING_TOO_OLD(mock_inputs.session)
+        age=one_attempt_forgiving_too_old(mock_inputs.session)
     )
 
 
@@ -815,7 +815,7 @@ def do_test_policy_enough_resources(
         mock_metrics.append(mock_pool_metrics)
 
     if one_crowded is True:
-        mock_metrics[1].resources.usage.cores = int(100 * ENOUGH_RESOURCES_EXCESS_MULTIPLIER(mock_session))
+        mock_metrics[1].resources.usage.cores = int(100 * enough_resources_excess_multiplier(mock_session))
 
     if pool_count is not None:
         mock_pools = mock_pools[:pool_count]
