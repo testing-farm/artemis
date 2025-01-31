@@ -29,9 +29,20 @@ from .. import (
 from ..cache import get_cached_mapping, refresh_cached_mapping
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import And, Constraint, ConstraintBase, Environment, FlavorBoot, Kickstart, Operator, Or, SizeType
+from ..environment import (
+    And,
+    Constraint,
+    ConstraintBase,
+    Environment,
+    Flavor,
+    FlavorBoot,
+    Kickstart,
+    Operator,
+    Or,
+    SizeType,
+)
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT, Knob
-from ..metrics import PoolMetrics, PoolResourcesMetrics, ResourceType
+from ..metrics import PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     CLIErrorCauses,
@@ -2082,41 +2093,58 @@ class BeakerDriver(PoolDriver):
 
         resources = r_resources.unwrap()
 
-        r_query_instances = self._run_bkr(
-            logger,
-            ['system-list', '--mine'],
-            commandname='bkr.system-list'
-        )
+        # Resource usage - instances and flavors
+        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[str], Failure]:
+            r_query_instances = self._run_bkr(
+                logger,
+                ['system-list', '--mine'],
+                commandname='bkr.system-list'
+            )
 
-        if r_query_instances.is_error:
-            failure = r_query_instances.unwrap_error()
-            command_output = cast(Optional[ProcessOutput], failure.details.get('command_output', None))
+            if r_query_instances.is_error:
+                failure = r_query_instances.unwrap_error()
+                command_output = cast(Optional[ProcessOutput], failure.details.get('command_output', None))
 
-            if command_output and command_output.stderr \
-               and 'nothing matches' in command_output.stderr.strip().lower():
-                # This is a a valid result, meaning "0 machines". Setting our "raw output" to a corresponding value
-                # instead of adding some special flag. Empty string has 0 lines, 0 machines...
-                raw_machines = ''
+                if command_output and command_output.stderr \
+                        and 'nothing matches' in command_output.stderr.strip().lower():
+                    # This is a a valid result, meaning "0 machines". Setting our "raw output" to a corresponding value
+                    # instead of adding some special flag. Empty list has 0 items, 0 machines...
 
-            else:
+                    return Ok([])
+
                 return Error(Failure.from_failure(
                     'failed to fetch system list',
                     r_query_instances.unwrap_error()
                 ))
 
-        else:
-            raw_machines = r_query_instances.unwrap().stdout
+            return Ok(r_query_instances.unwrap().stdout.splitlines())
 
-        if raw_machines:
-            resources.usage.instances = len(raw_machines.splitlines())
+        def _update_instance_usage(
+            logger: gluetool.log.ContextAdapter,
+            usage: PoolResourcesUsage,
+            raw_instance: str,
+            flavor: Optional[Flavor]
+        ) -> Result[None, Failure]:
+            assert usage.instances is not None  # narrow type
 
-        else:
-            # Not an error, just an empty list which means, hm, 0 instances.
-            resources.usage.instances = 0
+            usage.instances += 1
 
-        # For the actual numbers of cores, memory and other metrics, we'd have to query each and every machine from
-        # the list above. Is it worth it? At this moment it's not. But it can be done. Leaving them unspecified for
-        # now.
+            # For the actual numbers of cores, memory and other metrics, we'd have to query each and every machine from
+            # the list above. Is it worth it? At this moment it's not. But it can be done. Leaving them unspecified for
+            # now.
+
+            return Ok(None)
+
+        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+            logger,
+            resources.usage,
+            _fetch_instances,
+            None,
+            _update_instance_usage
+        )
+
+        if r_instances_usage.is_error:
+            return Error(r_instances_usage.unwrap_error())
 
         return Ok(resources)
 
