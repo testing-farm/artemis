@@ -2282,9 +2282,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
             [gluetool.log.ContextAdapter],
             Result[List[T], Failure]
         ],
-        flavor_name_getter: Callable[
-            [T],
-            str
+        flavor_name_getter: Optional[
+            Callable[
+                [T],
+                str
+            ]
         ],
         update: Callable[
             [gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[Flavor]],
@@ -2329,24 +2331,26 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raw_instances = r_raw_instances.unwrap()
 
         for raw_instance in raw_instances:
-            try:
-                flavor_name = flavor_name_getter(raw_instance)
+            if flavor_name_getter is not None:
+                try:
+                    flavor_name = flavor_name_getter(raw_instance)
 
-            except Exception as exc:
-                return Error(Failure.from_exc(
-                    'malformed instance description',
-                    exc,
-                    raw_instance=raw_instance
-                ))
+                except Exception as exc:
+                    return Error(Failure.from_exc(
+                        'malformed instance description',
+                        exc,
+                        raw_instance=raw_instance
+                    ))
 
-            flavor = flavors.get(flavor_name)
+                flavor = flavors.get(flavor_name)
 
-            # This may happen, with multiple pools with different flavors using the same credentials
-            # and overlapping subnets.
-            if flavor is None:
-                logger.warning(f'flavor {flavor_name} not cached')
+                # This may happen, with multiple pools with different flavors using the same credentials
+                # and overlapping subnets.
+                if flavor is None:
+                    logger.warning(f'flavor {flavor_name} not cached')
 
-            usage.instances += 1
+            else:
+                flavor = None
 
             try:
                 r_update = update(logger, usage, raw_instance, flavor)
