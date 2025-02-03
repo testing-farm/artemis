@@ -316,14 +316,21 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_answer.unwrap()[0] is False:
             return r_answer
 
-        r_distros = self.image_info_mapper.map_or_none(logger, guest_request)
-        if r_distros.is_error:
-            return Error(r_distros.unwrap_error())
+        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
 
-        distros = r_distros.unwrap()
+        images = r_images.unwrap()
 
-        if not distros:
+        if not images:
             return Ok((False, 'compose not supported'))
+
+        # The driver does not support kickstart natively. Filter only images we can perform ks install on.
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
+            if not images:
+                return Ok((False, 'compose does not support kickstart'))
 
         # Parent implementation does not care, but we still might: support for HW constraints is still
         # far from being complete and fully tested, therefore we should check whether we are able to
@@ -439,7 +446,12 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
-        image = r_images.unwrap()[0]
+        images = r_images.unwrap()
+
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
+        image = images[0]
 
         # In a typical driver there would be a flavor selection, but looks like ibmcloud power doesn't have a concept
         # of flavors, instead one is specifying the number of cores / memory (in Gb) requested.

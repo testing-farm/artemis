@@ -117,6 +117,9 @@ class RestDriver(PoolDriver):
         if r_answer.unwrap()[0] is False:
             return r_answer
 
+        if guest_request.environment.has_ks_specification:
+            return Ok((False, 'kickstart not supported'))
+
         payload = {
             "environment": base64.b64encode(json.dumps(guest_request._environment).encode()),
         }

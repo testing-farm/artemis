@@ -101,7 +101,6 @@ class GCPDriver(PoolDriver):
         capabilities.supports_native_post_install_script = False
         capabilities.supported_guest_logs = []
         capabilities.supports_hostnames = False
-        capabilities.supports_kickstart = False
         return Ok(capabilities)
 
     @cached_property
@@ -154,6 +153,13 @@ class GCPDriver(PoolDriver):
         images = r_images.unwrap()
         if not images:
             return Ok((False, 'compose not supported'))
+
+        # The driver does not support kickstart natively. Filter only images we can perform ks install on.
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
+            if not images:
+                return Ok((False, 'compose does not support kickstart'))
 
         if guest_request.environment.has_hw_constraints:
             return Ok((False, 'HW constraints are not supported by the GCP driver'))
@@ -360,7 +366,13 @@ class GCPDriver(PoolDriver):
         map_request_to_image_result = self.image_info_mapper.map(logger, guest_request)
         if map_request_to_image_result.is_error:
             return Error(map_request_to_image_result.unwrap_error())
-        image = map_request_to_image_result.unwrap()[0]
+
+        images = map_request_to_image_result.unwrap()
+
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
+        image = images[0]
 
         self.log_acquisition_attempt(logger, session, guest_request, image=image)
 

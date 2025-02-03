@@ -515,6 +515,13 @@ class IBMCloudVPCDriver(PoolDriver):
         if not images:
             return Ok((False, 'compose not supported'))
 
+        # The driver does not support kickstart natively. Filter only images we can perform ks install on.
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
+            if not images:
+                return Ok((False, 'compose does not support kickstart'))
+
         return Ok((True, None))
 
     def map_image_name_to_image_info(
@@ -637,6 +644,10 @@ class IBMCloudVPCDriver(PoolDriver):
             return Error(r_images.unwrap_error())
 
         images = r_images.unwrap()
+
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
         pairs: List[Tuple[IBMCloudVPCPoolImageInfo, IBMCloudFlavor]] = []
 
         for image in images:

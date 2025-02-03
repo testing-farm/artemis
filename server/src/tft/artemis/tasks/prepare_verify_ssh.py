@@ -98,7 +98,7 @@ class Workspace(_Workspace):
             if r_capabilities.is_error:
                 return self._error(r_capabilities, 'could not get pool capabilities')
 
-            if self.gr.environment.has_ks_specification and not r_capabilities.unwrap().supports_kickstart:
+            if self.gr.environment.has_ks_specification and not r_capabilities.unwrap().supports_native_kickstart:
                 next_task = prepare_kickstart
 
             self.request_task(next_task, self.guestname)
