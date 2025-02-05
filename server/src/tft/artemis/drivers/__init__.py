@@ -537,8 +537,9 @@ class PoolCapabilities:
     #: If set, the pool can find instances by their hostnames.
     supports_hostnames: bool = False
 
-    #: If set, the pool can accept a kickstart file.
-    supports_kickstart: bool = False
+    #: If set, the pool supports kickstart and will handle it itself. If not set, Artemis will run
+    #: a series of tasks to reinstall the guest to apply the requested kickstart directives.
+    supports_native_kickstart: bool = False
 
     def supports_arch(self, arch: str) -> bool:
         """
@@ -1614,8 +1615,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if r_uses_hostname.unwrap() is True:
                     return Ok((False, 'hostname HW constraint not supported'))
 
-        if guest_request.environment.has_ks_specification and not capabilities.supports_kickstart:
-            if guest_request.skip_prepare_verify_ssh:
+        if guest_request.environment.has_ks_specification:
+            if not capabilities.supports_native_kickstart and guest_request.skip_prepare_verify_ssh:
                 Ok((False, 'SSH access is required to perform non-native kickstart installation'))
 
             if guest_request.environment.kickstart.metadata is not None and any([

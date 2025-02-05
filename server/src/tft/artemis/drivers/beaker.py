@@ -1033,7 +1033,7 @@ class BeakerDriver(PoolDriver):
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = True
-        capabilities.supports_kickstart = True
+        capabilities.supports_native_kickstart = True
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.URL),
             ('console:dump', GuestLogContentType.BLOB),
