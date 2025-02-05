@@ -1513,6 +1513,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         if not resource_ids or all(resource_id.is_empty() for resource_id in resource_ids):
+            Failure('no pool resources to release').handle(logger)
+
             return Ok(None)
 
         if delay is None:

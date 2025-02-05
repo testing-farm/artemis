@@ -2867,9 +2867,6 @@ class AWSDriver(PoolDriver):
         if pool_data.security_group is not None:
             resource_ids.append(AWSPoolResourcesIDs(security_group=pool_data.security_group))
 
-        if not resource_ids:
-            return Error(Failure('guest has no identification'))
-
         return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
