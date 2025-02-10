@@ -76,7 +76,7 @@ class GuestRequestManager:
         logger: gluetool.log.ContextAdapter,
         response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
     ) -> List[GuestResponseType]:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_guests = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest).all()
 
             if r_guests.is_error:
@@ -216,7 +216,7 @@ class GuestRequestManager:
         guestname: str,
         response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
     ) -> Optional[GuestResponseType]:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_guest_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest) \
                 .filter(artemis_db.GuestRequest.guestname == guestname) \
                 .one_or_none()
@@ -389,7 +389,7 @@ class GuestRequestManager:
 
         guest_logger = get_guest_logger('trigger-guest-reboot', logger, guestname)
 
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_guest_request = artemis_db.SafeQuery \
                 .from_session(session, artemis_db.GuestRequest) \
                 .filter(artemis_db.GuestRequest.guestname == guestname) \
@@ -695,7 +695,7 @@ class GuestEventManager:
         logger: gluetool.log.ContextAdapter,
         search_params: EventSearchParameters
     ) -> List[GuestEvent]:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_events = artemis_db.GuestEvent.fetch(
                 session,
                 page=search_params.page,
@@ -719,7 +719,7 @@ class GuestEventManager:
         guestname: str,
         search_params: EventSearchParameters
     ) -> List[GuestEvent]:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_events = artemis_db.GuestEvent.fetch(
                 session,
                 guestname=guestname,
@@ -775,9 +775,10 @@ def execute_dml(
 @contextlib.contextmanager
 def get_session(
     logger: gluetool.log.ContextAdapter,
-    db: artemis_db.DB
+    db: artemis_db.DB,
+    read_only: bool = False
 ) -> Generator[Tuple[sqlalchemy.orm.session.Session, artemis_db.TransactionResult], None, None]:
-    with db.get_session(logger) as session:
+    with db.get_session(logger, read_only=read_only) as session:
         with artemis_db.transaction(logger, session) as t:
             yield session, t
 
@@ -881,7 +882,7 @@ class GuestShelfManager:
         self.db = db
 
     def get_shelves(self, logger: gluetool.log.ContextAdapter, ownername: str) -> List[GuestShelfResponse]:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_shelves = artemis_db.SafeQuery \
                 .from_session(session, artemis_db.GuestShelf) \
                 .filter(artemis_db.GuestShelf.ownername == ownername) \
@@ -896,7 +897,7 @@ class GuestShelfManager:
             ]
 
     def get_shelf(self, logger: gluetool.log.ContextAdapter, shelfname: str) -> Optional[GuestShelfResponse]:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_shelf = artemis_db.SafeQuery \
                 .from_session(session, artemis_db.GuestShelf) \
                 .filter(artemis_db.GuestShelf.shelfname == shelfname) \
@@ -1074,7 +1075,7 @@ class SnapshotRequestManager:
         guestname: str,
         snapshotname: str
     ) -> Optional[SnapshotResponse]:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_snapshot_request_record = artemis_db.SafeQuery.from_session(session, artemis_db.SnapshotRequest) \
                 .filter(artemis_db.SnapshotRequest.snapshotname == snapshotname) \
                 .filter(artemis_db.SnapshotRequest.guestname == guestname) \
@@ -1277,7 +1278,7 @@ class KnobManager:
         #   static knob, since `$poolname` placeholder in the name is replaced with the actual pool name. For these
         #   records, we must find their "parent" knob, because we need to know its casting function (which applies
         #   to all "child" records of the given per-pool-capable knob).
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_knobs = artemis_db.SafeQuery.from_session(session, artemis_db.Knob) \
                 .all()
 
@@ -1310,7 +1311,7 @@ class KnobManager:
         return list(knobs.values())
 
     def get_knob(self, logger: gluetool.log.ContextAdapter, knobname: str) -> Optional[KnobResponse]:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             r_knob = artemis_db.SafeQuery.from_session(session, artemis_db.Knob) \
                 .filter(artemis_db.Knob.knobname == knobname) \
                 .one_or_none()
@@ -1465,7 +1466,7 @@ class CacheManager:
         # check and before the dispatch, but we don't aim for consistency here, rather the user experience. The task
         # is safe: if the pool is gone in that sensitive period of time, task will report an error and won't ask for
         # reschedule. If we can avoid some of the errors with a trivial DB query, let's do so.
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             _ = self._get_pool(logger, session, poolname)
 
         from ...tasks import dispatch_task
@@ -1548,7 +1549,7 @@ class CacheManager:
         return pool
 
     def _get_pool_object_infos(self, logger: gluetool.log.ContextAdapter, poolname: str, method_name: str) -> Response:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db, read_only=True) as (session, _):
             pool = self._get_pool(logger, session, poolname)
 
             method = getattr(pool, method_name, None)
@@ -1593,7 +1594,7 @@ class UserManager:
 
     @staticmethod
     def entry_get_users(manager: 'UserManager', logger: gluetool.log.ContextAdapter) -> List[UserResponse]:
-        with get_session(logger, manager.db) as (session, _):
+        with get_session(logger, manager.db, read_only=True) as (session, _):
             return [
                 UserResponse.from_db(user)
                 for user in manager.get_users(session)
@@ -1601,7 +1602,7 @@ class UserManager:
 
     @staticmethod
     def entry_get_user(manager: 'UserManager', username: str, logger: gluetool.log.ContextAdapter) -> UserResponse:
-        with get_session(logger, manager.db) as (session, _):
+        with get_session(logger, manager.db, read_only=True) as (session, _):
             return UserResponse.from_db(manager.get_user(session, username))
 
     @staticmethod
@@ -1816,7 +1817,7 @@ def get_guest_request_log(
 
     guest_logger = get_guest_logger('create-guest-request-log', logger, guestname)
 
-    with get_session(guest_logger, manager.db) as (session, _):
+    with get_session(guest_logger, manager.db, read_only=True) as (session, _):
         r_log = artemis_db.SafeQuery.from_session(session, artemis_db.GuestLog) \
             .filter(artemis_db.GuestLog.guestname == guestname) \
             .filter(artemis_db.GuestLog.logname == logname) \

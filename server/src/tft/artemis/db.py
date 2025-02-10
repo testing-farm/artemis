@@ -335,11 +335,11 @@ def assert_not_in_transaction(
     session: sqlalchemy.orm.session.Session,
     rollback: bool = True
 ) -> bool:
-    if not session.is_active:
+    if session._transaction is None:
         return True
 
-    # from . import Failure
-    # Failure('Unresolved transaction').handle(logger)
+    from . import Failure
+    Failure('Unresolved transaction').handle(logger)
 
     if rollback:
         session.rollback()
@@ -1598,6 +1598,13 @@ def after_cursor_execute(
     ).handle(LOGGER.get())
 
 
+@sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'begin')
+def before_begin(
+    conn: sqlalchemy.engine.Connection,
+) -> None:
+    _log_db_statement('BEGIN')
+
+
 @sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'commit')
 def before_commit(
     conn: sqlalchemy.engine.Connection,
@@ -1630,6 +1637,13 @@ class DB:
     #: Session factory on top of auto-commit :py:attr:`engine_treansactional` engine: every session spawns
     #: a transaction with ``REPEATABLE READ`` isolation level.
     sessionmaker_transactional: sessionmaker[sqlalchemy.orm.session.Session]
+
+    #: Engine derived from :py:attr:`engine`, configured to transactions with ``REPEATABLE READ`` isolation level
+    #: in read-only mode.
+    engine_transactional_read_only: sqlalchemy.engine.Engine
+    #: Session factory on top of auto-commit :py:attr:`engine_treansactional_read_only` engine: every session spawns
+    #: a read-only transaction with ``REPEATABLE READ`` isolation level.
+    sessionmaker_transactional_read_only: sessionmaker[sqlalchemy.orm.session.Session]
 
     def _setup_instance(
         self,
@@ -1706,6 +1720,13 @@ class DB:
                 autocommit=False
             )
 
+            self.engine_transactional_read_only = _engine_execution_options(
+                isolation_level='REPEATABLE READ',
+                autobegin=False,
+                autocommit=False,
+                postgresql_readonly=True
+            )
+
         else:
             self.engine_transactional = _engine_execution_options(
                 isolation_level='SERIALIZABLE',
@@ -1713,7 +1734,16 @@ class DB:
                 autocommit=False
             )
 
+            # No read-only support for SQLite at this point.
+            self.engine_transactional_read_only = _engine_execution_options(
+                isolation_level='SERIALIZABLE',
+                autobegin=False,
+                autocommit=False
+            )
+
         self.sessionmaker_transactional = sqlalchemy.orm.sessionmaker(bind=self.engine_transactional)
+        self.sessionmaker_transactional_read_only \
+            = sqlalchemy.orm.sessionmaker(bind=self.engine_transactional_read_only)
 
     def __new__(
         cls,
@@ -1729,7 +1759,11 @@ class DB:
         return cls.instance
 
     @contextmanager
-    def get_session(self, logger: gluetool.log.ContextAdapter) -> Iterator[sqlalchemy.orm.session.Session]:
+    def get_session(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        read_only: bool = False
+    ) -> Iterator[sqlalchemy.orm.session.Session]:
         """
         Create new DB session.
 
@@ -1737,7 +1771,15 @@ class DB:
         :returns: new DB session.
         """
 
-        session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional)
+        if read_only:
+            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional_read_only)
+
+            _log_db_statement('BEGIN SESSION READ ONLY')
+
+        else:
+            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional)
+
+            _log_db_statement('BEGIN SESSION')
 
         session = session_factory(
             autoflush=True,
@@ -1766,12 +1808,15 @@ class DB:
             raise
 
         finally:
+            _log_db_statement('END SESSION')
+
             cast(Callable[[], None], session_factory.remove)()
 
     @contextmanager
     def transaction(
         self,
-        logger: gluetool.log.ContextAdapter
+        logger: gluetool.log.ContextAdapter,
+        read_only: bool = False
     ) -> Iterator[tuple[sqlalchemy.orm.session.Session, TransactionResult]]:
         """
         Create new DB session & transaction.
@@ -1779,7 +1824,7 @@ class DB:
         :returns: new DB session & transaction result tracker.
         """
 
-        with self.get_session(logger) as session:
+        with self.get_session(logger, read_only=read_only) as session:
             with transaction(logger, session) as t:
                 yield (session, t)
 
