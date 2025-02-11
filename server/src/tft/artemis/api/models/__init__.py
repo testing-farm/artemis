@@ -223,7 +223,7 @@ class AuthContext:
 
         from ..routers import get_session
 
-        with get_session(logger, db) as (session, _):
+        with get_session(logger, db, read_only=True) as (session, _):
             if matches_path(self.request, PROVISIONING_AUTH):
                 self.verify_auth_basic(session, 'provisioning')
 

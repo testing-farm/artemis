@@ -3384,7 +3384,7 @@ class Metrics(MetricsBase):
         """
 
         def _render() -> bytes:
-            with db.get_session(logger) as session:
+            with db.transaction(logger, read_only=True) as (session, t):
                 SESSION.set(session)
 
                 self.sync()
