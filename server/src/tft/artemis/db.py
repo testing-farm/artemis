@@ -5,7 +5,6 @@ import contextlib
 import dataclasses
 import datetime
 import enum
-import functools
 import hashlib
 import json
 import secrets
@@ -40,6 +39,7 @@ import sqlalchemy.ext.declarative
 import sqlalchemy.inspection
 import sqlalchemy.orm.session
 import sqlalchemy.pool
+import sqlalchemy.sql._typing
 import sqlalchemy.sql.base
 import sqlalchemy.sql.dml
 import sqlalchemy.sql.elements
@@ -57,8 +57,6 @@ from .guest import GuestState
 from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password
 
 if TYPE_CHECKING:
-    from mypy_extensions import VarArg
-
     from . import Failure
     from .environment import Environment
     from .security_group_rules import SecurityGroupRule, SecurityGroupRules
@@ -85,19 +83,11 @@ class Base(sqlalchemy.orm.DeclarativeBase):
 # "Safe" query - a query-like class, adapted to return Result instances instead of the raw data.
 # When it comes to issues encountered when working with the database, SafeQuery should be easier
 # to use than query, because it aligns better with our codebase, and exceptions raised by underlying
-# SQLAlchemy code are translated into Failures. For example, should the database connection go away,
+# SQLAlchemy code are translated into failures. For example, should the database connection go away,
 # one_or_none() will raise an exception when called - SafeQuery.one_or_none() would return Error(Failure)
 # instead.
-
+#
 # Types of SafeQuery methods, as used by SafeQuery decorators.
-#
-# Our decorators change the signature of the decorated function: to make the SafeQuery code simpler,
-# its methods return raw SQLAlchemy's Query, or the requested records (e.g. List[SomeTableRecord]).
-# Decorators then take care of catching exceptions, and either return the SafeQuery instance (e.g. filter()),
-# or wrap the "raw" results with Result instances (e.g. one()). Therefore we need one type for the
-# original SafeQuery method, and another type for the method as seen by users of SafeQuery:
-#
-# `one(self) -> T` becomes `one(self) -> Result[T, Failure]`
 #
 # All types are generic, and depend on at least one type provided by the SafeQuery itself, `T`. This is
 # the type of the records query is supposed to work with (e.g. `SafeQuery[db.Knob]`). Types that apply
@@ -105,112 +95,6 @@ class Base(sqlalchemy.orm.DeclarativeBase):
 # returned by the original method: `T` for `one()`, `List[T]` for `all()`, etc. `S` is then used when
 # defining what type the decorated method returns, `Result[S, Failure]`, preserving the original return
 # value type.
-#
-# Note: unfortunately, I wasn't able to cover "update" methods - filter(), limit(), ... - with a single
-# decorator and preserve the signature enough to keep type checking. I always found out that methods
-# accepting 1 integer parameter (limit/offset) collide with signature of filter() which accepts variable
-# number of arguments: `[argument: int]` does not fit under [*args: Any]`. Therefore we have a decorator
-# for methods accepting anything, and another decorator for methods accepting an integer. On the plus
-# side, type checking works, and mypy does see SafeQuery.limit() as accepting one integer and nothing else.
-SafeQueryRawUpdateVAType = Callable[['SafeQuery[T]', 'VarArg(Any)'], _Query]  # type: ignore[valid-type]
-SafeQueryUpdateVAType = Callable[['SafeQuery[T]', 'VarArg(Any)'], 'SafeQuery[T]']  # type: ignore[valid-type]
-
-SafeQueryRawUpdateIType = Callable[['SafeQuery[T]', int], _Query]
-SafeQueryUpdateIType = Callable[['SafeQuery[T]', int], 'SafeQuery[T]']
-
-SafeQueryRawUpdateType = Callable[['SafeQuery[T]'], _Query]
-SafeQueryUpdateType = Callable[['SafeQuery[T]'], 'SafeQuery[T]']
-
-SafeQueryRawGetType = Callable[['SafeQuery[T]'], S]
-SafeQueryGetType = Callable[['SafeQuery[T]'], Result[S, 'Failure']]
-
-
-# Decorator for methods with variable number of arguments (VA)...
-def chain_update_va(fn: 'SafeQueryRawUpdateVAType[T]') -> 'SafeQueryUpdateVAType[T]':
-    @functools.wraps(fn)
-    def wrapper(self: 'SafeQuery[T]', *args: Any) -> 'SafeQuery[T]':
-        if self.failure is None:
-            try:
-                self.query = fn(self, *args)
-
-            except Exception as exc:
-                from . import Failure
-
-                self.failure = Failure.from_exc(
-                    'failed to update query',
-                    exc,
-                    query=str(self.query)
-                )
-
-        return self
-
-    return wrapper
-
-
-# ... and a decorator for methods with just a single integer argument (I)...
-def chain_update_i(fn: 'SafeQueryRawUpdateIType[T]') -> 'SafeQueryUpdateIType[T]':
-    @functools.wraps(fn)
-    def wrapper(self: 'SafeQuery[T]', arg: int) -> 'SafeQuery[T]':
-        if self.failure is None:
-            try:
-                self.query = fn(self, arg)
-
-            except Exception as exc:
-                from . import Failure
-
-                self.failure = Failure.from_exc(
-                    'failed to update query',
-                    exc,
-                    query=str(self.query)
-                )
-
-        return self
-
-    return wrapper
-
-
-# ... and a decorator for methods without any argument.
-def chain_update(fn: 'SafeQueryRawUpdateType[T]') -> 'SafeQueryUpdateType[T]':
-    @functools.wraps(fn)
-    def wrapper(self: 'SafeQuery[T]') -> 'SafeQuery[T]':
-        if self.failure is None:
-            try:
-                self.query = fn(self)
-
-            except Exception as exc:
-                from . import Failure
-
-                self.failure = Failure.from_exc(
-                    'failed to update query',
-                    exc,
-                    query=str(self.query)
-                )
-
-        return self
-
-    return wrapper
-
-
-def chain_get(fn: 'SafeQueryRawGetType[T, S]') -> 'SafeQueryGetType[T, S]':
-    @functools.wraps(fn)
-    def wrapper(self: 'SafeQuery[T]') -> 'Result[S, Failure]':
-        if self.failure is None:
-            try:
-                return Ok(fn(self))
-
-            except Exception as exc:
-                from . import Failure
-
-                self.failure = Failure.from_exc(
-                    'failed to retrieve query result',
-                    exc,
-                    query=str(self.query)
-                )
-
-        return Error(self.failure)
-
-    return wrapper
-
 
 class SafeQuery(Generic[T]):
     def __init__(self, session: sqlalchemy.orm.session.Session, query: '_Query[T]') -> None:
@@ -221,98 +105,142 @@ class SafeQuery(Generic[T]):
 
     @staticmethod
     def from_session(session: sqlalchemy.orm.session.Session, klass: Type[T]) -> 'SafeQuery[T]':
-        query_proxy: SafeQuery[T] = SafeQuery(
-            session,
-            cast(
-                Callable[[Type[T]], '_Query[T]'],
-                session.query
-            )(klass)
+        return SafeQuery(session, session.query(klass))
+
+    def _error(self, message: str, exc: Exception) -> 'Failure':
+        from . import Failure
+
+        self.failure = Failure.from_exc(
+            message,
+            exc,
+            query=stringify_query(self._session, self.query.statement)
         )
 
-        return query_proxy
+        return self.failure
 
-    @chain_update_va
-    def filter(self, *args: Any) -> '_Query[T]':
-        return cast(
-            Callable[..., '_Query[T]'],
-            self.query.filter
-        )(*args)
+    def _update_error(self, exc: Exception) -> 'Failure':
+        return self._error('failed to update query', exc)
 
-    @chain_update_va
-    def order_by(self, *args: Any) -> '_Query[T]':
-        return cast(
-            Callable[..., '_Query[T]'],
-            self.query.order_by
-        )(*args)
+    def _retrieval_error(self, exc: Exception) -> 'Failure':
+        return self._error('failed to retrieve query result', exc)
 
-    @chain_update_i
-    def limit(self, limit: int) -> '_Query[T]':
-        return cast(
-            Callable[[Optional[int]], '_Query[T]'],
-            self.query.limit
-        )(limit)
+    def filter(self, *args: sqlalchemy.sql._typing._ColumnExpressionArgument[bool]) -> 'SafeQuery[T]':
+        if self.failure is None:
+            try:
+                self.query = self.query.filter(*args)
 
-    @chain_update_i
-    def offset(self, offset: int) -> '_Query[T]':
-        return cast(
-            Callable[[Optional[int]], '_Query[T]'],
-            self.query.offset
-        )(offset)
+            except Exception as exc:
+                self._update_error(exc)
 
-    @chain_update
-    def with_skip_locked(self) -> '_Query[T]':
-        return cast(
-            Callable[..., '_Query[T]'],
-            self.query.with_for_update
-        )(skip_locked=True)
+        return self
 
-    @chain_get
-    def one(self) -> T:
-        from . import Sentry
+    def with_skip_locked(self) -> 'SafeQuery[T]':
+        if self.failure is None:
+            try:
+                self.query = self.query.with_for_update(skip_locked=True)
 
-        stringified = stringify_query(self._session, self.query.statement)
+            except Exception as exc:
+                self._update_error(exc)
 
-        with Sentry.start_span('query_one', op='db.dql', query=stringified):
-            return cast(
-                Callable[[], T],
-                self.query.one
-            )()
+        return self
 
-    @chain_get
-    def one_or_none(self) -> Optional[T]:
-        from . import Sentry
+    def order_by(self, *args: sqlalchemy.sql._typing._ColumnExpressionOrStrLabelArgument[Any]) -> 'SafeQuery[T]':
+        if self.failure is None:
+            try:
+                self.query = self.query.order_by(*args)
 
-        stringified = stringify_query(self._session, self.query.statement)
+            except Exception as exc:
+                self._update_error(exc)
 
-        with Sentry.start_span('query_one_or_none', op='db.dql', query=stringified):
-            return cast(
-                Callable[[], T],
-                self.query.one_or_none
-            )()
+        return self
 
-    @chain_get
-    def all(self) -> List[T]:
-        from . import Sentry
+    def limit(self, limit: int) -> 'SafeQuery[T]':
+        if self.failure is None:
+            try:
+                self.query = self.query.limit(limit)
 
-        stringified = stringify_query(self._session, self.query.statement)
+            except Exception as exc:
+                self._update_error(exc)
 
-        with Sentry.start_span('query_all', op='db.dql', query=stringified):
-            return cast(
-                Callable[[], List[T]],
-                self.query.all
-            )()
+        return self
 
-    @chain_get
-    def count(self) -> int:
-        from . import Sentry
+    def offset(self, offset: int) -> 'SafeQuery[T]':
+        if self.failure is None:
+            try:
+                self.query = self.query.offset(offset)
 
-        stringified = stringify_query(self._session, self.query.statement)
+            except Exception as exc:
+                self._update_error(exc)
 
-        with Sentry.start_span('query_count', op='db.dql', query=stringified):
-            return cast(
-                Callable[[], int],
-                self.query.count
-            )()
+        return self
+
+    def one(self) -> Result[T, 'Failure']:
+        if self.failure is None:
+            from . import Sentry
+
+            stringified = stringify_query(self._session, self.query.statement)
+
+            with Sentry.start_span('query_one', op='db.dql', query=stringified):
+                try:
+                    return Ok(self.query.one())
+
+                except Exception as exc:
+                    self._retrieval_error(exc)
+
+        assert self.failure is not None
+
+        return Error(self.failure)
+
+    def one_or_none(self) -> Result[Optional[T], 'Failure']:
+        if self.failure is None:
+            from . import Sentry
+
+            stringified = stringify_query(self._session, self.query.statement)
+
+            with Sentry.start_span('query_one_or_none', op='db.dql', query=stringified):
+                try:
+                    return Ok(self.query.one_or_none())
+
+                except Exception as exc:
+                    self._retrieval_error(exc)
+
+        assert self.failure is not None
+
+        return Error(self.failure)
+
+    def all(self) -> Result[List[T], 'Failure']:
+        if self.failure is None:
+            from . import Sentry
+
+            stringified = stringify_query(self._session, self.query.statement)
+
+            with Sentry.start_span('query_all', op='db.dql', query=stringified):
+                try:
+                    return Ok(self.query.all())
+
+                except Exception as exc:
+                    self._retrieval_error(exc)
+
+        assert self.failure is not None
+
+        return Error(self.failure)
+
+    def count(self) -> Result[int, 'Failure']:
+        if self.failure is None:
+            from . import Sentry
+
+            stringified = stringify_query(self._session, self.query.statement)
+
+            with Sentry.start_span('query_count', op='db.dql', query=stringified):
+                try:
+                    return Ok(self.query.count())
+
+                except Exception as exc:
+                    self._retrieval_error(exc)
+
+        assert self.failure is not None
+
+        return Error(self.failure)
 
 
 def stringify_query(session: sqlalchemy.orm.session.Session, query: sqlalchemy.sql.elements.ClauseElement) -> str:
