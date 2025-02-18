@@ -91,7 +91,7 @@ touch /.ksinstall /.ksinprogress
 # Restore important files
 %post --log=/dev/console
 {%- for filename, contents in files.items() %}
-cat >> /{{ filename }} <<__EOF__
+cat >> /{{ filename }} <<'__EOF__'
 {{ contents }}
 __EOF__
 restorecon -R /{{ filename }}
