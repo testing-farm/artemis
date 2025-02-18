@@ -26,7 +26,7 @@ touch "${KS_DIR}/.ksinstall" "${KS_DIR}/.ksinprogress"
 echo -e "${KS_FILENAME}\n.ksinstall\n.ksinprogress" | cpio -D "${KS_DIR}" -c -o >> /tmp/initrd.img
 
 # Arm kexec
-kexec -l /tmp/vmlinuz --initrd /tmp/initrd.img --command-line="no_timer_check net.ifnames=0 console=tty1 console=ttyS0,115200n8 inst.ks=file:/${KS_FILENAME} inst.sshd inst.repo=${INSTALL_TREE_URL} inst.noverifyssl ${CMDLINE}"
+kexec -l /tmp/vmlinuz --initrd /tmp/initrd.img --command-line="no_timer_check net.ifnames=0 console=tty1 console=ttyS0,115200n8 inst.ks=file:/${KS_FILENAME} inst.sshd inst.repo=${INSTALL_TREE_URL} inst.noverifyssl inst.nokill ${CMDLINE}"
 
 # Use systemctl to gracefully reboot into the installer
 # Do it like this to give us some time for the SSH session to exit gracefully
