@@ -80,7 +80,12 @@ ALLOWED_LOGS = [
     'flasher-debug:dump/url',
     'flasher-debug:dump/blob',
     'flasher-event:dump/url',
-    'flasher-event:dump/blob'
+    'flasher-event:dump/blob',
+    'anaconda.log:dump/blob',
+    'storage.log:dump/blob',
+    'program.log:dump/blob',
+    'packaging.log:dump/blob',
+    'ks.cfg:dump/blob',
 ]
 
 # Won't be validating CIDR and 65535 max port range with regex here, not worth it

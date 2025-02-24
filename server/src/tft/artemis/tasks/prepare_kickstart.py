@@ -20,8 +20,15 @@ import gluetool.log
 import sqlalchemy.orm.session
 
 from .. import Failure, render_template
-from ..db import DB
-from ..drivers import copy_from_remote, copy_to_remote, create_tempfile, run_cli_tool, run_remote
+from ..db import DB, GuestLog, GuestLogContentType, GuestLogState, SafeQuery
+from ..drivers import (
+    GuestLogBlob,
+    copy_from_remote,
+    copy_to_remote,
+    create_tempfile,
+    run_cli_tool,
+    run_remote,
+)
 from ..drivers.hooks import KNOB_CACHE_PATTERN_MAPS, get_pattern_map
 from ..guest import GuestState
 from ..knobs import KNOB_CONFIG_DIRPATH, Knob
@@ -49,6 +56,8 @@ FILES_TO_FETCH = [
     '/etc/cloud/cloud.cfg',
     '/root/.ssh/*'
 ]
+
+KS_LOGNAME = 'ks.cfg:dump'
 
 KNOB_PREPARE_KICKSTART_SSH_TIMEOUT: Knob[int] = Knob(
     'actor.kickstart.ssh-timeout',
@@ -296,8 +305,53 @@ class Workspace(_Workspace):
             if r_kickstart.is_error:
                 return self._error(r_kickstart, 'failed to render kickstart script')
 
+            kickstart_script = r_kickstart.unwrap()
+            blob = GuestLogBlob.from_content(kickstart_script)
+
+            r_guest_log = SafeQuery.from_session(self.session, GuestLog) \
+                .filter(GuestLog.guestname == self.gr.guestname) \
+                .filter(GuestLog.logname == KS_LOGNAME) \
+                .filter(GuestLog.contenttype == GuestLogContentType.BLOB) \
+                .one_or_none()
+
+            if r_guest_log.is_error:
+                # Failing to log the generated kickstart is not a critical error but may make debugging installation
+                # issues more difficult.
+                self._error(r_guest_log, f'failed to load the log {KS_LOGNAME}', no_effect=True)
+
+            log = r_guest_log.unwrap()
+
+            if log is not None:
+                r_store_log = log.update(
+                    self.logger,
+                    self.session,
+                    GuestLogState.COMPLETE
+                )
+
+                if r_store_log.is_error:
+                    self._fail(r_store_log.unwrap_error(), 'failed to update the kickstart script log', no_effect=True)
+            else:
+                r_create_log = GuestLog.create(
+                    self.logger,
+                    self.session,
+                    self.gr.guestname,
+                    KS_LOGNAME,
+                    GuestLogContentType.BLOB,
+                    GuestLogState.COMPLETE
+                )
+
+                if r_create_log.is_error:
+                    self._error(r_create_log, 'failed to create log entry for the kickstart script', no_effect=True)
+
+                log = r_create_log.unwrap()
+
+            r_store_blob = blob.save(self.logger, self.session, log, overwrite=True)
+
+            if r_store_blob.is_error:
+                self._error(r_store_blob, 'failed to store the kickstart script log blob', no_effect=True)
+
             # Copy the templated kickstart script to guest
-            with create_tempfile(file_contents=r_kickstart.unwrap()) as kickstart_filepath:
+            with create_tempfile(file_contents=kickstart_script) as kickstart_filepath:
                 # Validate the generated ks
                 # TODO: Validate against concrete kickstart version? (ksvalidator -v VERSION ...)
                 r_validator = run_cli_tool(

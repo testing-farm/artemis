@@ -1340,6 +1340,87 @@ class GuestLogBlob(Base):
         )
     )
 
+    def update(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        content: str,
+        content_hash: str
+    ) -> Result[None, 'Failure']:
+        """
+        Update the log content.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param content: the log content.
+        :param content_hash: the hash of the log content.
+        """
+
+        r: DMLResult['GuestLogBlob'] = execute_dml(
+            logger,
+            session,
+            sqlalchemy
+            .update(GuestLogBlob)
+            .where(GuestLogBlob.guestname == self.guestname)
+            .where(GuestLogBlob.logname == self.logname)
+            .where(GuestLogBlob.contenttype == self.contenttype)
+            .where(GuestLogBlob.ctime == self.ctime)
+            .values(
+                content=content,
+                content_hash=content_hash
+            )
+        )
+
+        if r.is_error:
+            return Error(r.unwrap_error())
+
+        return Ok(None)
+
+    @classmethod
+    def create(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guestname: str,
+        logname: str,
+        contenttype: GuestLogContentType,
+        ctime: datetime.datetime,
+        content: str,
+        content_hash: str
+    ) -> Result[None, 'Failure']:
+        """
+        Create a new log blob entry.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guestname: guest request name to attach the event to.
+        :param logname: name of the log to create.
+        :param contenttype: the content type of the log to create.
+        :param ctime: the log creation time.
+        :param content: the log content.
+        :param content_hash: the hash of the log content.
+        """
+
+        r: DMLResult['GuestLogBlob'] = execute_dml(
+            logger,
+            session,
+            sqlalchemy
+            .insert(GuestLogBlob)
+            .values(
+                guestname=guestname,
+                logname=logname,
+                contenttype=contenttype,
+                ctime=ctime,
+                content=content,
+                content_hash=content_hash
+            )
+        )
+
+        if r.is_error:
+            return Error(r.unwrap_error())
+
+        return Ok(None)
+
 
 class GuestLog(Base):
     __tablename__ = 'guest_logs'
@@ -1378,6 +1459,109 @@ class GuestLog(Base):
     @property
     def blob_content_hashes(self) -> List[str]:
         return [blob.content_hash for blob in self.blobs]
+
+    def update(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        state: GuestLogState,
+        expires: Optional[datetime.datetime] = None,
+        *,
+        url: Optional[str] = None
+    ) -> Result[None, 'Failure']:
+        """
+        Update an existing log entry.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param state: current state of the log.
+        :param expires: optional datetime object marking the expiration time of a log.
+        :param url: optional URL of the log if contenttype is URL.
+        """
+
+        r: DMLResult['GuestLog'] = execute_dml(
+            logger,
+            session,
+            sqlalchemy
+            .update(GuestLog)
+            .where(
+                GuestLog.guestname == self.guestname,
+                GuestLog.logname == self.logname,
+                GuestLog.contenttype == self.contenttype,
+                GuestLog.state == self.state,
+                GuestLog.updated == self.updated,
+                GuestLog.url == self.url,
+            )
+            .values(
+                url=url,
+                updated=datetime.datetime.utcnow(),
+                state=state,
+                expires=expires
+            )
+        )
+
+        if r.is_error:
+            return Error(r.unwrap_error())
+
+        return Ok(None)
+
+    @classmethod
+    def create(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guestname: str,
+        logname: str,
+        contenttype: GuestLogContentType,
+        state: GuestLogState,
+        expires: Optional[datetime.datetime] = None,
+        *,
+        url: Optional[str] = None
+    ) -> Result['GuestLog', 'Failure']:
+        """
+        Create a new log entry.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guestname: guest request name to attach the event to.
+        :param logname: name of the log to create.
+        :param contenttype: the content type of the log to create.
+        :param state: current state of the log.
+        :param expires: optional datetime object marking the expiration time of a log.
+        :param url: optional URL of the log if contenttype is URL.
+        """
+
+        r: DMLResult['GuestLog'] = execute_dml(
+            logger,
+            session,
+            sqlalchemy
+            .insert(GuestLog)
+            .values(
+                guestname=guestname,
+                logname=logname,
+                contenttype=contenttype,
+                state=state,
+                updated=datetime.datetime.utcnow(),
+                expires=expires,
+                url=url
+            )
+            .returning(GuestLog)
+        )
+
+        if r.is_error:
+            return Error(r.unwrap_error())
+
+        try:
+            guest_log = r.unwrap().one()[0]
+        except Exception as exc:
+            from . import Failure
+
+            return Error(Failure.from_exc(
+                'failed to unwrap the inserted guest log',
+                exc
+            ))
+
+        return Ok(guest_log)
 
 
 class SnapshotRequest(Base):

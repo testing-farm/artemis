@@ -10,19 +10,27 @@ Wait for kickstart installation to complete.
    MUST preserve consistent and restartable state.
 """
 
+import enum
+import os
+import tempfile
 from typing import cast
 
 import gluetool.log
 import sqlalchemy.orm.session
+from gluetool.result import Error, Ok, Result
 
 from .. import Failure
-from ..db import DB
-from ..drivers import ping_shell_remote, run_remote
+from ..db import DB, GuestLog, GuestLogContentType, GuestLogState, SafeQuery
+from ..drivers import (
+    GuestLogBlob,
+    copy_from_remote,
+    ping_shell_remote,
+    run_remote,
+)
 from ..guest import GuestState
 from ..knobs import Knob
 from . import (
     _ROOT_LOGGER,
-    SUCCESS,
     DoerReturnType,
     DoerType,
     ProvisioningTailHandler,
@@ -55,6 +63,17 @@ KNOB_PREPARE_KICKSTART_WAIT_RETRY_DELAY: Knob[int] = Knob(
     cast_from_str=int,
     default=120
 )
+
+
+class AnacondaLogType(enum.Enum):
+    """
+    Anaconda generates a number of logs: anaconda steps, external program calls, storage and DNF package installation.
+    """
+
+    ANACONDA = 'anaconda'
+    STORAGE = 'storage'
+    PROGRAM = 'program'
+    PACKAGING = 'packaging'
 
 
 class Workspace(_Workspace):
@@ -96,6 +115,92 @@ class Workspace(_Workspace):
                 return self._error(r_ssh_timeout, 'failed to obtain SSH timeout value')
 
             ssh_timeout = r_ssh_timeout.unwrap()
+
+            def _pull_log(log_type: AnacondaLogType, finished: bool = False) -> None:
+                """
+                Pull the specified log from the system.
+                """
+
+                assert self.gr
+                assert self.master_key
+                assert self.pool
+
+                # After a successful installation, the logs are preserved
+                log_src_path = f'/var/log/anaconda/{log_type.value}.log' if finished else f'/tmp/{log_type.value}.log'
+
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    dst = os.path.join(tmpdir, f'{log_type.value}.log')
+
+                    copy_from_remote(
+                        self.logger,
+                        self.gr,
+                        log_src_path,
+                        dst,
+                        key=self.master_key,
+                        ssh_options=self.pool.ssh_options,
+                        ssh_timeout=ssh_timeout,
+                        poolname=self.pool.poolname,
+                        commandname='prepare-kickstart-wait.fetch-log'
+                    )
+
+                    with open(dst) as f:
+                        blob = GuestLogBlob.from_content(f.read())
+                        logname = f'{log_type.value}.log:dump'
+
+                        r_guest_log = SafeQuery.from_session(self.session, GuestLog) \
+                            .filter(GuestLog.guestname == self.gr.guestname) \
+                            .filter(GuestLog.logname == logname) \
+                            .filter(GuestLog.contenttype == GuestLogContentType.BLOB) \
+                            .one_or_none()
+
+                        if r_guest_log.is_error:
+                            return self._error(r_guest_log, f'failed to load the log {logname}', no_effect=True)
+
+                        log = r_guest_log.unwrap()
+
+                        if log is not None:
+                            r_store_log = log.update(
+                                self.logger,
+                                self.session,
+                                GuestLogState.COMPLETE
+                            )
+
+                            if r_store_log.is_error:
+                                return self._error(r_store_log, f'failed to update the log {logname}', no_effect=True)
+                        else:
+                            r_create_log = GuestLog.create(
+                                self.logger,
+                                self.session,
+                                self.gr.guestname,
+                                logname,
+                                GuestLogContentType.BLOB,
+                                GuestLogState.COMPLETE
+                            )
+
+                            if r_create_log.is_error:
+                                return self._error(r_create_log, f'failed to create the log {logname}', no_effect=True)
+
+                            log = r_create_log.unwrap()
+
+                        r_store_blob = blob.save(self.logger, self.session, log, overwrite=True)
+
+                        if r_store_blob.is_error:
+                            return self._error(
+                                r_store_blob,
+                                f'failed to store the blob for the log {logname}',
+                                no_effect=True
+                            )
+
+            def _pull_logs(finished: bool = False) -> Result[None, Failure]:
+                try:
+                    for log_type in AnacondaLogType:
+                        _pull_log(log_type, finished)
+                except Exception as exc:
+                    return Error(Failure.from_exc('failed getting logs from the guest', exc))
+
+                self._event('installation-logs-downloaded')
+
+                return Ok(None)
 
             # Check the guest is accessible
             r_ping = ping_shell_remote(
@@ -142,12 +247,13 @@ class Workspace(_Workspace):
 
                 if not r_iserror.is_error:
                     # End the provisioning here as there's nothing else to do
+                    r_logs = _pull_logs(finished=False)
+
+                    if r_logs.is_error:
+                        self._fail(r_logs.unwrap_error(), 'failed to fetch and store kickstart logs', no_effect=True)
+
                     return self._fail(
-                        Failure.from_failure(
-                            'the installation terminated with an error',
-                            r_iserror.unwrap_error(),
-                            recoverable=False
-                        ),
+                        Failure('the installation terminated with an error', recoverable=False),
                         'the installation terminated with an error'
                     )
 
@@ -167,7 +273,7 @@ class Workspace(_Workspace):
                     delay=r_delay.unwrap()
                 )
 
-                self.result = SUCCESS
+                return
 
             # A sanity check to verify the kickstart installation did happen.
             r_install = run_remote(
@@ -182,7 +288,13 @@ class Workspace(_Workspace):
             )
 
             if r_install.is_error:
-                self._error(r_install, 'failed to verify the kickstart installation was performed')
+                return self._error(r_install, 'failed to verify the kickstart installation was performed')
+
+            # Pull logs once we are done
+            r_logs = _pull_logs(finished=True)
+
+            if r_logs.is_error:
+                self._fail(r_logs.unwrap_error(), 'failed to fetch and store kickstart logs', no_effect=True)
 
             # Dispatch next task.
             self.request_task(

@@ -55,6 +55,7 @@ from ..cache import get_cached_mapping_item, get_cached_mapping_values, refresh_
 from ..context import CACHE, LOGGER
 from ..db import (
     GuestLog,
+    GuestLogBlob as GuestLogBlobDB,
     GuestLogContentType,
     GuestLogState,
     GuestRequest,
@@ -1017,6 +1018,47 @@ class GuestLogBlob:
     content: str
     content_hash: str
 
+    def save(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_log: GuestLog,
+        overwrite: bool = False
+    ) -> Result[None, Failure]:
+        if guest_log.blobs and overwrite:
+            return guest_log.blobs[0].update(
+                logger,
+                session,
+                content=self.content,
+                content_hash=self.content_hash
+            )
+
+        else:
+            return GuestLogBlobDB.create(
+                logger,
+                session,
+                guestname=guest_log.guestname,
+                logname=guest_log.logname,
+                contenttype=guest_log.contenttype,
+                ctime=self.ctime,
+                content=self.content,
+                content_hash=self.content_hash
+            )
+
+    @classmethod
+    def from_content(cls, content: str) -> 'GuestLogBlob':
+        """
+        Populate GuestLogBlob from the contents and infer/calculate remaining fields.
+
+        :param content: log content string.
+        """
+
+        return cls(
+            ctime=datetime.datetime.utcnow(),
+            content=content,
+            content_hash=hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
+        )
+
 
 @dataclasses.dataclass
 class GuestLogUpdateProgress:
@@ -1027,7 +1069,6 @@ class GuestLogUpdateProgress:
 
     overwrite: bool = False
     blobs: list[GuestLogBlob] = dataclasses.field(default_factory=list)
-    blob: Optional[str] = None
 
     #: If set, it represents a suggestion from the pool driver: it does not make much sense
     #: to run :py:meth:`PoolDriver.update_guest` sooner than this second in the future. If
@@ -1116,31 +1157,26 @@ class GuestLogUpdateProgress:
 
             return GuestLogUpdateProgress(state=GuestLogState.PENDING, overwrite=True)
 
-        timestamp = datetime.datetime.utcnow()
-        content_hash = hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
+        blob = GuestLogBlob.from_content(content)
 
         if not log.blobs:
-            logger.info(f'first log blob: {timestamp} {content_hash}')
+            logger.info(f'first log blob: {blob.ctime} {blob.content_hash}')
 
             return GuestLogUpdateProgress(
                 state=GuestLogState.IN_PROGRESS,
                 overwrite=True,
-                blobs=[
-                    GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
-                ]
+                blobs=[blob]
             )
 
-        for blob in log.blobs:
-            logger.info(f'existing log blob: {blob.ctime} {blob.content_hash}')
+        for existing_blob in log.blobs:
+            logger.info(f'existing log blob: {existing_blob.ctime} {existing_blob.content_hash}')
 
-        logger.info(f'overwrite log blob: {timestamp} {content_hash}')
+        logger.info(f'overwrite log blob: {blob.ctime} {blob.content_hash}')
 
         return GuestLogUpdateProgress(
             state=GuestLogState.IN_PROGRESS,
             overwrite=True,
-            blobs=[
-                GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
-            ]
+            blobs=[blob]
         )
 
 

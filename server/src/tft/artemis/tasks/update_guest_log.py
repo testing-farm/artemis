@@ -10,7 +10,6 @@ Inspect the provisioning progress of a given request, and update info Artemis ho
    MUST preserve consistent and restartable state.
 """
 
-import datetime
 from typing import Any, Dict, Optional, cast
 
 import gluetool.log
@@ -18,8 +17,8 @@ import sqlalchemy.orm.session
 from gluetool.result import Ok, Result
 
 from .. import Failure
-from ..db import DB, DMLResult, GuestLog, GuestLogBlob, GuestLogContentType, GuestLogState, SafeQuery, execute_dml
-from ..drivers import GuestLogBlob as GuestLogBlobProgress, GuestLogUpdateProgress
+from ..db import DB, GuestLog, GuestLogContentType, GuestLogState, SafeQuery
+from ..drivers import GuestLogUpdateProgress
 from ..guest import GuestState
 from ..knobs import Knob
 from . import (
@@ -100,90 +99,6 @@ class Workspace(_Workspace):
                     **kwargs
                 )
 
-            def _insert_blob(blob: GuestLogBlobProgress) -> None:
-                assert guest_log is not None
-
-                blob_query = sqlalchemy \
-                    .insert(GuestLogBlob) \
-                    .values(
-                        guestname=guest_log.guestname,
-                        logname=guest_log.logname,
-                        contenttype=guest_log.contenttype,
-                        ctime=blob.ctime,
-                        content=blob.content,
-                        content_hash=blob.content_hash
-                    )
-
-                r_store: DMLResult[GuestLogBlob] = execute_dml(self.logger, self.session, blob_query)
-
-                if r_store.is_error:
-                    return self._error(r_store, 'failed to store guest log blob')
-
-                # return SUCCESS
-
-            def _update_blob(blob: GuestLogBlob, content: str, content_hash: str) -> None:
-                assert guest_log is not None
-
-                blob_query = sqlalchemy \
-                    .update(GuestLogBlob) \
-                    .where(GuestLogBlob.guestname == guest_log.guestname) \
-                    .where(GuestLogBlob.logname == guest_log.logname) \
-                    .where(GuestLogBlob.contenttype == guest_log.contenttype) \
-                    .where(GuestLogBlob.ctime == blob.ctime) \
-                    .where(GuestLogBlob.content_hash == blob.content_hash) \
-                    .values(
-                        content=content,
-                        content_hash=content_hash
-                    )
-
-                r_store: DMLResult[GuestLogBlob] = execute_dml(self.logger, self.session, blob_query)
-
-                if r_store.is_error:
-                    return self._error(r_store, 'failed to update guest log blob')
-
-                # return SUCCESS
-
-            def _update_log(progress: GuestLogUpdateProgress) -> None:
-                assert isinstance(guest_log, GuestLog)
-                assert self.gr is not None
-
-                query = sqlalchemy \
-                    .update(GuestLog) \
-                    .where(GuestLog.guestname == self.gr.guestname) \
-                    .where(GuestLog.logname == guest_log.logname) \
-                    .where(GuestLog.contenttype == guest_log.contenttype) \
-                    .where(GuestLog.state == guest_log.state) \
-                    .where(GuestLog.updated == guest_log.updated) \
-                    .where(GuestLog.url == guest_log.url) \
-                    .values(
-                        url=progress.url,
-                        updated=datetime.datetime.utcnow(),
-                        state=progress.state,
-                        expires=progress.expires
-                    )
-
-                r_store: DMLResult[GuestLog] = execute_dml(self.logger, self.session, query)
-
-                if r_store.is_error:
-                    return self._error(r_store, 'failed to update guest log')
-
-                if progress.overwrite:
-                    assert progress.blobs
-
-                    current_blob: Optional[GuestLogBlob] = guest_log.blobs[0] if guest_log.blobs else None
-                    new_blob = progress.blobs[0]
-
-                    if current_blob:
-                        return _update_blob(current_blob, new_blob.content, new_blob.content_hash)
-
-                    return _insert_blob(new_blob)
-
-                for blob in progress.blobs:
-                    if self.result:
-                        return
-
-                    _insert_blob(blob)
-
             if guest_log is None:
                 return self._fail(
                     Failure(
@@ -205,11 +120,18 @@ class Workspace(_Workspace):
 
                 _log_state_event(resolution='guest-condemned')
 
-                return _update_log(GuestLogUpdateProgress(
+                r_log_update = guest_log.update(
+                    self.logger,
+                    self.session,
                     state=GuestLogState.COMPLETE,
-                    url=guest_log.url,
-                    expires=guest_log.expires
-                ))
+                    expires=guest_log.expires,
+                    url=guest_log.url
+                )
+
+                if r_log_update.is_error:
+                    return self._error(r_log_update, 'failed to update the log')
+
+                return
 
             if self.gr.pool is None:
                 # logger.warning('guest request has no pool at this moment, reschedule')
@@ -238,11 +160,18 @@ class Workspace(_Workspace):
                 if self.gr.state in (GuestState.READY, GuestState.CONDEMNED):
                     _log_state_event(resolution='unsupported-and-guest-complete')
 
-                    return _update_log(GuestLogUpdateProgress(
+                    r_log_update = guest_log.update(
+                        self.logger,
+                        self.session,
                         state=GuestLogState.UNSUPPORTED,
-                        url=guest_log.url,
-                        expires=guest_log.expires
-                    ))
+                        expires=guest_log.expires,
+                        url=guest_log.url
+                    )
+
+                    if r_log_update.is_error:
+                        return self._error(r_log_update, 'failed to update the log')
+
+                    return
 
                 r_update: Result[GuestLogUpdateProgress, Failure] = Ok(GuestLogUpdateProgress(
                     state=GuestLogState.UNSUPPORTED
@@ -254,11 +183,18 @@ class Workspace(_Workspace):
                 if self.gr.state in (GuestState.READY, GuestState.CONDEMNED):
                     _log_state_event(resolution='unsupported-and-guest-complete')
 
-                    return _update_log(GuestLogUpdateProgress(
+                    r_log_update = guest_log.update(
+                        self.logger,
+                        self.session,
                         state=GuestLogState.UNSUPPORTED,
-                        url=guest_log.url,
-                        expires=guest_log.expires
-                    ))
+                        expires=guest_log.expires,
+                        url=guest_log.url
+                    )
+
+                    if r_log_update.is_error:
+                        return self._error(r_log_update, 'failed to update the log')
+
+                    return
 
                 r_update = self.pool.update_guest_log(
                     self.logger,
@@ -299,10 +235,22 @@ class Workspace(_Workspace):
 
             _log_state_event(new_state=update_progress.state)
 
-            _update_log(update_progress)
+            r_log_update = guest_log.update(
+                self.logger,
+                self.session,
+                state=update_progress.state,
+                expires=update_progress.expires,
+                url=update_progress.url
+            )
 
-            if self.result:
-                return
+            if r_log_update.is_error:
+                return self._error(r_log_update, 'failed to update the log')
+
+            for blob in update_progress.blobs:
+                r_blob_update = blob.save(self.logger, self.session, guest_log, overwrite=update_progress.overwrite)
+
+                if r_blob_update.is_error:
+                    return self._error(r_blob_update, 'failed to store a log blob')
 
             if update_progress.state == GuestLogState.COMPLETE:
                 return
