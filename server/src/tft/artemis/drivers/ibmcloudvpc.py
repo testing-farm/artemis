@@ -887,63 +887,46 @@ class IBMCloudVPCDriver(PoolDriver):
             pool_failures=[Failure(f'instance ended up in an unexpected state "{status}"')]
         ))
 
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+    def release_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
         """
-        Release guest and its resources back to the pool.
+        Release resources allocated for the guest back to the pool infrastructure.
+        """
 
-        :param Guest guest: a guest to be destroyed.
-        :rtype: result.Result[bool, Failure]
-        """
         if IBMCloudPoolData.is_empty(guest_request):
-            return Ok(True)
+            return Ok(None)
 
         pool_data = IBMCloudPoolData.unserialize(guest_request)
 
-        with IBMCloudSession(logger, self) as session:
-            r_tagged_resources = session.run(
-                logger,
-                [
-                    'resource', 'search', f'tags:"uid:{pool_data.instance_name}"',
-                    '--output', 'json'
-                ],
-                commandname='az.resource-list'
-            )
-            if r_tagged_resources.is_error:
-                return Error(r_tagged_resources.unwrap_error())
+        # For now there is no additional resources to cleanup, keeping this here just for consistency with other drivers
+        # with IBMCloudSession(logger, self) as session:
+        #     r_tagged_resources = session.run(
+        #         logger,
+        #         [
+        #             'resource', 'search', f'tags:"uid:{pool_data.instance_name}"',
+        #             '--output', 'json'
+        #         ],
+        #         commandname='az.resource-list'
+        #     )
+        #     if r_tagged_resources.is_error:
+        #         return Error(r_tagged_resources.unwrap_error())
+        #
+        # tagged_resources = r_tagged_resources.unwrap()
+        #
+        # assorted_resource_ids = [
+        #     res for res in cast(Dict[str, Any], tagged_resources)['items'] if res['resource_type'] != 'instance'
+        # ]
 
-        tagged_resources = r_tagged_resources.unwrap()
-
-        # For now there is no resources to cleanup, keeping this here just for consistency with other drivers
-
-        assorted_resource_ids = [
-            res for res in cast(Dict[str, Any], tagged_resources)['items'] if res['resource_type'] != 'instance'
-        ]
-
-        r_cleanup = self._dispatch_resource_cleanup(
+        return self.dispatch_resource_cleanup(
             logger,
-            *assorted_resource_ids,
-            instance_id=pool_data.instance_id,
+            session,
+            IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id),
             guest_request=guest_request
         )
-
-        if r_cleanup.is_error:
-            return Error(r_cleanup.unwrap_error())
-
-        return Ok(True)
-
-    def _dispatch_resource_cleanup(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        *other_resources: Any,
-        instance_id: Optional[str] = None,
-        guest_request: Optional[GuestRequest] = None
-    ) -> Result[None, Failure]:
-        resource_ids = IBMCloudPoolResourcesIDs(
-            instance_id=instance_id,
-            assorted_resource_ids=list(other_resources) if other_resources else None
-        )
-
-        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def release_pool_resources(
         self,

@@ -620,47 +620,31 @@ class IBMCloudPowerDriver(PoolDriver):
 
             return Ok(res)
 
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+    def release_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
         """
-        Release guest and its resources back to the pool.
+        Release resources allocated for the guest back to the pool infrastructure.
+        """
 
-        :param Guest guest: a guest to be destroyed.
-        :rtype: result.Result[bool, Failure]
-        """
         if IBMCloudPoolData.is_empty(guest_request):
-            return Ok(True)
+            return Ok(None)
 
         pool_data = IBMCloudPoolData.unserialize(guest_request)
 
         # there should be a list of assorted vm resources, but given the fact there are no tags yet /
         # cumulative pi resources overview it will be empty
-        assorted_resource_ids: List[Dict[str, str]] = []
+        # assorted_resource_ids: List[Dict[str, str]] = []
 
-        r_cleanup = self._dispatch_resource_cleanup(
+        return self.dispatch_resource_cleanup(
             logger,
-            *assorted_resource_ids,
-            instance_id=pool_data.instance_id,
+            session,
+            IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id),
             guest_request=guest_request
         )
-
-        if r_cleanup.is_error:
-            return Error(r_cleanup.unwrap_error())
-
-        return Ok(True)
-
-    def _dispatch_resource_cleanup(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        *other_resources: Any,
-        instance_id: Optional[str] = None,
-        guest_request: Optional[GuestRequest] = None
-    ) -> Result[None, Failure]:
-        resource_ids = IBMCloudPoolResourcesIDs(
-            instance_id=instance_id,
-            assorted_resource_ids=list(other_resources) if other_resources else None
-        )
-
-        return self.dispatch_resource_cleanup(logger, resource_ids, guest_request=guest_request)
 
     def release_pool_resources(
         self,

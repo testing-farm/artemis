@@ -100,7 +100,7 @@ class Workspace(_Workspace):
                 self._progress('provisioning cancelled')
 
                 # This may fail, and re-running task should be correct - probably nothing was allocated.
-                r_release = self.pool.release_guest(self.logger, self.gr)
+                r_release = self.pool.release_guest(self.logger, self.session, self.gr)
 
                 if r_release.is_error:
                     return self._error(r_release, 'failed to release after cancel')

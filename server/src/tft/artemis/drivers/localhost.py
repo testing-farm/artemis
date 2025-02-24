@@ -40,9 +40,14 @@ class LocalhostDriver(PoolDriver):
     def release_guest(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
-        return Ok(True)
+    ) -> Result[None, Failure]:
+        """
+        Release resources allocated for the guest back to the pool infrastructure.
+        """
+
+        return Ok(None)
 
 
 PoolDriver._drivers_registry['localhost'] = LocalhostDriver

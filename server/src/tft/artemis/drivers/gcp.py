@@ -227,17 +227,27 @@ class GCPDriver(PoolDriver):
             pool_data=GCPPoolData.unserialize(guest_request),
         ))
 
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+    def release_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        """
+        Release resources allocated for the guest back to the pool infrastructure.
+        """
+
         if GCPPoolData.is_empty(guest_request):
-            return Ok(True)
+            return Ok(None)
 
         pool_data = GCPPoolData.unserialize(guest_request)
 
-        resource = GCPPoolResourcesIDs(name=pool_data.name, project=pool_data.project, zone=pool_data.zone)
-        r_cleanup = self.dispatch_resource_cleanup(logger, resource, guest_request=guest_request)
-        if r_cleanup.is_error:
-            return Error(r_cleanup.unwrap_error())
-        return Ok(True)
+        return self.dispatch_resource_cleanup(
+            logger,
+            session,
+            GCPPoolResourcesIDs(name=pool_data.name, project=pool_data.project, zone=pool_data.zone),
+            guest_request=guest_request
+        )
 
     def release_pool_resources(
         self,
