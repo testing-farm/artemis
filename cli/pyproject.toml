@@ -25,6 +25,9 @@ semver = "*"
 stackprinter = "*"
 rich = "*"
 setuptools = "*"
+py-getch = "*"
+pydantic = "*"
+prometheus-client = "*"
 
 [tool.poetry.dev-dependencies]
 # All development dependencies are left unpinned, untill we run into troubles with a particular version.
