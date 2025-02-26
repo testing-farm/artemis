@@ -77,7 +77,7 @@ from ..environment import (
     SizeType,
 )
 from ..knobs import KNOB_POOL_ENABLED, Knob
-from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, ResourceType
+from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..script import hook_engine
 
 T = TypeVar('T')
@@ -2273,6 +2273,103 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 ))
 
         return Ok(metrics)
+
+    def do_fetch_pool_resources_metrics_flavor_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        fetch: Callable[
+            [gluetool.log.ContextAdapter],
+            Result[List[T], Failure]
+        ],
+        flavor_name_getter: Optional[
+            Callable[
+                [T],
+                str
+            ]
+        ],
+        update: Callable[
+            [gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[Flavor]],
+            Result[None, Failure]
+        ]
+    ) -> Result[None, Failure]:
+        """
+        A helper implementation for constructing pool flavor usage metrics.
+
+        :param logger: logger to use for logging.
+        :param usage: pool resource usage container.
+        :param fetch: a callable that returns a list of raw instance information, one entry per
+            instance. The actual type of each raw instance entry is not important for this helper,
+            it must match input types expected by ``flavor_name_getter`` and ``update``.
+        :param flavor_name_getter: a callable that returns a name of the flavor for a given raw
+            instance entry.
+        :param update: a callable that accepts pool resource usage, a raw instance and optionally
+            a flavor, and shall update pool resource usage by adding data about the instance.
+        """
+
+        r_flavors = self.get_cached_pool_flavor_infos()
+
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        flavors = {
+            flavor.name: flavor
+            for flavor in r_flavors.unwrap()
+        }
+
+        usage.instances = 0
+        usage.cores = 0
+        usage.memory = 0
+        usage.diskspace = 0
+        usage.snapshots = 0
+
+        r_raw_instances = fetch(logger)
+
+        if r_raw_instances.is_error:
+            return Error(r_raw_instances.unwrap_error())
+
+        raw_instances = r_raw_instances.unwrap()
+
+        for raw_instance in raw_instances:
+            if flavor_name_getter is not None:
+                try:
+                    flavor_name = flavor_name_getter(raw_instance)
+
+                except Exception as exc:
+                    return Error(Failure.from_exc(
+                        'malformed instance description',
+                        exc,
+                        raw_instance=raw_instance
+                    ))
+
+                flavor = flavors.get(flavor_name)
+
+                # This may happen, with multiple pools with different flavors using the same credentials
+                # and overlapping subnets.
+                if flavor is None:
+                    logger.warning(f'flavor {flavor_name} not cached')
+
+            else:
+                flavor = None
+
+            try:
+                r_update = update(logger, usage, raw_instance, flavor)
+
+            except Exception as exc:
+                return Error(Failure.from_exc(
+                    'failed to extract instance resource info',
+                    exc,
+                    raw_instance=raw_instance
+                ))
+
+            if r_update.is_error:
+                return Error(Failure.from_failure(
+                    'failed to extract instance resource info',
+                    r_update.unwrap_error(),
+                    raw_instance=raw_instance
+                ))
+
+        return Ok(None)
 
     def fetch_pool_resources_metrics(
         self,

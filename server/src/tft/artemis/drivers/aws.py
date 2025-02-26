@@ -46,7 +46,7 @@ from ..environment import (
     SizeType,
 )
 from ..knobs import Knob
-from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
+from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
@@ -3116,57 +3116,55 @@ class AWSDriver(PoolDriver):
 
         resources = r_resources.unwrap()
 
-        r_flavors = self.get_cached_pool_flavor_infos()
+        # Resource usage - instances and flavors
+        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+            # Count only instance using our subnet
+            r = self._aws_command([
+                'ec2', 'describe-instances',
+                '--filter', f'Name=subnet-id,Values={subnet_id}'
+            ], commandname='aws.ec2-describe-instances')
 
-        if r_flavors.is_error:
-            return Error(r_flavors.unwrap_error())
+            if r.is_error:
+                return Error(Failure.from_failure(
+                    'failed to fetch instance information',
+                    r.unwrap_error()
+                ))
 
-        flavors = {
-            flavor.name: flavor
-            for flavor in r_flavors.unwrap()
-        }
+            return Ok(list(JQ_QUERY_POOL_INSTANCES.input(r.unwrap()).all()))
 
-        # Count instances - only those using our subnet
-        r_instances = self._aws_command([
-            'ec2', 'describe-instances',
-            '--filter', f'Name=subnet-id,Values={subnet_id}'
-        ], commandname='aws.ec2-describe-instances')
+        def _update_instance_usage(
+            logger: gluetool.log.ContextAdapter,
+            usage: PoolResourcesUsage,
+            raw_instance: Dict[str, Any],
+            flavor: Optional[Flavor]
+        ) -> Result[None, Failure]:
+            assert usage.instances is not None  # narrow type
+            assert usage.cores is not None  # narrow type
+            assert usage.memory is not None  # narrow type
 
-        if r_instances.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch instance information',
-                r_instances.unwrap_error()
-            ))
+            usage.instances += 1
 
-        resources.usage.instances = 0
-        resources.usage.cores = 0
-        resources.usage.memory = 0
+            if flavor is not None:
+                usage.cores += flavor.cpu.cores or 0
+                usage.memory += flavor.memory.to('bytes').magnitude if flavor.memory is not None else 0
 
-        try:
-            for instance_info in JQ_QUERY_POOL_INSTANCES.input(r_instances.unwrap()).all():
-                resources.usage.instances += 1
+                if flavor.name not in usage.flavors:
+                    usage.flavors[flavor.name] = 0
 
-                flavor = flavors.get(instance_info['InstanceType'])
+                usage.flavors[flavor.name] += 1
 
-                # This may happen, with multiple pools with different flavors using the same credentials
-                # and overlapping subnets.
-                if flavor is None:
-                    logger.warning(f'flavor {instance_info["InstanceType"]} not cached')
-                    continue
+            return Ok(None)
 
-                resources.usage.cores += flavor.cpu.cores or 0
-                resources.usage.memory += flavor.memory.to('bytes').magnitude if flavor.memory is not None else 0
+        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+            logger,
+            resources.usage,
+            _fetch_instances,
+            lambda raw_instance: raw_instance['InstanceType'],  # type: ignore[index,no-any-return]
+            _update_instance_usage
+        )
 
-                if flavor.name not in resources.usage.flavors:
-                    resources.usage.flavors[flavor.name] = 0
-
-                resources.usage.flavors[flavor.name] += 1
-
-        except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to parse AWS output',
-                exc
-            ))
+        if r_instances_usage.is_error:
+            return Error(r_instances_usage.unwrap_error())
 
         # Inspect the subnet
         r_subnet = self._aws_command([
