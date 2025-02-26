@@ -23,6 +23,7 @@ from . import (
     DoerReturnType,
     DoerType,
     TaskLogger,
+    TaskPriority,
     Workspace as _Workspace,
     get_guest_logger,
     step,
@@ -118,7 +119,7 @@ class Workspace(_Workspace):
             .final_result
 
 
-@task()
+@task(priority=TaskPriority.LOW)
 def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional[str]) -> None:
     if guestname:
         logger = get_guest_logger(Workspace.TASKNAME, _ROOT_LOGGER, guestname)
