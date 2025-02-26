@@ -1,6 +1,8 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
+import datetime
 import ipaddress
 import json
 import os.path
@@ -13,17 +15,22 @@ import time
 import urllib
 import urllib.parse
 from time import sleep
-from typing import Any, Dict, Generator, List, Optional, cast
+from typing import (Any, Callable, Dict, Generator, Iterator, List, Optional,
+                    cast)
 
 import click
 import click_completion
+import pydantic
+import rich.console
+import rich.panel
 import rich.table
 import semver
 import stackprinter
 
 from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
-               DEFAULT_RETRY_BACKOFF_FACTOR, BasicAuthConfiguration,
-               Configuration, artemis_create, artemis_delete, artemis_inspect,
+               DEFAULT_RETRY_BACKOFF_FACTOR, GUEST_STATE_COLORS, GUEST_STATES,
+               BasicAuthConfiguration, Configuration, ConfigurationTree,
+               RichYAML, artemis_create, artemis_delete, artemis_inspect,
                artemis_update, confirm, fetch_artemis, load_yaml,
                print_broker_tasks, print_events, print_guest_logs,
                print_guests, print_json, print_knobs, print_shelves,
@@ -169,6 +176,14 @@ def cli_root(
 
         ctx.invoke(cmd_init)
         sys.exit(0)
+
+    try:
+        cfg.tree = ConfigurationTree.parse_obj(cfg.raw_config)
+
+    except pydantic.ValidationError as error:
+        cfg.logger.error(
+            f'Config file {cfg.config_filepath} must be updated, found following validation errors: {error}'
+        )
 
     cfg.output_format = output_format
 
@@ -1287,25 +1302,378 @@ def cmd_status_tasks(cfg: Configuration) -> None:
     print_tasks(cfg, response.json())
 
 
-@cmd_status.command(name='top', short_help='Display current tasks in a top-like fashion')
-@click.option('--tick', metavar='N', type=int, default=10, help='Refresh output every N seconds')
-@click.pass_obj
-def cmd_status_top(cfg: Configuration, tick: int) -> None:
-    with cfg.console.status('Updating task list...', spinner='dots') as status:
-        while True:
-            status.update('Updating task list...')
-            response = fetch_artemis(cfg, '/_status/workers/traffic')
+def _status_top_raw(cfg: Configuration) -> None:
+    response = fetch_artemis(cfg, '/_status/workers/traffic')
+
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
+
+    tasks = response.json()
+
+    cfg.console.clear()
+    print_tasks(cfg, tasks)
+
+
+def _status_top_full(cfg: Configuration, tick: int) -> None:
+    from prometheus_client.parser import text_string_to_metric_families
+    from prometheus_client.samples import Sample
+    from rich.align import Align
+    from rich.layout import Layout
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.spinner import Spinner
+    from rich.table import Table
+
+    class RefreshablePanel(Panel):
+        enabled: bool = False
+
+        def __init__(self, layout: Layout, layout_cell: str, **kwargs: Any) -> None:
+            super().__init__(
+                Align(
+                    '[red]Here will be a content...[/red]',
+                    align='center',
+                    vertical='middle'
+                ),
+                **kwargs
+            )
+
+            self.layout = layout
+            self.layout_cell = layout_cell
+
+        def do_refresh(self) -> Any:
+            raise NotImplementedError
+
+        def refresh(self) -> None:
+            self.renderable = self.do_refresh()
+
+            self.layout[self.layout_cell].update(self)
+
+    class AboutPanel(RefreshablePanel):
+        def __init__(self, layout: Layout, layout_cell: str) -> None:
+            super().__init__(
+                layout,
+                layout_cell,
+                title='About',
+                title_align='left'
+            )
+
+        def do_refresh(self) -> Any:
+            with status('Updating "about"...'):
+                response = fetch_artemis(cfg, '/about')
+
+            if not response.ok:
+                cfg.logger.unhandled_api_response(response)
+
+            return Align.right(
+                f'Artemis [blue]{response.json()["package_version"]}[/blue]'
+            )
+
+    class BrokerPanel(RefreshablePanel):
+        def __init__(self, layout: Layout, layout_cell: str) -> None:
+            super().__init__(
+                layout,
+                layout_cell,
+                title='Broker',
+                title_align='left'
+            )
+
+            self.enabled = bool(cfg.tree and cfg.tree.broker and cfg.tree.broker.metrics)
+
+        def do_refresh(self) -> Any:
+            if not self.enabled:
+                return Align(
+                    '[yellow]Broker stats not available[/yellow]',
+                    align='center',
+                    vertical='middle'
+                )
+
+            assert cfg.tree
+            assert cfg.tree.broker
+            assert cfg.tree.broker.metrics
+
+            with status('Updating broker stats...'):
+                response = fetch_artemis(cfg, '', url=str(cfg.tree.broker.metrics))
+
+            metrics = _parse_metrics(response.text)
+
+            ready = _extract_metric(metrics, 'rabbitmq_queue_messages_ready')
+            unacked = _extract_metric(metrics, 'rabbitmq_queue_messages_unacked')
+
+            return ' | '.join([
+                f'[yellow]{ready:.0f} ready[/yellow]',
+                f'[red]{unacked:.0f} unacked[/red]'
+            ])
+
+    class WorkerPanel(RefreshablePanel):
+        def __init__(self, layout: Layout, layout_cell: str) -> None:
+            super().__init__(
+                layout,
+                layout_cell,
+                title='Worker slots',
+                title_align='left'
+            )
+
+            self.enabled = True
+
+        def do_refresh(self) -> Any:
+            with status('Updating task list...'):
+                response = fetch_artemis(cfg, '/_status/workers/traffic')
 
             if not response.ok:
                 cfg.logger.unhandled_api_response(response)
 
             tasks = response.json()
 
-            cfg.console.clear()
-            print_tasks(cfg, tasks)
+            all_slots = len(tasks)
+            occupied_slots = len([task for task in tasks if task['actor'] != '<empty>'])
+            free_slots = len([task for task in tasks if task['actor'] == '<empty>'])
 
-            status.update(f'Updating every {tick} seconds...')
-            sleep(tick)
+            return ' | '.join([
+                f'[yellow]{all_slots} total[/yellow]',
+                f'[blue]{occupied_slots} occupied[/blue]',
+                f'[green]{free_slots} free[/green]',
+            ])
+
+    class DBPanel(RefreshablePanel):
+        def __init__(self, layout: Layout, layout_cell: str) -> None:
+            super().__init__(
+                layout,
+                layout_cell,
+                title='DB',
+                title_align='left'
+            )
+
+            self.enabled = bool(cfg.tree and cfg.tree.db and cfg.tree.db.metrics)
+
+        def do_refresh(self) -> Any:
+            if not self.enabled:
+                return Align(
+                    '[yellow]DB stats not available[/yellow]',
+                    align='center',
+                    vertical='middle'
+                )
+
+            assert cfg.tree
+            assert cfg.tree.db
+            assert cfg.tree.db.metrics
+
+            with status('Updating DB stats...'):
+                response = fetch_artemis(cfg, '', url=str(cfg.tree.db.metrics))
+
+            metrics = _parse_metrics(response.text)
+
+            active = _extract_metric(
+                metrics,
+                'pg_stat_activity_count',
+                labels=lambda labels:
+                    labels.get('application_name', '').startswith('artemis-') and labels.get('state') == 'active'
+            )
+            idle = _extract_metric(
+                metrics,
+                'pg_stat_activity_count',
+                labels=lambda labels:
+                    labels.get('application_name', '').startswith('artemis-') and labels.get('state') == 'idle'
+            )
+            idle_in_transaction = _extract_metric(
+                metrics,
+                'pg_stat_activity_count',
+                labels=lambda labels:
+                    labels.get('application_name', '').startswith('artemis-') and labels.get('idle in transaction') == 'idle'  # noqa: E501
+            )
+
+            return ' | '.join([
+                f'[green]{active:.0f} active[/green]',
+                f'[yellow]{idle:.0f} idle[/yellow]',
+                f'[red]{idle_in_transaction:.0f} idle in transaction[/red]'
+            ])
+
+    class TasksPanel(RefreshablePanel):
+        def __init__(self, layout: Layout, layout_cell: str) -> None:
+            super().__init__(
+                layout,
+                layout_cell
+            )
+
+            self.enabled = True
+
+        def do_refresh(self) -> Any:
+            with status('Updating task list...'):
+                response = fetch_artemis(cfg, '/_status/workers/traffic')
+
+            if not response.ok:
+                cfg.logger.unhandled_api_response(response)
+
+            tasks = response.json()
+
+            now = datetime.datetime.utcnow()
+
+            tasks.sort(key=lambda task: (now - datetime.datetime.fromisoformat(task['ctime'])).total_seconds())
+
+            table = Table(expand=True)
+
+            for header in ['Task', 'Arguments', 'CTime']:
+                table.add_column(header)
+
+            for task in tasks:
+                actor = task['actor'].replace('_', '-')
+                args = task['args']
+
+                if actor == '<empty>':
+                    continue
+
+                if actor == 'release-pool-resources' and 'resource_ids' in args:
+                    args['resource_ids'] = json.loads(args['resource_ids'])
+
+                age = now - datetime.datetime.fromisoformat(task['ctime'])
+
+                if age.total_seconds() < 60:
+                    age_label = f'{age.total_seconds():.0f} seconds'
+
+                else:
+                    age_label = f'{age.total_seconds() / 60:.0f} minutes'
+
+                table.add_row(
+                    actor,
+                    RichYAML.from_data(args) if args else '',
+                    f'[yellow]{age_label}[/yellow] {task["ctime"]}'
+                )
+
+            return table
+
+    class GuestsPanel(RefreshablePanel):
+        def __init__(self, layout: Layout, layout_cell: str) -> None:
+            super().__init__(
+                layout,
+                layout_cell,
+                title='Guests',
+                title_align='left'
+            )
+
+            self.enabled = True
+
+        def do_refresh(self) -> Any:
+            with status('Updating guest metrics...'):
+                response = fetch_artemis(cfg, '/metrics')
+
+            if not response.ok:
+                cfg.logger.unhandled_api_response(response)
+
+            metrics = _parse_metrics(response.text)
+
+            states = {
+                state: _extract_metric(
+                    metrics,
+                    'current_guest_request_count',
+                    labels=lambda labels: labels.get('state') == state
+                )
+                for state in GUEST_STATES
+            }
+
+            return ' | '.join(
+                [
+                    f'[green]{sum(states.values()):.0f} total[/green]'
+                ] + [
+                    f'[{GUEST_STATE_COLORS[state]}]{states[state]:.0f} {state}[/{GUEST_STATE_COLORS[state]}]'
+                    for state in GUEST_STATES
+                ]
+            )
+
+    def _create_layout() -> Layout:
+        layout = Layout(name='main')
+
+        layout.split_column(
+            Layout(name='header-top', size=3),
+            Layout(GuestsPanel(layout, 'header-bottom'), name='header-bottom', size=3),
+            Layout(TasksPanel(layout, 'content'), name='content'),
+            Layout(f'Updating state every {tick} seconds...', name='footer', size=1)
+        )
+
+        layout['header-top'].split_row(
+            Layout(Panel(''), name='header-top.left', ratio=3),
+            Layout(AboutPanel(layout, 'header-top.right'), name='header-top.right')
+        )
+
+        layout['header-top.left'].split_row(
+            Layout(WorkerPanel(layout, 'header-top.left.left'), name='header-top.left.left'),
+            Layout(BrokerPanel(layout, 'header-top.left.middle'), name='header-top.left.middle'),
+            Layout(DBPanel(layout, 'header-top.left.right'), name='header-top.left.right')
+        )
+
+        return layout
+
+    layout = _create_layout()
+
+    @contextlib.contextmanager
+    def status(text: str) -> Iterator[None]:
+        spinner = Spinner('dots', text=text)
+
+        layout['footer'].update(spinner)
+
+        yield
+
+        layout['footer'].update(f'Updating state every {tick} seconds...')
+
+    def pause() -> None:
+        for remains in range(tick, 0, -1):
+            layout['footer'].update(f'Next update in {remains} seconds...')
+
+            sleep(1)
+
+    def _parse_metrics(raw_metrics: str) -> List[Sample]:
+        def _parse() -> Iterator[Sample]:
+            for family in text_string_to_metric_families(raw_metrics):
+                yield from family.samples
+
+        return list(_parse())
+
+    def _extract_metric(
+        metrics: List[Sample],
+        name: str,
+        labels: Optional[Callable[[Dict[str, str]], bool]] = None
+    ) -> float:
+        return sum(
+            sample[2]
+            for sample in metrics
+            if sample[0] == name and (labels is None or labels(sample[1]))
+        )
+
+    fast_panels: List[RefreshablePanel] = [
+        cast(AboutPanel, layout['header-top.right'].renderable),
+        cast(WorkerPanel, layout['header-top.left.left'].renderable),
+        cast(BrokerPanel, layout['header-top.left.middle'].renderable),
+        cast(DBPanel, layout['header-top.left.right'].renderable),
+        cast(TasksPanel, layout['content'].renderable)
+    ]
+
+    slow_panels: List[RefreshablePanel] = [
+        cast(GuestsPanel, layout['header-bottom'].renderable)
+    ]
+
+    with Live(layout, screen=True, auto_refresh=True):
+        for panel in (fast_panels + slow_panels):
+            panel.refresh()
+
+        while True:
+            for i in range(10):
+                for panel in fast_panels:
+                    panel.refresh()
+
+                pause()
+
+            for panel in slow_panels:
+                panel.refresh()
+
+
+@cmd_status.command(name='top', short_help='Display current tasks in a top-like fashion')
+@click.option('--tick', metavar='N', type=int, default=10, help='Refresh output every N seconds')
+@click.pass_obj
+def cmd_status_top(cfg: Configuration, tick: int) -> None:
+    if cfg.output_format in ('json', 'yaml'):
+        _status_top_raw(cfg)
+
+        return
+
+    _status_top_full(cfg, tick)
 
 
 @cmd_status.command(name='broker', short_help='Display current broker messages in a top-like fashion')

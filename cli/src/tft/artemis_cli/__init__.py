@@ -12,6 +12,7 @@ import click
 import jq
 import jsonschema
 import pkg_resources
+import pydantic
 import requests
 import requests.adapters
 import rich.console
@@ -145,11 +146,40 @@ class TimeoutHTTPAdapter(requests.adapters.HTTPAdapter):
         return super().send(request, **kwargs)
 
 
-@dataclasses.dataclass
-class BasicAuthConfiguration:
+class BaseConfigurationModel(pydantic.BaseModel):
+    class Config:
+        extra = pydantic.Extra.forbid
+        validate_assignment = True
+
+
+class BasicAuthConfiguration(BaseConfigurationModel):
     username: str
     provisioning_token: str
     admin_token: str
+
+
+class BrokerManagementConfiguration(BaseConfigurationModel):
+    hostname: str
+    port: int
+    username: str
+    password: str
+
+
+class BrokerConfiguration(BaseConfigurationModel):
+    metrics: Optional[pydantic.HttpUrl] = None
+    management: Optional[BrokerManagementConfiguration] = None
+
+
+class DBConfiguration(BaseConfigurationModel):
+    metrics: Optional[pydantic.HttpUrl] = None
+
+
+class ConfigurationTree(BaseConfigurationModel):
+    artemis_api_url: pydantic.HttpUrl
+    artemis_api_version: str
+
+    broker: Optional[BrokerConfiguration] = None
+    db: Optional[DBConfiguration] = None
 
 
 @dataclasses.dataclass
@@ -165,6 +195,8 @@ class Configuration:
     completion_shell: Optional[str] = None
 
     output_format: str = 'human'
+
+    tree: Optional[ConfigurationTree] = None
 
     artemis_api_url: Optional[str] = None
     artemis_api_version: Optional[semver.VersionInfo] = None
@@ -341,6 +373,7 @@ def fetch_remote(
 def fetch_artemis(
     cfg: Configuration,
     endpoint: str,
+    url: Optional[str] = None,
     method: str = 'get',
     request_kwargs: Optional[Dict[str, Any]] = None,
     logger: Optional[Logger] = None,
@@ -353,6 +386,8 @@ def fetch_artemis(
     def _error_callback(res: requests.Response, request_kwargs: Dict[str, Any]) -> None:
         assert logger is not None
 
+        json_dump = str(RichYAML.from_data(res.json()).text).strip() if url is None else ''
+
         logger.error(f"""
 Failed to communicate with Artemis API Server, responded with code {res.status_code}: {res.reason}'
 
@@ -364,7 +399,7 @@ Response: {res.status_code} {res.reason}
 
 {str(RichYAML.from_data(dict(res.headers)).text).strip()}
 
-{str(RichYAML.from_data(res.json()).text).strip()}
+{json_dump}
 """)
 
     if cfg.authentication_method == 'basic':
@@ -381,9 +416,15 @@ Response: {res.status_code} {res.reason}
             cfg.basic_auth.provisioning_token
         )
 
+    if url is None:
+        actual_url = f'{cfg.artemis_api_url}/{endpoint}'
+
+    else:
+        actual_url = url
+
     return fetch_remote(
         cfg,
-        f'{cfg.artemis_api_url}/{endpoint}',
+        actual_url,
         logger=logger,
         method=method,
         request_kwargs=request_kwargs,
@@ -555,6 +596,18 @@ def print_collection(
         print_yaml(collection, console=console)
 
 
+GUEST_STATES = (
+    'shelf-lookup',
+    'routing',
+    'provisioning',
+    'promised',
+    'preparing',
+    'ready',
+    'condemned',
+    'error',
+)
+
+
 GUEST_STATE_COLORS = {
     'shelf-lookup': 'yellow',
     'routing': 'yellow',
@@ -571,6 +624,14 @@ def colorize_guest_state(state: str) -> str:
     color = GUEST_STATE_COLORS.get(state, 'white')
 
     return f'[{color}]{state}[/{color}]'
+
+
+def about_artemis(cfg: Configuration) -> requests.Response:
+    return fetch_artemis(
+        cfg,
+        '/about',
+        logger=cfg.logger
+    )
 
 
 def print_guests(
@@ -810,6 +871,10 @@ def print_tasks(
     console: Optional[rich.console.Console] = None
 ) -> None:
     def tabulate(tasks: CollectionType) -> rich.table.Table:
+        now = datetime.datetime.utcnow()
+
+        tasks.sort(key=lambda task: (now - datetime.datetime.fromisoformat(task['ctime'])).total_seconds())
+
         table = rich.table.Table()
 
         for header in ['Task', 'Arguments', 'CTime']:
@@ -825,10 +890,18 @@ def print_tasks(
             if actor == 'release-pool-resources' and 'resource_ids' in args:
                 args['resource_ids'] = json.loads(args['resource_ids'])
 
+            age = now - datetime.datetime.fromisoformat(task['ctime'])
+
+            if age.total_seconds() < 60:
+                age_label = f'{age.total_seconds():.0f} seconds'
+
+            else:
+                age_label = f'{age.total_seconds() / 60:.0f} minutes'
+
             table.add_row(
                 actor,
                 RichYAML.from_data(args) if args else '',
-                task['ctime']
+                f'[yellow]{age_label}[/yellow] {task["ctime"]}'
             )
 
         return table
