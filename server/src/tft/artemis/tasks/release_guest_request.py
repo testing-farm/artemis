@@ -24,6 +24,7 @@ from . import (
     DoerReturnType,
     DoerType,
     GuestRequestWorkspace as _Workspace,
+    TaskPriority,
     get_guest_logger,
     step,
     task,
@@ -119,7 +120,7 @@ class Workspace(_Workspace):
             .final_result
 
 
-@task()
+@task(TaskPriority.LOW)
 def release_guest_request(guestname: str) -> None:
     """
     Schedule release of guest request resources.
