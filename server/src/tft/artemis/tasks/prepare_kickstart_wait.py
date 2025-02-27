@@ -94,7 +94,6 @@ class Workspace(_Workspace):
         with self.transaction():
             # Load GR, pool and SSH key
             self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-            self.mark_note_poolname()
             self.load_gr_pool()
             self.load_master_ssh_key()
 
@@ -198,7 +197,7 @@ class Workspace(_Workspace):
                 except Exception as exc:
                     return Error(Failure.from_exc('failed getting logs from the guest', exc))
 
-                self._event('installation-logs-downloaded')
+                self._guest_request_event('installation-logs-downloaded')
 
                 return Ok(None)
 

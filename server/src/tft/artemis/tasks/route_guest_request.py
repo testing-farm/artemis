@@ -101,7 +101,7 @@ class Workspace(_Workspace):
 
             # If new pool has been chosen, log failover.
             if new_poolname != current_poolname:
-                self._event(
+                self._guest_request_event(
                     'routing-failover',
                     current_pool=current_poolname,
                     new_pool=new_poolname

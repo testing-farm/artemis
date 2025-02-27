@@ -16,6 +16,7 @@ from typing import Dict, Union, cast
 import gluetool.log
 import sqlalchemy.orm.session
 
+from .. import Failure
 from ..db import DB
 from ..drivers import PoolData, ProvisioningProgress, ProvisioningState
 from ..guest import GuestState
@@ -53,6 +54,7 @@ class Workspace(_Workspace):
         with self.transaction():
             self.load_guest_request(self.guestname, state=GuestState.PROMISED)
             self.load_gr_pool()
+            self.test_pool_enabled()
 
             if self.result:
                 return
@@ -60,28 +62,36 @@ class Workspace(_Workspace):
             assert self.gr
             assert self.pool
 
-            skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
-            current_pool_data = self.pool.pool_data_class.unserialize(self.gr)
+            if self.is_pool_enabled:
+                skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
+                current_pool_data = self.pool.pool_data_class.unserialize(self.gr)
 
-            r_progress = self.pool.update_guest(self.logger, self.session, self.gr)
+                r_progress = self.pool.update_guest(self.logger, self.session, self.gr)
 
-            if r_progress.is_error:
-                return self._error(r_progress, 'failed to update guest')
+                if r_progress.is_error:
+                    return self._error(r_progress, 'failed to update guest')
 
-            provisioning_progress = r_progress.unwrap()
+                provisioning_progress = r_progress.unwrap()
 
-            new_guest_data = {
-                'pool_data': provisioning_progress.pool_data.serialize()
-            }
+                new_guest_data = {
+                    'pool_data': provisioning_progress.pool_data.serialize()
+                }
 
-            if provisioning_progress.ssh_info is not None:
-                new_guest_data.update({
-                    'ssh_username': provisioning_progress.ssh_info.username,
-                    'ssh_port': provisioning_progress.ssh_info.port
-                })
+                if provisioning_progress.ssh_info is not None:
+                    new_guest_data.update({
+                        'ssh_username': provisioning_progress.ssh_info.username,
+                        'ssh_port': provisioning_progress.ssh_info.port
+                    })
 
-            if provisioning_progress.address is not None:
-                new_guest_data['address'] = provisioning_progress.address
+                if provisioning_progress.address is not None:
+                    new_guest_data['address'] = provisioning_progress.address
+
+            else:
+                provisioning_progress = ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=self.pool.pool_data_class.unserialize(self.gr),
+                    pool_failures=[Failure('pool is disabled')]
+                )
 
             # not returning here - pool was able to recover and proceed
             for failure in provisioning_progress.pool_failures:

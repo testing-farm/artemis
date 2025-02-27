@@ -154,7 +154,7 @@ class Workspace(_Workspace):
             if r_check.is_ok:
                 # If the command succeeded, the file exists on the remote host and
                 # installation must have already finished.
-                return self._event('already-reinstalled')
+                return self._guest_request_event('already-reinstalled')
 
             # Verify the error is due to the file missing, which indicates the installer had not run yet
             failure = r_check.unwrap_error()

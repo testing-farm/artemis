@@ -31,7 +31,6 @@ class Workspace(_Workspace):
     def run(self) -> None:
         with self.transaction():
             self.load_guest_request(self.guestname)
-            self.mark_note_poolname()
             self.load_gr_pool()
 
             if self.result:

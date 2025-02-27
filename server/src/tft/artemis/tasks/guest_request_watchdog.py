@@ -78,23 +78,27 @@ class Workspace(_Workspace):
             if self.gr.poolname is None or PoolData.is_empty(self.gr):
                 return
 
-            self.mark_note_poolname()
             self.load_gr_pool()
+            self.test_pool_enabled()
 
             if self.result:
                 return
 
             assert self.pool
 
-            r = self.pool.guest_watchdog(self.logger, self.session, self.gr)
+            if self.is_pool_enabled:
+                r = self.pool.guest_watchdog(self.logger, self.session, self.gr)
 
-            if r.is_error:
-                return self._error(r, 'failed to watchdog guest')
+                if r.is_error:
+                    return self._error(r, 'failed to watchdog guest')
 
-            watchdog_state: WatchdogState = r.unwrap()
+                watchdog_state: WatchdogState = r.unwrap()
 
-            if watchdog_state == WatchdogState.COMPLETE:
-                return
+                if watchdog_state == WatchdogState.COMPLETE:
+                    return
+
+            else:
+                self._guest_request_event('pool-disabled')
 
             # Set the custom watchdog period delay if set by the user
             if self.gr.watchdog_period_delay is not None:

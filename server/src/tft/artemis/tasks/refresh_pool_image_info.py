@@ -46,10 +46,20 @@ class Workspace(_Workspace):
         with self.transaction():
             r_pool = PoolDriver.load(self.logger, self.session, self.poolname)
 
-        if r_pool.is_error:
-            return self._error(r_pool, 'failed to load pool')
+            if r_pool.is_error:
+                return self._error(r_pool, 'failed to load pool')
 
-        pool = r_pool.unwrap()
+            pool = r_pool.unwrap()
+
+            r_enabled = pool.is_enabled(self.session)
+
+            if r_enabled.is_error:
+                return self._error(r_enabled, 'failed to inspect pool')
+
+        if r_enabled.unwrap() is not True:
+            self._progress('pool-disabled')
+
+            return
 
         r_refresh = pool.refresh_cached_pool_image_info()
 
