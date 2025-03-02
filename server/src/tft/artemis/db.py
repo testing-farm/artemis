@@ -511,9 +511,13 @@ def transaction(
 
         session.commit()
 
+        session.expunge_all()
+
         result.complete = True
 
     except sqlalchemy.exc.OperationalError as exc:
+        session.expunge_all()
+
         if isinstance(exc, sqlalchemy.exc.OperationalError) \
                 and isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
                 and exc.orig.pgerror.strip() == 'ERROR:  could not serialize access due to concurrent update':
@@ -528,6 +532,8 @@ def transaction(
 
     except Exception as exc:
         session.rollback()
+
+        session.expunge_all()
 
         _save_error(exc)
 

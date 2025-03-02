@@ -2426,8 +2426,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def refresh_pool_resources_metrics(
         self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session
+        logger: gluetool.log.ContextAdapter
     ) -> Result[None, Failure]:
         """
         Responsible for updating the database records with the most up-to-date

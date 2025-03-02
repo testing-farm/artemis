@@ -1128,7 +1128,8 @@ def _task_core(
     session: Optional[sqlalchemy.orm.session.Session] = None,
     doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None,
-    session_isolation: bool = True
+    session_isolation: bool = True,
+    session_read_only: bool = False
 ) -> None:
     rss = RSSWatcher()
 
@@ -1239,7 +1240,7 @@ def _task_core(
 
     try:
         if session is None:
-            with db.get_session(logger) as session:
+            with db.get_session(logger, read_only=session_read_only) as session:
                 doer_result = _run_doer(session)
 
         else:
@@ -1288,7 +1289,8 @@ def task_core(
     session: Optional[sqlalchemy.orm.session.Session] = None,
     doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None,
-    session_isolation: bool = True
+    session_isolation: bool = True,
+    session_read_only: bool = False
 ) -> None:
     with Sentry.start_transaction('task', 'task') as tracing_transaction:
         tracing_transaction.set_context(
@@ -1307,7 +1309,8 @@ def task_core(
                 session=session,
                 doer_args=doer_args,
                 doer_kwargs=doer_kwargs,
-                session_isolation=session_isolation
+                session_isolation=session_isolation,
+                session_read_only=session_read_only
             )
 
 
