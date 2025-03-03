@@ -263,6 +263,24 @@ KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     default=0
 )
 
+KNOB_CLI_COMMAND_TIMEOUT_PATTERNS: Knob[str] = Knob(
+    'cli.command.timeout.patterns',
+    'Timeout and command patterns: "<timeout1>:<pattern1>;<timeout2>:<pattern2>;...',
+    has_db=False,
+    envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS',
+    cast_from_str=str,
+    default=r'3600:.*'
+)
+
+KNOB_CLI_COMMAND_TIMEOUT_KILL_DELAY: Knob[int] = Knob(
+    'cli.command.timeout.kill-delay',
+    'How long to wait before sending SIGKILL to commands that did not finish after running out of time.',
+    has_db=False,
+    envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_KILL_DELAY',
+    cast_from_str=int,
+    default=10
+)
+
 KNOB_LOGGING_SLOW_CLI_COMMANDS: Knob[bool] = Knob(
     'logging.cli.slow-commands',
     """
@@ -372,7 +390,7 @@ except Exception as exc:
     sys.exit(1)
 
 
-# Precompile the command pattern
+# Precompile the logged command pattern
 try:
     CLI_COMMAND_PATTERN = re.compile(KNOB_LOGGING_CLI_COMMAND_PATTERN.value)
 
@@ -381,6 +399,26 @@ except Exception as exc:
         'failed to compile ARTEMIS_LOG_CLI_COMMAND_PATTERN pattern',
         exc,
         pattern=KNOB_LOGGING_CLI_COMMAND_PATTERN.value
+    ).handle(LOGGER.get())
+
+    sys.exit(1)
+
+
+# Precompile the timeout command patterns
+try:
+    CLI_TIMEOUT_PATTERNS: List[Tuple[Pattern[str], int]] = [
+        (
+            re.compile(command_pattern.split(':', 1)[1]),
+            int(command_pattern.split(':', 1)[0])
+        )
+        for command_pattern in KNOB_CLI_COMMAND_TIMEOUT_PATTERNS.value.split(';')
+    ]
+
+except Exception as exc:
+    Failure.from_exc(
+        'failed to compile ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS pattern',
+        exc,
+        pattern=KNOB_CLI_COMMAND_TIMEOUT_PATTERNS.value
     ).handle(LOGGER.get())
 
     sys.exit(1)
@@ -2879,6 +2917,7 @@ def run_cli_tool(
     command_scrubber: Optional[Callable[[List[str]], List[str]]] = None,
     allow_empty: bool = True,
     env: Optional[Dict[str, str]] = None,
+    deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
@@ -2920,6 +2959,31 @@ def run_cli_tool(
         # 'environ': env
     }
 
+    joined_command = command_join(command)
+
+    # Decide whether timeout applies
+    actual_timeout: Optional[int] = None
+
+    if deadline is not None:
+        timeout = deadline.total_seconds()
+
+    else:
+        for pattern, timeout in CLI_TIMEOUT_PATTERNS:
+            if pattern.match(joined_command) is not None:
+                actual_timeout = timeout
+                break
+
+    if actual_timeout is not None:
+        command = [
+            'timeout',
+            '--preserve-status',
+            '--kill-after', str(KNOB_CLI_COMMAND_TIMEOUT_KILL_DELAY.value),
+            '--signal', 'SIGTERM',
+            '--verbose',
+            str(actual_timeout),
+            *command
+        ]
+
     start_time = time.monotonic()
 
     def _log_command(output: gluetool.utils.ProcessOutput) -> None:
@@ -2933,8 +2997,6 @@ def run_cli_tool(
                 command_time,
                 cause=cause_extractor(output) if cause_extractor is not None else None
             )
-
-        joined_command = command_join(command)
 
         # We are expected to log the command when either one of these conditions is true:
         #
@@ -3027,6 +3089,7 @@ def run_remote(
     key: SSHKey,
     ssh_timeout: int,
     ssh_options: Optional[List[str]] = None,
+    deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
@@ -3071,6 +3134,7 @@ def copy_to_remote(
     key: SSHKey,
     ssh_timeout: int,
     ssh_options: Optional[List[str]] = None,
+    deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
@@ -3112,6 +3176,7 @@ def copy_from_remote(
     key: SSHKey,
     ssh_timeout: int,
     ssh_options: Optional[List[str]] = None,
+    deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,

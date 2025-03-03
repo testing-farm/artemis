@@ -761,6 +761,26 @@ for full list of connection parameters that can be specified via URL.
 
 5+|Cache URL.
 
+|`cli.command.timeout.kill-delay`
+|`int`
+|`ARTEMIS_CLI_COMMAND_TIMEOUT_KILL_DELAY`
+|`10`
+|no
+
+
+
+5+|How long to wait before sending SIGKILL to commands that did not finish after running out of time.
+
+|`cli.command.timeout.patterns`
+|`str`
+|`ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS`
+|`3600:.*`
+|no
+
+
+
+5+|Timeout and command patterns: "<timeout1>:<pattern1>;<timeout2>:<pattern2>;...
+
 |`config.dirpath`
 |`<lambda>`
 |`ARTEMIS_CONFIG_DIR`
