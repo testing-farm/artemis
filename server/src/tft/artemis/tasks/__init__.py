@@ -69,6 +69,7 @@ from ..drivers import (
     aws as aws_driver,
     azure as azure_driver,
     beaker as beaker_driver,
+    flasher as flasher_driver,
     gcp as gcp_driver,
     ibmcloudpower as ibmcloud_power_driver,
     ibmcloudvpc as ibmcloud_vpc_driver,
@@ -321,6 +322,7 @@ POOL_DRIVERS = {
     'ibmcloud-vpc': ibmcloud_vpc_driver.IBMCloudVPCDriver,
     'ibmcloud-power': ibmcloud_power_driver.IBMCloudPowerDriver,
     'gcp': gcp_driver.GCPDriver,
+    'flasher': flasher_driver.FlasherDriver,
 }
 
 
