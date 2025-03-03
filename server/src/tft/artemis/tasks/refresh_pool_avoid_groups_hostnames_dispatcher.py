@@ -60,21 +60,23 @@ class Workspace(_Workspace):
         with self.transaction():
             self.load_pools()
 
+        if self.result:
+            return
+
+        self._progress('scheduling pool group avoidance hostnames refresh')
+
+        for pool in self.pools:
             if self.result:
                 return
 
-            for pool in self.pools:
-                if self.result:
-                    return
+            if not isinstance(pool, BeakerDriver):
+                continue
 
-                if not isinstance(pool, BeakerDriver):
-                    continue
-
-                self.dispatch_task(
-                    refresh_pool_avoid_groups_hostnames,
-                    pool.poolname,
-                    logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname)
-                )
+            self.dispatch_task(
+                refresh_pool_avoid_groups_hostnames,
+                pool.poolname,
+                logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname)
+            )
 
     @classmethod
     def create(
@@ -134,5 +136,6 @@ def refresh_pool_avoid_groups_hostnames_dispatcher() -> None:
 
     task_core(
         cast(DoerType, Workspace.refresh_pool_avoid_groups_hostnames_dispatcher),
-        logger=TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME)
+        logger=TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME),
+        session_read_only=True
     )

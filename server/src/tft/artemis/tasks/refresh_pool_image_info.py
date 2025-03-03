@@ -46,15 +46,15 @@ class Workspace(_Workspace):
         with self.transaction():
             r_pool = PoolDriver.load(self.logger, self.session, self.poolname)
 
-            if r_pool.is_error:
-                return self._error(r_pool, 'failed to load pool')
+        if r_pool.is_error:
+            return self._error(r_pool, 'failed to load pool')
 
-            pool = r_pool.unwrap()
+        pool = r_pool.unwrap()
 
-            r_refresh = pool.refresh_cached_pool_image_info()
+        r_refresh = pool.refresh_cached_pool_image_info()
 
-            if r_refresh.is_error:
-                return self._error(r_refresh, 'failed to refresh pool image info')
+        if r_refresh.is_error:
+            return self._error(r_refresh, 'failed to refresh pool image info')
 
     @classmethod
     def create(
@@ -103,5 +103,6 @@ def refresh_pool_image_info(poolname: str) -> None:
     task_core(
         cast(DoerType, Workspace.refresh_pool_image_info),
         logger=get_pool_logger(Workspace.TASKNAME, _ROOT_LOGGER, poolname),
-        doer_args=(poolname,)
+        doer_args=(poolname,),
+        session_read_only=True
     )
