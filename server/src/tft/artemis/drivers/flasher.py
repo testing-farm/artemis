@@ -252,7 +252,7 @@ class FlasherDriver(PoolDriver):
 
         payload = {
             "environment": guest_request._environment,
-            "request": guest_request
+            "metadata": json.dumps(guest_request.user_data)
         }
 
         try:
