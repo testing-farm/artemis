@@ -24,6 +24,7 @@ from . import (
     DoerReturnType,
     DoerType,
     GuestRequestWorkspace as _Workspace,
+    TaskPriority,
     get_guest_logger,
     step,
     task,
@@ -168,7 +169,7 @@ class Workspace(_Workspace):
             .final_result
 
 
-@task()
+@task(TaskPriority.LOW)
 def return_guest_to_shelf(guestname: str, current_state: str) -> None:
     """
     Return the guest back to shelf (if specified).

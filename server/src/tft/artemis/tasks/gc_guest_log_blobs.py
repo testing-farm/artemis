@@ -19,7 +19,18 @@ import sqlalchemy.orm.session
 
 from ..db import DB, DMLResult, GuestLogBlob, GuestRequest, execute_dml
 from ..knobs import Knob
-from . import _ROOT_LOGGER, DoerReturnType, DoerType, TaskLogger, Workspace as _Workspace, step, task, task_core
+from . import (
+    _ROOT_LOGGER,
+    DoerReturnType,
+    DoerType,
+    TaskLogger,
+    TaskPriority,
+    TaskQueue,
+    Workspace as _Workspace,
+    step,
+    task,
+    task_core,
+)
 
 KNOB_GC_GUEST_LOG_BLOBS_SCHEDULE: Knob[str] = Knob(
     'gc.guest-log-blobs.schedule',
@@ -116,7 +127,13 @@ class Workspace(_Workspace):
             .final_result
 
 
-@task(periodic=periodiq.cron(KNOB_GC_GUEST_LOG_BLOBS_SCHEDULE.value))
+@task(
+    singleton=True,
+    singleton_no_retry_on_lock_fail=True,
+    periodic=periodiq.cron(KNOB_GC_GUEST_LOG_BLOBS_SCHEDULE.value),
+    priority=TaskPriority.LOW,
+    queue_name=TaskQueue.PERIODIC
+)
 def worker_ping() -> None:
     """
     Remove old guest log blobs.
