@@ -154,6 +154,11 @@ class BkrErrorCauses(PoolErrorCauses):
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     NO_DISTRO_MATCHES_RECIPE = 'no-distro-matches-recipe'
 
+    JOB_FAILED = 'job-failed'
+    JOB_ABORTED = 'job-aborted'
+    JOB_CANCELLED = 'job-cancelled'
+    JOB_RESERVED_WITH_WARNING = 'job-reserved-with-warning'
+
 
 CLI_ERROR_PATTERNS = {
     BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE: re.compile(r'^Exception: .+:No distro tree matches Recipe:')
@@ -1613,7 +1618,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         job_results: bs4.BeautifulSoup
-    ) -> Result[Tuple[str, str], Failure]:
+    ) -> Result[Tuple[str, str, Optional[str]], Failure]:
         """
         Parse job results and return its result and status.
 
@@ -1642,7 +1647,13 @@ class BeakerDriver(PoolDriver):
                 job_results=job_results.prettify()
             ))
 
-        return Ok((job['result'].lower(), job['status'].lower()))
+        return Ok(
+            (
+                job['result'].lower(),
+                job['status'].lower(),
+                job_results.find('recipe')['system']
+            )
+        )
 
     def _parse_guest_address(
         self,
@@ -1726,7 +1737,7 @@ class BeakerDriver(PoolDriver):
         if r_job_status.is_error:
             return Error(r_job_status.unwrap_error())
 
-        job_result, job_status = r_job_status.unwrap()
+        job_result, job_status, system = r_job_status.unwrap()
 
         r_job_task_results = parse_job_task_results(logger, job_results)
 
@@ -1792,12 +1803,21 @@ class BeakerDriver(PoolDriver):
                 delay_update=r_delay.unwrap()
             ))
 
-        job_is_failed = \
-            job_result == 'fail' \
-            or job_status == 'aborted' \
-            or (job_status == 'reserved' and job_result == 'warn')  # job failed, needs a bit more time to update status
+        job_failed: Optional[BkrErrorCauses] = None
 
-        if job_is_failed:
+        if job_result == 'fail':
+            job_failed = BkrErrorCauses.JOB_FAILED
+
+        elif job_status == 'aborted':
+            job_failed = BkrErrorCauses.JOB_ABORTED
+
+        elif job_status == 'cancelled':
+            job_failed = BkrErrorCauses.JOB_CANCELLED
+
+        elif job_status == 'reserved' and job_result == 'warn':
+            job_failed = BkrErrorCauses.JOB_RESERVED_WITH_WARNING
+
+        if job_failed is not None:
             r_failed_avc_patterns = self.failed_avc_patterns
 
             if r_failed_avc_patterns.is_error:
@@ -1846,6 +1866,14 @@ class BeakerDriver(PoolDriver):
                         address=r_guest_address.unwrap()
                     ))
 
+            PoolMetrics.inc_aborts(
+                self.poolname,
+                system,
+                guest_request.environment.os.compose,
+                guest_request.environment.hw.arch,
+                job_failed
+            )
+
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
                 pool_data=BeakerPoolData.unserialize(guest_request),
@@ -1853,7 +1881,9 @@ class BeakerDriver(PoolDriver):
                     'beaker job failed',
                     job_result=job_result,
                     job_status=job_status,
-                    job_results=job_results.prettify()
+                    job_results=job_results.prettify(),
+                    cause=job_failed.value,
+                    system=system
                 )]
             ))
 
