@@ -45,13 +45,13 @@ from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT, Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
-    CLIErrorCauses,
     CLIOutput,
     GuestLogUpdateProgress,
     HookImageInfoMapper,
     PoolCapabilities,
     PoolData,
     PoolDriver,
+    PoolErrorCauses,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -147,8 +147,11 @@ KNOB_JOB_WHITEBOARD_TEMPLATE: Knob[str] = Knob(
 )
 
 
-class BkrErrorCauses(CLIErrorCauses):
+class BkrErrorCauses(PoolErrorCauses):
     NONE = 'none'
+    RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
+    FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
+    IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     NO_DISTRO_MATCHES_RECIPE = 'no-distro-matches-recipe'
 
 
@@ -1224,7 +1227,7 @@ class BeakerDriver(PoolDriver):
 
         failure.recoverable = False
 
-        PoolMetrics.inc_error(self.poolname, BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE.value)
+        PoolMetrics.inc_error(self.poolname, BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE)
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.CANCEL,
