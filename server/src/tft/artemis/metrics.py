@@ -764,6 +764,7 @@ class PoolMetrics(MetricsBase):
     """
 
     _KEY_ERRORS = 'metrics.pool.{poolname}.errors'  # noqa: FS003
+    _KEY_ABORTS = 'metrics.pool.{poolname}.aborts'  # noqa: FS003
     _KEY_CLI_CALLS = 'metrics.pool.{poolname}.cli-calls'  # noqa: FS003
     _KEY_CLI_EXIT_CODES = 'metrics.pool.{poolname}.cli-calls.exit-codes'  # noqa: FS003
     _KEY_CLI_CALLS_DURATIONS = 'metrics.pool.{poolname}.cli-calls.durations'  # noqa: FS003
@@ -784,6 +785,7 @@ class PoolMetrics(MetricsBase):
     current_guest_request_count_per_state: Dict[GuestState, int]
 
     errors: Dict[str, int]
+    aborts: Dict[Tuple[str, str, str, str], int]
 
     image_info_count: Optional[float]
     image_info_updated_timestamp: Optional[float]
@@ -805,6 +807,7 @@ class PoolMetrics(MetricsBase):
         """
 
         self.key_errors = self._KEY_ERRORS.format(poolname=poolname)  # noqa: FS002
+        self.key_aborts = self._KEY_ABORTS.format(poolname=poolname)  # noqa: FS002
 
         self.key_image_info_count = self._KEY_INFO_COUNT.format(  # noqa: FS002
             poolname=poolname,
@@ -838,6 +841,7 @@ class PoolMetrics(MetricsBase):
         self.current_guest_request_count_per_state = {}
 
         self.errors = {}
+        self.aborts = {}
 
         self.image_info_count = None
         self.image_info_updated_timestamp = None
@@ -936,6 +940,39 @@ class PoolMetrics(MetricsBase):
         """
 
         inc_metric_field(logger, cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error.value)  # noqa: FS002
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_aborts(
+        pool: str,
+        instance_id: Optional[str],
+        compose: str,
+        arch: str,
+        cause: 'PoolErrorCauses',
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increase counter for a aborted instance by 1.
+
+        :param pool: pool that provided the instance.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :param instance_id: optional ID identifying the aborted instance.
+        :param compose: compose requested.
+        :param arch: architecture requested.
+        :param cause: cause of the abort.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(
+            logger,
+            cache,
+            PoolMetrics._KEY_ABORTS.format(poolname=pool),  # noqa: FS002
+            f'{instance_id or ""}:{compose}:{arch}:{cause.value}'
+        )
+
         return Ok(None)
 
     @staticmethod
@@ -1060,6 +1097,15 @@ class PoolMetrics(MetricsBase):
             for errorname, count in get_metric_fields(logger, cache, self.key_errors).items()
         }
 
+        self.aborts = {
+            cast(Tuple[str, str, str, str], tuple(field.split(':', 4))): count
+            for field, count in get_metric_fields(
+                logger,
+                cache,
+                self._KEY_ABORTS.format(poolname=self.poolname)  # noqa: FS002
+            ).items()
+        }
+
         count = cast(
             Callable[[str], Optional[bytes]],
             cache.get
@@ -1136,6 +1182,7 @@ class UndefinedPoolMetrics(MetricsBase):
     current_guest_request_count_per_state: Dict[GuestState, int]
 
     errors: Dict[str, int]
+    aborts: Dict[Tuple[str, str, str, str], int]
 
     image_info_count: Optional[float]
     image_info_updated_timestamp: Optional[float]
@@ -1164,6 +1211,7 @@ class UndefinedPoolMetrics(MetricsBase):
         self.current_guest_request_count_per_state = {}
 
         self.errors = {}
+        self.aborts = {}
 
         self.image_info_count = None
         self.image_info_updated_timestamp = None
@@ -1312,6 +1360,13 @@ class PoolsMetrics(MetricsBase):
             registry=registry
         )
 
+        self.POOL_ABORTS = Counter(
+            'pool_aborts',
+            'Overall total number of aborted pool instance, per pool and cause of error.',
+            ['pool', 'instance_id', 'compose', 'arch', 'cause'],
+            registry=registry
+        )
+
         self.POOL_COSTS = Counter(
             'pool_costs',
             'Overall total cost of resources used by a pool, per pool and resource type.',
@@ -1394,6 +1449,7 @@ class PoolsMetrics(MetricsBase):
         super().update_prometheus()
 
         reset_counters(self.POOL_ERRORS)
+        reset_counters(self.POOL_ABORTS)
         reset_counters(self.POOL_COSTS)
         reset_counters(self.CLI_CALLS)
         reset_counters(self.CLI_CALLS_EXIT_CODES)
@@ -1410,6 +1466,11 @@ class PoolsMetrics(MetricsBase):
 
             for error, count in pool_metrics.errors.items():
                 self.POOL_ERRORS.labels(pool=poolname, error=error)._value.set(count)
+
+            for (instance_id, compose, arch, cause), count in pool_metrics.aborts.items():
+                self.POOL_ABORTS \
+                    .labels(pool=poolname, instance_id=instance_id, compose=compose, arch=arch, cause=cause) \
+                    ._value.set(count)
 
             for resource in ResourceType.__members__.values():
                 value = getattr(pool_metrics.costs, resource.value.replace('-', '_'))
