@@ -1949,6 +1949,7 @@ class Workspace:
         self.shelf: Optional[GuestShelf] = None
         self.ssh_key: Optional[SSHKey] = None
         self.pool: Optional[PoolDriver] = None
+        self.is_pool_enabled: Optional[bool] = None
         self.guest_events: Optional[List[GuestEvent]] = None
 
         self.pools: List[PoolDriver] = []
@@ -1978,6 +1979,12 @@ class Workspace:
         return Error(Failure('task did not produce final result'))
 
     def _event(self, event: str, **details: Any) -> None:
+        log_dict_yaml(self.logger.info, 'logged event', {
+            'eventname': event,
+            'details': details
+        })
+
+    def _guest_request_event(self, event: str, **details: Any) -> None:
         assert self.guestname
 
         GuestRequest.log_event_by_guestname(
@@ -2001,6 +2008,9 @@ class Workspace:
 
     def _begin(self) -> None:
         if self.guestname:
+            self._guest_request_event('entered-task')
+
+        else:
             self._event('entered-task')
 
     def begin(self: WorkspaceBound) -> WorkspaceBound:
@@ -2011,10 +2021,16 @@ class Workspace:
 
     def _progress(self, eventname: str, **details: Any) -> None:
         if self.guestname:
+            self._guest_request_event(eventname, **details)
+
+        else:
             self._event(eventname, **details)
 
     def _complete(self) -> None:
         if self.guestname:
+            self._guest_request_event('finished-task')
+
+        else:
             self._event('finished-task')
 
         if not self.result:
@@ -2028,6 +2044,9 @@ class Workspace:
 
     def _reschedule(self) -> None:
         if self.guestname:
+            self._guest_request_event('rescheduled')
+
+        else:
             self._event('rescheduled')
 
         if not self.result:
@@ -2049,6 +2068,9 @@ class Workspace:
                 label,
                 failure
             )
+
+        else:
+            self._event(label, failure=failure.get_event_details())
 
         if not no_effect:
             if failure.recoverable is True:
@@ -2142,6 +2164,8 @@ class Workspace:
 
         self.gr = gr
 
+        self.mark_note_poolname()
+
         return self
 
     def load_master_ssh_key(self: WorkspaceBound) -> WorkspaceBound:
@@ -2213,6 +2237,22 @@ class Workspace:
             return self
 
         self.pool = r.unwrap()
+
+        return self
+
+    def test_pool_enabled(self: WorkspaceBound) -> WorkspaceBound:
+        if self.result:
+            return self
+
+        assert self.pool
+
+        r = self.pool.is_enabled(self.session)
+
+        if r.is_error:
+            self._error(r, 'pool enablement check failed')
+            return self
+
+        self.is_pool_enabled = r.unwrap()
 
         return self
 

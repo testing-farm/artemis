@@ -48,7 +48,6 @@ class Workspace(_Workspace):
             assert self.gr
 
             if self.gr.poolname is not None and not PoolData.is_empty(self.gr):
-                self.mark_note_poolname()
                 self.load_gr_pool()
 
                 if self.result:

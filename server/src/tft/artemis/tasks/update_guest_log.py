@@ -91,7 +91,7 @@ class Workspace(_Workspace):
                 if new_state is not None:
                     kwargs['new_state'] = new_state.value
 
-                self._event(
+                self._guest_request_event(
                     'guest-log-updated',
                     logname=guest_log.logname,
                     contenttype=guest_log.contenttype.value,

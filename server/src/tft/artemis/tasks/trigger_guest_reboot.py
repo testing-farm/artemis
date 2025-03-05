@@ -32,10 +32,15 @@ class Workspace(_Workspace):
     def run(self) -> None:
         with self.transaction():
             self.load_guest_request(self.guestname, state=GuestState.READY)
-            self.mark_note_poolname()
             self.load_gr_pool()
+            self.test_pool_enabled()
 
             if self.result:
+                return
+
+            if not self.is_pool_enabled:
+                self._guest_request_event('pool-disabled')
+
                 return
 
             assert self.gr

@@ -1501,8 +1501,15 @@ class PoolDriver(gluetool.log.LoggerMixin):
         pools: List[PoolDriver] = []
 
         for pool_record in r_pools.unwrap():
+            r_pool = PoolDriver._instantiate(logger, pool_record.driver, pool_record.poolname, pool_record.parameters)
+
+            if r_pool.is_error:
+                return Error(r_pool.unwrap_error())
+
+            pool = r_pool.unwrap()
+
             if enabled_only is True:
-                r_enabled = KNOB_POOL_ENABLED.get_value(session=session, entityname=pool_record.poolname)
+                r_enabled = pool.is_enabled(session)
 
                 if r_enabled.is_error:
                     return Error(r_enabled.unwrap_error())
@@ -1510,17 +1517,18 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if r_enabled.unwrap() is not True:
                     continue
 
-            r_pool = PoolDriver._instantiate(logger, pool_record.driver, pool_record.poolname, pool_record.parameters)
-
-            if r_pool.is_error:
-                return Error(r_pool.unwrap_error())
-
-            pools.append(r_pool.unwrap())
+            pools.append(pool)
 
         return Ok(pools)
 
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__}: {self.poolname}>'
+
+    def is_enabled(
+        self,
+        session: sqlalchemy.orm.session.Session
+    ) -> Result[bool, Failure]:
+        return KNOB_POOL_ENABLED.get_value(session=session, entityname=self.poolname)
 
     @property
     def ssh_options(self) -> List[str]:

@@ -54,7 +54,6 @@ class Workspace(_Workspace):
     def run(self) -> None:
         with self.transaction():
             self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-            self.mark_note_poolname()
             self.load_gr_pool()
             self.load_master_ssh_key()
 

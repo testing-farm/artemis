@@ -52,6 +52,16 @@ class Workspace(_Workspace):
 
             pool = r_pool.unwrap()
 
+            r_enabled = pool.is_enabled(self.session)
+
+            if r_enabled.is_error:
+                return self._error(r_enabled, 'failed to inspect pool')
+
+            if r_enabled.unwrap() is not True:
+                self._guest_request_event('pool-disabled')
+
+                return self._reschedule()
+
             r_release = pool.release_pool_resources(self.logger, self.serialized_resource_ids)
 
             if r_release.is_error:
