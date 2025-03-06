@@ -2322,26 +2322,14 @@ class BeakerDriver(PoolDriver):
 
         return Ok(GuestLogUpdateProgress(state=GuestLogState.COMPLETE, url=url))
 
-    # Since Beaker provides named logs, unlike other drivers, there are updaters for various log names.
-    # To satisfy the "standard" logging expectations, use some of those for common logs like console/url
-    # while keeping their Beaker-native names available at the same time.
-    @guest_log_updater('beaker', 'console:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
-    def _update_guest_log_console_dump_url(
+    def _update_guest_log_blob(
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
-        guest_log: GuestLog
+        guest_log: GuestLog,
+        beaker_logname: str
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        return self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
-
-    @guest_log_updater('beaker', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
-    def _update_guest_log_console_dump_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
-    ) -> Result[GuestLogUpdateProgress, Failure]:
-        r_update = self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
+        r_update = self._update_guest_log_url(logger, guest_request, guest_log, beaker_logname)
 
         if r_update.is_error:
             return r_update
@@ -2372,14 +2360,71 @@ class BeakerDriver(PoolDriver):
             response.text
         ))
 
-    @guest_log_updater('beaker', 'sys.log:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
-    def _update_guest_log_sys_log_url(
+    # Since Beaker provides named logs, unlike other drivers, there are updaters for various log names.
+    # To satisfy the "standard" logging expectations, use some of those for common logs like console/url
+    # while keeping their Beaker-native names available at the same time.
+    @guest_log_updater('beaker', 'console:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
+    def _update_guest_log_console_dump_url(
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        return self._update_guest_log_url(logger, guest_request, guest_log, 'sys.log')
+        return self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
+
+    @guest_log_updater('beaker', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_console_dump_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        return self._update_guest_log_blob(logger, guest_request, guest_log, 'console.log')
+
+    @guest_log_updater('beaker', 'anaconda.log:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_anaconda_log_dump_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        return self._update_guest_log_blob(logger, guest_request, guest_log, 'anaconda.log')
+
+    @guest_log_updater('beaker', 'storage.log:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_storage_log_dump_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        return self._update_guest_log_blob(logger, guest_request, guest_log, 'storage.log')
+
+    @guest_log_updater('beaker', 'program.log:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_program_log_dump_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        return self._update_guest_log_blob(logger, guest_request, guest_log, 'program.log')
+
+    @guest_log_updater('beaker', 'packaging.log:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_packaging_log_dump_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        return self._update_guest_log_blob(logger, guest_request, guest_log, 'packaging.log')
+
+    @guest_log_updater('beaker', 'ks.cfg:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_ks_cfg_dump_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        return self._update_guest_log_blob(logger, guest_request, guest_log, 'ks.cfg')
 
     def trigger_reboot(
         self,
