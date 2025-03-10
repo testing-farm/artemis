@@ -5,7 +5,7 @@ import dataclasses
 import os
 import re
 import shutil
-from typing import Any, Dict, Generator, List, Optional, Pattern, Tuple, TypedDict, cast
+from typing import Any, Dict, Generator, Iterator, List, Optional, Pattern, Tuple, TypedDict, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -347,80 +347,76 @@ class IBMCloudVPCDriver(PoolDriver):
     def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         # See https://cloud.ibm.com/docs/vpc?topic=vpc-vs-profiles&interface=cli for more info
 
-        with IBMCloudSession(self.logger, self) as session:
-            r_flavors_list = session.run(
-                self.logger,
-                ['is', 'instance-profiles', '--output', 'json'],
-                commandname='ibmcloud.is-instance-profiles'
+        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+            with IBMCloudSession(self.logger, self) as session:
+                r_flavors_list = session.run(
+                    self.logger,
+                    ['is', 'instance-profiles', '--output', 'json'],
+                    commandname='ibmcloud.is-instance-profiles'
+                )
+
+                if r_flavors_list.is_error:
+                    return Error(Failure.from_failure(
+                        'failed to fetch flavors information',
+                        r_flavors_list.unwrap_error()))
+
+            return Ok(cast(List[Dict[str, Any]], r_flavors_list.unwrap()))
+
+        def _constructor(
+            logger: gluetool.log.ContextAdapter,
+            raw_flavor: Dict[str, Any]
+        ) -> Iterator[Result[Flavor, Failure]]:
+            raw_disks = cast(List[Any], raw_flavor.get('disks', []))
+
+            if not raw_disks:
+                # Yep, surprizingly enough ibmcloud has flavors with no disks, like bx2-2x8
+                disks: List[FlavorDisk] = []
+
+            else:
+                # diskspace is reported in GB
+                disks = [
+                    FlavorDisk(size=UNITS.Quantity(int(raw_disks[0]['size']['value']), UNITS.gigabytes))
+                ]
+
+                if len(raw_disks) > 1:
+                    disks.append(FlavorDisk(is_expansion=True, max_additional_items=len(raw_disks) - 1))
+
+            networks = [FlavorNetwork(type='eth')]
+            nic_limit = int(raw_flavor['max_nics'])
+
+            if nic_limit > 1:
+                networks.append(FlavorNetwork(type='eth', is_expansion=True, max_additional_items=nic_limit - 1))
+
+            # Now that is awkward - looks like technically there can be multiple arch versions in a flavor, but
+            # currently all flavors have exactly one arch if defined. Artemis Flavor.arch was designed to
+            # contain one arch only, so let's begin by taking the first value in the os_architecture.values list.
+            # We should not be taking the default value as the cli has (surprize!) amd64 default set for some
+            # s390x-specific flavors like bz2e-1x4
+            arch = raw_flavor['os_architecture'].get('values', [None])[0]
+
+            yield Ok(
+                IBMCloudFlavor(
+                    name=raw_flavor['name'],
+                    id=raw_flavor['name'],
+                    cpu=FlavorCpu(
+                        processors=int(raw_flavor['vcpu_count']['value'])
+                    ),
+                    memory=UNITS.Quantity(int(raw_flavor['memory']['value']), UNITS.gibibytes),
+                    disk=FlavorDisks(disks),
+                    network=FlavorNetworks(networks),
+                    virtualization=FlavorVirtualization(),
+                    arch=arch,
+                    numa_count=int(raw_flavor['numa_count'].get('value', 0)),
+                )
             )
 
-            if r_flavors_list.is_error:
-                return Error(Failure.from_failure(
-                    'failed to fetch flavors information',
-                    r_flavors_list.unwrap_error()))
-
-        flavors = r_flavors_list.unwrap()
-
-        flavor_name_pattern: Optional[Pattern[str]] = None
-        if self.pool_config.get('flavor-regex'):
-            try:
-                flavor_name_pattern = re.compile(self.pool_config['flavor-regex'])
-            except re.error as exc:
-                return Error(Failure.from_exc('failed to compile regex', exc))
-
-        ibmcloud_flavors: List[Flavor] = []
-
-        for flavor in cast(List[Dict[str, Any]], flavors):
-            try:
-                if flavor_name_pattern is not None and not flavor_name_pattern.match(flavor['name']):
-                    continue
-                max_data_disk_count = len(flavor.get('disks', []))
-                if not max_data_disk_count:
-                    # Yep, surprizingly enough ibmcloud has flavors with no disks, like bx2-2x8
-                    disks = []
-                else:
-                    # diskspace is reported in GB
-                    disks = [FlavorDisk(size=UNITS.Quantity(int(flavor['disks'][0]['size']['value']),
-                                                            UNITS.gigabytes))]
-                    if max_data_disk_count > 1:
-                        disks.append(FlavorDisk(is_expansion=True, max_additional_items=max_data_disk_count - 1))
-
-                networks = [FlavorNetwork(type='eth')]
-                nic_limit = int(flavor['max_nics'])
-
-                if nic_limit > 1:
-                    networks.append(FlavorNetwork(type='eth', is_expansion=True, max_additional_items=nic_limit - 1))
-
-                # Now that is awkward - looks like technically there can be multiple arch versions in a flavor, but
-                # currently all flavors have exactly one arch if defined. Artemis Flavor.arch was designed to
-                # contain one arch only, so let's begin by taking the first value in the os_architecture.values list.
-                # We should not be taking the default value as the cli has (surprize!) amd64 default set for some
-                # s390x-specific flavors like bz2e-1x4
-                arch = flavor['os_architecture'].get('values', [None])[0]
-
-                ibmcloud_flavors.append(
-                    IBMCloudFlavor(
-                        name=flavor['name'],
-                        id=flavor['name'],
-                        cpu=FlavorCpu(
-                            processors=int(flavor['vcpu_count']['value'])
-                        ),
-                        memory=UNITS.Quantity(int(flavor['memory']['value']), UNITS.gibibytes),
-                        disk=FlavorDisks(disks),
-                        network=FlavorNetworks(networks),
-                        virtualization=FlavorVirtualization(),
-                        arch=arch,
-                        numa_count=int(flavor['numa_count'].get('value', 0)),
-                    )
-                )
-            except KeyError as exc:
-                return Error(Failure.from_exc(
-                    'malformed flavor description',
-                    exc,
-                    flavor_info=flavors
-                ))
-
-        return Ok(ibmcloud_flavors)
+        return self.do_fetch_pool_flavor_info(
+            self.logger,
+            _fetch,
+            # ignore[index]: for some reason, mypy does not detect the type correctly
+            lambda raw_flavor: cast(str, raw_flavor['name']),  # type: ignore[index]
+            _constructor
+        )
 
     def fetch_pool_resources_metrics(
         self,
