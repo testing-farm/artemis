@@ -36,13 +36,13 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
-    CLIErrorCauses,
     ConsoleUrlData,
     GuestLogUpdateProgress,
     HookImageInfoMapper,
     PoolCapabilities,
     PoolData,
     PoolDriver,
+    PoolErrorCauses,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -103,23 +103,28 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 )
 
 
-class OsErrorCauses(CLIErrorCauses):
+class OpenStackErrorCauses(PoolErrorCauses):
     NONE = 'none'
+    RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
+    FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
+    IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     NO_SUCH_COMMAND = 'no-such-command'
     MISSING_INSTANCE = 'missing-instance'
     INSTANCE_NOT_READY = 'instance-not-ready'
+    INSTANCE_IN_ERROR_STATE = 'instance-in-error-state'
+    INSTANCE_BUILDING_TOO_LONG = 'instance-building-too-long'
 
 
 CLI_ERROR_PATTERNS = {
-    OsErrorCauses.NO_SUCH_COMMAND: re.compile(r'openstack: .+ is not an openstack command'),
-    OsErrorCauses.MISSING_INSTANCE: re.compile(r'^No server with a name or ID'),
-    OsErrorCauses.INSTANCE_NOT_READY: re.compile(r'^Instance [a-z0-9\-]+ is not ready')
+    OpenStackErrorCauses.NO_SUCH_COMMAND: re.compile(r'openstack: .+ is not an openstack command'),
+    OpenStackErrorCauses.MISSING_INSTANCE: re.compile(r'^No server with a name or ID'),
+    OpenStackErrorCauses.INSTANCE_NOT_READY: re.compile(r'^Instance [a-z0-9\-]+ is not ready')
 }
 
 
-def os_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> OsErrorCauses:
+def os_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> OpenStackErrorCauses:
     if output.exit_code == 0:
-        return OsErrorCauses.NONE
+        return OpenStackErrorCauses.NONE
 
     stdout = process_output_to_str(output, stream='stdout')
     stderr = process_output_to_str(output, stream='stderr')
@@ -134,7 +139,7 @@ def os_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> OsErrorCau
         if stderr and pattern.match(stderr):
             return cause
 
-    return OsErrorCauses.NONE
+    return OpenStackErrorCauses.NONE
 
 
 @dataclasses.dataclass
@@ -258,10 +263,10 @@ class OpenStackDriver(PoolDriver):
             # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
             # run this method, we would never evenr made it remove instance that doesn't exist.
             if failure.command_output \
-               and os_error_cause_extractor(failure.command_output) == OsErrorCauses.MISSING_INSTANCE:
+               and os_error_cause_extractor(failure.command_output) == OpenStackErrorCauses.MISSING_INSTANCE:
                 failure.recoverable = False
 
-                PoolMetrics.inc_error(self.poolname, OsErrorCauses.MISSING_INSTANCE.value)
+                PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.MISSING_INSTANCE.value)
 
             return Error(failure)
 
@@ -882,7 +887,7 @@ class OpenStackDriver(PoolDriver):
         logger.info(f'current instance status {OpenStackPoolData.unserialize(guest_request).instance_id}:{status}')
 
         if status == 'error':
-            PoolMetrics.inc_error(self.poolname, 'instance-in-error-state')
+            PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.INSTANCE_IN_ERROR_STATE)
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
@@ -905,7 +910,7 @@ class OpenStackDriver(PoolDriver):
                 diff = datetime.datetime.utcnow() - created_stamp
 
                 if diff.total_seconds() > KNOB_BUILD_TIMEOUT.value:
-                    PoolMetrics.inc_error(self.poolname, 'instance-building-too-long')
+                    PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.INSTANCE_BUILDING_TOO_LONG)
 
                     return Ok(ProvisioningProgress(
                         state=ProvisioningState.CANCEL,
@@ -1242,7 +1247,7 @@ class OpenStackDriver(PoolDriver):
 
             # Detect "instance not ready".
             if failure.command_output \
-               and os_error_cause_extractor(failure.command_output) == OsErrorCauses.INSTANCE_NOT_READY:
+               and os_error_cause_extractor(failure.command_output) == OpenStackErrorCauses.INSTANCE_NOT_READY:
                 return Ok(None)
 
         return r_output

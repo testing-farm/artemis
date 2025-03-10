@@ -470,18 +470,23 @@ class PoolLogger(gluetool.log.ContextAdapter):
         return cast(str, self._contexts['pool_name'][1])
 
 
-class CLIErrorCauses(enum.Enum):
+class PoolErrorCauses(enum.Enum):
     """
-    A base class for enums listing various error causes recognized by pools for their CLI tools.
+    A base class for enums listing various error causes recognized by pools for the purpose of collecting metrics.
     """
 
-    pass
+
+class CommonPoolErrorCauses(enum.Enum):
+    NONE = 'none'
+    RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
+    FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
+    IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
 
 
 #: A type for callables extracting CLI error cause from process output.
-CLIErrorCauseExtractor = Callable[
+PoolErrorCauseExtractor = Callable[
     [gluetool.utils.ProcessOutput],
-    CLIErrorCauses
+    PoolErrorCauses
 ]
 
 
@@ -1363,7 +1368,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
     image_info_class: Type[PoolImageInfo] = PoolImageInfo
     flavor_info_class: Type[Flavor] = Flavor
     pool_data_class: Type[PoolData] = PoolData
-    cli_error_cause_extractor: Optional[CLIErrorCauseExtractor] = None
+    pool_error_causes_enum: Type[PoolErrorCauses]
+    cli_error_cause_extractor: Optional[PoolErrorCauseExtractor] = None
 
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
@@ -2454,7 +2460,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         r_resource_metrics = self.fetch_pool_resources_metrics(logger)
 
         if r_resource_metrics.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, 'resource-metrics-refresh-failed')
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonPoolErrorCauses.RESOURCE_METRICS_REFRESH_FAILED)
 
             return Error(r_resource_metrics.unwrap_error())
 
@@ -2621,7 +2627,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         r_image_info = self.fetch_pool_image_info()
 
         if r_image_info.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, 'image-info-refresh-failed')
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonPoolErrorCauses.IMAGE_INFO_REFRESH_FAILED)
 
             return Error(r_image_info.unwrap_error())
 
@@ -2839,7 +2845,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         r_flavor_info = self.fetch_pool_flavor_info()
 
         if r_flavor_info.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, 'flavor-info-refresh-failed')
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonPoolErrorCauses.FLAVOR_INFO_REFRESH_FAILED)
 
             return Error(r_flavor_info.unwrap_error())
 
@@ -2928,7 +2934,7 @@ def run_cli_tool(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[CLIErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None
 ) -> Result[CLIOutput, Failure]:
     """
     Run a given command, and return its output.
@@ -3100,7 +3106,7 @@ def run_remote(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[CLIErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -3145,7 +3151,7 @@ def copy_to_remote(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[CLIErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -3187,7 +3193,7 @@ def copy_from_remote(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[CLIErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -3226,7 +3232,7 @@ def ping_shell_remote(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[CLIErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None
 ) -> Result[bool, Failure]:
     """
     Try to run a simple ``echo`` command on a given guest, and verify its output.
