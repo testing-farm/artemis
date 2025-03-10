@@ -1007,9 +1007,12 @@ def run_doer_multithread(
 
         def _thread_trampoline() -> DoerReturnType:
             profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
+            verbose_profile = gluetool.utils.normalize_bool_option(
+                actor_control_value(actor_name, 'VERBOSE_PROFILE', False)
+            )
 
             if profile_actor:
-                profiler = Profiler()
+                profiler = Profiler(verbose=verbose_profile)
                 profiler.start()
 
             try:
@@ -1067,12 +1070,13 @@ def run_doer_singlethread(
     logger.debug(f'starting {fn.__name__} doer')
 
     profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
+    verbose_profile = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'VERBOSE_PROFILE', False))
 
     try:
         logger.debug(f'submitting task doer {fn.__name__}')
 
         if profile_actor:
-            profiler = Profiler()
+            profiler = Profiler(verbose=verbose_profile)
             profiler.start()
 
         with Sentry.start_span('run_doer', op='function', doer=fn.__name__, doer_args=args):
@@ -1144,9 +1148,10 @@ def _task_core(
     actor_name = caller_frame.frame.f_code.co_name
 
     profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
+    verbose_profile = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'VERBOSE_PROFILE', False))
 
     if profile_actor:
-        profiler = Profiler()
+        profiler = Profiler(verbose=verbose_profile)
         profiler.start()
 
     db = db or get_root_db()

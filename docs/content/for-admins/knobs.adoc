@@ -442,6 +442,26 @@ for the requested action.
 
 5+|How many functions should be included in the summary.
 
+|`api.profiling.path-pattern`
+|`str`
+|`ARTEMIS_API_PROFILING_PATH_PATTERN`
+|`.*`
+|no
+
+
+
+5+|Only requests for paths matching this pattern will be profiled.
+
+|`api.profiling.verbose`
+|`bool`
+|`ARTEMIS_API_VERBOSE_PROFILING`
+|`no`
+|no
+
+
+
+5+|If enabled, API profiling will emit more information about more stack frames.
+
 |`api.threads`
 |`int`
 |`ARTEMIS_API_THREADS`

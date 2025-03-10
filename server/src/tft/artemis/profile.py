@@ -9,7 +9,7 @@ import cProfile
 import io
 import pstats
 import time
-from typing import List, Optional, Tuple, TypeVar
+from typing import Any, Dict, List, Optional, Tuple, TypeVar
 
 import gluetool.log
 import pyinstrument
@@ -22,10 +22,14 @@ class Profiler:
     Bundles together various parameters and helpers for profiling a code.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, verbose: bool = False) -> None:
         """
         Bundles together various parameters and helpers for profiling a code.
+
+        :param verbose: if set, profiler will report more frames and more details.
         """
+
+        self.verbose = verbose
 
         self.start_time: Optional[float] = None
         self.stop_time: Optional[float] = None
@@ -55,7 +59,7 @@ class Profiler:
         self.start_time = time.time()
 
         self._profiler = cProfile.Profile()
-        self._callstack_profiler = pyinstrument.Profiler()
+        self._callstack_profiler = pyinstrument.Profiler(async_mode='enabled')
 
         self._profiler.enable()
         self._callstack_profiler.start()
@@ -103,7 +107,24 @@ class Profiler:
             lines += ['']
 
         if self._callstack_profiler is not None:
-            lines += self._callstack_profiler.output_text(unicode=False, color=True).splitlines()
+            if self.verbose:
+                kwargs: Dict[str, Any] = {
+                    'show_all': True,
+                    'timeline': True
+                }
+
+            else:
+                kwargs = {
+                    'show_all': False,
+                    'timeline': False,
+                    'short_mode': True
+                }
+
+            lines += self._callstack_profiler.output_text(
+                unicode=False,
+                color=True,
+                **kwargs
+            ).splitlines()
             lines += ['']
 
         return '\n'.join(lines)
