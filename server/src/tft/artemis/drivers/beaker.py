@@ -1651,7 +1651,7 @@ class BeakerDriver(PoolDriver):
             (
                 job['result'].lower(),
                 job['status'].lower(),
-                job_results.find('recipe')['system']
+                job_results.find('recipe').attrs.get('system')
             )
         )
 
