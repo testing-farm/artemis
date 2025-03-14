@@ -482,7 +482,7 @@ def transaction(
             ...
     """
 
-    from . import Failure
+    from . import Failure, Sentry
 
     result = TransactionResult()
 
@@ -502,40 +502,41 @@ def transaction(
                 exc=exc
             )
 
-    try:
-        assert_not_in_transaction(logger, session, rollback=False)
+    with Sentry.start_span('transaction', op='db.transaction'):
+        try:
+            assert_not_in_transaction(logger, session, rollback=False)
 
-        session.begin()
+            session.begin()
 
-        yield result
+            yield result
 
-        session.commit()
+            session.commit()
 
-        session.expunge_all()
+            session.expunge_all()
 
-        result.complete = True
+            result.complete = True
 
-    except sqlalchemy.exc.OperationalError as exc:
-        session.expunge_all()
+        except sqlalchemy.exc.OperationalError as exc:
+            session.expunge_all()
 
-        if isinstance(exc, sqlalchemy.exc.OperationalError) \
-                and isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
-                and exc.orig.pgerror.strip() == 'ERROR:  could not serialize access due to concurrent update':
+            if isinstance(exc, sqlalchemy.exc.OperationalError) \
+                    and isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
+                    and exc.orig.pgerror.strip() == 'ERROR:  could not serialize access due to concurrent update':
 
-            result.complete = False
-            result.conflict = True
-            result.failure = Failure.from_exc('could not serialize access due to concurrent update', exc)
-            result.failed_query = exc.statement
+                result.complete = False
+                result.conflict = True
+                result.failure = Failure.from_exc('could not serialize access due to concurrent update', exc)
+                result.failed_query = exc.statement
 
-        else:
+            else:
+                _save_error(exc)
+
+        except Exception as exc:
+            session.rollback()
+
+            session.expunge_all()
+
             _save_error(exc)
-
-    except Exception as exc:
-        session.rollback()
-
-        session.expunge_all()
-
-        _save_error(exc)
 
 
 class UserRoles(enum.Enum):
