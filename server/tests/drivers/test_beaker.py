@@ -657,14 +657,7 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
         """,
         [],
         [],
-        """
-        <or>
-         <system_type op="=" value="Machine"/>
-         <system_type op="=" value="Prototype"/>
-         <system_type op="=" value="Resource"/>
-         <system_type op="=" value="Laptop"/>
-        </or>
-        """
+        None,
     ),
     (
         """
@@ -690,12 +683,6 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
          <system>
           <memory op="&gt;=" value="8192"/>
          </system>
-         <or>
-          <system_type op="=" value="Machine"/>
-          <system_type op="=" value="Prototype"/>
-          <system_type op="=" value="Resource"/>
-          <system_type op="=" value="Laptop"/>
-         </or>
         </and>
         """
     ),
@@ -727,12 +714,6 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
          <group op="!=" value="dummy-group-2"/>
          <hostname op="!=" value="dummy-hostname-1"/>
          <hostname op="!=" value="dummy-hostname-2"/>
-         <or>
-          <system_type op="=" value="Machine"/>
-          <system_type op="=" value="Prototype"/>
-          <system_type op="=" value="Resource"/>
-          <system_type op="=" value="Laptop"/>
-         </or>
         </and>
         """
     ),
@@ -758,12 +739,6 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
           <arch op="==" value="x86_64"/>
          </system>
          <hostname op="==" value="dummy.host.com"/>
-         <or>
-          <system_type op="=" value="Machine"/>
-          <system_type op="=" value="Prototype"/>
-          <system_type op="=" value="Resource"/>
-          <system_type op="=" value="Laptop"/>
-         </or>
         </and>
         """
     ),
@@ -789,12 +764,6 @@ def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
           <arch op="==" value="x86_64"/>
          </system>
          <hostname op="like" value="dummy.%.com"/>
-         <or>
-          <system_type op="=" value="Machine"/>
-          <system_type op="=" value="Prototype"/>
-          <system_type op="=" value="Resource"/>
-          <system_type op="=" value="Laptop"/>
-         </or>
         </and>
         """
     )
