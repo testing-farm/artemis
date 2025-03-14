@@ -1016,6 +1016,10 @@ class GuestRequest(Base):
     priority_group = relationship('PriorityGroup', back_populates='guests')
     pool = relationship('Pool', back_populates='guests')
 
+    __table_args__ = (
+        Index('ix_guestname_poolname', guestname, poolname),
+    )
+
     @classmethod
     def create_query(
         cls,
