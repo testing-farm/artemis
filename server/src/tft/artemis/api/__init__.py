@@ -74,7 +74,7 @@ KNOB_API_VERBOSE_PROFILING: Knob[bool] = Knob(
     default=False
 )
 
-KNOB_API_PROFILE_PATH_PATTERN: Knob[str] = Knob(
+KNOB_API_PROFILING_PATH_PATTERN: Knob[str] = Knob(
     'api.profiling.path-pattern',
     'Only requests for paths matching this pattern will be profiled.',
     has_db=False,
@@ -83,7 +83,7 @@ KNOB_API_PROFILE_PATH_PATTERN: Knob[str] = Knob(
     default=r'.*'
 )
 
-KNOB_API_PROFILE_LIMIT: Knob[int] = Knob(
+KNOB_API_PROFILING_LIMIT: Knob[int] = Knob(
     'api.profiling.limit',
     'How many functions should be included in the summary.',
     has_db=False,
@@ -131,13 +131,13 @@ KNOB_API_ENGINE_WORKER_RESTART_REQUESTS_SPREAD: Knob[int] = Knob(
 
 # Precompile the profiling path pattern
 try:
-    API_PROFILE_PATH_PATTERN = re.compile(KNOB_API_PROFILE_PATH_PATTERN.value)
+    API_PROFILE_PATH_PATTERN = re.compile(KNOB_API_PROFILING_PATH_PATTERN.value)
 
 except Exception as exc:
     Failure.from_exc(
-        'failed to compile ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN pattern',
+        'failed to compile ARTEMIS_API_PROFILING_PATH_PATTERN pattern',
         exc,
-        pattern=KNOB_API_PROFILE_PATH_PATTERN.value
+        pattern=KNOB_API_PROFILING_PATH_PATTERN.value
     ).handle(get_logger())
 
     sys.exit(1)

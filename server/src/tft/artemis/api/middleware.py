@@ -222,7 +222,7 @@ class RSSWatcherMiddleware(BaseHTTPMiddleware):
 
 class ProfileMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        from . import API_PROFILE_PATH_PATTERN, KNOB_API_PROFILE_LIMIT, KNOB_API_VERBOSE_PROFILING
+        from . import API_PROFILE_PATH_PATTERN, KNOB_API_PROFILING_LIMIT, KNOB_API_VERBOSE_PROFILING
 
         if not API_PROFILE_PATH_PATTERN.match(request.scope["path"]):
             return await call_next(request)
@@ -244,4 +244,4 @@ class ProfileMiddleware(BaseHTTPMiddleware):
 
             logger.info(f'{request_label} profiling ended')  # noqa: FS002
 
-            profiler.log(logger, f'{request_label} profiling report', limit=KNOB_API_PROFILE_LIMIT.value)
+            profiler.log(logger, f'{request_label} profiling report', limit=KNOB_API_PROFILING_LIMIT.value)
