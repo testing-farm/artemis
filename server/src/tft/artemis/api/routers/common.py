@@ -52,8 +52,11 @@ router_default = APIRouter(
 )
 
 
+# TODO: async is needed for the subsequent calls to be visible to FastAPI profiler middleware.
+# We shall add it to all endpoints, for now just fixing /metrics and /guests because those are
+# causing me the biggest headache.
 @router_default.get("/metrics", status_code=status.HTTP_200_OK)
-def show_metrics(
+async def show_metrics(
     request: Request,
     db: Annotated[artemis_db.DB, Depends(get_db)],
     metrics_tree: Annotated['metrics.Metrics', Depends(get_metrics_tree)],

@@ -44,7 +44,7 @@ router_guests = APIRouter(
 
 
 @router_guests.get("/", status_code=status.HTTP_200_OK)
-def get_guests(
+async def get_guests(
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     request: Request

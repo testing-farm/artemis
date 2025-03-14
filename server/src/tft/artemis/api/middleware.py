@@ -6,16 +6,17 @@ import json
 import os
 import re
 import time
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Tuple
 
 from fastapi import FastAPI, HTTPException, Request, Response, status as http_status
 from gluetool.utils import normalize_bool_option
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware as FastAPIBaseHTTPMiddleware
 
 from .. import RSSWatcher
 from ..db import DB
 from ..knobs import Knob
 from ..metrics import APIMetrics
+from ..profile import Profiler
 from . import errors
 from .dependencies import get_db, get_logger
 from .models import AuthContext
@@ -54,6 +55,19 @@ KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
     cast_from_str=normalize_bool_option,
     default=False
 )
+
+
+class BaseHTTPMiddleware(FastAPIBaseHTTPMiddleware):
+    def get_request_info(self, request: Request) -> Tuple[str, str]:
+        return (
+            f'{request.method} {request.scope["path"]} HTTP/{request.scope["http_version"]}',
+            f'{request.scope["client"][0]}:{request.scope["client"][1]}'
+        )
+
+    def get_request_label(self, request: Request) -> str:
+        request_info, client_info = self.get_request_info(request)
+
+        return f'[{os.getpid()}] [{client_info}] [{request_info}]'
 
 
 # NOTE(ivasilev) As middlewares are handled at starlette level there is no way to use dependency injection at the
@@ -192,16 +206,42 @@ class RSSWatcherMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         logger = get_logger()
 
-        request_info = f'{request.method} {request.scope["path"]} HTTP/{request.scope["http_version"]}'
-        client_info = f'{request.scope["client"][0]}:{request.scope["client"][1]}'
+        request_label = self.get_request_label(request)
 
         rss = RSSWatcher()
 
-        logger.info(f'[{os.getpid()}] [{client_info}] [{request_info}] {rss.format()}')  # noqa: FS002
+        logger.info(f'{request_label} {rss.format()}')  # noqa: FS002
 
         try:
             return await call_next(request)
 
         finally:
             rss.snapshot()
-            logger.info(f'[{os.getpid()}] [{client_info}] [{request_info}] {rss.format()}')  # noqa: FS002
+            logger.info(f'{request_label} {rss.format()}')  # noqa: FS002
+
+
+class ProfileMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        from . import API_PROFILE_PATH_PATTERN, KNOB_API_PROFILING_LIMIT, KNOB_API_VERBOSE_PROFILING
+
+        if not API_PROFILE_PATH_PATTERN.match(request.scope["path"]):
+            return await call_next(request)
+
+        logger = get_logger()
+
+        request_label = self.get_request_label(request)
+
+        profiler = Profiler(verbose=KNOB_API_VERBOSE_PROFILING.value)
+        profiler.start()
+
+        logger.info(f'{request_label} profiling started')  # noqa: FS002
+
+        try:
+            return await call_next(request)
+
+        finally:
+            profiler.stop()
+
+            logger.info(f'{request_label} profiling ended')  # noqa: FS002
+
+            profiler.log(logger, f'{request_label} profiling report', limit=KNOB_API_PROFILING_LIMIT.value)

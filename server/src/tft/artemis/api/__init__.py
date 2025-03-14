@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 import platform
+import re
 import shutil
 import sys
 from typing import Any, List, NoReturn, Optional, Sequence, cast
@@ -19,7 +20,7 @@ from gluetool.result import Ok
 from starlette.middleware import Middleware
 from starlette.responses import RedirectResponse
 
-from .. import get_logger, metrics
+from .. import Failure, get_logger, metrics
 from ..knobs import (
     KNOB_LOGGING_JSON,
     KNOB_WORKER_PROCESS_METRICS_ENABLED,
@@ -28,7 +29,13 @@ from ..knobs import (
 )
 from ..script import hook_engine
 from . import environment
-from .middleware import AuthorizationMiddleware, ErrorHandlerMiddleware, PrometheusMiddleware, RSSWatcherMiddleware
+from .middleware import (
+    AuthorizationMiddleware,
+    ErrorHandlerMiddleware,
+    ProfileMiddleware,
+    PrometheusMiddleware,
+    RSSWatcherMiddleware,
+)
 from .routers import define_openapi_schema
 
 KNOB_API_PROCESSES: Knob[int] = Knob(
@@ -58,7 +65,25 @@ KNOB_API_ENABLE_PROFILING: Knob[bool] = Knob(
     default=False
 )
 
-KNOB_API_PROFILE_LIMIT: Knob[int] = Knob(
+KNOB_API_VERBOSE_PROFILING: Knob[bool] = Knob(
+    'api.profiling.verbose',
+    'If enabled, API profiling will emit more information about more stack frames.',
+    has_db=False,
+    envvar='ARTEMIS_API_VERBOSE_PROFILING',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
+KNOB_API_PROFILING_PATH_PATTERN: Knob[str] = Knob(
+    'api.profiling.path-pattern',
+    'Only requests for paths matching this pattern will be profiled.',
+    has_db=False,
+    envvar='ARTEMIS_API_PROFILING_PATH_PATTERN',
+    cast_from_str=str,
+    default=r'.*'
+)
+
+KNOB_API_PROFILING_LIMIT: Knob[int] = Knob(
     'api.profiling.limit',
     'How many functions should be included in the summary.',
     has_db=False,
@@ -102,6 +127,20 @@ KNOB_API_ENGINE_WORKER_RESTART_REQUESTS_SPREAD: Knob[int] = Knob(
     cast_from_str=int,
     default=0
 )
+
+
+# Precompile the profiling path pattern
+try:
+    API_PROFILE_PATH_PATTERN = re.compile(KNOB_API_PROFILING_PATH_PATTERN.value)
+
+except Exception as exc:
+    Failure.from_exc(
+        'failed to compile ARTEMIS_API_PROFILING_PATH_PATTERN pattern',
+        exc,
+        pattern=KNOB_API_PROFILING_PATH_PATTERN.value
+    ).handle(get_logger())
+
+    sys.exit(1)
 
 
 def generate_redirects(app: fastapi.FastAPI, api_version: str, routes: List[fastapi.routing.APIRoute],
@@ -177,7 +216,14 @@ def run_app() -> fastapi.FastAPI:
             lambda _unused: Ok((1, KNOB_API_THREADS.value))
         )
 
-    mw: List[Middleware] = [
+    mw: List[Middleware] = []
+
+    if KNOB_API_ENABLE_PROFILING.value is True:
+        mw += [
+            Middleware(ProfileMiddleware)
+        ]
+
+    mw += [
         Middleware(AuthorizationMiddleware),
         Middleware(ErrorHandlerMiddleware),
         Middleware(PrometheusMiddleware),
@@ -206,11 +252,6 @@ def main() -> NoReturn:
     sys.stderr.flush()
 
     gunicorn_options: List[str] = []
-
-    if KNOB_API_ENABLE_PROFILING.value is True:
-        gunicorn_options += [
-            '-c', 'src/tft/artemis/api/wsgi_profiler.py'
-        ]
 
     gunicorn_options += [
         '-k', 'tft.artemis.api.UvicornWorker',
