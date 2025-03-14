@@ -912,6 +912,28 @@ def beaker_pools_to_beaker_filter(pools: List[BeakerPool]) -> Result[bs4.Beautif
     return Ok(container)
 
 
+def beaker_system_type_wildcard() -> Result[bs4.BeautifulSoup, Failure]:
+    """
+    Create a wildcardfilter for Beaker XML to allo all known system types.
+
+    For each system type value, the following element is created, eventually joined by others in a single ``or``
+    element:
+
+    .. code-block:: xml
+
+       <system_type op="=" value="$system_type"/>
+
+    :returns: a Beaker filter allowing all known system types.
+    """
+
+    container = _new_tag('or')
+
+    for system_type in ('Machine', 'Prototype', 'Resource', 'Laptop'):
+        container.append(_new_tag('system_type', op='=', value=system_type))
+
+    return Ok(container)
+
+
 def merge_beaker_filters(filters: List[bs4.BeautifulSoup]) -> Result[bs4.BeautifulSoup, Failure]:
     """
     Merge given Beaker filters into a single filter.
@@ -1009,6 +1031,14 @@ def create_beaker_filter(
 
     if r_beaker_pools.unwrap():
         r_beaker_filter = beaker_pools_to_beaker_filter(r_beaker_pools.unwrap())
+
+        if r_beaker_filter.is_error:
+            return Error(r_beaker_filter.unwrap_error())
+
+        beaker_filters.append(r_beaker_filter.unwrap())
+
+    else:
+        r_beaker_filter = beaker_system_type_wildcard()
 
         if r_beaker_filter.is_error:
             return Error(r_beaker_filter.unwrap_error())
