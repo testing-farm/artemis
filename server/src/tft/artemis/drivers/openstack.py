@@ -266,7 +266,7 @@ class OpenStackDriver(PoolDriver):
                and os_error_cause_extractor(failure.command_output) == OpenStackErrorCauses.MISSING_INSTANCE:
                 failure.recoverable = False
 
-                PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.MISSING_INSTANCE.value)
+                PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.MISSING_INSTANCE)
 
             return Error(failure)
 
