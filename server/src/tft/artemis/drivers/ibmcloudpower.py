@@ -3,7 +3,7 @@
 
 import dataclasses
 import re
-from typing import Any, Dict, List, Optional, Pattern, Tuple, TypedDict, cast
+from typing import Any, Dict, List, Optional, Pattern, TypedDict, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -19,6 +19,7 @@ from ..knobs import Knob
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CanAcquire,
     HookImageInfoMapper,
     PoolCapabilities,
     PoolImageSSHInfo,
@@ -295,7 +296,7 @@ class IBMCloudPowerDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[Tuple[bool, Optional[str]], Failure]:
+    ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
@@ -313,7 +314,7 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap()[0] is False:
+        if r_answer.unwrap().can_acquire is False:
             return r_answer
 
         r_images = self.image_info_mapper.map_or_none(logger, guest_request)
@@ -323,21 +324,21 @@ class IBMCloudPowerDriver(PoolDriver):
         images = r_images.unwrap()
 
         if not images:
-            return Ok((False, 'compose not supported'))
+            return Ok(CanAcquire.cannot('compose not supported'))
 
         # The driver does not support kickstart natively. Filter only images we can perform ks install on.
         if guest_request.environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
-                return Ok((False, 'compose does not support kickstart'))
+                return Ok(CanAcquire.cannot('compose does not support kickstart'))
 
         # Parent implementation does not care, but we still might: support for HW constraints is still
         # far from being complete and fully tested, therefore we should check whether we are able to
         # convert the constraints - if there are any - to a Beaker XML filter.
 
         if not guest_request.environment.has_hw_constraints:
-            return Ok((True, None))
+            return Ok(CanAcquire())
 
         r_constraints = guest_request.environment.get_hw_constraints()
 
@@ -359,14 +360,16 @@ class IBMCloudPowerDriver(PoolDriver):
         for span in constraints.spans(logger):
             for constraint in span:
                 if constraint.expand_name().spec_name not in supported_constraints:
-                    return Ok((False, f'HW requirement {constraint.expand_name().spec_name} is not supported'))
+                    return Ok(
+                        CanAcquire.cannot(f'HW requirement {constraint.expand_name().spec_name} is not supported')
+                    )
 
         r_filter = self._translate_constraints_to_cli_args(constraints)
 
         if r_filter.is_error:
             return Error(r_filter.unwrap_error())
 
-        return Ok((True, None))
+        return Ok(CanAcquire())
 
     def fetch_pool_resources_metrics(
         self,
