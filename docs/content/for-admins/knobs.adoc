@@ -1333,6 +1333,17 @@ of crashed resources.
 
 5+|A delay, in seconds, between two calls of `update-guest-request` task checking provisioning progress.
 
+|`route.policies.can-acquire.cancel-early`
+|`bool`
+|`ARTEMIS_ROUTE_POLICIES_CAN_ACQUIRE_CANCEL_EARLY`
+|`no`
+|no
+
+
+
+5+|If set, the ``can-acquire`` policy will cancel the request if no pool can acquire for it,
+and all provide irrecoverable reasons.
+
 |`route.policies.one-shot-only.label`
 |`str`
 |`ARTEMIS_ROUTE_POLICIES_ONE_SHOT_ONLY_LABEL`

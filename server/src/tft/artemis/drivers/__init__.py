@@ -633,6 +633,28 @@ class PoolData:
         return cls(**json.loads(guest_request.pool_data))
 
 
+@dataclasses.dataclass
+class CanAcquire:
+    """
+    Container for reporting whether a pool can deliver for the given request.
+    """
+
+    #: Whether the pool can deliver.
+    can_acquire: bool = True
+
+    #: If the pool cannot satisfy the request, it may share one or more reasons why it is so. Each instance of
+    #: :py:class:`Failure` shall represent one such reason, and its :py:attr:`Failure.recoverable` shall signal whether
+    #: it is a temporary limitation or not.
+    reason: Optional[Failure] = None
+
+    @classmethod
+    def cannot(cls, message: str, recoverable: bool = False) -> 'CanAcquire':
+        return CanAcquire(
+            can_acquire=False,
+            reason=Failure(message, recoverable=recoverable)
+        )
+
+
 class ProvisioningState(enum.Enum):
     """
     State of the provisioning. Used by drivers to notify the core workflow about the progress.
@@ -1674,7 +1696,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[Tuple[bool, Optional[str]], Failure]:
+    ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy the given environment.
 
@@ -1684,8 +1706,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         :param guest_request: guest_request to check.
         :rtype: result.Result[bool, Failure]
-        :returns: :py:class:`result.result` with either `bool`
-            or specification of error.
+        :returns: a container describing whether the pool can deliver, or specification of error.
         """
 
         r_capabilities = self.capabilities()
@@ -1696,7 +1717,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         capabilities = r_capabilities.unwrap()
 
         if not capabilities.supports_arch(guest_request.environment.hw.arch):
-            return Ok((False, 'architecture not supported'))
+            return Ok(CanAcquire.cannot('architecture not supported'))
 
         # Check whether given HW constraints do not go against what pool can deliver.
         #
@@ -1721,19 +1742,19 @@ class PoolDriver(gluetool.log.LoggerMixin):
                     return Error(r_uses_hostname.unwrap_error())
 
                 if r_uses_hostname.unwrap() is True:
-                    return Ok((False, 'hostname HW constraint not supported'))
+                    return Ok(CanAcquire.cannot('hostname HW constraint not supported'))
 
         if guest_request.environment.has_ks_specification:
             if not capabilities.supports_native_kickstart and guest_request.skip_prepare_verify_ssh:
-                Ok((False, 'SSH access is required to perform non-native kickstart installation'))
+                return Ok(CanAcquire.cannot('SSH access is required to perform non-native kickstart installation'))
 
             if guest_request.environment.kickstart.metadata is not None and any([
                 m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
                 for m in guest_request.environment.kickstart.metadata.split()
             ]):
-                Ok((False, 'unsupported kickstart metadata option specified'))
+                return Ok(CanAcquire.cannot('unsupported kickstart metadata option specified'))
 
-        return Ok((True, None))
+        return Ok(CanAcquire())
 
     def _map_image_name_to_image_info_by_cache(
         self,

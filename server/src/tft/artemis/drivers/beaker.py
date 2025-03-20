@@ -45,6 +45,7 @@ from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT, Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CanAcquire,
     CLIOutput,
     GuestLogUpdateProgress,
     HookImageInfoMapper,
@@ -1953,7 +1954,7 @@ class BeakerDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[Tuple[bool, Optional[str]], Failure]:
+    ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
@@ -1969,7 +1970,7 @@ class BeakerDriver(PoolDriver):
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap()[0] is False:
+        if r_answer.unwrap().can_acquire is False:
             return r_answer
 
         r_distros = self.image_info_mapper.map_or_none(logger, guest_request)
@@ -1979,14 +1980,14 @@ class BeakerDriver(PoolDriver):
         distros = r_distros.unwrap()
 
         if not distros:
-            return Ok((False, 'compose not supported'))
+            return Ok(CanAcquire.cannot('compose not supported'))
 
         # Parent implementation does not care, but we still might: support for HW constraints is still
         # far from being complete and fully tested, therefore we should check whether we are able to
         # convert the constraints - if there are any - to a Beaker XML filter.
 
         if not guest_request.environment.has_hw_constraints:
-            return Ok((True, None))
+            return Ok(CanAcquire())
 
         r_constraints = guest_request.environment.get_hw_constraints()
 
@@ -2039,14 +2040,16 @@ class BeakerDriver(PoolDriver):
         for span in constraints.spans(logger):
             for constraint in span:
                 if constraint.expand_name().spec_name not in supported_constraints:
-                    return Ok((False, f'HW requirement {constraint.expand_name().spec_name} is not supported'))
+                    return Ok(
+                        CanAcquire.cannot(f'HW requirement {constraint.expand_name().spec_name} is not supported')
+                    )
 
         r_filter = constraint_to_beaker_filter(constraints, guest_request, self)
 
         if r_filter.is_error:
             return Error(r_filter.unwrap_error())
 
-        return Ok((True, None))
+        return Ok(CanAcquire())
 
     def acquire_guest(
         self,

@@ -15,7 +15,7 @@ from typing_extensions import Protocol, TypedDict
 
 from . import Failure, SerializableContainer, partition
 from .db import GuestRequest
-from .drivers import PoolCapabilities, PoolDriver, PoolLogger
+from .drivers import CanAcquire, PoolCapabilities, PoolDriver, PoolLogger
 from .knobs import Knob
 from .metrics import PoolMetrics
 
@@ -217,6 +217,18 @@ KNOB_USE_SPOT_LABEL: Knob[str] = Knob(
     default='ArtemisUseSpot'
 )
 
+KNOB_CAN_ACQUIRE_CANCEL_EARLY: Knob[bool] = Knob(
+    'route.policies.can-acquire.cancel-early',
+    """
+    If set, the ``can-acquire`` policy will cancel the request if no pool can acquire for it,
+    and all provide irrecoverable reasons.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_ROUTE_POLICIES_CAN_ACQUIRE_CANCEL_EARLY',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False
+)
+
 
 class PolicyLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, policy_name: str) -> None:
@@ -325,7 +337,7 @@ def collect_pool_can_acquire(
     session: sqlalchemy.orm.session.Session,
     pools: List[PoolDriver],
     guest_request: GuestRequest
-) -> Result[List[Tuple[PoolDriver, Tuple[bool, Optional[str]]]], Failure]:
+) -> Result[List[Tuple[PoolDriver, CanAcquire]], Failure]:
     r_answers = [
         (
             pool,
@@ -890,11 +902,28 @@ def policy_can_acquire(
     if r_answers.is_error:
         return Error(r_answers.unwrap_error())
 
+    answers = r_answers.unwrap()
+
+    # If all pools reject the request, and all because of irrecoverable reasons, then we should cancel the request
+    # early.
+    cancel: bool = False
+
+    if KNOB_CAN_ACQUIRE_CANCEL_EARLY.value is True and not any(answer.can_acquire for _, answer in answers):
+        cancel = all(
+            (answer.reason is not None and answer.reason.recoverable is not True)
+            for _, answer in answers
+        )
+
     return Ok(PolicyRuling(
         pools=[
-            PoolPolicyRuling(pool=pool, allowed=answer, note=note)
-            for pool, (answer, note) in r_answers.unwrap()
-        ]
+            PoolPolicyRuling(
+                pool=pool,
+                allowed=answer.can_acquire,
+                note=answer.reason.message if answer.reason else None
+            )
+            for pool, answer in answers
+        ],
+        cancel=cancel
     ))
 
 
