@@ -4,7 +4,7 @@
 import base64
 import dataclasses
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import gluetool.log
 import gluetool.utils
@@ -19,6 +19,7 @@ from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CanAcquire,
     GuestLogUpdateProgress,
     PoolCapabilities,
     PoolData,
@@ -86,7 +87,7 @@ class RestDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[Tuple[bool, Optional[str]], Failure]:
+    ) -> Result[CanAcquire, Failure]:
         '''
         Request
         """""""
@@ -114,11 +115,11 @@ class RestDriver(PoolDriver):
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap()[0] is False:
+        if r_answer.unwrap().can_acquire is False:
             return r_answer
 
         if guest_request.environment.has_ks_specification:
-            return Ok((False, 'kickstart not supported'))
+            return Ok(CanAcquire.cannot('kickstart not supported'))
 
         payload = {
             "environment": base64.b64encode(json.dumps(guest_request._environment).encode()),
@@ -144,7 +145,7 @@ class RestDriver(PoolDriver):
         result = data.get("result")
         reason = data.get("reason", None)
 
-        return Ok((result, reason))
+        return Ok(CanAcquire(can_acquire=result, reason=Failure(reason) if reason else None))
 
     def acquire_guest(
         self,
