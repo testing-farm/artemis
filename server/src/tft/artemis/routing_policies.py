@@ -919,7 +919,8 @@ def policy_can_acquire(
             PoolPolicyRuling(
                 pool=pool,
                 allowed=answer.can_acquire,
-                note=answer.reason.message if answer.reason else None
+                note=f'{answer.reason.message} ({"recoverable" if answer.reason.recoverable else "irrecoverable"})'
+                if answer.reason else None
             )
             for pool, answer in answers
         ],
