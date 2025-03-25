@@ -20,6 +20,7 @@ from typing import (
     Dict,
     Generator,
     Iterable,
+    Iterator,
     List,
     MutableSet,
     NoReturn,
@@ -891,23 +892,22 @@ class Failure:
                 List[Union[sentry_sdk.utils.AnnotatedValue, str]],
                 None
             ]
-        ) -> str:
+        ) -> Iterator[str]:
             if v is None:
-                return ''
+                yield ''
 
-            if isinstance(v, str):
-                return v
+            elif isinstance(v, str):
+                yield v
 
-            if isinstance(v, sentry_sdk.utils.AnnotatedValue):
-                return str(v.value)
+            elif isinstance(v, sentry_sdk.utils.AnnotatedValue):
+                yield str(v.value)
 
-            if isinstance(v, list):
-                return '\n'.join([
-                    (s.value or '') if isinstance(s, sentry_sdk.utils.AnnotatedValue) else s
-                    for s in v
-                ])
+            elif isinstance(v, list):
+                for s in v:
+                    yield (s.value or '') if isinstance(s, sentry_sdk.utils.AnnotatedValue) else s
 
-            return str(v)
+            else:
+                yield str(v)
 
         result = []
         for frame in frames:
@@ -916,7 +916,7 @@ class Failure:
             function = frame.name
             line = frame.line
 
-            frame_result: Dict[str, Union[int, str, Dict[str, str], None]] = {
+            frame_result: Dict[str, Union[int, str, List[str], Dict[str, str], None]] = {
                 'abs_path': filename,
                 'filename': os.path.relpath(filename, os.getcwd()),
                 'module': None,
@@ -929,10 +929,11 @@ class Failure:
                 # Hence the decrement.
                 pre_context, context_line, post_context = sentry_sdk.utils.get_lines_from_file(filename, lineno - 1)
 
+                # Pre/post context is supposed to be a list of lines, the context line a string.
                 frame_result.update({
-                    'pre_context': _stringify(pre_context),
-                    'context_line': _stringify(context_line),
-                    'post_context': _stringify(post_context)
+                    'pre_context': list(_stringify(pre_context)),
+                    'context_line': '\n'.join(_stringify(context_line)),
+                    'post_context': list(_stringify(post_context))
                 })
 
             if frame.locals:
