@@ -10,7 +10,7 @@ fi
 trap 'kill $(jobs -p)' EXIT
 
 export ARTEMIS_CONFIG_DIR="${ARTEMIS_CONFIG_DIR:-$(pwd)/configuration}"
-export ARTEMIS_BROKER_URL="${ARTEMIS_BROKER_URL:-amqp://guest:guest@127.0.0.1:5672/?heartbeat=60&blocked_connection_timeout=60}"
+export ARTEMIS_BROKER_URL="${ARTEMIS_BROKER_URL:-amqp://artemis:artemis@127.0.0.1:5672/?heartbeat=60&blocked_connection_timeout=60}"
 export ARTEMIS_DB_URL="${ARTEMIS_DB_URL:-postgresql://artemis:artemis@127.0.0.1:5432/artemis}"
 export ARTEMIS_CACHE_URL="${ARTEMIS_CACHE_URL:-redis://127.0.0.1:6379}"
 export ARTEMIS_VAULT_PASSWORD_FILE="${ARTEMIS_VAULT_PASSWORD_FILE:-$ARTEMIS_CONFIG_DIR/.vault_pass}"

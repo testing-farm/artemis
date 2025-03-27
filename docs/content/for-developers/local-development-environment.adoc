@@ -111,7 +111,7 @@ You do not need to install these tools to run the test suite - test suite takes 
 
 [NOTE]
 ====
-If you picked the <<_docker_compose>> method, you already have these tools available after you finished `poetry install` step. If you followed <<_minishift_and_scaffold>> method, then you did not perform this particular step as your Artemis sources are happily packaged within container images. You should, however, consider installing the tools.
+If you picked the <<_podman_compose>> method, you already have these tools available after you finished `poetry install` step. If you followed <<_minishift_and_scaffold>> method, then you did not perform this particular step as your Artemis sources are happily packaged within container images. You should, however, consider installing the tools.
 ====
 
 * install the Artemis sources and all requirements:
@@ -263,9 +263,9 @@ If Artemis is killed (e.g. Ctrl+C), wait for all pods to quit before sourcing `d
 ====
 
 
-== Docker Compose
+== Podman Compose
 
-This is the most lightweight development setup: it spawns the necessary requirements - RabbitMQ, PostgreSQL and Redis - in Docker containers on your workstation, while Artemis services - API server, dispatcher, scheduler and workers - are launched as daemons.
+This is the most lightweight development setup: it spawns the necessary requirements - RabbitMQ, PostgreSQL, Redis, Prometheus and corresponding exporters - in containers on your workstation, while Artemis services - API server, dispatcher, scheduler and workers - are launched as daemons from a virtualenv.
 
 [NOTE]
 ====
@@ -289,11 +289,11 @@ $ poetry install
 Poetry will take care of creating a dedicated virtual environment, installing requirements, and makes it accessible via `poetry run` or `poetry shell`.
 +
 * follow the shared <<_create_configuration>> instructions.
-* launch RabbitMQ, PostgreSQL and Redis containers:
+* launch RabbitMQ, PostgreSQL,  Redis and other containers:
 +
 [source,shell]
 ....
-$ docker-compose up
+$ podman-compose up
 ....
 +
 [TIP]
@@ -302,7 +302,7 @@ Add `-d` option to run containers in _detached_ mode, i.e. on the background:
 
 [source,shell]
 ....
-$ docker-compose up -d
+$ podman-compose up -d
 ....
 ====
 +
@@ -314,11 +314,11 @@ $ bash nominishift-develop.sh
 ....
 +
 * To stop Artemis, use a well-known `Ctrl+C` combination.
-* To stop the RabbitMQ, PostgreSQL and Redis containers, either use `Ctrl+C` as well, or, if you started them in a detached mode, use `docker-compose`:
+* To stop the RabbitMQ, PostgreSQL and Redis containers, either use `Ctrl+C` as well, or, if you started them in a detached mode, use `podman-compose`:
 +
 [source,shell]
 ....
-$ docker-compose down
+$ podman-compose down
 ....
 +
 [TIP]
@@ -327,10 +327,10 @@ In case you want to remove the persistent storage of PostgreSQL and RabbitMQ con
 
 [source,shell]
 ....
-$ docker-compose down -v
+$ podman-compose down -v
 ....
 
-This instructs Docker to remove volumes associated with the containers.
+This instructs `podman-compose` to remove volumes associated with the containers.
 ====
 
 === Environment variables
