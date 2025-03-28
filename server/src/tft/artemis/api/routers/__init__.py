@@ -77,7 +77,10 @@ class GuestRequestManager:
         response_model: Type[GuestResponseType] = GuestResponse  # type: ignore[assignment]
     ) -> List[GuestResponseType]:
         with get_session(logger, self.db, read_only=True) as (session, _):
-            r_guests = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest).all()
+            # Include deferred `mtime` field, query guests and fields in one step.
+            r_guests = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest) \
+                .options(sqlalchemy.orm.undefer(artemis_db.GuestRequest.mtime)) \
+                .all()
 
             if r_guests.is_error:
                 raise errors.InternalServerError(caused_by=r_guests.unwrap_error())

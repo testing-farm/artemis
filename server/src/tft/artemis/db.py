@@ -144,6 +144,16 @@ class SafeQuery(Generic[T]):
 
         return self
 
+    def options(self, *args: sqlalchemy.sql.base.ExecutableOption) -> 'SafeQuery[T]':
+        if self.failure is None:
+            try:
+                self.query = self.query.options(*args)
+
+            except Exception as exc:
+                self._update_error(exc)
+
+        return self
+
     def order_by(self, *args: sqlalchemy.sql._typing._ColumnExpressionOrStrLabelArgument[Any]) -> 'SafeQuery[T]':
         if self.failure is None:
             try:
