@@ -78,7 +78,7 @@ def handle_task_request(
         )
 
         if r_delete.is_error:
-            return _log_failure(r_dispatch.unwrap_error(), 'failed to remove task request')
+            return _log_failure(r_delete.unwrap_error(), 'failed to remove task request')
 
         logger.finished()
 
@@ -154,7 +154,7 @@ def handle_task_sequence_request(
             )
 
             if r_delete.is_error:
-                return _log_failure(r_dispatch.unwrap_error(), 'failed to remove task request')
+                return _log_failure(r_delete.unwrap_error(), 'failed to remove task request')
 
         r_sequence_delete: DMLResult[TaskSequenceRequest] = execute_dml(
             logger,
@@ -163,7 +163,7 @@ def handle_task_sequence_request(
         )
 
         if r_sequence_delete.is_error:
-            return _log_failure(r_dispatch.unwrap_error(), 'failed to remove task sequence request')
+            return _log_failure(r_sequence_delete.unwrap_error(), 'failed to remove task sequence request')
 
         logger.finished()
 
