@@ -59,9 +59,11 @@ KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
 
 class BaseHTTPMiddleware(FastAPIBaseHTTPMiddleware):
     def get_request_info(self, request: Request) -> Tuple[str, str]:
+        client = request.scope.get('client')
+
         return (
             f'{request.method} {request.scope["path"]} HTTP/{request.scope["http_version"]}',
-            f'{request.scope["client"][0]}:{request.scope["client"][1]}'
+            f'{client[0] if client else "<unknown client>"}:{client[1] if client else "<unknown client>"}'
         )
 
     def get_request_label(self, request: Request) -> str:
