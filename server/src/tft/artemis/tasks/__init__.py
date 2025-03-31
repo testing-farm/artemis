@@ -38,6 +38,7 @@ from .. import (
     get_broker,
     get_db,
     get_logger,
+    get_worker_name,
     log_dict_yaml,
     metrics,
     safe_call,
@@ -143,13 +144,13 @@ def get_root_db(logger: Optional[gluetool.log.ContextAdapter] = None) -> DB:
     logger = logger or _ROOT_LOGGER
 
     if _ROOT_DB is None:
-        _ROOT_DB = get_db(logger, application_name='artemis-worker')
+        _ROOT_DB = get_db(logger, application_name=f'worker: {get_worker_name()}')
 
     return _ROOT_DB
 
 
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
-BROKER = get_broker(_ROOT_LOGGER, application_name='artemis-worker')
+BROKER = get_broker(_ROOT_LOGGER, application_name=f'worker: {get_worker_name()}')
 
 
 class TaskPriority(enum.Enum):

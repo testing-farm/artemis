@@ -6,7 +6,7 @@ import json
 import os
 import re
 import time
-from typing import Awaitable, Callable, Tuple
+from typing import Awaitable, Callable, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Request, Response, status as http_status
 from gluetool.utils import normalize_bool_option
@@ -80,9 +80,10 @@ class BaseHTTPMiddleware(FastAPIBaseHTTPMiddleware):
 # However as siwalter has noticed if we require more than 1 parameter to be sneaked in this way current approach should
 # be reconsidered towards passing a state object with db as one of the parameters.
 class AuthorizationMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: FastAPI, db: DB = get_db(logger=get_logger())):
+    def __init__(self, app: FastAPI, db: Optional[DB] = None) -> None:
         super().__init__(app)
-        self.db = db
+
+        self.db = db or get_db(logger=get_logger())
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         logger = get_logger()

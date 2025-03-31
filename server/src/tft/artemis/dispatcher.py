@@ -8,7 +8,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from . import Failure, Sentry, get_db, get_logger, log_dict_yaml
+from . import Failure, Sentry, get_db, get_logger, get_worker_name, log_dict_yaml
 from .context import DATABASE, LOGGER, SESSION
 from .db import DMLResult, SafeQuery, TaskRequest, TaskSequenceRequest, execute_dml, transaction
 from .tasks import TaskCall, TaskLogger, dispatch_sequence, dispatch_task
@@ -248,7 +248,7 @@ def pick_task_sequence_request(
 
 def main() -> None:
     logger = TaskLogger(get_logger(), 'dispatcher')
-    db = get_db(logger, application_name='artemis-dispatcher')
+    db = get_db(logger, application_name=f'dispatcher: {get_worker_name()}')
 
     LOGGER.set(logger)
     DATABASE.set(db)

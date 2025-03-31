@@ -1802,18 +1802,22 @@ class DB:
             self._echo_pool = gluetool.utils.normalize_bool_option(KNOB_LOGGING_DB_POOL.value)
 
         connect_args: Dict[str, Any] = {}
+
         # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
         if url.startswith('postgresql://'):
-
             if application_name is not None:
                 connect_args['application_name'] = application_name
 
-            gluetool.log.log_dict(logger.info, 'sqlalchemy create_engine parameters', {
-                'echo_pool': self._echo_pool,
-                'pool_size': KNOB_DB_POOL_SIZE.value,
-                'max_overflow': KNOB_DB_POOL_MAX_OVERFLOW.value,
-                'application_name': application_name
-            })
+            gluetool.log.log_dict(
+                logger.info,
+                'postgresql create_engine parameters', {
+                    'echo_pool': self._echo_pool,
+                    'pool_size': KNOB_DB_POOL_SIZE.value,
+                    'max_overflow': KNOB_DB_POOL_MAX_OVERFLOW.value,
+                    'application_name': application_name,
+                    'connect_args': connect_args
+                }
+            )
 
             self.engine = sqlalchemy.create_engine(
                 url,
@@ -1830,6 +1834,17 @@ class DB:
 
             if application_name is not None:
                 connect_args['application_name'] = application_name
+
+            gluetool.log.log_dict(
+                logger.info,
+                'sqlite create_engine parameters', {
+                    'echo_pool': self._echo_pool,
+                    'pool_size': KNOB_DB_POOL_SIZE.value,
+                    'max_overflow': KNOB_DB_POOL_MAX_OVERFLOW.value,
+                    'application_name': application_name,
+                    'connect_args': connect_args
+                }
+            )
 
             self.engine = sqlalchemy.create_engine(
                 url,
@@ -1960,6 +1975,18 @@ class DB:
         with self.get_session(logger, read_only=read_only) as session:
             with transaction(logger, session) as t:
                 yield (session, t)
+
+    @classmethod
+    def set_application_name(
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        name: str
+    ) -> None:
+        with transaction(logger, session):
+            session.execute(sqlalchemy.text(
+                f"SET application_name TO '{name}'"
+            ))
 
 
 def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
