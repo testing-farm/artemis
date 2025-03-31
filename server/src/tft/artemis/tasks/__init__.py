@@ -2330,15 +2330,16 @@ class Workspace:
 
         engine = r_engine.unwrap()
 
-        try:
-            r = engine.run_hook(
-                hook_name,
-                logger=self.logger,
-                **kwargs
-            )
+        with Sentry.start_span('run_hook', op='function', hookname=hook_name):
+            try:
+                r = engine.run_hook(
+                    hook_name,
+                    logger=self.logger,
+                    **kwargs
+                )
 
-        except Exception as exc:
-            r = Error(Failure.from_exc('unhandled hook error', exc))
+            except Exception as exc:
+                r = Error(Failure.from_exc('unhandled hook error', exc))
 
         return r
 

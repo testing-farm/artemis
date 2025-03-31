@@ -13,7 +13,7 @@ from gluetool.log import log_dict, log_table
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol, TypedDict
 
-from . import Failure, SerializableContainer, partition
+from . import Failure, Sentry, SerializableContainer, partition
 from .db import GuestRequest
 from .drivers import CanAcquire, PoolCapabilities, PoolDriver, PoolLogger
 from .knobs import Knob
@@ -1024,49 +1024,52 @@ def run_routing_policies(
     final_ruling = PolicyRuling.from_pools(pools)
 
     for policy in policies:
-        policy_name = cast(PolicyWrapperType, policy).policy_name
+        with Sentry.start_span('routing_policy', op='function') as tracing_span:
+            policy_name = cast(PolicyWrapperType, policy).policy_name
 
-        r = policy(logger, session, [pool_ruling.pool for pool_ruling in final_ruling.pools], guest_request)
+            tracing_span.set_tag('policy_name', policy_name)
 
-        RoutingMetrics.inc_policy_called(policy_name)
+            r = policy(logger, session, [pool_ruling.pool for pool_ruling in final_ruling.pools], guest_request)
 
-        if r.is_error:
-            history.append(RulingHistoryItem(policyname=policy_name, failure=r.unwrap_error()))
+            RoutingMetrics.inc_policy_called(policy_name)
 
-            return Error(Failure.from_failure(
-                'failed to route guest request',
-                r.unwrap_error(),
-                environment=guest_request.environment,
-                history=_serialize_history()
-            ))
+            if r.is_error:
+                history.append(RulingHistoryItem(policyname=policy_name, failure=r.unwrap_error()))
 
-        current_policy_ruling = r.unwrap()
+                return Error(Failure.from_failure(
+                    'failed to route guest request',
+                    r.unwrap_error(),
+                    environment=guest_request.environment,
+                    history=_serialize_history()
+                ))
 
-        history.append(RulingHistoryItem(policyname=policy_name, ruling=current_policy_ruling))
+            current_policy_ruling = r.unwrap()
 
-        if current_policy_ruling.cancel:
-            # Mark all input pools are excluded
-            map(lambda x: RoutingMetrics.inc_pool_excluded(policy_name, x.pool.poolname), final_ruling.pools)
+            history.append(RulingHistoryItem(policyname=policy_name, ruling=current_policy_ruling))
 
-            RoutingMetrics.inc_policy_canceled(policy_name)
+            if current_policy_ruling.cancel:
+                # Mark all input pools are excluded
+                map(lambda x: RoutingMetrics.inc_pool_excluded(policy_name, x.pool.poolname), final_ruling.pools)
 
-            final_ruling.pools = []
-            final_ruling.cancel = True
+                RoutingMetrics.inc_policy_canceled(policy_name)
 
-            _log_history()
+                final_ruling.pools = []
+                final_ruling.cancel = True
 
-            return Ok(final_ruling)
+                _log_history()
 
-        # Store ruling metrics before we update ruling container with results from the policy.
-        for pool_ruling in current_policy_ruling.pools:
-            if pool_ruling.allowed:
-                RoutingMetrics.inc_pool_allowed(policy_name, pool_ruling.pool.poolname)
+                return Ok(final_ruling)
 
-            else:
-                RoutingMetrics.inc_pool_excluded(policy_name, pool_ruling.pool.poolname)
+            # Store ruling metrics before we update ruling container with results from the policy.
+            for pool_ruling in current_policy_ruling.pools:
+                if pool_ruling.allowed:
+                    RoutingMetrics.inc_pool_allowed(policy_name, pool_ruling.pool.poolname)
 
-        # Now we can update our container with up-to-date results.
-        final_ruling.pools = [pool_ruling for pool_ruling in current_policy_ruling.pools if pool_ruling.allowed]
+                else:
+                    RoutingMetrics.inc_pool_excluded(policy_name, pool_ruling.pool.poolname)
+
+            # Now we can update our container with up-to-date results.
+            final_ruling.pools = [pool_ruling for pool_ruling in current_policy_ruling.pools if pool_ruling.allowed]
 
     _log_history()
 
