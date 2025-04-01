@@ -35,6 +35,7 @@ from .middleware import (
     ProfileMiddleware,
     PrometheusMiddleware,
     RSSWatcherMiddleware,
+    TracingMiddleware,
 )
 from .routers import define_openapi_schema
 
@@ -224,6 +225,7 @@ def run_app() -> fastapi.FastAPI:
         ]
 
     mw += [
+        Middleware(TracingMiddleware),
         Middleware(AuthorizationMiddleware),
         Middleware(ErrorHandlerMiddleware),
         Middleware(PrometheusMiddleware),

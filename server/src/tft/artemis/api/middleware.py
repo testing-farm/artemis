@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, status as http_st
 from gluetool.utils import normalize_bool_option
 from starlette.middleware.base import BaseHTTPMiddleware as FastAPIBaseHTTPMiddleware
 
-from .. import RSSWatcher
+from .. import RSSWatcher, Sentry
 from ..db import DB
 from ..knobs import Knob
 from ..metrics import APIMetrics
@@ -63,7 +63,7 @@ class BaseHTTPMiddleware(FastAPIBaseHTTPMiddleware):
 
         return (
             f'{request.method} {request.scope["path"]} HTTP/{request.scope["http_version"]}',
-            f'{client[0] if client else "<unknown client>"}:{client[1] if client else "<unknown client>"}'
+            f'{client[0] if client else "<unknown>"}:{client[1] if client else "<unknown>"}'
         )
 
     def get_request_label(self, request: Request) -> str:
@@ -247,3 +247,20 @@ class ProfileMiddleware(BaseHTTPMiddleware):
             logger.info(f'{request_label} profiling ended')  # noqa: FS002
 
             profiler.log(logger, f'{request_label} profiling report', limit=KNOB_API_PROFILING_LIMIT.value)
+
+
+class TracingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        with Sentry.start_transaction(op='api.request', name='api.request') as tracing_transaction:
+            client = request.scope.get('client')
+
+            tracing_transaction.set_context(
+                'request',
+                {
+                    'client': f'{client[0] if client else "<unknown>"}:{client[1] if client else "<unknown>"}',
+                    'method': request.method,
+                    'endpoint': request.scope['path']
+                }
+            )
+
+            return await call_next(request)
