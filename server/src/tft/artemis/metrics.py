@@ -35,7 +35,7 @@ import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
 
-from . import __VERSION__, DATETIME_FMT, Failure, SerializableContainer, db as artemis_db, safe_call
+from . import __VERSION__, DATETIME_FMT, Failure, Sentry, SerializableContainer, db as artemis_db, safe_call
 from .cache import (
     dec_cache_field,
     dec_cache_value,
@@ -215,7 +215,7 @@ class MetricsBase:
             if isinstance(self.__dict__[field.name], MetricsBase)
         ]
 
-    def sync(self) -> None:
+    def do_sync(self) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
@@ -229,6 +229,23 @@ class MetricsBase:
 
         for container in self._metric_container_fields:
             container.sync()
+
+    def sync(self) -> None:
+        """
+        Load values from the storage and update this container with up-to-date values.
+
+                .. note::
+
+           **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
+
+        The default implementation delegates the call to all child fields that are descendants of ``MetricsBase``
+        class.
+
+        Starts a new tracing span to trace the sync operations in this instance.
+        """
+
+        with Sentry.start_span(f'{self.__class__.__name__}.sync', op='function'):
+            self.do_sync()
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
@@ -273,12 +290,12 @@ class DBPoolMetrics(MetricsBase):
     #: Maximal "overflow" of the pool, i.e. how many connections above the :py:attr:`size` are allowed.
     current_overflow: int = 0
 
-    def sync(self) -> None:
+    def do_sync(self) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
         """
 
-        super().sync()
+        super().do_sync()
 
         db = DATABASE.get()
 
@@ -470,14 +487,14 @@ class PoolResources(MetricsBase):
         self.__post_init__()
 
     @with_context
-    def sync(self, cache: redis.Redis) -> None:
+    def do_sync(self, cache: redis.Redis) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
         :param cache: cache instance to use for cache access.
         """
 
-        super().sync()
+        super().do_sync()
 
         r_serialized = safe_call(cast(Callable[[str], Optional[str]], cache.get), self._key)
 
@@ -726,7 +743,7 @@ class PoolCostsMetrics(MetricsBase):
         self.security_group = None
 
     @with_context
-    def sync(self, cache: redis.Redis, logger: gluetool.log.ContextAdapter) -> None:
+    def do_sync(self, cache: redis.Redis, logger: gluetool.log.ContextAdapter) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
@@ -1028,7 +1045,7 @@ class PoolMetrics(MetricsBase):
         return Ok(None)
 
     @with_context
-    def sync(
+    def do_sync(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
@@ -1042,7 +1059,7 @@ class PoolMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super().sync()
+        super().do_sync()
 
         r_enabled = KNOB_POOL_ENABLED.get_value(session=session, entityname=self.poolname)
 
@@ -1225,7 +1242,7 @@ class UndefinedPoolMetrics(MetricsBase):
         self.__post_init__()
 
     @with_context
-    def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+    def do_sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
@@ -1233,7 +1250,7 @@ class UndefinedPoolMetrics(MetricsBase):
         :param session: DB session to use for DB access.
         """
 
-        super().sync()
+        super().do_sync()
 
         # NOTE: sqlalchemy overloads operators to construct the conditions, and `is` is not overloaded. Therefore
         # in the query, we have to use `==` instead of more Pythonic `is`.
@@ -1276,7 +1293,7 @@ class PoolsMetrics(MetricsBase):
     pools: Dict[str, Union[PoolMetrics, UndefinedPoolMetrics]] = dataclasses.field(default_factory=dict)
 
     @with_context
-    def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+    def do_sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
@@ -1284,7 +1301,7 @@ class PoolsMetrics(MetricsBase):
         :param session: DB session to use for DB access.
         """
 
-        super().sync()
+        super().do_sync()
 
         # Avoid circular imports
         from .drivers import PoolDriver
@@ -1748,7 +1765,7 @@ class ProvisioningMetrics(MetricsBase):
         return Ok(None)
 
     @with_context
-    def sync(
+    def do_sync(
         self,
         logger: gluetool.log.ContextAdapter,
         cache: redis.Redis,
@@ -1762,7 +1779,7 @@ class ProvisioningMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super().sync()
+        super().do_sync()
 
         now = datetime.datetime.utcnow()
 
@@ -2035,7 +2052,7 @@ class RoutingMetrics(MetricsBase):
         return Ok(None)
 
     @with_context
-    def sync(
+    def do_sync(
         self,
         logger: gluetool.log.ContextAdapter,
         cache: redis.Redis
@@ -2047,7 +2064,7 @@ class RoutingMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super().sync()
+        super().do_sync()
 
         self.policy_calls = {
             field: count
@@ -2260,7 +2277,7 @@ class ShelfMetrics(MetricsBase):
         return Ok(None)
 
     @with_context
-    def sync(
+    def do_sync(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
@@ -2274,7 +2291,7 @@ class ShelfMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super().sync()
+        super().do_sync()
 
         r_shelf_size = KNOB_SHELF_MAX_GUESTS.get_value(session=session, entityname=self.shelfname)
 
@@ -2337,7 +2354,7 @@ class ShelvesMetrics(MetricsBase):
     shelves: Dict[str, ShelfMetrics] = dataclasses.field(default_factory=dict)
 
     @with_context
-    def sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+    def do_sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
@@ -2345,7 +2362,7 @@ class ShelvesMetrics(MetricsBase):
         :param session: DB session to use for DB access.
         """
 
-        super().sync()
+        super().do_sync()
 
         r_shelves = artemis_db.SafeQuery \
             .from_session(session, artemis_db.GuestShelf) \
@@ -2687,7 +2704,7 @@ class TaskMetrics(MetricsBase):
         return Ok(None)
 
     @with_context
-    def sync(
+    def do_sync(
         self,
         logger: gluetool.log.ContextAdapter,
         cache: redis.Redis,
@@ -2701,7 +2718,7 @@ class TaskMetrics(MetricsBase):
         :param session: DB session to use for DB access.
         """
 
-        super().sync()
+        super().do_sync()
 
         # TODO: find a better way how to make broker aware of all tasks. We rely on `resolve_actor` importing
         # all subpackages, but that's hard to update.
@@ -3018,7 +3035,7 @@ class APIMetrics(MetricsBase):
         )
 
     @with_context
-    def sync(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
+    def do_sync(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
@@ -3026,7 +3043,7 @@ class APIMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super().sync()
+        super().do_sync()
 
         # NOTE: some paths may contain `:` => `path` must be the last bit, and `split()` must be called
         # with limited number of splits to prevent `path` exploding.
@@ -3247,7 +3264,7 @@ class WorkerMetrics(MetricsBase):
         )
 
     @with_context
-    def sync(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
+    def do_sync(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
@@ -3255,7 +3272,7 @@ class WorkerMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super().sync()
+        super().do_sync()
 
         worker_ping: Optional[float] = get_metric(logger, cache, self._KEY_WORKER_PING)
         self.worker_ping = worker_ping if worker_ping is None else float(worker_ping)
@@ -3448,11 +3465,14 @@ class Metrics(MetricsBase):
             with db.transaction(logger, read_only=True) as (session, t):
                 SESSION.set(session)
 
-                self.sync()
+                with Sentry.start_span('metrics.sync', op='function'):
+                    self.sync()
 
-            self.update_prometheus()
+            with Sentry.start_span('metrics.update', op='function'):
+                self.update_prometheus()
 
-            return cast(bytes, generate_latest(registry=self._registry))
+            with Sentry.start_span('metrics.generate', op='function'):
+                return cast(bytes, generate_latest(registry=self._registry))
 
         return safe_call(_render)
 
