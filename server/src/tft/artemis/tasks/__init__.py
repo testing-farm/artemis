@@ -303,6 +303,15 @@ KNOB_OFFLOAD_TASKS: Knob[bool] = Knob(
     default=True
 )
 
+KNOB_TRACE_TASKS_AS_EVENTS: Knob[bool] = Knob(
+    'actor.trace-tasks-as-events',
+    'When enabled, each task will emit "entered/finished task" event.',
+    has_db=False,
+    envvar='ARTEMIS_TRACE_TASKS_AS_EVENTS',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=True
+)
+
 POOL_DRIVERS = {
     'aws': aws_driver.AWSDriver,
     'beaker': beaker_driver.BeakerDriver,
@@ -2051,7 +2060,11 @@ class Workspace:
 
     def _begin(self) -> None:
         if self.guestname:
-            self._guest_request_event('entered-task')
+            if KNOB_TRACE_TASKS_AS_EVENTS.value:
+                self._guest_request_event('entered-task')
+
+            else:
+                self._event('entered-task')
 
         else:
             self._event('entered-task')
@@ -2075,7 +2088,11 @@ class Workspace:
 
     def _complete(self) -> None:
         if self.guestname:
-            self._guest_request_event('finished-task')
+            if KNOB_TRACE_TASKS_AS_EVENTS.value:
+                self._guest_request_event('finished-task')
+
+            else:
+                self._event('finished-task')
 
         else:
             self._event('finished-task')
@@ -2098,7 +2115,11 @@ class Workspace:
 
     def _reschedule(self) -> None:
         if self.guestname:
-            self._guest_request_event('rescheduled')
+            if KNOB_TRACE_TASKS_AS_EVENTS.value:
+                self._guest_request_event('rescheduled')
+
+            else:
+                self._event('rescheduled')
 
         else:
             self._event('rescheduled')

@@ -325,6 +325,16 @@ guest request watchdog tasks.
 
 5+|A delay, in seconds, between watchdog runs.
 
+|`actor.trace-tasks-as-events`
+|`bool`
+|`ARTEMIS_TRACE_TASKS_AS_EVENTS`
+|`yes`
+|no
+
+
+
+5+|When enabled, each task will emit "entered/finished task" event.
+
 |`actor.verify-ssh.connect-timeout`
 |`int`
 |`ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT`
