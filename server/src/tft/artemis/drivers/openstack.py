@@ -36,6 +36,7 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CanAcquire,
     ConsoleUrlData,
     GuestLogUpdateProgress,
     HookImageInfoMapper,
@@ -644,13 +645,13 @@ class OpenStackDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[Tuple[bool, Optional[str]], Failure]:
+    ) -> Result[CanAcquire, Failure]:
         r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap()[0] is False:
+        if r_answer.unwrap().can_acquire is False:
             return r_answer
 
         # Disallow HW constraints the driver does not implement yet
@@ -670,14 +671,14 @@ class OpenStackDriver(PoolDriver):
         images = r_images.unwrap()
 
         if not images:
-            return Ok((False, 'compose not supported'))
+            return Ok(CanAcquire.cannot('compose not supported'))
 
         # The driver does not support kickstart natively. Filter only images we can perform ks install on.
         if guest_request.environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
-                return Ok((False, 'compose does not support kickstart'))
+                return Ok(CanAcquire.cannot('compose does not support kickstart'))
 
         pairs: List[Tuple[PoolImageInfo, Flavor]] = []
 
@@ -695,7 +696,7 @@ class OpenStackDriver(PoolDriver):
             pairs.append((image, flavor))
 
         if not pairs:
-            return Ok((False, 'no suitable image/flavor combination found'))
+            return Ok(CanAcquire.cannot('no suitable image/flavor combination found'))
 
         log_dict_yaml(logger.info, 'available image/flavor combinations', [
             {
@@ -704,7 +705,7 @@ class OpenStackDriver(PoolDriver):
             } for image, flavor in pairs
         ])
 
-        return Ok((True, None))
+        return Ok(CanAcquire())
 
     def acquire_console_url(
         self,

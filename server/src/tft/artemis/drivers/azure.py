@@ -34,6 +34,7 @@ from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CanAcquire,
     GuestLogUpdateProgress,
     HookImageInfoMapper,
     PoolCapabilities,
@@ -463,7 +464,7 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[Tuple[bool, Optional[str]], Failure]:
+    ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
@@ -474,11 +475,11 @@ class AzureDriver(PoolDriver):
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap()[0] is False:
+        if r_answer.unwrap().can_acquire is False:
             return r_answer
 
         if guest_request.environment.has_hw_constraints is True:
-            return Ok((False, 'HW constraints are not supported'))
+            return Ok(CanAcquire.cannot('HW constraints are not supported'))
 
         r_images = self.image_info_mapper.map_or_none(logger, guest_request)
         if r_images.is_error:
@@ -487,15 +488,15 @@ class AzureDriver(PoolDriver):
         images = r_images.unwrap()
 
         if not images:
-            return Ok((False, 'compose not supported'))
+            return Ok(CanAcquire.cannot('compose not supported'))
 
         if guest_request.environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
-                return Ok((False, 'compose does not support kickstart'))
+                return Ok(CanAcquire.cannot('compose does not support kickstart'))
 
-        return Ok((True, None))
+        return Ok(CanAcquire())
 
     def update_guest(
         self,

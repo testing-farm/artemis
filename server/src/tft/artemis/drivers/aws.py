@@ -50,6 +50,7 @@ from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, P
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CanAcquire,
     GuestLogUpdateProgress,
     GuestTagsType,
     HookImageInfoMapper,
@@ -1559,13 +1560,13 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
-    ) -> Result[Tuple[bool, Optional[str]], Failure]:
+    ) -> Result[CanAcquire, Failure]:
         r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
 
-        if r_answer.unwrap()[0] is False:
+        if r_answer.unwrap().can_acquire is False:
             return r_answer
 
         # Disallow HW constraints the driver does not implement yet
@@ -1582,13 +1583,13 @@ class AWSDriver(PoolDriver):
         images = r_images.unwrap()
 
         if not images:
-            return Ok((False, 'compose not supported'))
+            return Ok(CanAcquire.cannot('compose not supported'))
 
         if guest_request.environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
-                return Ok((False, 'compose does not support kickstart'))
+                return Ok(CanAcquire.cannot('compose does not support kickstart'))
 
         pairs: List[Tuple[AWSPoolImageInfo, Flavor]] = []
 
@@ -1606,7 +1607,7 @@ class AWSDriver(PoolDriver):
             pairs.append((image, flavor))
 
         if not pairs:
-            return Ok((False, 'no suitable image/flavor combination found'))
+            return Ok(CanAcquire.cannot('no suitable image/flavor combination found'))
 
         log_dict_yaml(logger.info, 'available image/flavor combinations', [
             {
@@ -1615,7 +1616,7 @@ class AWSDriver(PoolDriver):
             } for image, flavor in pairs
         ])
 
-        return Ok((True, None))
+        return Ok(CanAcquire())
 
     def map_image_name_to_image_info(
         self,

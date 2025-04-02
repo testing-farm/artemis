@@ -5,7 +5,7 @@ import dataclasses
 import re
 import threading
 from functools import cached_property
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, cast
 
 import gluetool.log
 import google.api_core
@@ -22,6 +22,7 @@ from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
+    CanAcquire,
     HookImageInfoMapper,
     PoolCapabilities,
     PoolData,
@@ -133,7 +134,7 @@ class GCPDriver(PoolDriver):
     def can_acquire(self,
                     logger: gluetool.log.ContextAdapter,
                     session: sqlalchemy.orm.session.Session,
-                    guest_request: GuestRequest) -> Result[Tuple[bool, Optional[str]], Failure]:
+                    guest_request: GuestRequest) -> Result[CanAcquire, Failure]:
         """
         Check whether this driver can provision a guest that would satisfy the given environment.
         """
@@ -144,7 +145,7 @@ class GCPDriver(PoolDriver):
             return Error(r_answer.unwrap_error())
 
         answer = r_answer.unwrap()
-        if answer[0] is False:
+        if answer.can_acquire is False:
             return r_answer
 
         r_images = self.image_info_mapper.map_or_none(logger, guest_request)
@@ -153,19 +154,19 @@ class GCPDriver(PoolDriver):
 
         images = r_images.unwrap()
         if not images:
-            return Ok((False, 'compose not supported'))
+            return Ok(CanAcquire.cannot('compose not supported'))
 
         # The driver does not support kickstart natively. Filter only images we can perform ks install on.
         if guest_request.environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
-                return Ok((False, 'compose does not support kickstart'))
+                return Ok(CanAcquire.cannot('compose does not support kickstart'))
 
         if guest_request.environment.has_hw_constraints:
-            return Ok((False, 'HW constraints are not supported by the GCP driver'))
+            return Ok(CanAcquire.cannot('HW constraints are not supported by the GCP driver'))
 
-        return Ok((True, None))
+        return Ok(CanAcquire())
 
     def _query_instance_id(self, instance_name: str, project: str, zone: str) -> Result[int, Failure]:
         """ Perform API call to GCP, asking about the given instance """
