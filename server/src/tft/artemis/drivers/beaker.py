@@ -5,6 +5,7 @@ import dataclasses
 import os
 import re
 import stat
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 
 import bs4
@@ -145,6 +146,16 @@ KNOB_JOB_WHITEBOARD_TEMPLATE: Knob[str] = Knob(
     envvar='ARTEMIS_BEAKER_JOB_WHITEBOARD_TEMPLATE',
     cast_from_str=str,
     default='[artemis] [{{ DEPLOYMENT }}] {{ GUESTNAME }}'
+)
+
+KNOB_INSTALLATION_TIMEOUT: Knob[int] = Knob(
+    'beaker.installation-timeout',
+    'Installation timeout for the guest.',
+    has_db=True,
+    per_entity=True,
+    envvar='ARTEMIS_BEAKER_INSTALLATION_TIMEOUT',
+    cast_from_str=int,
+    default=1800
 )
 
 
@@ -1615,6 +1626,43 @@ class BeakerDriver(PoolDriver):
                 command_output=bkr_output.process_output
             ))
 
+    def _parse_recipe_install_start(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        job_results: bs4.BeautifulSoup
+    ) -> Result[Optional[datetime], Failure]:
+        """
+        Parse job results and return guest installation start time.
+
+        :param bs4.BeautifulSoup job_results: Job results in xml format.
+        :rtype: result.Result[str, Failure]
+        :returns: :py:class:`result.Result` with guest address, or specification of error.
+        """
+
+        install = job_results.find('installation')
+
+        if not install:
+            return Error(Failure(
+                'installation element was not found in job results',
+                job_results=job_results.prettify()
+            ))
+
+        install_start_str = install.get('install_started', None)
+
+        if install_start_str is None:
+            return Ok(None)
+
+        try:
+            install_start = datetime.fromisoformat(install_start_str)
+        except ValueError as exc:
+            return Error(Failure.from_exc(
+                'parsing installation start time failed',
+                exc,
+                datestr=install['install_started']
+            ))
+
+        return Ok(install_start)
+
     def _parse_job_status(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1798,6 +1846,36 @@ class BeakerDriver(PoolDriver):
                             failures=failures
                         )]
                     ))
+
+            # Check how long the guest has been in installing state
+            if job_status == 'installing':
+                now = datetime.utcnow()
+                r_install_started = self._parse_recipe_install_start(logger, job_results)
+
+                if r_install_started.is_error:
+                    return Error(r_install_started.unwrap_error())
+
+                r_install_timeout = KNOB_INSTALLATION_TIMEOUT.get_value(entityname=self.poolname, session=session)
+
+                if r_install_timeout.is_error:
+                    return Error(r_install_timeout.unwrap_error())
+
+                install_started = r_install_started.unwrap()
+
+                # We need the check for None as the installation might not have started yet but the state is already
+                # marked as installing and there is not installation start time.
+                if install_started is not None and (now - install_started).total_seconds() > r_install_timeout.unwrap():
+                    return Ok(ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=BeakerPoolData.unserialize(guest_request),
+                        pool_failures=[Failure(
+                            'installation did not finish in time',
+                            job_result=job_result,
+                            job_status=job_status,
+                            job_results=job_results.prettify()
+                        )]
+                    ))
+
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=BeakerPoolData.unserialize(guest_request),
