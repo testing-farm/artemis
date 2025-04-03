@@ -676,6 +676,22 @@ until cancelled and reprovisioned.
 
 5+|Guest watchdog SSH timeout.
 
+|`beaker.installation-timeout`
+|`int`
+|`ARTEMIS_BEAKER_INSTALLATION_TIMEOUT`
+|`1800`
+|yes
+
+
+|`beaker.installation-timeout:$entityname`
+|
+|`ARTEMIS_BEAKER_INSTALLATION_TIMEOUT_$entityname`
+|
+|
+
+
+5+|Installation timeout for the guest.
+
 |`beaker.job.whiteboard.template`
 |`str`
 |`ARTEMIS_BEAKER_JOB_WHITEBOARD_TEMPLATE`
