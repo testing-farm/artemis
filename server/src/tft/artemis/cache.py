@@ -9,7 +9,7 @@ Helpful building blocks for cache operations.
 
 import datetime
 import uuid
-from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Type, TypeVar, cast
+from typing import Any, Callable, Dict, Generator, List, Optional, Protocol, Set, Tuple, Type, TypeVar, Union, cast
 
 import gluetool.log
 import redis
@@ -17,6 +17,7 @@ from gluetool.result import Error, Ok, Result
 
 from . import Failure, SerializableContainer, safe_call, safe_call_and_handle
 
+T = TypeVar('T')
 S = TypeVar('S', bound='SerializableContainer')
 
 
@@ -27,8 +28,23 @@ RedisScanIterType = Callable[[str], Generator[bytes, None, None]]
 RedisIncrType = Callable[[str, int], None]
 RedisDecrType = RedisIncrType
 
-RedisGetType = Callable[[str], Optional[bytes]]
-RedisSetType = Callable[[str, bytes, Optional[int]], None]
+RedisGetType = Callable[[str], Optional[T]]
+
+
+class RedisSetType(Protocol):
+    """
+    ``cache.set()`` type.
+    """
+
+    def __call__(self, key: str, value: Union[bytes, float], ex: Optional[int] = None) -> None:
+        """
+        ``cache.set()`` type.
+
+        :param key: cache key to set.
+        :param value: value to store.
+        :param ex: if set, the key will expire after this many seconds.
+        """
+
 
 RedisHIncrByType = Callable[[str, str, int], None]
 RedisHGetType = Callable[[str, str], Optional[bytes]]
@@ -80,7 +96,7 @@ def get_cache_value(
     :returns: value of the metric.
     """
 
-    return safe_call_and_handle(logger, cast(RedisGetType, cache.get), key)
+    return safe_call_and_handle(logger, cast(RedisGetType[bytes], cache.get), key)
 
 
 def set_cache_value(
@@ -104,7 +120,7 @@ def set_cache_value(
         safe_call_and_handle(logger, cast(RedisDeleteType, cache.delete), key)
 
     else:
-        safe_call_and_handle(logger, cast(RedisSetType, cache.set), key, value, ttl)
+        safe_call_and_handle(logger, cast(RedisSetType, cache.set), key, value, ex=ttl)
 
 
 def inc_cache_value(
@@ -613,7 +629,7 @@ def collect_locks(
         lockname = raw_lockname.decode()
 
         token = get_cache_value(logger, cache, lockname)
-        ttl = safe_call_and_handle(logger, cast(RedisGetType, cache.ttl), lockname)
+        ttl = safe_call_and_handle(logger, cast(RedisGetType[bytes], cache.ttl), lockname)
 
         locks[lockname] = {
             'token': token.decode() if token is not None else '',
