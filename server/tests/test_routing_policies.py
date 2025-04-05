@@ -694,11 +694,7 @@ def do_test_policy_timeout_reached(
         assert ruling.cancel is True
         assert ruling.allowed_pools == []
 
-    elif age == timeout_reached_age_too_young(mock_session):
-        assert ruling.cancel is False
-        assert ruling.allowed_pools == mock_pools
-
-    elif empty_events:
+    elif age == timeout_reached_age_too_young(mock_session) or empty_events:
         assert ruling.cancel is False
         assert ruling.allowed_pools == mock_pools
 

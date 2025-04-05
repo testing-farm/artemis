@@ -786,17 +786,7 @@ def _honor_constraint_disk(
 
         if constraint.operator in (Operator.EQ, Operator.GTE):
             # Current size is unset, we must set the size.
-            if current_size is None:
-                r_update = mappings.update_mapping(
-                    mapping,
-                    size=desired_size
-                )
-
-                if r_update.is_error:
-                    return Error(r_update.unwrap_error())
-
-            # Current size is smaller than the desired one, we need to set the size.
-            elif current_size.to('GiB').magnitude < desired_size.to('GiB').magnitude:
+            if current_size is None or current_size.to('GiB').magnitude < desired_size.to('GiB').magnitude:
                 r_update = mappings.update_mapping(
                     mapping,
                     size=desired_size
@@ -811,17 +801,7 @@ def _honor_constraint_disk(
 
         elif constraint.operator == Operator.GT:
             # Current size is unset, we must set the size.
-            if current_size is None:
-                r_update = mappings.update_mapping(
-                    mapping,
-                    size=desired_size + UNITS.Quantity(1, 'gibibyte')
-                )
-
-                if r_update.is_error:
-                    return Error(r_update.unwrap_error())
-
-            # Current size is smaller or equal to the desired one, we need to set the size.
-            elif current_size.to('GiB').magnitude <= desired_size.to('GiB').magnitude:
+            if current_size is None or current_size.to('GiB').magnitude <= desired_size.to('GiB').magnitude:
                 r_update = mappings.update_mapping(
                     mapping,
                     size=desired_size + UNITS.Quantity(1, 'gibibyte')
@@ -2525,7 +2505,7 @@ class AWSDriver(PoolDriver):
                 delay_update=r_delay.unwrap()
             ))
 
-        if state == 'open':
+        if state == 'open':  # noqa: SIM102
             if is_old_enough(logger, spot_instance['CreateTime'], KNOB_SPOT_OPEN_TIMEOUT.value):
                 PoolMetrics.inc_error(self.poolname, AWSErrorCauses.INSTANCE_BUILDING_TOO_LONG)
 
@@ -3089,8 +3069,8 @@ class AWSDriver(PoolDriver):
                     # memory is reported in MB
                     memory=UNITS.Quantity(int(raw_flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
                     virtualization=FlavorVirtualization(
-                        hypervisor=raw_flavor.get('Hypervisor', None),
-                        is_virtualized=True if raw_flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS else False
+                        hypervisor=raw_flavor.get('Hypervisor'),
+                        is_virtualized=bool(raw_flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS)
                     ),
                     ena_support=raw_flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported')
                 ))

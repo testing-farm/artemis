@@ -360,7 +360,7 @@ class OpenStackDriver(PoolDriver):
         # For each network, we need to extract number of free addresses, noting its name as well.
         suitable_networks: List[Tuple[int, str]] = []
 
-        for network_name in metrics.usage.networks.keys():
+        for network_name in metrics.usage.networks:
             limit, usage = metrics.limits.networks.get(network_name), metrics.usage.networks.get(network_name)
 
             # If there's unknown limit or usage, then pool does not care enough. Use the biggest possible number

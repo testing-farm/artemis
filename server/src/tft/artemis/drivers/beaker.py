@@ -388,7 +388,7 @@ def constraint_to_beaker_filter(
 
     constraint_name = constraint.expand_name()
 
-    if constraint_name.property == 'boot':
+    if constraint_name.property == 'boot':  # noqa: SIM102
         if constraint_name.child_property == 'method':
             return _translate_constraint_by_config(
                 constraint,
@@ -400,7 +400,7 @@ def constraint_to_beaker_filter(
                     .get('translations', [])
             )
 
-    if constraint_name.property == 'compatible':
+    if constraint_name.property == 'compatible':  # noqa: SIM102
         if constraint_name.child_property == 'distro':
             system = _new_tag('system')
 
@@ -683,7 +683,7 @@ def constraint_to_beaker_filter(
                     .get('translations', [])
             )
 
-    if constraint_name.property == 'beaker':
+    if constraint_name.property == 'beaker':  # noqa: SIM102
         if constraint_name.child_property == 'pool':
             op, value = operator_to_beaker_op(
                 constraint.operator,

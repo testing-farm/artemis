@@ -1127,11 +1127,7 @@ class Constraint(ConstraintBase):
 
         groups = parsed_value.groupdict()
 
-        if groups['operator']:
-            operator = OPERATOR_SIGN_TO_OPERATOR[groups['operator']]
-
-        else:
-            operator = Operator.EQ
+        operator = OPERATOR_SIGN_TO_OPERATOR[groups['operator']] if groups['operator'] else Operator.EQ
 
         raw_value = groups['value']
 
@@ -1296,17 +1292,13 @@ class Constraint(ConstraintBase):
                 else:
                     flavor_property = flavor_property[flavor_property_index]
 
-        if flavor_property is None:
-            # Hard to compare `None` with a constraint. Flavor can't provide - or doesn't feel like providing - more
-            # specific value. Unless told otherwise, we should mark the evaluation as failed, and keep looking for
-            # better mach.
-            result = False
-
-        else:
-            result = self.operator_handler(
-                flavor_property,
-                self.value
-            )
+        # Hard to compare `None` with a constraint. Flavor can't provide - or doesn't feel like providing - more
+        # specific value. Unless told otherwise, we should mark the evaluation as failed, and keep looking for
+        # better mach.
+        result = False if flavor_property is None else self.operator_handler(
+            flavor_property,
+            self.value
+        )
 
         logger.debug(f'eval-flavor: {flavor.name}.{self.name}: {type(flavor_property).__name__}({flavor_property}) {self.operator.value} {type(self.value).__name__}({self.value}): {result}')  # noqa: E501
 
@@ -1659,12 +1651,8 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
         direct_group = And()
         expansion_group = And()
 
-        if 'size' in spec:
-            size = spec['size']
-
         # The old-style constraint when `space` existed. Remove once v0.0.26 is gone.
-        else:
-            size = spec['space']
+        size = spec['size'] if 'size' in spec else spec['space']
 
         constraint_name = f'disk[{disk_index}].size'
         original_constraint = Constraint.from_specification(constraint_name, str(size))
@@ -2160,12 +2148,12 @@ class Kickstart(SerializableContainer):
         :param **kwargs: keyword arguments representing kickstart sections.
         """
 
-        self.script: Optional[str] = kwargs.get('script', None)
-        self.pre_install: Optional[str] = kwargs.get('pre-install', None)
-        self.post_install: Optional[str] = kwargs.get('post-install', None)
-        self.metadata: Optional[str] = kwargs.get('metadata', None)
-        self.kernel_options: Optional[str] = kwargs.get('kernel-options', None)
-        self.kernel_options_post: Optional[str] = kwargs.get('kernel-options-post', None)
+        self.script: Optional[str] = kwargs.get('script')
+        self.pre_install: Optional[str] = kwargs.get('pre-install')
+        self.post_install: Optional[str] = kwargs.get('post-install')
+        self.metadata: Optional[str] = kwargs.get('metadata')
+        self.kernel_options: Optional[str] = kwargs.get('kernel-options')
+        self.kernel_options_post: Optional[str] = kwargs.get('kernel-options-post')
 
     def serialize(self) -> Dict[str, Any]:
         """Ensure that the parameters are saved with dashes to the database.
