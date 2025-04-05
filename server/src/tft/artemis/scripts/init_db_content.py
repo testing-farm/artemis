@@ -41,7 +41,7 @@ def _load_bundled_schema(logger: gluetool.log.ContextAdapter) -> Tuple[JSONSchem
 
     driver_schemas: Dict[str, JSONSchemaType] = {}
 
-    for driver_name in PoolDriver._drivers_registry.keys():
+    for driver_name in PoolDriver._drivers_registry:
         r_schema = load_packaged_validation_schema(os.path.join('drivers', f'{driver_name}.yml'))
 
         if r_schema.is_error:
@@ -78,7 +78,7 @@ def _load_local_schema(
 
     driver_schemas: Dict[str, JSONSchemaType] = {}
 
-    for driver_name in PoolDriver._drivers_registry.keys():
+    for driver_name in PoolDriver._drivers_registry:
         r_schema = _fetch_schema(os.path.join('drivers', f'{driver_name}.yml'))
 
         if r_schema.is_error:
@@ -134,7 +134,7 @@ def _load_remote_schema(
 
     driver_schemas: Dict[str, JSONSchemaType] = {}
 
-    for driver_name in PoolDriver._drivers_registry.keys():
+    for driver_name in PoolDriver._drivers_registry:
         r_schema = _fetch_schema(os.path.join('drivers', f'{driver_name}.yml'))
 
         if r_schema.is_error:

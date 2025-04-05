@@ -1321,11 +1321,7 @@ class KnobManager:
 
             knob_record = r_knob.unwrap()
 
-            if knob_record is None:
-                value = None
-
-            else:
-                value = knob_record.value
+            value = None if knob_record is None else knob_record.value
 
             if knobname in Knob.DB_BACKED_KNOBS:
                 knob = Knob.DB_BACKED_KNOBS[knobname]

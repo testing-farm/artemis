@@ -857,10 +857,7 @@ def policy_enough_resources(
 
         resources_depletion = metrics.resources.get_depletion(is_enough)
 
-        if not resources_depletion.is_depleted():
-            return True
-
-        return False
+        return not resources_depletion.is_depleted()
 
     # Here's the catch - we have to actually call `has_enough()` to get the report we want to log, can't squeeze
     # this into the final `return`.

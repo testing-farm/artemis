@@ -214,14 +214,7 @@ class Workspace(_Workspace):
                     guest_log
                 )
 
-            elif guest_log.state == GuestLogState.PENDING:
-                r_update = self.pool.update_guest_log(
-                    self.logger,
-                    self.gr,
-                    guest_log
-                )
-
-            elif guest_log.state == GuestLogState.IN_PROGRESS:
+            elif guest_log.state == GuestLogState.PENDING or guest_log.state == GuestLogState.IN_PROGRESS:
                 r_update = self.pool.update_guest_log(
                     self.logger,
                     self.gr,

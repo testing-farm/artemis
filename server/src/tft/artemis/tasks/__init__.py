@@ -571,7 +571,7 @@ class TaskCall(SerializableContainer):
         task_sequence_request_id: Optional[int] = None
     ) -> 'TaskCall':
         signature = inspect.signature(actor.fn)
-        arg_names = tuple(name for name in signature.parameters.keys())
+        arg_names = tuple(name for name in signature.parameters)
 
         assert len(signature.parameters) == len(args), 'actor signature parameters does not match message content'
 
@@ -799,12 +799,9 @@ def actor_kwargs(
 
             priority_actual = TaskPriority.DEFAULT.value
 
-    try:
+    # Yep,if it's not in our list, it doesn't meen it's forbidden to use it. Keep the input.
+    with contextlib.suppress(KeyError):
         queue_actual = TaskQueue[queue_input.upper()].value
-
-    except KeyError:
-        # Yep, not in our list, but that doesn't meen it's forbidden to use it. Keep the input.
-        pass
 
     kwargs = {
         'priority': priority_actual,
@@ -1135,11 +1132,7 @@ def run_doer_singlethread(
         return result
 
 
-if KNOB_OFFLOAD_TASKS.value:
-    run_doer = run_doer_multithread
-
-else:
-    run_doer = run_doer_singlethread
+run_doer = run_doer_multithread if KNOB_OFFLOAD_TASKS.value else run_doer_singlethread
 
 
 def _task_core(

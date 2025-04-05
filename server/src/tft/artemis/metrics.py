@@ -2794,7 +2794,7 @@ class TaskMetrics(MetricsBase):
 
         self.current_task_request_count = {
             actorname: 0
-            for actorname in BROKER.actors.keys()
+            for actorname in BROKER.actors
         }
 
         self.current_task_request_count.update({

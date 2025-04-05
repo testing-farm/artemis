@@ -1972,9 +1972,8 @@ class DB:
         :returns: new DB session & transaction result tracker.
         """
 
-        with self.get_session(logger, read_only=read_only) as session:
-            with transaction(logger, session) as t:
-                yield (session, t)
+        with self.get_session(logger, read_only=read_only) as session, transaction(logger, session) as t:
+            yield (session, t)
 
     @classmethod
     def set_application_name(

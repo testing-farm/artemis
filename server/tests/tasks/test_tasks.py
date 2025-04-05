@@ -67,15 +67,14 @@ def test_run_doer_exception(
     ) -> tft.artemis.tasks.DoerReturnType:
         raise Exception('foo')
 
-    with db.get_session(logger) as session:
-        with pytest.raises(Exception, match=r'foo'):
-            tft.artemis.tasks.run_doer_multithread(
-                logger,
-                db,
-                session,
-                cast(tft.artemis.tasks.DoerType, foo),
-                'test_run_doer_exception'
-            )
+    with db.get_session(logger) as session, pytest.raises(Exception, match=r'foo'):
+        tft.artemis.tasks.run_doer_multithread(
+            logger,
+            db,
+            session,
+            cast(tft.artemis.tasks.DoerType, foo),
+            'test_run_doer_exception'
+        )
 
 
 @pytest.fixture(name='actor')
