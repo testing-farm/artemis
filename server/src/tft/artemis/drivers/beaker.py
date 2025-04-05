@@ -758,7 +758,7 @@ def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, F
 
         return changes
 
-    for _ in range(0, 5):
+    for _ in range(5):
         changes = \
             _remove_empty('or') \
             + _remove_empty('and') \

@@ -123,7 +123,7 @@ def get_snapshot_request(
     snapshot_response = manager.get_snapshot(logger, guestname, snapshotname)
 
     if snapshot_response is None:
-        raise errors.NoSuchEntityError()
+        raise errors.NoSuchEntityError
 
     return snapshot_response
 

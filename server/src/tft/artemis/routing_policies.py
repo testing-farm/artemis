@@ -146,7 +146,7 @@ class RulingHistoryItem(SerializableContainer):
 
     @classmethod
     def unserialize(cls, serialized: SerializedRulingHistoryItemType) -> 'RulingHistoryItem':  # type: ignore[override]
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 class PolicyWrapperType(Protocol):

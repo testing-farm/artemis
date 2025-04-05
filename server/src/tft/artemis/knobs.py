@@ -36,14 +36,14 @@ class KnobSource(Generic[T]):
         failed with an error, returns a :py:class:`Failure` describing the error.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def to_repr(self) -> List[str]:
         """
         Return list of string that shall be added to knob's ``repr()`` representation.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 class KnobSourceEnv(KnobSource[T]):

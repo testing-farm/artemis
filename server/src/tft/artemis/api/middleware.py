@@ -111,7 +111,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
         ctx.inject()
 
         if ctx.is_invalid_request:
-            raise errors.BadRequestError()
+            raise errors.BadRequestError
 
         # Enable this once all pieces are merged and authentication/authorization becomes mandatory.
         # if not ctx.is_authenticated:
@@ -122,7 +122,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
             return response
 
         if not ctx.is_authorized:
-            raise errors.UnauthorizedError()
+            raise errors.UnauthorizedError
 
         response = await call_next(request)
         return response

@@ -472,19 +472,19 @@ class GCPDriver(PoolDriver):
     def create_snapshot(self,
                         guest_request: GuestRequest,
                         snapshot_request: SnapshotRequest) -> Result[ProvisioningProgress, Failure]:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def update_snapshot(self,
                         guest_request: GuestRequest,
                         snapshot_request: SnapshotRequest,
                         start_again: bool = True) -> Result[ProvisioningProgress, Failure]:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def remove_snapshot(self, snapshot_request: SnapshotRequest) -> Result[bool, Failure]:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def restore_snapshot(self, guest_request: GuestRequest, snapshot_request: SnapshotRequest) -> Result[bool, Failure]:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def trigger_reboot(
         self,

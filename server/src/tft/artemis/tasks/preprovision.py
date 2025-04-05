@@ -138,10 +138,7 @@ class Workspace(_Workspace):
                     self.session,
                     guestname,
                     'created',
-                    **{
-                        'environment': environment.serialize(),
-                        'user_data': self.guest_template.user_data
-                    }
+                    environment=environment.serialize(), user_data=self.guest_template.user_data
                 )
 
                 self.request_task(guest_shelf_lookup, guestname)

@@ -173,10 +173,7 @@ class GuestRequestManager:
                 session,
                 guestname,
                 'created',
-                **{
-                    'environment': environment.serialize(),
-                    'user_data': guest_request.user_data,
-                }
+                environment=environment.serialize(), user_data=guest_request.user_data
             )
 
             r_task = artemis_db.TaskRequest.create(guest_logger, session, guest_shelf_lookup, guestname)
@@ -1224,7 +1221,7 @@ class KnobManager:
         response = manager.get_knob(logger, knobname)
 
         if response is None:
-            raise errors.NoSuchEntityError()
+            raise errors.NoSuchEntityError
 
         return response
 
@@ -1240,7 +1237,7 @@ class KnobManager:
         response = manager.get_knob(logger, knobname)
 
         if response is None:
-            raise errors.NoSuchEntityError()
+            raise errors.NoSuchEntityError
 
         return response
 
@@ -1687,7 +1684,7 @@ class UserManager:
         user = r_user.unwrap()
 
         if not user:
-            raise errors.NoSuchEntityError()
+            raise errors.NoSuchEntityError
 
         return user
 
@@ -1928,10 +1925,7 @@ def create_guest_request_log(
             session,
             guestname,
             'guest-log-requested',
-            **{
-                'logname': logname,
-                'contenttype': contenttype
-            }
+            logname=logname, contenttype=contenttype
         )
 
     return None

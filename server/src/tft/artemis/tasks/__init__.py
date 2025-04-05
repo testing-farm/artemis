@@ -647,7 +647,7 @@ class TaskCall(SerializableContainer):
 
     @classmethod
     def unserialize(cls, serialized: Dict[str, Any]) -> 'TaskCall':
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 class DispatchTaskType(Protocol):
@@ -2455,7 +2455,7 @@ class TailHandler:
         task_call: TaskCall,
         failure_details: Dict[str, str]
     ) -> DoerReturnType:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def handle_tail(
         self,

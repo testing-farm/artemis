@@ -218,7 +218,7 @@ class AzureSession:
     def __enter__(self) -> 'AzureSession':
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         if self.session_directory is not None:
             self.session_directory.cleanup()
 
@@ -624,7 +624,7 @@ class AzureDriver(PoolDriver):
         :returns: :py:class:`result.result` with either :py:class:`artemis.snapshot.Snapshot`
             or specification of error.
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def update_snapshot(
         self,
@@ -643,7 +643,7 @@ class AzureDriver(PoolDriver):
         :returns: :py:class:`result.result` with either :py:class:`artemis.snapshot.Snapshot`
             or specification of error.
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def remove_snapshot(
         self,
@@ -657,7 +657,7 @@ class AzureDriver(PoolDriver):
         :returns: :py:class:`result.result` with either `bool`
             or specification of error.
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def restore_snapshot(
         self,
@@ -673,7 +673,7 @@ class AzureDriver(PoolDriver):
         :returns: :py:class:`result.result` with either `bool`
             or specification of error.
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def acquire_guest(
         self,

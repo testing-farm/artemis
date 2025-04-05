@@ -438,7 +438,6 @@ else:
 
 
 class _AnyArchitecture:
-    pass
 
     def __repr__(self) -> str:
         return '<Any>'
@@ -1271,7 +1270,7 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
         :returns: list of images fitting the given request. If no such image can be found, an empty list is returned.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def map(
         self,
@@ -1568,7 +1567,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Returns a guest request to image info mapper for this pool.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     @property
     def use_only_when_addressed(self) -> bool:
@@ -1689,7 +1688,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             understandable by this particular driver only.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def can_acquire(
         self,
@@ -1789,7 +1788,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Search pool resources, and find a pool-specific information for an image identified by the given name.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     # TODO: I dislike the naming scheme here very much...
     def _map_environment_to_flavor_info_by_cache_by_name_or_none(
@@ -1955,7 +1954,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param guest_request: guest request to provision for.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def update_guest(
         self,
@@ -1978,7 +1977,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param guest_request: guest request to provision for.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def guest_watchdog(
         self,
@@ -2007,7 +2006,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :rtype: result.Result[bool, Failure]
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def start_guest(
         self,
@@ -2021,7 +2020,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :rtype: result.Result[bool, Failure]
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def is_guest_stopped(self, guest: GuestRequest) -> Result[bool, Failure]:
         """
@@ -2031,7 +2030,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :rtype: result.Result[bool, Failure]
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def is_guest_running(self, guest: GuestRequest) -> Result[bool, Failure]:
         """
@@ -2041,7 +2040,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :rtype: result.Result[bool, Failure]
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def release_guest(
         self,
@@ -2053,7 +2052,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def acquire_console_url(
         self,
@@ -2064,7 +2063,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Acquire a guest console url.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def create_snapshot(
         self,
@@ -2081,7 +2080,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param guest_request: guest request to provision for.
         :param snapshot_request: snapshot request to satisfy.
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def update_snapshot(
         self,
@@ -2099,7 +2098,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param guest_request: guest request to provision for.
         :param snapshot_request: snapshot request to update.
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def remove_snapshot(
         self,
@@ -2113,7 +2112,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :returns: :py:class:`result.result` with either `bool`
             or specification of error.
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def restore_snapshot(
         self,
@@ -2129,7 +2128,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :returns: :py:class:`result.result` with either `bool`
             or specification of error.
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def get_guest_log_updater(self, guest_log: GuestLog) -> Optional[GuestLogUpdaterType]:
         updater_name = self.guest_log_updaters.get((
@@ -3378,7 +3377,7 @@ class CLISessionPermanentDir:
     def __enter__(self) -> 'CLISessionPermanentDir':
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         return
 
     def _run_cmd(
@@ -3433,7 +3432,7 @@ class CLISessionPermanentDir:
 
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         """Will be overridden by particular implementation"""
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def run(
         self,

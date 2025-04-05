@@ -278,7 +278,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #      - type: eth
 
 
-FlavorBootMethodType = Union[Literal['bios'], Literal['uefi'], Literal['uefi-preferred']]
+FlavorBootMethodType = Literal['bios', 'uefi', 'uefi-preferred']
 
 
 @dataclasses.dataclass(repr=False)
@@ -848,7 +848,7 @@ class ConstraintBase(SerializableContainer):
         :raises NotImplementedError: method is left for child classes to implement.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Result[bool, Failure]:
         """
@@ -897,7 +897,7 @@ class ConstraintBase(SerializableContainer):
         :raises NotImplementedError: the default implementation.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 ReducerType = Callable[[Iterable[Result[bool, Failure]]], Result[bool, Failure]]
@@ -976,7 +976,7 @@ class CompoundConstraint(ConstraintBase):
         :raises NotImplementedError: this method is left intentionally not implemented.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def eval_flavor(self, logger: gluetool.log.ContextAdapter, flavor: Flavor) -> Result[bool, Failure]:
         """
@@ -1067,7 +1067,7 @@ class CompoundConstraint(ConstraintBase):
         :raises NotImplementedError: default implementation is left undefined for compound constraints.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 @dataclasses.dataclass(repr=False)
@@ -1201,7 +1201,7 @@ class Constraint(ConstraintBase):
         :raises NotImplementedError: this method is left intentionally not implemented.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def expand_name(self) -> ConstraintNameComponents:
         """

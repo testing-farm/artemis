@@ -1034,7 +1034,7 @@ class Failure:
         tags.update({
             key: value
             for key, value in self.details.items()
-            if key.startswith('api_request_') or key.startswith('api_response_')
+            if key.startswith(('api_request_', 'api_response_'))
         })
 
         if self.caused_by:

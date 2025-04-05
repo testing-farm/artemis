@@ -149,18 +149,18 @@ lint.select = [
     # "COM",  # flake8-commas
     # "C4",  # flake8-comprehensions
     # "DTZ",  # flake8-datetimez
-    # "T10",  # flake8-debugger
+    "T10",  # flake8-debugger
     # "EXE",  # flake8-executable
-    # "ISC",  # flake8-implicit-str-concat
-    # "ICN",  # flake8-import-conventions
+    "ISC",  # flake8-implicit-str-concat
+    "ICN",  # flake8-import-conventions
     # "LOG",  # flake8-logging
     # "G",  # flake8-logging-format
-    # "PIE",  # flake8-pie
-    # "PYI",  # flake8-pyi
+    "PIE",  # flake8-pie
+    "PYI",  # flake8-pyi
     # "PT",  # flake8-pytest-style
     # "Q003",  # avoidable-escaped-quote
     # "Q004",  # unnecessary-escaped-quote
-    # "RSE",  # flake8-raise
+    "RSE",  # flake8-raise
     # "RET",  # flake8-return
     # "SIM",  # flake8-simplify
     # "TID",  # flake8-tidy-imports
@@ -177,7 +177,6 @@ lint.ignore = [
     # "B904",  # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ...
     # "COM812",  # Trailing comma missing
     # "G004",  # Logging statement uses f-string
-    # "PIE790",  # Unnecessary `pass` statement
     # "PLC1901",  # `{}` can be simplified to `{}` as an empty string is falsey
     # "PLE1205",  # Too many arguments for `logging` format string
     # "PLR09",  # Too many branches/statements/arguments/returns

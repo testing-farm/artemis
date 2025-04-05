@@ -218,7 +218,7 @@ def test_collect_pool_capabilities(
 
     collected = r.unwrap()
 
-    for i in range(0, len(mock_pools)):
+    for i in range(len(mock_pools)):
         expected_pool = mock_pools[i]
         expected_capabilities = mock_capabilities[i]
 
