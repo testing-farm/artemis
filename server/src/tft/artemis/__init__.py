@@ -11,6 +11,7 @@ import os
 import platform
 import resource
 import sys
+import threading
 import traceback as _traceback
 from types import FrameType, TracebackType
 from typing import (
@@ -1188,6 +1189,10 @@ def get_config() -> Dict[str, Any]:
     )
 
 
+def get_worker_name() -> str:
+    return f'{platform.node()}-{os.getpid()}-{threading.get_native_id()}'
+
+
 def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.Middleware]:
     from .knobs import (
         KNOB_COMPONENT,
@@ -1198,7 +1203,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
 
     middleware: List[dramatiq.Middleware] = []
 
-    worker_name = f'worker-{platform.node()}-{os.getpid()}'
+    worker_name = get_worker_name()
 
     if KNOB_WORKER_MAX_TASKS_PER_PROCESS.value != 0:
         middleware.append(

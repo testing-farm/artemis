@@ -7,7 +7,13 @@ import redis
 from fastapi import Depends, Request
 from prometheus_client import CollectorRegistry
 
-from .. import get_cache as get_artemis_cache, get_db as get_artemis_db, get_logger as get_artemis_logger, metrics
+from .. import (
+    get_cache as get_artemis_cache,
+    get_db as get_artemis_db,
+    get_logger as get_artemis_logger,
+    get_worker_name,
+    metrics,
+)
 from ..db import DB
 from .models import AuthContext
 
@@ -17,7 +23,7 @@ def get_logger() -> gluetool.log.ContextAdapter:
 
 
 def get_db(logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]) -> DB:
-    return get_artemis_db(logger, application_name='artemis-api-server')
+    return get_artemis_db(logger, application_name=f'api: {get_worker_name()}')
 
 
 def get_cache(logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]) -> 'redis.Redis':
