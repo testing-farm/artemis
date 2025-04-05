@@ -141,8 +141,8 @@ lint.select = [
     "I",  # isort
     "N",  # pep8-naming
     # "UP",  # pyupgrade
-    # "YTT",  # flake8-2020
-    # "ASYNC",  # flake8-async
+    "YTT",  # flake8-2020
+    "ASYNC",  # flake8-async
     # "S",  # flake8-bandit
     # "B",  # flake8-bugbear
     # "A",  # flake8-builtins
@@ -164,12 +164,12 @@ lint.select = [
     # "RET",  # flake8-return
     "SIM",  # flake8-simplify
     # "TID",  # flake8-tidy-imports
-    # "INT",  # flake8-gettext
-    # "PGH",  # pygrep-hooks
-    # "PLC",  # pylint-convention
-    # "PLE",  # pylint-error
+    "INT",  # flake8-gettext
+    "PGH",  # pygrep-hooks
+    "PLC",  # pylint-convention
+    "PLE",  # pylint-error
     # "PLR",  # pylint-refactor
-    # "FLY",  # flynt
+    "FLY",  # flynt
     # "FURB",  # refurb
     # "RUF",  # ruff
     ]
