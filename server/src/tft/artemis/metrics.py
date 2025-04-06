@@ -216,6 +216,16 @@ class MetricsBase:
             if isinstance(self.__dict__[field.name], MetricsBase)
         ]
 
+    @property
+    def tracing_tags(self) -> Dict[str, str]:
+        """
+        Custom tracking span tags.
+
+        :returns: container-specific tags for tracing span created by the :py:meth:`sync` method.
+        """
+
+        return {}
+
     def do_sync(self) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
@@ -245,7 +255,10 @@ class MetricsBase:
         Starts a new tracing span to trace the sync operations in this instance.
         """
 
-        with Sentry.start_span(TracingOp.FUNCTION, description=f'{self.__class__.__name__}.sync'):
+        with Sentry.start_span(TracingOp.FUNCTION, description=f'{self.__class__.__name__}.sync') as tracing_span:
+            for name, value in self.tracing_tags.items():
+                tracing_span.set_tag(name, value)
+
             self.do_sync()
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -369,6 +382,35 @@ class DBMetrics(MetricsBase):
     pool: DBPoolMetrics = DBPoolMetrics()
 
 
+class PoolMetricsBase(MetricsBase):
+    """
+    Base class for pool-specific metrics containers.
+    """
+
+    poolname: str
+
+    def __init__(self, poolname: str) -> None:
+        """
+        Initialize common fields.
+
+        :param poolname: name of the pool.
+        """
+
+        super().__init__()
+
+        self.poolname = poolname
+
+    @property
+    def tracing_tags(self) -> Dict[str, str]:
+        """
+        Custom tracking span tags.
+
+        :returns: container-specific tags for tracing span created by the :py:meth:`sync` method.
+        """
+
+        return {'poolname': self.poolname}
+
+
 class PoolResourcesMetricsDimensions(enum.Enum):
     """
     Which of the pool resource metrics to track, limits or usage.
@@ -393,7 +435,7 @@ class PoolNetworkResources:
 
 
 @dataclasses.dataclass
-class PoolResources(MetricsBase):
+class PoolResources(PoolMetricsBase):
     """
     Describes current values of pool resources.
 
@@ -468,7 +510,7 @@ class PoolResources(MetricsBase):
         :param dimension: whether this instance describes limits or usage.
         """
 
-        super().__init__()
+        super().__init__(poolname)
 
         self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)  # noqa: FS002
         self._key_updated_timestamp = PoolResources._KEY_UPDATED_TIMESTAMP.format(  # noqa: FS002
@@ -631,7 +673,7 @@ class PoolResourcesDepleted:
 
 
 @dataclasses.dataclass
-class PoolResourcesMetrics(MetricsBase):
+class PoolResourcesMetrics(PoolMetricsBase):
     """
     Describes resources of a pool, both limits and usage.
     """
@@ -645,6 +687,8 @@ class PoolResourcesMetrics(MetricsBase):
 
         :param poolname: name of the pool whose metrics we're tracking.
         """
+
+        super().__init__(poolname)
 
         self.limits = PoolResourcesLimits(poolname)
         self.usage = PoolResourcesUsage(poolname)
@@ -713,7 +757,7 @@ class ResourceType(enum.Enum):
 
 
 @dataclasses.dataclass
-class PoolCostsMetrics(MetricsBase):
+class PoolCostsMetrics(PoolMetricsBase):
     """
     Cumulative cost produced by a pool.
     """
@@ -731,6 +775,8 @@ class PoolCostsMetrics(MetricsBase):
 
         :param poolname: name of the pool whose costs we are tracking.
         """
+
+        super().__init__(poolname)
 
         self._key = f'metrics.pool.{poolname}.cost.cumulative_cost'
 
@@ -774,7 +820,7 @@ class PoolCostsMetrics(MetricsBase):
 
 
 @dataclasses.dataclass
-class PoolMetrics(MetricsBase):
+class PoolMetrics(PoolMetricsBase):
     """
     Metrics of a particular pool.
     """
@@ -790,7 +836,6 @@ class PoolMetrics(MetricsBase):
     _KEY_INFO_COUNT = 'metrics.pool.{poolname}.{info}.count'  # noqa: FS003
     _KEY_INFO_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.{info}.updated_timestamp'  # noqa: FS003
 
-    poolname: str
     enabled: bool
     routing_enabled: bool
 
@@ -822,6 +867,8 @@ class PoolMetrics(MetricsBase):
         :param poolname: name of the pool whose metrics we're tracking.
         """
 
+        super().__init__(poolname)
+
         self.key_errors = self._KEY_ERRORS.format(poolname=poolname)  # noqa: FS002
         self.key_aborts = self._KEY_ABORTS.format(poolname=poolname)  # noqa: FS002
 
@@ -846,7 +893,6 @@ class PoolMetrics(MetricsBase):
         self.key_cli_calls_exit_codes = self._KEY_CLI_EXIT_CODES.format(poolname=poolname)  # noqa: FS002
         self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)  # noqa: FS002
 
-        self.poolname = poolname
         self.enabled = False
         self.routing_enabled = True
 
@@ -1178,12 +1224,11 @@ class PoolMetrics(MetricsBase):
 
 
 @dataclasses.dataclass
-class UndefinedPoolMetrics(MetricsBase):
+class UndefinedPoolMetrics(PoolMetricsBase):
     """
     Metrics of an "undefined" pool, to handle values for guests that don't belong into any pool (yet).
     """
 
-    poolname: str
     enabled: bool
     routing_enabled: bool
 
@@ -1212,7 +1257,8 @@ class UndefinedPoolMetrics(MetricsBase):
         :param poolname: name of the pool whose metrics we're tracking.
         """
 
-        self.poolname = poolname
+        super().__init__(poolname)
+
         self.enabled = False
         self.routing_enabled = True
 
