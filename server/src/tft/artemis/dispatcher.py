@@ -8,7 +8,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from . import Failure, Sentry, get_db, get_logger, get_worker_name, log_dict_yaml
+from . import Failure, Sentry, TracingOp, get_db, get_logger, get_worker_name, log_dict_yaml
 from .context import DATABASE, LOGGER, SESSION
 from .db import DMLResult, SafeQuery, TaskRequest, TaskSequenceRequest, execute_dml, transaction
 from .tasks import TaskCall, TaskLogger, dispatch_sequence, dispatch_task
@@ -23,7 +23,7 @@ def handle_task_request(
     session: sqlalchemy.orm.session.Session,
     task_request: TaskRequest
 ) -> None:
-    with Sentry.start_span('dispatch_task_request', op='function') as tracing_span:
+    with Sentry.start_span(TracingOp.FUNCTION, description='dispatch_task_request') as tracing_span:
         logger = TaskLogger(root_logger, f'task-request#{task_request.id}')
 
         LOGGER.set(logger)
@@ -58,7 +58,8 @@ def handle_task_request(
 
         task_call = r_task_call.unwrap()
 
-        tracing_span.set_tag('task_call', task_call.serialize())
+        tracing_span.set_tag('taskname', task_call.actor.actor_name)
+        tracing_span.set_data('task_call', task_call.serialize())
 
         r_dispatch = dispatch_task(
             logger,
@@ -88,7 +89,7 @@ def handle_task_sequence_request(
     session: sqlalchemy.orm.session.Session,
     task_sequence_request: TaskSequenceRequest
 ) -> None:
-    with Sentry.start_span('dispatch_task_sequence_request', op='function') as tracing_span:
+    with Sentry.start_span(TracingOp.FUNCTION, description='dispatch_task_sequence_request') as tracing_span:
         logger = TaskLogger(root_logger, f'task-sequence-request#{task_sequence_request.id}')
 
         LOGGER.set(logger)
@@ -131,7 +132,7 @@ def handle_task_sequence_request(
             ]
         )
 
-        tracing_span.set_tag('task_sequence_call', [task_call.serialize() for task_call in task_calls])
+        tracing_span.set_data('task_sequence_call', [task_call.serialize() for task_call in task_calls])
 
         r_dispatch = dispatch_sequence(
             logger,
@@ -174,8 +175,8 @@ def pick_task_request(
 ) -> bool:
     LOGGER.set(logger)
 
-    with Sentry.start_transaction(op='function', name='dispatcher'):
-        with Sentry.start_span('handle_task_request', op='function'), \
+    with Sentry.start_transaction(TracingOp.FUNCTION, 'dispatcher') as tracing_transaction:
+        with Sentry.start_span(TracingOp.FUNCTION, 'handle_task_request'), \
                 transaction(logger, session) as transaction_result:
             r_pending_task = SafeQuery.from_session(session, TaskRequest) \
                 .filter(TaskRequest.task_sequence_request_id.is_(None)) \
@@ -196,6 +197,8 @@ def pick_task_request(
             if task_request is None:
                 return False
 
+            tracing_transaction.set_tag('taskname', task_request.taskname)
+
             handle_task_request(logger, session, task_request)
 
             LOGGER.set(logger)
@@ -214,8 +217,8 @@ def pick_task_sequence_request(
 ) -> bool:
     LOGGER.set(logger)
 
-    with Sentry.start_transaction(op='function', name='dispatcher'):
-        with Sentry.start_span('handle_task_sequence_request', op='function'), \
+    with Sentry.start_transaction(TracingOp.FUNCTION, 'dispatcher'):
+        with Sentry.start_span(TracingOp.FUNCTION, 'handle_task_sequence_request'), \
                 transaction(logger, session) as transaction_result:
             r_pending_task_sequence = SafeQuery.from_session(session, TaskSequenceRequest) \
                 .limit(1) \

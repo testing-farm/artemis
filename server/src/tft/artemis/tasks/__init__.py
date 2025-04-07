@@ -35,6 +35,7 @@ from .. import (
     RSSWatcher,
     Sentry,
     SerializableContainer,
+    TracingOp,
     get_broker,
     get_db,
     get_logger,
@@ -1080,7 +1081,13 @@ def run_doer_singlethread(
             profiler = Profiler(verbose=verbose_profile)
             profiler.start()
 
-        with Sentry.start_span('run_doer', op='function', doer=fn.__name__, doer_args=args):
+        with Sentry.start_span(
+            TracingOp.FUNCTION,
+            description='run_doer',
+            tags={
+                'taskname': fn.__name__
+            }
+        ):
             result = fn(logger, db, session, *args, **kwargs)
 
     except dramatiq.middleware.Interrupt as exc:
@@ -1167,7 +1174,6 @@ def _task_core(
 
     LOGGER.set(logger)
     DATABASE.set(db)
-    CURRENT_TASK.set(TaskCall.from_message(BROKER, CURRENT_MESSAGE.get()))
 
     # Small helper so we can keep all session-related stuff inside one block, and avoid repetition or more than
     # one `get_session()` call.
@@ -1298,16 +1304,36 @@ def task_core(
     session_isolation: bool = True,
     session_read_only: bool = False
 ) -> None:
-    with Sentry.start_transaction('task', 'task') as tracing_transaction:
-        tracing_transaction.set_context(
-            'task_call',
-            {
-                'actor': doer.__name__,
-                'args': doer_args
-            }
-        )
+    task_call = TaskCall.from_message(BROKER, CURRENT_MESSAGE.get())
 
-        with Sentry.start_span('run_task', op='function', doer=doer.__name__, doer_args=doer_args):
+    CURRENT_TASK.set(task_call)
+
+    with Sentry.start_transaction(
+        TracingOp.QUEUE_TASK,
+        'task',
+        tags={
+            'taskname': task_call.actor.actor_name
+        },
+        data={
+            'task_call': task_call.serialize()
+        }
+    ) as tracing_transaction:
+        if 'poolname' in task_call.named_args:
+            tracing_transaction.set_tag('poolname', task_call.named_args['poolname'])
+
+        with Sentry.start_span(
+            TracingOp.FUNCTION,
+            description='run_task',
+            tags={
+                'taskname': task_call.actor.actor_name
+            },
+            data={
+                'task_call': task_call.serialize()
+            }
+        ) as tracing_span:
+            if 'poolname' in task_call.named_args:
+                tracing_span.set_tag('poolname', task_call.named_args['poolname'])
+
             _task_core(
                 doer,
                 logger,
@@ -1381,7 +1407,16 @@ def dispatch_task(
 
     task_call = TaskCall.from_message(BROKER, message, delay=delay, task_request_id=task_request_id)
 
-    with Sentry.start_span('dispatch_task', op='function', task_call=task_call.serialize()):
+    with Sentry.start_span(
+        TracingOp.QUEUE_SUBMIT,
+        description='dispatch_task',
+        tags={
+            'taskname': task_call.actor.actor_name
+        },
+        data={
+            'task_call': task_call.serialize()
+        }
+    ):
         r = safe_call(BROKER.enqueue, message, delay=actual_delay)
 
     if r.is_error:
@@ -1515,9 +1550,11 @@ def dispatch_sequence(
         pipeline = pipeline | on_complete_message
 
     with Sentry.start_span(
-        'dispatch_sequence',
-        op='function',
-        task_calls=serialize_task_sequence_invocation(task_calls, on_complete_task_call)
+        TracingOp.QUEUE_SUBMIT,
+        description='dispatch_sequence',
+        data={
+            'task_calls': serialize_task_sequence_invocation(task_calls, on_complete_task_call)
+        }
     ):
         r = safe_call(pipeline.run, delay=actual_delay)
 
@@ -2020,8 +2057,12 @@ class Workspace:
             self._event('entered-task')
 
     def begin(self: WorkspaceBound) -> WorkspaceBound:
-        with self.transaction():
-            self._begin()
+        if self.guestname:
+            with self.transaction():
+                self._guest_request_event('entered-task')
+
+        else:
+            self._event('entered-task')
 
         return self
 
@@ -2043,8 +2084,15 @@ class Workspace:
             self.result = SUCCESS
 
     def complete(self: WorkspaceBound) -> WorkspaceBound:
-        with self.transaction():
-            self._complete()
+        if self.guestname:
+            with self.transaction():
+                self._guest_request_event('finished-task')
+
+        else:
+            self._event('finished-task')
+
+        if not self.result:
+            self.result = SUCCESS
 
         return self
 
@@ -2331,7 +2379,13 @@ class Workspace:
 
         engine = r_engine.unwrap()
 
-        with Sentry.start_span('run_hook', op='function', hookname=hook_name):
+        with Sentry.start_span(
+            TracingOp.FUNCTION,
+            description='run_hook',
+            tags={
+                'hookname': hook_name
+            }
+        ):
             try:
                 r = engine.run_hook(
                     hook_name,

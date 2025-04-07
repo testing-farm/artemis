@@ -3,6 +3,7 @@
 
 import contextlib
 import dataclasses
+import enum
 import importlib
 import inspect
 import itertools
@@ -218,6 +219,34 @@ def get_release() -> str:
 #    return r_release.unwrap()
 
 
+class TracingOp(enum.Enum):
+    """
+    Recognized tracing *operation* values.
+
+    Inspired by :py:class:`sentry_sdk.const.OP`.
+    """
+
+    FUNCTION = 'function'
+
+    DB_TRANSACTION = 'db.transaction'
+    DB_QUERY = 'db.query'
+    DB_QUERY_ONE = 'db.query.one'
+    DB_QUERY_ONE_OR_NONE = 'db.query.one_or_none'
+    DB_QUERY_ALL = 'db.query.all'
+    DB_QUERY_COUNT = 'db.query.count'
+    DB_QUERY_DML = 'db.query.dml'
+
+    HTTP_SERVER = "http.server"
+
+    QUEUE_TASK = "queue.task"
+    QUEUE_SUBMIT = 'queue.submit'
+
+    SUBPROCESS = 'subprocess'
+
+
+SpanT = TypeVar('SpanT', bound=sentry_sdk.tracing.Span)
+
+
 class Sentry:
     @classmethod
     def _ingest_integrations(cls, logger: gluetool.log.ContextAdapter) -> List[sentry_sdk.integrations.Integration]:
@@ -370,44 +399,100 @@ class Sentry:
         return contexts
 
     @classmethod
+    def _apply_tracing_info(
+        cls,
+        span: SpanT,
+        tags: Dict[str, Any],
+        data: Dict[str, Any]
+    ) -> SpanT:
+        for name, value in tags.items():
+            span.set_tag(name, value)
+
+        for name, value in data.items():
+            span.set_data(name, value)
+
+        return span
+
+    @classmethod
     @contextlib.contextmanager
     def start_transaction(
         cls,
-        op: Optional[str] = None,
-        name: Optional[str] = None,
-        guestname: Optional[str] = None,
-        poolname: Optional[str] = None
+        op: TracingOp,
+        description: str,
+        tags: Optional[Dict[str, Any]] = None,
+        data: Optional[Dict[str, Any]] = None,
+        context: Optional[Dict[str, Any]] = None
     ) -> Generator[sentry_sdk.tracing.Transaction, None, None]:
-        with sentry_sdk.get_current_scope().start_transaction(op=op, name=name) as transaction:
+        """
+        Start new tracing transaction.
+
+        :param op: categhory of the transaction.
+        :param description: short, human-readable label describing the transaction.
+        :param tags: tags to attach to the transaction. Tags should be simple, trivial, low-cardinality labels that
+            maintainers would use for categorizing and searching transactions. Task name, pool name, HTTP method are
+            good examples; task call or broker message would not be good tags.
+
+            Additional tags can be added while the transaction is active, as new important pieces of information are
+            revealed.
+        :param data: additional data to attach to the transaction. Suitable for more complex payload than ``tags``.
+            Individual data packages should be the same across the span of transaction and its spans.
+
+            While additional data can be added while the transaction is active, it is not recommended to do so.
+        :param context: additional data describing the bigger picture surrounding the transaction.
+        """
+
+        with sentry_sdk.get_current_scope().start_transaction(op=op.value, name=description) as transaction:
             assert isinstance(transaction, sentry_sdk.tracing.Transaction)
 
-            for name, value in cls.get_default_tags().items():
-                transaction.set_tag(name, value)
-
-            for name, value in cls.get_default_contexts().items():
+            for name, value in {
+                **cls.get_default_contexts(),
+                **(context or {})
+            }.items():
                 transaction.set_context(name, value)
 
-            if guestname:
-                transaction.set_tag('guestname', guestname)
-
-            if poolname:
-                transaction.set_tag('poolname', poolname)
-
-            yield transaction
+            yield cls._apply_tracing_info(
+                transaction,
+                {
+                    **cls.get_default_tags(),
+                    **(tags or {})
+                },
+                data or {}
+            )
 
     @classmethod
     @contextlib.contextmanager
     def start_span(
         cls,
-        name: str,
-        op: Optional[str] = None,
-        **tags: Any
+        op: TracingOp,
+        description: Optional[str] = None,
+        tags: Optional[Dict[str, Any]] = None,
+        data: Optional[Dict[str, Any]] = None
     ) -> Generator[sentry_sdk.tracing.Span, None, None]:
-        with sentry_sdk.get_current_scope().start_span(name=name, op=op) as span:
-            for name, value in tags.items():
-                span.set_tag(name, value)
+        """
+        Start new tracing span.
 
-            yield span
+        :param op: categhory of the span.
+        :param description: short, human-readable label describing the span.
+        :param tags: tags to attach to the span. Tags should be simple, trivial, low-cardinality labels that maintainers
+            would use for categorizing and searching span. Task name, pool name, HTTP method are good examples; task
+            call or broker message would not be good tags.
+
+            Additional tags can be added while the span is active, as new important pieces of information are revealed.
+        :param data: additional data to attach to the span. Suitable for more complex payload than ``tags``.
+            Individual data packages should be the same across the span of transaction and its spans.
+
+            While additional data can be added while the span is active, it is not recommended to do so.
+        """
+
+        with sentry_sdk.get_current_scope().start_span(op=op.value, name=description) as span:
+            yield cls._apply_tracing_info(
+                span,
+                {
+                    **cls.get_default_tags(),
+                    **(tags or {})
+                },
+                data or {}
+            )
 
 
 SENTRY = Sentry()
