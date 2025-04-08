@@ -20,7 +20,7 @@ scrape_configs:
     scheme: http
     static_configs:
     - targets:
-      - "127.0.0.1:9090"
+      - "prometheus:9090"
 
   - job_name: artemis
     scrape_interval: 15s
@@ -29,7 +29,7 @@ scrape_configs:
     scheme: http
     static_configs:
     - targets:
-        - "127.0.0.1:8001"
+        - "host.docker.internal:8001"
 
   - job_name: postgresql
     scrape_interval: 15s
@@ -38,7 +38,7 @@ scrape_configs:
     scheme: http
     static_configs:
     - targets:
-        - "127.0.0.1:9187"
+        - "postgresql-exporter:9187"
 
   - job_name: redis
     scrape_interval: 15s
@@ -47,7 +47,7 @@ scrape_configs:
     scheme: http
     static_configs:
     - targets:
-        - "127.0.0.1:9121"
+        - "redis-exporter:9121"
 
   - job_name: rabbitmq
     scrape_interval: 15s
@@ -56,4 +56,4 @@ scrape_configs:
     scheme: http
     static_configs:
     - targets:
-        - "127.0.0.1:15692"
+        - "rabbitmq:15692"

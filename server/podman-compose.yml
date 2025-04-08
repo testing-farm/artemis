@@ -6,24 +6,22 @@ services:
       ALLOW_EMPTY_PASSWORD: "yes"
     ports:
       - "6379:6379"
-    network_mode: host
 
   redis-exporter:
     image: "docker.io/bitnami/redis-exporter:1.69.0"
-    ports:
-      - "9121:9121"
-    network_mode: host
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
 
   rabbitmq:
     image: "docker.io/bitnami/rabbitmq:4.0.7"
     ports:
       - "5672:5672"
-    network_mode: host
     environment:
       RABBITMQ_DEFAULT_USER: artemis
       RABBITMQ_DEFAULT_PASS: artemis
     volumes:
-      - ./configuration/podman-compose/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./configuration/podman-compose/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:Z,ro
+      - ./configuration/podman-compose/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:Z,ro
 
   postgresql:
     image: "docker.io/bitnami/postgresql:17.4.0"
@@ -36,21 +34,17 @@ services:
       # POSTGRESQL_EXTRA_FLAGS: "-c log_statement=all -c log_connections=on -c log_min_messages=INFO"
     ports:
       -  "5432:5432"
-    network_mode: host
     volumes:
-      - ./configuration/podman-compose/postgresql/init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+      - ./configuration/podman-compose/postgresql/init.sh:/docker-entrypoint-initdb.d/01-init.sh:Z,ro
       - postgresql_data:/var/lib/postgresql/data
 
   postgresql-exporter:
     image: "docker.io/bitnami/postgres-exporter:0.17.1"
     environment:
-      DATA_SOURCE_NAME: "postgresql://artemis:artemis@localhost:5432/artemis?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://artemis:artemis@postgresql:5432/artemis?sslmode=disable"
       PG_EXPORTER_EXTEND_QUERY_PATH: /tmp/queries.yaml
-    ports:
-      -  "9187:9187"
-    network_mode: host
     volumes:
-      - ./configuration/podman-compose/postgresql-exporter/custom-metrics.yaml:/tmp/queries.yaml:ro
+      - ./configuration/podman-compose/postgresql-exporter/custom-metrics.yaml:/tmp/queries.yaml:Z,ro
 
   prometheus:
     image: "docker.io/bitnami/prometheus:3.0.1"
@@ -58,11 +52,9 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
     ports:
       - "9090:9090"
-    network_mode: host
     volumes:
-      - ./configuration/podman-compose/prometheus:/etc/prometheus:ro
+      - ./configuration/podman-compose/prometheus:/etc/prometheus:Z,ro
       - prometheus_data:/opt/bitnami/prometheus/data
-    privileged: true
 
 volumes:
   prometheus_data:
