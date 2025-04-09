@@ -186,11 +186,11 @@ class SafeQuery(Generic[T]):
 
     def one(self) -> Result[T, 'Failure']:
         if self.failure is None:
-            from . import Sentry
+            from . import Sentry, TracingOp
 
             stringified = stringify_query(self._session, self.query.statement)
 
-            with Sentry.start_span('query_one', op='db.dql', query=stringified):
+            with Sentry.start_span(TracingOp.DB_QUERY_ONE, description=stringified):
                 try:
                     return Ok(self.query.one())
 
@@ -203,11 +203,11 @@ class SafeQuery(Generic[T]):
 
     def one_or_none(self) -> Result[Optional[T], 'Failure']:
         if self.failure is None:
-            from . import Sentry
+            from . import Sentry, TracingOp
 
             stringified = stringify_query(self._session, self.query.statement)
 
-            with Sentry.start_span('query_one_or_none', op='db.dql', query=stringified):
+            with Sentry.start_span(TracingOp.DB_QUERY_ONE_OR_NONE, description=stringified):
                 try:
                     return Ok(self.query.one_or_none())
 
@@ -220,11 +220,11 @@ class SafeQuery(Generic[T]):
 
     def all(self) -> Result[List[T], 'Failure']:
         if self.failure is None:
-            from . import Sentry
+            from . import Sentry, TracingOp
 
             stringified = stringify_query(self._session, self.query.statement)
 
-            with Sentry.start_span('query_all', op='db.dql', query=stringified):
+            with Sentry.start_span(TracingOp.DB_QUERY_ALL, description=stringified):
                 try:
                     return Ok(self.query.all())
 
@@ -237,11 +237,11 @@ class SafeQuery(Generic[T]):
 
     def count(self) -> Result[int, 'Failure']:
         if self.failure is None:
-            from . import Sentry
+            from . import Sentry, TracingOp
 
             stringified = stringify_query(self._session, self.query.statement)
 
-            with Sentry.start_span('query_count', op='db.dql', query=stringified):
+            with Sentry.start_span(TracingOp.DB_QUERY_COUNT, description=stringified):
                 try:
                     return Ok(self.query.count())
 
@@ -299,13 +299,13 @@ def execute_dml(
     :returns: ``None`` if the statement was executed correctly, :py:class:`Failure` otherwise.
     """
 
-    from . import Sentry
+    from . import Sentry, TracingOp
 
     stringified = stringify_query(session, statement)
 
     logger.debug(f'execute DML: {stringified}')
 
-    with Sentry.start_span('query_dml', op='db.dml', query=stringified):
+    with Sentry.start_span(TracingOp.DB_QUERY_DML, description=stringified):
         try:
             result: sqlalchemy.engine.cursor.CursorResult[T] = session.execute(statement)
 
@@ -492,7 +492,7 @@ def transaction(
             ...
     """
 
-    from . import Failure, Sentry
+    from . import Failure, Sentry, TracingOp
 
     result = TransactionResult()
 
@@ -512,7 +512,7 @@ def transaction(
                 exc=exc
             )
 
-    with Sentry.start_span('transaction', op='db.transaction'):
+    with Sentry.start_span(TracingOp.DB_TRANSACTION):
         try:
             assert_not_in_transaction(logger, session, rollback=False)
 

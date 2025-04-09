@@ -13,7 +13,7 @@ from gluetool.log import log_dict, log_table
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Protocol, TypedDict
 
-from . import Failure, Sentry, SerializableContainer, partition
+from . import Failure, Sentry, SerializableContainer, TracingOp, partition
 from .db import GuestRequest
 from .drivers import CanAcquire, PoolCapabilities, PoolDriver, PoolLogger
 from .knobs import Knob
@@ -1024,10 +1024,13 @@ def run_routing_policies(
     final_ruling = PolicyRuling.from_pools(pools)
 
     for policy in policies:
-        with Sentry.start_span('routing_policy', op='function') as tracing_span:
+        with Sentry.start_span(
+            TracingOp.FUNCTION,
+            description='routing_policy'
+        ) as tracing_span:
             policy_name = cast(PolicyWrapperType, policy).policy_name
 
-            tracing_span.set_tag('policy_name', policy_name)
+            tracing_span.set_tag('policyname', policy_name)
 
             r = policy(logger, session, [pool_ruling.pool for pool_ruling in final_ruling.pools], guest_request)
 

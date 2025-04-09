@@ -43,7 +43,9 @@ from typing_extensions import Literal, Protocol, TypedDict
 from .. import (
     Failure,
     JSONType,
+    Sentry,
     SerializableContainer,
+    TracingOp,
     log_dict_yaml,
     logging_filter,
     process_output_to_str,
@@ -3058,7 +3060,8 @@ def run_cli_tool(
             return
 
     try:
-        output = gluetool.utils.Command(command, logger=logger).run(env=env)
+        with Sentry.start_span(TracingOp.SUBPROCESS, description=' '.join(failure_details['scrubbed_command'])):
+            output = gluetool.utils.Command(command, logger=logger).run(env=env)
 
     except gluetool.glue.GlueCommandError as exc:
         _log_command(exc.output)

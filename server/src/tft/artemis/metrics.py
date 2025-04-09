@@ -35,7 +35,7 @@ import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
 
-from . import __VERSION__, DATETIME_FMT, Failure, Sentry, SerializableContainer, db as artemis_db, safe_call
+from . import __VERSION__, DATETIME_FMT, Failure, Sentry, SerializableContainer, TracingOp, db as artemis_db, safe_call
 from .cache import (
     RedisGetType,
     dec_cache_field,
@@ -245,7 +245,7 @@ class MetricsBase:
         Starts a new tracing span to trace the sync operations in this instance.
         """
 
-        with Sentry.start_span(f'{self.__class__.__name__}.sync', op='function'):
+        with Sentry.start_span(TracingOp.FUNCTION, description=f'{self.__class__.__name__}.sync'):
             self.do_sync()
 
     def register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -3460,13 +3460,13 @@ class Metrics(MetricsBase):
             with db.transaction(logger, read_only=True) as (session, t):
                 SESSION.set(session)
 
-                with Sentry.start_span('metrics.sync', op='function'):
+                with Sentry.start_span(TracingOp.FUNCTION, description='metrics.sync'):
                     self.sync()
 
-            with Sentry.start_span('metrics.update', op='function'):
+            with Sentry.start_span(TracingOp.FUNCTION, description='metrics.update'):
                 self.update_prometheus()
 
-            with Sentry.start_span('metrics.generate', op='function'):
+            with Sentry.start_span(TracingOp.FUNCTION, description='metrics.generate'):
                 return cast(bytes, generate_latest(registry=self._registry))
 
         return safe_call(_render)
