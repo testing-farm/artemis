@@ -54,6 +54,7 @@ from ..db import (
     GuestRequest,
     GuestShelf,
     SafeQuery,
+    SerializedPoolDataMapping,
     SnapshotRequest,
     SSHKey,
     TaskRequest,
@@ -63,7 +64,6 @@ from ..db import (
     transaction,
 )
 from ..drivers import (
-    PoolData,
     PoolDriver,
     PoolLogger,
     aws as aws_driver,
@@ -1639,7 +1639,7 @@ def _guest_state_update_query(
     new_state: GuestState,
     current_state: Optional[GuestState] = None,
     set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
-    current_pool_data: Optional[str] = None
+    current_pool_data: Optional[SerializedPoolDataMapping] = None
 ) -> Result[sqlalchemy.Update, Failure]:
     """
     Create an ``UPDATE`` query for guest request state change.
@@ -1664,7 +1664,7 @@ def _guest_state_update_query(
         query = query.where(GuestRequest.state == current_state)
 
     if current_pool_data:
-        query = query.where(GuestRequest.pool_data == current_pool_data)
+        query = query.where(GuestRequest._pool_data == current_pool_data)
 
     if set_values:
         values = set_values
@@ -1756,7 +1756,7 @@ def _update_guest_state_and_request_task(
     current_state: Optional[GuestState] = None,
     set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
     poolname: Optional[str] = None,
-    current_pool_data: Optional[str] = None,
+    current_pool_data: Optional[SerializedPoolDataMapping] = None,
     delay: Optional[int] = None,
     **details: Any
 ) -> Result[None, Failure]:
@@ -2381,7 +2381,7 @@ class Workspace:
         current_state: Optional[GuestState] = None,
         set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
         poolname: Optional[str] = None,
-        current_pool_data: Optional[str] = None,
+        current_pool_data: Optional[SerializedPoolDataMapping] = None,
         delay: Optional[int] = None,
         **details: Any
     ) -> WorkspaceBound:
@@ -2583,7 +2583,7 @@ class ProvisioningTailHandler(TailHandler):
 
         assert workspace.gr
 
-        if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
+        if workspace.gr.poolname and not workspace.gr.is_pool_data_empty(workspace.gr.poolname):
             workspace.spice_details['poolname'] = workspace.gr.poolname
 
             workspace.load_gr_pool()
@@ -2610,7 +2610,7 @@ class ProvisioningTailHandler(TailHandler):
                 guest_shelf_lookup,
                 workspace.guestname,
                 current_state=self.current_state,
-                current_pool_data=workspace.gr.pool_data,
+                current_pool_data=workspace.gr._pool_data,
                 set_values={
                     'poolname': None,
                     'last_poolname': workspace.gr.poolname,
@@ -2627,7 +2627,7 @@ class ProvisioningTailHandler(TailHandler):
                 route_guest_request,
                 workspace.guestname,
                 current_state=self.current_state,
-                current_pool_data=workspace.gr.pool_data,
+                current_pool_data=workspace.gr._pool_data,
                 set_values={
                     'poolname': None,
                     'last_poolname': workspace.gr.poolname,
@@ -2640,7 +2640,7 @@ class ProvisioningTailHandler(TailHandler):
             workspace.update_guest_state(
                 self.new_state,
                 current_state=self.current_state,
-                current_pool_data=workspace.gr.pool_data,
+                current_pool_data=workspace.gr._pool_data,
                 set_values={
                     'poolname': None,
                     'last_poolname': workspace.gr.poolname,

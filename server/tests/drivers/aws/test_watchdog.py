@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import datetime
-import json
 from typing import Dict, cast
 from unittest.mock import ANY, MagicMock
 
@@ -27,22 +26,25 @@ WATCHDOG_CONTINUE: Result[tft.artemis.drivers.WatchdogState, tft.artemis.Failure
     ('pool_data', 'state', 'code', 'expected_state', 'expected_log_msg'),
     [
         # No tracking for non-spot instances regardless of state
-        ({'instance_id': '42', 'spot_instance_id': None}, 'ready', '', WATCHDOG_COMPLETE, ''),
-        ({'instance_id': '42', 'spot_instance_id': None}, 'open', '', WATCHDOG_COMPLETE, ''),
-        ({'instance_id': '42', 'spot_instance_id': None}, 'closed', 'instance-terminated-by-user',
+        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': None}}, 'ready', '', WATCHDOG_COMPLETE, ''),
+        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': None}}, 'open', '', WATCHDOG_COMPLETE, ''),
+        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': None}}, 'closed', 'instance-terminated-by-user',
          WATCHDOG_COMPLETE, ''),
         # continue tracking active spot instances
-        ({'instance_id': '42', 'spot_instance_id': 'sir-42'}, 'open', '', WATCHDOG_CONTINUE, ''),
-        ({'instance_id': '42', 'spot_instance_id': 'sir-42'}, 'active', '', WATCHDOG_CONTINUE, ''),
+        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}}, 'open', '', WATCHDOG_CONTINUE, ''),
+        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}}, 'active', '', WATCHDOG_CONTINUE, ''),
         # normally terminated instance
-        ({'instance_id': '42', 'spot_instance_id': 'sir-42'}, 'cancelled', 'instance-terminated-by-user',
+        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}}, 'cancelled',
+         'instance-terminated-by-user',
          WATCHDOG_COMPLETE, ''),
         # terminated instance not in expected state
-        ({'instance_id': '42', 'spot_instance_id': 'sir-42'}, 'some-other-untypical-of-user-termination-code',
+        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}},
+         'some-other-untypical-of-user-termination-code',
          'instance-terminated-by-user',
          WATCHDOG_COMPLETE, 'spot instance terminated prematurely'),
         # no-capacity-event
-        ({'instance_id': '42', 'spot_instance_id': 'sir-42'}, 'closed', 'spot-instance-terminated-no-capacity',
+        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}}, 'closed',
+         'spot-instance-terminated-no-capacity',
          WATCHDOG_COMPLETE, 'spot instance terminated prematurely'),
     ]
 )
@@ -73,7 +75,7 @@ def test_aws_guest_watchdog(
         ssh_keyname='dummy-key',
         ssh_port=22,
         ssh_username='root',
-        pool_data=json.dumps(pool_data),
+        _pool_data=pool_data,
         _user_data={}
     )
     monkeypatch.setattr(tft.artemis.drivers.aws.AWSDriver, '_describe_spot_instance',

@@ -68,7 +68,7 @@ class Workspace(_Workspace):
                 # save guest's address. In both cases, we must be sure nobody else did any changes before us.
 
                 new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
-                    'pool_data': provisioning_progress.pool_data.serialize()
+                    '_pool_data': self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data)
                 }
 
                 if provisioning_progress.ssh_info is not None:
@@ -94,7 +94,9 @@ class Workspace(_Workspace):
                     current_state=GuestState.PROVISIONING,
                     set_values=new_guest_values,
                     pool=self.gr.poolname,
-                    pool_data=provisioning_progress.pool_data.serialize(),
+                    pool_data=self.gr.pool_data.update(
+                        self.gr.poolname, provisioning_progress.pool_data
+                    ),
                     delay=provisioning_progress.delay_update
                 )
 
@@ -146,7 +148,10 @@ class Workspace(_Workspace):
                         address=provisioning_progress.address,
                         set_values=new_guest_values,
                         pool=self.gr.poolname,
-                        pool_data=provisioning_progress.pool_data.serialize()
+                        pool_data=self.gr.pool_data.update(
+                            self.gr.poolname,
+                            provisioning_progress.pool_data
+                        )
                     )
 
                 else:
@@ -161,7 +166,10 @@ class Workspace(_Workspace):
                         address=provisioning_progress.address,
                         set_values=new_guest_values,
                         pool=self.gr.poolname,
-                        current_pool_data=provisioning_progress.pool_data.serialize(),
+                        current_pool_data=self.gr.pool_data.update(
+                            self.gr.poolname,
+                            provisioning_progress.pool_data
+                        ),
                         delay=KNOB_DISPATCH_PREPARE_DELAY.value
                     )
 

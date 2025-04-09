@@ -1726,7 +1726,7 @@ class BeakerDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_job_results = self._get_job_results(logger, BeakerPoolData.unserialize(guest_request).job_id)
+        r_job_results = self._get_job_results(logger, guest_request.pool_data.mine(self, BeakerPoolData).job_id)
 
         if r_job_results.is_error:
             return Error(r_job_results.unwrap_error())
@@ -1749,7 +1749,7 @@ class BeakerDriver(PoolDriver):
 
         log_table(
             logger.info,
-            f'current job status {BeakerPoolData.unserialize(guest_request).job_id}:{job_result}:{job_status}',
+            f'current job status {guest_request.pool_data.mine(self, BeakerPoolData).job_id}:{job_result}:{job_status}',
             [
                 ['Task', 'Result', 'Status', 'Phase', 'Phase result']
             ] + [
@@ -1767,7 +1767,7 @@ class BeakerDriver(PoolDriver):
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.COMPLETE,
-                pool_data=BeakerPoolData.unserialize(guest_request),
+                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
                 address=r_guest_address.unwrap()
             ))
 
@@ -1789,7 +1789,7 @@ class BeakerDriver(PoolDriver):
                 if failures:
                     return Ok(ProvisioningProgress(
                         state=ProvisioningState.CANCEL,
-                        pool_data=BeakerPoolData.unserialize(guest_request),
+                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
                         pool_failures=[Failure(
                             'beaker job failed',
                             job_result=job_result,
@@ -1800,7 +1800,7 @@ class BeakerDriver(PoolDriver):
                     ))
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
-                pool_data=BeakerPoolData.unserialize(guest_request),
+                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
                 delay_update=r_delay.unwrap()
             ))
 
@@ -1857,7 +1857,7 @@ class BeakerDriver(PoolDriver):
 
                     return Ok(ProvisioningProgress(
                         state=ProvisioningState.COMPLETE,
-                        pool_data=BeakerPoolData.unserialize(guest_request),
+                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
                         pool_failures=[Failure(
                             'AVC denials during installation',
                             job_result=job_result,
@@ -1877,7 +1877,7 @@ class BeakerDriver(PoolDriver):
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=BeakerPoolData.unserialize(guest_request),
+                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
                 pool_failures=[Failure(
                     'beaker job failed',
                     job_result=job_result,
@@ -2106,10 +2106,10 @@ class BeakerDriver(PoolDriver):
         Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        if BeakerPoolData.is_empty(guest_request):
-            return Ok(None)
+        pool_data = guest_request.pool_data.mine_or_none(self, BeakerPoolData)
 
-        pool_data = BeakerPoolData.unserialize(guest_request)
+        if not pool_data:
+            return Ok(None)
 
         return self.dispatch_resource_cleanup(
             logger,
@@ -2264,7 +2264,7 @@ class BeakerDriver(PoolDriver):
         :returns: log URL, ``None`` when no such log was found, or a :py:class:`Failure` describing an error.
         """
 
-        r_job_results = self._get_job_results(logger, BeakerPoolData.unserialize(guest_request).job_id)
+        r_job_results = self._get_job_results(logger, guest_request.pool_data.mine(self, BeakerPoolData).job_id)
 
         if r_job_results.is_error:
             return Error(r_job_results.unwrap_error())
