@@ -37,6 +37,7 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info
 
 from . import __VERSION__, DATETIME_FMT, Failure, Sentry, SerializableContainer, db as artemis_db, safe_call
 from .cache import (
+    RedisGetType,
     dec_cache_field,
     dec_cache_value,
     get_cache_value,
@@ -519,12 +520,10 @@ class PoolResources(MetricsBase):
             for network_name, serialized_network in serialized.get('networks', {}).items()
         }
 
-        updated = cast(
-            Callable[[str], Optional[bytes]],
+        self.updated_timestamp = cast(
+            RedisGetType[float],
             cache.get
         )(self._key_updated_timestamp)
-
-        self.updated_timestamp = updated if updated is None else float(updated)
 
     @with_context
     def store(self, cache: redis.Redis) -> None:
@@ -1130,12 +1129,10 @@ class PoolMetrics(MetricsBase):
 
         self.image_info_count = count if count is None else float(count)
 
-        updated = cast(
-            Callable[[str], Optional[bytes]],
+        self.image_info_updated_timestamp = cast(
+            RedisGetType[float],
             cache.get
         )(self.key_image_info_refresh_timestamp)
-
-        self.image_info_updated_timestamp = updated if updated is None else float(updated)
 
         count = cast(
             Callable[[str], Optional[bytes]],
@@ -1144,12 +1141,10 @@ class PoolMetrics(MetricsBase):
 
         self.flavor_info_count = count if count is None else float(count)
 
-        updated = cast(
-            Callable[[str], Optional[bytes]],
+        self.flavor_info_updated_timestamp = cast(
+            RedisGetType[float],
             cache.get
         )(self.key_flavor_info_refresh_timestamp)
-
-        self.flavor_info_updated_timestamp = updated if updated is None else float(updated)
 
         # commandname => count
         self.cli_calls = {

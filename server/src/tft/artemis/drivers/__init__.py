@@ -766,7 +766,7 @@ def _parse_flavor_disk_size(
 
     property_name = field_name.replace('-', '_')
 
-    r_value = safe_call(UNITS, value)
+    r_value = safe_call(UNITS, str(value))
 
     if r_value.is_error:
         return Error(Failure.from_failure(

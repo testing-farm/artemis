@@ -72,6 +72,7 @@ import sentry_sdk.types
 import sentry_sdk.utils
 import stackprinter
 from gluetool.result import Error, Ok, Result
+from typing_extensions import ParamSpec
 
 __VERSION__ = pkg_resources.get_distribution('tft-artemis').version
 
@@ -142,6 +143,7 @@ ExceptionInfoType = Union[
 # Type variable used in generic types
 T = TypeVar('T')
 S = TypeVar('S', bound='SerializableContainer')
+P = ParamSpec('P')
 
 FailureDetailsType = Dict[str, Any]
 
@@ -1333,7 +1335,7 @@ def get_db(logger: gluetool.log.ContextAdapter, application_name: Optional[str] 
     )
 
 
-def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Failure]:
+def safe_call(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> Result[T, Failure]:
     """
     Call given function, with provided arguments.
 
@@ -1372,9 +1374,9 @@ def safe_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> Result[T, Fail
 
 def safe_call_and_handle(
     logger: gluetool.log.ContextAdapter,
-    fn: Callable[..., T],
-    *args: Any,
-    **kwargs: Any
+    fn: Callable[P, T],
+    *args: P.args,
+    **kwargs: P.kwargs
 ) -> Optional[T]:
     """
     Call given function, with provided arguments. If the call fails, log the resulting failure before returning it.
