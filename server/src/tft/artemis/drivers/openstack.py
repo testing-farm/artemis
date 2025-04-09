@@ -409,7 +409,10 @@ class OpenStackDriver(PoolDriver):
         r_nova = self._get_nova()
         if r_nova.is_error:
             return Error(r_nova.unwrap_error())
-        instance = safe_call(r_nova.unwrap().servers.get, OpenStackPoolData.unserialize(guest_request).instance_id)
+        instance = safe_call(
+            r_nova.unwrap().servers.get,
+            guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
+        )
 
         return instance
 
@@ -612,7 +615,7 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest
     ) -> Result[bool, Failure]:
         logger.info('stoping the guest instance')
-        os_options = ['server', 'stop', OpenStackPoolData.unserialize(guest_request).instance_id]
+        os_options = ['server', 'stop', guest_request.pool_data.mine(self, OpenStackPoolData).instance_id]
         r_stop = self._run_os(os_options, json_format=False, commandname='os.server-stop')
 
         if r_stop.is_error:
@@ -629,7 +632,7 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest
     ) -> Result[bool, Failure]:
         logger.info('starting the guest instance')
-        os_options = ['server', 'start', OpenStackPoolData.unserialize(guest_request).instance_id]
+        os_options = ['server', 'start', guest_request.pool_data.mine(self, OpenStackPoolData).instance_id]
         r_start = self._run_os(os_options, json_format=False, commandname='os.server-start')
 
         if r_start.is_error:
@@ -717,9 +720,8 @@ class OpenStackDriver(PoolDriver):
         Acquire a guest console.
         """
 
-        instance_id = OpenStackPoolData.unserialize(guest).instance_id
         os_options = [
-            'console', 'url', 'show', instance_id
+            'console', 'url', 'show', guest.pool_data.mine(self, OpenStackPoolData).instance_id
         ]
         r_output = self._run_os(os_options, commandname='os.console-url-show')
         if r_output.is_error:
@@ -749,7 +751,7 @@ class OpenStackDriver(PoolDriver):
         os_options = [
             'server', 'image', 'create',
             '--name', snapshot_request.snapshotname,
-            OpenStackPoolData.unserialize(guest_request).instance_id
+            guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
         ]
 
         r_output = self._run_os(os_options, commandname='os.server-image-create')
@@ -762,7 +764,7 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
-            pool_data=OpenStackPoolData.unserialize(guest_request),
+            pool_data=guest_request.pool_data.mine(self, OpenStackPoolData),
             delay_update=r_delay.unwrap()
         ))
 
@@ -787,19 +789,21 @@ class OpenStackDriver(PoolDriver):
         if not output:
             return Error(Failure('Image show commmand output is empty'))
 
+        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
+
         status = output['status']
         self.logger.info(f'snapshot status is {status}')
 
         if status != 'active':
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
-                pool_data=OpenStackPoolData.unserialize(guest_request),
+                pool_data=pool_data,
                 delay_update=r_delay.unwrap()
             ))
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
-            pool_data=OpenStackPoolData.unserialize(guest_request)
+            pool_data=pool_data
         ))
 
     def remove_snapshot(
@@ -828,7 +832,7 @@ class OpenStackDriver(PoolDriver):
             'server', 'rebuild',
             '--image', snapshot_request.snapshotname,
             '--wait',
-            OpenStackPoolData.unserialize(guest_request).instance_id
+            guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
         ]
 
         r_output = self._run_os(os_options, json_format=False, commandname='os.server-rebuild')
@@ -886,14 +890,16 @@ class OpenStackDriver(PoolDriver):
 
         status = instance.status.lower()
 
-        logger.info(f'current instance status {OpenStackPoolData.unserialize(guest_request).instance_id}:{status}')
+        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
+
+        logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
         if status == 'error':
             PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.INSTANCE_IN_ERROR_STATE)
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=OpenStackPoolData.unserialize(guest_request),
+                pool_data=pool_data,
                 pool_failures=[Failure('instance ended up in "ERROR" state')]
             ))
 
@@ -916,13 +922,13 @@ class OpenStackDriver(PoolDriver):
 
                     return Ok(ProvisioningProgress(
                         state=ProvisioningState.CANCEL,
-                        pool_data=OpenStackPoolData.unserialize(guest_request),
+                        pool_data=pool_data,
                         pool_failures=[Failure('instance stuck in "BUILD" for too long')]
                     ))
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
-                pool_data=OpenStackPoolData.unserialize(guest_request),
+                pool_data=pool_data,
                 delay_update=r_delay.unwrap()
             ))
 
@@ -938,7 +944,7 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.COMPLETE,
-            pool_data=OpenStackPoolData.unserialize(guest_request),
+            pool_data=pool_data,
             address=ip_address
         ))
 
@@ -952,10 +958,10 @@ class OpenStackDriver(PoolDriver):
         Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        if OpenStackPoolData.is_empty(guest_request):
-            return Ok(None)
+        pool_data = guest_request.pool_data.mine_or_none(self, OpenStackPoolData)
 
-        pool_data = OpenStackPoolData.unserialize(guest_request)
+        if not pool_data:
+            return Ok(None)
 
         return self.dispatch_resource_cleanup(
             logger,
@@ -1241,7 +1247,7 @@ class OpenStackDriver(PoolDriver):
             'console',
             resource,
             'show',
-            OpenStackPoolData.unserialize(guest_request).instance_id
+            guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
         ], json_format=json_format, commandname=f'console-{resource}-show')
 
         if r_output.is_error:
@@ -1322,7 +1328,10 @@ class OpenStackDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[None, Failure]:
-        pool_data = OpenStackPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine_or_none(self, OpenStackPoolData)
+
+        if not pool_data:
+            return Ok(None)
 
         assert pool_data.instance_id is not None
 

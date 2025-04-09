@@ -55,7 +55,7 @@ class Workspace(_Workspace):
                     'console_url': console_url_data.url,
                     'console_url_expires': console_url_data.expires,
                 },
-                current_pool_data=self.gr.pool_data
+                current_pool_data=self.gr._pool_data
             )
 
     @classmethod

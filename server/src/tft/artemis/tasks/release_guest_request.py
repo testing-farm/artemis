@@ -17,7 +17,6 @@ import sqlalchemy
 import sqlalchemy.orm.session
 
 from ..db import DB, DMLResult, GuestRequest, execute_dml
-from ..drivers import PoolData
 from ..guest import GuestState
 from . import (
     _ROOT_LOGGER,
@@ -47,7 +46,7 @@ class Workspace(_Workspace):
 
             assert self.gr
 
-            if self.gr.poolname is not None and not PoolData.is_empty(self.gr):
+            if self.gr.poolname is not None and not self.gr.pool_data.is_empty(self.gr.poolname):
                 self.load_gr_pool()
 
                 if self.result:

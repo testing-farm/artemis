@@ -192,7 +192,7 @@ class GCPDriver(PoolDriver):
                      session: sqlalchemy.orm.session.Session,
                      guest_request: GuestRequest,
                      cancelled: Optional[threading.Event] = None) -> Result[ProvisioningProgress, Failure]:
-        pool_data = GCPPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, GCPPoolData)
 
         request = compute_v1.GetInstanceRequest()
         request.instance = pool_data.name
@@ -221,13 +221,13 @@ class GCPDriver(PoolDriver):
         if ip_address:
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.COMPLETE,
-                pool_data=GCPPoolData.unserialize(guest_request),
+                pool_data=guest_request.pool_data.mine(self, GCPPoolData),
                 address=ip_address
             ))
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.PENDING,
-            pool_data=GCPPoolData.unserialize(guest_request),
+            pool_data=guest_request.pool_data.mine(self, GCPPoolData),
         ))
 
     def release_guest(
@@ -240,10 +240,10 @@ class GCPDriver(PoolDriver):
         Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        if GCPPoolData.is_empty(guest_request):
-            return Ok(None)
+        pool_data = guest_request.pool_data.mine_or_none(self, GCPPoolData)
 
-        pool_data = GCPPoolData.unserialize(guest_request)
+        if not pool_data:
+            return Ok(None)
 
         return self.dispatch_resource_cleanup(
             logger,
@@ -495,7 +495,10 @@ class GCPDriver(PoolDriver):
         """
         Trigger hard reboot of a GCP instance.
         """
-        pool_data = GCPPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine_or_none(self, GCPPoolData)
+
+        if not pool_data:
+            return Ok(None)
 
         request = compute_v1.ResetInstanceRequest(
             instance=pool_data.name,

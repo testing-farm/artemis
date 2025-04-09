@@ -9,7 +9,6 @@ import datetime
 import enum
 import functools
 import inspect
-import json
 import os
 import random
 import threading
@@ -55,6 +54,7 @@ from ..db import (
     GuestRequest,
     GuestShelf,
     SafeQuery,
+    SerializedPoolDataMapping,
     SnapshotRequest,
     SSHKey,
     TaskRequest,
@@ -64,7 +64,6 @@ from ..db import (
     transaction,
 )
 from ..drivers import (
-    PoolData,
     PoolDriver,
     PoolLogger,
     aws as aws_driver,
@@ -860,6 +859,12 @@ def resolve_actor(actorname: str) -> Result[Actor, Failure]:
         return Error(Failure.from_exc('failed to find task', exc))
 
     return Ok(actor)
+
+
+GuestFieldStates = Dict[
+    str,
+    Union[str, int, None, datetime.datetime, GuestState, SerializedPoolDataMapping]
+]
 
 
 #: Type variable representing :py:class:_Workspace and its child classes.
@@ -1677,8 +1682,8 @@ def _guest_state_update_query(
     guestname: str,
     new_state: GuestState,
     current_state: Optional[GuestState] = None,
-    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
-    current_pool_data: Optional[str] = None
+    set_values: Optional[GuestFieldStates] = None,
+    current_pool_data: Optional[SerializedPoolDataMapping] = None
 ) -> Result[sqlalchemy.Update, Failure]:
     """
     Create an ``UPDATE`` query for guest request state change.
@@ -1703,7 +1708,7 @@ def _guest_state_update_query(
         query = query.where(GuestRequest.state == current_state)
 
     if current_pool_data:
-        query = query.where(GuestRequest.pool_data == current_pool_data)
+        query = query.where(GuestRequest._pool_data == current_pool_data)
 
     if set_values:
         values = set_values
@@ -1729,9 +1734,9 @@ def _update_guest_state(
     guestname: str,
     new_state: GuestState,
     current_state: Optional[GuestState] = None,
-    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+    set_values: Optional[GuestFieldStates] = None,
     poolname: Optional[str] = None,
-    current_pool_data: Optional[str] = None,
+    current_pool_data: Optional[SerializedPoolDataMapping] = None,
     **details: Any
 ) -> Result[None, Failure]:
     current_state_label = current_state.value if current_state is not None else '<ignored>'
@@ -1793,9 +1798,9 @@ def _update_guest_state_and_request_task(
     task: Actor,
     *task_arguments: ActorArgumentType,
     current_state: Optional[GuestState] = None,
-    set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+    set_values: Optional[GuestFieldStates] = None,
     poolname: Optional[str] = None,
-    current_pool_data: Optional[str] = None,
+    current_pool_data: Optional[SerializedPoolDataMapping] = None,
     delay: Optional[int] = None,
     **details: Any
 ) -> Result[None, Failure]:
@@ -2168,9 +2173,9 @@ class Workspace:
         self,
         new_state: GuestState,
         current_state: Optional[GuestState] = None,
-        set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+        set_values: Optional[GuestFieldStates] = None,
         poolname: Optional[str] = None,
-        current_pool_data: Optional[str] = None,
+        current_pool_data: Optional[SerializedPoolDataMapping] = None,
         **details: Any
     ) -> None:
         if self.result:
@@ -2447,9 +2452,9 @@ class Workspace:
         task: Actor,
         *task_arguments: ActorArgumentType,
         current_state: Optional[GuestState] = None,
-        set_values: Optional[Dict[str, Union[str, int, None, datetime.datetime, GuestState]]] = None,
+        set_values: Optional[GuestFieldStates] = None,
         poolname: Optional[str] = None,
-        current_pool_data: Optional[str] = None,
+        current_pool_data: Optional[SerializedPoolDataMapping] = None,
         delay: Optional[int] = None,
         **details: Any
     ) -> WorkspaceBound:
@@ -2651,7 +2656,7 @@ class ProvisioningTailHandler(TailHandler):
 
         assert workspace.gr
 
-        if workspace.gr.poolname and not PoolData.is_empty(workspace.gr):
+        if workspace.gr.poolname and not workspace.gr.pool_data.is_empty(workspace.gr.poolname):
             workspace.spice_details['poolname'] = workspace.gr.poolname
 
             workspace.load_gr_pool()
@@ -2670,6 +2675,15 @@ class ProvisioningTailHandler(TailHandler):
 
                     return RESCHEDULE
 
+        set_values: GuestFieldStates = {
+            'poolname': None,
+            'last_poolname': workspace.gr.poolname,
+            'address': None
+        }
+
+        if workspace.gr.poolname:
+            set_values['_pool_data'] = workspace.gr.pool_data.reset(workspace.gr.poolname)
+
         if self.new_state == GuestState.SHELF_LOOKUP:
             from .guest_shelf_lookup import guest_shelf_lookup
 
@@ -2678,13 +2692,8 @@ class ProvisioningTailHandler(TailHandler):
                 guest_shelf_lookup,
                 workspace.guestname,
                 current_state=self.current_state,
-                current_pool_data=workspace.gr.pool_data,
-                set_values={
-                    'poolname': None,
-                    'last_poolname': workspace.gr.poolname,
-                    'pool_data': json.dumps({}),
-                    'address': None
-                }
+                current_pool_data=workspace.gr._pool_data,
+                set_values=set_values
             )
 
         elif self.new_state == GuestState.ROUTING:
@@ -2695,26 +2704,16 @@ class ProvisioningTailHandler(TailHandler):
                 route_guest_request,
                 workspace.guestname,
                 current_state=self.current_state,
-                current_pool_data=workspace.gr.pool_data,
-                set_values={
-                    'poolname': None,
-                    'last_poolname': workspace.gr.poolname,
-                    'pool_data': json.dumps({}),
-                    'address': None
-                }
+                current_pool_data=workspace.gr._pool_data,
+                set_values=set_values
             )
 
         elif self.new_state == GuestState.ERROR:
             workspace.update_guest_state(
                 self.new_state,
                 current_state=self.current_state,
-                current_pool_data=workspace.gr.pool_data,
-                set_values={
-                    'poolname': None,
-                    'last_poolname': workspace.gr.poolname,
-                    'pool_data': json.dumps({}),
-                    'address': None
-                }
+                current_pool_data=workspace.gr._pool_data,
+                set_values=set_values
             )
 
         else:
