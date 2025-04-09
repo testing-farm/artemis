@@ -5,6 +5,7 @@ import contextlib
 import dataclasses
 import datetime
 import enum
+import functools
 import hashlib
 import json
 import secrets
@@ -46,6 +47,7 @@ import sqlalchemy.sql.elements
 import sqlalchemy.sql.expression
 from gluetool.result import Error, Ok, Result
 from sqlalchemy import JSON, Column, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 from sqlalchemy.orm.query import Query as _Query
 from sqlalchemy.orm.session import sessionmaker
@@ -58,6 +60,7 @@ from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password
 
 if TYPE_CHECKING:
     from . import Failure
+    from .drivers import PoolData, PoolDriver, SerializedPoolData
     from .environment import Environment
     from .security_group_rules import SecurityGroupRule, SecurityGroupRules
     from .tasks import Actor, ActorArgumentType
@@ -905,6 +908,51 @@ class GuestEvent(Base):
 
 
 UserDataType = Dict[str, Optional[str]]
+PoolDataT = TypeVar('PoolDataT', bound='PoolData')
+SerializedPoolDataMapping = Dict[str, 'SerializedPoolData']
+
+
+class _PoolDataMapping:
+    def __init__(self, guest_request: 'GuestRequest') -> None:
+        self._guest_request = guest_request
+
+    def is_empty(self, poolname: str) -> bool:
+        return not self._guest_request._pool_data.get(poolname, {})
+
+    def one_or_none(self, poolname: str, pool_data_class: Type[PoolDataT]) -> Optional[PoolDataT]:
+        pool_data = self._guest_request._pool_data.get(poolname, {})
+
+        if not pool_data:
+            return None
+
+        return pool_data_class.unserialize(pool_data)
+
+    def one(self, poolname: str, pool_data_class: Type[PoolDataT]) -> PoolDataT:
+        _pool_data = self._guest_request._pool_data  # noqa: F841
+
+        pool_data = self._guest_request._pool_data.get(poolname, {})
+
+        assert pool_data
+
+        return pool_data_class.unserialize(pool_data)
+
+    def mine_or_none(self, pool: 'PoolDriver', pool_data_class: Type[PoolDataT]) -> Optional[PoolDataT]:
+        return self.one_or_none(pool.poolname, pool_data_class)
+
+    def mine(self, pool: 'PoolDriver', pool_data_class: Type[PoolDataT]) -> PoolDataT:
+        return self.one(pool.poolname, pool_data_class)
+
+    def update(self, poolname: str, pool_data: PoolDataT) -> SerializedPoolDataMapping:
+        return {
+            **self._guest_request._pool_data,
+            poolname: pool_data.serialize()
+        }
+
+    def reset(self, poolname: str) -> SerializedPoolDataMapping:
+        return {
+            **self._guest_request._pool_data,
+            poolname: {}
+        }
 
 
 class GuestRequest(Base):
@@ -998,7 +1046,15 @@ class GuestRequest(Base):
     ssh_username: Mapped[str] = mapped_column(String(250), nullable=False)
 
     # Pool-specific data.
-    pool_data: Mapped[str]
+    _pool_data: Mapped[Dict[str, Dict[str, Any]]] = mapped_column(
+        JSONB(),  # type: ignore[no-untyped-call]
+        nullable=False,
+        server_default='{}'
+    )
+
+    @functools.cached_property
+    def pool_data(self) -> _PoolDataMapping:
+        return _PoolDataMapping(self)
 
     # User specified data
     _user_data: Mapped[UserDataType] = mapped_column(JSON(), nullable=False)
@@ -1089,7 +1145,7 @@ class GuestRequest(Base):
             state_mtime=datetime.datetime.utcnow(),
             poolname=None,
             last_poolname=None,
-            pool_data=json.dumps({}),
+            _pool_data=json.dumps({}),
             _on_ready=[(actor.actor_name, args) for actor, args in on_ready] if on_ready is not None else on_ready,
             _security_group_rules_ingress=([rule.serialize() for rule in security_group_rules_ingress]
                                            if security_group_rules_ingress else None),

@@ -800,7 +800,7 @@ class IBMCloudVPCDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[Any, Failure]:
-        instance_id = IBMCloudPoolData.unserialize(guest_request).instance_id
+        instance_id = guest_request.pool_data.mine(self, IBMCloudPoolData).instance_id
         res: Dict[str, Any] = {}
 
         if not instance_id:
@@ -862,7 +862,7 @@ class IBMCloudVPCDriver(PoolDriver):
         if not output:
             return Error(Failure('Server show commmand output is empty'))
 
-        pool_data = IBMCloudPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 
         if not output['tags']:
             # No tags have been assigned yet, time to do that.
@@ -935,10 +935,10 @@ class IBMCloudVPCDriver(PoolDriver):
         Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        if IBMCloudPoolData.is_empty(guest_request):
-            return Ok(None)
+        pool_data = guest_request.pool_data.mine_or_none(self, IBMCloudPoolData)
 
-        pool_data = IBMCloudPoolData.unserialize(guest_request)
+        if not pool_data:
+            return Ok(None)
 
         # For now there is no additional resources to cleanup, keeping this here just for consistency with other drivers
         # with IBMCloudSession(logger, self) as session:
@@ -994,7 +994,7 @@ class IBMCloudVPCDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[None, Failure]:
-        pool_data = IBMCloudPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 
         assert pool_data.instance_id is not None
 

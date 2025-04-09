@@ -250,7 +250,7 @@ class RestDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        pool_data = RestPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, RestPoolData)
 
         payload = {
             "environment": guest_request._environment,
@@ -293,10 +293,10 @@ class RestDriver(PoolDriver):
         Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        if RestPoolData.is_empty(guest_request):
-            return Ok(None)
+        pool_data = guest_request.pool_data.mine_or_none(self, RestPoolData)
 
-        pool_data = RestPoolData.unserialize(guest_request)
+        if not pool_data:
+            return Ok(None)
 
         return self.dispatch_resource_cleanup(
             logger,
@@ -415,7 +415,7 @@ class RestDriver(PoolDriver):
         :returns: log URL.
         """
 
-        pool_data = RestPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, RestPoolData)
 
         return f"{self.url}/getlog/{pool_data.guest_id}/{log_name}"
 
@@ -540,7 +540,11 @@ class RestDriver(PoolDriver):
 
         The response is expected to be empty.
         '''
-        pool_data = RestPoolData.unserialize(guest_request)
+
+        pool_data = guest_request.pool_data.mine_or_none(self, RestPoolData)
+
+        if not pool_data:
+            return Ok(None)
 
         try:
             response = requests.post(

@@ -615,6 +615,9 @@ class ConsoleUrlData:
     expires: datetime.datetime
 
 
+SerializedPoolData = Dict[str, Any]
+
+
 @dataclasses.dataclass
 class PoolData:
     """
@@ -622,19 +625,12 @@ class PoolData:
     to declare its own fields.
     """
 
-    @classmethod
-    def is_empty(cls, guest_request: GuestRequest) -> bool:
-        return guest_request.pool_data == json.dumps({})
-
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> SerializedPoolData:
         return dataclasses.asdict(self)
 
-    def serialize_to_json(self) -> str:
-        return json.dumps(self.serialize())
-
     @classmethod
-    def unserialize(cls: Type[T], guest_request: GuestRequest) -> T:
-        return cls(**json.loads(guest_request.pool_data))
+    def unserialize(cls: Type[T], serialized: SerializedPoolData) -> T:
+        return cls(**serialized)
 
 
 @dataclasses.dataclass

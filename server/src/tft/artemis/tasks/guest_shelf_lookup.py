@@ -97,7 +97,7 @@ class Workspace(_Workspace):
                         current_state=GuestState.SHELF_LOOKUP,
                         set_values={
                             attr: getattr(selected_guest, attr)
-                            for attr in ['poolname', 'address', 'ssh_port', 'ssh_username', 'pool_data']
+                            for attr in ['poolname', 'address', 'ssh_port', 'ssh_username', '_pool_data']
                         }
                     )
 

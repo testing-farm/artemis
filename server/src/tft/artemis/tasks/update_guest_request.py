@@ -10,20 +10,20 @@ Inspect the provisioning progress of a given request, and update info Artemis ho
    MUST preserve consistent and restartable state.
 """
 
-import datetime
-from typing import Dict, Union, cast
+from typing import cast
 
 import gluetool.log
 import sqlalchemy.orm.session
 
 from .. import Failure
-from ..db import DB
-from ..drivers import PoolData, ProvisioningProgress, ProvisioningState
+from ..db import DB, SerializedPoolDataMapping
+from ..drivers import ProvisioningProgress, ProvisioningState
 from ..guest import GuestState
 from . import (
     _ROOT_LOGGER,
     DoerReturnType,
     DoerType,
+    GuestFieldStates,
     GuestRequestWorkspace as _Workspace,
     ProvisioningTailHandler,
     TaskCall,
@@ -47,9 +47,9 @@ class Workspace(_Workspace):
 
         skip_prepare_verify_ssh: bool
 
-        current_pool_data: PoolData
+        current_pool_data: SerializedPoolDataMapping
         provisioning_progress: ProvisioningProgress
-        new_guest_data: Dict[str, Union[str, int, None, datetime.datetime, GuestState]]
+        new_guest_data: GuestFieldStates
 
         with self.transaction():
             self.load_guest_request(self.guestname, state=GuestState.PROMISED)
@@ -61,10 +61,11 @@ class Workspace(_Workspace):
 
             assert self.gr
             assert self.pool
+            assert self.gr.poolname
 
             if self.is_pool_enabled:
                 skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
-                current_pool_data = self.pool.pool_data_class.unserialize(self.gr)
+                current_pool_data = self.gr._pool_data.copy()
 
                 r_progress = self.pool.update_guest(self.logger, self.session, self.gr)
 
@@ -74,7 +75,9 @@ class Workspace(_Workspace):
                 provisioning_progress = r_progress.unwrap()
 
                 new_guest_data = {
-                    'pool_data': provisioning_progress.pool_data.serialize_to_json()
+                    '_pool_data': self.gr.pool_data.update(
+                        self.gr.poolname, provisioning_progress.pool_data
+                    )
                 }
 
                 if provisioning_progress.ssh_info is not None:
@@ -89,7 +92,7 @@ class Workspace(_Workspace):
             else:
                 provisioning_progress = ProvisioningProgress(
                     state=ProvisioningState.CANCEL,
-                    pool_data=self.pool.pool_data_class.unserialize(self.gr),
+                    pool_data=self.gr.pool_data.mine(self.pool, self.pool.pool_data_class),
                     pool_failures=[Failure('pool is disabled')]
                 )
 
@@ -106,7 +109,8 @@ class Workspace(_Workspace):
                     self.guestname,
                     current_state=GuestState.PROMISED,
                     set_values=new_guest_data,
-                    current_pool_data=current_pool_data.serialize_to_json(),
+                    # UNBOUND
+                    current_pool_data=current_pool_data,
                     delay=provisioning_progress.delay_update
                 )
 
@@ -140,7 +144,8 @@ class Workspace(_Workspace):
                         self.guestname,
                         current_state=GuestState.PROMISED,
                         set_values=new_guest_data,
-                        current_pool_data=current_pool_data.serialize_to_json()
+                        # UNBOUND
+                        current_pool_data=current_pool_data
                     )
 
                 else:
@@ -153,7 +158,8 @@ class Workspace(_Workspace):
                         self.guestname,
                         current_state=GuestState.PROMISED,
                         set_values=new_guest_data,
-                        current_pool_data=current_pool_data.serialize_to_json(),
+                        # UNBOUND
+                        current_pool_data=current_pool_data,
                         delay=KNOB_DISPATCH_PREPARE_DELAY.value
                     )
 

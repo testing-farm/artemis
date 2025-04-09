@@ -16,7 +16,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 
 from ..db import DB
-from ..drivers import PoolData, WatchdogState
+from ..drivers import WatchdogState
 from ..guest import GuestState
 from ..knobs import Knob
 from . import (
@@ -75,7 +75,7 @@ class Workspace(_Workspace):
 
             assert self.gr
 
-            if self.gr.poolname is None or PoolData.is_empty(self.gr):
+            if self.gr.poolname is None or self.gr.pool_data.is_empty(self.gr.poolname):
                 return
 
             self.load_gr_pool()
