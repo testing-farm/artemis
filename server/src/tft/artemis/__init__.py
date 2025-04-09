@@ -236,9 +236,9 @@ class TracingOp(enum.Enum):
     DB_QUERY_COUNT = 'db.query.count'
     DB_QUERY_DML = 'db.query.dml'
 
-    HTTP_SERVER = "http.server"
+    HTTP_SERVER = 'http.server'
 
-    QUEUE_TASK = "queue.task"
+    QUEUE_TASK = 'queue.task'
     QUEUE_SUBMIT = 'queue.submit'
 
     SUBPROCESS = 'subprocess'
@@ -426,7 +426,7 @@ class Sentry:
         """
         Start new tracing transaction.
 
-        :param op: categhory of the transaction.
+        :param op: category of the transaction.
         :param description: short, human-readable label describing the transaction.
         :param tags: tags to attach to the transaction. Tags should be simple, trivial, low-cardinality labels that
             maintainers would use for categorizing and searching transactions. Task name, pool name, HTTP method are
@@ -471,7 +471,7 @@ class Sentry:
         """
         Start new tracing span.
 
-        :param op: categhory of the span.
+        :param op: category of the span.
         :param description: short, human-readable label describing the span.
         :param tags: tags to attach to the span. Tags should be simple, trivial, low-cardinality labels that maintainers
             would use for categorizing and searching span. Task name, pool name, HTTP method are good examples; task
