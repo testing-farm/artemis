@@ -3432,6 +3432,250 @@ class WorkerMetrics(MetricsBase):
 
 
 @dataclasses.dataclass
+class DispatcherMetrics(MetricsBase):
+    """
+    Dispatcher metrics.
+    """
+
+    dispatched_task_invocations_count: int = 0
+    dispatched_task_success_count: Dict[str, int] = dataclasses.field(default_factory=dict)
+    dispatched_task_failure_count: int = 0
+    dispatched_task_sequence_invocations_count: int = 0
+    dispatched_task_sequence_success_count: Dict[str, int] = dataclasses.field(default_factory=dict)
+    dispatched_task_sequence_failure_count: int = 0
+
+    _KEY_DISPATCHED_TASK_INVOCATIONS = 'metrics.dispatcher.task.invocations'
+    _KEY_DISPATCHED_TASK_SUCCESS = 'metrics.dispatcher.task.success'
+    _KEY_DISPATCHED_TASK_FAILURE = 'metrics.dispatcher.task.failure'
+    _KEY_DISPATCHED_TASK_SEQUENCE_INVOCATIONS = 'metrics.dispatcher.task-sequence.invocations'
+    _KEY_DISPATCHED_TASK_SEQUENCE_SUCCESS = 'metrics.dispatcher.task-sequence.success'
+    _KEY_DISPATCHED_TASK_SEQUENCE_FAILURE = 'metrics.dispatcher.task-sequence.failure'
+
+    @staticmethod
+    @with_context
+    def inc_dispatched_task_invocations(
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increment number of task dispatcher invocations.
+
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(logger, cache, DispatcherMetrics._KEY_DISPATCHED_TASK_INVOCATIONS)
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_successful_dispatched_tasks(
+        actor_name: str,
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increment number of successfull task dispatches.
+
+        :param actor_name: Name of the dispatched task.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(logger, cache, DispatcherMetrics._KEY_DISPATCHED_TASK_SUCCESS, actor_name)
+
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_failed_dispatched_tasks(
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increment number of task sequence dispatcher invocations.
+
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(logger, cache, DispatcherMetrics._KEY_DISPATCHED_TASK_FAILURE)
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_dispatched_task_sequence_invocations(
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increment number of failed task sequence dispatches.
+
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(logger, cache, DispatcherMetrics._KEY_DISPATCHED_TASK_SEQUENCE_INVOCATIONS)
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_successful_dispatched_task_sequence(
+        actor_names: List[str],
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increment number of successfull task sequences dispatches.
+
+        :param actor_names: Names of tasks in the sequence.
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric_field(logger, cache, DispatcherMetrics._KEY_DISPATCHED_TASK_SEQUENCE_SUCCESS, ':'.join(actor_names))
+
+        return Ok(None)
+
+    @staticmethod
+    @with_context
+    def inc_failed_dispatched_task_sequences(
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis
+    ) -> Result[None, Failure]:
+        """
+        Increment number of failed task sequences dispatches.
+
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
+        """
+
+        inc_metric(logger, cache, DispatcherMetrics._KEY_DISPATCHED_TASK_SEQUENCE_FAILURE)
+        return Ok(None)
+
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Register instances of Prometheus metrics with the given registry.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
+        super().register_with_prometheus(registry)
+
+        self.DISPATCHED_TASK_INVOCATIONS_COUNT = Counter(
+            'dispatched_task_invocations_count',
+            'Count of dispatched tasks by task name.',
+            registry=registry
+        )
+
+        self.DISPATCHED_TASK_SUCCESS_COUNT = Counter(
+            'dispatched_task_success_count',
+            'Count of dispatched tasks by task name.',
+            ['actor_name'],
+            registry=registry
+        )
+
+        self.DISPATCHED_TASK_FAILURE_COUNT = Counter(
+            'dispatched_task_failed_count',
+            'Count of dispatched tasks by task name.',
+            registry=registry
+        )
+
+        self.DISPATCHED_TASK_SEQUENCE_INVOCATIONS_COUNT = Counter(
+            'dispatched_task_sequence_invocations_count',
+            'Count of dispatched tasks by task name.',
+            registry=registry
+        )
+
+        self.DISPATCHED_TASK_SEQUENCE_SUCCESS_COUNT = Counter(
+            'dispatched_task_sequence_success_count',
+            'Count of dispatched tasks by task name.',
+            ['actor_names'],
+            registry=registry
+        )
+
+        self.DISPATCHED_TASK_SEQUENCE_FAILURE_COUNT = Counter(
+            'dispatched_task_sequence_failed_count',
+            'Count of dispatched tasks by task name.',
+            registry=registry
+        )
+
+    @with_context
+    def do_sync(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
+        """
+        Load values from the storage and update this container with up-to-date values.
+
+        :param logger: logger to use for logging.
+        :param cache: cache instance to use for cache access.
+        """
+
+        super().do_sync()
+
+        self.dispatched_task_invocations_count = get_metric(logger, cache, self._KEY_DISPATCHED_TASK_INVOCATIONS) or 0
+
+        # actor_name => count
+        self.dispatched_task_success_count = {
+            field: count
+            for field, count in get_metric_fields(logger, cache, self._KEY_DISPATCHED_TASK_SUCCESS).items()
+        }
+
+        self.dispatched_task_failure_count = get_metric(logger, cache, self._KEY_DISPATCHED_TASK_FAILURE) or 0
+
+        self.dispatched_task_sequence_invocations_count = get_metric(
+            logger,
+            cache,
+            self._KEY_DISPATCHED_TASK_SEQUENCE_INVOCATIONS
+        ) or 0
+
+        # actor_names => count
+        self.dispatched_task_sequence_success_count = {
+            field: count
+            for field, count in get_metric_fields(logger, cache, self._KEY_DISPATCHED_TASK_SEQUENCE_SUCCESS).items()
+        }
+
+        self.dispatched_task_sequence_failure_count = get_metric(
+            logger,
+            cache,
+            self._KEY_DISPATCHED_TASK_SEQUENCE_FAILURE
+        ) or 0
+
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+        """
+
+        super().update_prometheus()
+
+        # Reset all duration buckets and sums first
+        reset_counters(self.DISPATCHED_TASK_SUCCESS_COUNT)
+        reset_counters(self.DISPATCHED_TASK_SEQUENCE_SUCCESS_COUNT)
+
+        self.DISPATCHED_TASK_INVOCATIONS_COUNT._value.set(self.dispatched_task_invocations_count)
+
+        for actor_name, count in self.dispatched_task_success_count.items():
+            self.DISPATCHED_TASK_SUCCESS_COUNT \
+                .labels(actor_name=actor_name) \
+                ._value.set(count)
+
+        self.DISPATCHED_TASK_FAILURE_COUNT._value.set(self.dispatched_task_failure_count)
+
+        self.DISPATCHED_TASK_SEQUENCE_INVOCATIONS_COUNT._value.set(self.dispatched_task_sequence_invocations_count)
+
+        for actor_names, count in self.dispatched_task_sequence_success_count.items():
+            self.DISPATCHED_TASK_SEQUENCE_SUCCESS_COUNT \
+                .labels(actor_names=actor_names) \
+                ._value.set(count)
+
+        self.DISPATCHED_TASK_SEQUENCE_FAILURE_COUNT._value.set(self.dispatched_task_sequence_failure_count)
+
+
+@dataclasses.dataclass
 class Metrics(MetricsBase):
     """
     Global metrics that don't fit anywhere else, and also a root of the tree of metrics.
@@ -3445,6 +3689,7 @@ class Metrics(MetricsBase):
     shelves: ShelvesMetrics = ShelvesMetrics()
     api: APIMetrics = APIMetrics()
     workers: WorkerMetrics = WorkerMetrics()
+    dispatcher: DispatcherMetrics = DispatcherMetrics()
 
     # Registry this tree of metrics containers is tied to.
     _registry: Optional[CollectorRegistry] = None
