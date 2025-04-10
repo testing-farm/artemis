@@ -11,6 +11,7 @@ import sqlalchemy.orm.session
 from . import Failure, Sentry, TracingOp, get_db, get_logger, get_worker_name, log_dict_yaml
 from .context import DATABASE, LOGGER, SESSION
 from .db import DMLResult, SafeQuery, TaskRequest, TaskSequenceRequest, execute_dml, transaction
+from .metrics import DispatcherMetrics
 from .tasks import TaskCall, TaskLogger, dispatch_sequence, dispatch_task
 
 # Some tasks may seem to be unused, but they *must* be imported and known to broker
@@ -49,6 +50,8 @@ def handle_task_request(
                 task_args=task_request.arguments
             ).handle(logger, message)
 
+            DispatcherMetrics.inc_failed_dispatched_tasks()
+
             logger.finished()
 
         r_task_call = TaskCall.from_task_request(task_request)
@@ -81,6 +84,8 @@ def handle_task_request(
         if r_delete.is_error:
             return _log_failure(r_delete.unwrap_error(), 'failed to remove task request')
 
+        DispatcherMetrics.inc_successful_dispatched_tasks(task_call.actor.actor_name)
+
         logger.finished()
 
 
@@ -111,6 +116,8 @@ def handle_task_sequence_request(
 
         def _log_failure(failure: Failure, message: str) -> None:
             failure.handle(logger, message)
+
+            DispatcherMetrics.inc_failed_dispatched_task_sequences()
 
             logger.finished()
 
@@ -166,6 +173,10 @@ def handle_task_sequence_request(
         if r_sequence_delete.is_error:
             return _log_failure(r_sequence_delete.unwrap_error(), 'failed to remove task sequence request')
 
+        DispatcherMetrics.inc_successful_dispatched_task_sequence([
+            task_call.actor.actor_name for task_call in task_calls
+        ])
+
         logger.finished()
 
 
@@ -174,6 +185,8 @@ def pick_task_request(
     session: sqlalchemy.orm.session.Session,
 ) -> bool:
     LOGGER.set(logger)
+
+    DispatcherMetrics.inc_dispatched_task_invocations()
 
     with Sentry.start_transaction(TracingOp.FUNCTION, 'dispatcher') as tracing_transaction:
         with Sentry.start_span(TracingOp.FUNCTION, 'handle_task_request'), \
@@ -216,6 +229,8 @@ def pick_task_sequence_request(
     session: sqlalchemy.orm.session.Session,
 ) -> bool:
     LOGGER.set(logger)
+
+    DispatcherMetrics.inc_dispatched_task_sequence_invocations()
 
     with Sentry.start_transaction(TracingOp.FUNCTION, 'dispatcher'):
         with Sentry.start_span(TracingOp.FUNCTION, 'handle_task_sequence_request'), \
