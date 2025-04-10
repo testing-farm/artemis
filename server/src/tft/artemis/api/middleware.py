@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import json
 import os
 import re
@@ -12,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, status as http_st
 from gluetool.utils import normalize_bool_option
 from starlette.middleware.base import BaseHTTPMiddleware as FastAPIBaseHTTPMiddleware
 
-from .. import RSSWatcher, Sentry, TracingOp
+from .. import Failure, RSSWatcher, Sentry, TracingOp
 from ..db import DB
 from ..knobs import Knob
 from ..metrics import APIMetrics
@@ -264,3 +265,26 @@ class TracingMiddleware(BaseHTTPMiddleware):
             }
         ):
             return await call_next(request)
+
+
+class RequestCancelledMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        _, client = self.get_request_info(request)
+
+        logger = get_logger()
+
+        start = datetime.datetime.utcnow()
+
+        try:
+            return await call_next(request)
+
+        finally:
+            if await request.is_disconnected():
+                end = datetime.datetime.utcnow()
+
+                Failure(
+                    'client disconnected from API',
+                    delay=str(end - start),
+                    client=client,
+                    path=request.scope['path']
+                ).handle(logger)

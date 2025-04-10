@@ -34,6 +34,7 @@ from .middleware import (
     ErrorHandlerMiddleware,
     ProfileMiddleware,
     PrometheusMiddleware,
+    RequestCancelledMiddleware,
     RSSWatcherMiddleware,
     TracingMiddleware,
 )
@@ -225,6 +226,7 @@ def run_app() -> fastapi.FastAPI:
         ]
 
     mw += [
+        Middleware(RequestCancelledMiddleware),
         Middleware(TracingMiddleware),
         Middleware(AuthorizationMiddleware),
         Middleware(ErrorHandlerMiddleware),
