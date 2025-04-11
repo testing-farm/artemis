@@ -226,8 +226,8 @@ def run_app() -> fastapi.FastAPI:
         ]
 
     mw += [
-        Middleware(RequestCancelledMiddleware),
         Middleware(TracingMiddleware),
+        Middleware(RequestCancelledMiddleware),
         Middleware(AuthorizationMiddleware),
         Middleware(ErrorHandlerMiddleware),
         Middleware(PrometheusMiddleware),

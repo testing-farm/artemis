@@ -72,6 +72,19 @@ class BaseHTTPMiddleware(FastAPIBaseHTTPMiddleware):
 
         return f'[{os.getpid()}] [{client_info}] [{request_info}]'
 
+    async def do_dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        return await call_next(request)
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        with Sentry.start_span(
+            TracingOp.HTTP_SERVER,
+            'api-request.middleare',
+            tags={
+                'midleware': self.__class__.__name__
+            }
+        ):
+            return await self.do_dispatch(request, call_next)
+
 
 # NOTE(ivasilev) As middlewares are handled at starlette level there is no way to use dependency injection at the
 # moment https://github.com/tiangolo/fastapi/issues/402. This approach kinda works, although sneaking in db object this
@@ -86,7 +99,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
 
         self.db = db or get_db(logger=get_logger())
 
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def do_dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         logger = get_logger()
 
         # We need context even when authentication and authorization are disabled: handlers request it,
@@ -125,15 +138,14 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
         if not ctx.is_authorized:
             raise errors.UnauthorizedError
 
-        response = await call_next(request)
-        return response
+        return await call_next(request)
 
 
 class ErrorHandlerMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def do_dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         try:
-            response = await call_next(request)
-            return response
+            return await call_next(request)
+
         except errors.ArtemisHTTPError as error:
             return Response(
                 status_code=error.status_code,
@@ -165,7 +177,7 @@ def rewrite_request_path(path: str) -> str:
 
 
 class PrometheusMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def do_dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         status = "500 Internal Server Error"
 
         start_time = time.monotonic()
@@ -207,7 +219,7 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
 
 class RSSWatcherMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def do_dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         logger = get_logger()
 
         request_label = self.get_request_label(request)
@@ -225,7 +237,7 @@ class RSSWatcherMiddleware(BaseHTTPMiddleware):
 
 
 class ProfileMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def do_dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         from . import API_PROFILE_PATH_PATTERN, KNOB_API_PROFILING_LIMIT, KNOB_API_VERBOSE_PROFILING
 
         if not API_PROFILE_PATH_PATTERN.match(request.scope["path"]):
@@ -264,11 +276,11 @@ class TracingMiddleware(BaseHTTPMiddleware):
                 'http.request.path': request.scope['path']
             }
         ):
-            return await call_next(request)
+            return await super().dispatch(request, call_next)
 
 
 class RequestCancelledMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def do_dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         _, client = self.get_request_info(request)
 
         logger = get_logger()

@@ -237,6 +237,7 @@ class TracingOp(enum.Enum):
     DB_QUERY_DML = 'db.query.dml'
 
     HTTP_SERVER = 'http.server'
+    HTTP_SERVER_MIDDLEWARE = 'http.server.middleware'
 
     QUEUE_TASK = 'queue.task'
     QUEUE_SUBMIT = 'queue.submit'
