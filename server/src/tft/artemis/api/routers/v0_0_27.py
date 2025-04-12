@@ -51,7 +51,7 @@ router__cache = APIRouter(
 
 
 @router_guests.get("/", status_code=status.HTTP_200_OK)
-async def get_guests(
+def get_guests(
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
     request: Request

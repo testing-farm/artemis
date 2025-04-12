@@ -55,7 +55,7 @@ router_shelves = APIRouter(
 
 
 @router_guests.get("/", status_code=status.HTTP_200_OK)
-async def get_guests(
+def get_guests(
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     request: Request
