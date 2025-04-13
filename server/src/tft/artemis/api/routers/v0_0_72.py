@@ -31,6 +31,7 @@ from . import (
     get_guest_request,
     get_guest_request_log,
     get_guest_requests,
+    with_tracing,
 )
 from .common import router__status, router_default, router_knobs, router_users
 from .v0_0_27 import router__cache
@@ -46,6 +47,7 @@ router_guests = APIRouter(
 
 
 @router_guests.get("/", status_code=status.HTTP_200_OK)
+@with_tracing
 def get_guests(
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
@@ -60,6 +62,7 @@ def get_guests(
 
 
 @router_guests.post("/", status_code=status.HTTP_201_CREATED)
+@with_tracing
 def create_guest(
     guest_request: GuestRequest_v0_0_72,
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
@@ -78,6 +81,7 @@ def create_guest(
 
 
 @router_guests.get("/{guestname}", status_code=status.HTTP_200_OK)
+@with_tracing
 def get_guest(
     guestname: str,
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
@@ -94,6 +98,7 @@ def get_guest(
 
 
 @router_guests.delete("/{guestname}", status_code=status.HTTP_204_NO_CONTENT)
+@with_tracing
 def delete_guest(
     guestname: str,
     request: Request,
@@ -104,6 +109,7 @@ def delete_guest(
 
 
 @router_guests.get("/events", status_code=status.HTTP_200_OK)
+@with_tracing
 def get_events(
     request: Request,
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
@@ -113,6 +119,7 @@ def get_events(
 
 
 @router_guests.get("/{guestname}/events", status_code=status.HTTP_200_OK)
+@with_tracing
 def get_guest_events(
     guestname: str,
     request: Request,
@@ -125,6 +132,7 @@ def get_guest_events(
 # NOTE(ivasilev) Snapshots are doomed, so didn't really check them properly
 
 @router_guests.get("/{guestname}/snapshots/{snapshotname}", status_code=status.HTTP_200_OK)
+@with_tracing
 def get_snapshot_request(
     guestname: str,
     snapshotname: str,
@@ -140,6 +148,7 @@ def get_snapshot_request(
 
 
 @router_guests.post("/{guestname}/snapshots", status_code=status.HTTP_201_CREATED)
+@with_tracing
 def create_snapshot_request(
     guestname: str,
     snapshot_request: SnapshotRequest,
@@ -151,6 +160,7 @@ def create_snapshot_request(
 
 @router_guests.delete("/{guestname}/snapshots/{snapshotname}",
                       status_code=status.HTTP_204_NO_CONTENT)
+@with_tracing
 def delete_snapshot(
     guestname: str,
     snapshotname: str,
@@ -164,6 +174,7 @@ def delete_snapshot(
 
 @router_guests.post("/{guestname}/snapshots/{snapshotname}/restore",
                     status_code=status.HTTP_201_CREATED)
+@with_tracing
 def restore_snapshot_request(
     guestname: str,
     snapshotname: str,
@@ -174,10 +185,12 @@ def restore_snapshot_request(
 
 
 @router_guests.post("/{guestname}/logs/{logname}/{contenttype}", status_code=status.HTTP_202_ACCEPTED)
+@with_tracing
 def create_guest_log(
     guestname: str,
     logname: str,
     contenttype: str,
+    request: Request,
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
 ) -> None:
@@ -185,10 +198,12 @@ def create_guest_log(
 
 
 @router_guests.get("/{guestname}/logs/{logname}/{contenttype}", status_code=status.HTTP_200_OK)
+@with_tracing
 def get_guest_log(
     guestname: str,
     logname: str,
     contenttype: str,
+    request: Request,
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
 ) -> GuestLogResponse:

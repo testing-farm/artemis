@@ -420,6 +420,7 @@ class Sentry:
         cls,
         op: TracingOp,
         description: str,
+        scope: Optional[sentry_sdk.Scope] = None,
         tags: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
         context: Optional[Dict[str, Any]] = None
@@ -442,7 +443,9 @@ class Sentry:
         :param context: additional data describing the bigger picture surrounding the transaction.
         """
 
-        with sentry_sdk.get_current_scope().start_transaction(op=op.value, name=description) as transaction:
+        scope = scope or sentry_sdk.get_current_scope()
+
+        with scope.start_transaction(op=op.value, name=description) as transaction:
             assert isinstance(transaction, sentry_sdk.tracing.Transaction)
 
             for name, value in {
@@ -466,6 +469,7 @@ class Sentry:
         cls,
         op: TracingOp,
         description: Optional[str] = None,
+        scope: Optional[sentry_sdk.Scope] = None,
         tags: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None
     ) -> Generator[sentry_sdk.tracing.Span, None, None]:
@@ -485,7 +489,9 @@ class Sentry:
             While additional data can be added while the span is active, it is not recommended to do so.
         """
 
-        with sentry_sdk.get_current_scope().start_span(op=op.value, name=description) as span:
+        scope = scope or sentry_sdk.get_current_scope()
+
+        with scope.start_span(op=op.value, name=description) as span:
             yield cls._apply_tracing_info(
                 span,
                 {

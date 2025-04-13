@@ -9,6 +9,7 @@ import re
 import time
 from typing import Awaitable, Callable, Optional, Tuple
 
+import sentry_sdk
 from fastapi import FastAPI, HTTPException, Request, Response, status as http_status
 from gluetool.utils import normalize_bool_option
 from starlette.middleware.base import BaseHTTPMiddleware as FastAPIBaseHTTPMiddleware
@@ -78,7 +79,7 @@ class BaseHTTPMiddleware(FastAPIBaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         with Sentry.start_span(
             TracingOp.HTTP_SERVER,
-            'api-request.middleare',
+            'api-request.middleware',
             tags={
                 'midleware': self.__class__.__name__
             }
@@ -267,15 +268,21 @@ class TracingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         client = request.scope.get('client')
 
-        with Sentry.start_transaction(
+        with sentry_sdk.isolation_scope() as scope, Sentry.start_transaction(
             TracingOp.HTTP_SERVER,
             'api-request',
+            scope=scope,
             data={
-                'http.request.client': f'{client[0] if client else "<unknown>"}:{client[1] if client else "<unknown>"}',
+                'http.request.client':
+                    f'{client[0] if client else "<unknown>"}:{client[1] if client else "<unknown>"}',
                 'http.request.method': request.method,
                 'http.request.path': request.scope['path']
             }
-        ):
+        ) as tracing_transaction:
+            request.state.tracing_trace = tracing_transaction.trace_id
+            request.state.tracing_scope = scope
+            request.state.tracing_transaction = tracing_transaction
+
             return await super().dispatch(request, call_next)
 
 
