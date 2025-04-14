@@ -76,7 +76,8 @@ def show_about(
 @with_tracing
 def get_knobs(
     manager: Annotated[KnobManager, Depends(KnobManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    request: Request
 ) -> List[KnobResponse]:
     return manager.entry_get_knobs(manager=manager, logger=logger)
 
@@ -86,7 +87,8 @@ def get_knobs(
 def get_knob(
     knobname: str,
     manager: Annotated[KnobManager, Depends(KnobManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    request: Request
 ) -> KnobResponse:
     return manager.entry_get_knob(knobname=knobname, manager=manager, logger=logger)
 
@@ -97,7 +99,8 @@ def set_knob(
     knobname: str,
     payload: KnobUpdateRequest,
     manager: Annotated[KnobManager, Depends(KnobManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    request: Request
 ) -> KnobResponse:
     return manager.entry_set_knob(knobname=knobname, payload=payload, manager=manager, logger=logger)
 
@@ -107,7 +110,8 @@ def set_knob(
 def delete_knob(
     knobname: str,
     manager: Annotated[KnobManager, Depends(KnobManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    request: Request
 ) -> None:
     return manager.entry_delete_knob(knobname=knobname, manager=manager, logger=logger)
 
@@ -168,6 +172,7 @@ def reset_token(
 def get_workers_traffic(
     manager: Annotated[CacheManager, Depends(StatusManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-    cache: Annotated['redis.Redis', Depends(get_cache)]
+    cache: Annotated['redis.Redis', Depends(get_cache)],
+    request: Request
 ) -> Response:
     return StatusManager.entry_workers_traffic(manager=manager, logger=logger, cache=cache)
