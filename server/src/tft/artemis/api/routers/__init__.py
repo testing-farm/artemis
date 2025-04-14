@@ -4,25 +4,31 @@
 import contextlib
 import dataclasses
 import datetime
+import functools
 import json
 import os
 import uuid
-from typing import Any, Dict, Generator, List, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import fastapi
 import gluetool.log
 import redis
+import sentry_sdk
+import sentry_sdk.scope
+import sentry_sdk.tracing
 import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.orm.exc
 from fastapi import Depends, Request, Response, status
-from typing_extensions import Annotated
+from typing_extensions import Annotated, ParamSpec
 
 from ... import (
     __VERSION__,
     Failure,
     FailureDetailsType,
     JSONSchemaType,
+    Sentry,
+    TracingOp,
     db as artemis_db,
     log_dict_yaml,
     metrics,
@@ -37,7 +43,8 @@ from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, Knob
 from ...security_group_rules import SecurityGroupRule
 from ...tasks import Actor, TaskCall, _get_ssh_key, get_snapshot_logger
 from .. import environment as global_env, errors
-from ..dependencies import get_db
+from ..dependencies import get_db, get_logger
+from ..errors import InternalServerError
 from ..models import (
     AboutResponse,
     AuthContext,
@@ -60,6 +67,54 @@ from ..models import (
 )
 from ..models.v0_0_69 import GuestLogResponse_v0_0_69
 from ..models.v0_0_72 import GuestRequest_v0_0_72, GuestResponse_v0_0_72
+
+P = ParamSpec('P')
+ResponseT = TypeVar('ResponseT')
+
+PathHandler = Callable[P, ResponseT]
+
+
+def with_tracing(fn: PathHandler[P, ResponseT]) -> PathHandler[P, ResponseT]:
+    @functools.wraps(fn)
+    def _with_tracing(*args: P.args, **kwargs: P.kwargs) -> ResponseT:
+        request = cast(Optional[Request], kwargs.get('request'))
+
+        if request is None:
+            raise InternalServerError(
+                message='request not passed to API path handler',
+                logger=get_logger(),
+                failure_details={
+                    'handlername': fn.__name__
+                }
+            )
+
+        scope: Optional[sentry_sdk.Scope] = getattr(request.state, 'tracing_scope', None)
+
+        def _run() -> ResponseT:
+            with Sentry.start_span(
+                TracingOp.HTTP_SERVER,
+                'api-request.handler',
+                tags={
+                    'handlername': fn.__name__
+                }
+            ):
+                return fn(*args, **kwargs)
+
+        if scope is not None:
+            with sentry_sdk.scope.use_scope(scope):
+                tracing_transaction: Optional[sentry_sdk.tracing.Transaction] = scope.transaction
+
+                assert tracing_transaction is not None
+
+                tracing_transaction.set_tag('handlername', fn.__name__)
+
+                return _run()
+
+        else:
+            return _run()
+
+    return _with_tracing
+
 
 GuestLogResponseType = TypeVar('GuestLogResponseType', GuestLogResponse, GuestLogResponse_v0_0_69)
 GuestResponseType = TypeVar('GuestResponseType', GuestResponse, GuestResponse_v0_0_72)

@@ -27,6 +27,7 @@ from . import (
     UserManager,
     get_about,
     get_metrics,
+    with_tracing,
 )
 
 router_knobs = APIRouter(
@@ -53,6 +54,7 @@ router_default = APIRouter(
 
 
 @router_default.get("/metrics", status_code=status.HTTP_200_OK)
+@with_tracing
 def show_metrics(
     request: Request,
     db: Annotated[artemis_db.DB, Depends(get_db)],
@@ -63,6 +65,7 @@ def show_metrics(
 
 
 @router_default.get("/about", status_code=status.HTTP_200_OK)
+@with_tracing
 def show_about(
     request: Request
 ) -> AboutResponse:
@@ -70,6 +73,7 @@ def show_about(
 
 
 @router_knobs.get('/', status_code=status.HTTP_200_OK)
+@with_tracing
 def get_knobs(
     manager: Annotated[KnobManager, Depends(KnobManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
@@ -78,6 +82,7 @@ def get_knobs(
 
 
 @router_knobs.get('/{knobname}', status_code=status.HTTP_200_OK)
+@with_tracing
 def get_knob(
     knobname: str,
     manager: Annotated[KnobManager, Depends(KnobManager)],
@@ -87,6 +92,7 @@ def get_knob(
 
 
 @router_knobs.put('/{knobname}', status_code=status.HTTP_201_CREATED)
+@with_tracing
 def set_knob(
     knobname: str,
     payload: KnobUpdateRequest,
@@ -97,6 +103,7 @@ def set_knob(
 
 
 @router_knobs.delete('/{knobname}', status_code=status.HTTP_204_NO_CONTENT)
+@with_tracing
 def delete_knob(
     knobname: str,
     manager: Annotated[KnobManager, Depends(KnobManager)],
@@ -106,6 +113,7 @@ def delete_knob(
 
 
 @router_users.get('/', status_code=status.HTTP_200_OK)
+@with_tracing
 def get_users(
     manager: Annotated[UserManager, Depends(UserManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
@@ -114,6 +122,7 @@ def get_users(
 
 
 @router_users.get('/{username}', status_code=status.HTTP_200_OK)
+@with_tracing
 def get_user(
     username: str,
     manager: Annotated[UserManager, Depends(UserManager)],
@@ -123,6 +132,7 @@ def get_user(
 
 
 @router_users.post('/{username}', status_code=status.HTTP_201_CREATED)
+@with_tracing
 def create_user(
     username: str,
     user_request: CreateUserRequest,
@@ -133,6 +143,7 @@ def create_user(
 
 
 @router_users.delete('/{username}', status_code=status.HTTP_204_NO_CONTENT)
+@with_tracing
 def delete_user(
     username: str,
     manager: Annotated[UserManager, Depends(UserManager)],
@@ -142,6 +153,7 @@ def delete_user(
 
 
 @router_users.post('/{username}/tokens/{tokentype}/reset', status_code=status.HTTP_201_CREATED)
+@with_tracing
 def reset_token(
     username: str,
     tokentype: str,
@@ -152,6 +164,7 @@ def reset_token(
 
 
 @router__status.get('/workers/traffic', status_code=status.HTTP_200_OK)
+@with_tracing
 def get_workers_traffic(
     manager: Annotated[CacheManager, Depends(StatusManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
