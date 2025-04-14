@@ -39,7 +39,7 @@ from ...context import DATABASE, LOGGER, SESSION
 from ...drivers import PoolDriver
 from ...environment import Environment
 from ...guest import GuestState
-from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, Knob
+from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_TRACING_ENABLED, Knob
 from ...security_group_rules import SecurityGroupRule
 from ...tasks import Actor, TaskCall, _get_ssh_key, get_snapshot_logger
 from .. import environment as global_env, errors
@@ -88,8 +88,6 @@ def with_tracing(fn: PathHandler[P, ResponseT]) -> PathHandler[P, ResponseT]:
                 }
             )
 
-        scope: Optional[sentry_sdk.Scope] = getattr(request.state, 'tracing_scope', None)
-
         def _run() -> ResponseT:
             with Sentry.start_span(
                 TracingOp.HTTP_SERVER,
@@ -99,6 +97,11 @@ def with_tracing(fn: PathHandler[P, ResponseT]) -> PathHandler[P, ResponseT]:
                 }
             ):
                 return fn(*args, **kwargs)
+
+        if KNOB_TRACING_ENABLED.value is not True:
+            return _run()
+
+        scope: Optional[sentry_sdk.Scope] = getattr(request.state, 'tracing_scope', None)
 
         if scope is not None:
             with sentry_sdk.scope.use_scope(scope):

@@ -23,21 +23,14 @@ from starlette.responses import RedirectResponse
 from .. import Failure, get_logger, metrics
 from ..knobs import (
     KNOB_LOGGING_JSON,
+    KNOB_TRACING_ENABLED,
     KNOB_WORKER_PROCESS_METRICS_ENABLED,
     KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK,
     Knob,
 )
 from ..script import hook_engine
 from . import environment
-from .middleware import (
-    AuthorizationMiddleware,
-    ErrorHandlerMiddleware,
-    ProfileMiddleware,
-    PrometheusMiddleware,
-    RequestCancelledMiddleware,
-    RSSWatcherMiddleware,
-    TracingMiddleware,
-)
+from .middleware import MIDDLEWARE, ErrorHandlerMiddleware, ProfileMiddleware, TracingMiddleware
 from .routers import define_openapi_schema
 
 KNOB_API_PROCESSES: Knob[int] = Knob(
@@ -56,6 +49,15 @@ KNOB_API_THREADS: Knob[int] = Knob(
     envvar='ARTEMIS_API_THREADS',
     cast_from_str=int,
     default=1
+)
+
+KNOB_API_MIDDLEWARE: Knob[str] = Knob(
+    'api.middleware',
+    'Comma-separated list of API middleware, in order in which they should be enabled.',
+    has_db=False,
+    envvar='ARTEMIS_API_MIDDLEWARE',
+    cast_from_str=str,
+    default='request-cancelled,authorization,prometheus,rss-watcher'
 )
 
 KNOB_API_ENABLE_PROFILING: Knob[bool] = Knob(
@@ -225,13 +227,31 @@ def run_app() -> fastapi.FastAPI:
             Middleware(ProfileMiddleware)
         ]
 
+    if KNOB_TRACING_ENABLED.value is True:
+        mw += [
+            Middleware(TracingMiddleware)
+        ]
+
+    for middleware_name in KNOB_API_MIDDLEWARE.value.split(','):
+        middleware_name = middleware_name.strip().lower()
+
+        if not middleware_name:
+            continue
+
+        middleware_class = MIDDLEWARE.get(middleware_name)
+
+        if middleware_class is None:
+            Failure(
+                'unknown API middleware',
+                middleware=middleware_name
+            ).handle(logger)
+
+            sys.exit(1)
+
+        mw.append(Middleware(middleware_class))
+
     mw += [
-        Middleware(TracingMiddleware),
-        Middleware(RequestCancelledMiddleware),
-        Middleware(AuthorizationMiddleware),
-        Middleware(ErrorHandlerMiddleware),
-        Middleware(PrometheusMiddleware),
-        Middleware(RSSWatcherMiddleware)
+        Middleware(ErrorHandlerMiddleware)
     ]
 
     return _create_app(middlewares=mw)

@@ -117,8 +117,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
         ctx.inject()
 
         if not ctx.is_authentication_enabled:
-            response = await call_next(request)
-            return response
+            return await call_next(request)
 
         ctx.verify_auth(logger, self.db)
 
@@ -133,8 +132,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
         #     raise errors.UnauthorizedError()
 
         if not ctx.is_authorization_enabled:
-            response = await call_next(request)
-            return response
+            return await call_next(request)
 
         if not ctx.is_authorized:
             raise errors.UnauthorizedError
@@ -307,3 +305,11 @@ class RequestCancelledMiddleware(BaseHTTPMiddleware):
                     client=client,
                     path=request.scope['path']
                 ).handle(logger)
+
+
+MIDDLEWARE = {
+    'request-cancelled': RequestCancelledMiddleware,
+    'authorization': AuthorizationMiddleware,
+    'prometheus': PrometheusMiddleware,
+    'rss-watcher': RSSWatcherMiddleware
+}

@@ -422,6 +422,16 @@ for the requested action.
 
 5+|A range by which is number of requests randomized.
 
+|`api.middleware`
+|`str`
+|`ARTEMIS_API_MIDDLEWARE`
+|`request-cancelled,authorization,prometheus,rss-watcher`
+|no
+
+
+
+5+|Comma-separated list of API middleware, in order in which they should be enabled.
+
 |`api.processes`
 |`int`
 |`ARTEMIS_API_PROCESSES`
