@@ -280,7 +280,10 @@ def assert_not_in_transaction(
     Failure('Unresolved transaction').handle(logger)
 
     if rollback:
-        session.rollback()
+        from . import Sentry, TracingOp
+
+        with Sentry.start_span(TracingOp.DB_TRANSACTION, description='rollback'):
+            session.rollback()
 
     return False
 
@@ -516,18 +519,23 @@ def transaction(
         try:
             assert_not_in_transaction(logger, session, rollback=False)
 
-            session.begin()
+            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='begin'):
+                session.begin()
 
-            yield result
+            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='body'):
+                yield result
 
-            session.commit()
+            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='commit'):
+                session.commit()
 
-            session.expunge_all()
+            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='expunge'):
+                session.expunge_all()
 
             result.complete = True
 
         except sqlalchemy.exc.OperationalError as exc:
-            session.expunge_all()
+            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='expunge'):
+                session.expunge_all()
 
             if isinstance(exc, sqlalchemy.exc.OperationalError) \
                     and isinstance(exc.orig, psycopg2.errors.SerializationFailure) \
@@ -542,9 +550,11 @@ def transaction(
                 _save_error(exc)
 
         except Exception as exc:
-            session.rollback()
+            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='rollback'):
+                session.rollback()
 
-            session.expunge_all()
+            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='expunge'):
+                session.expunge_all()
 
             _save_error(exc)
 
