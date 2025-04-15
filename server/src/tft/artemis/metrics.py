@@ -261,7 +261,7 @@ class MetricsBase:
 
             self.do_sync()
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
@@ -274,7 +274,26 @@ class MetricsBase:
         for container in self._metric_container_fields:
             container.register_with_prometheus(registry)
 
-    def update_prometheus(self) -> None:
+    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+        """
+        Register instances of Prometheus metrics with the given registry.
+
+        The default implementation delegates the call to all child fields that are descendants of ``MetricsBase``
+        class.
+
+        :param registry: Prometheus registry to attach metrics to.
+        """
+
+        with Sentry.start_span(
+            TracingOp.FUNCTION,
+            description=f'{self.__class__.__name__}.register_with_prometheus'
+        ) as tracing_span:
+            for name, value in self.tracing_tags.items():
+                tracing_span.set_tag(name, value)
+
+            self.do_register_with_prometheus(registry)
+
+    def do_update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
 
@@ -284,6 +303,23 @@ class MetricsBase:
 
         for container in self._metric_container_fields:
             container.update_prometheus()
+
+    def update_prometheus(self) -> None:
+        """
+        Update values of Prometheus metric instances with the data in this container.
+
+        The default implementation delegates the call to all child fields that are descendants of ``MetricsBase``
+        class.
+        """
+
+        with Sentry.start_span(
+            TracingOp.FUNCTION,
+            description=f'{self.__class__.__name__}.update_prometheus'
+        ) as tracing_span:
+            for name, value in self.tracing_tags.items():
+                tracing_span.set_tag(name, value)
+
+            self.do_update_prometheus()
 
 
 @dataclasses.dataclass
@@ -326,14 +362,14 @@ class DBPoolMetrics(MetricsBase):
         self.checked_out_connections = db.engine.pool.checkedout()
         self.current_overflow = db.engine.pool.overflow()
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         self.POOL_SIZE = Gauge(
             'db_pool_size',
@@ -359,12 +395,12 @@ class DBPoolMetrics(MetricsBase):
             registry=registry
         )
 
-    def update_prometheus(self) -> None:
+    def do_update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super().update_prometheus()
+        super().do_update_prometheus()
 
         self.POOL_SIZE.set(self.size)
         self.POOL_CHECKED_IN.set(self.checked_in_connections)
@@ -1365,14 +1401,14 @@ class PoolsMetrics(MetricsBase):
         for metrics in self.pools.values():
             metrics.sync()
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         def _create_pool_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
@@ -1499,12 +1535,12 @@ class PoolsMetrics(MetricsBase):
             registry=registry
         )
 
-    def update_prometheus(self) -> None:
+    def do_update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super().update_prometheus()
+        super().do_update_prometheus()
 
         reset_counters(self.POOL_ERRORS)
         reset_counters(self.POOL_ABORTS)
@@ -1876,14 +1912,14 @@ class ProvisioningMetrics(MetricsBase):
             ).items()
         }
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         self.CURRENT_GUEST_REQUEST_COUNT_TOTAL = Gauge(
             'current_guest_request_count_total',
@@ -1947,12 +1983,12 @@ class ProvisioningMetrics(MetricsBase):
             registry=registry
         )
 
-    def update_prometheus(self) -> None:
+    def do_update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super().update_prometheus()
+        super().do_update_prometheus()
 
         reset_counters(self.OVERALL_EMPTY_ROUTING_COUNT)
         reset_counters(self.GUEST_STATE_TRANSITIONS)
@@ -2121,14 +2157,14 @@ class RoutingMetrics(MetricsBase):
             for field, count in get_metric_fields(logger, cache, self._KEY_RULINGS).items()
         }
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         self.OVERALL_POLICY_CALLS_COUNT = Counter(
             'overall_policy_calls_count',
@@ -2151,12 +2187,12 @@ class RoutingMetrics(MetricsBase):
             registry=registry
         )
 
-    def update_prometheus(self) -> None:
+    def do_update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super().update_prometheus()
+        super().do_update_prometheus()
 
         for policy_name, count in self.policy_calls.items():
             self.OVERALL_POLICY_CALLS_COUNT.labels(policy=policy_name)._value.set(count)
@@ -2423,14 +2459,14 @@ class ShelvesMetrics(MetricsBase):
         for metrics in self.shelves.values():
             metrics.sync()
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         self.CURRENT_GUEST_REQUEST_COUNT = Gauge(
             'shelf_current_guest_request_count',
@@ -2481,12 +2517,12 @@ class ShelvesMetrics(MetricsBase):
             registry=registry
         )
 
-    def update_prometheus(self) -> None:
+    def do_update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super().update_prometheus()
+        super().do_update_prometheus()
 
         reset_counters(self.CURRENT_GUEST_REQUEST_COUNT)
         reset_counters(self.SIZE)
@@ -2822,14 +2858,14 @@ class TaskMetrics(MetricsBase):
 
             self.message_durations[cast(Tuple[str, str, str, str], field_split)] = count
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         self.OVERALL_MESSAGE_COUNT = Counter(
             'overall_message_count',
@@ -2889,7 +2925,7 @@ class TaskMetrics(MetricsBase):
         )
 
     @with_context
-    def update_prometheus(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
+    def do_update_prometheus(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
 
@@ -2897,7 +2933,7 @@ class TaskMetrics(MetricsBase):
         :param cache: cache instance to use for cache access.
         """
 
-        super().update_prometheus()
+        super().do_update_prometheus()
 
         def _update_counter(prom_metric: Counter, source: Dict[Tuple[str, str], int]) -> None:
             reset_counters(prom_metric)
@@ -3044,14 +3080,14 @@ class APIMetrics(MetricsBase):
         dec_metric_field(logger, cache, APIMetrics._KEY_REQUEST_INPROGRESS_COUNT, f'{method}:{path}')
         return Ok(None)
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         self.REQUEST_DURATIONS = Histogram(
             'http_request_duration_milliseconds',
@@ -3107,12 +3143,12 @@ class APIMetrics(MetricsBase):
             for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_INPROGRESS_COUNT).items()
         }
 
-    def update_prometheus(self) -> None:
+    def do_update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super().update_prometheus()
+        super().do_update_prometheus()
 
         # Reset all duration buckets and sums first
         reset_histogram(self.REQUEST_DURATIONS)
@@ -3261,14 +3297,14 @@ class WorkerMetrics(MetricsBase):
 
         return Ok(None)
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         self.WORKER_PING = Gauge(
             'worker_ping',
@@ -3338,12 +3374,12 @@ class WorkerMetrics(MetricsBase):
             for metric in iter_cache_keys(logger, cache, 'metrics.workers.*.updated_timestamp')
         }
 
-    def update_prometheus(self) -> None:
+    def do_update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super().update_prometheus()
+        super().do_update_prometheus()
 
         self.WORKER_PING.set(self.worker_ping or float('Nan'))
 
@@ -3559,14 +3595,14 @@ class DispatcherMetrics(MetricsBase):
         inc_metric(logger, cache, DispatcherMetrics._KEY_DISPATCHED_TASK_SEQUENCE_FAILURE)
         return Ok(None)
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         self.DISPATCHED_TASK_INVOCATIONS_COUNT = Counter(
             'dispatched_task_invocations_count',
@@ -3645,12 +3681,12 @@ class DispatcherMetrics(MetricsBase):
             self._KEY_DISPATCHED_TASK_SEQUENCE_FAILURE
         ) or 0
 
-    def update_prometheus(self) -> None:
+    def do_update_prometheus(self) -> None:
         """
         Update values of Prometheus metric instances with the data in this container.
         """
 
-        super().update_prometheus()
+        super().do_update_prometheus()
 
         # Reset all duration buckets and sums first
         reset_counters(self.DISPATCHED_TASK_SUCCESS_COUNT)
@@ -3694,14 +3730,14 @@ class Metrics(MetricsBase):
     # Registry this tree of metrics containers is tied to.
     _registry: Optional[CollectorRegistry] = None
 
-    def register_with_prometheus(self, registry: CollectorRegistry) -> None:
+    def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
         Register instances of Prometheus metrics with the given registry.
 
         :param registry: Prometheus registry to attach metrics to.
         """
 
-        super().register_with_prometheus(registry)
+        super().do_register_with_prometheus(registry)
 
         self._registry = registry
 
@@ -3778,7 +3814,14 @@ def inc_metric(
     :param amount: amount to increment by.
     """
 
-    inc_cache_value(logger, cache, metric, amount=amount)
+    with Sentry.start_span(
+        TracingOp.FUNCTION,
+        description='inc_metric',
+        tags={
+            'metric': metric
+        }
+    ):
+        inc_cache_value(logger, cache, metric, amount=amount)
 
 
 def dec_metric(
@@ -3796,7 +3839,14 @@ def dec_metric(
     :param amount: amount to decrement by.
     """
 
-    dec_cache_value(logger, cache, metric, amount=amount)
+    with Sentry.start_span(
+        TracingOp.FUNCTION,
+        description='dec_metric',
+        tags={
+            'metric': metric
+        }
+    ):
+        dec_cache_value(logger, cache, metric, amount=amount)
 
 
 def inc_metric_field(
@@ -3816,7 +3866,14 @@ def inc_metric_field(
     :param amount: amount to increment by.
     """
 
-    inc_cache_field(logger, cache, metric, field, amount=amount)
+    with Sentry.start_span(
+        TracingOp.FUNCTION,
+        description='inc_metric_field',
+        tags={
+            'metric': metric
+        }
+    ):
+        inc_cache_field(logger, cache, metric, field, amount=amount)
 
 
 def dec_metric_field(
@@ -3836,7 +3893,14 @@ def dec_metric_field(
     :param amount: amount to decrement by.
     """
 
-    dec_cache_field(logger, cache, metric, field, amount=amount)
+    with Sentry.start_span(
+        TracingOp.FUNCTION,
+        description='dec_metric_field',
+        tags={
+            'metric': metric
+        }
+    ):
+        dec_cache_field(logger, cache, metric, field, amount=amount)
 
 
 def get_metric(
@@ -3857,9 +3921,16 @@ def get_metric(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `get` with `cast` calls.
 
-    value: Optional[bytes] = get_cache_value(logger, cache, metric)
+    with Sentry.start_span(
+        TracingOp.FUNCTION,
+        description='get_metric',
+        tags={
+            'metric': metric
+        }
+    ):
+        value: Optional[bytes] = get_cache_value(logger, cache, metric)
 
-    return value if value is None else int(value)
+        return value if value is None else int(value)
 
 
 def set_metric(
@@ -3883,7 +3954,14 @@ def set_metric(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `get` with `cast` calls.
 
-    set_cache_value(logger, cache, metric, value=str(value).encode() if value is not None else None, ttl=ttl)
+    with Sentry.start_span(
+        TracingOp.FUNCTION,
+        description='set_metric',
+        tags={
+            'metric': metric
+        }
+    ):
+        set_cache_value(logger, cache, metric, value=str(value).encode() if value is not None else None, ttl=ttl)
 
 
 def get_metric_fields(
@@ -3904,7 +3982,14 @@ def get_metric_fields(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `hgetall` with `cast` calls.
 
-    return {
-        field.decode(): int(value)
-        for field, value in iter_cache_fields(logger, cache, metric)
-    }
+    with Sentry.start_span(
+        TracingOp.FUNCTION,
+        description='get_metric_fields',
+        tags={
+            'metric': metric
+        }
+    ):
+        return {
+            field.decode(): int(value)
+            for field, value in iter_cache_fields(logger, cache, metric)
+        }
