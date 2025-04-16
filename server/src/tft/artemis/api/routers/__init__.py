@@ -1994,19 +1994,19 @@ def get_metrics(
     LOGGER.set(logger)
     DATABASE.set(db)
 
-    r_metrics = metrics_tree.render_prometheus_metrics()
+    with global_env.METRICS_LOCK:
+        r_metrics = metrics_tree.render_prometheus_metrics()
 
     if r_metrics.is_error:
         raise errors.InternalServerError(caused_by=r_metrics.unwrap_error())
 
-    with global_env.METRICS_LOCK:
-        return Response(
-            status_code=status.HTTP_200_OK,
-            content=r_metrics.unwrap().decode('utf-8'),
-            headers={
-                "content-type": "text/plain; charset=utf-8"
-            }
-        )
+    return Response(
+        status_code=status.HTTP_200_OK,
+        content=r_metrics.unwrap().decode('utf-8'),
+        headers={
+            "content-type": "text/plain; charset=utf-8"
+        }
+    )
 
 
 def get_about(request: Request) -> AboutResponse:
