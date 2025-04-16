@@ -33,6 +33,15 @@ from . import environment
 from .middleware import MIDDLEWARE, ErrorHandlerMiddleware, ProfileMiddleware, TracingMiddleware
 from .routers import define_openapi_schema
 
+KNOB_API_ENGINE: Knob[str] = Knob(
+    'api.engine',
+    'Which engine to user for API server, gunicorn or uvicorn.',
+    has_db=False,
+    envvar='ARTEMIS_API_ENGINE',
+    cast_from_str=str,
+    default='gunicorn'
+)
+
 KNOB_API_PROCESSES: Knob[int] = Knob(
     'api.processes',
     'Number of processes to spawn for servicing API requests.',
@@ -266,14 +275,56 @@ class UvicornWorker(uvicorn.workers.UvicornWorker):
         '%H:%M:%S'
 
 
-def main() -> NoReturn:
+def _main_uvicorn() -> NoReturn:
+    uvicorn_path = shutil.which('uvicorn')
+
+    if not uvicorn_path:
+        raise Exception('No "uvicorn" executable found')
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    uvicorn_options: List[str] = []
+
+    uvicorn_options += [
+        'tft.artemis.api:run_app',
+        '--factory',
+        '--host', '0.0.0.0',
+        '--port', '8001',
+        '--workers', str(KNOB_API_PROCESSES.value),
+        '--access-log'
+    ]
+
+    if KNOB_API_ENGINE_DEBUG.value is True:
+        uvicorn_options += [
+            '--log-level', 'debug'
+        ]
+
+    if KNOB_API_ENGINE_RELOAD_ON_CHANGE.value is True:
+        uvicorn_options += [
+            '--reload'
+        ]
+
+    if KNOB_API_ENGINE_WORKER_RESTART_REQUESTS.value != 0:
+        uvicorn_options += [
+            '--limit-max-requests', str(KNOB_API_ENGINE_WORKER_RESTART_REQUESTS.value),
+        ]
+
+    os.execve(
+        uvicorn_path,
+        [
+            'uvicorn'
+        ] + uvicorn_options + [
+        ],
+        os.environ
+    )
+
+
+def _main_gunicorn() -> NoReturn:
     gunicorn_path = shutil.which('gunicorn')
 
     if not gunicorn_path:
         raise Exception('No "gunicorn" executable found')
-
-    sys.stdout.flush()
-    sys.stderr.flush()
 
     gunicorn_options: List[str] = []
 
@@ -331,6 +382,19 @@ def main() -> NoReturn:
         ],
         os.environ
     )
+
+
+def main() -> NoReturn:
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    if KNOB_API_ENGINE.value == 'gunicorn':
+        _main_gunicorn()
+
+    if KNOB_API_ENGINE.value == 'uvicorn':
+        _main_uvicorn()
+
+    raise Exception(f'Unknown API engine "{KNOB_API_ENGINE.value}"')
 
 
 if __name__ == '__main__':
