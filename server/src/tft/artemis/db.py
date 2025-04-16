@@ -1929,6 +1929,8 @@ class DB:
         :returns: new DB session.
         """
 
+        from . import Sentry, TracingOp
+
         if read_only:
             session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional_read_only)
 
@@ -1939,36 +1941,41 @@ class DB:
 
             _log_db_statement('BEGIN SESSION')
 
-        session = session_factory(
-            autoflush=True,
-            # autobegin=False,
-            expire_on_commit=True,
-            twophase=False,
-        )
-
-        if self._echo_pool:
-            from .metrics import DBPoolMetrics
-
-            gluetool.log.log_dict(
-                logger.info,
-                'pool metrics',
-                DBPoolMetrics.load(self.logger, self, session)  # type: ignore[attr-defined]
+        with Sentry.start_span(TracingOp.DB_SESSION):
+            session = session_factory(
+                autoflush=True,
+                # autobegin=False,
+                expire_on_commit=True,
+                twophase=False,
             )
 
-        try:
-            yield session
+            if self._echo_pool:
+                from .metrics import DBPoolMetrics
 
-            assert_not_in_transaction(logger, session)
+                gluetool.log.log_dict(
+                    logger.info,
+                    'pool metrics',
+                    DBPoolMetrics.load(self.logger, self, session)  # type: ignore[attr-defined]
+                )
 
-        except Exception:
-            session.rollback()
+            try:
+                yield session
 
-            raise
+                assert_not_in_transaction(logger, session)
 
-        finally:
-            _log_db_statement('END SESSION')
+            except Exception:
+                with Sentry.start_span(TracingOp.DB_SESSION, description='rollback'):
+                    session.rollback()
 
-            cast(Callable[[], None], session_factory.remove)()
+                with Sentry.start_span(TracingOp.DB_SESSION, description='expunge'):
+                    session.expunge_all()
+
+                raise
+
+            finally:
+                _log_db_statement('END SESSION')
+
+                cast(Callable[[], None], session_factory.remove)()
 
     @contextmanager
     def transaction(

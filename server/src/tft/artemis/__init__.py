@@ -228,7 +228,9 @@ class TracingOp(enum.Enum):
 
     FUNCTION = 'function'
 
+    DB = 'db'
     DB_TRANSACTION = 'db.transaction'
+    DB_SESSION = 'db.session'
     DB_QUERY = 'db.query'
     DB_QUERY_ONE = 'db.query.one'
     DB_QUERY_ONE_OR_NONE = 'db.query.one_or_none'
@@ -1420,11 +1422,17 @@ def get_db(logger: gluetool.log.ContextAdapter, application_name: Optional[str] 
 
     from .knobs import KNOB_DB_URL
 
-    return artemis_db.DB(
-        logger,
-        KNOB_DB_URL.value,
-        application_name=application_name
-    )
+    with Sentry.start_span(
+        TracingOp.DB,
+        tags={
+            'appname': application_name
+        }
+    ):
+        return artemis_db.DB(
+            logger,
+            KNOB_DB_URL.value,
+            application_name=application_name
+        )
 
 
 def safe_call(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> Result[T, Failure]:
