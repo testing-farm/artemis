@@ -10,7 +10,7 @@ import redis
 from fastapi import APIRouter, Depends, Request, Response, status
 from typing_extensions import Annotated
 
-from ... import db as artemis_db, metrics
+from ... import db as artemis_db
 from ..dependencies import get_cache, get_db, get_logger, get_metrics_tree
 from ..models import (
     AboutResponse,
@@ -58,10 +58,9 @@ router_default = APIRouter(
 def show_metrics(
     request: Request,
     db: Annotated[artemis_db.DB, Depends(get_db)],
-    metrics_tree: Annotated['metrics.Metrics', Depends(get_metrics_tree)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> Response:
-    return get_metrics(request=request, db=db, metrics_tree=metrics_tree, logger=logger)
+    return get_metrics(request=request, db=db, metrics_tree=get_metrics_tree(), logger=logger)
 
 
 @router_default.get("/about", status_code=status.HTTP_200_OK)
