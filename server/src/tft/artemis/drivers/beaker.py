@@ -1345,6 +1345,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest,
         distro: BeakerPoolImageInfo
     ) -> Result[List[str], Failure]:
@@ -1380,7 +1381,7 @@ class BeakerDriver(PoolDriver):
             '--dry-run',
             '--prettyxml',
             '--distro', distro.id,
-            '--arch', guest_request.environment.hw.arch,
+            '--arch', environment.hw.arch,
             # Using reservesys task instead of --reserve, because reservesys adds extendtesttime.sh
             # script we can use to extend existing reservation.
             '--task', '/distribution/reservesys',
@@ -1394,12 +1395,12 @@ class BeakerDriver(PoolDriver):
         for name, value in tags.items():
             command += ['--taskparam', f'ARTEMIS_TAG_{name}={value}']
 
-        if guest_request.environment.has_ks_specification:
-            command += self._create_bkr_kickstart_options(guest_request.environment.kickstart)
+        if environment.has_ks_specification:
+            command += self._create_bkr_kickstart_options(environment.kickstart)
 
         space = ':'.join([
-            guest_request.environment.os.compose,
-            guest_request.environment.hw.arch,
+            environment.os.compose,
+            environment.hw.arch,
             distro.id,
             distro.variant or ''
         ])
@@ -1417,6 +1418,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> Result[bs4.BeautifulSoup, Failure]:
         """
@@ -1439,7 +1441,7 @@ class BeakerDriver(PoolDriver):
             return Error(r_avoid_groups.unwrap_error())
 
         r_beaker_filter = create_beaker_filter(
-            guest_request.environment,
+            environment,
             guest_request,
             self,
             r_avoid_groups.unwrap(),
@@ -1451,7 +1453,7 @@ class BeakerDriver(PoolDriver):
 
         beaker_filter = r_beaker_filter.unwrap()
 
-        r_distros = self.image_info_mapper.map(logger, guest_request)
+        r_distros = self.image_info_mapper.map(logger, environment, guest_request)
 
         if r_distros.is_error:
             return Error(r_distros.unwrap_error())
@@ -1459,7 +1461,7 @@ class BeakerDriver(PoolDriver):
         distros = r_distros.unwrap()
         distro = distros[0]
 
-        r_wow_options = self._create_wow_options(logger, session, guest_request, distro)
+        r_wow_options = self._create_wow_options(logger, session, environment, guest_request, distro)
 
         if r_wow_options.is_error:
             return Error(r_wow_options.unwrap_error())
@@ -1569,11 +1571,13 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> Result[str, Failure]:
         r_job_xml = self._create_job_xml(
             logger,
             session,
+            environment,
             guest_request
         )
 
@@ -1953,7 +1957,8 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        environment: Optional[Environment] = None
     ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
@@ -1964,8 +1969,17 @@ class BeakerDriver(PoolDriver):
         :returns: Ok with True if guest can be acquired.
         """
 
+        environment = environment or guest_request.environment
+
+        r_patched_environment = self._patch_environment(logger, environment)
+
+        if r_patched_environment.is_error:
+            return Error(r_patched_environment.unwrap_error())
+
+        environment = r_patched_environment.unwrap()
+
         # First, check the parent class, maybe its tests already have the answer.
-        r_answer = super().can_acquire(logger, session, guest_request)
+        r_answer = super().can_acquire(logger, session, guest_request, environment=environment)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -1973,7 +1987,7 @@ class BeakerDriver(PoolDriver):
         if r_answer.unwrap().can_acquire is False:
             return r_answer
 
-        r_distros = self.image_info_mapper.map_or_none(logger, guest_request)
+        r_distros = self.image_info_mapper.map_or_none(logger, environment, guest_request)
         if r_distros.is_error:
             return Error(r_distros.unwrap_error())
 
@@ -1986,10 +2000,10 @@ class BeakerDriver(PoolDriver):
         # far from being complete and fully tested, therefore we should check whether we are able to
         # convert the constraints - if there are any - to a Beaker XML filter.
 
-        if not guest_request.environment.has_hw_constraints:
+        if not environment.has_hw_constraints:
             return Ok(CanAcquire())
 
-        r_constraints = guest_request.environment.get_hw_constraints()
+        r_constraints = environment.get_hw_constraints()
 
         if r_constraints.is_error:
             return Error(r_constraints.unwrap_error())
@@ -2068,14 +2082,21 @@ class BeakerDriver(PoolDriver):
             of error.
         """
 
-        log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
+        r_environment = self._patch_environment(logger, guest_request.environment)
+
+        if r_environment.is_error:
+            return Error(r_environment.unwrap_error())
+
+        environment = r_environment.unwrap()
+
+        log_dict_yaml(logger.info, 'provisioning environment', environment.serialize())
 
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_create_job = self._create_job(logger, session, guest_request)
+        r_create_job = self._create_job(logger, session, environment, guest_request)
 
         if r_create_job.is_error:
             failure = r_create_job.unwrap_error()

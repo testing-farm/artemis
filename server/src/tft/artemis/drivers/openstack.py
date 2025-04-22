@@ -289,11 +289,12 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> Result[Optional[Flavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger,
-            guest_request.environment
+            environment
         )
 
         if r_suitable_flavors.is_error:
@@ -339,9 +340,10 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> Result[Flavor, Failure]:
-        r_flavor = self._env_to_flavor_or_none(logger, session, guest_request)
+        r_flavor = self._env_to_flavor_or_none(logger, session, environment, guest_request)
 
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
@@ -446,6 +448,7 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         log_dict_yaml(
@@ -459,19 +462,19 @@ class OpenStackDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_images = self.image_info_mapper.map(logger, guest_request)
+        r_images = self.image_info_mapper.map(logger, environment, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
         images = r_images.unwrap()
 
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
         pairs: List[Tuple[PoolImageInfo, Flavor]] = []
 
         for image in images:
-            r_flavor = self._env_to_flavor(logger, session, guest_request)
+            r_flavor = self._env_to_flavor(logger, session, environment, guest_request)
             if r_flavor.is_error:
                 return Error(r_flavor.unwrap_error())
 
@@ -497,7 +500,7 @@ class OpenStackDriver(PoolDriver):
             image=image
         )
 
-        r_network = self._env_to_network(guest_request.environment)
+        r_network = self._env_to_network(environment)
         if r_network.is_error:
             return Error(r_network.unwrap_error())
 
@@ -644,9 +647,19 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        environment: Optional[Environment] = None
     ) -> Result[CanAcquire, Failure]:
-        r_answer = super().can_acquire(logger, session, guest_request)
+        environment = environment or guest_request.environment
+
+        r_patched_environment = self._patch_environment(logger, environment)
+
+        if r_patched_environment.is_error:
+            return Error(r_patched_environment.unwrap_error())
+
+        environment = r_patched_environment.unwrap()
+
+        r_answer = super().can_acquire(logger, session, guest_request, environment=environment)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -655,8 +668,8 @@ class OpenStackDriver(PoolDriver):
             return r_answer
 
         # Disallow HW constraints the driver does not implement yet
-        if guest_request.environment.has_hw_constraints:
-            r_constraints = guest_request.environment.get_hw_constraints()
+        if environment.has_hw_constraints:
+            r_constraints = environment.get_hw_constraints()
 
             if r_constraints.is_error:
                 return Error(r_constraints.unwrap_error())
@@ -664,7 +677,7 @@ class OpenStackDriver(PoolDriver):
             constraints = r_constraints.unwrap()
             assert constraints is not None
 
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        r_images = self.image_info_mapper.map_or_none(logger, environment, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
@@ -674,7 +687,7 @@ class OpenStackDriver(PoolDriver):
             return Ok(CanAcquire.cannot('compose not supported'))
 
         # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
@@ -683,7 +696,7 @@ class OpenStackDriver(PoolDriver):
         pairs: List[Tuple[PoolImageInfo, Flavor]] = []
 
         for image in images:
-            r_flavor = self._env_to_flavor_or_none(logger, session, guest_request)
+            r_flavor = self._env_to_flavor_or_none(logger, session, environment, guest_request)
 
             if r_flavor.is_error:
                 return Error(r_flavor.unwrap_error())
@@ -856,9 +869,18 @@ class OpenStackDriver(PoolDriver):
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
         """
+
+        r_environment = self._patch_environment(logger, guest_request.environment)
+
+        if r_environment.is_error:
+            return Error(r_environment.unwrap_error())
+
+        environment = r_environment.unwrap()
+
         return self._do_acquire_guest(
             logger,
             session,
+            environment,
             guest_request
         )
 

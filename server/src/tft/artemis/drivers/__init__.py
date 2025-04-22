@@ -377,6 +377,16 @@ KNOB_PARALLEL_CLI_SESSIONS: Knob[int] = Knob(
     default=4
 )
 
+KNOB_ENVIRONMENT_PATCH_MAPPING_FILEPATH: Knob[Optional[str]] = Knob(
+    'pool.environment-patch-mapping-filepath',
+    'Path of the environment patching mapping',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_ENVIRONMENT_PATCH_MAPPING_FILEPATH',
+    cast_from_str=str,
+    default=None
+)
+
 
 # Precompile the slow command pattern
 try:
@@ -1260,6 +1270,7 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
     def map_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
         """
@@ -1273,6 +1284,7 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
     def map(
         self,
         logger: gluetool.log.ContextAdapter,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
         """
@@ -1281,7 +1293,7 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
         :returns: list of images fitting the given request.
         """
 
-        r_images = self.map_or_none(logger, guest_request)
+        r_images = self.map_or_none(logger, environment, guest_request)
 
         if r_images.is_error:
             return Error(r_images.unwrap_error())
@@ -1291,7 +1303,7 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
         if not images:
             return Error(Failure(
                 'cannot map guest request to image',
-                environment=guest_request.environment,
+                environment=environment,
                 recoverable=False
             ))
 
@@ -1311,6 +1323,7 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
     def map_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
         r_engine = hook_engine(self.hook_name)
@@ -1326,12 +1339,12 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
                 self.hook_name,
                 logger=logger,
                 pool=self.pool,
-                environment=guest_request.environment
+                environment=environment
             )
         )
 
         if r_images.is_error:
-            r_images.unwrap_error().update(environment=guest_request.environment)
+            r_images.unwrap_error().update(environment=environment)
 
         return r_images
 
@@ -1688,11 +1701,76 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError
 
+    def _patch_environment(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment
+    ) -> Result[Environment, Failure]:
+        r_mapping_filepath = KNOB_ENVIRONMENT_PATCH_MAPPING_FILEPATH.get_value(entityname=self.poolname)
+
+        if r_mapping_filepath.is_error:
+            return Error(r_mapping_filepath.unwrap_error())
+
+        mapping_filepath = r_mapping_filepath.unwrap()
+
+        if mapping_filepath is None:
+            return Ok(environment)
+
+        try:
+            # TODO: Validate mapping schema? Caching?
+            # TODO: Allow having no mapping
+            mappings = gluetool.utils.load_yaml(mapping_filepath)
+        except Exception as exc:
+            return Error(Failure.from_exc('failed to load environment mapping', exc=exc))
+
+        for compose, mapping in mappings.items():
+            try:
+                compose_re = re.compile(compose)
+            except re.error as exc:
+                return Error(Failure.from_exc('failed to compile regular expr', exc=exc))
+
+            if environment.os.compose is not None and compose_re.match(environment.os.compose):
+                r_compose = render_template(mapping['os']['compose'], environment=environment)
+                if r_compose.is_error:
+                    return Error(r_compose.unwrap_error())
+
+                environment.os.compose = r_compose.unwrap()
+
+                r_ks_meta = render_template(mapping['kickstart']['metadata'], environment=environment)
+                if r_ks_meta.is_error:
+                    return Error(r_ks_meta.unwrap_error())
+
+                environment.kickstart.metadata = r_ks_meta.unwrap()
+
+                r_ks_script = render_template(mapping['kickstart']['script'], environment=environment)
+                if r_ks_script.is_error:
+                    return Error(r_ks_script.unwrap_error())
+
+                environment.kickstart.script = r_ks_script.unwrap()
+
+                r_ks_pre_install = render_template(mapping['kickstart']['pre_install'], environment=environment)
+                if r_ks_pre_install.is_error:
+                    return Error(r_ks_pre_install.unwrap_error())
+
+                environment.kickstart.pre_install = r_ks_pre_install.unwrap()
+
+                r_ks_post_install = render_template(mapping['kickstart']['post_install'], environment=environment)
+                if r_ks_post_install.is_error:
+                    return Error(r_ks_post_install.unwrap_error())
+
+                environment.kickstart.post_install = r_ks_post_install.unwrap()
+
+                # Assuming we do not want to layer patches
+                break
+
+        return Ok(environment)
+
     def can_acquire(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        environment: Optional[Environment] = None
     ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy the given environment.
@@ -1706,6 +1784,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :returns: a container describing whether the pool can deliver, or specification of error.
         """
 
+        environment = environment or guest_request.environment
+
         r_capabilities = self.capabilities()
 
         if r_capabilities.is_error:
@@ -1713,15 +1793,15 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         capabilities = r_capabilities.unwrap()
 
-        if not capabilities.supports_arch(guest_request.environment.hw.arch):
+        if not capabilities.supports_arch(environment.hw.arch):
             return Ok(CanAcquire.cannot('architecture not supported'))
 
         # Check whether given HW constraints do not go against what pool can deliver.
         #
         # There may be more checks implemented by the driver, but some conflicts we
         # can identify right away.
-        if guest_request.environment.has_hw_constraints:
-            r_constraints = guest_request.environment.get_hw_constraints()
+        if environment.has_hw_constraints:
+            r_constraints = environment.get_hw_constraints()
 
             if r_constraints.is_error:
                 return Error(r_constraints.unwrap_error())
@@ -1741,13 +1821,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if r_uses_hostname.unwrap() is True:
                     return Ok(CanAcquire.cannot('hostname HW constraint not supported'))
 
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             if not capabilities.supports_native_kickstart and guest_request.skip_prepare_verify_ssh:
                 return Ok(CanAcquire.cannot('SSH access is required to perform non-native kickstart installation'))
 
-            if guest_request.environment.kickstart.metadata is not None and any([
+            if environment.kickstart.metadata is not None and any([
                 m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
-                for m in guest_request.environment.kickstart.metadata.split()
+                for m in environment.kickstart.metadata.split()
             ]):
                 return Ok(CanAcquire.cannot('unsupported kickstart metadata option specified'))
 

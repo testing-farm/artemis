@@ -1331,6 +1331,22 @@ of crashed resources.
 
 5+|If unset for a pool, the given pool is ignored by Artemis in general.
 
+|`pool.environment-patch-mapping-filepath`
+|`str`
+|`ARTEMIS_ENVIRONMENT_PATCH_MAPPING_FILEPATH`
+|`None`
+|no
+
+
+|`pool.environment-patch-mapping-filepath:$entityname`
+|
+|`ARTEMIS_ENVIRONMENT_PATCH_MAPPING_FILEPATH_$entityname`
+|
+|
+
+
+5+|Path of the environment patching mapping
+
 |`pool.max-parallel-cli-sessions`
 |`int`
 |`ARTEMIS_MAX_PARALLEL_CLI_SESSIONS`

@@ -35,6 +35,7 @@ from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
     UNITS,
     Constraint,
+    Environment,
     Flavor,
     FlavorBoot,
     FlavorBootMethodType,
@@ -409,9 +410,10 @@ class AWSHookImageInfoMapper(HookImageInfoMapper[AWSPoolImageInfo]):
     def map_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> ImageInfoMapperResultType[AWSPoolImageInfo]:
-        r_images = super().map_or_none(logger, guest_request)
+        r_images = super().map_or_none(logger, environment, guest_request)
 
         if r_images.is_error:
             return r_images
@@ -756,7 +758,6 @@ def _honor_constraint_disk(
     logger: ContextAdapter,
     constraint: Constraint,
     mappings: BlockDeviceMappings,
-    guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
 ) -> Result[bool, Failure]:
@@ -826,14 +827,14 @@ def _honor_constraint_disk(
 
 def _get_constraint_spans(
     logger: ContextAdapter,
-    guest_request: GuestRequest,
+    environment: Environment,
     image: AWSPoolImageInfo,
     flavor: Flavor
 ) -> Result[List[List[Constraint]], Failure]:
-    if not guest_request.environment.has_hw_constraints:
+    if not environment.has_hw_constraints:
         return Ok([])
 
-    r_constraints = guest_request.environment.get_hw_constraints()
+    r_constraints = environment.get_hw_constraints()
 
     if r_constraints.is_error:
         return Error(r_constraints.unwrap_error())
@@ -866,11 +867,11 @@ def _get_constraint_spans(
 
 def _get_constraint_span(
     logger: ContextAdapter,
-    guest_request: GuestRequest,
+    environment: Environment,
     image: AWSPoolImageInfo,
     flavor: Flavor
 ) -> Result[List[Constraint], Failure]:
-    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+    r_spans = _get_constraint_spans(logger, environment, image, flavor)
 
     if r_spans.is_error:
         return Error(r_spans.unwrap_error())
@@ -891,6 +892,7 @@ def _get_constraint_span(
 def setup_extra_volumes(
     logger: ContextAdapter,
     mappings: BlockDeviceMappings,
+    environment: Environment,
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor
@@ -905,7 +907,7 @@ def setup_extra_volumes(
     :param flavor: a flavor that would serve as a basis for the provisioned instance.
     """
 
-    r_span = _get_constraint_span(logger, guest_request, image, flavor)
+    r_span = _get_constraint_span(logger, environment, image, flavor)
 
     if r_span.is_error:
         return Error(r_span.unwrap_error())
@@ -928,7 +930,6 @@ def setup_extra_volumes(
             logger,
             constraint.original_constraint or constraint,
             mappings,
-            guest_request,
             image,
             flavor
         )
@@ -1002,6 +1003,7 @@ def setup_root_volume(
 
 def create_block_device_mappings(
     logger: ContextAdapter,
+    environment: Environment,
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
@@ -1039,6 +1041,7 @@ def create_block_device_mappings(
     r_mappings = setup_extra_volumes(
         logger,
         mappings,
+        environment,
         guest_request,
         image,
         flavor,
@@ -1243,12 +1246,13 @@ def setup_extra_network_interfaces(
     logger: ContextAdapter,
     pool: 'AWSDriver',
     nics: NetworkInterfaces,
+    environment: Environment,
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
     security_groups: List[str]
 ) -> Result[NetworkInterfaces, Failure]:
-    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+    r_spans = _get_constraint_spans(logger, environment, image, flavor)
 
     if r_spans.is_error:
         return Error(r_spans.unwrap_error())
@@ -1300,6 +1304,7 @@ def setup_extra_network_interfaces(
 def create_network_interfaces(
     logger: ContextAdapter,
     pool: 'AWSDriver',
+    environment: Environment,
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: AWSFlavor,
@@ -1319,6 +1324,7 @@ def create_network_interfaces(
         logger,
         pool,
         nics,
+        environment,
         guest_request,
         image,
         flavor,
@@ -1539,9 +1545,19 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        environment: Optional[Environment] = None
     ) -> Result[CanAcquire, Failure]:
-        r_answer = super().can_acquire(logger, session, guest_request)
+        environment = environment or guest_request.environment
+
+        r_patched_environment = self._patch_environment(logger, environment)
+
+        if r_patched_environment.is_error:
+            return Error(r_patched_environment.unwrap_error())
+
+        environment = r_patched_environment.unwrap()
+
+        r_answer = super().can_acquire(logger, session, guest_request, environment=environment)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -1550,13 +1566,13 @@ class AWSDriver(PoolDriver):
             return r_answer
 
         # Disallow HW constraints the driver does not implement yet
-        if guest_request.environment.has_hw_constraints:
-            r_constraints = guest_request.environment.get_hw_constraints()
+        if environment.has_hw_constraints:
+            r_constraints = environment.get_hw_constraints()
 
             if r_constraints.is_error:
                 return Error(r_constraints.unwrap_error())
 
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        r_images = self.image_info_mapper.map_or_none(logger, environment, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
@@ -1565,7 +1581,7 @@ class AWSDriver(PoolDriver):
         if not images:
             return Ok(CanAcquire.cannot('compose not supported'))
 
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
@@ -1574,7 +1590,7 @@ class AWSDriver(PoolDriver):
         pairs: List[Tuple[AWSPoolImageInfo, Flavor]] = []
 
         for image in images:
-            r_type = self._env_to_instance_type_or_none(logger, session, guest_request, image)
+            r_type = self._env_to_instance_type_or_none(logger, session, environment, guest_request, image)
 
             if r_type.is_error:
                 return Error(r_type.unwrap_error())
@@ -1675,11 +1691,11 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
+        environment: Environment,
         image: AWSPoolImageInfo,
         suitable_flavors: List[AWSFlavor]
     ) -> List[AWSFlavor]:
-        r_constraints = guest_request.environment.get_hw_constraints()
+        r_constraints = environment.get_hw_constraints()
 
         if r_constraints.is_error:
             r_constraints.unwrap_error().handle(logger)
@@ -1692,7 +1708,7 @@ class AWSDriver(PoolDriver):
             return suitable_flavors
 
         def _boot_method_requested(logger: ContextAdapter, flavor: AWSFlavor) -> bool:
-            r_span = _get_constraint_span(logger, guest_request, image, flavor)
+            r_span = _get_constraint_span(logger, environment, image, flavor)
 
             if r_span.is_error:
                 r_span.unwrap_error().handle(logger)
@@ -1731,12 +1747,13 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest,
         image: AWSPoolImageInfo
     ) -> Result[Optional[AWSFlavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger,
-            guest_request.environment
+            environment
         )
 
         if r_suitable_flavors.is_error:
@@ -1777,11 +1794,11 @@ class AWSDriver(PoolDriver):
         )
 
         # Make sure the image and flavor support requested HW
-        if guest_request.environment.has_hw_constraints:
+        if environment.has_hw_constraints:
             suitable_flavors = self._filter_flavors_hw_constraints(
                 logger,
                 session,
-                guest_request,
+                environment,
                 image,
                 suitable_flavors
             )
@@ -1829,10 +1846,11 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest,
         image: AWSPoolImageInfo
     ) -> Result[AWSFlavor, Failure]:
-        r_flavor = self._env_to_instance_type_or_none(logger, session, guest_request, image)
+        r_flavor = self._env_to_instance_type_or_none(logger, session, environment, guest_request, image)
 
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
@@ -2020,6 +2038,7 @@ class AWSDriver(PoolDriver):
     def _create_block_device_mappings(
         self,
         logger: ContextAdapter,
+        environment: Environment,
         guest_request: GuestRequest,
         image: AWSPoolImageInfo,
         flavor: Flavor
@@ -2044,6 +2063,7 @@ class AWSDriver(PoolDriver):
 
         return create_block_device_mappings(
             logger,
+            environment,
             guest_request,
             image,
             flavor,
@@ -2053,6 +2073,7 @@ class AWSDriver(PoolDriver):
     def _create_network_interfaces(
         self,
         logger: ContextAdapter,
+        environment: Environment,
         guest_request: GuestRequest,
         image: AWSPoolImageInfo,
         flavor: AWSFlavor,
@@ -2061,6 +2082,7 @@ class AWSDriver(PoolDriver):
         return create_network_interfaces(
             logger,
             self,
+            environment,
             guest_request,
             image,
             flavor,
@@ -2156,6 +2178,7 @@ class AWSDriver(PoolDriver):
     def _create_guest_security_group(
         self,
         logger: ContextAdapter,
+        environment: Environment,
         guest_request: GuestRequest,
         tags: Dict[str, str],
     ) -> Result[List[str], Failure]:
@@ -2167,7 +2190,7 @@ class AWSDriver(PoolDriver):
         r_rendered = render_template(
             r_security_group_template.unwrap(),
             GUESTNAME=guest_request.guestname,
-            ENVIRONMENT=guest_request.environment,
+            ENVIRONMENT=environment,
             TAGS=tags
         )
         if r_security_group_template.is_error:
@@ -2231,6 +2254,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest,
         instance_type: AWSFlavor,
         image: AWSPoolImageInfo
@@ -2251,6 +2275,7 @@ class AWSDriver(PoolDriver):
         # otherwise use the one from the security-group pool configuration
         if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
             r_create_guest_sg = self._create_guest_security_group(logger=logger,
+                                                                  environment=environment,
                                                                   guest_request=guest_request,
                                                                   tags=tags)
             if r_create_guest_sg.is_error:
@@ -2276,7 +2301,8 @@ class AWSDriver(PoolDriver):
         if 'subnet-id' in self.pool_config:
             command.extend(['--subnet-id', self.pool_config['subnet-id']])
 
-        r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
+        r_block_device_mappings = self._create_block_device_mappings(logger, environment, guest_request, image,
+                                                                     instance_type)
 
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
@@ -2286,7 +2312,7 @@ class AWSDriver(PoolDriver):
             r_block_device_mappings.unwrap().serialize_to_json()
         ])
 
-        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type,
+        r_network_interfaces = self._create_network_interfaces(logger, environment, guest_request, image, instance_type,
                                                                security_group_ids)
 
         if r_network_interfaces.is_error:
@@ -2363,6 +2389,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest,
         instance_type: AWSFlavor,
         image: AWSPoolImageInfo
@@ -2383,6 +2410,7 @@ class AWSDriver(PoolDriver):
         # otherwise use the one from the security-group pool configuration
         if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
             r_create_guest_sg = self._create_guest_security_group(logger=logger,
+                                                                  environment=environment,
                                                                   guest_request=guest_request,
                                                                   tags=tags)
             if r_create_guest_sg.is_error:
@@ -2403,12 +2431,13 @@ class AWSDriver(PoolDriver):
 
         spot_price = r_price.unwrap()
 
-        r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
+        r_block_device_mappings = self._create_block_device_mappings(logger, environment, guest_request, image,
+                                                                     instance_type)
 
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
 
-        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type,
+        r_network_interfaces = self._create_network_interfaces(logger, environment, guest_request, image, instance_type,
                                                                security_group_ids)
 
         if r_network_interfaces.is_error:
@@ -2761,9 +2790,18 @@ class AWSDriver(PoolDriver):
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
         """
+
+        r_environment = self._patch_environment(logger, guest_request.environment)
+
+        if r_environment.is_error:
+            return Error(r_environment.unwrap_error())
+
+        environment = r_environment.unwrap()
+
         return self._do_acquire_guest(
             logger,
             session,
+            environment,
             guest_request
         )
 
@@ -2771,25 +2809,26 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
         # find out image from enviroment
-        r_images = self.image_info_mapper.map(logger, guest_request)
+        r_images = self.image_info_mapper.map(logger, environment, guest_request)
 
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
         images = r_images.unwrap()
 
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
         pairs: List[Tuple[AWSPoolImageInfo, AWSFlavor]] = []
 
         for image in images:
-            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
+            r_instance_type = self._env_to_instance_type(logger, session, environment, guest_request, image)
             if r_instance_type.is_error:
                 return Error(r_instance_type.unwrap_error())
 
@@ -2825,9 +2864,9 @@ class AWSDriver(PoolDriver):
         )
 
         if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
-            return self._request_spot_instance(logger, session, guest_request, instance_type, image)
+            return self._request_spot_instance(logger, session, environment, guest_request, instance_type, image)
 
-        return self._request_instance(logger, session, guest_request, instance_type, image)
+        return self._request_instance(logger, session, environment, guest_request, instance_type, image)
 
     def release_guest(
         self,

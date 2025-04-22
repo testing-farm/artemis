@@ -17,7 +17,7 @@ from google.cloud import compute_v1
 
 from .. import Failure, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
-from ..environment import UNITS, Flavor, FlavorBoot, SizeType
+from ..environment import UNITS, Environment, Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
@@ -134,12 +134,22 @@ class GCPDriver(PoolDriver):
     def can_acquire(self,
                     logger: gluetool.log.ContextAdapter,
                     session: sqlalchemy.orm.session.Session,
-                    guest_request: GuestRequest) -> Result[CanAcquire, Failure]:
+                    guest_request: GuestRequest,
+                    environment: Optional[Environment] = None) -> Result[CanAcquire, Failure]:
         """
         Check whether this driver can provision a guest that would satisfy the given environment.
         """
 
-        r_answer = super().can_acquire(logger, session, guest_request)
+        environment = environment or guest_request.environment
+
+        r_patched_environment = self._patch_environment(logger, environment)
+
+        if r_patched_environment.is_error:
+            return Error(r_patched_environment.unwrap_error())
+
+        environment = r_patched_environment.unwrap()
+
+        r_answer = super().can_acquire(logger, session, guest_request, environment=environment)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -148,7 +158,7 @@ class GCPDriver(PoolDriver):
         if answer.can_acquire is False:
             return r_answer
 
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        r_images = self.image_info_mapper.map_or_none(logger, environment, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
@@ -157,13 +167,13 @@ class GCPDriver(PoolDriver):
             return Ok(CanAcquire.cannot('compose not supported'))
 
         # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
                 return Ok(CanAcquire.cannot('compose does not support kickstart'))
 
-        if guest_request.environment.has_hw_constraints:
+        if environment.has_hw_constraints:
             return Ok(CanAcquire.cannot('HW constraints are not supported by the GCP driver'))
 
         return Ok(CanAcquire())
@@ -369,19 +379,26 @@ class GCPDriver(PoolDriver):
                       session: sqlalchemy.orm.session.Session,
                       guest_request: GuestRequest,
                       cancelled: Optional[threading.Event] = None) -> Result[ProvisioningProgress, Failure]:
+        r_environment = self._patch_environment(logger, guest_request.environment)
+
+        if r_environment.is_error:
+            return Error(r_environment.unwrap_error())
+
+        environment = r_environment.unwrap()
+
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
         delay_cfg_option_read_result = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
         if delay_cfg_option_read_result.is_error:
             return Error(delay_cfg_option_read_result.unwrap_error())
 
-        map_request_to_image_result = self.image_info_mapper.map(logger, guest_request)
+        map_request_to_image_result = self.image_info_mapper.map(logger, environment, guest_request)
         if map_request_to_image_result.is_error:
             return Error(map_request_to_image_result.unwrap_error())
 
         images = map_request_to_image_result.unwrap()
 
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
         image = images[0]

@@ -17,6 +17,7 @@ from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest
 from ..environment import (
     UNITS,
+    Environment,
     Flavor,
     FlavorBoot,
     FlavorCpu,
@@ -516,14 +517,24 @@ class IBMCloudVPCDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        environment: Optional[Environment] = None
     ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
         the given environment.
         """
 
-        r_answer = super().can_acquire(logger, session, guest_request)
+        environment = environment or guest_request.environment
+
+        r_patched_environment = self._patch_environment(logger, environment)
+
+        if r_patched_environment.is_error:
+            return Error(r_patched_environment.unwrap_error())
+
+        environment = r_patched_environment.unwrap()
+
+        r_answer = super().can_acquire(logger, session, guest_request, environment=environment)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -531,10 +542,10 @@ class IBMCloudVPCDriver(PoolDriver):
         if r_answer.unwrap().can_acquire is False:
             return r_answer
 
-        if guest_request.environment.has_hw_constraints is True:
+        if environment.has_hw_constraints is True:
             return Ok(CanAcquire.cannot('HW constraints are not supported'))
 
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        r_images = self.image_info_mapper.map_or_none(logger, environment, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
@@ -544,7 +555,7 @@ class IBMCloudVPCDriver(PoolDriver):
             return Ok(CanAcquire.cannot('compose not supported'))
 
         # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
@@ -563,12 +574,13 @@ class IBMCloudVPCDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest,
         image: IBMCloudVPCPoolImageInfo
     ) -> Result[IBMCloudFlavor, Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger,
-            guest_request.environment
+            environment
         )
 
         if r_suitable_flavors.is_error:
@@ -645,11 +657,19 @@ class IBMCloudVPCDriver(PoolDriver):
             of error.
         """
 
+        r_environment = self._patch_environment(logger, guest_request.environment)
+
+        if r_environment.is_error:
+            return Error(r_environment.unwrap_error())
+
+        environment = r_environment.unwrap()
+
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
         return self._do_acquire_guest(
             logger,
             session,
+            environment,
             guest_request,
         )
 
@@ -657,6 +677,7 @@ class IBMCloudVPCDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
 
@@ -667,19 +688,19 @@ class IBMCloudVPCDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_images = self.image_info_mapper.map(logger, guest_request)
+        r_images = self.image_info_mapper.map(logger, environment, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
         images = r_images.unwrap()
 
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
         pairs: List[Tuple[IBMCloudVPCPoolImageInfo, IBMCloudFlavor]] = []
 
         for image in images:
-            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
+            r_instance_type = self._env_to_instance_type(logger, session, environment, guest_request, image)
             if r_instance_type.is_error:
                 return Error(r_instance_type.unwrap_error())
 

@@ -15,6 +15,7 @@ from gluetool.result import Error, Ok, Result
 
 from .. import Failure
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
+from ..environment import Environment
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
@@ -86,7 +87,8 @@ class RestDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        environment: Optional[Environment] = None
     ) -> Result[CanAcquire, Failure]:
         '''
         Request
@@ -110,7 +112,16 @@ class RestDriver(PoolDriver):
              "reason": optional[string]
            }
         '''
-        r_answer = super().can_acquire(logger, session, guest_request)
+        environment = environment or guest_request.environment
+
+        r_patched_environment = self._patch_environment(logger, environment)
+
+        if r_patched_environment.is_error:
+            return Error(r_patched_environment.unwrap_error())
+
+        environment = r_patched_environment.unwrap()
+
+        r_answer = super().can_acquire(logger, session, guest_request, environment=environment)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -118,11 +129,11 @@ class RestDriver(PoolDriver):
         if r_answer.unwrap().can_acquire is False:
             return r_answer
 
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             return Ok(CanAcquire.cannot('kickstart not supported'))
 
         payload = {
-            "environment": base64.b64encode(json.dumps(guest_request._environment).encode()),
+            "environment": base64.b64encode(json.dumps(environment.serialize()).encode()),
         }
 
         try:
@@ -176,6 +187,14 @@ class RestDriver(PoolDriver):
             "address": optional[string]
            }
         '''
+
+        r_environment = self._patch_environment(logger, guest_request.environment)
+
+        if r_environment.is_error:
+            return Error(r_environment.unwrap_error())
+
+        environment = r_environment.unwrap()
+
         self.log_acquisition_attempt(
             logger,
             session,
@@ -183,7 +202,7 @@ class RestDriver(PoolDriver):
         )
 
         payload = {
-            "environment": guest_request._environment,
+            "environment": environment.serialize(),
         }
 
         try:

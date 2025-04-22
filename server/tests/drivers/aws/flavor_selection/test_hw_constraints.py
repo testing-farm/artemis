@@ -32,7 +32,7 @@ def test_irrelevant_hw_constraints(
     suitable_flavors = aws_pool._filter_flavors_hw_constraints(
         logger,
         session,
-        guest_request,
+        guest_request.environment,
         image,
         flavors
     )
@@ -55,7 +55,7 @@ def test_no_constraints(
     suitable_flavors = aws_pool._filter_flavors_hw_constraints(
         logger,
         session,
-        guest_request,
+        guest_request.environment,
         image,
         flavors
     )
@@ -86,7 +86,7 @@ def test_boot_method_match(
     suitable_flavors = aws_pool._filter_flavors_hw_constraints(
         logger,
         session,
-        guest_request,
+        guest_request.environment,
         image,
         flavors
     )
@@ -117,7 +117,7 @@ def test_boot_method_mismatch(
     suitable_flavors = aws_pool._filter_flavors_hw_constraints(
         logger,
         session,
-        guest_request,
+        guest_request.environment,
         image,
         flavors
     )

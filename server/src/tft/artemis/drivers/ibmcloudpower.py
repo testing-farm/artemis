@@ -14,7 +14,7 @@ from tft.artemis.drivers.ibmcloudvpc import IBMCloudPoolData, IBMCloudPoolResour
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest
-from ..environment import UNITS, And, Constraint, ConstraintBase, Flavor, FlavorBoot, SizeType
+from ..environment import UNITS, And, Constraint, ConstraintBase, Environment, Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
@@ -232,11 +232,19 @@ class IBMCloudPowerDriver(PoolDriver):
             of error.
         """
 
+        r_environment = self._patch_environment(logger, guest_request.environment)
+
+        if r_environment.is_error:
+            return Error(r_environment.unwrap_error())
+
+        environment = r_environment.unwrap()
+
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
         return self._do_acquire_guest(
             logger,
             session,
+            environment,
             guest_request,
         )
 
@@ -295,7 +303,8 @@ class IBMCloudPowerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        guest_request: GuestRequest,
+        environment: Optional[Environment] = None
     ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
@@ -306,10 +315,19 @@ class IBMCloudPowerDriver(PoolDriver):
         :returns: Ok with True if guest can be acquired.
         """
 
+        environment = environment or guest_request.environment
+
+        r_patched_environment = self._patch_environment(logger, environment)
+
+        if r_patched_environment.is_error:
+            return Error(r_patched_environment.unwrap_error())
+
+        environment = r_patched_environment.unwrap()
+
         # Largely borrowed code from beaker driver
 
         # First, check the parent class, maybe its tests already have the answer.
-        r_answer = super().can_acquire(logger, session, guest_request)
+        r_answer = super().can_acquire(logger, session, guest_request, environment=environment)
 
         if r_answer.is_error:
             return Error(r_answer.unwrap_error())
@@ -317,7 +335,7 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_answer.unwrap().can_acquire is False:
             return r_answer
 
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        r_images = self.image_info_mapper.map_or_none(logger, environment, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
@@ -327,7 +345,7 @@ class IBMCloudPowerDriver(PoolDriver):
             return Ok(CanAcquire.cannot('compose not supported'))
 
         # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
@@ -337,10 +355,10 @@ class IBMCloudPowerDriver(PoolDriver):
         # far from being complete and fully tested, therefore we should check whether we are able to
         # convert the constraints - if there are any - to a Beaker XML filter.
 
-        if not guest_request.environment.has_hw_constraints:
+        if not environment.has_hw_constraints:
             return Ok(CanAcquire())
 
-        r_constraints = guest_request.environment.get_hw_constraints()
+        r_constraints = environment.get_hw_constraints()
 
         if r_constraints.is_error:
             return Error(r_constraints.unwrap_error())
@@ -477,6 +495,7 @@ class IBMCloudPowerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        environment: Environment,
         guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
 
@@ -485,20 +504,20 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_images = self.image_info_mapper.map(logger, guest_request)
+        r_images = self.image_info_mapper.map(logger, environment, guest_request)
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
         images = r_images.unwrap()
 
-        if guest_request.environment.has_ks_specification:
+        if environment.has_ks_specification:
             images = [image for image in images if image.supports_kickstart is True]
 
         image = images[0]
 
         # In a typical driver there would be a flavor selection, but looks like ibmcloud power doesn't have a concept
         # of flavors, instead one is specifying the number of cores / memory (in Gb) requested.
-        r_constraints = guest_request.environment.get_hw_constraints()
+        r_constraints = environment.get_hw_constraints()
 
         if r_constraints.is_error:
             return Error(r_constraints.unwrap_error())
