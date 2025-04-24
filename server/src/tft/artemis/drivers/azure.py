@@ -403,7 +403,7 @@ class AzureDriver(PoolDriver):
         # up in a single call. Calls to iterative one-by-one resource listing in this scenario will remain only for the
         # purpose of incurring costs.
 
-        def _delete_resource(resource_id: str) -> Any:
+        def _delete_resource(resource_id: str) -> Result[JSONType, Failure]:
             with AzureSession(logger, self) as session:
                 return session.run_az(
                     logger,
@@ -447,15 +447,31 @@ class AzureDriver(PoolDriver):
                                                           r_remove_storage.unwrap_error()))
 
         if resource_ids.instance_id is not None:
-            self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
             if resource_group == self.pool_config.get('guest-resource-group'):
-                _delete_resource(resource_ids.instance_id)
+                r_delete = _delete_resource(resource_ids.instance_id)
+
+                if r_delete.is_error:
+                    return Error(Failure.from_failure(
+                        'failed to remove Azure resource',
+                        r_delete.unwrap_error(),
+                        resource_id=resource_ids.instance_id
+                    ))
+
+            self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         if resource_ids.assorted_resource_ids is not None:
             for resource in resource_ids.assorted_resource_ids:
-                self.inc_costs(logger, AZURE_RESOURCE_TYPE[resource['type']], resource_ids.ctime)
                 if resource_group == self.pool_config.get('guest-resource-group'):
-                    _delete_resource(resource["id"])
+                    r_delete = _delete_resource(resource["id"])
+
+                    if r_delete.is_error:
+                        return Error(Failure.from_failure(
+                            'failed to remove Azure resource',
+                            r_delete.unwrap_error(),
+                            resource_id=resource['id']
+                        ))
+
+                self.inc_costs(logger, AZURE_RESOURCE_TYPE[resource['type']], resource_ids.ctime)
 
         return Ok(None)
 
