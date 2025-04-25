@@ -1825,11 +1825,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
             if not capabilities.supports_native_kickstart and guest_request.skip_prepare_verify_ssh:
                 return Ok(CanAcquire.cannot('SSH access is required to perform non-native kickstart installation'))
 
-            if environment.kickstart.metadata is not None and any([
-                m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
-                for m in environment.kickstart.metadata.split()
-            ]):
-                return Ok(CanAcquire.cannot('unsupported kickstart metadata option specified'))
+                if environment.kickstart.metadata is not None and any([
+                    m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
+                    for m in environment.kickstart.metadata.split()
+                ]):
+                    return Ok(CanAcquire.cannot('unsupported kickstart metadata option specified'))
 
         return Ok(CanAcquire())
 
