@@ -1483,6 +1483,28 @@ for said guest request again.
 
 5+|Comma-separated list of Sentry integrations, in order in which they should be enabled.
 
+|`sentry.issues.sample-rate`
+|`float`
+|`ARTEMIS_SENTRY_ISSUES_SAMPLE_RATE`
+|`1.0`
+|no
+
+
+
+5+|The sampling rate of issues reported to Sentry, between 0.0 (no events reported) and 1.0
+(all events reported).
+
+|`sentry.tracing.sample-rate`
+|`float`
+|`ARTEMIS_SENTRY_TRACING_SAMPLE_RATE`
+|`1.0`
+|no
+
+
+
+5+|The sampling rate of traces reported to Sentry, between 0.0 (no transactions reported) and 1.0
+(all transactions reported).
+
 |`shelf.max-guests`
 |`int`
 |`ARTEMIS_SHELF_MAX_GUESTS`

@@ -833,6 +833,29 @@ KNOB_TRACING_ENABLED: Knob[bool] = Knob(
     default=False
 )
 
+KNOB_SENTRY_ISSUES_SAMPLE_RATE: Knob[float] = Knob(
+    'sentry.issues.sample-rate',
+    """
+    The sampling rate of issues reported to Sentry, between 0.0 (no events reported) and 1.0
+    (all events reported).
+    """,
+    has_db=False,
+    envvar='ARTEMIS_SENTRY_ISSUES_SAMPLE_RATE',
+    cast_from_str=float,
+    default=1.0
+)
+
+KNOB_SENTRY_TRACING_SAMPLE_RATE: Knob[float] = Knob(
+    'sentry.tracing.sample-rate',
+    """
+    The sampling rate of traces reported to Sentry, between 0.0 (no transactions reported) and 1.0
+    (all transactions reported).
+    """,
+    has_db=False,
+    envvar='ARTEMIS_SENTRY_TRACING_SAMPLE_RATE',
+    cast_from_str=float,
+    default=1.0
+)
 
 KNOB_LOGGING_SENTRY: Knob[bool] = Knob(
     'logging.sentry',

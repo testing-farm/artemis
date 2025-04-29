@@ -97,6 +97,8 @@ from .knobs import (  # noqa: E402
     KNOB_SENTRY_DSN,
     KNOB_SENTRY_EVENT_URL_TEMPLATE,
     KNOB_SENTRY_INTEGRATIONS,
+    KNOB_SENTRY_ISSUES_SAMPLE_RATE,
+    KNOB_SENTRY_TRACING_SAMPLE_RATE,
     KNOB_TEMPLATE_BLOCK_DELIMITERS,
     KNOB_TEMPLATE_VARIABLE_DELIMITERS,
     KNOB_TRACING_ENABLED,
@@ -348,8 +350,6 @@ class Sentry:
             environment=KNOB_DEPLOYMENT_ENVIRONMENT.value,
             server_name=platform.node(),
             debug=KNOB_LOGGING_SENTRY.value,
-            # log all issues - if we ever decide we need less, we can add knobs to control these
-            sample_rate=1.0,
             # We need to override one parameter of on of the default integrations,
             # so we're doomed to list all of them.
             integrations=integrations,
@@ -358,12 +358,17 @@ class Sentry:
             # surprises like extensive sentry communication per normal request with middleware for fastapi/starlette
             # integrations.
             default_integrations=False,
+            enable_db_query_source=False,
+
+            # Issues
+            sample_rate=KNOB_SENTRY_ISSUES_SAMPLE_RATE.value,
 
             # Tracing
             enable_tracing=KNOB_TRACING_ENABLED.value,
-            traces_sample_rate=1.0,
-            enable_db_query_source=False,
+            traces_sample_rate=KNOB_SENTRY_TRACING_SAMPLE_RATE.value,
 
+            # Profiling
+            # We do not use Sentry for profiling
             profiles_sample_rate=0.0,
         )
 
