@@ -27,6 +27,7 @@ from . import (
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
+    ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
     guest_log_updater,
 )
@@ -311,7 +312,7 @@ class RestDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
-    ) -> Result[None, Failure]:
+    ) -> Result[ReleasePoolResourcesState, Failure]:
         '''
         Request
         """""""
@@ -340,7 +341,7 @@ class RestDriver(PoolDriver):
                 exc
             ))
 
-        return Ok(None)
+        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def fetch_pool_resources_metrics(
         self,
