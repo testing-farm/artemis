@@ -32,6 +32,7 @@ from . import (
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
+    ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
 )
 
@@ -255,7 +256,7 @@ class GCPDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
-    ) -> Result[None, Failure]:
+    ) -> Result[ReleasePoolResourcesState, Failure]:
         resource_ids = GCPPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
         request = compute_v1.DeleteInstanceRequest(instance=resource_ids.name,
                                                    project=resource_ids.project,
@@ -268,7 +269,7 @@ class GCPDriver(PoolDriver):
                                        recoverable=False,
                                        fail_guest_request=False)
             return Error(failure)
-        return Ok(None)
+        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def _create_boot_disk_for_image_link(self,
                                          image_link: str,

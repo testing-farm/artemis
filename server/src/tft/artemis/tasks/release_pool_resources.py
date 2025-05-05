@@ -17,7 +17,7 @@ import sqlalchemy
 import sqlalchemy.orm.session
 
 from ..db import DB
-from ..drivers import PoolDriver
+from ..drivers import PoolDriver, ReleasePoolResourcesState
 from . import (
     _ROOT_LOGGER,
     DoerReturnType,
@@ -71,6 +71,12 @@ class Workspace(_Workspace):
                 failure.fail_guest_request = False
 
                 return self._error(r_release, 'failed to release pool resources')
+
+            if r_release.unwrap() is ReleasePoolResourcesState.BLOCKED:
+                # The resource cannot be released just yet because it is blocked on a prior resource.
+                self._guest_request_event('resource-blocked')
+
+                return self._reschedule()
 
             self._progress('released')
 

@@ -703,6 +703,20 @@ class ProvisioningProgress:
     pool_failures: List[Failure] = dataclasses.field(default_factory=list)
 
 
+class ReleasePoolResourcesState(enum.Enum):
+    """
+    State of the release pool resources.
+    """
+
+    #: The resource cannot be released at the current time because it is blocked by another resource but should be
+    #: possible to release at a later time.
+    BLOCKED = 'blocked'
+
+    #: The resource was successfully released or a request was accepted by the remote and the resource is guaranteed to
+    #: be released.
+    RELEASED = 'released'
+
+
 class WatchdogState(enum.Enum):
     """
     State of the guest watchdog.
@@ -1672,7 +1686,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         raw_resources_ids: SerializedPoolResourcesIDs
-    ) -> Result[None, Failure]:
+    ) -> Result[ReleasePoolResourcesState, Failure]:
         """
         Release any pool resources identified by provided IDs.
 

@@ -25,6 +25,7 @@ from . import (
     PoolImageSSHInfo,
     ProvisioningProgress,
     ProvisioningState,
+    ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
     create_tempfile,
 )
@@ -693,7 +694,7 @@ class IBMCloudPowerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
-    ) -> Result[None, Failure]:
+    ) -> Result[ReleasePoolResourcesState, Failure]:
 
         resource_ids = IBMCloudPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
@@ -710,7 +711,7 @@ class IBMCloudPowerDriver(PoolDriver):
                 if r_delete_instance.is_error:
                     return Error(Failure.from_failure('Failed to cleanup instance', r_delete_instance.unwrap_error()))
 
-        return Ok(None)
+        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def trigger_reboot(
         self,
