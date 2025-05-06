@@ -999,6 +999,51 @@ class OpenStackDriver(PoolDriver):
 
         resources = r_resources.unwrap()
 
+        # Resource usage - instances and flavors
+        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, str]], Failure]:
+            r_servers = self._run_os([
+                'server',
+                'list',
+                '--user', self.pool_config['username']
+            ], json_format=True, commandname='os.server-list')
+
+            if r_servers.is_error:
+                return Error(Failure.from_failure(
+                    'failed to fetch server list',
+                    r_servers.unwrap_error()
+                ))
+
+            return Ok(cast(List[Dict[str, str]], r_servers.unwrap()))
+
+        def _update_instance_usage(
+            logger: gluetool.log.ContextAdapter,
+            usage: PoolResourcesUsage,
+            raw_instance: Dict[str, str],
+            flavor: Optional[Flavor]
+        ) -> Result[None, Failure]:
+            assert usage.instances is not None  # narrow type
+
+            usage.instances += 1
+
+            if flavor is not None:
+                if flavor.name not in usage.flavors:
+                    usage.flavors[flavor.name] = 0
+
+                usage.flavors[flavor.name] += 1
+
+            return Ok(None)
+
+        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+            logger,
+            resources.usage,
+            _fetch_instances,
+            lambda raw_instance: raw_instance['Flavor'],  # type: ignore[index,no-any-return]
+            _update_instance_usage
+        )
+
+        if r_instances_usage.is_error:
+            return Error(r_instances_usage.unwrap_error())
+
         r_query_limits = self._run_os(
             ['limits', 'show', '--absolute', '--reserved'],
             json_format=True,
@@ -1088,51 +1133,6 @@ class OpenStackDriver(PoolDriver):
 
             resources.usage.networks[network_name] = PoolNetworkResources(addresses=int(network['Used IPs']))
             resources.limits.networks[network_name] = PoolNetworkResources(addresses=int(network['Total IPs']))
-
-        # Resource usage - instances and flavors
-        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, str]], Failure]:
-            r_servers = self._run_os([
-                'server',
-                'list',
-                '--user', self.pool_config['username']
-            ], json_format=True, commandname='os.server-list')
-
-            if r_servers.is_error:
-                return Error(Failure.from_failure(
-                    'failed to fetch server list',
-                    r_servers.unwrap_error()
-                ))
-
-            return Ok(cast(List[Dict[str, str]], r_servers.unwrap()))
-
-        def _update_instance_usage(
-            logger: gluetool.log.ContextAdapter,
-            usage: PoolResourcesUsage,
-            raw_instance: Dict[str, str],
-            flavor: Optional[Flavor]
-        ) -> Result[None, Failure]:
-            assert usage.instances is not None  # narrow type
-
-            usage.instances += 1
-
-            if flavor is not None:
-                if flavor.name not in usage.flavors:
-                    usage.flavors[flavor.name] = 0
-
-                usage.flavors[flavor.name] += 1
-
-            return Ok(None)
-
-        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
-            logger,
-            resources.usage,
-            _fetch_instances,
-            lambda raw_instance: raw_instance['Flavor'],  # type: ignore[index,no-any-return]
-            _update_instance_usage
-        )
-
-        if r_instances_usage.is_error:
-            return Error(r_instances_usage.unwrap_error())
 
         return Ok(resources)
 
