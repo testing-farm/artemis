@@ -407,7 +407,11 @@ class AzureDriver(PoolDriver):
             with AzureSession(logger, self) as session:
                 return session.run_az(
                     logger,
-                    ['resource', 'delete', '--ids', resource_id],
+                    [
+                        'resource', 'delete',
+                        '--verbose',
+                        '--ids', resource_id
+                    ],
                     json_format=False,
                     commandname='az.resource-delete'
                 )
