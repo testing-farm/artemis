@@ -28,7 +28,7 @@ beaker-client = { version = "*", optional = true }
 # beautifulsoup4 = "^4.9.3"
 click = "*"
 # TODO: 1.13.0 and newer add typing support, way bigger patch
-dramatiq = { version = "1.13.0", extras = ["rabbitmq"] }
+dramatiq = {git = "https://github.com/dansimko/dramatiq.git", rev = "1.13.0-close-write-pipe", extras = ["rabbitmq"]}
 gluetool = "^2.5"
 gunicorn = "*"
 jinja2-ansible-filters = "*"

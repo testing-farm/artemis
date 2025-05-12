@@ -2337,23 +2337,27 @@ version = "1.13.0"
 description = "Background Processing for Python 3."
 optional = false
 python-versions = ">=3.6"
-files = [
-    {file = "dramatiq-1.13.0-py3-none-any.whl", hash = "sha256:8ef7509ca62bc45c3f1e3b1a0248e9f774337100e32ba1502cfcca15df79ad61"},
-    {file = "dramatiq-1.13.0.tar.gz", hash = "sha256:b4fe0ca6b55b06bebf82cd14c88044fb267505a57d4aa47378194efa0cef5f47"},
-]
+files = []
+develop = false
 
 [package.dependencies]
 pika = {version = ">=1.0,<2.0", optional = true, markers = "extra == \"rabbitmq\""}
 prometheus-client = ">=0.2"
 
 [package.extras]
-all = ["gevent (>=1.1)", "pika (>=1.0,<2.0)", "pylibmc (>=1.5,<2.0)", "redis (>=2.0,<5.0)", "watchdog", "watchdog-gevent"]
-dev = ["alabaster", "bumpversion", "flake8", "flake8-bugbear", "flake8-quotes", "gevent (>=1.1)", "hiredis", "isort", "pika (>=1.0,<2.0)", "pylibmc (>=1.5,<2.0)", "pytest", "pytest-benchmark[histogram]", "pytest-cov", "redis (>=2.0,<5.0)", "sphinx (<1.8)", "sphinxcontrib-napoleon", "tox", "twine", "watchdog", "watchdog-gevent", "wheel"]
+all = ["gevent (>=1.1)", "pika (>=1.0,<2.0)", "pylibmc (>=1.5,<2.0)", "redis (>=2.0,<5.0)", "watchdog", "watchdog_gevent"]
+dev = ["alabaster", "bumpversion", "flake8", "flake8-bugbear", "flake8-quotes", "gevent (>=1.1)", "hiredis", "isort", "pika (>=1.0,<2.0)", "pylibmc (>=1.5,<2.0)", "pytest", "pytest-benchmark[histogram]", "pytest-cov", "redis (>=2.0,<5.0)", "sphinx (<1.8)", "sphinxcontrib-napoleon", "tox", "twine", "watchdog", "watchdog_gevent", "wheel"]
 gevent = ["gevent (>=1.1)"]
 memcached = ["pylibmc (>=1.5,<2.0)"]
 rabbitmq = ["pika (>=1.0,<2.0)"]
 redis = ["redis (>=2.0,<5.0)"]
-watch = ["watchdog", "watchdog-gevent"]
+watch = ["watchdog", "watchdog_gevent"]
+
+[package.source]
+type = "git"
+url = "https://github.com/dansimko/dramatiq.git"
+reference = "1.13.0-close-write-pipe"
+resolved_reference = "49101cd4b02e5550dd10ca58b9610f5b99b8b093"
 
 [[package]]
 name = "exceptiongroup"
@@ -6334,4 +6338,4 @@ full = ["awscli", "azure-cli", "beaker-client", "google-cloud-compute", "python-
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.9.0"
-content-hash = "83a6e208de1a5b6716d2624ec55c06b2e3e8bc742c8c323734534d1e3359b024"
+content-hash = "cb20d601b8200d0a648b0619aefee8b05254b322b1395f03ed2f6b01499d8475"
