@@ -541,18 +541,11 @@ def policy_supports_guest_logs(
     ))
 
 
-@policy_boilerplate
-def policy_prefer_spot_instances(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
+def _prefer_spot_or_dedicated_instances(
     pools: List[PoolDriver],
-    guest_request: GuestRequest
+    guest_request: GuestRequest,
+    supports_spot_instances: bool
 ) -> PolicyReturnType:
-    """
-    Prefer pools capable of using spot instances to satisfy the request. If there are no such pools, all given pools
-    are returned - *prefer*, not *allow only*.
-    """
-
     # If request does insist on using spot or non-spot instance, we should not mess with its request by
     # possibly removing the group it requests. For such environments, do nothing and let other policies
     # apply their magic.
@@ -567,7 +560,7 @@ def policy_prefer_spot_instances(
     preferred_pools = [
         pool
         for pool, capabilities in r_capabilities.unwrap()
-        if capabilities.supports_spot_instances is True
+        if capabilities.supports_spot_instances is supports_spot_instances
     ]
 
     if not preferred_pools:
@@ -580,6 +573,33 @@ def policy_prefer_spot_instances(
 
 
 @policy_boilerplate
+def policy_prefer_spot_instances(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Prefer pools capable of using spot instances to satisfy the request. If there are no such pools,
+    all given pools are returned - *prefer*, not *allow only*.
+    """
+    return _prefer_spot_or_dedicated_instances(pools, guest_request, True)
+
+
+@policy_boilerplate
+def policy_prefer_dedicated_instances(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: List[PoolDriver],
+    guest_request: GuestRequest
+) -> PolicyReturnType:
+    """
+    Prefer pools capable of using dedicated instances to satisfy the request. If there are no such pools,
+    all given pools are returned - *prefer*, not *allow only*.
+    """
+    return _prefer_spot_or_dedicated_instances(pools, guest_request, False)
+
+
 def policy_use_spot_instances(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
