@@ -45,6 +45,7 @@ from . import (
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
+    ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
     create_tempfile,
     guest_log_updater,
@@ -396,7 +397,7 @@ class AzureDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
-    ) -> Result[None, Failure]:
+    ) -> Result[ReleasePoolResourcesState, Failure]:
         # NOTE(ivasilev) If the resource_group matches the one in pool config's guest-request-group, then the cleanup
         # will be solely relying on removing all resources tagged with the instance-id tag one by one.
         # Otherwise in case of a precreated for this guest RG, by removing it we'll will effectively clean everything
@@ -477,7 +478,7 @@ class AzureDriver(PoolDriver):
 
                 self.inc_costs(logger, AZURE_RESOURCE_TYPE[resource['type']], resource_ids.ctime)
 
-        return Ok(None)
+        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def can_acquire(
         self,

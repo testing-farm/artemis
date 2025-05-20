@@ -58,6 +58,7 @@ from . import (
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
+    ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
     WatchdogState,
     create_tempfile,
@@ -1245,7 +1246,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
-    ) -> Result[None, Failure]:
+    ) -> Result[ReleasePoolResourcesState, Failure]:
         resource_ids = BeakerPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.job_id is not None:
@@ -1259,7 +1260,7 @@ class BeakerDriver(PoolDriver):
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
-        return Ok(None)
+        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def map_image_name_to_image_info(
         self,

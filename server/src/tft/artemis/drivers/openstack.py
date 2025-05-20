@@ -49,6 +49,7 @@ from . import (
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
+    ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
     create_tempfile,
     guest_log_updater,
@@ -967,7 +968,7 @@ class OpenStackDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
-    ) -> Result[None, Failure]:
+    ) -> Result[ReleasePoolResourcesState, Failure]:
         resource_ids = OpenStackPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.instance_id:
@@ -986,7 +987,7 @@ class OpenStackDriver(PoolDriver):
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
-        return Ok(None)
+        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def fetch_pool_resources_metrics(
         self,

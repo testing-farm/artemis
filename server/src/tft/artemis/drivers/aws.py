@@ -64,6 +64,7 @@ from . import (
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
+    ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
     WatchdogState,
     guest_log_updater,
@@ -1485,7 +1486,7 @@ class AWSDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
-    ) -> Result[None, Failure]:
+    ) -> Result[ReleasePoolResourcesState, Failure]:
         resource_ids = AWSPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.spot_instance_id is not None:
@@ -1517,13 +1518,32 @@ class AWSDriver(PoolDriver):
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         if resource_ids.security_group is not None:
+            r_check = self._aws_command(
+                [
+                    'ec2', 'describe-network-interfaces',
+                    '--filter', f'Name=group-id,Values={resource_ids.security_group}',
+                    '--query', 'NetworkInterfaces[*].[NetworkInterfaceId]'
+                ],
+                commandname='aws.ec2-check-security-group-attached'
+            )
+
+            if r_check.is_error:
+                return Error(Failure.from_failure(
+                    'failed to check if security group is attached to a NIC',
+                    r_check.unwrap_error()
+                ))
+
+            if cast(List[Any], r_check.unwrap()):
+                # We have a VNIC still attached to the security group and have to wait for the VM to terminate fully
+                return Ok(ReleasePoolResourcesState.BLOCKED)
+
             r_output = self._aws_command(
                 [
                     'ec2', 'delete-security-group',
                     '--group-id', resource_ids.security_group
                 ],
                 json_output=False,
-                commandname='aws.ec2-delete-security=group')
+                commandname='aws.ec2-delete-security-group')
 
             if r_output.is_error:
                 return Error(Failure.from_failure(
@@ -1533,7 +1553,7 @@ class AWSDriver(PoolDriver):
 
             self.inc_costs(logger, ResourceType.SECURITY_GROUP, resource_ids.ctime)
 
-        return Ok(None)
+        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def can_acquire(
         self,
