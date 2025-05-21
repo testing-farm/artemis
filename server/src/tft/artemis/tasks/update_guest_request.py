@@ -74,7 +74,7 @@ class Workspace(_Workspace):
                 provisioning_progress = r_progress.unwrap()
 
                 new_guest_data = {
-                    'pool_data': provisioning_progress.pool_data.serialize()
+                    'pool_data': provisioning_progress.pool_data.serialize_to_json()
                 }
 
                 if provisioning_progress.ssh_info is not None:
@@ -106,7 +106,7 @@ class Workspace(_Workspace):
                     self.guestname,
                     current_state=GuestState.PROMISED,
                     set_values=new_guest_data,
-                    current_pool_data=current_pool_data.serialize(),
+                    current_pool_data=current_pool_data.serialize_to_json(),
                     delay=provisioning_progress.delay_update
                 )
 
@@ -140,7 +140,7 @@ class Workspace(_Workspace):
                         self.guestname,
                         current_state=GuestState.PROMISED,
                         set_values=new_guest_data,
-                        current_pool_data=current_pool_data.serialize()
+                        current_pool_data=current_pool_data.serialize_to_json()
                     )
 
                 else:
@@ -153,7 +153,7 @@ class Workspace(_Workspace):
                         self.guestname,
                         current_state=GuestState.PROMISED,
                         set_values=new_guest_data,
-                        current_pool_data=current_pool_data.serialize(),
+                        current_pool_data=current_pool_data.serialize_to_json(),
                         delay=KNOB_DISPATCH_PREPARE_DELAY.value
                     )
 

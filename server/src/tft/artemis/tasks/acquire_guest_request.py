@@ -68,7 +68,7 @@ class Workspace(_Workspace):
                 # save guest's address. In both cases, we must be sure nobody else did any changes before us.
 
                 new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
-                    'pool_data': provisioning_progress.pool_data.serialize()
+                    'pool_data': provisioning_progress.pool_data.serialize_to_json()
                 }
 
                 if provisioning_progress.ssh_info is not None:
@@ -94,7 +94,7 @@ class Workspace(_Workspace):
                     current_state=GuestState.PROVISIONING,
                     set_values=new_guest_values,
                     pool=self.gr.poolname,
-                    pool_data=provisioning_progress.pool_data.serialize(),
+                    pool_data=provisioning_progress.pool_data.serialize_to_json(),
                     delay=provisioning_progress.delay_update
                 )
 
@@ -104,7 +104,10 @@ class Workspace(_Workspace):
                     # be tracked.
                     return
 
-                self._progress('scheduled update')
+                self._progress(
+                    'pool-resources-requested',
+                    pool_data=provisioning_progress.pool_data.serialize()
+                )
 
             elif provisioning_progress.state == ProvisioningState.CANCEL:
                 self._progress('provisioning cancelled')
@@ -146,7 +149,7 @@ class Workspace(_Workspace):
                         address=provisioning_progress.address,
                         set_values=new_guest_values,
                         pool=self.gr.poolname,
-                        pool_data=provisioning_progress.pool_data.serialize()
+                        pool_data=provisioning_progress.pool_data.serialize_to_json()
                     )
 
                 else:
@@ -161,7 +164,7 @@ class Workspace(_Workspace):
                         address=provisioning_progress.address,
                         set_values=new_guest_values,
                         pool=self.gr.poolname,
-                        current_pool_data=provisioning_progress.pool_data.serialize(),
+                        current_pool_data=provisioning_progress.pool_data.serialize_to_json(),
                         delay=KNOB_DISPATCH_PREPARE_DELAY.value
                     )
 
