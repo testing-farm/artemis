@@ -626,8 +626,11 @@ class PoolData:
     def is_empty(cls, guest_request: GuestRequest) -> bool:
         return guest_request.pool_data == json.dumps({})
 
-    def serialize(self) -> str:
-        return json.dumps(dataclasses.asdict(self))
+    def serialize(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+    def serialize_to_json(self) -> str:
+        return json.dumps(self.serialize())
 
     @classmethod
     def unserialize(cls: Type[T], guest_request: GuestRequest) -> T:
