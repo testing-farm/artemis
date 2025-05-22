@@ -599,6 +599,7 @@ def policy_prefer_dedicated_instances(
     """
     return _prefer_spot_or_dedicated_instances(pools, guest_request, False)
 
+
 @policy_boilerplate
 def policy_use_spot_instances(
     logger: gluetool.log.ContextAdapter,
