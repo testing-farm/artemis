@@ -1635,8 +1635,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if r_uses_hostname.unwrap() is True:
                     return Ok(CanAcquire.cannot('hostname HW constraint not supported'))
 
-        if guest_request.environment.has_ks_specification:
-            if not capabilities.supports_native_kickstart and guest_request.skip_prepare_verify_ssh:
+        # Validate kickstart installation pre-requisites when the pool does not support kickstart natively
+        if guest_request.environment.has_ks_specification and not capabilities.supports_native_kickstart:
+            if guest_request.skip_prepare_verify_ssh:
                 return Ok(CanAcquire.cannot('SSH access is required to perform non-native kickstart installation'))
 
             if guest_request.environment.kickstart.metadata is not None and any(
