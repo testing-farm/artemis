@@ -179,6 +179,7 @@ class BkrErrorCauses(PoolErrorCauses):
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     NO_DISTRO_MATCHES_RECIPE = 'no-distro-matches-recipe'
+    NO_SYSTEM_MATCHES_RECIPE = 'no-system-matches-recipe'
 
     JOB_FAILED = 'job-failed'
     JOB_ABORTED = 'job-aborted'
@@ -188,8 +189,19 @@ class BkrErrorCauses(PoolErrorCauses):
 
 
 CLI_ERROR_PATTERNS = {
-    BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE: re.compile(r'^Exception: .+:No distro tree matches Recipe:')
+    BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE: re.compile(r'^Exception: .+:No distro tree matches Recipe:'),
+    BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE: re.compile(r'^Recipe ID \d+ does not match any systems')
 }
+
+
+def error_cause_extractor(text: str) -> BkrErrorCauses:
+    for cause, pattern in CLI_ERROR_PATTERNS.items():
+        if not pattern.match(text):
+            continue
+
+        return cause
+
+    return BkrErrorCauses.NONE
 
 
 def bkr_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> BkrErrorCauses:
@@ -202,13 +214,7 @@ def bkr_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> BkrErrorC
     if stderr is None:
         return BkrErrorCauses.NONE
 
-    for cause, pattern in CLI_ERROR_PATTERNS.items():
-        if not pattern.match(stderr):
-            continue
-
-        return cause
-
-    return BkrErrorCauses.NONE
+    return error_cause_extractor(stderr)
 
 
 @dataclasses.dataclass
@@ -248,6 +254,8 @@ class JobTaskResult:
     phasename: Optional[str] = None
     phase_result: Optional[str] = None
 
+    message: Optional[str] = None
+
 
 def parse_job_task_results(
     logger: gluetool.log.ContextAdapter,
@@ -271,7 +279,8 @@ def parse_job_task_results(
                     task_result=task_element['result'],
                     task_status=task_element['status'],
                     phasename=task_result_element['path'],
-                    phase_result=task_result_element['result']
+                    phase_result=task_result_element['result'],
+                    message=task_result_element.string or None
                 ))
 
         else:
@@ -1822,7 +1831,7 @@ class BeakerDriver(PoolDriver):
             logger.info,
             f'current job status {guest_request.pool_data.mine(self, BeakerPoolData).job_id}:{job_result}:{job_status}',
             [
-                ['Task', 'Result', 'Status', 'Phase', 'Phase result']
+                ['Task', 'Result', 'Status', 'Phase', 'Phase result', 'Message']
             ] + [
                 [item or '' for item in dataclasses.astuple(job_task_result)]
                 for job_task_result in job_task_results
@@ -1934,7 +1943,7 @@ class BeakerDriver(PoolDriver):
                 return Error(r_failed_avc_patterns.unwrap_error())
 
             matchable_job_task_results: List[str] = [
-                f'{result.taskname}:{result.task_result}:{result.task_status}:{result.phasename or ""}:{result.phase_result or ""}'  # noqa: E501
+                f'{result.taskname}:{result.task_result}:{result.task_status}:{result.phasename or ""}:{result.phase_result or ""}:{result.message or ""}'  # noqa: E501
                 for result in job_task_results
             ]
 
@@ -1975,6 +1984,15 @@ class BeakerDriver(PoolDriver):
                         )],
                         address=r_guest_address.unwrap()
                     ))
+
+            if any(
+                error_cause_extractor(result.message) == BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
+                for result in job_task_results
+                if result.message
+            ):
+                logger.warning('no system matches recipe')
+
+                job_failed = BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
 
             PoolMetrics.inc_aborts(
                 self.poolname,
