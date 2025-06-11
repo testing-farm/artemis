@@ -27,12 +27,13 @@ from ..environment import (
     FlavorVirtualization,
 )
 from ..knobs import Knob
-from ..metrics import PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
+from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
     GuestTagsType,
     HookImageInfoMapper,
+    PoolErrorCauses,
     PoolImageSSHInfo,
     ProvisioningProgress,
     ProvisioningState,
@@ -68,6 +69,12 @@ IBMCLOUD_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'floating-ip': ResourceType.STATIC_IP,
     'security-group': ResourceType.SECURITY_GROUP
 }
+
+
+class IBMCloudVPCErrorCauses(PoolErrorCauses):
+    NONE = 'none'
+
+    UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
 
 
 # Limits imposed on tags in IBM VPC cloud.
@@ -910,6 +917,8 @@ class IBMCloudVPCDriver(PoolDriver):
             ))
 
         # Let's consider all other states as something unexpected and thus a failure
+        PoolMetrics.inc_error(self.poolname, IBMCloudVPCErrorCauses.UNEXPECTED_INSTANCE_STATE)
+
         return Ok(ProvisioningProgress(
             state=ProvisioningState.CANCEL,
             pool_data=pool_data,

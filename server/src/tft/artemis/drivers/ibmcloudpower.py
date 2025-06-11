@@ -16,12 +16,13 @@ from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest
 from ..environment import UNITS, And, Constraint, ConstraintBase, Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
-from ..metrics import PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
+from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
     HookImageInfoMapper,
     PoolCapabilities,
+    PoolErrorCauses,
     PoolImageSSHInfo,
     ProvisioningProgress,
     ProvisioningState,
@@ -64,6 +65,12 @@ class APIImageType(TypedDict):
     href: str
     imageID: str
     specifications: Dict[str, Any]
+
+
+class IBMCloudPowerErrorCauses(PoolErrorCauses):
+    NONE = 'none'
+
+    UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
 
 
 class IBMCloudPowerSession(IBMCloudSession):
@@ -632,6 +639,8 @@ class IBMCloudPowerDriver(PoolDriver):
                 pool_data=pool_data,
                 address=ip_address
             ))
+
+        PoolMetrics.inc_error(self.poolname, IBMCloudPowerErrorCauses.UNEXPECTED_INSTANCE_STATE)
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState.CANCEL,
