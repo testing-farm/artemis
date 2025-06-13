@@ -5,6 +5,7 @@ import inspect
 import logging
 import os
 import re
+import textwrap
 from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Optional, Pattern, Tuple, TypeVar, cast
 
 import gluetool.log
@@ -928,6 +929,29 @@ KNOB_HTTP_TIMEOUT: Knob[int] = Knob(
     envvar='ARTEMIS_HTTP_TIMEOUT',
     cast_from_str=int,
     default=60
+)
+
+KNOB_GUEST_REQUEST_RESOURCE_DIGEST_TEMPLATE: Knob[str] = Knob(
+    'guest_request.resource-digest-template',
+    """
+    A template for guest request summary information attached to resource tracking events.
+    """,
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_GUEST_REQUEST_RESOURCE_DIGEST_TEMPLATE',
+    cast_from_str=str,
+    default=textwrap.dedent(
+        """
+        guestname: {{ GUEST_REQUEST.guestname | quote }}
+        compose: {{ GUEST_REQUEST.environment.os.compose | quote }}
+        arch: {{ GUEST_REQUEST.environment.hw.arch | quote }}
+        has-constraints: {{ GUEST_REQUEST.environment.has_hw_constraints | string | lower }}
+        has-kickstart: {{ GUEST_REQUEST.environment.has_ks_specification | string | lower }}
+        pool: {{ GUEST_REQUEST.environment.pool | quote }}
+
+        BusinessUnit: {{ GUEST_REQUEST.user_data.BusinessUnit | default("") | quote }}
+        """
+    )
 )
 
 

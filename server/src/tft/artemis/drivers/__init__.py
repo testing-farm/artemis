@@ -733,6 +733,9 @@ SerializedPoolResourcesIDs = str
 #: Used to serialize ``datetime`` instances that are part of ``PoolResourcesIDs``.
 RESOURCE_CTIME_FMT: str = '%Y-%m-%dT%H:%M:%S.%f'
 
+#: Used to label resource allocation/release events for resource accounting.
+PoolResourceGuestRequestDigest = Dict[str, Union[str, int, bool]]
+
 
 @dataclasses.dataclass
 class PoolResourcesIDs(SerializableContainer):
@@ -742,6 +745,9 @@ class PoolResourcesIDs(SerializableContainer):
     Serves as a base class for pool-specific implementations that add the actual fields for resources and IDs.
     """
 
+    guest_request_digest: PoolResourceGuestRequestDigest = dataclasses.field(
+        default_factory=dict
+    )
     ctime: Optional[datetime.datetime] = None
 
     def is_empty(self) -> bool:
@@ -1647,8 +1653,19 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
             delay = r_delay.unwrap()
 
+        guest_request_digest: PoolResourceGuestRequestDigest = {}
+
+        if guest_request is not None:
+            r_digest = guest_request.resource_digest()
+
+            if r_digest.is_error:
+                return Error(r_digest.unwrap_error())
+
+            guest_request_digest = r_digest.unwrap()
+
         for resource_id in resource_ids:
             resource_id.ctime = guest_request.ctime if guest_request else None
+            resource_id.guest_request_digest = guest_request_digest
 
         # Local import, to avoid circular imports
         from ..tasks import _request_task, _request_task_sequence
@@ -1660,7 +1677,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 session,
                 release_pool_resources,
                 self.poolname,
-                resource_id.serialize_to_json(),
+                resource_ids[0].serialize_to_json(),
                 guest_request.guestname if guest_request else None,
                 delay=delay
             )
