@@ -2437,6 +2437,7 @@ class AWSDriver(PoolDriver):
                         spot_instance_id=pool_data.spot_instance_id,
                         security_group=pool_data.security_group,
                     ),
+                    newly_allocated_resources=AWSPoolData(instance_id=spot_instance['InstanceId']),
                     delay_update=r_delay.unwrap(),
                 )
             )

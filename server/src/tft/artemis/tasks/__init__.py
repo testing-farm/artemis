@@ -9,6 +9,7 @@ import datetime
 import enum
 import functools
 import inspect
+import json
 import os
 import random
 import threading
@@ -64,8 +65,11 @@ from ..db import (
     transaction,
 )
 from ..drivers import (
+    PoolData,
     PoolDriver,
     PoolLogger,
+    ResourceOwnerDigest,
+    SerializedPoolResourcesIDs,
     aws as aws_driver,
     azure as azure_driver,
     beaker as beaker_driver,
@@ -1858,6 +1862,56 @@ class Workspace:
         GuestRequest.log_event_by_guestname(
             self.logger, self.session, self.guestname, event, **self.spice_details, **details
         )
+
+    def _resource_event(
+        self, event: str, resource_owner_digest: Optional[ResourceOwnerDigest] = None, **details: Any
+    ) -> Result[None, Failure]:
+        if resource_owner_digest is None:
+            if self.gr is None:
+                failure = Failure(
+                    'cannot infere guest request resource owner digest without the guest request',
+                    guestname=self.guestname,
+                    eventname=event,
+                )
+
+                failure.handle(
+                    self.logger,
+                    label='failed to store resource event',
+                )
+
+                return Error(failure)
+
+            r_digest = self.gr.resource_owner_digest()
+
+            if r_digest.is_error:
+                r_digest.unwrap_error().handle(
+                    self.logger, label='failed to store resource event', guestname=self.guestname, eventname=event
+                )
+
+                return Error(r_digest.unwrap_error())
+
+            resource_owner_digest = r_digest.unwrap()
+
+        self._guest_request_event(f'resource-{event}', resource_owner_digest=resource_owner_digest, **details)
+
+        return Ok(None)
+
+    def allocated_resources(self, pool_data: PoolData) -> None:
+        self._resource_event('allocated', resource_ids=pool_data.serialize())
+
+    def released_resources(self, serialized_resource_ids: SerializedPoolResourcesIDs) -> None:
+        # We cannot use `PoolResourcesIDs.unserialize_from_json` because we have a custom, pool-specific content,
+        # and the base class does not understand all the custom fields.
+        resource_ids = json.loads(serialized_resource_ids)
+
+        log_dict_yaml(self.logger.warning, 'released_resources', resource_ids)
+
+        resource_owner_digest = resource_ids.pop('resource_owner_digest')
+        resource_ids.pop('ctime')
+
+        log_dict_yaml(self.logger.warning, 'released_resources - pruned', resource_ids)
+
+        self._resource_event('released', resource_owner_digest=resource_owner_digest, resource_ids=resource_ids)
 
     @contextlib.contextmanager
     def transaction(self) -> Generator[TransactionResult, None, None]:

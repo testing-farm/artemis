@@ -55,11 +55,11 @@ from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 
 from .guest import GuestState
-from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password
+from .knobs import KNOB_GUEST_REQUEST_RESOURCE_DIGEST_TEMPLATE, KNOB_LOGGING_DB_QUERIES, get_vault_password
 
 if TYPE_CHECKING:
     from . import Failure
-    from .drivers import PoolData, PoolDriver, SerializedPoolData
+    from .drivers import PoolData, PoolDriver, ResourceOwnerDigest, SerializedPoolData
     from .environment import Environment
     from .security_group_rules import SecurityGroupRule, SecurityGroupRules
     from .tasks import Actor, ActorArgumentType
@@ -926,6 +926,30 @@ class GuestRequest(Base):
         from .security_group_rules import SecurityGroupRules
 
         return SecurityGroupRules(ingress=self.security_group_rules_ingress, egress=self.security_group_rules_egress)
+
+    def resource_owner_digest(self) -> Result['ResourceOwnerDigest', 'Failure']:
+        """
+        Generate a mapping describing the given guest request as an owner of pool resources.
+        """
+
+        if self.poolname is None:
+            return Error(
+                Failure('cannot construct guest request resource digest for unknown pool', guestname=self.guestname)
+            )
+
+        r_template = KNOB_GUEST_REQUEST_RESOURCE_DIGEST_TEMPLATE.get_value(entityname=self.poolname)
+
+        if r_template.is_error:
+            return Error(r_template.unwrap_error())
+
+        from . import get_yaml, render_template, safe_call, template_environment
+
+        r_digest = render_template(r_template.unwrap(), **template_environment(self))
+
+        if r_digest.is_error:
+            return Error(r_digest.unwrap_error())
+
+        return safe_call(get_yaml().load, r_digest.unwrap())
 
     # This is tricky:
     # * we want to keep `nullable=False`, because `ctime` cannot ever be set to `NULL`. That way we're not forced

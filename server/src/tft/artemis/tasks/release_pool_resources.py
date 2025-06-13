@@ -78,6 +78,8 @@ class Workspace(_Workspace):
 
                 return self._reschedule()
 
+            self.released_resources(self.serialized_resource_ids)
+
             self._progress('released')
 
     @classmethod

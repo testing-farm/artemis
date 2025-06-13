@@ -81,6 +81,8 @@ class Workspace(_Workspace):
                 )
 
             if provisioning_progress.state == ProvisioningState.PENDING:
+                self.allocated_resources(provisioning_progress.pool_data)
+
                 from .update_guest_request import update_guest_request
 
                 self.update_guest_state_and_request_task(
@@ -124,6 +126,8 @@ class Workspace(_Workspace):
                     self._reschedule()
 
             else:
+                self.allocated_resources(provisioning_progress.pool_data)
+
                 assert provisioning_progress.address
 
                 self._progress('address-assigned', address=provisioning_progress.address)

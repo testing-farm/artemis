@@ -103,6 +103,9 @@ class Workspace(_Workspace):
             if provisioning_progress.state == ProvisioningState.PENDING:
                 self._progress('pending')
 
+                if provisioning_progress.newly_allocated_resources is not None:
+                    self.allocated_resources(provisioning_progress.newly_allocated_resources)
+
                 self.update_guest_state_and_request_task(
                     GuestState.PROMISED,
                     update_guest_request,
@@ -129,6 +132,9 @@ class Workspace(_Workspace):
 
             elif provisioning_progress.state == ProvisioningState.COMPLETE:
                 self._progress('address-assigned', address=provisioning_progress.address)
+
+                if provisioning_progress.newly_allocated_resources is not None:
+                    self.allocated_resources(provisioning_progress.newly_allocated_resources)
 
                 # Running verify-ssh step is optional - user might have requested us to skip the step.
                 if skip_prepare_verify_ssh:
