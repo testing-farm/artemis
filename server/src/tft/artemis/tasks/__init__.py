@@ -64,8 +64,12 @@ from ..db import (
     transaction,
 )
 from ..drivers import (
+    PoolData,
     PoolDriver,
     PoolLogger,
+    PoolResourcesIDs,
+    ResourceOwnerDigest,
+    SerializedPoolResourcesIDs,
     aws as aws_driver,
     azure as azure_driver,
     beaker as beaker_driver,
@@ -2044,6 +2048,67 @@ class Workspace:
             event,
             **self.spice_details,
             **details
+        )
+
+    def _resource_event(
+        self,
+        event: str,
+        resource_owner_digest: Optional[ResourceOwnerDigest] = None,
+        **details: Any
+    ) -> Result[None, Failure]:
+        if resource_owner_digest is None:
+            if self.gr is None:
+                failure = Failure(
+                    'cannot infere guest request resource owner digest without the guest request',
+                    guestname=self.guestname,
+                    eventname=event
+                )
+
+                failure.handle(
+                    self.logger,
+                    label='failed to store resource event',
+                )
+
+                return Error(failure)
+
+            r_digest = self.gr.resource_owner_digest()
+
+            if r_digest.is_error:
+                r_digest.unwrap_error().handle(
+                    self.logger,
+                    label='failed to store resource event',
+                    guestname=self.guestname,
+                    eventname=event
+                )
+
+                return Error(r_digest.unwrap_error())
+
+            resource_owner_digest = r_digest.unwrap()
+
+        self._guest_request_event(
+            f'resource-{event}',
+            resource_owner_digest=resource_owner_digest,
+            **details
+        )
+
+        return Ok(None)
+
+    def allocated_resources(self, pool_data: PoolData) -> None:
+        self._resource_event(
+            'allocated',
+            resource_ids=pool_data.serialize()
+        )
+
+    def released_resources(
+        self,
+        serialized_resource_ids: SerializedPoolResourcesIDs
+    ) -> None:
+        resource_ids = PoolResourcesIDs.unserialize_from_json(serialized_resource_ids)
+
+        self._resource_event(
+            'released',
+            resource_owner_digest=resource_ids.resource_owner_digest or None,
+            resource_ids=resource_ids.serialize_to_json()
         )
 
     @contextlib.contextmanager
