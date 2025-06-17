@@ -585,7 +585,8 @@ class AzureDriver(PoolDriver):
         resource_ids: List[AzurePoolResourcesIDs] = []
 
         if pool_data.instance_id is not None:
-            resource_ids.append(AzurePoolResourcesIDs(instance_id=pool_data.instance_id))
+            resource_ids.append(AzurePoolResourcesIDs(instance_id=pool_data.instance_id,
+                                                      resource_group=pool_data.resource_group))
 
         with AzureSession(logger, self) as az_session:
             r_tagged_resources = az_session.run_az(
