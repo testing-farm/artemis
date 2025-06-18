@@ -433,23 +433,26 @@ class AzureDriver(PoolDriver):
                     if r_remove_resource_group.is_error:
                         return Error(Failure.from_failure('failed to remove resource group',
                                                           r_remove_resource_group.unwrap_error()))
-                # storage containers used for console log have to be cleaned up separately - they belong to a different
-                # resource group and can't be tagged out of the box so need special treatment
-                if resource_ids.boot_log_container is not None:
-                    r_remove_storage = session.run_az(
-                        logger,
-                        [
-                            'storage', 'container-rm', 'delete',
-                            '--name', resource_ids.boot_log_container,
-                            '--storage-account', self.pool_config['boot-log-storage'],
-                            '-y'
-                        ],
-                        json_format=False,
-                        commandname='az.storage-container-rm',
-                    )
-                    if r_remove_storage.is_error:
-                        return Error(Failure.from_failure('failed to remove storage container for boot logs',
-                                                          r_remove_storage.unwrap_error()))
+
+        # storage containers used for console log have to be cleaned up separately - they belong to a different
+        # resource group and can't be tagged out of the box so need special treatment
+        if resource_ids.boot_log_container is not None:
+            with AzureSession(logger, self) as session:
+                r_remove_storage = session.run_az(
+                    logger,
+                    [
+                        'storage', 'container-rm', 'delete',
+                        '--name', resource_ids.boot_log_container,
+                        '--storage-account', self.pool_config['boot-log-storage'],
+                        '-y'
+                    ],
+                    json_format=False,
+                    commandname='az.storage-container-rm',
+                )
+                if r_remove_storage.is_error:
+                    return Error(Failure.from_failure('failed to remove storage container for boot logs',
+                                                      r_remove_storage.unwrap_error()))
+                # TODO(ivasilev) Start tracking blobs usage?
 
         if resource_ids.instance_id is not None:
             if resource_group == self.pool_config.get('guest-resource-group'):
