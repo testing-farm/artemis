@@ -660,6 +660,39 @@ until cancelled and reprovisioned.
 
 5+|A pattern for guest resource group name
 
+|`beaker.command-timeout.kill`
+|`int`
+|`ARTEMIS_BEAKER_BKR_TIMEOUT_KILL`
+|`10`
+|no
+
+
+|`beaker.command-timeout.kill:$entityname`
+|
+|`ARTEMIS_BEAKER_BKR_TIMEOUT_KILL_$entityname`
+|
+|
+
+
+5+|If a `bkr` command does not terminate after being sent `SIGTERM`, `SIGKILL` will be sent after this many seconds.
+
+|`beaker.command-timeout.termination`
+|`int`
+|`ARTEMIS_BEAKER_BKR_TIMEOUT_TERMINATION`
+|`120`
+|no
+
+
+|`beaker.command-timeout.termination:$entityname`
+|
+|`ARTEMIS_BEAKER_BKR_TIMEOUT_TERMINATION_$entityname`
+|
+|
+
+
+5+|Timeout for all `bkr` commands executed by the driver. After this many seconds, `bkr` command will be sent
+`SIGTERM`.
+
 |`beaker.guest-watchdog.ssh.connect-timeout`
 |`int`
 |`ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT`
