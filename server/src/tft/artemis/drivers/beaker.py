@@ -159,6 +159,31 @@ KNOB_INSTALLATION_TIMEOUT: Knob[int] = Knob(
     default=1800
 )
 
+KNOB_BKR_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
+    'beaker.command-timeout.termination',
+    """
+    Timeout for all `bkr` commands executed by the driver. After this many seconds, `bkr` command will be sent
+    `SIGTERM`.
+    """,
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_BEAKER_BKR_TIMEOUT_TERMINATION',
+    cast_from_str=int,
+    default=120
+)
+
+KNOB_BKR_COMMAND_KILL_TIMEOUT: Knob[int] = Knob(
+    'beaker.command-timeout.kill',
+    """
+    If a `bkr` command does not terminate after being sent `SIGTERM`, `SIGKILL` will be sent after this many seconds.
+    """,
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_BEAKER_BKR_TIMEOUT_KILL',
+    cast_from_str=int,
+    default=10
+)
+
 
 class BkrErrorCauses(PoolErrorCauses):
     NONE = 'none'
@@ -1203,11 +1228,15 @@ class BeakerDriver(PoolDriver):
         """
 
         bkr_command: List[str] = [
-            'bkr'
+            'timeout',
+            '--preserve-status',
+            '--kill-after', str(KNOB_BKR_COMMAND_KILL_TIMEOUT.get_value(entityname=self.poolname)),
+            '--signal', 'SIGTERM',
+            str(KNOB_BKR_COMMAND_TERMINATION_TIMEOUT.get_value(entityname=self.poolname)),
+            'bkr',
+            # Subcommand is the first item of `options`...
+            options[0]
         ]
-
-        # Subcommand is the first item of `options`...
-        bkr_command += [options[0]]
 
         if self.pool_config.get('username') and self.pool_config.get('password'):
             bkr_command += [
