@@ -200,7 +200,7 @@ def bkr_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> BkrErrorC
 
 @dataclasses.dataclass
 class BeakerPoolData(PoolData):
-    job_id: str
+    job_id: Optional[str] = None
 
 
 @dataclasses.dataclass
@@ -1774,7 +1774,12 @@ class BeakerDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_job_results = self._get_job_results(logger, guest_request.pool_data.mine(self, BeakerPoolData).job_id)
+        pool_data = guest_request.pool_data.mine(self, BeakerPoolData)
+
+        if pool_data.job_id is None:
+            return Error(Failure('guest request update without job ID'))
+
+        r_job_results = self._get_job_results(logger, pool_data.job_id)
 
         if r_job_results.is_error:
             return Error(r_job_results.unwrap_error())
@@ -2350,7 +2355,12 @@ class BeakerDriver(PoolDriver):
         :returns: log URL, ``None`` when no such log was found, or a :py:class:`Failure` describing an error.
         """
 
-        r_job_results = self._get_job_results(logger, guest_request.pool_data.mine(self, BeakerPoolData).job_id)
+        pool_data = guest_request.pool_data.mine(self, BeakerPoolData)
+
+        if pool_data.job_id is None:
+            return Ok(None)
+
+        r_job_results = self._get_job_results(logger, pool_data.job_id)
 
         if r_job_results.is_error:
             return Error(r_job_results.unwrap_error())

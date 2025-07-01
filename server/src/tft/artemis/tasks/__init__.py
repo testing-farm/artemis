@@ -2656,7 +2656,13 @@ class ProvisioningTailHandler(TailHandler):
 
         assert workspace.gr
 
-        if workspace.gr.poolname and not workspace.gr.pool_data.is_empty(workspace.gr.poolname):
+        set_values: GuestFieldStates = {
+            'poolname': None,
+            'last_poolname': workspace.gr.poolname,
+            'address': None
+        }
+
+        if workspace.gr.poolname:
             workspace.spice_details['poolname'] = workspace.gr.poolname
 
             workspace.load_gr_pool()
@@ -2666,8 +2672,13 @@ class ProvisioningTailHandler(TailHandler):
 
             assert workspace.pool
 
-            # Don't release the guests if preserve-for-investigation is set
-            if not workspace.pool.preserve_for_investigation:
+            pool_data = workspace.gr.pool_data.mine(
+                workspace.pool,
+                workspace.pool.pool_data_class
+            )
+
+            # Release guest and its resources but only if pool is not asked to keep resources allocated.
+            if not pool_data.is_empty and not workspace.pool.preserve_for_investigation:
                 r_release = workspace.pool.release_guest(logger, workspace.session, workspace.gr)
 
                 if r_release.is_error:
@@ -2675,14 +2686,10 @@ class ProvisioningTailHandler(TailHandler):
 
                     return RESCHEDULE
 
-        set_values: GuestFieldStates = {
-            'poolname': None,
-            'last_poolname': workspace.gr.poolname,
-            'address': None
-        }
-
-        if workspace.gr.poolname:
-            set_values['_pool_data'] = workspace.gr.pool_data.reset(workspace.gr.poolname)
+            set_values['_pool_data'] = workspace.gr.pool_data.reset(
+                workspace.gr.poolname,
+                pool_data
+            )
 
         if self.new_state == GuestState.SHELF_LOOKUP:
             from .guest_shelf_lookup import guest_shelf_lookup
