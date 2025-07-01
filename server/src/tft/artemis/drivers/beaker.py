@@ -23,7 +23,7 @@ from gluetool.utils import ProcessOutput
 from returns.pipeline import is_successful
 from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import Operator
-from typing_extensions import TypedDict, override
+from typing_extensions import Self, TypedDict, override
 
 from .. import (
     Failure,
@@ -299,6 +299,25 @@ class BeakerPoolData(PoolData):
     job_id: Optional[str] = None
     is_bootc: Optional[bool] = None
     avoid_hostnames: list[str] = dataclasses.field(default_factory=list)
+
+    #: Collection of hostnames to avoid in future provisioning attempts.
+    avoid_hostnames: list[str] = dataclasses.field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return self.job_id is None
+
+    def reset(self) -> Self:
+        return dataclasses.replace(self, job_id=None)
+
+    def record_avoid_hostname(self, hostname: Optional[str]) -> None:
+        if hostname is None:
+            return
+
+        if hostname in self.avoid_hostnames:
+            return
+
+        self.avoid_hostnames.append(hostname)
 
 
 @dataclasses.dataclass
@@ -1847,22 +1866,6 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         return Ok((job['result'].lower(), job['status'].lower(), job_results.find('recipe').attrs.get('system')))
 
-    def _parse_guest_address(
-        self, logger: gluetool.log.ContextAdapter, job_results: bs4.BeautifulSoup
-    ) -> Result[str, Failure]:
-        """
-        Parse job results and return guest address
-
-        :param bs4.BeautifulSoup job_results: Job results in xml format.
-        :rtype: result.Result[str, Failure]
-        :returns: :py:class:`result.Result` with guest address, or specification of error.
-        """
-
-        if not job_results.find('recipe')['system']:
-            return Error(Failure('System element was not found in job results', job_results=job_results.prettify()))
-
-        return Ok(job_results.find('recipe')['system'])
-
     def _analyze_beaker_logs(
         self, log_urls: list[str], patterns: list[Pattern[str]]
     ) -> Result[Optional[list[str]], Failure]:
@@ -1901,16 +1904,14 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         if job_result != 'pass':
             return Ok(None)
 
-        r_guest_address = self._parse_guest_address(logger, job_results)
-
-        if r_guest_address.is_error:
-            return Error(r_guest_address.unwrap_error().update(**failure_details))
+        if system is None:
+            return Error(Failure('unknown hostname in successfull job', **failure_details))
 
         return Ok(
             ProvisioningProgress(
                 state=ProvisioningState.COMPLETE,
-                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                address=r_guest_address.unwrap(),
+                pool_data=pool_data,
+                address=system,
             )
         )
 
@@ -1954,10 +1955,12 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             failures = r_is_failed.unwrap()
 
             if failures:
+                pool_data.record_avoid_hostname(system)
+
                 return Ok(
                     ProvisioningProgress(
                         state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                        pool_data=pool_data,
                         pool_failures=[Failure('beaker job failed', failures=failures, **failure_details)],
                     )
                 )
@@ -1980,6 +1983,8 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             # We need the check for None as the installation might not have started yet but the state is already
             # marked as installing and there is not installation start time.
             if install_started is not None and (now - install_started).total_seconds() > r_install_timeout.unwrap():
+                pool_data.record_avoid_hostname(system)
+
                 PoolMetrics.inc_aborts(
                     self.poolname,
                     system,
@@ -1991,7 +1996,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
                 return Ok(
                     ProvisioningProgress(
                         state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                        pool_data=pool_data,
                         pool_failures=[Failure('installation did not finish in time', **failure_details)],
                     )
                 )
@@ -1999,7 +2004,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         return Ok(
             ProvisioningProgress(
                 state=ProvisioningState.PENDING,
-                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                pool_data=pool_data,
             )
         )
 
@@ -2054,19 +2059,15 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         ):
             return Ok(None)
 
-        r_guest_address = self._parse_guest_address(logger, job_results)
-
-        if r_guest_address.is_error:
-            return Error(r_guest_address.unwrap_error().update(**failure_details))
+        pool_data.record_avoid_hostname(system)
 
         logger.info('ignoring AVC denials during installation')
 
         return Ok(
             ProvisioningProgress(
                 state=ProvisioningState.COMPLETE,
-                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                pool_data=pool_data,
                 pool_failures=[Failure('AVC denials during installation', **failure_details)],
-                address=r_guest_address.unwrap(),
             )
         )
 
@@ -2217,7 +2218,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         log_table(
             logger.info,
-            f'current job status {guest_request.pool_data.mine(self, BeakerPoolData).job_id}:{job_result}:{job_status}',
+            f'current job status {pool_data.job_id}:{job_result}:{job_status}',
             [['Task', 'Result', 'Status', 'Phase', 'Phase result', 'Message']]
             + [[item or '' for item in dataclasses.astuple(job_task_result)] for job_task_result in job_task_results],
             headers='firstrow',
