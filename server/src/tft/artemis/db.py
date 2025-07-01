@@ -7,7 +7,6 @@ import datetime
 import enum
 import functools
 import hashlib
-import json
 import secrets
 import threading
 import time
@@ -1145,7 +1144,7 @@ class GuestRequest(Base):
             state_mtime=datetime.datetime.utcnow(),
             poolname=None,
             last_poolname=None,
-            _pool_data=json.dumps({}),
+            _pool_data={},
             _on_ready=[(actor.actor_name, args) for actor, args in on_ready] if on_ready is not None else on_ready,
             _security_group_rules_ingress=([rule.serialize() for rule in security_group_rules_ingress]
                                            if security_group_rules_ingress else None),
