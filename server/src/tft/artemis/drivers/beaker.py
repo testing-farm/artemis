@@ -17,7 +17,7 @@ import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter, log_table, log_xml
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import ProcessOutput
-from typing_extensions import TypedDict
+from typing_extensions import Self, TypedDict
 
 from .. import (
     Failure,
@@ -220,6 +220,16 @@ def bkr_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> BkrErrorC
 @dataclasses.dataclass
 class BeakerPoolData(PoolData):
     job_id: Optional[str] = None
+
+    #: Collection of hostnames to avoid in future provisioning attempts.
+    avoid_hostnames: List[str] = dataclasses.field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return self.job_id is None
+
+    def reset(self) -> Self:
+        return dataclasses.replace(self, job_id=None)
 
 
 @dataclasses.dataclass
@@ -1468,6 +1478,8 @@ class BeakerDriver(PoolDriver):
         :returns: :py:class:`result.Result` with job xml, or specification of error.
         """
 
+        pool_data = guest_request.pool_data.mine(self, BeakerPoolData)
+
         r_avoid_hostnames = self.avoid_hostnames
 
         if r_avoid_hostnames.is_error:
@@ -1483,7 +1495,7 @@ class BeakerDriver(PoolDriver):
             guest_request,
             self,
             r_avoid_groups.unwrap(),
-            r_avoid_hostnames.unwrap()
+            r_avoid_hostnames.unwrap() + pool_data.avoid_hostnames
         )
 
         if r_beaker_filter.is_error:
@@ -1731,27 +1743,6 @@ class BeakerDriver(PoolDriver):
             )
         )
 
-    def _parse_guest_address(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        job_results: bs4.BeautifulSoup
-    ) -> Result[str, Failure]:
-        """
-        Parse job results and return guest address
-
-        :param bs4.BeautifulSoup job_results: Job results in xml format.
-        :rtype: result.Result[str, Failure]
-        :returns: :py:class:`result.Result` with guest address, or specification of error.
-        """
-
-        if not job_results.find('recipe')['system']:
-            return Error(Failure(
-                'System element was not found in job results',
-                job_results=job_results.prettify()
-            ))
-
-        return Ok(job_results.find('recipe')['system'])
-
     def _analyze_beaker_logs(
         self,
         log_urls: List[str],
@@ -1820,6 +1811,12 @@ class BeakerDriver(PoolDriver):
 
         job_result, job_status, system = r_job_status.unwrap()
 
+        failure_details: Dict[str, Any] = {
+            'job_result': job_result,
+            'job_status': job_status,
+            'job_results': job_results.prettify()
+        }
+
         r_job_task_results = parse_job_task_results(logger, job_results)
 
         if r_job_task_results.is_error:
@@ -1829,7 +1826,7 @@ class BeakerDriver(PoolDriver):
 
         log_table(
             logger.info,
-            f'current job status {guest_request.pool_data.mine(self, BeakerPoolData).job_id}:{job_result}:{job_status}',
+            f'current job status {pool_data.job_id}:{job_result}:{job_status}',
             [
                 ['Task', 'Result', 'Status', 'Phase', 'Phase result', 'Message']
             ] + [
@@ -1840,42 +1837,44 @@ class BeakerDriver(PoolDriver):
             tablefmt='psql')
 
         if job_result == 'pass':
-            r_guest_address = self._parse_guest_address(logger, job_results)
-
-            if r_guest_address.is_error:
-                return Error(r_guest_address.unwrap_error())
+            if not system:
+                return Error(Failure(
+                    'failed to extract guest address',
+                    **failure_details
+                ))
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.COMPLETE,
-                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                address=r_guest_address.unwrap()
+                pool_data=pool_data,
+                address=system
             ))
 
         if job_result == 'new':
             r_console_log = self._get_beaker_machine_log_url(logger, guest_request, "console.log")
             if r_console_log.is_error:
-                return Error(r_console_log.unwrap_error())
+                return Error(r_console_log.unwrap_error().update(**failure_details))
             # fetch console log, grab patterns
             r_failure_patterns = self.console_failure_patterns
             if r_failure_patterns.is_error:
-                return Error(r_failure_patterns.unwrap_error())
+                return Error(r_failure_patterns.unwrap_error().update(**failure_details))
             console_log = r_console_log.unwrap()
             failure_patterns = r_failure_patterns.unwrap()
             if console_log and failure_patterns:
                 r_is_failed = self._analyze_beaker_logs([console_log], failure_patterns)
                 if r_is_failed.is_error:
-                    return Error(r_is_failed.unwrap_error())
+                    return Error(r_is_failed.unwrap_error().update(**failure_details))
                 failures = r_is_failed.unwrap()
                 if failures:
+                    if system is not None and system not in pool_data.avoid_hostnames:
+                        pool_data.avoid_hostnames.append(system)
+
                     return Ok(ProvisioningProgress(
                         state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                        pool_data=pool_data,
                         pool_failures=[Failure(
                             'beaker job failed',
-                            job_result=job_result,
-                            job_status=job_status,
-                            job_results=job_results.prettify(),
-                            failures=failures
+                            failures=failures,
+                            **failure_details
                         )]
                     ))
 
@@ -1885,12 +1884,12 @@ class BeakerDriver(PoolDriver):
                 r_install_started = self._parse_recipe_install_start(logger, job_results)
 
                 if r_install_started.is_error:
-                    return Error(r_install_started.unwrap_error())
+                    return Error(r_install_started.unwrap_error().update(**failure_details))
 
                 r_install_timeout = KNOB_INSTALLATION_TIMEOUT.get_value(entityname=self.poolname, session=session)
 
                 if r_install_timeout.is_error:
-                    return Error(r_install_timeout.unwrap_error())
+                    return Error(r_install_timeout.unwrap_error().update(**failure_details))
 
                 install_started = r_install_started.unwrap()
 
@@ -1907,40 +1906,42 @@ class BeakerDriver(PoolDriver):
 
                     return Ok(ProvisioningProgress(
                         state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                        pool_data=pool_data,
                         pool_failures=[Failure(
                             'installation did not finish in time',
-                            job_result=job_result,
-                            job_status=job_status,
-                            job_results=job_results.prettify()
+                            **failure_details
                         )]
                     ))
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.PENDING,
-                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                pool_data=pool_data,
                 delay_update=r_delay.unwrap()
             ))
 
         job_failed: Optional[BkrErrorCauses] = None
+        avoid_hostname: bool = False
 
         if job_result == 'fail':
             job_failed = BkrErrorCauses.JOB_FAILED
+            avoid_hostname = True
 
         elif job_status == 'aborted':
             job_failed = BkrErrorCauses.JOB_ABORTED
+            avoid_hostname = True
 
         elif job_status == 'cancelled':
             job_failed = BkrErrorCauses.JOB_CANCELLED
 
         elif job_status == 'reserved' and job_result == 'warn':
             job_failed = BkrErrorCauses.JOB_RESERVED_WITH_WARNING
+            avoid_hostname = True
 
         if job_failed is not None:
             r_failed_avc_patterns = self.failed_avc_patterns
 
             if r_failed_avc_patterns.is_error:
-                return Error(r_failed_avc_patterns.unwrap_error())
+                return Error(r_failed_avc_patterns.unwrap_error().update(**failure_details))
 
             matchable_job_task_results: List[str] = [
                 f'{result.taskname}:{result.task_result}:{result.task_status}:{result.phasename or ""}:{result.phase_result or ""}:{result.message or ""}'  # noqa: E501
@@ -1960,29 +1961,28 @@ class BeakerDriver(PoolDriver):
                 r_ignore_avc_on_compose_pattern = self.ignore_avc_on_compose_pattern
 
                 if r_ignore_avc_on_compose_pattern.is_error:
-                    return Error(r_ignore_avc_on_compose_pattern.unwrap_error())
+                    return Error(r_ignore_avc_on_compose_pattern.unwrap_error().update(**failure_details))
 
                 ignore_avc_on_compose_pattern = r_ignore_avc_on_compose_pattern.unwrap()
 
                 if ignore_avc_on_compose_pattern \
                         and ignore_avc_on_compose_pattern.match(guest_request.environment.os.compose):
-                    r_guest_address = self._parse_guest_address(logger, job_results)
-
-                    if r_guest_address.is_error:
-                        return Error(r_guest_address.unwrap_error())
+                    if not system:
+                        return Error(Failure(
+                            'failed to extract guest address',
+                            **failure_details
+                        ))
 
                     logger.info('ignoring AVC denials during installation')
 
                     return Ok(ProvisioningProgress(
                         state=ProvisioningState.COMPLETE,
-                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                        pool_data=pool_data,
                         pool_failures=[Failure(
                             'AVC denials during installation',
-                            job_result=job_result,
-                            job_status=job_status,
-                            job_results=job_results.prettify()
+                            **failure_details
                         )],
-                        address=r_guest_address.unwrap()
+                        address=system
                     ))
 
             if any(
@@ -1994,6 +1994,9 @@ class BeakerDriver(PoolDriver):
 
                 job_failed = BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
 
+            if avoid_hostname and system is not None and system not in pool_data.avoid_hostnames:
+                pool_data.avoid_hostnames.append(system)
+
             PoolMetrics.inc_aborts(
                 self.poolname,
                 system,
@@ -2004,22 +2007,18 @@ class BeakerDriver(PoolDriver):
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                pool_data=pool_data,
                 pool_failures=[Failure(
                     'beaker job failed',
-                    job_result=job_result,
-                    job_status=job_status,
-                    job_results=job_results.prettify(),
                     cause=job_failed.value,
-                    system=system
+                    system=system,
+                    **failure_details
                 )]
             ))
 
         return Error(Failure(
             'unknown status',
-            job_result=job_result,
-            job_status=job_status,
-            job_results=job_results.prettify()
+            **failure_details
         ))
 
     def guest_watchdog(
