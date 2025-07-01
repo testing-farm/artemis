@@ -75,7 +75,7 @@ class Workspace(_Workspace):
 
             assert self.gr
 
-            if self.gr.poolname is None or self.gr.pool_data.is_empty(self.gr.poolname):
+            if self.gr.poolname is None:
                 return
 
             self.load_gr_pool()
@@ -85,6 +85,11 @@ class Workspace(_Workspace):
                 return
 
             assert self.pool
+
+            pool_data = self.gr.pool_data.mine(self.pool, self.pool.pool_data_class)
+
+            if pool_data.is_empty:
+                return
 
             if self.is_pool_enabled:
                 r = self.pool.guest_watchdog(self.logger, self.session, self.gr)

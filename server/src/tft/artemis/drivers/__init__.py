@@ -38,7 +38,7 @@ import gluetool.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
-from typing_extensions import Literal, Protocol, TypedDict
+from typing_extensions import Literal, Protocol, Self, TypedDict
 
 from .. import (
     Failure,
@@ -631,6 +631,28 @@ class PoolData:
     @classmethod
     def unserialize(cls: Type[T], serialized: SerializedPoolData) -> T:
         return cls(**serialized)
+
+    @property
+    def is_empty(self) -> bool:
+        """
+        Whether the container contains allocated resources.
+
+        The default implementation checks if all fields are unset. Drivers may override this to implement custom logic,
+        such as preserving certain tracking fields that shouldn't affect the "empty" determination.
+
+        :returns: True if no resources are allocated, False otherwise.
+        """
+
+        serialized = self.serialize()
+
+        return serialized == {} or all(not value for value in serialized.values())
+
+    def reset(self) -> Self:
+        """
+        Return an instance with all fields set to their defaults.
+        """
+
+        return type(self)()
 
 
 @dataclasses.dataclass
