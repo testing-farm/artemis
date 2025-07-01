@@ -1872,7 +1872,7 @@ class AWSDriver(PoolDriver):
         aws_options = [
             'ec2',
             'describe-instances',
-            f'--instance-id={AWSPoolData.unserialize(guest_request).instance_id}'
+            f'--instance-id={guest_request.pool_data.mine(self, AWSPoolData).instance_id}'
         ]
 
         r_output = self._aws_command(aws_options, key='Reservations', commandname='aws.ec2-describe-instances')
@@ -1910,7 +1910,7 @@ class AWSDriver(PoolDriver):
         aws_options = [
             'ec2',
             'describe-spot-instance-requests',
-            f'--spot-instance-request-ids={AWSPoolData.unserialize(guest_request).spot_instance_id}'
+            f'--spot-instance-request-ids={guest_request.pool_data.mine(self, AWSPoolData).spot_instance_id}'
         ]
 
         r_output = self._aws_command(
@@ -2498,7 +2498,7 @@ class AWSDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         assert pool_data.spot_instance_id is not None
 
@@ -2531,7 +2531,7 @@ class AWSDriver(PoolDriver):
 
                 return Ok(ProvisioningProgress(
                     state=ProvisioningState.CANCEL,
-                    pool_data=AWSPoolData.unserialize(guest_request),
+                    pool_data=guest_request.pool_data.mine(self, AWSPoolData),
                     pool_failures=[Failure('spot instance stuck in "open" for too long')]
                 ))
 
@@ -2542,7 +2542,7 @@ class AWSDriver(PoolDriver):
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=AWSPoolData.unserialize(guest_request),
+                pool_data=guest_request.pool_data.mine(self, AWSPoolData),
                 pool_failures=[Failure(
                     'spot instance terminated prematurely',
                     spot_instance_state=state,
@@ -2579,7 +2579,7 @@ class AWSDriver(PoolDriver):
 
         state = instance['State']['Name']
 
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         assert pool_data.instance_id is not None
 
@@ -2593,7 +2593,7 @@ class AWSDriver(PoolDriver):
 
             return Ok(ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=AWSPoolData.unserialize(guest_request),
+                pool_data=guest_request.pool_data.mine(self, AWSPoolData),
                 pool_failures=[Failure('instance terminated prematurely')]
             ))
 
@@ -2603,7 +2603,7 @@ class AWSDriver(PoolDriver):
 
                 return Ok(ProvisioningProgress(
                     state=ProvisioningState.CANCEL,
-                    pool_data=AWSPoolData.unserialize(guest_request),
+                    pool_data=guest_request.pool_data.mine(self, AWSPoolData),
                     pool_failures=[Failure('instance stuck in "pending" for too long')]
                 ))
 
@@ -2682,7 +2682,7 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         # If there is a spot instance request, check its state. If it's complete, the pool data would be updated
         # with freshly known instance ID - next time we're asked for update, we would proceed to check the state
@@ -2705,7 +2705,7 @@ class AWSDriver(PoolDriver):
         :param logger: logger to use for logging.
         :param guest_request: guest request to provision for.
         """
-        spot_instance_id = AWSPoolData.unserialize(guest_request).spot_instance_id
+        spot_instance_id = guest_request.pool_data.mine(self, AWSPoolData).spot_instance_id
         if spot_instance_id is None:
             # We are dealing with a non-spot instance that can't be terminated on demand by AWS
             return Ok(WatchdogState.COMPLETE)
@@ -2859,10 +2859,10 @@ class AWSDriver(PoolDriver):
         Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        if AWSPoolData.is_empty(guest_request):
-            return Ok(None)
+        pool_data = guest_request.pool_data.mine_or_none(self, AWSPoolData)
 
-        pool_data = AWSPoolData.unserialize(guest_request)
+        if not pool_data:
+            return Ok(None)
 
         resource_ids: List[AWSPoolResourcesIDs] = []
 
@@ -3211,7 +3211,7 @@ class AWSDriver(PoolDriver):
     ) -> Result[
             Union[Tuple[None, None], Tuple[datetime.datetime, Optional[str]]],
             Failure]:
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         # This can actually happen, spot instances may take some time to get the instance ID.
         if pool_data.instance_id is None:
@@ -3281,7 +3281,7 @@ class AWSDriver(PoolDriver):
         Update console.interactive/url guest log.
         """
 
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         # This can actually happen, spot instances may take some time to get the instance ID.
         if pool_data.instance_id is None:
@@ -3304,9 +3304,15 @@ class AWSDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[None, Failure]:
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine_or_none(self, AWSPoolData)
 
-        assert pool_data.instance_id is not None
+        if not pool_data:
+            return Ok(None)
+
+        if pool_data.instance_id is None:
+            return Error(Failure(
+                'failed to trigger instance reboot without instance ID'
+            ))
 
         r = self._aws_command([
             'ec2',

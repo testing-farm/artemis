@@ -1,8 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import datetime
-from typing import Dict, Union, cast
+from typing import cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -15,6 +14,7 @@ from . import (
     _ROOT_LOGGER,
     DoerReturnType,
     DoerType,
+    GuestFieldStates,
     GuestRequestWorkspace as _Workspace,
     ProvisioningTailHandler,
     TaskCall,
@@ -44,6 +44,7 @@ class Workspace(_Workspace):
 
             assert self.gr
             assert self.pool
+            assert self.gr.poolname
 
             if self.is_pool_enabled:
                 skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
@@ -66,9 +67,8 @@ class Workspace(_Workspace):
                 # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
                 # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
                 # save guest's address. In both cases, we must be sure nobody else did any changes before us.
-
-                new_guest_values: Dict[str, Union[str, int, None, datetime.datetime, GuestState]] = {
-                    'pool_data': provisioning_progress.pool_data.serialize_to_json()
+                new_guest_values: GuestFieldStates = {
+                    '_pool_data': self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data),
                 }
 
                 if provisioning_progress.ssh_info is not None:
@@ -94,7 +94,9 @@ class Workspace(_Workspace):
                     current_state=GuestState.PROVISIONING,
                     set_values=new_guest_values,
                     pool=self.gr.poolname,
-                    pool_data=provisioning_progress.pool_data.serialize_to_json(),
+                    pool_data=self.gr.pool_data.update(
+                        self.gr.poolname, provisioning_progress.pool_data
+                    ),
                     delay=provisioning_progress.delay_update
                 )
 
@@ -149,7 +151,10 @@ class Workspace(_Workspace):
                         address=provisioning_progress.address,
                         set_values=new_guest_values,
                         pool=self.gr.poolname,
-                        pool_data=provisioning_progress.pool_data.serialize_to_json()
+                        pool_data=self.gr.pool_data.update(
+                            self.gr.poolname,
+                            provisioning_progress.pool_data
+                        )
                     )
 
                 else:
@@ -164,7 +169,10 @@ class Workspace(_Workspace):
                         address=provisioning_progress.address,
                         set_values=new_guest_values,
                         pool=self.gr.poolname,
-                        current_pool_data=provisioning_progress.pool_data.serialize_to_json(),
+                        current_pool_data=self.gr.pool_data.update(
+                            self.gr.poolname,
+                            provisioning_progress.pool_data
+                        ),
                         delay=KNOB_DISPATCH_PREPARE_DELAY.value
                     )
 

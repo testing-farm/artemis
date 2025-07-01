@@ -277,7 +277,7 @@ def fixture_schema_initialized_actual(
         state=tft.artemis.guest.GuestState.READY,
         state_mtime=datetime.datetime.utcnow(),
         poolname='dummy-pool',
-        pool_data=json.dumps({}),
+        _pool_data=json.dumps({}),
         _on_ready=[]
     ))
 
@@ -301,7 +301,7 @@ def fixture_schema_initialized_actual(
         state=tft.artemis.guest.GuestState.SHELVED,
         state_mtime=datetime.datetime.utcnow(),
         poolname='dummy-pool',
-        pool_data=json.dumps({}),
+        _pool_data=json.dumps({}),
         _on_ready=None
     ))
 

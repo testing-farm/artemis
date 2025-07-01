@@ -546,7 +546,7 @@ class AzureDriver(PoolDriver):
 
         status = output['provisioningState'].lower()
 
-        pool_data = AzurePoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AzurePoolData)
 
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
@@ -578,10 +578,10 @@ class AzureDriver(PoolDriver):
         Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        if AzurePoolData.is_empty(guest_request):
-            return Ok(None)
+        pool_data = guest_request.pool_data.mine_or_none(self, AzurePoolData)
 
-        pool_data = AzurePoolData.unserialize(guest_request)
+        if not pool_data:
+            return Ok(None)
 
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
@@ -731,7 +731,7 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[Any, Failure]:
-        instance_id = AzurePoolData.unserialize(guest_request).instance_id
+        instance_id = guest_request.pool_data.mine(self, AzurePoolData).instance_id
 
         if not instance_id:
             return Error(Failure('Need an instance ID to fetch any information about a guest'))
@@ -1186,7 +1186,7 @@ class AzureDriver(PoolDriver):
         guest_request: GuestRequest
     ) -> Result[Dict[str, str], Failure]:
 
-        pool_data = AzurePoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AzurePoolData)
 
         if not self.pool_config.get('boot-log-storage'):
             return Error(Failure('Boot log storage container is not specified by the pool'))
@@ -1289,7 +1289,7 @@ class AzureDriver(PoolDriver):
 
         [1] https://learn.microsoft.com/en-us/azure/virtual-machines/boot-diagnostics
         """
-        pool_data = AzurePoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AzurePoolData)
         # No vm id -> no guest log
         if pool_data.vm_id is None:
             return Ok(GuestLogUpdateProgress(
@@ -1316,9 +1316,15 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[None, Failure]:
-        pool_data = AzurePoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine_or_none(self, AzurePoolData)
 
-        assert pool_data.instance_id is not None
+        if not pool_data:
+            return Ok(None)
+
+        if pool_data.instance_id is None:
+            return Error(Failure(
+                'failed to trigger instance reboot without instance ID'
+            ))
 
         with AzureSession(logger, self) as session:
             r_output = session.run_az(

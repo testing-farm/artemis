@@ -600,7 +600,7 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        instance_id = IBMCloudPoolData.unserialize(guest_request).instance_id
+        instance_id = guest_request.pool_data.mine(self, IBMCloudPoolData).instance_id
         if not instance_id:
             return Error(Failure('Need an instance id to fetch any information about a guest'))
 
@@ -614,7 +614,7 @@ class IBMCloudPowerDriver(PoolDriver):
         if not output:
             return Error(Failure('Server show commmand output is empty'))
 
-        pool_data = IBMCloudPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 
         status = output['status'].lower()
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
@@ -683,10 +683,10 @@ class IBMCloudPowerDriver(PoolDriver):
         Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        if IBMCloudPoolData.is_empty(guest_request):
-            return Ok(None)
+        pool_data = guest_request.pool_data.mine_or_none(self, IBMCloudPoolData)
 
-        pool_data = IBMCloudPoolData.unserialize(guest_request)
+        if not pool_data:
+            return Ok(None)
 
         # there should be a list of assorted vm resources, but given the fact there are no tags yet /
         # cumulative pi resources overview it will be empty
@@ -727,7 +727,7 @@ class IBMCloudPowerDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[None, Failure]:
-        pool_data = IBMCloudPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 
         assert pool_data.instance_id is not None
 
