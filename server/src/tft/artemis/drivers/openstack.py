@@ -768,6 +768,11 @@ class OpenStackDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
+        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
+
+        if pool_data.instance_id is None:
+            return Error(Failure('guest request update without instance ID'))
+
         os_options = [
             'server', 'image', 'create',
             '--name', snapshot_request.snapshotname,
