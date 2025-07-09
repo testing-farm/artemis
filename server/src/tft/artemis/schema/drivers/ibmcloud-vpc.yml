@@ -85,6 +85,9 @@ properties:
   installed-plugins-dir:
     type: string
 
+  resource-group:
+    type: string
+
 additionalProperties: false
 
 required:
