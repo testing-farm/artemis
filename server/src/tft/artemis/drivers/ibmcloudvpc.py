@@ -261,7 +261,14 @@ class IBMCloudVPCDriver(PoolDriver):
             arch_pattern: Optional[Pattern[str]] = None
 
             logger = self.logger
-            list_images_cmd = ['is', 'images', '--output', 'json']
+
+            # NOTE(ivasilev) Due to the newly discovered issue with ibmcloud cli crashing on listing 500+
+            # images without resource_group filter passed let's pass one now.
+            # That is not a great solution, but without this cache population and ibmcloud usage is paralyzed,
+            # so passing resource group it is.
+            resource_group = self.pool_config.get('resource-group', 'Default')
+
+            list_images_cmd = ['is', 'images', '--output', 'json', '--resource-group-name', resource_group]
 
             def _process_regex_filter(filter_name: str, filters: ConfigImageFilter) -> Optional[Pattern[Any]]:
                 if filter_name not in filters:
