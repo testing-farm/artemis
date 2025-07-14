@@ -660,22 +660,6 @@ until cancelled and reprovisioned.
 
 5+|A pattern for guest resource group name
 
-|`beaker.command-timeout.kill`
-|`int`
-|`ARTEMIS_BEAKER_BKR_TIMEOUT_KILL`
-|`10`
-|no
-
-
-|`beaker.command-timeout.kill:$entityname`
-|
-|`ARTEMIS_BEAKER_BKR_TIMEOUT_KILL_$entityname`
-|
-|
-
-
-5+|If a `bkr` command does not terminate after being sent `SIGTERM`, `SIGKILL` will be sent after this many seconds.
-
 |`beaker.command-timeout.termination`
 |`int`
 |`ARTEMIS_BEAKER_BKR_TIMEOUT_TERMINATION`
