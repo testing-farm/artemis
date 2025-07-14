@@ -3009,7 +3009,7 @@ def run_cli_tool(
     actual_timeout: Optional[int] = None
 
     if deadline is not None:
-        timeout = deadline.total_seconds()
+        actual_timeout = int(deadline.total_seconds())
 
     else:
         for pattern, timeout in CLI_TIMEOUT_PATTERNS:

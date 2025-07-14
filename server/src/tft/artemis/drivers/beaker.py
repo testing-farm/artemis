@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import os
 import re
 import stat
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 
 import bs4
@@ -170,18 +170,6 @@ KNOB_BKR_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
     envvar='ARTEMIS_BEAKER_BKR_TIMEOUT_TERMINATION',
     cast_from_str=int,
     default=120
-)
-
-KNOB_BKR_COMMAND_KILL_TIMEOUT: Knob[int] = Knob(
-    'beaker.command-timeout.kill',
-    """
-    If a `bkr` command does not terminate after being sent `SIGTERM`, `SIGKILL` will be sent after this many seconds.
-    """,
-    has_db=False,
-    per_entity=True,
-    envvar='ARTEMIS_BEAKER_BKR_TIMEOUT_KILL',
-    cast_from_str=int,
-    default=10
 )
 
 
@@ -1227,12 +1215,12 @@ class BeakerDriver(PoolDriver):
             describing the problem.
         """
 
+        r_timeout = KNOB_BKR_COMMAND_TERMINATION_TIMEOUT.get_value(entityname=self.poolname)
+
+        if r_timeout.is_error:
+            return Error(r_timeout.unwrap_error())
+
         bkr_command: List[str] = [
-            'timeout',
-            '--preserve-status',
-            '--kill-after', str(KNOB_BKR_COMMAND_KILL_TIMEOUT.get_value(entityname=self.poolname)),
-            '--signal', 'SIGTERM',
-            str(KNOB_BKR_COMMAND_TERMINATION_TIMEOUT.get_value(entityname=self.poolname)),
             'bkr',
             # Subcommand is the first item of `options`...
             options[0]
@@ -1254,7 +1242,8 @@ class BeakerDriver(PoolDriver):
             command_scrubber=lambda cmd: (['bkr'] + options),
             poolname=self.poolname,
             commandname=commandname,
-            cause_extractor=bkr_error_cause_extractor
+            cause_extractor=bkr_error_cause_extractor,
+            deadline=datetime.timedelta(seconds=r_timeout.unwrap())
         )
 
         if r_run.is_error:
@@ -1661,7 +1650,7 @@ class BeakerDriver(PoolDriver):
         self,
         logger: gluetool.log.ContextAdapter,
         job_results: bs4.BeautifulSoup
-    ) -> Result[Optional[datetime], Failure]:
+    ) -> Result[Optional[datetime.datetime], Failure]:
         """
         Parse job results and return guest installation start time.
 
@@ -1684,7 +1673,7 @@ class BeakerDriver(PoolDriver):
             return Ok(None)
 
         try:
-            return Ok(datetime.fromisoformat(install_start))
+            return Ok(datetime.datetime.fromisoformat(install_start))
         except ValueError as exc:
             return Error(Failure.from_exc(
                 'parsing installation start time failed',
@@ -1878,7 +1867,7 @@ class BeakerDriver(PoolDriver):
 
             # Check how long the guest has been in installing state
             if job_status == 'installing':
-                now = datetime.utcnow()
+                now = datetime.datetime.utcnow()
                 r_install_started = self._parse_recipe_install_start(logger, job_results)
 
                 if r_install_started.is_error:
