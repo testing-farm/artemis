@@ -140,6 +140,10 @@ class FlasherDriver(PoolDriver):
 
         payload = {
             "environment": guest_request._environment,
+            "image": guest_request._environment["os"]["compose"],
+            "arch": guest_request._environment["hw"]["arch"],
+            "hostname": (guest_request._environment.get("hw", {}).get("constraints") or {}).get("hostname"),
+            "client_id": guest_request.guestname,
             "metadata": json.dumps(guest_request.user_data),
         }
 
