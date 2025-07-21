@@ -62,14 +62,6 @@ class FlasherDriver(PoolDriver):
         ]
         return Ok(capabilities)
 
-    def _get_headers(self, guestname: Optional[str] = None) -> Dict[str, str]:
-        """
-        Prepares HTTP headers for backend requests.
-        """
-        if guestname is not None:
-            return {"Artemis-guestname": guestname}
-        return {}
-
     def can_acquire(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -139,7 +131,6 @@ class FlasherDriver(PoolDriver):
         )
 
         payload = {
-            "environment": guest_request._environment,
             "image": guest_request._environment["os"]["compose"],
             "arch": guest_request._environment["hw"]["arch"],
             "hostname": (guest_request._environment.get("hw", {}).get("constraints") or {}).get("hostname"),
@@ -183,17 +174,6 @@ class FlasherDriver(PoolDriver):
         guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         '''
-        Request
-        """""""
-
-        .. code-block:: json
-
-           GET /guests/{flasher_id}
-
-           {
-             "environment": guest request environment,
-           }
-
         Response
         """"""""
 
@@ -214,7 +194,6 @@ class FlasherDriver(PoolDriver):
         try:
             response = requests.get(
                 f"{self.url}/loan/{pool_data.flasher_id}",
-                headers=self._get_headers(guestname=guest_request.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
@@ -284,7 +263,6 @@ class FlasherDriver(PoolDriver):
         try:
             response = requests.delete(
                 f"{self.url}/loan/{pool_resources.flasher_id}",
-                headers=self._get_headers(guestname=pool_resources.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
@@ -480,7 +458,6 @@ class FlasherDriver(PoolDriver):
         try:
             response = requests.post(
                 f"{self.url}/reboot/{pool_data.flasher_id}",
-                headers=self._get_headers(guestname=guest_request.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
