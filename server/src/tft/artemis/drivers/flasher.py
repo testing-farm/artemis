@@ -80,8 +80,9 @@ class FlasherDriver(PoolDriver):
             return Ok(CanAcquire.cannot('kickstart not supported'))
 
         payload = {
-            "environment": guest_request._environment,
-            "metadata": json.dumps(guest_request.user_data),
+            "image": guest_request._environment["os"]["compose"],
+            "hostname": (guest_request._environment.get("hw", {}).get("constraints") or {}).get("hostname"),
+            "metadata": json.dumps({"user_data": guest_request.user_data, "Artemis_guestname": guest_request.guestname})
         }
 
         try:
@@ -132,10 +133,8 @@ class FlasherDriver(PoolDriver):
 
         payload = {
             "image": guest_request._environment["os"]["compose"],
-            "arch": guest_request._environment["hw"]["arch"],
             "hostname": (guest_request._environment.get("hw", {}).get("constraints") or {}).get("hostname"),
-            "client_id": guest_request.guestname,
-            "metadata": json.dumps(guest_request.user_data),
+            "metadata": json.dumps({"user_data": guest_request.user_data, "Artemis_guestname": guest_request.guestname})
         }
 
         try:
