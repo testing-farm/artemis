@@ -31,23 +31,19 @@ from . import (
     guest_log_updater,
 )
 
-ARTEMIS_GUESTNAME_HEADER = "Artemis-guestname"
-
 
 @dataclasses.dataclass
 class FlasherPoolData(PoolData):
-    guest_id: str
+    flasher_id: str
 
 
 @dataclasses.dataclass
 class FlasherPoolResourcesIDs(PoolResourcesIDs):
-    guest_id: Optional[str] = None
+    flasher_id: Optional[str] = None
     guestname: Optional[str] = None
 
 
 class FlasherDriver(PoolDriver):
-    drivername = 'flasher'
-
     pool_data_class = FlasherPoolData
 
     def __init__(
@@ -64,7 +60,6 @@ class FlasherDriver(PoolDriver):
             ('console:dump', GuestLogContentType.BLOB),
             ('flasher-event:dump', GuestLogContentType.BLOB)
         ]
-
         return Ok(capabilities)
 
     def _get_headers(self, guestname: Optional[str] = None) -> Dict[str, str]:
@@ -72,7 +67,7 @@ class FlasherDriver(PoolDriver):
         Prepares HTTP headers for backend requests.
         """
         if guestname is not None:
-            return {ARTEMIS_GUESTNAME_HEADER: guestname}
+            return {"Artemis-guestname": guestname}
         return {}
 
     def can_acquire(
@@ -99,7 +94,7 @@ class FlasherDriver(PoolDriver):
 
         try:
             response = requests.post(
-                f"{self.url}/{self.poolname}/precheck",
+                f"{self.url}/preck/{self.poolname}",
                 json=payload,
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
@@ -126,17 +121,6 @@ class FlasherDriver(PoolDriver):
         guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         '''
-        Request
-        """""""
-
-        .. code-block:: json
-
-           POST /guests
-
-           {
-             "environment": guest request environment
-           }
-
         Response
         """"""""
 
@@ -144,7 +128,7 @@ class FlasherDriver(PoolDriver):
 
            {
             "state": ["pending"|"complete"|"cancel"],
-            "guest_id": string,
+            "flasher_id": string,
             "address": optional[string]
            }
         '''
@@ -161,9 +145,8 @@ class FlasherDriver(PoolDriver):
 
         try:
             response = requests.post(
-                f"{self.url}/{self.poolname}/guests",
+                f"{self.url}/loan/{self.poolname}",
                 json=payload,
-                headers=self._get_headers(guestname=guest_request.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
@@ -176,8 +159,8 @@ class FlasherDriver(PoolDriver):
 
         data = response.json()
 
-        guest_id = data.get("guest_id")
-        if not guest_id:
+        flasher_id = data.get("guest_id")
+        if not flasher_id:
             return Error(Failure(
                 'no guest ID in response',
                 payload=data
@@ -185,8 +168,8 @@ class FlasherDriver(PoolDriver):
 
         return Ok(ProvisioningProgress(
             state=ProvisioningState[data.get("state").upper()],
-            pool_data=FlasherPoolData(guest_id=guest_id),
-            address=data.get("address", None),
+            pool_data=FlasherPoolData(flasher_id=flasher_id),
+            address=data.get("address"),
         ))
 
     def update_guest(
@@ -201,7 +184,7 @@ class FlasherDriver(PoolDriver):
 
         .. code-block:: json
 
-           GET /guests/{guest_id}
+           GET /guests/{flasher_id}
 
            {
              "environment": guest request environment,
@@ -224,14 +207,9 @@ class FlasherDriver(PoolDriver):
 
         pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
 
-        payload = {
-            "environment": guest_request._environment,
-        }
-
         try:
             response = requests.get(
-                f"{self.url}/{self.poolname}/guests/{pool_data.guest_id}",
-                json=payload,
+                f"{self.url}/loan/{pool_data.flasher_id}",
                 headers=self._get_headers(guestname=guest_request.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
@@ -246,7 +224,7 @@ class FlasherDriver(PoolDriver):
         data = response.json()
 
         state = ProvisioningState[data.get("state").upper()]
-        address = data.get("address", None)
+        address = data.get("address")
 
         return Ok(ProvisioningProgress(
             state=state,
@@ -274,7 +252,7 @@ class FlasherDriver(PoolDriver):
             logger,
             session,
             FlasherPoolResourcesIDs(
-                guest_id=pool_data.guest_id,
+                flasher_id=pool_data.flasher_id,
                 guestname=guest_request.guestname
             ),
             guest_request=guest_request
@@ -291,7 +269,7 @@ class FlasherDriver(PoolDriver):
 
         .. code-block:: json
 
-           DELETE /guests/{guest_id}
+           DELETE /guests/{flasher_id}
 
         Response
         """"""""
@@ -301,7 +279,7 @@ class FlasherDriver(PoolDriver):
         pool_resources = FlasherPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
         try:
             response = requests.delete(
-                f"{self.url}/{self.poolname}/guests/{pool_resources.guest_id}",
+                f"{self.url}/loan/{pool_resources.flasher_id}",
                 headers=self._get_headers(guestname=pool_resources.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
@@ -404,7 +382,7 @@ class FlasherDriver(PoolDriver):
 
         pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
 
-        return f"{self.url}/{self.poolname}/getlog/{pool_data.guest_id}/{log_name}"
+        return f"{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/{log_name}"
 
     def _update_guest_log_blob(
         self,
@@ -434,23 +412,6 @@ class FlasherDriver(PoolDriver):
             guest_log,
             response.text
         ))
-
-    @guest_log_updater('flasher', 'flasher-debug:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
-    def _update_guest_log_cmd_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
-    ) -> Result[GuestLogUpdateProgress, Failure]:
-        """
-        Artemis will store the log, replacing the exsting log data with data from newer requests to the log endpoint.
-        So it doesn't make sense to have Artemis store the '/latest' data, which would exclude older data.
-        """
-        return self._update_guest_log_blob(
-            logger,
-            guest_log,
-            self._get_guest_log_url(guest_request, 'cmd/all')
-        )
 
     @guest_log_updater('flasher', 'flasher-event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_event_blob(
@@ -499,7 +460,7 @@ class FlasherDriver(PoolDriver):
 
         .. code-block:: json
 
-        POST /guests/{guest_id}/reboot
+        POST /guests/{flasher_id}/reboot
 
         Response
         """"""""
@@ -514,7 +475,7 @@ class FlasherDriver(PoolDriver):
 
         try:
             response = requests.post(
-                f"{self.url}/{self.poolname}/guests/{pool_data.guest_id}/reboot",
+                f"{self.url}/reboot/{pool_data.flasher_id}",
                 headers=self._get_headers(guestname=guest_request.guestname),
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
