@@ -435,37 +435,24 @@ class FlasherDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[None, Failure]:
-        '''
-        Request
-        """""""
-
-        .. code-block:: json
-
-        POST /guests/{flasher_id}/reboot
-
-        Response
-        """"""""
-
-        The response is expected to be empty.
-        '''
-
         pool_data = guest_request.pool_data.mine_or_none(self, FlasherPoolData)
 
         if not pool_data:
             return Ok(None)
 
         try:
-            response = requests.post(
-                f"{self.url}/reboot/{pool_data.flasher_id}",
+            response = requests.put(
+                f"{self.url}/loan/reboot/{pool_data.flasher_id}",
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
-            response.raise_for_status()
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc(
                 'failed to trigger guest reboot',
                 exc
             ))
+
+        response.raise_for_status()
 
         return Ok(None)
 
