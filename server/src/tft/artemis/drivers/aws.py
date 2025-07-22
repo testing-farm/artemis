@@ -827,13 +827,13 @@ def _honor_constraint_disk(
 
         elif constraint.operator is Operator.GT:
             r_update = _check_and_set(
-                operator.ge,
+                operator.gt,
                 UNITS.Quantity(desired_size.to('GiB').magnitude + 1, UNITS.gibibytes)
             )
 
         elif constraint.operator is Operator.LT:
             r_update = _check_and_set(
-                operator.ge,
+                operator.lt,
                 UNITS.Quantity(desired_size.to('GiB').magnitude - 1, UNITS.gibibytes)
             )
 
