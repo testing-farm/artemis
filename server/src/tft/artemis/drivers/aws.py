@@ -6,9 +6,23 @@ import dataclasses
 import datetime
 import ipaddress
 import json
+import operator
 import os
 import re
-from typing import Any, Dict, Generator, Iterator, List, MutableSequence, Optional, Pattern, Tuple, Union, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterator,
+    List,
+    MutableSequence,
+    Optional,
+    Pattern,
+    Tuple,
+    Union,
+    cast,
+)
 
 import gluetool.log
 import gluetool.utils
@@ -785,38 +799,53 @@ def _honor_constraint_disk(
         current_size = mappings.mapping_size(mapping)
         desired_size = cast(SizeType, constraint.value)
 
-        if constraint.operator in (Operator.EQ, Operator.GTE):
-            # Current size is unset, we must set the size.
-            if current_size is None or current_size.to('GiB').magnitude < desired_size.to('GiB').magnitude:
+        def _check_and_set(
+            op: Callable[[float, float], bool],
+            actual_desired_size: SizeType
+        ) -> Result[bool, Failure]:
+            # Either the current size is undefined, or it does not pass the test. In such cases, force the desired size.
+            if current_size is None or not op(current_size.to('GiB').magnitude, desired_size.to('GiB').magnitude):
                 r_update = mappings.update_mapping(
                     mapping,
-                    size=desired_size
+                    size=actual_desired_size
                 )
 
                 if r_update.is_error:
                     return Error(r_update.unwrap_error())
 
-            # Current size is set, and it's equal or bigger than desired size, no need to do anything.
-            else:
-                pass
+            # At this point, the size has been either already fine, or it's forced to be.
+            return Ok(True)
 
-        elif constraint.operator == Operator.GT:
-            # Current size is unset, we must set the size.
-            if current_size is None or current_size.to('GiB').magnitude <= desired_size.to('GiB').magnitude:
-                r_update = mappings.update_mapping(
-                    mapping,
-                    size=desired_size + UNITS.Quantity(1, 'gibibyte')
-                )
+        if constraint.operator is Operator.EQ:
+            r_update = _check_and_set(operator.eq, desired_size)
 
-                if r_update.is_error:
-                    return Error(r_update.unwrap_error())
+        elif constraint.operator is Operator.GTE:
+            r_update = _check_and_set(operator.ge, desired_size)
 
-            # Current size is set, and it's bigger than desired size, no need to do anything.
-            else:
-                pass
+        elif constraint.operator is Operator.LTE:
+            r_update = _check_and_set(operator.le, desired_size)
+
+        elif constraint.operator is Operator.GT:
+            r_update = _check_and_set(
+                operator.ge,
+                UNITS.Quantity(desired_size.to('GiB').magnitude + 1, UNITS.gibibytes)
+            )
+
+        elif constraint.operator is Operator.LT:
+            r_update = _check_and_set(
+                operator.ge,
+                UNITS.Quantity(desired_size.to('GiB').magnitude - 1, UNITS.gibibytes)
+            )
 
         else:
             return Error(Failure('cannot honor disk.size constraint', constraint=repr(constraint)))
+
+        if r_update.is_error:
+            Error(Failure.from_failure(
+                'cannot honor disk.size constraint',
+                r_update.unwrap_error(),
+                constraint=repr(constraint)
+            ))
 
         log_dict_yaml(logger.debug, '  mappings after', mappings.serialize())
 
