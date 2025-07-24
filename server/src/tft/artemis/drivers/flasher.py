@@ -93,10 +93,7 @@ class FlasherDriver(PoolDriver):
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc(
-                'failed to query acquisition',
-                exc
-            ))
+            return Error(Failure.from_exc('failed to query acquisition', exc))
 
         can_acquire = False
         reason = None
@@ -144,12 +141,10 @@ class FlasherDriver(PoolDriver):
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
-            response.raise_for_status()
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc(
-                'failed to acquire guest',
-                exc
-            ))
+            return Error(Failure.from_exc('failed to acquire guest', exc))
+
+        response.raise_for_status()
 
         data = response.json()
 
@@ -196,12 +191,10 @@ class FlasherDriver(PoolDriver):
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
-            response.raise_for_status()
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc(
-                'failed to update guest',
-                exc
-            ))
+            return Error(Failure.from_exc('failed to update guest', exc))
+
+        response.raise_for_status()
 
         data = response.json()
 
@@ -245,19 +238,6 @@ class FlasherDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
-        '''
-        Request
-        """""""
-
-        .. code-block:: json
-
-           DELETE /guests/{flasher_id}
-
-        Response
-        """"""""
-
-        The response is expected to be empty.
-        '''
         pool_resources = FlasherPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
         try:
             response = requests.delete(
@@ -265,12 +245,10 @@ class FlasherDriver(PoolDriver):
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
-            response.raise_for_status()
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc(
-                'failed to release guest',
-                exc
-            ))
+            return Error(Failure.from_exc('failed to release guest', exc))
+
+        response.raise_for_status()
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
@@ -279,15 +257,6 @@ class FlasherDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
         '''
-        Request
-        """""""
-
-        .. code-block:: json
-
-           GET /pool_resources_metrics
-
-           The payload is empty.
-
         Response
         """"""""
 
@@ -315,12 +284,10 @@ class FlasherDriver(PoolDriver):
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
-            response.raise_for_status()
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc(
-                'failed to fetch pool resources metrics',
-                exc
-            ))
+            return Error(Failure.from_exc('failed to fetch pool resources metrics', exc))
+
+        response.raise_for_status()
 
         data = response.json()
         resources.usage.instances = data["usage"]["instances"]
@@ -331,7 +298,6 @@ class FlasherDriver(PoolDriver):
         resources.limits.memory = 0
 
         return Ok(resources)
-
 
     def _is_recoverable(self, response: requests.Response) -> bool:
         code = response.status_code
@@ -346,7 +312,6 @@ class FlasherDriver(PoolDriver):
         if code == 503:
             return True
         response.raise_for_status()
-
 
     def _get_guest_log_url(
         self,
@@ -380,13 +345,10 @@ class FlasherDriver(PoolDriver):
             response = requests.get(url,
                                     verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                                     timeout=KNOB_HTTP_TIMEOUT.value)
-            response.raise_for_status()
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc(
-                'failed to fetch flasher log',
-                exc,
-                url=url
-            ))
+            return Error(Failure.from_exc('failed to fetch flasher log', exc, url=url))
+
+        response.raise_for_status()
 
         return Ok(GuestLogUpdateProgress.from_unabridged(
             logger,
@@ -447,10 +409,7 @@ class FlasherDriver(PoolDriver):
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc(
-                'failed to trigger guest reboot',
-                exc
-            ))
+            return Error(Failure.from_exc('failed to trigger guest reboot', exc))
 
         response.raise_for_status()
 
