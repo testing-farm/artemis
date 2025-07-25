@@ -58,7 +58,7 @@ class FlasherDriver(PoolDriver):
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.BLOB),
-            ('flasher-event:dump', GuestLogContentType.BLOB)
+            ('flasher.event:dump', GuestLogContentType.BLOB)
         ]
         return Ok(capabilities)
 
@@ -356,7 +356,7 @@ class FlasherDriver(PoolDriver):
             response.text
         ))
 
-    @guest_log_updater('flasher', 'flasher-event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    @guest_log_updater('flasher', 'flasher.event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_event_blob(
         self,
         logger: gluetool.log.ContextAdapter,
