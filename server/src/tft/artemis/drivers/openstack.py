@@ -146,7 +146,7 @@ def os_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> OpenStackE
 
 @dataclasses.dataclass
 class OpenStackPoolData(PoolData):
-    instance_id: str
+    instance_id: Optional[str] = None
 
 
 @dataclasses.dataclass
@@ -614,8 +614,13 @@ class OpenStackDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[bool, Failure]:
+        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
+
+        if not pool_data.instance_id:
+            return Error(Failure('cannot stop guest without instance ID'))
+
         logger.info('stoping the guest instance')
-        os_options = ['server', 'stop', guest_request.pool_data.mine(self, OpenStackPoolData).instance_id]
+        os_options = ['server', 'stop', pool_data.instance_id]
         r_stop = self._run_os(os_options, json_format=False, commandname='os.server-stop')
 
         if r_stop.is_error:
@@ -631,8 +636,13 @@ class OpenStackDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest
     ) -> Result[bool, Failure]:
+        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
+
+        if not pool_data.instance_id:
+            return Error(Failure('cannot start guest without instance ID'))
+
         logger.info('starting the guest instance')
-        os_options = ['server', 'start', guest_request.pool_data.mine(self, OpenStackPoolData).instance_id]
+        os_options = ['server', 'start', pool_data.instance_id]
         r_start = self._run_os(os_options, json_format=False, commandname='os.server-start')
 
         if r_start.is_error:
@@ -720,8 +730,13 @@ class OpenStackDriver(PoolDriver):
         Acquire a guest console.
         """
 
+        pool_data = guest.pool_data.mine(self, OpenStackPoolData)
+
+        if not pool_data.instance_id:
+            return Error(Failure('cannot fetch console without instance ID'))
+
         os_options = [
-            'console', 'url', 'show', guest.pool_data.mine(self, OpenStackPoolData).instance_id
+            'console', 'url', 'show', pool_data.instance_id
         ]
         r_output = self._run_os(os_options, commandname='os.console-url-show')
         if r_output.is_error:
@@ -743,6 +758,11 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         snapshot_request: SnapshotRequest
     ) -> Result[ProvisioningProgress, Failure]:
+        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
+
+        if not pool_data.instance_id:
+            return Error(Failure('cannot create snapshot without instance ID'))
+
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
@@ -751,7 +771,7 @@ class OpenStackDriver(PoolDriver):
         os_options = [
             'server', 'image', 'create',
             '--name', snapshot_request.snapshotname,
-            guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
+            pool_data.instance_id
         ]
 
         r_output = self._run_os(os_options, commandname='os.server-image-create')
@@ -828,11 +848,16 @@ class OpenStackDriver(PoolDriver):
         guest_request: GuestRequest,
         snapshot_request: SnapshotRequest,
     ) -> Result[bool, Failure]:
+        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
+
+        if not pool_data.instance_id:
+            return Ok(False)
+
         os_options = [
             'server', 'rebuild',
             '--image', snapshot_request.snapshotname,
             '--wait',
-            guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
+            pool_data.instance_id
         ]
 
         r_output = self._run_os(os_options, json_format=False, commandname='os.server-rebuild')
@@ -1243,11 +1268,16 @@ class OpenStackDriver(PoolDriver):
         resource: str,
         json_format: bool = True
     ) -> Result[Optional[JSONType], Failure]:
+        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
+
+        if not pool_data.instance_id:
+            return Ok(None)
+
         r_output = self._run_os([
             'console',
             resource,
             'show',
-            guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
+            pool_data.instance_id
         ], json_format=json_format, commandname=f'console-{resource}-show')
 
         if r_output.is_error:
