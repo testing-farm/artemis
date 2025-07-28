@@ -98,7 +98,7 @@ class FlasherDriver(PoolDriver):
 
         can_acquire = False
         reason = None
-        if response.status_code == 200:
+        if response.status_code == 204:
             can_acquire = True
         else:
             reason = Failure(message=response.text, recoverable=self._is_recoverable(response))
@@ -218,7 +218,7 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to release guest', exc))
 
-        if response.status_code == 200:
+        if response.status_code == 204:
             return Ok(ReleasePoolResourcesState.RELEASED)
         if response.status_code == 400:
             return Error('guest does not exist or already returned')
@@ -291,7 +291,7 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to trigger guest reboot', exc))
 
-        if response.status_code == 200:
+        if response.status_code == 202:
             return Ok(None)
         if response.status_code == 400:
             return Error('guest does not exist or already returned')
