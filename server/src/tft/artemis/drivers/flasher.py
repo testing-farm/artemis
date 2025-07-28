@@ -225,27 +225,12 @@ class FlasherDriver(PoolDriver):
                     '{pool_resources.guestname}' does not exist or already returned")
             return Ok(ReleasePoolResourcesState.RELEASED)
 
-        return Error(Failure("unknown error"))
+        return Error(Failure(f"unexpected response. status: {response.status_code}; body: {response.text}"))
 
     def fetch_pool_resources_metrics(
         self,
         logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
-        '''
-        Response
-        """"""""
-
-        .. code-block:: json
-
-           {
-             "usage": {
-                "instances": integer,
-                "cores": integer,
-                "memory": integer
-             }
-           }
-        '''
-
         r_resources = super().fetch_pool_resources_metrics(logger)
 
         if r_resources.is_error:
@@ -263,7 +248,7 @@ class FlasherDriver(PoolDriver):
             return Error(Failure.from_exc('failed to fetch pool resources metrics', exc))
 
         if response.status_code != 200:
-            return Error(Failure("unknown error"))
+            return Error(Failure(f"unexpected response. status: {response.status_code}; body: {response.text}"))
 
         data = response.json()
         resources.usage.instances = data["borrowed"]
@@ -300,7 +285,7 @@ class FlasherDriver(PoolDriver):
         if response.status_code == 400:
             return Error(Failure('guest does not exist'))
 
-        return Error(Failure("unknown error"))
+        return Error(Failure(f"unexpected response. status: {response.status_code}; body: {response.text}"))
 
     @guest_log_updater('flasher', 'flasher.event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_event_blob(
@@ -315,12 +300,7 @@ class FlasherDriver(PoolDriver):
         place to look for where the problem occurred. Why the problem occurred could be discovered in the 'cmd' log,
         which contains output of the underlying commands being executed to provision the guest.
         """
-        pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
-        return self._update_guest_log_blob(
-            logger,
-            guest_log,
-            f"{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/event"
-        )
+        return self._update_guest_log_blob(logger, guest_log, guest_request, "event")
 
     @guest_log_updater('flasher', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_blob(
@@ -333,26 +313,20 @@ class FlasherDriver(PoolDriver):
         Console output cannot be grouped. So all data is always returned and there is no need for '/lastest' and '/all'
         endpoints.
         """
-        pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
-        return self._update_guest_log_blob(
-            logger,
-            guest_log,
-            f"{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/console"
-        )
+        return self._update_guest_log_blob(logger, guest_log, guest_request, "console")
 
     def _is_recoverable(self, response: requests.Response) -> bool:
-        code = response.status_code
-        if code == 500:
+        if response.status_code == 500:
             return False
-        if code == 501:
+        if response.status_code == 501:
             return False
-        if code == 400:
+        if response.status_code == 400:
             return False
-        if code == 404:
+        if response.status_code == 404:
             return False
-        if code == 503:
+        if response.status_code == 503:
             return True
-        raise ValueError("invalid input")
+        raise ValueError(f"invalid input: {response.status_code}")
 
     def _http_code_to_status(self, response: requests.Response) -> str:
         if response.status_code == 202:
@@ -361,19 +335,20 @@ class FlasherDriver(PoolDriver):
             return "complete"
         if response.status_code == 509:
             return "cancel"
-        raise ValueError("invalid input")
+        raise ValueError(f"invalid input: {response.status_code}")
 
     def _update_guest_log_blob(
         self,
         logger: gluetool.log.ContextAdapter,
         guest_log: GuestLog,
-        url: str
+        guest_request: GuestRequest,
+        log_name: str
     ) -> Result[GuestLogUpdateProgress, Failure]:
         """
         GET the data at the URL, return it with the state to signal that more data is available.
         """
-        assert url is not None
-
+        pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
+        url = f"{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/{log_name}"
         try:
             response = requests.get(url,
                                     verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
@@ -382,7 +357,7 @@ class FlasherDriver(PoolDriver):
             return Error(Failure.from_exc('failed to fetch flasher log', exc, url=url))
 
         if response.status_code != 200:
-            return Error(Failure("unknown error"))
+            return Error(Failure(f"unexpected HTTP status: {response.status_code}"))
 
         return Ok(GuestLogUpdateProgress.from_unabridged(
             logger,
