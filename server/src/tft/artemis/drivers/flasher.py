@@ -255,7 +255,7 @@ class FlasherDriver(PoolDriver):
 
         try:
             response = requests.get(
-                f"{self.url}/{self.poolname}/pool_resources_metrics",
+                f"{self.url}/{self.poolname}/info/metrics",
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
@@ -266,10 +266,10 @@ class FlasherDriver(PoolDriver):
             return Error(Failure("unknown error"))
 
         data = response.json()
-        resources.usage.instances = data["usage"]["instances"]
+        resources.usage.instances = data["borrowed"]
         resources.usage.cores = 0
         resources.usage.memory = 0
-        resources.limits.instances = data["limits"]["instances"]
+        resources.limits.instances = data["enabled"]
         resources.limits.cores = 0
         resources.limits.memory = 0
 
@@ -315,10 +315,11 @@ class FlasherDriver(PoolDriver):
         place to look for where the problem occurred. Why the problem occurred could be discovered in the 'cmd' log,
         which contains output of the underlying commands being executed to provision the guest.
         """
+        pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
         return self._update_guest_log_blob(
             logger,
             guest_log,
-            self._get_guest_log_url(guest_request, 'event')
+            f"{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/event"
         )
 
     @guest_log_updater('flasher', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
@@ -332,10 +333,11 @@ class FlasherDriver(PoolDriver):
         Console output cannot be grouped. So all data is always returned and there is no need for '/lastest' and '/all'
         endpoints.
         """
+        pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
         return self._update_guest_log_blob(
             logger,
             guest_log,
-            self._get_guest_log_url(guest_request, 'console')
+            f"{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/console"
         )
 
     def _is_recoverable(self, response: requests.Response) -> bool:
@@ -360,23 +362,6 @@ class FlasherDriver(PoolDriver):
         if response.status_code == 509:
             return "cancel"
         raise ValueError("invalid input")
-
-    def _get_guest_log_url(
-        self,
-        guest_request: GuestRequest,
-        log_name: str
-    ) -> str:
-        """
-        Create location (URL) of guest log.
-
-        :param guest_request: a request whose logs to look for.
-        :param log_name: a name of the log as known to backend (e.g. ``cmd/latest``).
-        :returns: log URL.
-        """
-
-        pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
-
-        return f"{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/{log_name}"
 
     def _update_guest_log_blob(
         self,
