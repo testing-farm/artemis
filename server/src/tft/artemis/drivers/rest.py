@@ -37,7 +37,7 @@ ARTEMIS_GUESTNAME_HEADER = "Artemis-guestname"
 
 @dataclasses.dataclass
 class RestPoolData(PoolData):
-    guest_id: str
+    guest_id: Optional[str] = None
 
 
 @dataclasses.dataclass

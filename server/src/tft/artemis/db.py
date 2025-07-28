@@ -927,11 +927,7 @@ class _PoolDataMapping:
         return pool_data_class.unserialize(pool_data)
 
     def one(self, poolname: str, pool_data_class: Type[PoolDataT]) -> PoolDataT:
-        _pool_data = self._guest_request._pool_data  # noqa: F841
-
         pool_data = self._guest_request._pool_data.get(poolname, {})
-
-        assert pool_data
 
         return pool_data_class.unserialize(pool_data)
 
