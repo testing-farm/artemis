@@ -218,12 +218,13 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to release guest', exc))
 
-        if response.status_code == 204:
-            return Ok(ReleasePoolResourcesState.RELEASED)
         if response.status_code == 400:
-            return Error('guest does not exist or already returned')
+            logger.warning(f"flasher request '{pool_resources.flasher_id}' with guestname \
+                    '{pool_resources.guestname}' does not exist or already returned")
+            return Ok(ReleasePoolResourcesState.RELEASED)
 
         response.raise_for_status()
+        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def fetch_pool_resources_metrics(
         self,
@@ -280,7 +281,8 @@ class FlasherDriver(PoolDriver):
         pool_data = guest_request.pool_data.mine_or_none(self, FlasherPoolData)
 
         if not pool_data:
-            return Ok(None)
+            logger.warning(f"no pool_data for {guest_request.guestname}")
+            return Error(Failure('guest does not exist'))
 
         try:
             response = requests.put(
@@ -291,12 +293,11 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to trigger guest reboot', exc))
 
-        if response.status_code == 202:
-            return Ok(None)
         if response.status_code == 400:
-            return Error('guest does not exist or already returned')
+            return Error(Failure('guest does not exist'))
 
         response.raise_for_status()
+        return Ok(None)
 
     @guest_log_updater('flasher', 'flasher.event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_event_blob(
