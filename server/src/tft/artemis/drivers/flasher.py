@@ -218,13 +218,14 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to release guest', exc))
 
+        if response.status_code == 204:
+            return Ok(ReleasePoolResourcesState.RELEASED)
         if response.status_code == 400:
             logger.warning(f"flasher request '{pool_resources.flasher_id}' with guestname \
                     '{pool_resources.guestname}' does not exist or already returned")
             return Ok(ReleasePoolResourcesState.RELEASED)
 
-        response.raise_for_status()
-        return Ok(ReleasePoolResourcesState.RELEASED)
+        return Error(Failure("unknown error"))
 
     def fetch_pool_resources_metrics(
         self,
@@ -261,7 +262,8 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to fetch pool resources metrics', exc))
 
-        response.raise_for_status()
+        if response.status_code != 200:
+            return Error(Failure("unknown error"))
 
         data = response.json()
         resources.usage.instances = data["usage"]["instances"]
@@ -293,11 +295,12 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to trigger guest reboot', exc))
 
+        if response.status_code == 202:
+            return Ok(None)
         if response.status_code == 400:
             return Error(Failure('guest does not exist'))
 
-        response.raise_for_status()
-        return Ok(None)
+        return Error(Failure("unknown error"))
 
     @guest_log_updater('flasher', 'flasher.event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_event_blob(
@@ -347,7 +350,7 @@ class FlasherDriver(PoolDriver):
             return True
         if code == 503:
             return True
-        response.raise_for_status()
+        raise ValueError("invalid input")
 
     def _http_code_to_status(self, response: requests.Response) -> str:
         if response.status_code == 202:
@@ -356,7 +359,7 @@ class FlasherDriver(PoolDriver):
             return "complete"
         if response.status_code == 509:
             return "cancel"
-        response.raise_for_status()
+        raise ValueError("invalid input")
 
     def _get_guest_log_url(
         self,
@@ -393,7 +396,8 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to fetch flasher log', exc, url=url))
 
-        response.raise_for_status()
+        if response.status_code != 200:
+            return Error(Failure("unknown error"))
 
         return Ok(GuestLogUpdateProgress.from_unabridged(
             logger,
