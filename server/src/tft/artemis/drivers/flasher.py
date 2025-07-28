@@ -225,7 +225,6 @@ class FlasherDriver(PoolDriver):
 
         response.raise_for_status()
 
-
     def fetch_pool_resources_metrics(
         self,
         logger: gluetool.log.ContextAdapter
@@ -272,6 +271,68 @@ class FlasherDriver(PoolDriver):
         resources.limits.memory = 0
 
         return Ok(resources)
+
+    def trigger_reboot(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest
+    ) -> Result[None, Failure]:
+        pool_data = guest_request.pool_data.mine_or_none(self, FlasherPoolData)
+
+        if not pool_data:
+            return Ok(None)
+
+        try:
+            response = requests.put(
+                f"{self.url}/loan/reboot/{pool_data.flasher_id}",
+                verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
+                timeout=KNOB_HTTP_TIMEOUT.value
+            )
+        except requests.exceptions.RequestException as exc:
+            return Error(Failure.from_exc('failed to trigger guest reboot', exc))
+
+        if response.status_code == 200:
+            return Ok(None)
+        if response.status_code == 400:
+            return Error('guest does not exist or already returned')
+
+        response.raise_for_status()
+
+    @guest_log_updater('flasher', 'flasher.event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_event_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        """
+        This log contains explicit logging output and does not contain much debug output. It will show the flow of
+        events taking place while provisioning a guest. It can be compared to the Artemis guest event log and is a good
+        place to look for where the problem occurred. Why the problem occurred could be discovered in the 'cmd' log,
+        which contains output of the underlying commands being executed to provision the guest.
+        """
+        return self._update_guest_log_blob(
+            logger,
+            guest_log,
+            self._get_guest_log_url(guest_request, 'event')
+        )
+
+    @guest_log_updater('flasher', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    def _update_guest_log_console_blob(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        """
+        Console output cannot be grouped. So all data is always returned and there is no need for '/lastest' and '/all'
+        endpoints.
+        """
+        return self._update_guest_log_blob(
+            logger,
+            guest_log,
+            self._get_guest_log_url(guest_request, 'console')
+        )
 
     def _is_recoverable(self, response: requests.Response) -> bool:
         code = response.status_code
@@ -338,68 +399,6 @@ class FlasherDriver(PoolDriver):
             guest_log,
             response.text
         ))
-
-    @guest_log_updater('flasher', 'flasher.event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
-    def _update_guest_log_event_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
-    ) -> Result[GuestLogUpdateProgress, Failure]:
-        """
-        This log contains explicit logging output and does not contain much debug output. It will show the flow of
-        events taking place while provisioning a guest. It can be compared to the Artemis guest event log and is a good
-        place to look for where the problem occurred. Why the problem occurred could be discovered in the 'cmd' log,
-        which contains output of the underlying commands being executed to provision the guest.
-        """
-        return self._update_guest_log_blob(
-            logger,
-            guest_log,
-            self._get_guest_log_url(guest_request, 'event')
-        )
-
-    @guest_log_updater('flasher', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
-    def _update_guest_log_console_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
-    ) -> Result[GuestLogUpdateProgress, Failure]:
-        """
-        Console output cannot be grouped. So all data is always returned and there is no need for '/lastest' and '/all'
-        endpoints.
-        """
-        return self._update_guest_log_blob(
-            logger,
-            guest_log,
-            self._get_guest_log_url(guest_request, 'console')
-        )
-
-    def trigger_reboot(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[None, Failure]:
-        pool_data = guest_request.pool_data.mine_or_none(self, FlasherPoolData)
-
-        if not pool_data:
-            return Ok(None)
-
-        try:
-            response = requests.put(
-                f"{self.url}/loan/reboot/{pool_data.flasher_id}",
-                verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                timeout=KNOB_HTTP_TIMEOUT.value
-            )
-        except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to trigger guest reboot', exc))
-
-        if response.status_code == 200:
-            return Ok(None)
-        if response.status_code == 400:
-            return Error('guest does not exist or already returned')
-
-        response.raise_for_status()
 
 
 PoolDriver._drivers_registry['flasher'] = FlasherDriver
