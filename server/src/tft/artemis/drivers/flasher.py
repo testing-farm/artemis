@@ -347,7 +347,7 @@ class FlasherDriver(PoolDriver):
         if code == 400:
             return False
         if code == 404:
-            return True
+            return False
         if code == 503:
             return True
         raise ValueError("invalid input")
