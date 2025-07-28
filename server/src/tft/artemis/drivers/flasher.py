@@ -3,6 +3,7 @@
 
 import dataclasses
 import json
+import uuid
 from typing import Any, Dict, Optional
 
 import gluetool.log
@@ -100,7 +101,7 @@ class FlasherDriver(PoolDriver):
         if response.status_code == 200:
             can_acquire = True
         else:
-            reason = Failure(message=response.content, recoverable=self._is_recoverable(response))
+            reason = Failure(message=response.text, recoverable=self._is_recoverable(response))
 
         return Ok(CanAcquire(can_acquire=can_acquire, reason=reason))
 
@@ -110,18 +111,6 @@ class FlasherDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        '''
-        Response
-        """"""""
-
-        .. code-block:: json
-
-           {
-            "state": ["pending"|"complete"|"cancel"],
-            "flasher_id": string,
-            "address": optional[string]
-           }
-        '''
         self.log_acquisition_attempt(
             logger,
             session,
@@ -144,21 +133,20 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to acquire guest', exc))
 
-        response.raise_for_status()
+        if response.status_code != 202:
+            return Error(Failure(message=response.text, recoverable=self._is_recoverable(response)))
 
-        data = response.json()
+        flasher_id = response.text
 
-        flasher_id = data.get("guest_id")
-        if not flasher_id:
-            return Error(Failure(
-                'no guest ID in response',
-                payload=data
-            ))
+        try:
+            uuid.UUID(flasher_id, version=4)
+        except (ValueError, TypeError):
+            return Error(Failure('no UUID in response', payload=flasher_id))
 
         return Ok(ProvisioningProgress(
-            state=ProvisioningState[data.get("state").upper()],
+            state=ProvisioningState[self._http_code_to_status(response).upper()],
             pool_data=FlasherPoolData(flasher_id=flasher_id),
-            address=data.get("address"),
+            address=None,
         ))
 
     def update_guest(
@@ -167,17 +155,6 @@ class FlasherDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        '''
-        Response
-        """"""""
-
-        .. code-block:: json
-
-           {
-            "state": ["pending"|"complete"|"cancel"],
-            "address": optional[string]
-           }
-        '''
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
@@ -194,17 +171,10 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to update guest', exc))
 
-        response.raise_for_status()
-
-        data = response.json()
-
-        state = ProvisioningState[data.get("state").upper()]
-        address = data.get("address")
-
         return Ok(ProvisioningProgress(
-            state=state,
+            state=ProvisioningState[self._http_code_to_status(response).upper()],
             pool_data=pool_data,
-            address=address,
+            address=response.text or None,
             delay_update=r_delay.unwrap(),
         ))
 
@@ -248,9 +218,13 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to release guest', exc))
 
+        if response.status_code == 200:
+            return Ok(ReleasePoolResourcesState.RELEASED)
+        if response.status_code == 400:
+            return Error('guest does not exist or already returned')
+
         response.raise_for_status()
 
-        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def fetch_pool_resources_metrics(
         self,
@@ -311,6 +285,15 @@ class FlasherDriver(PoolDriver):
             return True
         if code == 503:
             return True
+        response.raise_for_status()
+
+    def _http_code_to_status(self, response: requests.Response) -> str:
+        if response.status_code == 202:
+            return "pending"
+        if response.status_code == 200:
+            return "complete"
+        if response.status_code == 509:
+            return "cancel"
         response.raise_for_status()
 
     def _get_guest_log_url(
@@ -411,9 +394,12 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to trigger guest reboot', exc))
 
-        response.raise_for_status()
+        if response.status_code == 200:
+            return Ok(None)
+        if response.status_code == 400:
+            return Error('guest does not exist or already returned')
 
-        return Ok(None)
+        response.raise_for_status()
 
 
 PoolDriver._drivers_registry['flasher'] = FlasherDriver
