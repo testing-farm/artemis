@@ -268,6 +268,8 @@ JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES = jq.compile('.SupportedBootModes | .[]')
 #: Extract supported boot mode of an instance, as available from ``describe-images``.
 JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE = jq.compile('.BootMode')
 
+JQ_QUERY_SECURITY_GROUP_IDS = jq.compile('.SecurityGroups | .[] | .GroupId')
+
 
 KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
     'aws.spot-open-timeout',
@@ -335,7 +337,7 @@ KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE',
     cast_from_str=str,
-    default='{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}'
+    default='artemis-guest-{{ GUESTNAME }}'
 )
 
 KNOB_REMOVE_SECURITY_GROUP_DELAY: Knob[int] = Knob(
@@ -2173,7 +2175,33 @@ class AWSDriver(PoolDriver):
 
         return Ok(res_security_groups)
 
-    def _create_guest_security_group(
+    def _find_security_group_id(
+        self,
+        logger: ContextAdapter,
+        security_group: str,
+        vpc: str
+    ) -> Result[Optional[str], Failure]:
+        r_security_group_info = self._aws_command(
+            [
+                'ec2', 'describe-security-groups',
+                '--filters',
+                f'Name=group-name,Values={security_group}',
+                f'Name=vpc-id,Values={vpc}'
+            ],
+            commandname='aws.ec2-describe-security-groups'
+        )
+
+        if r_security_group_info.is_error:
+            return Error(r_security_group_info.unwrap_error())
+
+        security_group_ids: List[str] = list(JQ_QUERY_SECURITY_GROUP_IDS.input(r_security_group_info.unwrap()).all())
+
+        if not security_group_ids:
+            return Ok(None)
+
+        return Ok(security_group_ids[0])
+
+    def _acquire_guest_security_group(
         self,
         logger: ContextAdapter,
         guest_request: GuestRequest,
@@ -2214,28 +2242,39 @@ class AWSDriver(PoolDriver):
         subnet_details = cast(List[Dict[str, str]], r_subnet_details.unwrap())
         vpc_id = subnet_details[0]['VpcId']
 
-        command = [
-            'ec2', 'create-security-group',
-            '--group-name', security_group_name,
-            '--description', 'Autocreated artemis guest security group',
-            '--vpc-id', vpc_id
-        ]
+        r_security_group_id = self._find_security_group_id(logger, security_group_name, vpc_id)
 
-        if tags:
-            command += [
-                '--tag-specifications'
-            ] + _tags_to_tag_specifications(tags, 'security-group')
+        if r_security_group_id.is_error:
+            return Error(r_security_group_id.unwrap_error())
 
-        # Create a new security group and retrieve it's id
-        r_create_sg = self._aws_command(command, key='GroupId', commandname='aws.ec2-create-security-group')
+        if r_security_group_id.unwrap():
+            security_group_id = r_security_group_id.unwrap()
 
-        if r_create_sg.is_error:
-            return Error(Failure.from_failure(
-                'failed to create a security group',
-                r_create_sg.unwrap_error()
-            ))
+            assert security_group_id is not None
 
-        security_group_id = cast(str, r_create_sg.unwrap())
+        else:
+            command = [
+                'ec2', 'create-security-group',
+                '--group-name', security_group_name,
+                '--description', 'Autocreated artemis guest security group',
+                '--vpc-id', vpc_id
+            ]
+
+            if tags:
+                command += [
+                    '--tag-specifications'
+                ] + _tags_to_tag_specifications(tags, 'security-group')
+
+            # Create a new security group and retrieve it's id
+            r_create_sg = self._aws_command(command, key='GroupId', commandname='aws.ec2-create-security-group')
+
+            if r_create_sg.is_error:
+                return Error(Failure.from_failure(
+                    'failed to create a security group',
+                    r_create_sg.unwrap_error()
+                ))
+
+            security_group_id = cast(str, r_create_sg.unwrap())
 
         r_get_secgroups = self._assign_security_group_rules(logger, guest_request, security_group_id)
         if r_get_secgroups.is_error:
@@ -2270,13 +2309,16 @@ class AWSDriver(PoolDriver):
         # If create-security-group-per-guest is defined in the config then precreate a security group for each guest,
         # otherwise use the one from the security-group pool configuration
         if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
-            r_create_guest_sg = self._create_guest_security_group(logger=logger,
-                                                                  guest_request=guest_request,
-                                                                  tags=tags)
+            r_create_guest_sg = self._acquire_guest_security_group(
+                logger=logger,
+                guest_request=guest_request,
+                tags=tags
+            )
             if r_create_guest_sg.is_error:
                 return Error(r_create_guest_sg.unwrap_error())
 
             security_group_ids = r_create_guest_sg.unwrap()
+
         else:
             assert self.pool_config['security-group']
             security_group_ids = [self.pool_config['security-group']]
@@ -2402,13 +2444,16 @@ class AWSDriver(PoolDriver):
         # If create-security-group-per-guest is defined in the config then precreate a security group for each guest,
         # otherwise use the one from the security-group pool configuration
         if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
-            r_create_guest_sg = self._create_guest_security_group(logger=logger,
-                                                                  guest_request=guest_request,
-                                                                  tags=tags)
+            r_create_guest_sg = self._acquire_guest_security_group(
+                logger=logger,
+                guest_request=guest_request,
+                tags=tags
+            )
             if r_create_guest_sg.is_error:
                 return Error(r_create_guest_sg.unwrap_error())
 
             security_group_ids = r_create_guest_sg.unwrap()
+
         else:
             assert self.pool_config['security-group']
             security_group_ids = [self.pool_config['security-group']]
