@@ -557,7 +557,7 @@ for the requested action.
 |`aws.mapping.guest-security-group-name.template`
 |`str`
 |`ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE`
-|`{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}`
+|`artemis-guest-{{ GUESTNAME }}`
 |no
 
 
