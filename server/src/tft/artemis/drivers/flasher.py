@@ -146,10 +146,9 @@ class FlasherDriver(PoolDriver):
         r = self._http_code_to_status(response)
         if r.is_error:
             return Error(r.unwrap_error())
-        state = r.unwrap()
 
         return Ok(ProvisioningProgress(
-            state=state,
+            state=r.unwrap(),
             pool_data=FlasherPoolData(flasher_id=flasher_id),
             address=None,
         ))
@@ -179,10 +178,9 @@ class FlasherDriver(PoolDriver):
         r = self._http_code_to_status(response)
         if r.is_error:
             return Error(r.unwrap_error())
-        state = r.unwrap()
 
         return Ok(ProvisioningProgress(
-            state=state,
+            state=r.unwrap(),
             pool_data=pool_data,
             address=response.text or None,
             delay_update=r_delay.unwrap(),
@@ -262,11 +260,7 @@ class FlasherDriver(PoolDriver):
 
         data = response.json()
         resources.usage.instances = data["borrowed"]
-        resources.usage.cores = 0
-        resources.usage.memory = 0
         resources.limits.instances = data["enabled"]
-        resources.limits.cores = 0
-        resources.limits.memory = 0
 
         return Ok(resources)
 
@@ -290,7 +284,7 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to trigger guest reboot', exc))
 
-        if response.status_code == 202:
+        if response.status_code == 204:
             return Ok(None)
         if response.status_code == 404:
             return Error(Failure('guest does not exist'))
