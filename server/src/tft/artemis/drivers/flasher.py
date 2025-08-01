@@ -143,8 +143,13 @@ class FlasherDriver(PoolDriver):
         except (ValueError, TypeError):
             return Error(Failure('no UUID in response', payload=flasher_id))
 
+        r = self._http_code_to_status(response)
+        if r.is_error:
+            return Error(r.unwrap_error())
+        state = r.unwrap()
+
         return Ok(ProvisioningProgress(
-            state=ProvisioningState[self._http_code_to_status(response).upper()],
+            state=state,
             pool_data=FlasherPoolData(flasher_id=flasher_id),
             address=None,
         ))
@@ -171,8 +176,13 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to update guest', exc))
 
+        r = self._http_code_to_status(response)
+        if r.is_error:
+            return Error(r.unwrap_error())
+        state = r.unwrap()
+
         return Ok(ProvisioningProgress(
-            state=ProvisioningState[self._http_code_to_status(response).upper()],
+            state=state,
             pool_data=pool_data,
             address=response.text or None,
             delay_update=r_delay.unwrap(),
@@ -220,7 +230,7 @@ class FlasherDriver(PoolDriver):
 
         if response.status_code == 204:
             return Ok(ReleasePoolResourcesState.RELEASED)
-        if response.status_code == 400:
+        if response.status_code == 404:
             logger.warning(f"flasher request '{pool_resources.flasher_id}' with guestname \
                     '{pool_resources.guestname}' does not exist or already returned")
             return Ok(ReleasePoolResourcesState.RELEASED)
@@ -240,7 +250,7 @@ class FlasherDriver(PoolDriver):
 
         try:
             response = requests.get(
-                f"{self.url}/{self.poolname}/info/metrics",
+                f"{self.url}/{self.poolname}/summary/metrics",
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
@@ -282,7 +292,7 @@ class FlasherDriver(PoolDriver):
 
         if response.status_code == 202:
             return Ok(None)
-        if response.status_code == 400:
+        if response.status_code == 404:
             return Error(Failure('guest does not exist'))
 
         return Error(Failure(f"unexpected response. status: {response.status_code}; body: {response.text}"))
@@ -326,16 +336,16 @@ class FlasherDriver(PoolDriver):
             return False
         if response.status_code == 503:
             return True
-        raise ValueError(f"invalid input: {response.status_code}")
+        return True  # default to retrying (recoverable)
 
-    def _http_code_to_status(self, response: requests.Response) -> str:
+    def _http_code_to_status(self, response: requests.Response) -> Result[ProvisioningState, Failure]:
         if response.status_code == 202:
-            return "pending"
+            return Ok(ProvisioningState.PENDING)
         if response.status_code == 200:
-            return "complete"
+            return Ok(ProvisioningState.COMPLETE)
         if response.status_code == 509:
-            return "cancel"
-        raise ValueError(f"invalid input: {response.status_code}")
+            return Ok(ProvisioningState.CANCEL)
+        return Error(Failure("unhandled HTTP code"))
 
     def _update_guest_log_blob(
         self,
