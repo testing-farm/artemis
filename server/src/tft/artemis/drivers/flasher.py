@@ -57,6 +57,7 @@ class FlasherDriver(PoolDriver):
         self.url = self.pool_config["url"]
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+        capabilities.supports_hostnames = True
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.BLOB),
             ('flasher.event:dump', GuestLogContentType.BLOB)
