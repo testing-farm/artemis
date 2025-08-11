@@ -158,7 +158,7 @@ class IBMCloudPowerDriver(PoolDriver):
             with IBMCloudPowerSession(logger, self) as session:
                 r_images_list = session.run(
                     logger,
-                    ['pi', 'image', 'list-catalog', '-s', '--json'],
+                    ['pi', 'image', 'list', '--json'],
                     commandname='ibmcloud.pi-image-list'
                 )
 
@@ -171,11 +171,16 @@ class IBMCloudPowerDriver(PoolDriver):
             images: List[PoolImageInfo] = []
             for image in cast(List[APIImageType], cast(Dict[str, Any], r_images_list.unwrap()).get('images', [])):
                 try:
+
                     # Apply wild-card filter if specified, unfortunately no way to filter by name or regex via cli
                     if name_pattern and not name_pattern.match(image['name']):
                         continue
 
                     arch = image['specifications']['architecture']
+                    # NOTE(ivasilev) ppc64 needs special treatment, as IBM had this brilliant idea to put both
+                    # ppc64 and ppc64le as `ppc64` and differentiate upon the value of `endianness` field..
+                    if arch == 'ppc64':
+                        arch = 'ppc64le' if image['specifications']['endianness'] == 'little-endian' else 'ppc64'
                     if arch_pattern and not arch_pattern.match(arch):
                         continue
 
