@@ -35,7 +35,7 @@ from . import (
 
 @dataclasses.dataclass
 class FlasherPoolData(PoolData):
-    flasher_id: str
+    flasher_id: Optional[str] = None
 
 
 @dataclasses.dataclass
@@ -81,30 +81,7 @@ class FlasherDriver(PoolDriver):
         if guest_request.environment.has_ks_specification:
             return Ok(CanAcquire.cannot('kickstart not supported'))
 
-        payload = {
-            "image": guest_request._environment["os"]["compose"],
-            "hostname": (guest_request._environment.get("hw", {}).get("constraints") or {}).get("hostname"),
-            "metadata": json.dumps({"user_data": guest_request.user_data, "Artemis_guestname": guest_request.guestname})
-        }
-
-        try:
-            response = requests.post(
-                f"{self.url}/preck/{self.poolname}",
-                json=payload,
-                verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                timeout=KNOB_HTTP_TIMEOUT.value
-            )
-        except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to query acquisition', exc))
-
-        can_acquire = False
-        reason = None
-        if response.status_code == 204:
-            can_acquire = True
-        else:
-            reason = Failure(message=response.text, recoverable=self._is_recoverable(response))
-
-        return Ok(CanAcquire(can_acquire=can_acquire, reason=reason))
+        return Ok(CanAcquire(can_acquire=True))
 
     def acquire_guest(
         self,
@@ -144,7 +121,7 @@ class FlasherDriver(PoolDriver):
         except (ValueError, TypeError):
             return Error(Failure('no UUID in response', payload=flasher_id))
 
-        r = self._http_code_to_status(response)
+        r = self._http_code_to_status(response.status_code)
         if r.is_error:
             return Error(r.unwrap_error())
 
@@ -176,7 +153,7 @@ class FlasherDriver(PoolDriver):
         except requests.exceptions.RequestException as exc:
             return Error(Failure.from_exc('failed to update guest', exc))
 
-        r = self._http_code_to_status(response)
+        r = self._http_code_to_status(response.status_code)
         if r.is_error:
             return Error(r.unwrap_error())
 
@@ -218,9 +195,11 @@ class FlasherDriver(PoolDriver):
         raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
         pool_resources = FlasherPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
+        url = f"{self.url}/loan/{pool_resources.flasher_id}"
+
         try:
             response = requests.delete(
-                f"{self.url}/loan/{pool_resources.flasher_id}",
+                url,
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
@@ -234,7 +213,7 @@ class FlasherDriver(PoolDriver):
                     '{pool_resources.guestname}' does not exist or already returned")
             return Ok(ReleasePoolResourcesState.RELEASED)
 
-        return Error(Failure(f"unexpected response. status: {response.status_code}; body: {response.text}"))
+        return Error(Failure("unexpected response", url=url, status_code=response.status_code, body=response.text))
 
     def fetch_pool_resources_metrics(
         self,
@@ -246,10 +225,11 @@ class FlasherDriver(PoolDriver):
             return Error(r_resources.unwrap_error())
 
         resources = r_resources.unwrap()
+        url = f"{self.url}/{self.poolname}/summary/metrics"
 
         try:
             response = requests.get(
-                f"{self.url}/{self.poolname}/summary/metrics",
+                url,
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
@@ -257,7 +237,7 @@ class FlasherDriver(PoolDriver):
             return Error(Failure.from_exc('failed to fetch pool resources metrics', exc))
 
         if response.status_code != 200:
-            return Error(Failure(f"unexpected response. status: {response.status_code}; body: {response.text}"))
+            return Error(Failure("unexpected response", url=url, status_code=response.status_code, body=response.text))
 
         data = response.json()
         resources.usage.instances = data["borrowed"]
@@ -273,12 +253,13 @@ class FlasherDriver(PoolDriver):
         pool_data = guest_request.pool_data.mine_or_none(self, FlasherPoolData)
 
         if not pool_data:
-            logger.warning(f"no pool_data for {guest_request.guestname}")
-            return Error(Failure('guest does not exist'))
+            return Ok(None)
+
+        url = f"{self.url}/loan/reboot/{pool_data.flasher_id}"
 
         try:
             response = requests.put(
-                f"{self.url}/loan/reboot/{pool_data.flasher_id}",
+                url,
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
@@ -290,7 +271,7 @@ class FlasherDriver(PoolDriver):
         if response.status_code == 404:
             return Error(Failure('guest does not exist'))
 
-        return Error(Failure(f"unexpected response. status: {response.status_code}; body: {response.text}"))
+        return Error(Failure("unexpected response", url=url, status_code=response.status_code, body=response.text))
 
     @guest_log_updater('flasher', 'flasher.event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_event_blob(
@@ -322,25 +303,26 @@ class FlasherDriver(PoolDriver):
 
     def _is_recoverable(self, response: requests.Response) -> bool:
         if response.status_code == 500:
-            return False
+            return False  # Service is down.
         if response.status_code == 501:
-            return False
+            return False  # After rm flasher can_acquire endpoint, this is probably not needed... e2e testing...
+        # I wonder if I should add 509 here, since it is flasher's "cancel" code.
         if response.status_code == 400:
-            return False
+            return False  # Problem with request.
         if response.status_code == 404:
-            return False
+            return False  # Guest or host doesn't exist.
         if response.status_code == 503:
-            return True
+            return True   # Service temporarily unavailable - no capacity
         return True  # default to retrying (recoverable)
 
-    def _http_code_to_status(self, response: requests.Response) -> Result[ProvisioningState, Failure]:
-        if response.status_code == 202:
+    def _http_code_to_status(self, response_code: int) -> Result[ProvisioningState, Failure]:
+        if response_code == 202:
             return Ok(ProvisioningState.PENDING)
-        if response.status_code == 200:
+        if response_code == 200:
             return Ok(ProvisioningState.COMPLETE)
-        if response.status_code == 509:
+        if response_code == 509:
             return Ok(ProvisioningState.CANCEL)
-        return Error(Failure("unhandled HTTP code"))
+        return Error(Failure("unhandled HTTP response code", status_code=response_code))
 
     def _update_guest_log_blob(
         self,
@@ -354,6 +336,7 @@ class FlasherDriver(PoolDriver):
         """
         pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
         url = f"{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/{log_name}"
+
         try:
             response = requests.get(url,
                                     verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
@@ -362,7 +345,7 @@ class FlasherDriver(PoolDriver):
             return Error(Failure.from_exc('failed to fetch flasher log', exc, url=url))
 
         if response.status_code != 200:
-            return Error(Failure(f"unexpected HTTP status: {response.status_code}"))
+            return Error(Failure("unexpected response", url=url, status_code=response.status_code, body=response.text))
 
         return Ok(GuestLogUpdateProgress.from_unabridged(
             logger,
