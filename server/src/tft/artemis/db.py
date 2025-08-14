@@ -915,9 +915,6 @@ class _PoolDataMapping:
     def __init__(self, guest_request: 'GuestRequest') -> None:
         self._guest_request = guest_request
 
-    def is_empty(self, poolname: str) -> bool:
-        return not self._guest_request._pool_data.get(poolname, {})
-
     def one_or_none(self, poolname: str, pool_data_class: Type[PoolDataT]) -> Optional[PoolDataT]:
         pool_data = self._guest_request._pool_data.get(poolname, {})
 
@@ -943,10 +940,17 @@ class _PoolDataMapping:
             poolname: pool_data.serialize()
         }
 
-    def reset(self, poolname: str) -> SerializedPoolDataMapping:
+    def reset(self, poolname: str, pool_data: PoolDataT) -> SerializedPoolDataMapping:
+        """
+        Return a copy of pool data mapping with the given pool slot emptied.
+
+        :param poolname: name of the pool whose slot to reset.
+        :param pool_data: current pool data of the pool.
+        """
+
         return {
             **self._guest_request._pool_data,
-            poolname: {}
+            poolname: pool_data.reset().serialize()
         }
 
 

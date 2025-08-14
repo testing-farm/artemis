@@ -46,7 +46,7 @@ class Workspace(_Workspace):
 
             assert self.gr
 
-            if self.gr.poolname is not None and not self.gr.pool_data.is_empty(self.gr.poolname):
+            if self.gr.poolname is not None:
                 self.load_gr_pool()
 
                 if self.result:
@@ -54,10 +54,13 @@ class Workspace(_Workspace):
 
                 assert self.pool
 
-                r_release = self.pool.release_guest(self.logger, self.session, self.gr)
+                pool_data = self.gr.pool_data.mine(self.pool, self.pool.pool_data_class)
 
-                if r_release.is_error:
-                    return self._error(r_release, 'failed to release guest')
+                if not pool_data.is_empty:
+                    r_release = self.pool.release_guest(self.logger, self.session, self.gr)
+
+                    if r_release.is_error:
+                        return self._error(r_release, 'failed to release guest')
 
             r_delete: DMLResult[GuestRequest] = execute_dml(
                 self.logger,
