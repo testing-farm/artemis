@@ -262,10 +262,12 @@ class FlasherDriver(PoolDriver):
 
         if response.status_code == 204:
             return Ok(None)
-        if response.status_code == 404:
-            return Ok(Failure('guest does not exist'))
 
-        return Error(Failure("unexpected response", url=url, status_code=response.status_code, body=response.text))
+        return Error(Failure("unexpected response",
+                             url=url,
+                             status_code=response.status_code,
+                             body=response.text,
+                             recoverable=self._is_recoverable(response.status_code)))
 
     @guest_log_updater('flasher', 'flasher-event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_event_blob(
