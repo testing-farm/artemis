@@ -60,7 +60,7 @@ class FlasherDriver(PoolDriver):
         capabilities.supports_hostnames = True
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.BLOB),
-            ('flasher.event:dump', GuestLogContentType.BLOB)
+            ('flasher-event:dump', GuestLogContentType.BLOB)
         ]
         return Ok(capabilities)
 
@@ -95,7 +95,7 @@ class FlasherDriver(PoolDriver):
             guest_request,
         )
 
-        payload = {
+        body = {
             "image": guest_request._environment["os"]["compose"],
             "hostname": (guest_request._environment.get("hw", {}).get("constraints") or {}).get("hostname"),
             "metadata": json.dumps({"user_data": guest_request.user_data, "Artemis_guestname": guest_request.guestname})
@@ -104,29 +104,24 @@ class FlasherDriver(PoolDriver):
         try:
             response = requests.post(
                 f"{self.url}/loan/{self.poolname}",
-                json=payload,
+                json=body,
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to acquire guest', exc))
+            return Error(Failure.from_exc('acquire_guest request failed', exc))
 
         if response.status_code != 202:
-            return Error(Failure(message=response.text, recoverable=self._is_recoverable(response)))
+            return Error(Failure(message=response.text, recoverable=self._is_recoverable(response.status_code)))
 
         flasher_id = response.text
-
         try:
             uuid.UUID(flasher_id, version=4)
         except (ValueError, TypeError):
-            return Error(Failure('no UUID in response', payload=flasher_id))
-
-        r = self._http_code_to_status(response.status_code)
-        if r.is_error:
-            return Error(r.unwrap_error())
+            return Error(Failure('no UUID in acquire_guest response', response=flasher_id))
 
         return Ok(ProvisioningProgress(
-            state=r.unwrap(),
+            state=self._http_code_to_status(response.status_code),
             pool_data=FlasherPoolData(flasher_id=flasher_id),
             address=None,
         ))
@@ -151,14 +146,10 @@ class FlasherDriver(PoolDriver):
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to update guest', exc))
-
-        r = self._http_code_to_status(response.status_code)
-        if r.is_error:
-            return Error(r.unwrap_error())
+            return Error(Failure.from_exc('update_guest request failed', exc))
 
         return Ok(ProvisioningProgress(
-            state=r.unwrap(),
+            state=self._http_code_to_status(response.status_code),
             pool_data=pool_data,
             address=response.text or None,
             delay_update=r_delay.unwrap(),
@@ -204,7 +195,7 @@ class FlasherDriver(PoolDriver):
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to release guest', exc))
+            return Error(Failure.from_exc('release_pool_resources request failed', exc))
 
         if response.status_code == 204:
             return Ok(ReleasePoolResourcesState.RELEASED)
@@ -234,14 +225,17 @@ class FlasherDriver(PoolDriver):
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to fetch pool resources metrics', exc))
+            return Error(Failure.from_exc('fetch_pool_resources_metrics request failed', exc))
 
         if response.status_code != 200:
             return Error(Failure("unexpected response", url=url, status_code=response.status_code, body=response.text))
 
         data = response.json()
-        resources.usage.instances = data["borrowed"]
-        resources.limits.instances = data["enabled"]
+        try:
+            resources.usage.instances = int(data["borrowed"])
+            resources.limits.instances = int(data["enabled"])
+        except ValueError as exc:
+            return Error(Failure.from_exc('invalid metrics from pool', exc))
 
         return Ok(resources)
 
@@ -264,16 +258,16 @@ class FlasherDriver(PoolDriver):
                 timeout=KNOB_HTTP_TIMEOUT.value
             )
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to trigger guest reboot', exc))
+            return Error(Failure.from_exc('trigger_reboot request failed', exc))
 
         if response.status_code == 204:
             return Ok(None)
         if response.status_code == 404:
-            return Error(Failure('guest does not exist'))
+            return Ok(Failure('guest does not exist'))
 
         return Error(Failure("unexpected response", url=url, status_code=response.status_code, body=response.text))
 
-    @guest_log_updater('flasher', 'flasher.event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
+    @guest_log_updater('flasher', 'flasher-event:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_event_blob(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -283,8 +277,7 @@ class FlasherDriver(PoolDriver):
         """
         This log contains explicit logging output and does not contain much debug output. It will show the flow of
         events taking place while provisioning a guest. It can be compared to the Artemis guest event log and is a good
-        place to look for where the problem occurred. Why the problem occurred could be discovered in the 'cmd' log,
-        which contains output of the underlying commands being executed to provision the guest.
+        place to look for where the problem occurred.
         """
         return self._update_guest_log_blob(logger, guest_log, guest_request, "event")
 
@@ -295,34 +288,29 @@ class FlasherDriver(PoolDriver):
         guest_request: GuestRequest,
         guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        """
-        Console output cannot be grouped. So all data is always returned and there is no need for '/lastest' and '/all'
-        endpoints.
-        """
         return self._update_guest_log_blob(logger, guest_log, guest_request, "console")
 
-    def _is_recoverable(self, response: requests.Response) -> bool:
-        if response.status_code == 500:
+    def _is_recoverable(self, response_code: int) -> bool:
+        if response_code == 500:
             return False  # Service is down.
-        if response.status_code == 501:
-            return False  # After rm flasher can_acquire endpoint, this is probably not needed... e2e testing...
-        # I wonder if I should add 509 here, since it is flasher's "cancel" code.
-        if response.status_code == 400:
+        if response_code == 509:
+            return True   # Request cancelled, but can be retried.
+        if response_code == 400:
             return False  # Problem with request.
-        if response.status_code == 404:
+        if response_code == 404:
             return False  # Guest or host doesn't exist.
-        if response.status_code == 503:
+        if response_code == 503:
             return True   # Service temporarily unavailable - no capacity
         return True  # default to retrying (recoverable)
 
-    def _http_code_to_status(self, response_code: int) -> Result[ProvisioningState, Failure]:
+    def _http_code_to_status(self, response_code: int) -> ProvisioningState:
         if response_code == 202:
-            return Ok(ProvisioningState.PENDING)
+            return ProvisioningState.PENDING
         if response_code == 200:
-            return Ok(ProvisioningState.COMPLETE)
+            return ProvisioningState.COMPLETE
         if response_code == 509:
-            return Ok(ProvisioningState.CANCEL)
-        return Error(Failure("unhandled HTTP response code", status_code=response_code))
+            return ProvisioningState.CANCEL
+        return ProvisioningState.CANCEL
 
     def _update_guest_log_blob(
         self,
@@ -342,7 +330,7 @@ class FlasherDriver(PoolDriver):
                                     verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                                     timeout=KNOB_HTTP_TIMEOUT.value)
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to fetch flasher log', exc, url=url))
+            return Error(Failure.from_exc('_update_guest_log_blob request failed', exc, url=url))
 
         if response.status_code != 200:
             return Error(Failure("unexpected response", url=url, status_code=response.status_code, body=response.text))
