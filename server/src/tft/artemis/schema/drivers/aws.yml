@@ -87,7 +87,11 @@ properties:
     type: string
 
   security-group:
-    type: string
+    oneOf:
+      - type: string
+      - type: array
+        items:
+          type: string
 
   security-group-rules:
     type: array
