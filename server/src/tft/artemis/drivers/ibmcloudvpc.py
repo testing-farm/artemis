@@ -546,8 +546,12 @@ class IBMCloudVPCDriver(PoolDriver):
         if r_answer.unwrap().can_acquire is False:
             return r_answer
 
-        if guest_request.environment.has_hw_constraints is True:
-            return Ok(CanAcquire.cannot('HW constraints are not supported'))
+        # Disallow HW constraints the driver does not implement yet
+        if guest_request.environment.has_hw_constraints:
+            r_constraints = guest_request.environment.get_hw_constraints()
+
+            if r_constraints.is_error:
+                return Error(r_constraints.unwrap_error())
 
         r_images = self.image_info_mapper.map_or_none(logger, guest_request)
         if r_images.is_error:
@@ -564,6 +568,29 @@ class IBMCloudVPCDriver(PoolDriver):
 
             if not images:
                 return Ok(CanAcquire.cannot('compose does not support kickstart'))
+
+        # Check that there is a suitable flavor
+        pairs: List[Tuple[IBMCloudVPCPoolImageInfo, IBMCloudFlavor]] = []
+        for image in images:
+            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
+            if r_instance_type.is_error:
+                return Error(r_instance_type.unwrap_error())
+            instance_type = r_instance_type.unwrap()
+
+            if instance_type is None:
+                continue
+
+            pairs.append((image, instance_type))
+
+        if not pairs:
+            return Ok(CanAcquire.cannot('no suitable image/instance_type combination found'))
+
+        log_dict_yaml(logger.info, 'available image/instance_type combinations', [
+            {
+                'instance_type': instance_type.serialize(),
+                'image': image.serialize()
+            } for image, instance_type in pairs
+        ])
 
         return Ok(CanAcquire())
 
@@ -598,8 +625,6 @@ class IBMCloudVPCDriver(PoolDriver):
             image,
             suitable_flavors
         )
-
-        # NOTE(ivasilev) hardware requirements not supported atm so skipping all related flavor filtering
 
         # FIXME The whole default flavor dance is identical between Azure / aws / openstack / now ibmcloud and is
         # the candidate for generalization.
