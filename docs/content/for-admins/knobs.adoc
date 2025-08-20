@@ -1058,6 +1058,22 @@ for full list of connection parameters that can be specified via URL.
 
 5+|A pattern for needle to match in environment to image mapping file.
 
+|`ibmcloud.guests.default-root-partition-size`
+|`int`
+|`ARTEMIS_IBMCLOUD_VPC_DEFAULT_GUEST_PARTITION_SIZE`
+|`42`
+|no
+
+
+|`ibmcloud.guests.default-root-partition-size:$entityname`
+|
+|`ARTEMIS_IBMCLOUD_VPC_DEFAULT_GUEST_PARTITION_SIZE_$entityname`
+|
+|
+
+
+5+|Default boot volume partition size in GB for ibmcloud vpc guests
+
 |`ibmcloud.mapping.environment-to-image.pattern-map.filepath`
 |`str`
 |`ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`

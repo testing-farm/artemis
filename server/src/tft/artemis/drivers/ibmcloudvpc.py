@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import json
 import os
 import re
 import shutil
@@ -60,6 +61,16 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     envvar='ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
     default='{{ os.compose }}'
+)
+
+KNOB_DEFAULT_ROOT_PARTITION_SIZE_IBMCLOUD_S390X: Knob[int] = Knob(
+    'ibmcloud.guests.default-root-partition-size',
+    'Default boot volume partition size in GB for ibmcloud vpc guests',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_IBMCLOUD_VPC_DEFAULT_GUEST_PARTITION_SIZE',
+    cast_from_str=int,
+    default=42
 )
 
 IBMCLOUD_RESOURCE_TYPE: Dict[str, ResourceType] = {
@@ -774,6 +785,17 @@ class IBMCloudVPCDriver(PoolDriver):
                 except KeyError:
                     return Error(Failure('Subnet details have no vpc information'))
 
+                # For now let's take boot partition size from the knob, later on will use disk size of artificial
+                # flavors like happz suggested
+                r_boot_partition_size = KNOB_DEFAULT_ROOT_PARTITION_SIZE_IBMCLOUD_S390X.get_value(
+                    entityname=self.poolname)
+
+                if r_boot_partition_size.is_error:
+                    return Error(r_boot_partition_size.unwrap_error())
+
+                boot_volume_specs = {"name": instance_name, "volume": {"capacity": r_boot_partition_size.unwrap(),
+                                                                       "profile": {"name": "general-purpose"}}}
+
                 # Now we are all set to create an instance
                 create_cmd_args = [
                     'is', 'instance-create',
@@ -785,7 +807,8 @@ class IBMCloudVPCDriver(PoolDriver):
                     '--image', image.id,
                     '--allow-ip-spoofing=false',
                     '--keys', self.pool_config['master-key-name'],
-                    '--output', 'json'
+                    '--output', 'json',
+                    '--boot-volume', json.dumps(boot_volume_specs)
                 ]
                 if user_data_file:
                     create_cmd_args += ['--user-data', f'@{user_data_file}']
