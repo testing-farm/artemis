@@ -66,6 +66,51 @@ These patterns are not regular expressions, they will be passed to AWS CLI's `--
 See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html#Filtering_Resources_CLI[AWS EC2 documentation] for more details on filters.
 ====
 
+=== Security Groups
+
+AWS instances require security groups to control network access. Artemis supports two approaches:
+
+==== Pool-level Security Groups
+
+You can specify one or more security groups that will be attached to all instances in the pool:
+
+.Single security group
+[source,yaml]
+....
+security-group: "sg-12345678"
+....
+
+.Multiple security groups
+[source,yaml]
+....
+security-group:
+  - "sg-12345678"
+  - "sg-87654321"
+....
+
+==== Guest-specific Security Groups
+
+Alternatively, you can let Artemis create a dedicated security group for each guest with custom rules:
+
+[source,yaml]
+....
+create-security-group-per-guest: true
+
+security-group-rules:
+  - type: ingress
+    protocol: tcp
+    port: "22"
+    cidr:
+      - "10.0.0.0/8"
+  - type: egress
+    protocol: "-1"
+    port: "-1"
+    cidr:
+      - "0.0.0.0/0"
+....
+
+When using `create-security-group-per-guest: true`, if you also specify `security-group`, both the pool-level security group(s) and the guest-specific security group will be attached to the instance.
+
 === Expose Public IP address
 
 By default, Artemis will expose the private IP address of the instance. In case you want to rather expose the public IP, use the `use-public-ip` setting in the pool configuration.
