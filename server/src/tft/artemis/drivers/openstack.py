@@ -1069,7 +1069,7 @@ class OpenStackDriver(PoolDriver):
             logger,
             resources.usage,
             _fetch_instances,
-            lambda raw_instance: raw_instance['Flavor'],  # type: ignore[index,no-any-return]
+            lambda raw_instance: raw_instance['Flavor'],
             _update_instance_usage
         )
 
@@ -1258,7 +1258,7 @@ class OpenStackDriver(PoolDriver):
         return self.do_fetch_pool_flavor_info(
             self.logger,
             _fetch,
-            lambda raw_flavor: cast(str, raw_flavor.name),  # type: ignore[attr-defined]
+            lambda raw_flavor: cast(str, raw_flavor.name),
             _constructor
         )
 

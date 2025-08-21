@@ -27,7 +27,7 @@ import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
 import stackprinter
 from gluetool.result import Error, Ok, Result
-from typing_extensions import Protocol, TypedDict
+from typing_extensions import Protocol, Self, TypedDict
 
 from .. import (
     Failure,
@@ -2069,7 +2069,7 @@ class Workspace:
         else:
             self._event('entered-task')
 
-    def begin(self: WorkspaceBound) -> WorkspaceBound:
+    def begin(self) -> Self:
         if self.guestname:
             with self.transaction():
                 self._guest_request_event('entered-task')
@@ -2100,7 +2100,7 @@ class Workspace:
         if not self.result:
             self.result = SUCCESS
 
-    def complete(self: WorkspaceBound) -> WorkspaceBound:
+    def complete(self) -> Self:
         if self.guestname:
             with self.transaction():
                 self._guest_request_event('finished-task')
@@ -2205,10 +2205,10 @@ class Workspace:
     #
 
     def load_guest_request(
-        self: WorkspaceBound,
+        self,
         guestname: str,
         state: Optional[GuestState] = None
-    ) -> WorkspaceBound:
+    ) -> Self:
         """ Load a guest request from a database, as long as it is in a given state. """
 
         if self.result:
@@ -2243,7 +2243,7 @@ class Workspace:
 
         return self
 
-    def load_master_ssh_key(self: WorkspaceBound) -> WorkspaceBound:
+    def load_master_ssh_key(self) -> Self:
         if self.result:
             return self
 
@@ -2294,7 +2294,7 @@ class Workspace:
 
         self.shelf = shelf
 
-    def load_gr_pool(self: WorkspaceBound) -> WorkspaceBound:
+    def load_gr_pool(self) -> Self:
         """
         Load a pool as specified by a guest request.
         """
@@ -2315,7 +2315,7 @@ class Workspace:
 
         return self
 
-    def test_pool_enabled(self: WorkspaceBound) -> WorkspaceBound:
+    def test_pool_enabled(self) -> Self:
         if self.result:
             return self
 
@@ -2419,7 +2419,7 @@ class Workspace:
 
         return r
 
-    def load_pools(self: WorkspaceBound) -> WorkspaceBound:
+    def load_pools(self) -> Self:
         if self.result:
             return self
 
@@ -2433,7 +2433,7 @@ class Workspace:
 
         return self
 
-    def mark_note_poolname(self: WorkspaceBound) -> WorkspaceBound:
+    def mark_note_poolname(self) -> Self:
         if self.result:
             return self
 
@@ -2449,7 +2449,7 @@ class Workspace:
         return self
 
     def update_guest_state_and_request_task(
-        self: WorkspaceBound,
+        self,
         new_state: GuestState,
         task: Actor,
         *task_arguments: ActorArgumentType,
@@ -2459,7 +2459,7 @@ class Workspace:
         current_pool_data: Optional[SerializedPoolDataMapping] = None,
         delay: Optional[int] = None,
         **details: Any
-    ) -> WorkspaceBound:
+    ) -> Self:
         """
         Update guest request state and plan a follow-up task.
         """

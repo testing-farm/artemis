@@ -2030,7 +2030,7 @@ class DB:
             finally:
                 _log_db_statement('END SESSION')
 
-                cast(Callable[[], None], session_factory.remove)()
+                session_factory.remove()
 
     @contextmanager
     def transaction(

@@ -36,7 +36,7 @@ import gluetool.log
 import gluetool.utils
 import pint
 from gluetool.result import Error, Ok, Result
-from typing_extensions import Literal, TypeAlias
+from typing_extensions import Literal, Self, TypeAlias
 
 from . import Failure, SerializableContainer
 
@@ -137,10 +137,10 @@ class _FlavorSubsystemContainer(SerializableContainer):
     VIRTUAL_PROPERTIES: List[str] = []
 
     # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone some complex fields.
-    def clone(self: U) -> U:
-        clone = dataclasses.replace(self)
+    def clone(self) -> Self:
+        clone = dataclasses.replace(self)  # type: ignore[type-var]
 
-        for field_spec in dataclasses.fields(self):
+        for field_spec in dataclasses.fields(self):  # type: ignore[arg-type]
             field = getattr(self, field_spec.name)
 
             if isinstance(field, _FlavorSubsystemContainer):
@@ -199,7 +199,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 
         return len(self.items)
 
-    def clone(self: V) -> V:
+    def clone(self) -> Self:
         return self.__class__([
             item.clone() for item in self.items
         ])
@@ -1372,7 +1372,7 @@ class And(CompoundConstraint):
         simple_constraints = [
             constraint
             for constraint in self.constraints
-            if not isinstance(constraint, CompoundConstraint)
+            if isinstance(constraint, Constraint)
         ]
 
         # Compound constraints - these we will ask to generate their spans, and we produce cartesian

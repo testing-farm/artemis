@@ -131,8 +131,7 @@ def get_environment_schemas() -> Result[Dict[str, JSONSchemaType], Failure]:
     return Ok(ENVIRONMENT_SCHEMAS)
 
 
-# NOTE(ivasilev) type ignore because of https://github.com/python/mypy/issues/11929
 def get_redirects(version: str) -> List[str]:
     _, redirects = next(((milestone_version, redirects) for milestone_version, redirects in API_MILESTONES
                          if milestone_version == version), (None, []))
-    return redirects  # type: ignore[return-value]
+    return redirects
