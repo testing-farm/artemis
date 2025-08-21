@@ -336,7 +336,7 @@ class Sentry:
                     'cert_reqs': 'CERT_NONE'
                 }
 
-            sentry_sdk.transport.HttpTransport._get_pool_options = _get_pool_options  # type: ignore[assignment]
+            sentry_sdk.transport.HttpTransport._get_pool_options = _get_pool_options  # type: ignore[method-assign]
 
         integrations = Sentry._ingest_integrations(logger)
 
@@ -563,9 +563,9 @@ class SerializableContainer:
         See :py:meth:`unserialize` for the reversal operation.
         """
 
-        serialized = dataclasses.asdict(self)
+        serialized = dataclasses.asdict(self)  # type: ignore[call-overload]
 
-        for field in dataclasses.fields(self):
+        for field in dataclasses.fields(self):  # type: ignore[arg-type]
             if not inspect.isclass(field.type):
                 continue
 
@@ -574,7 +574,7 @@ class SerializableContainer:
 
             serialized[field.name] = getattr(self, field.name).serialize()
 
-        return serialized
+        return cast(Dict[str, Any], serialized)
 
     @classmethod
     def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
@@ -588,7 +588,7 @@ class SerializableContainer:
 
         unserialized = cls(**serialized)
 
-        for field in dataclasses.fields(unserialized):
+        for field in dataclasses.fields(unserialized):  # type: ignore[arg-type]
             if not inspect.isclass(field.type):
                 continue
 

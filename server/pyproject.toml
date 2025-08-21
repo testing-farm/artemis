@@ -130,6 +130,7 @@ filterwarnings = [
 
 [tool.ruff]
 line-length = 120
+indent-width = 4
 src = ["src", "tests"]
 target-version = "py39"
 # The following comes from the tmt project - pretty much everything is disabled for now, and we
@@ -177,6 +178,7 @@ lint.ignore = [
     # "B904",  # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ...
     # "COM812",  # Trailing comma missing
     # "G004",  # Logging statement uses f-string
+    "PLC0415",  # `import` should be at the top-level of a file
     # "PLC1901",  # `{}` can be simplified to `{}` as an empty string is falsey
     # "PLE1205",  # Too many arguments for `logging` format string
     # "PLR09",  # Too many branches/statements/arguments/returns

@@ -212,7 +212,7 @@ class MetricsBase:
 
         self._metric_container_fields = [
             self.__dict__[field.name]
-            for field in dataclasses.fields(self)
+            for field in dataclasses.fields(self)  # type: ignore[arg-type]
             if isinstance(self.__dict__[field.name], MetricsBase)
         ]
 

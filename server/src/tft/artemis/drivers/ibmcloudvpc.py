@@ -431,8 +431,7 @@ class IBMCloudVPCDriver(PoolDriver):
         return self.do_fetch_pool_flavor_info(
             self.logger,
             _fetch,
-            # ignore[index]: for some reason, mypy does not detect the type correctly
-            lambda raw_flavor: cast(str, raw_flavor['name']),  # type: ignore[index]
+            lambda raw_flavor: cast(str, raw_flavor['name']),
             _constructor
         )
 

@@ -3138,10 +3138,12 @@ class AWSDriver(PoolDriver):
                     ]
 
                 except Exception as exc:
-                    return Error(Failure.from_exc(
+                    yield Error(Failure.from_exc(
                         'malformed flavor description',
                         exc
                     ))
+
+                    return
 
                 vcpus = int(raw_flavor['VCpuInfo']['DefaultVCpus'])
                 cores = int(raw_flavor['VCpuInfo']['DefaultCores'])
@@ -3180,8 +3182,7 @@ class AWSDriver(PoolDriver):
         return self.do_fetch_pool_flavor_info(
             self.logger,
             _fetch,
-            # ignore[index]: for some reason, mypy does not detect the type correctly
-            lambda raw_flavor: cast(str, raw_flavor['InstanceType']),  # type: ignore[index]
+            lambda raw_flavor: cast(str, raw_flavor['InstanceType']),
             _constructor
         )
 
@@ -3251,7 +3252,7 @@ class AWSDriver(PoolDriver):
             logger,
             resources.usage,
             _fetch_instances,
-            lambda raw_instance: raw_instance['InstanceType'],  # type: ignore[index,no-any-return]
+            lambda raw_instance: raw_instance['InstanceType'],
             _update_instance_usage
         )
 

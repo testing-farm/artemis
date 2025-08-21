@@ -880,19 +880,17 @@ def _apply_flavor_specification(
             patched_disks.append(disk)
 
             if 'additional-disks' not in disk_patch:
-                specific_disk_patch = cast(ConfigFlavorDiskSpecificSpecType, disk_patch)
-
                 r_size = _parse_flavor_disk_size(
                     'size',
-                    specific_disk_patch.get('size'),
+                    disk_patch.get('size'),
                     disk
                 )
 
                 if r_size.is_error:
                     return Error(r_size.unwrap_error())
 
-                if specific_disk_patch.get('model-name'):
-                    disk.model_name = specific_disk_patch.get('model-name')
+                if disk_patch.get('model-name'):
+                    disk.model_name = disk_patch.get('model-name')
 
             else:
                 expansion_disk_patch = cast(ConfigFlavorDiskExpandedSpecType, disk_patch)['additional-disks']
@@ -918,7 +916,7 @@ def _apply_flavor_specification(
                 if r_size.is_error:
                     return Error(r_size.unwrap_error())
 
-                if specific_disk_patch.get('model-name'):
+                if disk_patch.get('model-name'):
                     disk.model_name = expansion_disk_patch.get('model-name')
 
         flavor.disk = FlavorDisks(patched_disks)
@@ -1592,7 +1590,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     @property
     def ssh_options(self) -> List[str]:
-        return self.pool_config.get('ssh-options', [])
+        return gluetool.utils.normalize_multistring_option(self.pool_config.get('ssh-options', []))
 
     @property
     def image_info_mapper(self) -> ImageInfoMapper[PoolImageInfo]:
@@ -1604,7 +1602,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     @property
     def use_only_when_addressed(self) -> bool:
-        return self.pool_config.get('use-only-when-addressed', False)
+        return gluetool.utils.normalize_bool_option(self.pool_config.get('use-only-when-addressed', False))
 
     @property
     def preserve_for_investigation(self) -> bool:
