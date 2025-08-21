@@ -9,6 +9,7 @@ Revises: cbb792480f16
 Create Date: 2023-01-19 10:56:12.546863
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -26,16 +27,16 @@ def upgrade() -> None:
         sa.Column('shelfname', sa.String(length=250), nullable=False),
         sa.Column('ownername', sa.String(length=250), nullable=False),
         sa.Column('state', sa.String(length=250), nullable=False),
-        sa.ForeignKeyConstraint(['ownername'], ['users.username'], ),
-        sa.PrimaryKeyConstraint('shelfname')
+        sa.ForeignKeyConstraint(
+            ['ownername'],
+            ['users.username'],
+        ),
+        sa.PrimaryKeyConstraint('shelfname'),
     )
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         batch_op.add_column(sa.Column('shelfname', sa.String(length=250), nullable=True))
         batch_op.create_foreign_key(
-            'fk_guest_requests_shelfname_guest_shelves',
-            'guest_shelves',
-            ['shelfname'],
-            ['shelfname']
+            'fk_guest_requests_shelfname_guest_shelves', 'guest_shelves', ['shelfname'], ['shelfname']
         )
 
     # ### end Alembic commands ###

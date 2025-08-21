@@ -26,16 +26,17 @@ ENVIRONMENT_SCHEMAS: Dict[str, JSONSchemaType] = {}
 API_MILESTONES: List[Tuple[str, List[str]]] = [
     # NEW: guest reboot
     # NEW: cpu.stepping HW requirement
-    ('v0.0.74', [
-        # For lazy clients who don't care about the version, our most current API version should add
-        # `/current` redirected to itself.
-        'current',
-
-        # For clients that did not switch to versioned API yet, keep top-level endpoints.
-        # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
-        'toplevel'
-    ]),
-
+    (
+        'v0.0.74',
+        [
+            # For lazy clients who don't care about the version, our most current API version should add
+            # `/current` redirected to itself.
+            'current',
+            # For clients that did not switch to versioned API yet, keep top-level endpoints.
+            # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
+            'toplevel',
+        ],
+    ),
     # NEW: beaker HW requirement
     ('v0.0.73', []),
     # NEW: allow passing security group rules for guest creation
@@ -88,7 +89,7 @@ API_MILESTONES: List[Tuple[str, List[str]]] = [
     ('v0.0.19', []),
     # NEW: /guest/$GUESTNAME/console/url
     ('v0.0.18', []),
-    ('v0.0.17', [])
+    ('v0.0.17', []),
 ]
 
 CURRENT_MILESTONE_VERSION = API_MILESTONES[0][0]
@@ -98,17 +99,12 @@ METRICS_LOCK = threading.Lock()
 
 # Type checking this call is hard, mypy complains about unexpected keyword arguments, and refactoring
 # didn't help at all, just yielded another kind of errors.
-OPENAPI_METADATA = {
-    'title': 'Artemis API',
-    'description': 'Artemis provisioning system API.',
-    'version': __VERSION__
-}
+OPENAPI_METADATA = {'title': 'Artemis API', 'description': 'Artemis provisioning system API.', 'version': __VERSION__}
 
 
 def get_environment_schemas() -> Result[Dict[str, JSONSchemaType], Failure]:
     global ENVIRONMENT_SCHEMAS
     if not ENVIRONMENT_SCHEMAS:
-
         logger = get_logger()
         environment_schemas = {}
         for milestone_version, compatible_versions in API_MILESTONES:
@@ -132,6 +128,12 @@ def get_environment_schemas() -> Result[Dict[str, JSONSchemaType], Failure]:
 
 
 def get_redirects(version: str) -> List[str]:
-    _, redirects = next(((milestone_version, redirects) for milestone_version, redirects in API_MILESTONES
-                         if milestone_version == version), (None, []))
+    _, redirects = next(
+        (
+            (milestone_version, redirects)
+            for milestone_version, redirects in API_MILESTONES
+            if milestone_version == version
+        ),
+        (None, []),
+    )
     return redirects

@@ -88,7 +88,7 @@ class Workspace(_Workspace):
         session: sqlalchemy.orm.session.Session,
         poolname: str,
         serialized_resource_ids: str,
-        guestname: Optional[str]
+        guestname: Optional[str],
     ) -> 'Workspace':
         """
         Create workspace.
@@ -116,7 +116,7 @@ class Workspace(_Workspace):
         session: sqlalchemy.orm.session.Session,
         poolname: str,
         serialized_resource_ids: str,
-        guestname: Optional[str]
+        guestname: Optional[str],
     ) -> DoerReturnType:
         """
         Schedule release of guest request resources.
@@ -128,11 +128,13 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, poolname, serialized_resource_ids, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
+        return (
+            cls.create(logger, db, session, poolname, serialized_resource_ids, guestname)
+            .begin()
+            .run()
+            .complete()
             .final_result
+        )
 
 
 @task(priority=TaskPriority.LOW)
@@ -144,7 +146,5 @@ def release_pool_resources(poolname: str, resource_ids: str, guestname: Optional
         logger = TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME)
 
     task_core(
-        cast(DoerType, Workspace.release_pool_resources),
-        logger=logger,
-        doer_args=(poolname, resource_ids, guestname)
+        cast(DoerType, Workspace.release_pool_resources), logger=logger, doer_args=(poolname, resource_ids, guestname)
     )

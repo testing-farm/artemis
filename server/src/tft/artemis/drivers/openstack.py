@@ -62,7 +62,7 @@ KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_OPENSTACK_BUILD_TIMEOUT',
     cast_from_str=int,
-    default=600
+    default=600,
 )
 
 KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
@@ -71,7 +71,7 @@ KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES',
     cast_from_str=int,
-    default=600
+    default=600,
 )
 
 KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
@@ -81,7 +81,7 @@ KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
     per_entity=True,
     envvar='ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK',
     cast_from_str=int,
-    default=30
+    default=30,
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -91,7 +91,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
-    default='artemis-image-map-openstack.yaml'
+    default='artemis-image-map-openstack.yaml',
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
@@ -101,7 +101,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
-    default='{{ os.compose }}'
+    default='{{ os.compose }}',
 )
 
 
@@ -120,7 +120,7 @@ class OpenStackErrorCauses(PoolErrorCauses):
 CLI_ERROR_PATTERNS = {
     OpenStackErrorCauses.NO_SUCH_COMMAND: re.compile(r'openstack: .+ is not an openstack command'),
     OpenStackErrorCauses.MISSING_INSTANCE: re.compile(r'^No server with a name or ID'),
-    OpenStackErrorCauses.INSTANCE_NOT_READY: re.compile(r'^Instance [a-z0-9\-]+ is not ready')
+    OpenStackErrorCauses.INSTANCE_NOT_READY: re.compile(r'^Instance [a-z0-9\-]+ is not ready'),
 }
 
 
@@ -159,60 +159,58 @@ class OpenStackDriver(PoolDriver):
 
     pool_data_class = OpenStackPoolData
 
-    def __init__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        poolname: str,
-        pool_config: Dict[str, Any]
-    ) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
 
         self._os_cmd_base = [
             'openstack',
-            '--os-auth-url', self.pool_config['auth-url'],
-            '--os-identity-api-version', self.pool_config['api-version'],
-            '--os-user-domain-name', self.pool_config['user-domain-name'],
-            '--os-project-name', self.pool_config['project-name'],
-            '--os-username', self.pool_config['username'],
-            '--os-password', self.pool_config['password']
+            '--os-auth-url',
+            self.pool_config['auth-url'],
+            '--os-identity-api-version',
+            self.pool_config['api-version'],
+            '--os-user-domain-name',
+            self.pool_config['user-domain-name'],
+            '--os-project-name',
+            self.pool_config['project-name'],
+            '--os-username',
+            self.pool_config['username'],
+            '--os-password',
+            self.pool_config['password'],
         ]
 
         if self.pool_config.get('project-domain-name'):
-            self._os_cmd_base += [
-                '--os-project-domain-name', self.pool_config['project-domain-name']
-            ]
+            self._os_cmd_base += ['--os-project-domain-name', self.pool_config['project-domain-name']]
 
         elif self.pool_config.get('project-domain-id'):
-            self._os_cmd_base += [
-                '--os-project-domain-id', self.pool_config['project-domain-id']
-            ]
+            self._os_cmd_base += ['--os-project-domain-id', self.pool_config['project-domain-id']]
 
     @property
     def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
         return HookImageInfoMapper(self, 'OPENSTACK_ENVIRONMENT_TO_IMAGE')
 
-    def login_session(
-            self,
-            logger: gluetool.log.ContextAdapter
-    ) -> Result[keystoneauth1.session.Session, Failure]:
+    def login_session(self, logger: gluetool.log.ContextAdapter) -> Result[keystoneauth1.session.Session, Failure]:
         # NOTE(ivasilev) Either project-domain-name or project-domain-id can be used for auth, so let's pass whatever's
         # defined in the config without restricting to project-domain-name only and let keystone client decide what
         # to use
         auth = v3.Password(
-            auth_url=self.pool_config['auth-url'], username=self.pool_config['username'],
-            password=self.pool_config['password'], user_domain_name=self.pool_config['user-domain-name'],
+            auth_url=self.pool_config['auth-url'],
+            username=self.pool_config['username'],
+            password=self.pool_config['password'],
+            user_domain_name=self.pool_config['user-domain-name'],
             project_domain_name=self.pool_config.get('project-domain-name'),
             project_domain_id=self.pool_config.get('project-domain-id'),
-            project_name=self.pool_config['project-name']
+            project_name=self.pool_config['project-name'],
         )
         try:
             sess = keystoneauth1.session.Session(auth=auth)
             return Ok(sess)
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'Failed to log into OpenStack tenant',
-                exc,
-            ))
+            return Error(
+                Failure.from_exc(
+                    'Failed to log into OpenStack tenant',
+                    exc,
+                )
+            )
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
@@ -221,16 +219,13 @@ class OpenStackDriver(PoolDriver):
         capabilities.supports_snapshots = True
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.BLOB),
-            ('console:interactive', GuestLogContentType.URL)
+            ('console:interactive', GuestLogContentType.URL),
         ]
 
         return Ok(capabilities)
 
     def _run_os(
-        self,
-        options: List[str],
-        json_format: bool = True,
-        commandname: Optional[str] = None
+        self, options: List[str], json_format: bool = True, commandname: Optional[str] = None
     ) -> Result[Union[JSONType, str], Failure]:
         """
         Run os command with additional options and return output in json format
@@ -256,7 +251,7 @@ class OpenStackDriver(PoolDriver):
             command_scrubber=lambda cmd: (['openstack'] + options),
             poolname=self.poolname,
             commandname=commandname,
-            cause_extractor=os_error_cause_extractor
+            cause_extractor=os_error_cause_extractor,
         )
 
         if r_run.is_error:
@@ -264,8 +259,10 @@ class OpenStackDriver(PoolDriver):
 
             # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
             # run this method, we would never evenr made it remove instance that doesn't exist.
-            if failure.command_output \
-               and os_error_cause_extractor(failure.command_output) == OpenStackErrorCauses.MISSING_INSTANCE:
+            if (
+                failure.command_output
+                and os_error_cause_extractor(failure.command_output) == OpenStackErrorCauses.MISSING_INSTANCE
+            ):
                 failure.recoverable = False
 
                 PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.MISSING_INSTANCE)
@@ -280,21 +277,15 @@ class OpenStackDriver(PoolDriver):
         return Ok(cli_output.stdout)
 
     def map_image_name_to_image_info(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        imagename: str
+        self, logger: gluetool.log.ContextAdapter, imagename: str
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
     def _env_to_flavor_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[Optional[Flavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
-            logger,
-            guest_request.environment
+            logger, guest_request.environment
         )
 
         if r_suitable_flavors.is_error:
@@ -305,42 +296,26 @@ class OpenStackDriver(PoolDriver):
         if not suitable_flavors:
             if self.pool_config.get('use-default-flavor-when-no-suitable', True):
                 guest_request.log_warning_event(
-                    logger,
-                    session,
-                    'no suitable flavors, using default',
-                    poolname=self.poolname
+                    logger, session, 'no suitable flavors, using default', poolname=self.poolname
                 )
 
                 return self._map_environment_to_flavor_info_by_cache_by_name_or_none(
-                    logger,
-                    self.pool_config['default-flavor']
+                    logger, self.pool_config['default-flavor']
                 )
 
-            guest_request.log_warning_event(
-                logger,
-                session,
-                'no suitable flavors',
-                poolname=self.poolname
-            )
+            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
 
             return Ok(None)
 
         if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
             logger.info('default flavor among suitable ones, using it')
 
-            return Ok([
-                flavor
-                for flavor in suitable_flavors
-                if flavor.name == self.pool_config['default-flavor']
-            ][0])
+            return Ok([flavor for flavor in suitable_flavors if flavor.name == self.pool_config['default-flavor']][0])
 
         return Ok(suitable_flavors[0])
 
     def _env_to_flavor(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[Flavor, Failure]:
         r_flavor = self._env_to_flavor_or_none(logger, session, guest_request)
 
@@ -388,7 +363,6 @@ class OpenStackDriver(PoolDriver):
         return Ok(network_name)
 
     def _get_nova(self) -> Result[novaclient.v2.client.Client, Failure]:
-
         sess = self.login_session(self.logger)
         if sess.is_error:
             return Error(sess.unwrap_error())
@@ -396,22 +370,19 @@ class OpenStackDriver(PoolDriver):
             nova = nocl.Client(self.pool_config['nova-version'], session=sess.unwrap())
             return Ok(nova)
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'Failed to get nova Client',
-                exc,
-            ))
+            return Error(
+                Failure.from_exc(
+                    'Failed to get nova Client',
+                    exc,
+                )
+            )
 
-    def _show_guest(
-        self,
-        guest_request: GuestRequest
-    ) -> Result[novaclient.v2.servers.Server, Failure]:
-
+    def _show_guest(self, guest_request: GuestRequest) -> Result[novaclient.v2.servers.Server, Failure]:
         r_nova = self._get_nova()
         if r_nova.is_error:
             return Error(r_nova.unwrap_error())
         instance = safe_call(
-            r_nova.unwrap().servers.get,
-            guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
+            r_nova.unwrap().servers.get, guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
         )
 
         return instance
@@ -425,15 +396,11 @@ class OpenStackDriver(PoolDriver):
         r_output = self._run_os(os_options, commandname='os.image-show')
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch snapshot information',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to fetch snapshot information', r_output.unwrap_error()))
 
         return Ok(r_output.unwrap())
 
     def _get_glance(self) -> Result[glanceclient.Client, Failure]:
-
         sess = self.login_session(self.logger)
         if sess.is_error:
             return Error(sess.unwrap_error())
@@ -441,22 +408,17 @@ class OpenStackDriver(PoolDriver):
             glance = glanceclient.Client(self.pool_config['glance-version'], session=sess.unwrap())
             return Ok(glance)
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'Failed to get glance Client',
-                exc,
-            ))
+            return Error(
+                Failure.from_exc(
+                    'Failed to get glance Client',
+                    exc,
+                )
+            )
 
     def _do_acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        log_dict_yaml(
-            logger.info,
-            'provisioning environment',
-            guest_request._environment
-        )
+        log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
@@ -484,22 +446,15 @@ class OpenStackDriver(PoolDriver):
         if not pairs:
             return Error(Failure('no suitable image/flavor combination found'))
 
-        log_dict_yaml(logger.info, 'available image/flavor combinations', [
-            {
-                'flavor': flavor.serialize(),
-                'image': image.serialize()
-            } for image, flavor in pairs
-        ])
+        log_dict_yaml(
+            logger.info,
+            'available image/flavor combinations',
+            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
+        )
 
         image, flavor = pairs[0]
 
-        self.log_acquisition_attempt(
-            logger,
-            session,
-            guest_request,
-            flavor=flavor,
-            image=image
-        )
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
         r_network = self._env_to_network(guest_request.environment)
         if r_network.is_error:
@@ -509,7 +464,7 @@ class OpenStackDriver(PoolDriver):
 
         def _create(user_data_filename: Optional[str] = None) -> Result[Any, Failure]:
             """The actual call to the openstack cli guest create command is happening here.
-               If user_data_filename is an empty string then the guest vm is booted with no user-data.
+            If user_data_filename is an empty string then the guest vm is booted with no user-data.
             """
 
             r_tags = self.get_guest_tags(logger, session, guest_request)
@@ -519,31 +474,37 @@ class OpenStackDriver(PoolDriver):
 
             tags = r_tags.unwrap()
 
-            property_options: List[str] = sum((
-                ['--property', f'{tag}={value}']
-                for tag, value in tags.items()
-            ), [])
+            property_options: List[str] = sum((['--property', f'{tag}={value}'] for tag, value in tags.items()), [])
 
             user_data_options: List[str] = [] if not user_data_filename else ['--user-data', user_data_filename]
 
-            os_options = [
-                'server',
-                'create',
-                '--flavor', flavor.id,
-                '--image', image.id,
-                '--network', network,
-                '--key-name', self.pool_config['master-key-name'],
-                '--security-group', self.pool_config.get('security-group', 'default'),
-            ] + property_options + user_data_options + [
-                tags['ArtemisGuestLabel']
-            ]
+            os_options = (
+                [
+                    'server',
+                    'create',
+                    '--flavor',
+                    flavor.id,
+                    '--image',
+                    image.id,
+                    '--network',
+                    network,
+                    '--key-name',
+                    self.pool_config['master-key-name'],
+                    '--security-group',
+                    self.pool_config.get('security-group', 'default'),
+                ]
+                + property_options
+                + user_data_options
+                + [tags['ArtemisGuestLabel']]
+            )
 
             return self._run_os(os_options, commandname='os.server-create')
 
         r_post_install_script = self.generate_post_install_script(guest_request)
         if r_post_install_script.is_error:
-            return Error(Failure.from_failure('Could not generate post-install script',
-                                              r_post_install_script.unwrap_error()))
+            return Error(
+                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+            )
 
         post_install_script = r_post_install_script.unwrap()
         if post_install_script:
@@ -565,17 +526,16 @@ class OpenStackDriver(PoolDriver):
         logger.info(f'acquired instance status {instance_id}:{status}')
 
         # There is no chance that the guest will be ready in this step
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.PENDING,
-            pool_data=OpenStackPoolData(instance_id=instance_id),
-            delay_update=r_delay.unwrap(),
-            ssh_info=image.ssh
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=OpenStackPoolData(instance_id=instance_id),
+                delay_update=r_delay.unwrap(),
+                ssh_info=image.ssh,
+            )
+        )
 
-    def _get_guest_status(
-        self,
-        guest_request: GuestRequest
-    ) -> Result[str, Failure]:
+    def _get_guest_status(self, guest_request: GuestRequest) -> Result[str, Failure]:
         r_show = self._show_guest(guest_request)
 
         if r_show.is_error:
@@ -585,10 +545,7 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(instance.status.lower())
 
-    def is_guest_stopped(
-        self,
-        guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    def is_guest_stopped(self, guest_request: GuestRequest) -> Result[bool, Failure]:
         r_status = self._get_guest_status(guest_request)
 
         if r_status.is_error:
@@ -597,10 +554,7 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(status == 'shutoff')
 
-    def is_guest_running(
-        self,
-        guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    def is_guest_running(self, guest_request: GuestRequest) -> Result[bool, Failure]:
         r_status = self._get_guest_status(guest_request)
 
         if r_status.is_error:
@@ -609,11 +563,7 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(status == 'active')
 
-    def stop_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    def stop_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
 
         if not pool_data.instance_id:
@@ -624,18 +574,11 @@ class OpenStackDriver(PoolDriver):
         r_stop = self._run_os(os_options, json_format=False, commandname='os.server-stop')
 
         if r_stop.is_error:
-            return Error(Failure.from_failure(
-                'failed to stop instance',
-                r_stop.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to stop instance', r_stop.unwrap_error()))
 
         return Ok(True)
 
-    def start_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[bool, Failure]:
+    def start_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
         pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
 
         if not pool_data.instance_id:
@@ -646,19 +589,13 @@ class OpenStackDriver(PoolDriver):
         r_start = self._run_os(os_options, json_format=False, commandname='os.server-start')
 
         if r_start.is_error:
-            return Error(Failure.from_failure(
-                'failed to start instance',
-                r_start.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to start instance', r_start.unwrap_error()))
             return Error(r_start.unwrap_error())
 
         return Ok(True)
 
     def can_acquire(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
         r_answer = super().can_acquire(logger, session, guest_request)
 
@@ -712,19 +649,16 @@ class OpenStackDriver(PoolDriver):
         if not pairs:
             return Ok(CanAcquire.cannot('no suitable image/flavor combination found'))
 
-        log_dict_yaml(logger.info, 'available image/flavor combinations', [
-            {
-                'flavor': flavor.serialize(),
-                'image': image.serialize()
-            } for image, flavor in pairs
-        ])
+        log_dict_yaml(
+            logger.info,
+            'available image/flavor combinations',
+            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
+        )
 
         return Ok(CanAcquire())
 
     def acquire_console_url(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:
         """
         Acquire a guest console.
@@ -735,28 +669,23 @@ class OpenStackDriver(PoolDriver):
         if not pool_data.instance_id:
             return Error(Failure('cannot fetch console without instance ID'))
 
-        os_options = [
-            'console', 'url', 'show', pool_data.instance_id
-        ]
+        os_options = ['console', 'url', 'show', pool_data.instance_id]
         r_output = self._run_os(os_options, commandname='os.console-url-show')
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch console URL',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to fetch console URL', r_output.unwrap_error()))
         # NOTE(ivasilev) The following cast is needed to keep quiet the typing check
         data = cast(Dict[str, str], r_output.unwrap())
 
-        return Ok(ConsoleUrlData(
-            url=data['url'],
-            type=data['type'],
-            expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
-        ))
+        return Ok(
+            ConsoleUrlData(
+                url=data['url'],
+                type=data['type'],
+                expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value),
+            )
+        )
 
     def create_snapshot(
-        self,
-        guest_request: GuestRequest,
-        snapshot_request: SnapshotRequest
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest
     ) -> Result[ProvisioningProgress, Failure]:
         pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
 
@@ -768,31 +697,23 @@ class OpenStackDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        os_options = [
-            'server', 'image', 'create',
-            '--name', snapshot_request.snapshotname,
-            pool_data.instance_id
-        ]
+        os_options = ['server', 'image', 'create', '--name', snapshot_request.snapshotname, pool_data.instance_id]
 
         r_output = self._run_os(os_options, commandname='os.server-image-create')
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to create snapshot',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to create snapshot', r_output.unwrap_error()))
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.PENDING,
-            pool_data=guest_request.pool_data.mine(self, OpenStackPoolData),
-            delay_update=r_delay.unwrap()
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=guest_request.pool_data.mine(self, OpenStackPoolData),
+                delay_update=r_delay.unwrap(),
+            )
+        )
 
     def update_snapshot(
-        self,
-        guest_request: GuestRequest,
-        snapshot_request: SnapshotRequest,
-        start_again: bool = True
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
@@ -815,16 +736,13 @@ class OpenStackDriver(PoolDriver):
         self.logger.info(f'snapshot status is {status}')
 
         if status != 'active':
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=pool_data,
-                delay_update=r_delay.unwrap()
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.PENDING, pool_data=pool_data, delay_update=r_delay.unwrap()
+                )
+            )
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.COMPLETE,
-            pool_data=pool_data
-        ))
+        return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data))
 
     def remove_snapshot(
         self,
@@ -836,10 +754,7 @@ class OpenStackDriver(PoolDriver):
         r_output = safe_call(r_glance.unwrap().images.delete, snapshot_request.snapshotname)
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to delete snapshot',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to delete snapshot', r_output.unwrap_error()))
 
         return Ok(True)
 
@@ -853,28 +768,17 @@ class OpenStackDriver(PoolDriver):
         if not pool_data.instance_id:
             return Ok(False)
 
-        os_options = [
-            'server', 'rebuild',
-            '--image', snapshot_request.snapshotname,
-            '--wait',
-            pool_data.instance_id
-        ]
+        os_options = ['server', 'rebuild', '--image', snapshot_request.snapshotname, '--wait', pool_data.instance_id]
 
         r_output = self._run_os(os_options, json_format=False, commandname='os.server-rebuild')
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to rebuild instance',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to rebuild instance', r_output.unwrap_error()))
 
         return Ok(True)
 
     def acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
@@ -886,17 +790,10 @@ class OpenStackDriver(PoolDriver):
         :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
             of error.
         """
-        return self._do_acquire_guest(
-            logger,
-            session,
-            guest_request
-        )
+        return self._do_acquire_guest(logger, session, guest_request)
 
     def update_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
@@ -922,22 +819,20 @@ class OpenStackDriver(PoolDriver):
         if status == 'error':
             PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.INSTANCE_IN_ERROR_STATE)
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.CANCEL,
-                pool_data=pool_data,
-                pool_failures=[Failure('instance ended up in "ERROR" state')]
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=pool_data,
+                    pool_failures=[Failure('instance ended up in "ERROR" state')],
+                )
+            )
 
         if status == 'build' and instance.created:
             try:
                 created_stamp = datetime.datetime.strptime(instance.created, '%Y-%m-%dT%H:%M:%SZ')
 
             except Exception as exc:
-                Failure.from_exc(
-                    'failed to parse "created" timestamp',
-                    exc,
-                    stamp=instance.created
-                ).handle(self.logger)
+                Failure.from_exc('failed to parse "created" timestamp', exc, stamp=instance.created).handle(self.logger)
 
             else:
                 diff = datetime.datetime.utcnow() - created_stamp
@@ -945,39 +840,36 @@ class OpenStackDriver(PoolDriver):
                 if diff.total_seconds() > KNOB_BUILD_TIMEOUT.value:
                     PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.INSTANCE_BUILDING_TOO_LONG)
 
-                    return Ok(ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=pool_data,
-                        pool_failures=[Failure('instance stuck in "BUILD" for too long')]
-                    ))
+                    return Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=pool_data,
+                            pool_failures=[Failure('instance stuck in "BUILD" for too long')],
+                        )
+                    )
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=pool_data,
-                delay_update=r_delay.unwrap()
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.PENDING, pool_data=pool_data, delay_update=r_delay.unwrap()
+                )
+            )
 
         try:
             raw_address = list(instance.addresses.values())[0]
             ip_address = cast(str, raw_address[0]['addr'])
 
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to parse IP address',
-                exc,
-            ))
+            return Error(
+                Failure.from_exc(
+                    'failed to parse IP address',
+                    exc,
+                )
+            )
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.COMPLETE,
-            pool_data=pool_data,
-            address=ip_address
-        ))
+        return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=ip_address))
 
     def release_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -989,40 +881,30 @@ class OpenStackDriver(PoolDriver):
             return Ok(None)
 
         return self.dispatch_resource_cleanup(
-            logger,
-            session,
-            OpenStackPoolResourcesIDs(instance_id=pool_data.instance_id),
-            guest_request=guest_request
+            logger, session, OpenStackPoolResourcesIDs(instance_id=pool_data.instance_id), guest_request=guest_request
         )
 
     def release_pool_resources(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        raw_resource_ids: SerializedPoolResourcesIDs
+        self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
         resource_ids = OpenStackPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.instance_id:
-            r_output = self._run_os([
-                'server',
-                'delete',
-                '--wait',
-                resource_ids.instance_id
-            ], json_format=False, commandname='os.server-delete')
+            r_output = self._run_os(
+                ['server', 'delete', '--wait', resource_ids.instance_id],
+                json_format=False,
+                commandname='os.server-delete',
+            )
 
             if r_output.is_error:
-                return Error(Failure.from_failure(
-                    'failed to delete instance',
-                    r_output.unwrap_error()
-                ))
+                return Error(Failure.from_failure('failed to delete instance', r_output.unwrap_error()))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
     def fetch_pool_resources_metrics(
-        self,
-        logger: gluetool.log.ContextAdapter
+        self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
         r_resources = super().fetch_pool_resources_metrics(logger)
 
@@ -1033,17 +915,14 @@ class OpenStackDriver(PoolDriver):
 
         # Resource usage - instances and flavors
         def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, str]], Failure]:
-            r_servers = self._run_os([
-                'server',
-                'list',
-                '--user', self.pool_config['username']
-            ], json_format=True, commandname='os.server-list')
+            r_servers = self._run_os(
+                ['server', 'list', '--user', self.pool_config['username']],
+                json_format=True,
+                commandname='os.server-list',
+            )
 
             if r_servers.is_error:
-                return Error(Failure.from_failure(
-                    'failed to fetch server list',
-                    r_servers.unwrap_error()
-                ))
+                return Error(Failure.from_failure('failed to fetch server list', r_servers.unwrap_error()))
 
             return Ok(cast(List[Dict[str, str]], r_servers.unwrap()))
 
@@ -1051,7 +930,7 @@ class OpenStackDriver(PoolDriver):
             logger: gluetool.log.ContextAdapter,
             usage: PoolResourcesUsage,
             raw_instance: Dict[str, str],
-            flavor: Optional[Flavor]
+            flavor: Optional[Flavor],
         ) -> Result[None, Failure]:
             assert usage.instances is not None  # narrow type
 
@@ -1070,23 +949,18 @@ class OpenStackDriver(PoolDriver):
             resources.usage,
             _fetch_instances,
             lambda raw_instance: raw_instance['Flavor'],
-            _update_instance_usage
+            _update_instance_usage,
         )
 
         if r_instances_usage.is_error:
             return Error(r_instances_usage.unwrap_error())
 
         r_query_limits = self._run_os(
-            ['limits', 'show', '--absolute', '--reserved'],
-            json_format=True,
-            commandname='os.limits-show'
+            ['limits', 'show', '--absolute', '--reserved'], json_format=True, commandname='os.limits-show'
         )
 
         if r_query_limits.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch tenant limits',
-                r_query_limits.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to fetch tenant limits', r_query_limits.unwrap_error()))
 
         raw_limits_container = r_query_limits.unwrap()
 
@@ -1131,18 +1005,14 @@ class OpenStackDriver(PoolDriver):
             elif name == 'maxTotalVolumeGigabytes' and resources.limits.diskspace is None:
                 resources.limits.diskspace = int(value) * 1073741824
 
-        r_networks = self._run_os([
-            'ip',
-            'availability',
-            'list',
-            '--ip-version', self.pool_config['ip-version']
-        ], json_format=True, commandname='os.ip-availability-list')
+        r_networks = self._run_os(
+            ['ip', 'availability', 'list', '--ip-version', self.pool_config['ip-version']],
+            json_format=True,
+            commandname='os.ip-availability-list',
+        )
 
         if r_networks.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch network information',
-                r_networks.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to fetch network information', r_networks.unwrap_error()))
 
         # networks have the following structure:
         # [
@@ -1182,31 +1052,26 @@ class OpenStackDriver(PoolDriver):
         r_images = safe_call(r_glance.unwrap().images.list)
 
         if r_images.is_error:
-            return Error(Failure.from_failure(
-                'Failed to list images',
-                r_images.unwrap_error()
-            ))
+            return Error(Failure.from_failure('Failed to list images', r_images.unwrap_error()))
 
         try:
-            return Ok([
-                PoolImageInfo(
-                    name=image['name'],
-                    id=image['id'],
-                    arch=None,
-                    boot=FlavorBoot(method=[image.get('hw_firmware_type', 'bios')]),
-                    ssh=PoolImageSSHInfo(),
-                    supports_kickstart=False
-                )
-                for image in r_images.unwrap()
-                if image_name_pattern is None or image_name_pattern.match(image['name'])
-            ])
+            return Ok(
+                [
+                    PoolImageInfo(
+                        name=image['name'],
+                        id=image['id'],
+                        arch=None,
+                        boot=FlavorBoot(method=[image.get('hw_firmware_type', 'bios')]),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                    )
+                    for image in r_images.unwrap()
+                    if image_name_pattern is None or image_name_pattern.match(image['name'])
+                ]
+            )
 
         except KeyError as exc:
-            return Error(Failure.from_exc(
-                'malformed image description',
-                exc,
-                image_info=r_images.unwrap()
-            ))
+            return Error(Failure.from_exc('malformed image description', exc, image_info=r_images.unwrap()))
 
     def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
         # Flavors are described by OpenStack CLI with the following structure:
@@ -1232,70 +1097,61 @@ class OpenStackDriver(PoolDriver):
             return safe_call(r_nova.unwrap().flavors.list)
 
         def _constructor(
-            logger: gluetool.log.ContextAdapter,
-            raw_flavor: novaclient.v2.flavors.Flavor
+            logger: gluetool.log.ContextAdapter, raw_flavor: novaclient.v2.flavors.Flavor
         ) -> Iterator[Result[Flavor, Failure]]:
-            yield Ok(Flavor(
-                name=raw_flavor.name,
-                id=raw_flavor.id,
-                cpu=FlavorCpu(
-                    processors=int(raw_flavor.vcpus)
-                ),
-                # memory is reported in MiB
-                memory=UNITS.Quantity(int(raw_flavor.ram), UNITS.mebibytes),
-                disk=FlavorDisks([
-                    FlavorDisk(
-                        # diskspace is reported in GiB
-                        size=UNITS.Quantity(int(raw_flavor.disk), UNITS.gibibytes)
-                    )
-                ]),
-                network=FlavorNetworks([FlavorNetwork(type='eth')]),
-                virtualization=FlavorVirtualization(
-                    is_virtualized=True
+            yield Ok(
+                Flavor(
+                    name=raw_flavor.name,
+                    id=raw_flavor.id,
+                    cpu=FlavorCpu(processors=int(raw_flavor.vcpus)),
+                    # memory is reported in MiB
+                    memory=UNITS.Quantity(int(raw_flavor.ram), UNITS.mebibytes),
+                    disk=FlavorDisks(
+                        [
+                            FlavorDisk(
+                                # diskspace is reported in GiB
+                                size=UNITS.Quantity(int(raw_flavor.disk), UNITS.gibibytes)
+                            )
+                        ]
+                    ),
+                    network=FlavorNetworks([FlavorNetwork(type='eth')]),
+                    virtualization=FlavorVirtualization(is_virtualized=True),
                 )
-            ))
+            )
 
         return self.do_fetch_pool_flavor_info(
-            self.logger,
-            _fetch,
-            lambda raw_flavor: cast(str, raw_flavor.name),
-            _constructor
+            self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor.name), _constructor
         )
 
     def _do_fetch_console(
-        self,
-        guest_request: GuestRequest,
-        resource: str,
-        json_format: bool = True
+        self, guest_request: GuestRequest, resource: str, json_format: bool = True
     ) -> Result[Optional[JSONType], Failure]:
         pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
 
         if not pool_data.instance_id:
             return Ok(None)
 
-        r_output = self._run_os([
-            'console',
-            resource,
-            'show',
-            pool_data.instance_id
-        ], json_format=json_format, commandname=f'console-{resource}-show')
+        r_output = self._run_os(
+            ['console', resource, 'show', pool_data.instance_id],
+            json_format=json_format,
+            commandname=f'console-{resource}-show',
+        )
 
         if r_output.is_error:
             failure = r_output.unwrap_error()
 
             # Detect "instance not ready".
-            if failure.command_output \
-               and os_error_cause_extractor(failure.command_output) == OpenStackErrorCauses.INSTANCE_NOT_READY:
+            if (
+                failure.command_output
+                and os_error_cause_extractor(failure.command_output) == OpenStackErrorCauses.INSTANCE_NOT_READY
+            ):
                 return Ok(None)
 
         return r_output
 
     @guest_log_updater('openstack', 'console:interactive', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_console_url(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(entityname=self.poolname)
 
@@ -1312,23 +1168,19 @@ class OpenStackDriver(PoolDriver):
         output = r_output.unwrap()
 
         if output is None:
-            return Ok(GuestLogUpdateProgress(
-                state=GuestLogState.IN_PROGRESS,
-                delay_update=delay_update
-            ))
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, delay_update=delay_update))
 
-        return Ok(GuestLogUpdateProgress(
-            state=GuestLogState.COMPLETE,
-            url=cast(Dict[str, str], output)['url'],
-            expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value)
-        ))
+        return Ok(
+            GuestLogUpdateProgress(
+                state=GuestLogState.COMPLETE,
+                url=cast(Dict[str, str], output)['url'],
+                expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value),
+            )
+        )
 
     @guest_log_updater('openstack', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(entityname=self.poolname)
 
@@ -1347,17 +1199,13 @@ class OpenStackDriver(PoolDriver):
             guest_log,
             datetime.datetime.utcnow(),
             cast(str, r_output.unwrap()),
-            lambda guest_log, timestamp, content, content_hash: content_hash in guest_log.blob_content_hashes
+            lambda guest_log, timestamp, content, content_hash: content_hash in guest_log.blob_content_hashes,
         )
         progress.delay_update = delay_update
 
         return Ok(progress)
 
-    def trigger_reboot(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[None, Failure]:
+    def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         pool_data = guest_request.pool_data.mine_or_none(self, OpenStackPoolData)
 
         if not pool_data:
@@ -1372,10 +1220,7 @@ class OpenStackDriver(PoolDriver):
         r_output = safe_call(r_nova.unwrap().servers.reboot, pool_data.instance_id, reboot_type='HARD')
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to trigger instance reboot',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to trigger instance reboot', r_output.unwrap_error()))
 
         return Ok(None)
 

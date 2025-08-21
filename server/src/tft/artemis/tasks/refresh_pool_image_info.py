@@ -68,11 +68,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        poolname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, poolname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -90,29 +86,21 @@ class Workspace(_Workspace):
 
     @classmethod
     def refresh_pool_image_info(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        poolname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, poolname: str
     ) -> DoerReturnType:
-        return cls.create(logger, db, session, poolname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, poolname).begin().run().complete().final_result
 
 
 @task(
     singleton=True,
     singleton_no_retry_on_lock_fail=True,
     priority=TaskPriority.HIGH,
-    queue_name=TaskQueue.POOL_DATA_REFRESH
+    queue_name=TaskQueue.POOL_DATA_REFRESH,
 )
 def refresh_pool_image_info(poolname: str) -> None:
     task_core(
         cast(DoerType, Workspace.refresh_pool_image_info),
         logger=get_pool_logger(Workspace.TASKNAME, _ROOT_LOGGER, poolname),
         doer_args=(poolname,),
-        session_read_only=True
+        session_read_only=True,
     )

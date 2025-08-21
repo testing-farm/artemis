@@ -43,13 +43,7 @@ class NestingContainer(tft.artemis.SerializableContainer):
 
 @pytest.fixture(name='nesting_container')
 def fixture_nesting_container() -> NestingContainer:
-    return NestingContainer(
-        foo='some foo value',
-        child=NestedContainer(
-            bar='some bar value'
-        ),
-        baz=79
-    )
+    return NestingContainer(foo='some foo value', child=NestedContainer(bar='some bar value'), baz=79)
 
 
 # Use lstrip() to get rid of the leading new-line - it's there because of the formatting of the multiline string,

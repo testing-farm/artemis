@@ -38,7 +38,7 @@ class GuestRequest:
         arch: str,
         pool: Optional[str] = None,
         deadline: Optional[datetime.timedelta] = None,
-        **details: Any
+        **details: Any,
     ) -> Optional['GuestRequest']:
         details['compose'] = compose
         details['arch'] = arch
@@ -48,10 +48,14 @@ class GuestRequest:
             os.getenv('HERD_ARTEMIS_CLI', 'artemis-cli'),
             'guest',
             'create',
-            '--keyname', 'ci-key',
-            '--compose', compose,
-            '--arch', arch,
-            '--user-data', '{"owner": "artemis-tests"}'  # noqa: FS003
+            '--keyname',
+            'ci-key',
+            '--compose',
+            compose,
+            '--arch',
+            arch,
+            '--user-data',
+            '{"owner": "artemis-tests"}',  # noqa: FS003
         ]
 
         if pool is not None:
@@ -70,7 +74,7 @@ class GuestRequest:
             state='routing',
             details=details,
             ctime=datetime.datetime.utcnow(),
-            deadline=deadline
+            deadline=deadline,
         )
 
     def update(self) -> bool:
@@ -78,12 +82,7 @@ class GuestRequest:
 
         try:
             output = subprocess.check_output(
-                [
-                    os.getenv('HERD_ARTEMIS_CLI', 'artemis-cli'),
-                    'guest',
-                    'inspect',
-                    self.guestname
-                ]
+                [os.getenv('HERD_ARTEMIS_CLI', 'artemis-cli'), 'guest', 'inspect', self.guestname]
             )
 
         except subprocess.CalledProcessError:
@@ -109,14 +108,7 @@ class GuestRequest:
             return True
 
         try:
-            subprocess.check_output(
-                [
-                    os.getenv('HERD_ARTEMIS_CLI', 'artemis-cli'),
-                    'guest',
-                    'cancel',
-                    self.guestname
-                ]
-            )
+            subprocess.check_output([os.getenv('HERD_ARTEMIS_CLI', 'artemis-cli'), 'guest', 'cancel', self.guestname])
 
         except subprocess.CalledProcessError:
             logging.error(f'{self.guestname}: failed to cancel request', exc_info=sys.exc_info())
@@ -145,7 +137,9 @@ class HerdPrinter(threading.Thread):
     def do_run(self, guests: List[GuestRequest]) -> None:
         start = datetime.datetime.utcnow()
 
-        print(f' {colorama.Fore.YELLOW}routing{colorama.Fore.RESET} => {colorama.Fore.MAGENTA}provisioning{colorama.Fore.RESET} => {colorama.Fore.BLUE}promised{colorama.Fore.RESET} => {colorama.Fore.CYAN}preparing{colorama.Fore.RESET} => {colorama.Fore.GREEN}ready{colorama.Fore.RESET} | {colorama.Fore.RED}error{colorama.Fore.RESET} | {colorama.Fore.LIGHTRED_EX}cancelled{colorama.Fore.RESET}')  # noqa: E501
+        print(
+            f' {colorama.Fore.YELLOW}routing{colorama.Fore.RESET} => {colorama.Fore.MAGENTA}provisioning{colorama.Fore.RESET} => {colorama.Fore.BLUE}promised{colorama.Fore.RESET} => {colorama.Fore.CYAN}preparing{colorama.Fore.RESET} => {colorama.Fore.GREEN}ready{colorama.Fore.RESET} | {colorama.Fore.RED}error{colorama.Fore.RESET} | {colorama.Fore.LIGHTRED_EX}cancelled{colorama.Fore.RESET}'  # noqa: E501
+        )
         print()
 
         while self.KEEP_PRINTING:
@@ -221,9 +215,7 @@ def run_herd(populate: Callable[[List[GuestRequest]], None]) -> List[GuestReques
     printer.join()
 
     durations = [
-        guest.duration.total_seconds()
-        for guest in guests
-        if guest.state == 'ready' and guest.duration is not None
+        guest.duration.total_seconds() for guest in guests if guest.state == 'ready' and guest.duration is not None
     ]
 
     if durations:

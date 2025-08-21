@@ -51,11 +51,7 @@ SCRIPT_DST = '/tmp/do-kexec.sh'
 
 REPOS_GLOB = 'etc/yum.repos.d/*'
 
-FILES_TO_FETCH = [
-    '/' + REPOS_GLOB,
-    '/etc/cloud/cloud.cfg',
-    '/root/.ssh/*'
-]
+FILES_TO_FETCH = ['/' + REPOS_GLOB, '/etc/cloud/cloud.cfg', '/root/.ssh/*']
 
 KS_LOGNAME = 'ks.cfg:dump'
 
@@ -66,7 +62,7 @@ KNOB_PREPARE_KICKSTART_SSH_TIMEOUT: Knob[int] = Knob(
     has_db=True,
     envvar='ARTEMIS_PREPARE_KICKSTART_SSH_TIMEOUT',
     cast_from_str=int,
-    default=15
+    default=15,
 )
 
 KNOB_PREPARE_KICKSTART_COMPOSE_REPO_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -76,7 +72,7 @@ KNOB_PREPARE_KICKSTART_COMPOSE_REPO_MAPPING_FILEPATH: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_PREPARE_KICKSTART_COMPOSE_REPO_MAPPING_FILEPATH',
     cast_from_str=str,
-    default='artemis-kickstart-compose-repo-map.yaml'
+    default='artemis-kickstart-compose-repo-map.yaml',
 )
 
 KNOB_PREPARE_KICKSTART_TEMPLATE_FILEPATH: Knob[str] = Knob(
@@ -86,7 +82,7 @@ KNOB_PREPARE_KICKSTART_TEMPLATE_FILEPATH: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_PREPARE_KICKSTART_TEMPLATE_FILEPATH',
     cast_from_str=str,
-    default='artemis-kickstart.ks.j2'
+    default='artemis-kickstart.ks.j2',
 )
 
 KNOB_PREPARE_KICKSTART_BOOT_INSTALLER_SCRIPT_FILEPATH: Knob[str] = Knob(
@@ -96,7 +92,7 @@ KNOB_PREPARE_KICKSTART_BOOT_INSTALLER_SCRIPT_FILEPATH: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_PREPARE_KICKSTART_BOOT_INSTALLER_SCRIPT_FILEPATH',
     cast_from_str=str,
-    default='artemis-kickstart-kexec.sh'
+    default='artemis-kickstart-kexec.sh',
 )
 
 
@@ -130,8 +126,7 @@ class Workspace(_Workspace):
 
             # Load the SSH timeout value
             r_ssh_timeout = KNOB_PREPARE_KICKSTART_SSH_TIMEOUT.get_value(
-                session=self.session,
-                entityname=self.pool.poolname
+                session=self.session, entityname=self.pool.poolname
             )
 
             if r_ssh_timeout.is_error:
@@ -148,7 +143,7 @@ class Workspace(_Workspace):
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
                 poolname=self.pool.poolname,
-                commandname='prepare-kickstart.check-if-ran'
+                commandname='prepare-kickstart.check-if-ran',
             )
 
             if r_check.is_ok:
@@ -160,7 +155,7 @@ class Workspace(_Workspace):
             failure = r_check.unwrap_error()
             stderr = failure.details['command_output'].stderr if 'command_output' in failure.details else None
 
-            if stderr is not None and 'cannot access \'/.ksinstall\': No such file or directory' not in stderr:
+            if stderr is not None and "cannot access '/.ksinstall': No such file or directory" not in stderr:
                 return self._fail(failure, 'could not verify whether kickstart installation was already started')
 
             # Fetch preserved files from the guest
@@ -171,10 +166,10 @@ class Workspace(_Workspace):
                 try:
                     os.makedirs(dst_dir, mode=0o700, exist_ok=True)
                 except Exception as exc:
-                    return self._fail(Failure.from_exc(
+                    return self._fail(
+                        Failure.from_exc('failed to create a local destination directory', exc),
                         'failed to create a local destination directory',
-                        exc
-                    ), 'failed to create a local destination directory')
+                    )
 
                 r_copy = copy_from_remote(
                     self.logger,
@@ -185,7 +180,7 @@ class Workspace(_Workspace):
                     ssh_options=self.pool.ssh_options,
                     ssh_timeout=ssh_timeout,
                     poolname=self.pool.poolname,
-                    commandname='prepare-kickstart.fetch-files'
+                    commandname='prepare-kickstart.fetch-files',
                 )
 
                 if r_copy.is_error:
@@ -212,13 +207,11 @@ class Workspace(_Workspace):
                 _repos.read(glob.glob(os.path.abspath(os.path.join(files_tmp_dir.name, REPOS_GLOB))))
 
                 repos = {
-                    name: dict(vals) for name, vals in _repos.items()
-                    if name != 'DEFAULT' and vals['enabled'] == '1'
+                    name: dict(vals) for name, vals in _repos.items() if name != 'DEFAULT' and vals['enabled'] == '1'
                 }
             except Exception as exc:
                 return self._fail(
-                    Failure.from_exc('failed to parse enabled repos', exc),
-                    'failed to parse enabled repos'
+                    Failure.from_exc('failed to parse enabled repos', exc), 'failed to parse enabled repos'
                 )
 
             # Fetch the list of installed packages
@@ -230,7 +223,7 @@ class Workspace(_Workspace):
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
                 poolname=self.pool.poolname,
-                commandname='prepare-kickstart.installed-pkgs'
+                commandname='prepare-kickstart.installed-pkgs',
             )
 
             if r_pkg_list.is_error:
@@ -247,7 +240,7 @@ class Workspace(_Workspace):
             r_pattern_map = get_pattern_map(
                 self.logger,
                 os.path.join(KNOB_CONFIG_DIRPATH.value, KNOB_PREPARE_KICKSTART_COMPOSE_REPO_MAPPING_FILEPATH.value),
-                use_cache=r_cache_enabled.unwrap()
+                use_cache=r_cache_enabled.unwrap(),
             )
 
             if r_pattern_map.is_error:
@@ -258,8 +251,7 @@ class Workspace(_Workspace):
             except gluetool.glue.GlueError as exc:
                 # TODO: Switch guest to error as there is nothing else we can do
                 return self._fail(
-                    Failure.from_exc('failed to match the compose', exc, recoverable=False),
-                    'failed to match compose'
+                    Failure.from_exc('failed to match the compose', exc, recoverable=False), 'failed to match compose'
                 )
 
             repo = None
@@ -268,19 +260,19 @@ class Workspace(_Workspace):
                 repo = repos[repo_name].get('baseurl', None)
 
             if not repo:
-                return self._fail(Failure(
-                    f'the guest does not contain a repo named {repo_name} that would provide base url for the installer',  # noqa: E501
-                    recoverable=False
-                ), 'installer source repo is not valid')
+                return self._fail(
+                    Failure(
+                        f'the guest does not contain a repo named {repo_name} that would provide base url for the installer',  # noqa: E501
+                        recoverable=False,
+                    ),
+                    'installer source repo is not valid',
+                )
 
             # Template kickstart
             try:
                 metadata = self.gr.environment.kickstart.metadata or ''
 
-                with open(os.path.join(
-                    KNOB_CONFIG_DIRPATH.value,
-                    KNOB_PREPARE_KICKSTART_TEMPLATE_FILEPATH.value
-                )) as f:
+                with open(os.path.join(KNOB_CONFIG_DIRPATH.value, KNOB_PREPARE_KICKSTART_TEMPLATE_FILEPATH.value)) as f:
                     r_kickstart = render_template(
                         f.read(),
                         install_tree=repo,
@@ -294,12 +286,12 @@ class Workspace(_Workspace):
                         metadata={
                             tag[0]: tag[1] if len(tag) > 1 else None
                             for tag in [m.split('=', maxsplit=1) for m in metadata.split()]
-                        }
+                        },
                     )
             except OSError as exc:
                 return self._fail(
                     Failure.from_exc('failed to read the kickstart template', exc),
-                    'failed to read the kickstart template'
+                    'failed to read the kickstart template',
                 )
 
             if r_kickstart.is_error:
@@ -308,11 +300,13 @@ class Workspace(_Workspace):
             kickstart_script = r_kickstart.unwrap()
             blob = GuestLogBlob.from_content(kickstart_script)
 
-            r_guest_log = SafeQuery.from_session(self.session, GuestLog) \
-                .filter(GuestLog.guestname == self.gr.guestname) \
-                .filter(GuestLog.logname == KS_LOGNAME) \
-                .filter(GuestLog.contenttype == GuestLogContentType.BLOB) \
+            r_guest_log = (
+                SafeQuery.from_session(self.session, GuestLog)
+                .filter(GuestLog.guestname == self.gr.guestname)
+                .filter(GuestLog.logname == KS_LOGNAME)
+                .filter(GuestLog.contenttype == GuestLogContentType.BLOB)
                 .one_or_none()
+            )
 
             if r_guest_log.is_error:
                 # Failing to log the generated kickstart is not a critical error but may make debugging installation
@@ -322,11 +316,7 @@ class Workspace(_Workspace):
             log = r_guest_log.unwrap()
 
             if log is not None:
-                r_store_log = log.update(
-                    self.logger,
-                    self.session,
-                    GuestLogState.COMPLETE
-                )
+                r_store_log = log.update(self.logger, self.session, GuestLogState.COMPLETE)
 
                 if r_store_log.is_error:
                     self._fail(r_store_log.unwrap_error(), 'failed to update the kickstart script log', no_effect=True)
@@ -337,7 +327,7 @@ class Workspace(_Workspace):
                     self.gr.guestname,
                     KS_LOGNAME,
                     GuestLogContentType.BLOB,
-                    GuestLogState.COMPLETE
+                    GuestLogState.COMPLETE,
                 )
 
                 if r_create_log.is_error:
@@ -358,7 +348,7 @@ class Workspace(_Workspace):
                     self.logger,
                     ['ksvalidator', kickstart_filepath],
                     poolname=self.pool.poolname,
-                    commandname='prepare-kickstart.validate-kickstart'
+                    commandname='prepare-kickstart.validate-kickstart',
                 )
 
                 if r_validator.is_error:
@@ -374,7 +364,7 @@ class Workspace(_Workspace):
                     ssh_options=self.pool.ssh_options,
                     ssh_timeout=ssh_timeout,
                     poolname=self.pool.poolname,
-                    commandname='prepare-kickstart.copy-kickstart'
+                    commandname='prepare-kickstart.copy-kickstart',
                 )
 
                 if r_ks_upload.is_error:
@@ -386,16 +376,13 @@ class Workspace(_Workspace):
             r_script_upload = copy_to_remote(
                 self.logger,
                 self.gr,
-                os.path.join(
-                    KNOB_CONFIG_DIRPATH.value,
-                    KNOB_PREPARE_KICKSTART_BOOT_INSTALLER_SCRIPT_FILEPATH.value
-                ),
+                os.path.join(KNOB_CONFIG_DIRPATH.value, KNOB_PREPARE_KICKSTART_BOOT_INSTALLER_SCRIPT_FILEPATH.value),
                 script_dst,
                 key=self.master_key,
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
                 poolname=self.pool.poolname,
-                commandname='prepare-kickstart.copy-script'
+                commandname='prepare-kickstart.copy-script',
             )
 
             if r_script_upload.is_error:
@@ -407,19 +394,12 @@ class Workspace(_Workspace):
             r_kexec = run_remote(
                 self.logger,
                 self.gr,
-                [
-                    '/bin/bash',
-                    '-x',
-                    script_dst,
-                    repo,
-                    ks_dst,
-                    self.gr.environment.kickstart.kernel_options or ''
-                ],
+                ['/bin/bash', '-x', script_dst, repo, ks_dst, self.gr.environment.kickstart.kernel_options or ''],
                 key=self.master_key,
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
                 poolname=self.pool.poolname,
-                commandname='prepare-kickstart.kexec'
+                commandname='prepare-kickstart.kexec',
             )
 
             if r_kexec.is_error:
@@ -428,26 +408,17 @@ class Workspace(_Workspace):
             self.logger.debug('successfuly executed the installer')
 
             r_delay = KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY.get_value(
-                session=self.session,
-                entityname=self.pool.poolname
+                session=self.session, entityname=self.pool.poolname
             )
 
             if r_delay.is_error:
                 return self._error(r_delay, 'failed to load the delay for installation check task')
 
-            self.request_task(
-                prepare_kickstart_wait,
-                self.guestname,
-                delay=r_delay.unwrap()
-            )
+            self.request_task(prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -463,11 +434,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def prepare_kickstart(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Perform a kickstart installation.
@@ -479,11 +446,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ERROR))
@@ -497,5 +460,5 @@ def prepare_kickstart(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.prepare_kickstart),
         logger=get_guest_logger(TASK_NAME, _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

@@ -17,8 +17,7 @@ import jinja2_ansible_filters.core_filters
 
 
 def _knob_envvar(knob) -> Optional[str]:
-    """
-    """
+    """ """
 
     from tft.artemis.knobs import KnobSourceEnv
 
@@ -65,9 +64,7 @@ jinja2.defaults.DEFAULT_FILTERS['knob_envvar'] = _knob_envvar
 jinja2.defaults.DEFAULT_FILTERS['knob_editable'] = _knob_editable
 jinja2.defaults.DEFAULT_FILTERS['knob_default'] = _knob_default
 
-jinja2.defaults.DEFAULT_FILTERS.update(
-    jinja2_ansible_filters.core_filters.FilterModule().filters()
-)
+jinja2.defaults.DEFAULT_FILTERS.update(jinja2_ansible_filters.core_filters.FilterModule().filters())
 
 
 from tft.artemis.knobs import Knob  # noqa: E402
@@ -108,7 +105,7 @@ def main():
     parser.add_argument(
         '--template-file',
         help='Path to the documentation page template.',
-        default='../docs/content/for-admins/knobs.adoc.j2'
+        default='../docs/content/for-admins/knobs.adoc.j2',
     )
 
     options = parser.parse_args(sys.argv[1:])

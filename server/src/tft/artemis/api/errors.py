@@ -33,7 +33,7 @@ def get_failure_details_from_request(request: Optional[Request]) -> Dict[str, An
         'api_request_method': request.method,
         'api_request_path': request.url,
         'api_request_params': serialized_params,
-        'api_request_host': request.client.host if request.client else ''
+        'api_request_host': request.client.host if request.client else '',
     }
 
 
@@ -54,7 +54,7 @@ class ArtemisHTTPError(HTTPException):
         report_as_failure: bool = True,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
-        failure_details: Optional[FailureDetailsType] = None
+        failure_details: Optional[FailureDetailsType] = None,
     ) -> None:
         """
         Base class for our custom HTTP errors. Provides one interface to reporting issues via HTTP responses
@@ -76,9 +76,7 @@ class ArtemisHTTPError(HTTPException):
             pass
 
         elif message is not None:
-            response = {
-                'message': message
-            }
+            response = {'message': message}
 
         else:
             response = {}
@@ -94,20 +92,11 @@ class ArtemisHTTPError(HTTPException):
             details.update(get_failure_details_from_request(request))
 
             if caused_by is None:
-                failure = Failure(
-                    'API error',
-                    api_response_status=status,
-                    api_response_payload=response,
-                    **details
-                )
+                failure = Failure('API error', api_response_status=status, api_response_payload=response, **details)
 
             else:
                 failure = Failure.from_failure(
-                    'API error',
-                    caused_by,
-                    api_response_status=status,
-                    api_response_payload=response,
-                    **details
+                    'API error', caused_by, api_response_status=status, api_response_payload=response, **details
                 )
 
             failure.handle(logger or get_logger())
@@ -123,7 +112,7 @@ class InternalServerError(ArtemisHTTPError):
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
-        failure_details: Optional[FailureDetailsType] = None
+        failure_details: Optional[FailureDetailsType] = None,
     ) -> None:
         if not message and not response:
             message = 'Unknown error'
@@ -136,7 +125,7 @@ class InternalServerError(ArtemisHTTPError):
             request=request,
             logger=logger,
             caused_by=caused_by,
-            failure_details=failure_details
+            failure_details=failure_details,
         )
 
 
@@ -150,7 +139,7 @@ class BadRequestError(ArtemisHTTPError):
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
-        failure_details: Optional[FailureDetailsType] = None
+        failure_details: Optional[FailureDetailsType] = None,
     ) -> None:
         if not message and not response:
             message = 'Bad request'
@@ -163,7 +152,7 @@ class BadRequestError(ArtemisHTTPError):
             request=request,
             logger=logger,
             caused_by=caused_by,
-            failure_details=failure_details
+            failure_details=failure_details,
         )
 
 
@@ -177,7 +166,7 @@ class NoSuchEntityError(ArtemisHTTPError):
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
-        failure_details: Optional[FailureDetailsType] = None
+        failure_details: Optional[FailureDetailsType] = None,
     ) -> None:
         if not message and not response:
             message = 'No such entity'
@@ -191,7 +180,7 @@ class NoSuchEntityError(ArtemisHTTPError):
             report_as_failure=False,
             logger=logger,
             caused_by=caused_by,
-            failure_details=failure_details
+            failure_details=failure_details,
         )
 
 
@@ -205,7 +194,7 @@ class UnauthorizedError(ArtemisHTTPError):
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
-        failure_details: Optional[FailureDetailsType] = None
+        failure_details: Optional[FailureDetailsType] = None,
     ) -> None:
         if not message and not response:
             message = 'Not authorized to perform this action'
@@ -219,7 +208,7 @@ class UnauthorizedError(ArtemisHTTPError):
             report_as_failure=False,
             logger=logger,
             caused_by=caused_by,
-            failure_details=failure_details
+            failure_details=failure_details,
         )
 
 
@@ -233,7 +222,7 @@ class ForbiddenError(ArtemisHTTPError):
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
-        failure_details: Optional[FailureDetailsType] = None
+        failure_details: Optional[FailureDetailsType] = None,
     ) -> None:
         if not message and not response:
             message = 'Not authorized to perform this action'
@@ -247,7 +236,7 @@ class ForbiddenError(ArtemisHTTPError):
             report_as_failure=False,
             logger=logger,
             caused_by=caused_by,
-            failure_details=failure_details
+            failure_details=failure_details,
         )
 
 
@@ -261,7 +250,7 @@ class ConflictError(ArtemisHTTPError):
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
-        failure_details: Optional[FailureDetailsType] = None
+        failure_details: Optional[FailureDetailsType] = None,
     ) -> None:
         if not message and not response:
             message = 'Request conflicts with the current state of the resource'
@@ -275,7 +264,7 @@ class ConflictError(ArtemisHTTPError):
             report_as_failure=False,
             logger=logger,
             caused_by=caused_by,
-            failure_details=failure_details
+            failure_details=failure_details,
         )
 
 
@@ -289,7 +278,7 @@ class MethodNotAllowedError(ArtemisHTTPError):
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
-        failure_details: Optional[FailureDetailsType] = None
+        failure_details: Optional[FailureDetailsType] = None,
     ) -> None:
         if not message and not response:
             message = 'This method is not compatible with the given resource'
@@ -303,5 +292,5 @@ class MethodNotAllowedError(ArtemisHTTPError):
             report_as_failure=False,
             logger=logger,
             caused_by=caused_by,
-            failure_details=failure_details
+            failure_details=failure_details,
         )

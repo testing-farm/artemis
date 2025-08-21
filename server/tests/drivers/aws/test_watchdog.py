@@ -29,25 +29,41 @@ WATCHDOG_CONTINUE: Result[tft.artemis.drivers.WatchdogState, tft.artemis.Failure
         # No tracking for non-spot instances regardless of state
         ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': None}}, 'ready', '', WATCHDOG_COMPLETE, ''),
         ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': None}}, 'open', '', WATCHDOG_COMPLETE, ''),
-        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': None}}, 'closed', 'instance-terminated-by-user',
-         WATCHDOG_COMPLETE, ''),
+        (
+            {'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': None}},
+            'closed',
+            'instance-terminated-by-user',
+            WATCHDOG_COMPLETE,
+            '',
+        ),
         # continue tracking active spot instances
         ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}}, 'open', '', WATCHDOG_CONTINUE, ''),
         ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}}, 'active', '', WATCHDOG_CONTINUE, ''),
         # normally terminated instance
-        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}}, 'cancelled',
-         'instance-terminated-by-user',
-         WATCHDOG_COMPLETE, ''),
+        (
+            {'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}},
+            'cancelled',
+            'instance-terminated-by-user',
+            WATCHDOG_COMPLETE,
+            '',
+        ),
         # terminated instance not in expected state
-        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}},
-         'some-other-untypical-of-user-termination-code',
-         'instance-terminated-by-user',
-         WATCHDOG_COMPLETE, 'spot instance terminated prematurely'),
+        (
+            {'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}},
+            'some-other-untypical-of-user-termination-code',
+            'instance-terminated-by-user',
+            WATCHDOG_COMPLETE,
+            'spot instance terminated prematurely',
+        ),
         # no-capacity-event
-        ({'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}}, 'closed',
-         'spot-instance-terminated-no-capacity',
-         WATCHDOG_COMPLETE, 'spot instance terminated prematurely'),
-    ]
+        (
+            {'dummy-aws-pool': {'instance_id': '42', 'spot_instance_id': 'sir-42'}},
+            'closed',
+            'spot-instance-terminated-no-capacity',
+            WATCHDOG_COMPLETE,
+            'spot instance terminated prematurely',
+        ),
+    ],
 )
 @pytest.mark.usefixtures('_schema_initialized_actual')
 def test_aws_guest_watchdog(
@@ -59,7 +75,7 @@ def test_aws_guest_watchdog(
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
     logger: ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    caplog: _pytest.logging.LogCaptureFixture
+    caplog: _pytest.logging.LogCaptureFixture,
 ) -> None:
     guest_request = tft.artemis.db.GuestRequest(
         guestname='dummy-guest',
@@ -77,17 +93,24 @@ def test_aws_guest_watchdog(
         ssh_port=22,
         ssh_username='root',
         _pool_data=pool_data,
-        _user_data={}
+        _user_data={},
     )
-    monkeypatch.setattr(tft.artemis.drivers.aws.AWSDriver, '_describe_spot_instance',
-                        MagicMock(return_value=Ok({'State': state, 'Status': {'Code': code, 'Message': ''}})))
+    monkeypatch.setattr(
+        tft.artemis.drivers.aws.AWSDriver,
+        '_describe_spot_instance',
+        MagicMock(return_value=Ok({'State': state, 'Status': {'Code': code, 'Message': ''}})),
+    )
     monkeypatch.setattr(guest_request, 'log_error_event', MagicMock())
-    aws_driver = tft.artemis.drivers.aws.AWSDriver(poolname='dummy-aws-pool',
-                                                   logger=logger,
-                                                   pool_config={'access-key-id': '42',
-                                                                'secret-access-key': '42secret',
-                                                                'default-region': 'some-region',
-                                                                'command': 'aws'})
+    aws_driver = tft.artemis.drivers.aws.AWSDriver(
+        poolname='dummy-aws-pool',
+        logger=logger,
+        pool_config={
+            'access-key-id': '42',
+            'secret-access-key': '42secret',
+            'default-region': 'some-region',
+            'command': 'aws',
+        },
+    )
     res_state = aws_driver.guest_watchdog(logger=logger, session=session, guest_request=guest_request)
     assert res_state == expected_state
     if not expected_log_msg:
@@ -96,7 +119,8 @@ def test_aws_guest_watchdog(
     else:
         cast(MagicMock, guest_request.log_error_event).assert_called()
         cast(MagicMock, guest_request.log_error_event).assert_called_once_with(
-            logger, session, 'spot instance terminated prematurely', ANY)
+            logger, session, 'spot instance terminated prematurely', ANY
+        )
         failure = cast(MagicMock, guest_request.log_error_event).call_args.args[3]
         assert isinstance(failure, tft.artemis.Failure)
         assert failure.message == 'spot instance terminated prematurely'

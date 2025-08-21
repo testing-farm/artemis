@@ -70,24 +70,19 @@ def _message_max_backoff(message: dramatiq.broker.MessageProxy, actor: Optional[
     return _get_message_limit(message, 'max_backoff', dramatiq.middleware.retries.DEFAULT_MAX_BACKOFF, actor=actor)
 
 
-def _message_backoff(
-    message: dramatiq.broker.MessageProxy,
-    retries: int,
-    actor: Optional['Actor'] = None
-) -> int:
+def _message_backoff(message: dramatiq.broker.MessageProxy, retries: int, actor: Optional['Actor'] = None) -> int:
     return cast(
         int,
         compute_backoff(
             retries,
             factor=_message_min_backoff(message, actor=actor),
-            max_backoff=_message_max_backoff(message, actor=actor)
-        )[1]
+            max_backoff=_message_max_backoff(message, actor=actor),
+        )[1],
     )
 
 
 def _message_tools(
-    broker: dramatiq.broker.Broker,
-    message: dramatiq.message.Message
+    broker: dramatiq.broker.Broker, message: dramatiq.message.Message
 ) -> Tuple[gluetool.log.ContextAdapter, 'TaskCall', Dict[str, Any]]:
     from . import get_logger
     from .tasks import TaskCall
@@ -95,16 +90,9 @@ def _message_tools(
     logger = get_logger()
     task_call = TaskCall.from_message(broker, message)
 
-    failure_details: Dict[str, Any] = {
-        'task_call': task_call,
-        'broker_message': _dump_message(message)
-    }
+    failure_details: Dict[str, Any] = {'task_call': task_call, 'broker_message': _dump_message(message)}
 
-    return (
-        task_call.logger(logger, failure_details),
-        task_call,
-        failure_details
-    )
+    return (task_call.logger(logger, failure_details), task_call, failure_details)
 
 
 def _retry_message(
@@ -112,7 +100,7 @@ def _retry_message(
     broker: dramatiq.broker.Broker,
     message: dramatiq.message.Message,
     task_call: 'TaskCall',
-    exc_info: Optional['ExceptionInfoType'] = None
+    exc_info: Optional['ExceptionInfoType'] = None,
 ) -> bool:
     """
     Enqueue a given message while increasing its "retried" count by 1.
@@ -124,12 +112,7 @@ def _retry_message(
 
     if exc_info:
         message.options['traceback'] = '\n'.join(
-            traceback.format_exception(
-                exc_info[0],
-                value=exc_info[1],
-                tb=exc_info[2],
-                limit=30
-            )
+            traceback.format_exception(exc_info[0], value=exc_info[1], tb=exc_info[2], limit=30)
         )
 
     retries = cast(int, message.options['retries'])
@@ -145,23 +128,15 @@ def _retry_message(
         'message scheduled for retry',
         {
             'task_call': task_call.serialize(),
-            'retries': {
-                'current': retries,
-                'max': max_retries,
-                'backoff': backoff,
-                'retry-at': retry_at
-            }
-        }
+            'retries': {'current': retries, 'max': max_retries, 'backoff': backoff, 'retry-at': retry_at},
+        },
     )
 
     return True
 
 
 def _fail_message(
-    logger: gluetool.log.ContextAdapter,
-    message: dramatiq.message.Message,
-    error_message: str,
-    **details: Any
+    logger: gluetool.log.ContextAdapter, message: dramatiq.message.Message, error_message: str, **details: Any
 ) -> None:
     """
     Mark the given message as failed.
@@ -177,9 +152,7 @@ def _fail_message(
 
 
 def _handle_tails(
-    logger: gluetool.log.ContextAdapter,
-    message: dramatiq.message.Message,
-    task_call: 'TaskCall'
+    logger: gluetool.log.ContextAdapter, message: dramatiq.message.Message, task_call: 'TaskCall'
 ) -> bool:
     """
     Handle the "tails": when we run out of retries on a task, we cannot just let it fail, but we must take
@@ -221,9 +194,7 @@ def _handle_tails(
 
 
 def resolve_retry_message(
-    logger: gluetool.log.ContextAdapter,
-    broker: dramatiq.broker.Broker,
-    task_call: 'TaskCall'
+    logger: gluetool.log.ContextAdapter, broker: dramatiq.broker.Broker, task_call: 'TaskCall'
 ) -> bool:
     from . import log_dict_yaml
 
@@ -236,13 +207,7 @@ def resolve_retry_message(
     log_dict_yaml(
         logger.info,
         'retry message',
-        {
-            'task_call': task_call.serialize(),
-            'retries': {
-                'current': retries,
-                'max': max_retries
-            }
-        }
+        {'task_call': task_call.serialize(), 'retries': {'current': retries, 'max': max_retries}},
     )
 
     if max_retries is not None and retries >= max_retries:
@@ -254,10 +219,7 @@ def resolve_retry_message(
                 'retries exceeded',
                 task_call=task_call,
                 guestname=task_call.named_args.get('guestname', None),
-                retries={
-                    'current': retries,
-                    'max': max_retries
-                }
+                retries={'current': retries, 'max': max_retries},
             )
 
             return False
@@ -279,7 +241,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # can
             'retry_when',
             'throws',
             # ... and this one is our addition so we could attach tail handler to each actor.
-            'tail_handler'
+            'tail_handler',
         }
 
     def after_process_message(
@@ -289,7 +251,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # can
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
-        exception: Optional[BaseException] = None
+        exception: Optional[BaseException] = None,
     ) -> None:
         # If the task did not raise an exception, there's obviously no need to retry it in the future. We're done.
         if exception is None:
@@ -358,7 +320,7 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
     def after_enqueue(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message, delay: int) -> None:
         from .metrics import TaskMetrics
 
-        if "retries" in message.options:
+        if 'retries' in message.options:
             TaskMetrics.inc_overall_retried_messages(message.queue_name, message.actor_name)
 
     def before_delay_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
@@ -388,7 +350,7 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
         message: dramatiq.message.Message,
         *,
         exception: Optional[BaseException] = None,
-        skipped: bool = False
+        skipped: bool = False,
     ) -> None:
         from .metrics import TaskMetrics
         from .tasks import TaskCall
@@ -412,12 +374,7 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
             elif message.options:
                 poolname = get_metric_note(NOTE_POOLNAME)
 
-            TaskMetrics.inc_message_durations(
-                message.queue_name,
-                message.actor_name,
-                message_duration,
-                poolname
-            )
+            TaskMetrics.inc_message_durations(message.queue_name, message.actor_name, message_duration, poolname)
 
         TaskMetrics.dec_current_messages(*labels)
         TaskMetrics.inc_overall_messages(*labels)
@@ -432,15 +389,11 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
-        exception: Optional[BaseException] = None
+        exception: Optional[BaseException] = None,
     ) -> None:
         self._update_after_message(broker, message, exception=exception)
 
-    def after_skip_message(
-        self,
-        broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message
-    ) -> None:
+    def after_skip_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
         self._update_after_message(broker, message, skipped=True)
 
 
@@ -468,7 +421,7 @@ class WorkerMetrics(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
             self.worker_name,
             self.interval,
             lambda _worker: Ok((1, len(worker.workers))),
-            worker_instance=worker
+            worker_instance=worker,
         )
 
 
@@ -476,12 +429,7 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
     KEY_WORKER_TASK = 'tasks.workers.traffic.{worker}.{pid}.{tid}'  # noqa: FS003
     KEY_WORKER_TASK_PATTERN = 'tasks.workers.traffic.*'
 
-    def __init__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis,
-        worker_name: str
-    ) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis, worker_name: str) -> None:
         super().__init__()
 
         self.logger = logger
@@ -492,9 +440,7 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
     @property
     def current_key(self) -> str:
         return self.KEY_WORKER_TASK.format(  # noqa: FS002
-            worker=self.worker_name,
-            pid=self.worker_pid,
-            tid=threading.get_ident()
+            worker=self.worker_name, pid=self.worker_pid, tid=threading.get_ident()
         )
 
     def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
@@ -518,9 +464,11 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
                 ctime=datetime.datetime.utcnow(),
                 queue=cast(str, message.queue_name),
                 actor=cast(str, message.actor_name),
-                args=task_call.named_args
-            ).serialize_to_json().encode(),
-            ttl=KNOB_WORKER_TRAFFIC_METRICS_TTL.value
+                args=task_call.named_args,
+            )
+            .serialize_to_json()
+            .encode(),
+            ttl=KNOB_WORKER_TRAFFIC_METRICS_TTL.value,
         )
 
     def after_process_message(
@@ -530,7 +478,7 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
-        exception: Optional[BaseException] = None
+        exception: Optional[BaseException] = None,
     ) -> None:
         from .cache import delete_cache_value, set_cache_value
         from .knobs import KNOB_WORKER_TRAFFIC_METRICS_TTL
@@ -551,11 +499,13 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
                 ctime=datetime.datetime.utcnow(),
                 queue='<empty>',
                 actor='<empty>',
-                args={}
-            ).serialize_to_json().encode(),
+                args={},
+            )
+            .serialize_to_json()
+            .encode(),
             # Use TTL, but much smaller than the one for the actual task records. We want these empty ones
             # to disappear, end we expect workers are not sitting idle :)
-            ttl=int(KNOB_WORKER_TRAFFIC_METRICS_TTL.value / 4)
+            ttl=int(KNOB_WORKER_TRAFFIC_METRICS_TTL.value / 4),
         )
 
     after_skip_message = after_process_message
@@ -581,7 +531,7 @@ class CurrentMessage(dramatiq.middleware.Middleware):  # type: ignore[misc]  # c
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
-        exception: Optional[BaseException] = None
+        exception: Optional[BaseException] = None,
     ) -> None:
         from .context import CURRENT_MESSAGE
 
@@ -600,11 +550,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
     @property
     def actor_options(self) -> Set[str]:
-        return {
-            'singleton',
-            'singleton_deadline',
-            'singleton_no_retry_on_lock_fail'
-        }
+        return {'singleton', 'singleton_deadline', 'singleton_no_retry_on_lock_fail'}
 
     @staticmethod
     def _lock_name(task_call: 'TaskCall') -> str:
@@ -640,11 +586,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
             if KNOB_LOGGING_SINGLETON_LOCKS.value is True:
                 from . import log_dict_yaml
 
-                log_dict_yaml(
-                    logger.warning,
-                    f'singleton-lock: lockname={lockname} acquire=failed',
-                    locks
-                )
+                log_dict_yaml(logger.warning, f'singleton-lock: lockname={lockname} acquire=failed', locks)
 
             failure_details['locks'] = locks
 
@@ -676,7 +618,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
-        exception: Optional[BaseException] = None
+        exception: Optional[BaseException] = None,
     ) -> None:
         from .knobs import KNOB_LOGGING_SINGLETON_LOCKS
 
@@ -692,13 +634,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         token = failure_details['token'] = self._tokens.pop(message.message_id, None)
 
         if token is None:
-            return _fail_message(
-                logger,
-                message,
-                'lost singleton lock token',
-                recoverable=False,
-                **failure_details
-            )
+            return _fail_message(logger, message, 'lost singleton lock token', recoverable=False, **failure_details)
 
         released = release_lock(logger, self.cache, lockname, token)
 
@@ -707,11 +643,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
                 logger.info(f'singleton-lock: lockname={lockname} release=failed token={token}')
 
             return _fail_message(
-                logger,
-                message,
-                'failed to release singleton lock',
-                recoverable=False,
-                **failure_details
+                logger, message, 'failed to release singleton lock', recoverable=False, **failure_details
             )
 
         if KNOB_LOGGING_SINGLETON_LOCKS.value is True:
@@ -721,11 +653,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
 
 class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
-    def __init__(
-            self,
-            max_tasks: int,
-            logger: gluetool.log.ContextAdapter,
-            worker_name: str) -> None:
+    def __init__(self, max_tasks: int, logger: gluetool.log.ContextAdapter, worker_name: str) -> None:
         super().__init__()
 
         self.lock = threading.Lock()
@@ -742,7 +670,7 @@ class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
-        exception: Optional[BaseException] = None
+        exception: Optional[BaseException] = None,
     ) -> None:
         with self.lock:
             self.counter -= 1
@@ -759,6 +687,7 @@ class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[
             self.signaled = True
 
             from .metrics import WorkerMetrics as _WorkerMetrics
+
             _WorkerMetrics.inc_worker_process_restart_count(self.worker_name)
 
     after_skip_message = after_process_message
@@ -772,11 +701,7 @@ class AgeLimit(dramatiq.middleware.age_limit.AgeLimit):  # type: ignore[misc]  #
     including Sentry integration.
     """
 
-    def before_process_message(
-        self,
-        broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message
-    ) -> None:
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
         logger, task_call, _ = _message_tools(broker, message)
 
         delta = current_millis() - message.message_timestamp

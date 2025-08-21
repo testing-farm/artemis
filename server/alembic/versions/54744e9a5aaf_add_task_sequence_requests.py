@@ -9,6 +9,7 @@ Revises: 56597d9c983a_4
 Create Date: 2025-01-03 14:44:37.644329
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -24,16 +25,13 @@ def upgrade() -> None:
     op.create_table(
         'task_sequence_requests',
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.PrimaryKeyConstraint('id')
+        sa.PrimaryKeyConstraint('id'),
     )
 
     with op.batch_alter_table('task_requests', schema=None) as batch_op:
         batch_op.add_column(sa.Column('task_sequence_request_id', sa.Integer(), nullable=True))
         batch_op.create_foreign_key(
-            'fk_task_requests_task_sequence_requests_id',
-            'task_sequence_requests',
-            ['task_sequence_request_id'],
-            ['id']
+            'fk_task_requests_task_sequence_requests_id', 'task_sequence_requests', ['task_sequence_request_id'], ['id']
         )
 
     # ### end Alembic commands ###

@@ -200,9 +200,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
         return len(self.items)
 
     def clone(self) -> Self:
-        return self.__class__([
-            item.clone() for item in self.items
-        ])
+        return self.__class__([item.clone() for item in self.items])
 
     def serialize(self) -> List[Dict[str, Any]]:  # type: ignore[override]  # expected
         """
@@ -211,9 +209,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
         :returns: serialized form of container items.
         """
 
-        return [
-            item.serialize() for item in self.items
-        ]
+        return [item.serialize() for item in self.items]
 
     @classmethod
     def unserialize(cls: Type[V], serialized: List[Dict[str, Any]]) -> V:  # type: ignore[override]
@@ -224,10 +220,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
         :returns: unserialized container.
         """
 
-        return cls([
-            cls.ITEM_CLASS.unserialize(serialized_item)
-            for serialized_item in serialized
-        ])
+        return cls([cls.ITEM_CLASS.unserialize(serialized_item) for serialized_item in serialized])
 
 
 #
@@ -791,7 +784,7 @@ OPERATOR_SIGN_TO_OPERATOR = {
     'contains': Operator.CONTAINS,
     'not contains': Operator.NOTCONTAINS,
     # Legacy operators
-    '=~': Operator.MATCH
+    '=~': Operator.MATCH,
 }
 
 
@@ -805,7 +798,7 @@ OPERATOR_TO_HANDLER: Dict[Operator, OperatorHandlerType] = {
     Operator.MATCH: match,
     Operator.NOTMATCH: notmatch,
     Operator.CONTAINS: operator.contains,
-    Operator.NOTCONTAINS: notcontains
+    Operator.NOTCONTAINS: notcontains,
 }
 
 
@@ -862,9 +855,7 @@ class ConstraintBase(SerializableContainer):
         return Ok(False)
 
     def prune_on_flavor(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        flavor: Flavor
+        self, logger: gluetool.log.ContextAdapter, flavor: Flavor
     ) -> Result[Optional['ConstraintBase'], Failure]:
         """
         Decide whether to keep this constraint or not, given the flavor.
@@ -882,9 +873,7 @@ class ConstraintBase(SerializableContainer):
         return Ok(self if r.unwrap() else None)
 
     def spans(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        members: Optional[List['Constraint']] = None
+        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
     ) -> Iterator[List['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
@@ -930,11 +919,7 @@ class CompoundConstraint(ConstraintBase):
     Base class for all *compound* constraints, constraints imposed to more than one dimension.
     """
 
-    def __init__(
-        self,
-        reducer: ReducerType = _reduce_any,
-        constraints: Optional[List[ConstraintBase]] = None
-    ) -> None:
+    def __init__(self, reducer: ReducerType = _reduce_any, constraints: Optional[List[ConstraintBase]] = None) -> None:
         """
         Construct a compound constraint, constraint imposed to more than one dimension.
 
@@ -957,11 +942,7 @@ class CompoundConstraint(ConstraintBase):
         :returns: serialized form of this constraint.
         """
 
-        return {
-            self.__class__.__name__.lower(): [
-                constraint.serialize() for constraint in self.constraints
-            ]
-        }
+        return {self.__class__.__name__.lower(): [constraint.serialize() for constraint in self.constraints]}
 
     @classmethod
     def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
@@ -989,10 +970,7 @@ class CompoundConstraint(ConstraintBase):
         :returns: ``True`` if the given flavor satisfies the constraint.
         """
 
-        return self.reducer(
-            constraint.eval_flavor(logger, flavor)
-            for constraint in self.constraints
-        )
+        return self.reducer(constraint.eval_flavor(logger, flavor) for constraint in self.constraints)
 
     def uses_constraint(self, logger: gluetool.log.ContextAdapter, constraint_name: str) -> Result[bool, Failure]:
         """
@@ -1007,15 +985,10 @@ class CompoundConstraint(ConstraintBase):
         # because that one may yield result based on validity of all child constraints.
         # But we want to answer the question "is *any* of child constraints using the given
         # constraint?", not "are all using it?".
-        return _reduce_any(
-            constraint.uses_constraint(logger, constraint_name)
-            for constraint in self.constraints
-        )
+        return _reduce_any(constraint.uses_constraint(logger, constraint_name) for constraint in self.constraints)
 
     def prune_on_flavor(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        flavor: Flavor
+        self, logger: gluetool.log.ContextAdapter, flavor: Flavor
     ) -> Result[Optional[ConstraintBase], Failure]:
         """
         Decide whether to keep this constraint or not, given the flavor.
@@ -1051,9 +1024,7 @@ class CompoundConstraint(ConstraintBase):
         return Ok(self.__class__(constraints=pruned_constraints))
 
     def spans(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        members: Optional[List['Constraint']] = None
+        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
     ) -> Iterator[List['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
@@ -1104,7 +1075,7 @@ class Constraint(ConstraintBase):
         raw_value: str,
         as_quantity: bool = True,
         as_cast: Optional[Callable[[str], ConstraintValueType]] = None,
-        original_constraint: Optional['Constraint'] = None
+        original_constraint: Optional['Constraint'] = None,
     ) -> T:
         """
         Parse raw constraint specification into our internal representation.
@@ -1146,7 +1117,7 @@ class Constraint(ConstraintBase):
             operator_handler=OPERATOR_TO_HANDLER[operator],
             value=value,
             raw_value=raw_value,
-            original_constraint=original_constraint
+            original_constraint=original_constraint,
         )
 
     @classmethod
@@ -1167,7 +1138,7 @@ class Constraint(ConstraintBase):
             operator=Operator.EQ,
             operator_handler=OPERATOR_TO_HANDLER[Operator.EQ],
             value=value,
-            raw_value=value
+            raw_value=value,
         )
 
     def serialize(self) -> str:  # type: ignore[override]
@@ -1213,26 +1184,19 @@ class Constraint(ConstraintBase):
 
         groups = match.groupdict()
 
-        spec_name_components: List[str] = [
-            groups['property_name']
-        ]
+        spec_name_components: List[str] = [groups['property_name']]
 
         if groups['index']:
-            spec_name_components += [
-                '[]'
-            ]
+            spec_name_components += ['[]']
 
         if groups['child_property_name']:
-            spec_name_components += [
-                '.',
-                groups['child_property_name']
-            ]
+            spec_name_components += ['.', groups['child_property_name']]
 
         return ConstraintNameComponents(
             property=groups['property_name'],
             property_index=int(groups['index']) if groups['index'] is not None else None,
             child_property=groups['child_property_name'],
-            spec_name=''.join(spec_name_components)
+            spec_name=''.join(spec_name_components),
         )
 
     def change_operator(self, operator: Operator) -> None:
@@ -1274,10 +1238,7 @@ class Constraint(ConstraintBase):
                 flavor_property = getattr(flavor_property, groups['property_name'])
 
             except AttributeError:
-                return Error(Failure(
-                    'unknown flavor property',
-                    property=groups['property_name']
-                ))
+                return Error(Failure('unknown flavor property', property=groups['property_name']))
 
             if groups.get('index') is not None:
                 flavor_property_index = int(groups['index'])
@@ -1295,12 +1256,11 @@ class Constraint(ConstraintBase):
         # Hard to compare `None` with a constraint. Flavor can't provide - or doesn't feel like providing - more
         # specific value. Unless told otherwise, we should mark the evaluation as failed, and keep looking for
         # better mach.
-        result = False if flavor_property is None else self.operator_handler(
-            flavor_property,
-            self.value
-        )
+        result = False if flavor_property is None else self.operator_handler(flavor_property, self.value)
 
-        logger.debug(f'eval-flavor: {flavor.name}.{self.name}: {type(flavor_property).__name__}({flavor_property}) {self.operator.value} {type(self.value).__name__}({self.value}): {result}')  # noqa: E501
+        logger.debug(
+            f'eval-flavor: {flavor.name}.{self.name}: {type(flavor_property).__name__}({flavor_property}) {self.operator.value} {type(self.value).__name__}({self.value}): {result}'  # noqa: E501
+        )
 
         return Ok(result)
 
@@ -1316,9 +1276,7 @@ class Constraint(ConstraintBase):
         return Ok(self.expand_name().spec_name == constraint_name)
 
     def spans(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        members: Optional[List['Constraint']] = None
+        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
     ) -> Iterator[List['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
@@ -1350,9 +1308,7 @@ class And(CompoundConstraint):
         super().__init__(_reduce_all, constraints=constraints)
 
     def spans(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        members: Optional[List['Constraint']] = None
+        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
     ) -> Iterator[List['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
@@ -1369,18 +1325,12 @@ class And(CompoundConstraint):
         members = members or []
 
         # List of non-compound constraints - we just slap these into every combination we generate
-        simple_constraints = [
-            constraint
-            for constraint in self.constraints
-            if isinstance(constraint, Constraint)
-        ]
+        simple_constraints = [constraint for constraint in self.constraints if isinstance(constraint, Constraint)]
 
         # Compound constraints - these we will ask to generate their spans, and we produce cartesian
         # product from the output.
         compound_constraints = [
-            constraint
-            for constraint in self.constraints
-            if isinstance(constraint, CompoundConstraint)
+            constraint for constraint in self.constraints if isinstance(constraint, CompoundConstraint)
         ]
 
         for compounds in itertools.product(*[constraint.spans(logger) for constraint in compound_constraints]):
@@ -1405,9 +1355,7 @@ class Or(CompoundConstraint):
         super().__init__(_reduce_any, constraints=constraints)
 
     def spans(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        members: Optional[List['Constraint']] = None
+        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
     ) -> Iterator[List['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
@@ -1439,7 +1387,7 @@ def _parse_boot(spec: SpecType) -> ConstraintBase:
     group = And()
 
     if 'method' in spec:
-        constraint = Constraint.from_specification('boot.method', spec["method"], as_quantity=False)
+        constraint = Constraint.from_specification('boot.method', spec['method'], as_quantity=False)
 
         if constraint.operator == Operator.EQ:
             constraint.change_operator(Operator.CONTAINS)
@@ -1471,7 +1419,7 @@ def _parse_virtualization(spec: SpecType) -> ConstraintBase:
                 'virtualization.is_virtualized',
                 str(spec['is-virtualized']),
                 as_quantity=False,
-                as_cast=gluetool.utils.normalize_bool_option
+                as_cast=gluetool.utils.normalize_bool_option,
             )
         ]
 
@@ -1481,17 +1429,13 @@ def _parse_virtualization(spec: SpecType) -> ConstraintBase:
                 'virtualization.is_supported',
                 str(spec['is-supported']),
                 as_quantity=False,
-                as_cast=gluetool.utils.normalize_bool_option
+                as_cast=gluetool.utils.normalize_bool_option,
             )
         ]
 
     if 'hypervisor' in spec:
         group.constraints += [
-            Constraint.from_specification(
-                'virtualization.hypervisor',
-                spec['hypervisor'],
-                as_quantity=False
-            )
+            Constraint.from_specification('virtualization.hypervisor', spec['hypervisor'], as_quantity=False)
         ]
 
     if len(group.constraints) == 1:
@@ -1511,7 +1455,6 @@ def _parse_compatible(spec: SpecType) -> ConstraintBase:
     group = And()
 
     for distro in spec['distro']:
-
         constraint = Constraint.from_specification('compatible.distro', distro, as_quantity=False)
 
         constraint.change_operator(Operator.CONTAINS)
@@ -1576,10 +1519,7 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
     group = And()
 
     group.constraints += [
-        Constraint.from_specification(
-            f'cpu.{constraint_name.replace("-", "_")}',
-            str(spec[constraint_name])
-        )
+        Constraint.from_specification(f'cpu.{constraint_name.replace("-", "_")}', str(spec[constraint_name]))
         for constraint_name in (
             'processors',
             'sockets',
@@ -1589,21 +1529,16 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
             'threads-per-core',
             'model',
             'stepping',
-            'family'
+            'family',
         )
         if constraint_name in spec
     ]
 
     group.constraints += [
         Constraint.from_specification(
-            f'cpu.{constraint_name.replace("-", "_")}',
-            str(spec[constraint_name]),
-            as_quantity=False
+            f'cpu.{constraint_name.replace("-", "_")}', str(spec[constraint_name]), as_quantity=False
         )
-        for constraint_name in (
-            'family-name',
-            'model-name'
-        )
+        for constraint_name in ('family-name', 'model-name')
         if constraint_name in spec
     ]
 
@@ -1661,55 +1596,38 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
 
         expansion_group.constraints += [
             Constraint.from_specification(
-                'disk.length',
-                '> 0',
-                as_quantity=False,
-                as_cast=int,
-                original_constraint=original_constraint
+                'disk.length', '> 0', as_quantity=False, as_cast=int, original_constraint=original_constraint
             ),
             Constraint.from_specification(
                 'disk[-1].is_expansion',
                 'True',
                 as_quantity=False,
                 as_cast=bool,
-                original_constraint=original_constraint
+                original_constraint=original_constraint,
             ),
             Constraint.from_specification(
                 'disk.expanded_length',
                 f'> {disk_index}',
                 as_quantity=False,
                 as_cast=int,
-                original_constraint=original_constraint
-            )
+                original_constraint=original_constraint,
+            ),
         ]
 
         if original_constraint.operator in (Operator.EQ, Operator.GTE, Operator.LTE, Operator.GT, Operator.LT):
             expansion_group.constraints += [
                 Constraint.from_specification(
-                    'disk[-1].min_size',
-                    f'<= {original_constraint.raw_value}',
-                    original_constraint=original_constraint
+                    'disk[-1].min_size', f'<= {original_constraint.raw_value}', original_constraint=original_constraint
                 ),
                 Constraint.from_specification(
-                    'disk[-1].max_size',
-                    f'>= {original_constraint.raw_value}',
-                    original_constraint=original_constraint
-                )
+                    'disk[-1].max_size', f'>= {original_constraint.raw_value}', original_constraint=original_constraint
+                ),
             ]
 
         else:
-            raise ParseError(
-                message='operator not supported',
-                constraint_name=constraint_name,
-                raw_value=str(size)
-            )
+            raise ParseError(message='operator not supported', constraint_name=constraint_name, raw_value=str(size))
 
-        group.constraints += [
-            Or([
-                direct_group,
-                expansion_group
-            ])
-        ]
+        group.constraints += [Or([direct_group, expansion_group])]
 
     # group.constraints += [
     #     Constraint.from_specification(f'disk[{disk_index}].{constraint_name}', str(spec[constraint_name]))
@@ -1745,10 +1663,7 @@ def _parse_disks(spec: SpecType) -> ConstraintBase:
 
     group = And()
 
-    group.constraints += [
-        _parse_disk(disk_spec, disk_index)
-        for disk_index, disk_spec in enumerate(spec)
-    ]
+    group.constraints += [_parse_disk(disk_spec, disk_index) for disk_index, disk_spec in enumerate(spec)]
 
     # Do not reduce group to a single item: we need more predictable tree
     # for Beaker driver to be able to construct its own XML.
@@ -1767,28 +1682,16 @@ def _parse_gpu(spec: SpecType) -> ConstraintBase:
     group = And()
 
     group.constraints += [
-        Constraint.from_specification(
-            f'gpu.{constraint_name.replace("-", "_")}',
-            str(spec[constraint_name])
-        )
-        for constraint_name in (
-            'device',
-            'vendor'
-        )
+        Constraint.from_specification(f'gpu.{constraint_name.replace("-", "_")}', str(spec[constraint_name]))
+        for constraint_name in ('device', 'vendor')
         if constraint_name in spec
     ]
 
     group.constraints += [
         Constraint.from_specification(
-            f'gpu.{constraint_name.replace("-", "_")}',
-            str(spec[constraint_name]),
-            as_quantity=False
+            f'gpu.{constraint_name.replace("-", "_")}', str(spec[constraint_name]), as_quantity=False
         )
-        for constraint_name in (
-            'device-name',
-            'vendor-name',
-            'driver'
-        )
+        for constraint_name in ('device-name', 'vendor-name', 'driver')
         if constraint_name in spec
     ]
 
@@ -1828,26 +1731,22 @@ def _parse_network(spec: SpecType, network_index: int) -> ConstraintBase:
 
         expansion_group.constraints += [
             Constraint.from_specification(
-                'network.length',
-                '> 0',
-                as_quantity=False,
-                as_cast=int,
-                original_constraint=original_constraint
+                'network.length', '> 0', as_quantity=False, as_cast=int, original_constraint=original_constraint
             ),
             Constraint.from_specification(
                 'network[-1].is_expansion',
                 'True',
                 as_quantity=False,
                 as_cast=bool,
-                original_constraint=original_constraint
+                original_constraint=original_constraint,
             ),
             Constraint.from_specification(
                 'network.expanded_length',
                 f'> {network_index}',
                 as_quantity=False,
                 as_cast=int,
-                original_constraint=original_constraint
-            )
+                original_constraint=original_constraint,
+            ),
         ]
 
         if original_constraint.operator in (Operator.EQ,):
@@ -1856,23 +1755,14 @@ def _parse_network(spec: SpecType, network_index: int) -> ConstraintBase:
                     'network[-1].type',
                     original_constraint.raw_value,
                     as_quantity=False,
-                    original_constraint=original_constraint
+                    original_constraint=original_constraint,
                 )
             ]
 
         else:
-            raise ParseError(
-                message='operator not supported',
-                constraint_name=constraint_name,
-                raw_value=str(type_)
-            )
+            raise ParseError(message='operator not supported', constraint_name=constraint_name, raw_value=str(type_))
 
-        group.constraints += [
-            Or([
-                direct_group,
-                expansion_group
-            ])
-        ]
+        group.constraints += [Or([direct_group, expansion_group])]
 
     if 'type' in spec:
         _parse_type_spec(spec)
@@ -1894,8 +1784,7 @@ def _parse_networks(spec: SpecType) -> ConstraintBase:
     group = And()
 
     group.constraints += [
-        _parse_network(network_spec, network_index)
-        for network_index, network_spec in enumerate(spec)
+        _parse_network(network_spec, network_index) for network_index, network_spec in enumerate(spec)
     ]
 
     if len(group.constraints) == 1:
@@ -1915,18 +1804,15 @@ def _parse_system(spec: SpecType) -> ConstraintBase:
     group = And()
 
     group.constraints += [
-        Constraint.from_specification(
-            f'system.{constraint_name.replace("-", "_")}',
-            str(spec[constraint_name]))
+        Constraint.from_specification(f'system.{constraint_name.replace("-", "_")}', str(spec[constraint_name]))
         for constraint_name in ('vendor', 'model', 'numa-nodes')
         if constraint_name in spec
     ]
 
     group.constraints += [
         Constraint.from_specification(
-            f'system.{constraint_name.replace("-", "_")}',
-            str(spec[constraint_name]),
-            as_quantity=False)
+            f'system.{constraint_name.replace("-", "_")}', str(spec[constraint_name]), as_quantity=False
+        )
         for constraint_name in ('model-name', 'vendor-name')
         if constraint_name in spec
     ]
@@ -1946,9 +1832,8 @@ def _parse_beaker(spec: SpecType) -> ConstraintBase:
 
     group.constraints += [
         Constraint.from_specification(
-            f'beaker.{constraint_name.replace("-", "_")}',
-            str(spec[constraint_name]),
-            as_quantity=False)
+            f'beaker.{constraint_name.replace("-", "_")}', str(spec[constraint_name]), as_quantity=False
+        )
         for constraint_name in ('pool',)
         if constraint_name in spec
     ]
@@ -1972,7 +1857,7 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
     if 'boot' in spec:
         group.constraints += [_parse_boot(spec['boot'])]
 
-    if "compatible" in spec:
+    if 'compatible' in spec:
         group.constraints += [_parse_compatible(spec['compatible'])]
 
     if 'cpu' in spec:
@@ -2024,10 +1909,7 @@ def _parse_and(spec: SpecType) -> ConstraintBase:
 
     group = And()
 
-    group.constraints += [
-        _parse_block(member)
-        for member in spec
-    ]
+    group.constraints += [_parse_block(member) for member in spec]
 
     if len(group.constraints) == 1:
         return group.constraints[0]
@@ -2045,10 +1927,7 @@ def _parse_or(spec: SpecType) -> ConstraintBase:
 
     group = Or()
 
-    group.constraints += [
-        _parse_block(member)
-        for member in spec
-    ]
+    group.constraints += [_parse_block(member) for member in spec]
 
     if len(group.constraints) == 1:
         return group.constraints[0]
@@ -2164,7 +2043,7 @@ class Kickstart(SerializableContainer):
         :returns: serialized Kickstart container.
         """
 
-        return{
+        return {
             'script': self.script,
             'pre-install': self.pre_install,
             'post-install': self.post_install,
@@ -2215,8 +2094,7 @@ class Environment(SerializableContainer):
             return Ok(None)
 
         return cast(
-            Result[Optional[ConstraintBase], 'Failure'],
-            constraints_from_environment_requirements(self.hw.constraints)
+            Result[Optional[ConstraintBase], 'Failure'], constraints_from_environment_requirements(self.hw.constraints)
         )
 
     @property

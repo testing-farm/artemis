@@ -9,6 +9,7 @@ Revises: 0da45d07fde0
 Create Date: 2021-08-09 10:03:38.317918
 
 """
+
 from typing import Union
 
 import sqlalchemy as sa
@@ -25,62 +26,33 @@ depends_on = None
 def get_new_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
     if op.get_bind().dialect.name == 'postgresql':
         enum = postgresql.ENUM(
-            'UNSUPPORTED',
-            'PENDING',
-            'IN_PROGRESS',
-            'COMPLETE',
-            'ERROR',
-            name=name,
-            create_type=False
+            'UNSUPPORTED', 'PENDING', 'IN_PROGRESS', 'COMPLETE', 'ERROR', name=name, create_type=False
         )
 
         enum.create(op.get_bind())
 
         return enum
 
-    return sa.Enum(
-        'UNSUPPORTED',
-        'PENDING',
-        'IN_PROGRESS',
-        'COMPLETE',
-        'ERROR',
-        name=name
-    )
+    return sa.Enum('UNSUPPORTED', 'PENDING', 'IN_PROGRESS', 'COMPLETE', 'ERROR', name=name)
 
 
 def get_old_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
     if op.get_bind().dialect.name == 'postgresql':
-        enum = postgresql.ENUM(
-            'PENDING',
-            'IN_PROGRESS',
-            'COMPLETE',
-            'ERROR',
-            name=name,
-            create_type=False
-        )
+        enum = postgresql.ENUM('PENDING', 'IN_PROGRESS', 'COMPLETE', 'ERROR', name=name, create_type=False)
 
         enum.create(op.get_bind())
 
         return enum
 
-    return sa.Enum(
-        'PENDING',
-        'IN_PROGRESS',
-        'COMPLETE',
-        'ERROR',
-        name=name
-    )
+    return sa.Enum('PENDING', 'IN_PROGRESS', 'COMPLETE', 'ERROR', name=name)
 
 
 def upgrade() -> None:
     # create a temporary column, with the updated enum
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
-        batch_op.add_column(sa.Column(
-            '__tmp_state',
-            get_new_enum('new_guestlogstate'),
-            server_default='PENDING',
-            nullable=False
-        ))
+        batch_op.add_column(
+            sa.Column('__tmp_state', get_new_enum('new_guestlogstate'), server_default='PENDING', nullable=False)
+        )
 
     # copy existing state to the temporary column
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
@@ -95,16 +67,11 @@ def upgrade() -> None:
 
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute(sa.text("DROP TYPE guestlogstate;"))
+            batch_op.execute(sa.text('DROP TYPE guestlogstate;'))
 
     # re-create the column, with the updated enum
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
-        batch_op.add_column(sa.Column(
-            'state',
-            get_new_enum('guestlogstate'),
-            server_default='PENDING',
-            nullable=False
-        ))
+        batch_op.add_column(sa.Column('state', get_new_enum('guestlogstate'), server_default='PENDING', nullable=False))
 
     # copy saved state to this recreated column
     if op.get_bind().dialect.name == 'postgresql':
@@ -118,24 +85,22 @@ def upgrade() -> None:
 
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute(sa.text("DROP TYPE new_guestlogstate;"))
+            batch_op.execute(sa.text('DROP TYPE new_guestlogstate;'))
 
 
 def downgrade() -> None:
     # create a temporary column, with the old enum
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
-        batch_op.add_column(sa.Column(
-            '__tmp_state',
-            get_old_enum('old_guestlogstate'),
-            server_default='PENDING',
-            nullable=False
-        ))
+        batch_op.add_column(
+            sa.Column('__tmp_state', get_old_enum('old_guestlogstate'), server_default='PENDING', nullable=False)
+        )
 
     # copy existing state to the temporary column - handle UNSUPPORTED downgrade
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
             op.get_bind().execute(
-                sa.text("UPDATE guest_logs SET state = 'ERROR'::guestlogstate WHERE state = 'UNSUPPORTED'"))
+                sa.text("UPDATE guest_logs SET state = 'ERROR'::guestlogstate WHERE state = 'UNSUPPORTED'")
+            )
             op.get_bind().execute(sa.text('UPDATE guest_logs SET __tmp_state = state::text::old_guestlogstate'))
         else:
             op.get_bind().execute(sa.text("UPDATE guest_logs SET state = 'ERROR' WHERE state = 'UNSUPPORTED'"))
@@ -147,16 +112,11 @@ def downgrade() -> None:
 
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute(sa.text("DROP TYPE guestlogstate;"))
+            batch_op.execute(sa.text('DROP TYPE guestlogstate;'))
 
     # re-create the column, with the updated enum
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
-        batch_op.add_column(sa.Column(
-            'state',
-            get_old_enum('guestlogstate'),
-            server_default='PENDING',
-            nullable=False
-        ))
+        batch_op.add_column(sa.Column('state', get_old_enum('guestlogstate'), server_default='PENDING', nullable=False))
 
     # copy saved state to this recreated column (no cast needed)
     if op.get_bind().dialect.name == 'postgresql':
@@ -170,4 +130,4 @@ def downgrade() -> None:
 
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute(sa.text("DROP TYPE old_guestlogstate;"))
+            batch_op.execute(sa.text('DROP TYPE old_guestlogstate;'))

@@ -44,13 +44,10 @@ runcmd:
         ({'address': 'IPv4=127.0.0.1, IPv6=2001:db8::8a2e:370:7334'}, 'address', None, Ok('127.0.0.1')),
         ({'address': None}, 'address', None, Ok(None)),
         ({'address': '127.0.0'}, 'address', None, Error(tft.artemis.Failure('failed to parse an IP address'))),
-    ]
+    ],
 )
 def test_vm_info_to_ip(
-    output: tft.artemis.JSONType,
-    key: str,
-    regex: Optional[Pattern[str]],
-    expected: Result[str, tft.artemis.Failure]
+    output: tft.artemis.JSONType, key: str, regex: Optional[Pattern[str]], expected: Result[str, tft.artemis.Failure]
 ) -> None:
     r_ip = vm_info_to_ip(output, key, regex=regex)
 
@@ -84,10 +81,7 @@ def test_driver_instantiate_unknown_driver(logger: gluetool.log.ContextAdapter) 
     assert failure.details['drivername'] == 'unknown-driver'
 
 
-def test_driver_instantiate_failed_sanity(
-    logger: gluetool.log.ContextAdapter,
-    mockpatch: MockPatcher
-) -> None:
+def test_driver_instantiate_failed_sanity(logger: gluetool.log.ContextAdapter, mockpatch: MockPatcher) -> None:
     mockpatch(tft.artemis.drivers.localhost.LocalhostDriver, 'sanity').return_value = Error(
         tft.artemis.Failure('failed sanity')
     )
@@ -102,15 +96,9 @@ def test_driver_instantiate_failed_sanity(
 
 
 def test_driver_load_or_none(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    mockpatch: MockPatcher
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, mockpatch: MockPatcher
 ) -> None:
-    mock_record = MagicMock(
-        name='Pool()<M>',
-        driver='dummy-driver',
-        parameters={}
-    )
+    mock_record = MagicMock(name='Pool()<M>', driver='dummy-driver', parameters={})
 
     mock_pool = MagicMock(name='pool<M>')
 
@@ -124,19 +112,14 @@ def test_driver_load_or_none(
     pool = r_pool.unwrap()
 
     cast(MagicMock, tft.artemis.drivers.PoolDriver._instantiate).assert_called_once_with(
-        logger,
-        'dummy-driver',
-        'dummy-pool',
-        mock_record.parameters
+        logger, 'dummy-driver', 'dummy-pool', mock_record.parameters
     )
 
     assert pool is mock_pool
 
 
 def test_driver_load_or_none_no_such_pool(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    mockpatch: MockPatcher
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, mockpatch: MockPatcher
 ) -> None:
     mockpatch(tft.artemis.drivers.SafeQuery, 'one_or_none').return_value = Ok(None)  # type: ignore[attr-defined]
 
@@ -148,14 +131,12 @@ def test_driver_load_or_none_no_such_pool(
 
 
 def test_driver_load_or_none_db_error(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    mockpatch: MockPatcher
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, mockpatch: MockPatcher
 ) -> None:
     mock_failure = tft.artemis.Failure('dummy failure')
     mockpatch(
         tft.artemis.drivers.SafeQuery,  # type: ignore[attr-defined]
-        'one_or_none'
+        'one_or_none',
     ).return_value = Error(mock_failure)
 
     r_pool = tft.artemis.drivers.PoolDriver.load_or_none(logger, session, 'dummy-pool-that-does-not-exist')
@@ -165,13 +146,11 @@ def test_driver_load_or_none_db_error(
 
 
 def test_driver_load_or_none_instantiate_error(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    mockpatch: MockPatcher
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, mockpatch: MockPatcher
 ) -> None:
     mockpatch(
         tft.artemis.drivers.SafeQuery,  # type: ignore[attr-defined]
-        'one_or_none'
+        'one_or_none',
     ).return_value = Ok(MagicMock(name='Pool<M>'))
 
     mock_failure = tft.artemis.Failure('dummy failure')
@@ -184,9 +163,7 @@ def test_driver_load_or_none_instantiate_error(
 
 
 def test_driver_load(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    mockpatch: MockPatcher
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, mockpatch: MockPatcher
 ) -> None:
     mock_pool = MagicMock(name='pool<M>')
     mockpatch(tft.artemis.drivers.PoolDriver, 'load_or_none').return_value = Ok(mock_pool)
@@ -203,9 +180,7 @@ def test_driver_load(
 
 
 def test_driver_load_no_such_pool(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    mockpatch: MockPatcher
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, mockpatch: MockPatcher
 ) -> None:
     mockpatch(tft.artemis.drivers.PoolDriver, 'load_or_none').return_value = Ok(None)
 
@@ -225,13 +200,9 @@ def test_driver_load_no_such_pool(
 
 
 def test_driver_load_error(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    mockpatch: MockPatcher
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, mockpatch: MockPatcher
 ) -> None:
-    mockpatch(tft.artemis.drivers.PoolDriver, 'load_or_none').return_value = Error(
-        tft.artemis.Failure('dummy failure')
-    )
+    mockpatch(tft.artemis.drivers.PoolDriver, 'load_or_none').return_value = Error(tft.artemis.Failure('dummy failure'))
 
     r = tft.artemis.drivers.PoolDriver.load(logger, session, 'dummy-pool')
 
@@ -248,15 +219,18 @@ def test_driver_load_error(
         ('#!/bin/sh\n echo Something > 42',),
         ('',),
         (None,),
-    ]
+    ],
 )
 def test_generate_post_install_script_from_template_cloud_init(
     user_data: Optional[str],
     logger: gluetool.log.ContextAdapter,
 ) -> None:
     guest_request = MagicMock(post_install_script=user_data)
-    pool = tft.artemis.drivers.PoolDriver(logger, 'dummy-driver-with-post-install-script',
-                                          {'post-install-template': POST_INSTALL_SCRIPT_TEMPLATE_CLOUD_INIT})
+    pool = tft.artemis.drivers.PoolDriver(
+        logger,
+        'dummy-driver-with-post-install-script',
+        {'post-install-template': POST_INSTALL_SCRIPT_TEMPLATE_CLOUD_INIT},
+    )
     r_script = pool.generate_post_install_script(guest_request)
     assert r_script.is_ok
     script = r_script.unwrap()
@@ -272,7 +246,7 @@ def test_generate_post_install_script_from_template_cloud_init(
         ('#!/bin/sh\n echo Something > 42',),
         ('',),
         (None,),
-    ]
+    ],
 )
 def test_generate_post_install_script_from_template_default(
     user_data: Optional[str],

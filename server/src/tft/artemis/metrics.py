@@ -67,10 +67,7 @@ UNDEFINED_POOL_NAME = 'undefined'
 # * first hour split into intervals of 5 minutes,
 # * next 47 hours, by hour,
 # * and the rest.
-GUEST_AGE_BUCKETS = \
-    list(range(300, 3600, 300)) \
-    + list(range(3600, 49 * 3600, 3600)) \
-    + [prometheus_client.utils.INF]
+GUEST_AGE_BUCKETS = list(range(300, 3600, 300)) + list(range(3600, 49 * 3600, 3600)) + [prometheus_client.utils.INF]
 
 
 # Message processing time buckets, in milliseconds. Spanning from 5 milliseconds up to 900 seconds.
@@ -78,43 +75,92 @@ GUEST_AGE_BUCKETS = \
 # setup is not incompatible with our architecture.
 MESSAGE_DURATION_BUCKETS = (
     # -> 1s
-    5, 10, 25, 50, 75, 100, 250, 500, 750, 1000,
+    5,
+    10,
+    25,
+    50,
+    75,
+    100,
+    250,
+    500,
+    750,
+    1000,
     # -> 10s
-    2500, 5000, 7500, 10000,
+    2500,
+    5000,
+    7500,
+    10000,
     # -> 60s
-    30000, 60000,
+    30000,
+    60000,
     # -> 600s/10m
-    120000, 180000, 240000, 300000, 360000, 420000, 480000, 540000, 600000,
+    120000,
+    180000,
+    240000,
+    300000,
+    360000,
+    420000,
+    480000,
+    540000,
+    600000,
     # -> 900s/15m
     900000,
-    prometheus_client.utils.INF
+    prometheus_client.utils.INF,
 )
 
 
 # Machine provisioning time buckets, in seconds. Spanning from 60 seconds up to 24 hours.
 # First hour split by minute, next 23 hours, by hour
-PROVISION_DURATION_BUCKETS = \
-    list(range(60, 3600, 60)) \
-    + list(range(3600, 23 * 3600 + 3600, 3600)) \
-    + [prometheus_client.utils.INF]
+PROVISION_DURATION_BUCKETS = (
+    list(range(60, 3600, 60)) + list(range(3600, 23 * 3600 + 3600, 3600)) + [prometheus_client.utils.INF]
+)
 
 
 # HTTP request processing time buckets, in milliseconds. Spanning from 5 milliseconds up to 15 seconds.
 HTTP_REQUEST_DURATION_BUCKETS = (
     # -> 1s
-    5, 10, 25, 50, 75, 100, 250, 500, 750, 1000,
+    5,
+    10,
+    25,
+    50,
+    75,
+    100,
+    250,
+    500,
+    750,
+    1000,
     # -> 15s
-    2500, 5000, 7500, 10000, 15000,
-    prometheus_client.utils.INF
+    2500,
+    5000,
+    7500,
+    10000,
+    15000,
+    prometheus_client.utils.INF,
 )
 
 # CLI call duration buckets, in seconds. Spanning from 1 second up to 10 minutes.
 CLI_CALL_DURATION_BUCKETS = (
     # -> 60 seconds
-    1, 2, 5, 10, 20, 30, 40, 50, 60,
+    1,
+    2,
+    5,
+    10,
+    20,
+    30,
+    40,
+    50,
+    60,
     # -> 600 seconds
-    120, 180, 240, 300, 360, 420, 480, 540, 600,
-    prometheus_client.utils.INF
+    120,
+    180,
+    240,
+    300,
+    360,
+    420,
+    480,
+    540,
+    600,
+    prometheus_client.utils.INF,
 )
 
 
@@ -285,8 +331,7 @@ class MetricsBase:
         """
 
         with Sentry.start_span(
-            TracingOp.FUNCTION,
-            description=f'{self.__class__.__name__}.register_with_prometheus'
+            TracingOp.FUNCTION, description=f'{self.__class__.__name__}.register_with_prometheus'
         ) as tracing_span:
             for name, value in self.tracing_tags.items():
                 tracing_span.set_tag(name, value)
@@ -313,8 +358,7 @@ class MetricsBase:
         """
 
         with Sentry.start_span(
-            TracingOp.FUNCTION,
-            description=f'{self.__class__.__name__}.update_prometheus'
+            TracingOp.FUNCTION, description=f'{self.__class__.__name__}.update_prometheus'
         ) as tracing_span:
             for name, value in self.tracing_tags.items():
                 tracing_span.set_tag(name, value)
@@ -371,29 +415,15 @@ class DBPoolMetrics(MetricsBase):
 
         super().do_register_with_prometheus(registry)
 
-        self.POOL_SIZE = Gauge(
-            'db_pool_size',
-            'Maximal number of connections available in the pool',
-            registry=registry
-        )
+        self.POOL_SIZE = Gauge('db_pool_size', 'Maximal number of connections available in the pool', registry=registry)
 
         self.POOL_CHECKED_IN = Gauge(
-            'db_pool_checked_in',
-            'Current number of connections checked in',
-            registry=registry
+            'db_pool_checked_in', 'Current number of connections checked in', registry=registry
         )
 
-        self.POOL_CHECKED_OUT = Gauge(
-            'db_pool_checked_out',
-            'Current number of connections out',
-            registry=registry
-        )
+        self.POOL_CHECKED_OUT = Gauge('db_pool_checked_out', 'Current number of connections out', registry=registry)
 
-        self.POOL_OVERFLOW = Gauge(
-            'db_pool_overflow',
-            'Current overflow of connections',
-            registry=registry
-        )
+        self.POOL_OVERFLOW = Gauge('db_pool_overflow', 'Current overflow of connections', registry=registry)
 
     def do_update_prometheus(self) -> None:
         """
@@ -598,10 +628,7 @@ class PoolResources(PoolMetricsBase):
             for network_name, serialized_network in serialized.get('networks', {}).items()
         }
 
-        self.updated_timestamp = cast(
-            RedisGetType[float],
-            cache.get
-        )(self._key_updated_timestamp)
+        self.updated_timestamp = cast(RedisGetType[float], cache.get)(self._key_updated_timestamp)
 
     @with_context
     def store(self, cache: redis.Redis) -> None:
@@ -617,16 +644,12 @@ class PoolResources(PoolMetricsBase):
         # This method will take care of serialization of `networks` list as well, since `asdict` can deal with
         # nested dataclasses.
 
-        safe_call(
-            cast(Callable[[str, str], None], cache.set),
-            self._key,
-            json.dumps(dataclasses.asdict(self))
-        )
+        safe_call(cast(Callable[[str, str], None], cache.set), self._key, json.dumps(dataclasses.asdict(self)))
 
         safe_call(
             cast(Callable[[str, float], None], cache.set),
             self._key_updated_timestamp,
-            datetime.datetime.timestamp(datetime.datetime.utcnow())
+            datetime.datetime.timestamp(datetime.datetime.utcnow()),
         )
 
 
@@ -687,8 +710,9 @@ class PoolResourcesDepleted:
             but all of them are marked as depleted; ``False`` otherwise.
         """
 
-        return any([getattr(self, field) for field in PoolResources._TRIVIAL_FIELDS]) \
-            or (self.available_network_count != 0 and len(self.networks) == self.available_network_count)
+        return any([getattr(self, field) for field in PoolResources._TRIVIAL_FIELDS]) or (
+            self.available_network_count != 0 and len(self.networks) == self.available_network_count
+        )
 
     def depleted_resources(self) -> List[str]:
         """
@@ -698,13 +722,8 @@ class PoolResourcesDepleted:
             by their names, networks are represented as network name prefixed with ``network.``, e.g. ``network.foo``.
         """
 
-        return [
-            fieldname
-            for fieldname in PoolResources._TRIVIAL_FIELDS
-            if getattr(self, fieldname) is True
-        ] + [
-            f'network.{network_name}'
-            for network_name in self.networks
+        return [fieldname for fieldname in PoolResources._TRIVIAL_FIELDS if getattr(self, fieldname) is True] + [
+            f'network.{network_name}' for network_name in self.networks
         ]
 
 
@@ -731,10 +750,7 @@ class PoolResourcesMetrics(PoolMetricsBase):
 
         self.__post_init__()
 
-    def get_depletion(
-        self,
-        is_enough: Callable[[str, int, int], bool]
-    ) -> PoolResourcesDepleted:
+    def get_depletion(self, is_enough: Callable[[str, int, int], bool]) -> PoolResourcesDepleted:
         """
         Compare limits and usage and yield :py:class:`PoolResourcesDepleted` instance describing depleted resources.
 
@@ -841,7 +857,7 @@ class PoolCostsMetrics(PoolMetricsBase):
         resource_type: ResourceType,
         value: ResourceCostType,
         cache: redis.Redis,
-        logger: gluetool.log.ContextAdapter
+        logger: gluetool.log.ContextAdapter,
     ) -> None:
         """
         Increment cost.
@@ -909,20 +925,16 @@ class PoolMetrics(PoolMetricsBase):
         self.key_aborts = self._KEY_ABORTS.format(poolname=poolname)  # noqa: FS002
 
         self.key_image_info_count = self._KEY_INFO_COUNT.format(  # noqa: FS002
-            poolname=poolname,
-            info='image'
+            poolname=poolname, info='image'
         )
         self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(  # noqa: FS002
-            poolname=poolname,
-            info='image'
+            poolname=poolname, info='image'
         )
         self.key_flavor_info_count = self._KEY_INFO_COUNT.format(  # noqa: FS002
-            poolname=poolname,
-            info='flavor'
+            poolname=poolname, info='flavor'
         )
         self.key_flavor_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(  # noqa: FS002
-            poolname=poolname,
-            info='flavor'
+            poolname=poolname, info='flavor'
         )
 
         self.key_cli_calls = self._KEY_CLI_CALLS.format(poolname=poolname)  # noqa: FS002
@@ -954,40 +966,28 @@ class PoolMetrics(PoolMetricsBase):
 
     @staticmethod
     @with_context
-    def _refresh_info_count(
-        pool: str,
-        info: str,
-        count: float,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
+    def _refresh_info_count(pool: str, info: str, count: float, cache: redis.Redis) -> Result[None, Failure]:
         safe_call(
             cast(Callable[[str, float], None], cache.set),
             PoolMetrics._KEY_INFO_COUNT.format(poolname=pool, info=info),  # noqa: FS002
-            count
+            count,
         )
 
         return Ok(None)
 
     @staticmethod
     @with_context
-    def _refresh_info_updated_timestamp(
-        pool: str,
-        info: str,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
+    def _refresh_info_updated_timestamp(pool: str, info: str, cache: redis.Redis) -> Result[None, Failure]:
         safe_call(
             cast(Callable[[str, float], None], cache.set),
             PoolMetrics._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=pool, info=info),  # noqa: FS002
-            datetime.datetime.timestamp(datetime.datetime.utcnow())
+            datetime.datetime.timestamp(datetime.datetime.utcnow()),
         )
 
         return Ok(None)
 
     @staticmethod
-    def refresh_image_info_metrics(
-        pool: str,
-        image_count: int
-    ) -> Result[None, Failure]:
+    def refresh_image_info_metrics(pool: str, image_count: int) -> Result[None, Failure]:
         """
         Update "latest updated" timestamp of pool image info cache to current time.
 
@@ -1002,10 +1002,7 @@ class PoolMetrics(PoolMetricsBase):
         return Ok(None)
 
     @staticmethod
-    def refresh_flavor_info_metrics(
-        pool: str,
-        flavor_count: int
-    ) -> Result[None, Failure]:
+    def refresh_flavor_info_metrics(pool: str, flavor_count: int) -> Result[None, Failure]:
         """
         Update "latest updated" timestamp of pool flavor info cache to current time.
 
@@ -1022,10 +1019,7 @@ class PoolMetrics(PoolMetricsBase):
     @staticmethod
     @with_context
     def inc_error(
-        pool: str,
-        error: 'PoolErrorCauses',
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        pool: str, error: 'PoolErrorCauses', logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase counter for a given pool error by 1.
@@ -1049,7 +1043,7 @@ class PoolMetrics(PoolMetricsBase):
         arch: str,
         cause: 'PoolErrorCauses',
         logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        cache: redis.Redis,
     ) -> Result[None, Failure]:
         """
         Increase counter for a aborted instance by 1.
@@ -1068,7 +1062,7 @@ class PoolMetrics(PoolMetricsBase):
             logger,
             cache,
             PoolMetrics._KEY_ABORTS.format(poolname=pool),  # noqa: FS002
-            f'{instance_id or ""}:{compose}:{arch}:{cause.value}'
+            f'{instance_id or ""}:{compose}:{arch}:{cause.value}',
         )
 
         return Ok(None)
@@ -1102,7 +1096,7 @@ class PoolMetrics(PoolMetricsBase):
             logger,
             cache,
             PoolMetrics._KEY_CLI_CALLS.format(poolname=poolname),  # noqa: FS002
-            commandname
+            commandname,
         )
 
         # exit code
@@ -1110,7 +1104,7 @@ class PoolMetrics(PoolMetricsBase):
             logger,
             cache,
             PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),  # noqa: FS002
-            f'{commandname}:{exit_code}:{cause.value if cause else ""}'
+            f'{commandname}:{exit_code}:{cause.value if cause else ""}',
         )
 
         # duration
@@ -1120,17 +1114,14 @@ class PoolMetrics(PoolMetricsBase):
             logger,
             cache,
             PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname),  # noqa: FS002
-            f'{bucket}:{commandname}:{exit_code}:{cause.value if cause else ""}'
+            f'{bucket}:{commandname}:{exit_code}:{cause.value if cause else ""}',
         )
 
         return Ok(None)
 
     @with_context
     def do_sync(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        cache: redis.Redis
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, cache: redis.Redis
     ) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
@@ -1168,31 +1159,26 @@ class PoolMetrics(PoolMetricsBase):
             Tuple[int],
             session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))
             .filter(artemis_db.GuestRequest.poolname == self.poolname)
-            .one()
+            .one(),
         )[0]
 
-        self.current_guest_request_count_per_state = {
-            state: 0
-            for state in GuestState.__members__.values()
-        }
+        self.current_guest_request_count_per_state = {state: 0 for state in GuestState.__members__.values()}
 
-        self.current_guest_request_count_per_state.update({
-            GuestState(record[0]): record[1]
-            for record in cast(
-                List[Tuple[str, int]],
-                session.query(
-                    artemis_db.GuestRequest.state,
-                    sqlalchemy.func.count(artemis_db.GuestRequest.state)
+        self.current_guest_request_count_per_state.update(
+            {
+                GuestState(record[0]): record[1]
+                for record in cast(
+                    List[Tuple[str, int]],
+                    session.query(artemis_db.GuestRequest.state, sqlalchemy.func.count(artemis_db.GuestRequest.state))
+                    .filter(artemis_db.GuestRequest.poolname == self.poolname)
+                    .group_by(artemis_db.GuestRequest.state)
+                    .all(),
                 )
-                .filter(artemis_db.GuestRequest.poolname == self.poolname)
-                .group_by(artemis_db.GuestRequest.state)
-                .all()
-            )
-        })
+            }
+        )
 
         self.errors = {
-            errorname: count
-            for errorname, count in get_metric_fields(logger, cache, self.key_errors).items()
+            errorname: count for errorname, count in get_metric_fields(logger, cache, self.key_errors).items()
         }
 
         self.aborts = {
@@ -1200,33 +1186,23 @@ class PoolMetrics(PoolMetricsBase):
             for field, count in get_metric_fields(
                 logger,
                 cache,
-                self._KEY_ABORTS.format(poolname=self.poolname)  # noqa: FS002
+                self._KEY_ABORTS.format(poolname=self.poolname),  # noqa: FS002
             ).items()
         }
 
-        count = cast(
-            Callable[[str], Optional[bytes]],
-            cache.get
-        )(self.key_image_info_count)
+        count = cast(Callable[[str], Optional[bytes]], cache.get)(self.key_image_info_count)
 
         self.image_info_count = count if count is None else float(count)
 
-        self.image_info_updated_timestamp = cast(
-            RedisGetType[float],
-            cache.get
-        )(self.key_image_info_refresh_timestamp)
+        self.image_info_updated_timestamp = cast(RedisGetType[float], cache.get)(self.key_image_info_refresh_timestamp)
 
-        count = cast(
-            Callable[[str], Optional[bytes]],
-            cache.get
-        )(self.key_flavor_info_count)
+        count = cast(Callable[[str], Optional[bytes]], cache.get)(self.key_flavor_info_count)
 
         self.flavor_info_count = count if count is None else float(count)
 
-        self.flavor_info_updated_timestamp = cast(
-            RedisGetType[float],
-            cache.get
-        )(self.key_flavor_info_refresh_timestamp)
+        self.flavor_info_updated_timestamp = cast(RedisGetType[float], cache.get)(
+            self.key_flavor_info_refresh_timestamp
+        )
 
         # commandname => count
         self.cli_calls = {
@@ -1234,18 +1210,14 @@ class PoolMetrics(PoolMetricsBase):
             for field, count in get_metric_fields(
                 logger,
                 cache,
-                self._KEY_CLI_CALLS.format(poolname=self.poolname)  # noqa: FS002
+                self._KEY_CLI_CALLS.format(poolname=self.poolname),  # noqa: FS002
             ).items()
         }
 
         # commandname:exit-code:cause => count
         self.cli_calls_exit_codes = {
             cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
-            for field, count in get_metric_fields(
-                logger,
-                cache,
-                self.key_cli_calls_exit_codes
-            ).items()
+            for field, count in get_metric_fields(logger, cache, self.key_cli_calls_exit_codes).items()
         }
 
         # bucket:commandname:exit-code:cause => count
@@ -1254,7 +1226,7 @@ class PoolMetrics(PoolMetricsBase):
             for field, count in get_metric_fields(
                 logger,
                 cache,
-                self._KEY_CLI_CALLS_DURATIONS.format(poolname=self.poolname)  # noqa: FS002
+                self._KEY_CLI_CALLS_DURATIONS.format(poolname=self.poolname),  # noqa: FS002
             ).items()
         }
 
@@ -1336,27 +1308,23 @@ class UndefinedPoolMetrics(PoolMetricsBase):
             Tuple[int],
             session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))
             .filter(artemis_db.GuestRequest.poolname == None)  # noqa: E711
-            .one()
+            .one(),
         )[0]
 
-        self.current_guest_request_count_per_state = {
-            state: 0
-            for state in GuestState.__members__.values()
-        }
+        self.current_guest_request_count_per_state = {state: 0 for state in GuestState.__members__.values()}
 
-        self.current_guest_request_count_per_state.update({
-            GuestState(record[0]): record[1]
-            for record in cast(
-                List[Tuple[str, int]],
-                session.query(
-                    artemis_db.GuestRequest.state,
-                    sqlalchemy.func.count(artemis_db.GuestRequest.state)
+        self.current_guest_request_count_per_state.update(
+            {
+                GuestState(record[0]): record[1]
+                for record in cast(
+                    List[Tuple[str, int]],
+                    session.query(artemis_db.GuestRequest.state, sqlalchemy.func.count(artemis_db.GuestRequest.state))
+                    .filter(artemis_db.GuestRequest.poolname == None)  # noqa: E711
+                    .group_by(artemis_db.GuestRequest.state)
+                    .all(),
                 )
-                .filter(artemis_db.GuestRequest.poolname == None)  # noqa: E711
-                .group_by(artemis_db.GuestRequest.state)
-                .all()
-            )
-        })
+            }
+        )
 
 
 @dataclasses.dataclass
@@ -1391,10 +1359,7 @@ class PoolsMetrics(MetricsBase):
             self.pools = {}
 
         else:
-            self.pools = {
-                pool.poolname: PoolMetrics(pool.poolname)
-                for pool in r_pools.unwrap()
-            }
+            self.pools = {pool.poolname: PoolMetrics(pool.poolname) for pool in r_pools.unwrap()}
 
         self.pools[UNDEFINED_POOL_NAME] = UndefinedPoolMetrics(UNDEFINED_POOL_NAME)
 
@@ -1415,7 +1380,7 @@ class PoolsMetrics(MetricsBase):
                 f'pool_resources_{name}{"_{}".format(unit) if unit else ""}',  # noqa: FS002
                 f'Limits and usage of pool {name}',
                 ['pool', 'dimension'],
-                registry=registry
+                registry=registry,
             )
 
         def _create_network_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
@@ -1423,49 +1388,43 @@ class PoolsMetrics(MetricsBase):
                 f'pool_resources_network_{name}{"_{}".format(unit) if unit else ""}',
                 f'Limits and usage of pool network {name}',
                 ['pool', 'network', 'dimension'],
-                registry=registry
+                registry=registry,
             )
 
         self.POOL_ENABLED = Gauge(
-            'pool_enabled',
-            'Current enabled/disabled pool state by pool.',
-            ['pool'],
-            registry=registry
+            'pool_enabled', 'Current enabled/disabled pool state by pool.', ['pool'], registry=registry
         )
 
         self.POOL_ROUTING_ENABLED = Gauge(
-            'pool_routing_enabled',
-            'Current enabled/disabled pool routing state by pool.',
-            ['pool'],
-            registry=registry
+            'pool_routing_enabled', 'Current enabled/disabled pool routing state by pool.', ['pool'], registry=registry
         )
 
         self.CURRENT_GUEST_REQUEST_COUNT = Gauge(
             'current_guest_request_count',
             'Current number of guest requests being provisioned by pool and state.',
             ['pool', 'state'],
-            registry=registry
+            registry=registry,
         )
 
         self.POOL_ERRORS = Counter(
             'pool_errors',
             'Overall total number of pool errors, per pool and error.',
             ['pool', 'error'],
-            registry=registry
+            registry=registry,
         )
 
         self.POOL_ABORTS = Counter(
             'pool_aborts',
             'Overall total number of aborted pool instance, per pool and cause of error.',
             ['pool', 'instance_id', 'compose', 'arch', 'cause'],
-            registry=registry
+            registry=registry,
         )
 
         self.POOL_COSTS = Counter(
             'pool_costs',
             'Overall total cost of resources used by a pool, per pool and resource type.',
             ['pool', 'resource'],
-            registry=registry
+            registry=registry,
         )
 
         self.POOL_RESOURCES_INSTANCES = _create_pool_resource_metric('instances')
@@ -1480,51 +1439,45 @@ class PoolsMetrics(MetricsBase):
             'pool_resources_flavors',
             'Limits and usage of pool flavors',
             ['pool', 'dimension', 'flavor'],
-            registry=registry
+            registry=registry,
         )
 
         self.POOL_RESOURCES_UPDATED_TIMESTAMP = _create_pool_resource_metric('updated_timestamp')
 
         self.POOL_IMAGE_INFO_COUNT = Gauge(
-            'pool_image_info_count',
-            'Number of cached image info entries.',
-            ['pool'],
-            registry=registry
+            'pool_image_info_count', 'Number of cached image info entries.', ['pool'], registry=registry
         )
 
         self.POOL_IMAGE_INFO_UPDATED_TIMESTAMP = Gauge(
             'pool_image_info_updated_timestamp',
             'Last time pool image info has been updated.',
             ['pool'],
-            registry=registry
+            registry=registry,
         )
 
         self.POOL_FLAVOR_INFO_COUNT = Gauge(
-            'pool_flavor_info_count',
-            'Number of cached flavor info entries.',
-            ['pool'],
-            registry=registry
+            'pool_flavor_info_count', 'Number of cached flavor info entries.', ['pool'], registry=registry
         )
 
         self.POOL_FLAVOR_INFO_UPDATED_TIMESTAMP = Gauge(
             'pool_flavor_info_updated_timestamp',
             'Last time pool flavor info has been updated.',
             ['pool'],
-            registry=registry
+            registry=registry,
         )
 
         self.CLI_CALLS = Counter(
             'cli_calls',
             'Overall total number of CLI commands executed, per pool and command name.',
             ['pool', 'command'],
-            registry=registry
+            registry=registry,
         )
 
         self.CLI_CALLS_EXIT_CODES = Counter(
             'cli_calls_exit_codes',
             'Overall total number of CLI commands exit codes, per pool, command name, exit code and cause of error.',
             ['pool', 'command', 'exit_code', 'cause'],
-            registry=registry
+            registry=registry,
         )
 
         self.CLI_CALLS_DURATIONS = Histogram(
@@ -1532,7 +1485,7 @@ class PoolsMetrics(MetricsBase):
             'The time spent executing CLI commands, by pool, command name, exit code and cause of error.',
             ['pool', 'command', 'exit_code', 'cause'],
             buckets=CLI_CALL_DURATION_BUCKETS,
-            registry=registry
+            registry=registry,
         )
 
     def do_update_prometheus(self) -> None:
@@ -1554,110 +1507,94 @@ class PoolsMetrics(MetricsBase):
             self.POOL_ROUTING_ENABLED.labels(pool=poolname).set(1 if pool_metrics.routing_enabled else 0)
 
             for state in pool_metrics.current_guest_request_count_per_state:
-                self.CURRENT_GUEST_REQUEST_COUNT \
-                    .labels(poolname, state.value) \
-                    .set(pool_metrics.current_guest_request_count_per_state[state])
+                self.CURRENT_GUEST_REQUEST_COUNT.labels(poolname, state.value).set(
+                    pool_metrics.current_guest_request_count_per_state[state]
+                )
 
             for error, count in pool_metrics.errors.items():
                 self.POOL_ERRORS.labels(pool=poolname, error=error)._value.set(count)
 
             for (instance_id, compose, arch, cause), count in pool_metrics.aborts.items():
-                self.POOL_ABORTS \
-                    .labels(pool=poolname, instance_id=instance_id, compose=compose, arch=arch, cause=cause) \
-                    ._value.set(count)
+                self.POOL_ABORTS.labels(
+                    pool=poolname, instance_id=instance_id, compose=compose, arch=arch, cause=cause
+                )._value.set(count)
 
             for resource in ResourceType.__members__.values():
                 value = getattr(pool_metrics.costs, resource.value.replace('-', '_'))
 
-                self.POOL_COSTS \
-                    .labels(pool=poolname, resource=resource.value) \
-                    ._value.set(value if value is not None else float('NaN'))
+                self.POOL_COSTS.labels(pool=poolname, resource=resource.value)._value.set(
+                    value if value is not None else float('NaN')
+                )
 
             for gauge, metric_name in [
                 (self.POOL_RESOURCES_INSTANCES, 'instances'),
                 (self.POOL_RESOURCES_CORES, 'cores'),
                 (self.POOL_RESOURCES_MEMORY, 'memory'),
                 (self.POOL_RESOURCES_DISKSPACE, 'diskspace'),
-                (self.POOL_RESOURCES_SNAPSHOTS, 'snapshots')
+                (self.POOL_RESOURCES_SNAPSHOTS, 'snapshots'),
             ]:
                 limit = getattr(pool_metrics.resources.limits, metric_name)
                 usage = getattr(pool_metrics.resources.usage, metric_name)
 
-                gauge \
-                    .labels(pool=poolname, dimension='limit') \
-                    .set(limit if limit is not None else float('NaN'))
+                gauge.labels(pool=poolname, dimension='limit').set(limit if limit is not None else float('NaN'))
 
-                gauge \
-                    .labels(pool=poolname, dimension='usage') \
-                    .set(usage if usage is not None else float('NaN'))
+                gauge.labels(pool=poolname, dimension='usage').set(usage if usage is not None else float('NaN'))
 
             for network_name, network_metrics in pool_metrics.resources.limits.networks.items():
-                self.POOL_RESOURCES_NETWORK_ADDRESSES \
-                    .labels(pool=poolname, dimension='limit', network=network_name) \
-                    .set(network_metrics.addresses if network_metrics.addresses is not None else float('NaN'))
+                self.POOL_RESOURCES_NETWORK_ADDRESSES.labels(
+                    pool=poolname, dimension='limit', network=network_name
+                ).set(network_metrics.addresses if network_metrics.addresses is not None else float('NaN'))
 
             for network_name, network_metrics in pool_metrics.resources.usage.networks.items():
-                self.POOL_RESOURCES_NETWORK_ADDRESSES \
-                    .labels(pool=poolname, dimension='usage', network=network_name) \
-                    .set(network_metrics.addresses if network_metrics.addresses is not None else float('NaN'))
+                self.POOL_RESOURCES_NETWORK_ADDRESSES.labels(
+                    pool=poolname, dimension='usage', network=network_name
+                ).set(network_metrics.addresses if network_metrics.addresses is not None else float('NaN'))
 
             for flavorname, count in pool_metrics.resources.limits.flavors.items():
-                self.POOL_RESOURCES_FLAVORS \
-                    .labels(pool=poolname, dimension='limit', flavor=flavorname) \
-                    .set(count)
+                self.POOL_RESOURCES_FLAVORS.labels(pool=poolname, dimension='limit', flavor=flavorname).set(count)
 
             for flavorname, count in pool_metrics.resources.usage.flavors.items():
-                self.POOL_RESOURCES_FLAVORS \
-                    .labels(pool=poolname, dimension='usage', flavor=flavorname) \
-                    .set(count)
+                self.POOL_RESOURCES_FLAVORS.labels(pool=poolname, dimension='usage', flavor=flavorname).set(count)
 
-            self.POOL_RESOURCES_UPDATED_TIMESTAMP \
-                .labels(pool=poolname, dimension='limit') \
-                .set(pool_metrics.resources.limits.updated_timestamp or float('NaN'))
+            self.POOL_RESOURCES_UPDATED_TIMESTAMP.labels(pool=poolname, dimension='limit').set(
+                pool_metrics.resources.limits.updated_timestamp or float('NaN')
+            )
 
-            self.POOL_RESOURCES_UPDATED_TIMESTAMP \
-                .labels(pool=poolname, dimension='usage') \
-                .set(pool_metrics.resources.usage.updated_timestamp or float('NaN'))
+            self.POOL_RESOURCES_UPDATED_TIMESTAMP.labels(pool=poolname, dimension='usage').set(
+                pool_metrics.resources.usage.updated_timestamp or float('NaN')
+            )
 
-            self.POOL_IMAGE_INFO_COUNT \
-                .labels(pool=poolname) \
-                .set(pool_metrics.image_info_count or float('NaN'))
+            self.POOL_IMAGE_INFO_COUNT.labels(pool=poolname).set(pool_metrics.image_info_count or float('NaN'))
 
-            self.POOL_IMAGE_INFO_UPDATED_TIMESTAMP \
-                .labels(pool=poolname) \
-                .set(pool_metrics.image_info_updated_timestamp or float('NaN'))
+            self.POOL_IMAGE_INFO_UPDATED_TIMESTAMP.labels(pool=poolname).set(
+                pool_metrics.image_info_updated_timestamp or float('NaN')
+            )
 
-            self.POOL_FLAVOR_INFO_COUNT \
-                .labels(pool=poolname) \
-                .set(pool_metrics.flavor_info_count or float('NaN'))
+            self.POOL_FLAVOR_INFO_COUNT.labels(pool=poolname).set(pool_metrics.flavor_info_count or float('NaN'))
 
-            self.POOL_FLAVOR_INFO_UPDATED_TIMESTAMP \
-                .labels(pool=poolname) \
-                .set(pool_metrics.flavor_info_updated_timestamp or float('NaN'))
+            self.POOL_FLAVOR_INFO_UPDATED_TIMESTAMP.labels(pool=poolname).set(
+                pool_metrics.flavor_info_updated_timestamp or float('NaN')
+            )
 
             for commandname, count in pool_metrics.cli_calls.items():
-                self.CLI_CALLS \
-                    .labels(pool=poolname, command=commandname) \
-                    ._value.set(count)
+                self.CLI_CALLS.labels(pool=poolname, command=commandname)._value.set(count)
 
             for (commandname, exit_code, cause), count in pool_metrics.cli_calls_exit_codes.items():
-                self.CLI_CALLS_EXIT_CODES \
-                    .labels(pool=poolname, command=commandname, exit_code=exit_code, cause=cause) \
-                    ._value.set(count)
+                self.CLI_CALLS_EXIT_CODES.labels(
+                    pool=poolname, command=commandname, exit_code=exit_code, cause=cause
+                )._value.set(count)
 
             for (bucket_threshold, commandname, exit_code, cause), count in pool_metrics.cli_calls_durations.items():
                 bucket_index = CLI_CALL_DURATION_BUCKETS.index(
                     prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
                 )
 
-                self.CLI_CALLS_DURATIONS \
-                    .labels(pool=poolname, command=commandname, exit_code=exit_code, cause=cause) \
-                    ._buckets[bucket_index] \
-                    .set(count)
-                self.CLI_CALLS_DURATIONS \
-                    .labels(pool=poolname, command=commandname, exit_code=exit_code, cause=cause) \
-                    ._sum \
-                    .inc(float(bucket_threshold) * count)
+                self.CLI_CALLS_DURATIONS.labels(
+                    pool=poolname, command=commandname, exit_code=exit_code, cause=cause
+                )._buckets[bucket_index].set(count)
+                self.CLI_CALLS_DURATIONS.labels(
+                    pool=poolname, command=commandname, exit_code=exit_code, cause=cause
+                )._sum.inc(float(bucket_threshold) * count)
 
 
 @dataclasses.dataclass
@@ -1690,10 +1627,7 @@ class ProvisioningMetrics(MetricsBase):
 
     @staticmethod
     @with_context
-    def inc_requested(
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
+    def inc_requested(logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[None, Failure]:
         """
         Increase :py:attr:`requested` metric by 1.
 
@@ -1707,11 +1641,7 @@ class ProvisioningMetrics(MetricsBase):
 
     @staticmethod
     @with_context
-    def inc_success(
-        pool: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
+    def inc_success(pool: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[None, Failure]:
         """
         Increase :py:attr:`success` metric by 1.
 
@@ -1727,9 +1657,7 @@ class ProvisioningMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_empty_routing(
-        from_pool: Optional[str],
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        from_pool: Optional[str], logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase empty routing result metric by 1.
@@ -1746,10 +1674,7 @@ class ProvisioningMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_failover(
-        from_pool: str,
-        to_pool: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        from_pool: str, to_pool: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase pool failover metric by 1.
@@ -1767,10 +1692,7 @@ class ProvisioningMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_failover_success(
-        from_pool: str,
-        to_pool: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        from_pool: str, to_pool: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase successfull pool failover meric by 1.
@@ -1788,9 +1710,7 @@ class ProvisioningMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_provisioning_durations(
-        duration: int,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        duration: int, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment provisioning duration bucket by one.
@@ -1816,7 +1736,7 @@ class ProvisioningMetrics(MetricsBase):
         current_state: Optional[GuestState],
         new_state: GuestState,
         logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        cache: redis.Redis,
     ) -> Result[None, Failure]:
         """
         Increase counter for a given guest state transition by 1.
@@ -1830,23 +1750,20 @@ class ProvisioningMetrics(MetricsBase):
         """
 
         poolname = poolname or UNDEFINED_POOL_NAME
-        current_state_label = current_state.value if current_state is not None else "none"
+        current_state_label = current_state.value if current_state is not None else 'none'
 
         inc_metric_field(
             logger,
             cache,
             ProvisioningMetrics._KEY_GUEST_STATE_TRANSITIONS,
-            f'{poolname}:{current_state_label}:{new_state.value}'
+            f'{poolname}:{current_state_label}:{new_state.value}',
         )
 
         return Ok(None)
 
     @with_context
     def do_sync(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis,
-        session: sqlalchemy.orm.session.Session
+        self, logger: gluetool.log.ContextAdapter, cache: redis.Redis, session: sqlalchemy.orm.session.Session
     ) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
@@ -1860,9 +1777,7 @@ class ProvisioningMetrics(MetricsBase):
 
         now = datetime.datetime.utcnow()
 
-        current_record = session.query(
-            sqlalchemy.func.count(artemis_db.GuestRequest.guestname)
-        )
+        current_record = session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))
 
         self.current = cast(Callable[[], int], current_record.scalar)()
         self.requested = get_metric(logger, cache, self._KEY_PROVISIONING_REQUESTED) or 0
@@ -1871,8 +1786,7 @@ class ProvisioningMetrics(MetricsBase):
             for poolname, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_SUCCESS).items()
         }
         self.empty_routing = {
-            poolname: count
-            for poolname, count in get_metric_fields(logger, cache, self._KEY_EMPTY_ROUTING).items()
+            poolname: count for poolname, count in get_metric_fields(logger, cache, self._KEY_EMPTY_ROUTING).items()
         }
         # fields are in form `from_pool:to_pool`
         self.failover = {
@@ -1891,25 +1805,18 @@ class ProvisioningMetrics(MetricsBase):
             for record in cast(
                 List[Tuple[GuestState, Optional[str], datetime.datetime]],
                 session.query(
-                    artemis_db.GuestRequest.state,
-                    artemis_db.GuestRequest.poolname,
-                    artemis_db.GuestRequest.ctime
-                ).all()
+                    artemis_db.GuestRequest.state, artemis_db.GuestRequest.poolname, artemis_db.GuestRequest.ctime
+                ).all(),
             )
         ]
         self.provisioning_durations = {
-            field: count
-            for field, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_DURATIONS).items()
+            field: count for field, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_DURATIONS).items()
         }
 
         # pool:current-state:new-state => count
         self.guest_state_transitions = {
             cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
-            for field, count in get_metric_fields(
-                logger,
-                cache,
-                self._KEY_GUEST_STATE_TRANSITIONS
-            ).items()
+            for field, count in get_metric_fields(logger, cache, self._KEY_GUEST_STATE_TRANSITIONS).items()
         }
 
     def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
@@ -1924,48 +1831,46 @@ class ProvisioningMetrics(MetricsBase):
         self.CURRENT_GUEST_REQUEST_COUNT_TOTAL = Gauge(
             'current_guest_request_count_total',
             'Current total number of guest requests being provisioned.',
-            registry=registry
+            registry=registry,
         )
 
         self.OVERALL_PROVISIONING_COUNT = Counter(
-            'overall_provisioning_count',
-            'Overall total number of all requested guest requests.',
-            registry=registry
+            'overall_provisioning_count', 'Overall total number of all requested guest requests.', registry=registry
         )
 
         self.OVERALL_SUCCESSFULL_PROVISIONING_COUNT = Counter(
             'overall_successfull_provisioning_count',
             'Overall total number of all successfully provisioned guest requests by pool.',
             ['pool'],
-            registry=registry
+            registry=registry,
         )
 
         self.OVERALL_EMPTY_ROUTING_COUNT = Counter(
             'overall_empty_routing_count',
             'Overall total number of all empty routing outcomes by previous pool.',
             ['pool'],
-            registry=registry
+            registry=registry,
         )
 
         self.OVERALL_FAILOVER_COUNT = Counter(
             'overall_failover_count',
             'Overall total number of failovers to another pool by source and destination pool.',
             ['from_pool', 'to_pool'],
-            registry=registry
+            registry=registry,
         )
 
         self.OVERALL_SUCCESSFULL_FAILOVER_COUNT = Counter(
             'overall_successfull_failover_count',
             'Overall total number of successful failovers to another pool by source and destination pool.',
             ['from_pool', 'to_pool'],
-            registry=registry
+            registry=registry,
         )
 
         self.GUEST_AGES = Gauge(
             'guest_request_age',
             'Guest request ages by pool and state.',
             ['pool', 'state', 'age_threshold'],
-            registry=registry
+            registry=registry,
         )
 
         self.PROVISION_DURATIONS = Histogram(
@@ -1980,7 +1885,7 @@ class ProvisioningMetrics(MetricsBase):
             'guest_request_state_transitions',
             'Overall total number of guest request state transitions, per pool, current state and new state.',
             ['pool', 'current_state', 'new_state'],
-            registry=registry
+            registry=registry,
         )
 
     def do_update_prometheus(self) -> None:
@@ -2029,9 +1934,9 @@ class ProvisioningMetrics(MetricsBase):
             self.PROVISION_DURATIONS._sum.inc(float(bucket_threshold) * count)
 
         for (poolname, current_state, new_state), count in self.guest_state_transitions.items():
-            self.GUEST_STATE_TRANSITIONS \
-                .labels(pool=poolname, current_state=current_state, new_state=new_state) \
-                ._value.set(count)
+            self.GUEST_STATE_TRANSITIONS.labels(
+                pool=poolname, current_state=current_state, new_state=new_state
+            )._value.set(count)
 
 
 @dataclasses.dataclass
@@ -2051,9 +1956,7 @@ class RoutingMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_policy_called(
-        policy_name: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        policy_name: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "policy called to make ruling" metric by 1.
@@ -2070,9 +1973,7 @@ class RoutingMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_policy_canceled(
-        policy_name: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        policy_name: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "policy canceled a guest request" metric by 1.
@@ -2089,10 +1990,7 @@ class RoutingMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_pool_allowed(
-        policy_name: str,
-        pool_name: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        policy_name: str, pool_name: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "pool allowed by policy" metric by 1.
@@ -2110,10 +2008,7 @@ class RoutingMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_pool_excluded(
-        policy_name: str,
-        pool_name: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        policy_name: str, pool_name: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase "pool excluded by policy" metric by 1.
@@ -2129,11 +2024,7 @@ class RoutingMetrics(MetricsBase):
         return Ok(None)
 
     @with_context
-    def do_sync(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> None:
+    def do_sync(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
 
@@ -2143,13 +2034,9 @@ class RoutingMetrics(MetricsBase):
 
         super().do_sync()
 
-        self.policy_calls = {
-            field: count
-            for field, count in get_metric_fields(logger, cache, self._KEY_CALLS).items()
-        }
+        self.policy_calls = {field: count for field, count in get_metric_fields(logger, cache, self._KEY_CALLS).items()}
         self.policy_cancellations = {
-            field: count
-            for field, count in get_metric_fields(logger, cache, self._KEY_CANCELLATIONS).items()
+            field: count for field, count in get_metric_fields(logger, cache, self._KEY_CANCELLATIONS).items()
         }
         # fields are in form `policy:pool:allowed`
         self.policy_rulings = {
@@ -2170,21 +2057,21 @@ class RoutingMetrics(MetricsBase):
             'overall_policy_calls_count',
             'Overall total number of policy call by policy name.',
             ['policy'],
-            registry=registry
+            registry=registry,
         )
 
         self.OVERALL_POLICY_CANCELLATIONS_COUNT = Counter(
             'overall_policy_cancellations_count',
             'Overall total number of policy canceling a guest request by policy name.',
             ['policy'],
-            registry=registry
+            registry=registry,
         )
 
         self.OVERALL_POLICY_RULINGS_COUNT = Counter(
             'overall_policy_rulings_count',
             'Overall total number of policy rulings by policy name, pool name and whether the pool was allowed.',
             ['policy', 'pool', 'allowed'],
-            registry=registry
+            registry=registry,
         )
 
     def do_update_prometheus(self) -> None:
@@ -2201,9 +2088,9 @@ class RoutingMetrics(MetricsBase):
             self.OVERALL_POLICY_CANCELLATIONS_COUNT.labels(policy=policy_name)._value.set(count)
 
         for (policy_name, pool_name, allowed), count in self.policy_rulings.items():
-            self.OVERALL_POLICY_RULINGS_COUNT \
-                .labels(policy=policy_name, pool=pool_name, allowed=allowed) \
-                ._value.set(count)
+            self.OVERALL_POLICY_RULINGS_COUNT.labels(policy=policy_name, pool=pool_name, allowed=allowed)._value.set(
+                count
+            )
 
 
 @dataclasses.dataclass
@@ -2255,12 +2142,7 @@ class ShelfMetrics(MetricsBase):
 
     @classmethod
     @with_context
-    def inc_hits(
-        cls,
-        shelfname: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
+    def inc_hits(cls, shelfname: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[None, Failure]:
         """
         Increase the counter for the given shelf hits by 1.
 
@@ -2276,10 +2158,7 @@ class ShelfMetrics(MetricsBase):
     @classmethod
     @with_context
     def inc_misses(
-        cls,
-        shelfname: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        cls, shelfname: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase the counter for the given shelf misses by 1.
@@ -2296,10 +2175,7 @@ class ShelfMetrics(MetricsBase):
     @classmethod
     @with_context
     def inc_removals(
-        cls,
-        shelfname: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        cls, shelfname: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase the counter for the number of guests removed from the given shelf by 1.
@@ -2316,10 +2192,7 @@ class ShelfMetrics(MetricsBase):
     @classmethod
     @with_context
     def inc_forced_removals(
-        cls,
-        shelfname: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        cls, shelfname: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase the counter for the number of guests forcefully released from the given shelf by 1.
@@ -2335,12 +2208,7 @@ class ShelfMetrics(MetricsBase):
 
     @classmethod
     @with_context
-    def inc_dead(
-        cls,
-        shelfname: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
+    def inc_dead(cls, shelfname: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[None, Failure]:
         """
         Increase the counter for dead guests in the given shelf by 1.
 
@@ -2355,10 +2223,7 @@ class ShelfMetrics(MetricsBase):
 
     @with_context
     def do_sync(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        cache: redis.Redis
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, cache: redis.Redis
     ) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
@@ -2376,9 +2241,11 @@ class ShelfMetrics(MetricsBase):
             r_shelf_size.unwrap_error().handle(logger)
             return
 
-        r_current_guest_count = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest) \
-            .filter(artemis_db.GuestRequest.shelfname == self.shelfname) \
+        r_current_guest_count = (
+            artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest)
+            .filter(artemis_db.GuestRequest.shelfname == self.shelfname)
             .count()
+        )
 
         if r_current_guest_count.is_error:
             r_current_guest_count.unwrap_error().handle(logger)
@@ -2386,38 +2253,23 @@ class ShelfMetrics(MetricsBase):
 
         self.current_guest_count = r_current_guest_count.unwrap()
 
-        hits = cast(
-            Callable[[str], Optional[bytes]],
-            cache.get
-        )(self.key_hits)
+        hits = cast(Callable[[str], Optional[bytes]], cache.get)(self.key_hits)
 
         self.hits = hits if hits is None else float(hits)
 
-        misses = cast(
-            Callable[[str], Optional[bytes]],
-            cache.get
-        )(self.key_misses)
+        misses = cast(Callable[[str], Optional[bytes]], cache.get)(self.key_misses)
 
         self.misses = misses if misses is None else float(misses)
 
-        removals = cast(
-            Callable[[str], Optional[bytes]],
-            cache.get
-        )(self.key_removals)
+        removals = cast(Callable[[str], Optional[bytes]], cache.get)(self.key_removals)
 
         self.removals = removals if removals is None else float(removals)
 
-        forced_removals = cast(
-            Callable[[str], Optional[bytes]],
-            cache.get
-        )(self.key_forced_removals)
+        forced_removals = cast(Callable[[str], Optional[bytes]], cache.get)(self.key_forced_removals)
 
         self.forced_removals = forced_removals if forced_removals is None else float(forced_removals)
 
-        dead = cast(
-            Callable[[str], Optional[bytes]],
-            cache.get
-        )(self.key_dead)
+        dead = cast(Callable[[str], Optional[bytes]], cache.get)(self.key_dead)
 
         self.dead_guest_count = dead if dead is None else float(dead)
 
@@ -2441,9 +2293,7 @@ class ShelvesMetrics(MetricsBase):
 
         super().do_sync()
 
-        r_shelves = artemis_db.SafeQuery \
-            .from_session(session, artemis_db.GuestShelf) \
-            .all()
+        r_shelves = artemis_db.SafeQuery.from_session(session, artemis_db.GuestShelf).all()
 
         if r_shelves.is_error:
             r_shelves.unwrap_error().handle(logger)
@@ -2451,10 +2301,7 @@ class ShelvesMetrics(MetricsBase):
             self.shelves = {}
 
         else:
-            self.shelves = {
-                shelf.shelfname: ShelfMetrics(shelf.shelfname)
-                for shelf in r_shelves.unwrap()
-            }
+            self.shelves = {shelf.shelfname: ShelfMetrics(shelf.shelfname) for shelf in r_shelves.unwrap()}
 
         for metrics in self.shelves.values():
             metrics.sync()
@@ -2472,49 +2319,35 @@ class ShelvesMetrics(MetricsBase):
             'shelf_current_guest_request_count',
             'Current number of guest requests being stored, per shelf.',
             ['shelfname'],
-            registry=registry
+            registry=registry,
         )
 
-        self.SIZE = Gauge(
-            'shelf_size',
-            'Size of shelves, per shelf.',
-            ['shelfname'],
-            registry=registry
-        )
+        self.SIZE = Gauge('shelf_size', 'Size of shelves, per shelf.', ['shelfname'], registry=registry)
 
         self.HIT_COUNT = Counter(
-            'shelf_hit_count',
-            'Number of guests retrieved from a shelf, per shelf.',
-            ['shelfname'],
-            registry=registry
+            'shelf_hit_count', 'Number of guests retrieved from a shelf, per shelf.', ['shelfname'], registry=registry
         )
 
         self.MISS_COUNT = Counter(
-            'miss_count',
-            'Number of guests not retrieved from a shelf, per shelf.',
-            ['shelfname'],
-            registry=registry
+            'miss_count', 'Number of guests not retrieved from a shelf, per shelf.', ['shelfname'], registry=registry
         )
 
         self.REMOVALS = Counter(
-            'shelf_removals',
-            'Number of guests removed a shelf, per shelf.',
-            ['shelfname'],
-            registry=registry
+            'shelf_removals', 'Number of guests removed a shelf, per shelf.', ['shelfname'], registry=registry
         )
 
         self.FORCED_REMOVALS = Counter(
             'shelf_forced_removals',
             'Number of guests forcefully removed from a shelf, per shelf.',
             ['shelfname'],
-            registry=registry
+            registry=registry,
         )
 
         self.DEAD_GUEST_COUNT = Counter(
             'shelf_dead_guest_request_count',
             'Number of dead guests removed from a shelf, per shelf.',
             ['shelfname'],
-            registry=registry
+            registry=registry,
         )
 
     def do_update_prometheus(self) -> None:
@@ -2531,27 +2364,25 @@ class ShelvesMetrics(MetricsBase):
             self.CURRENT_GUEST_REQUEST_COUNT.labels(shelfname=shelfname).set(shelf_metrics.current_guest_count)
             self.SIZE.labels(shelfname=shelfname).set(shelf_metrics.size)
 
-            self.HIT_COUNT \
-                .labels(shelfname=shelfname) \
-                ._value.set(shelf_metrics.hit_count if shelf_metrics.hit_count is not None else float('NaN'))
+            self.HIT_COUNT.labels(shelfname=shelfname)._value.set(
+                shelf_metrics.hit_count if shelf_metrics.hit_count is not None else float('NaN')
+            )
 
-            self.MISS_COUNT \
-                .labels(shelfname=shelfname) \
-                ._value.set(shelf_metrics.miss_count if shelf_metrics.miss_count is not None else float('NaN'))
+            self.MISS_COUNT.labels(shelfname=shelfname)._value.set(
+                shelf_metrics.miss_count if shelf_metrics.miss_count is not None else float('NaN')
+            )
 
-            self.REMOVALS \
-                .labels(shelfname=shelfname) \
-                ._value.set(shelf_metrics.removals if shelf_metrics.removals is not None else float('NaN'))
+            self.REMOVALS.labels(shelfname=shelfname)._value.set(
+                shelf_metrics.removals if shelf_metrics.removals is not None else float('NaN')
+            )
 
-            self.FORCED_REMOVALS \
-                .labels(shelfname=shelfname) \
-                ._value \
-                .set(shelf_metrics.forced_removals if shelf_metrics.forced_removals is not None else float('NaN'))
+            self.FORCED_REMOVALS.labels(shelfname=shelfname)._value.set(
+                shelf_metrics.forced_removals if shelf_metrics.forced_removals is not None else float('NaN')
+            )
 
-            self.DEAD_GUEST_COUNT \
-                .labels(shelfname=shelfname) \
-                ._value \
-                .set(shelf_metrics.dead_guest_count if shelf_metrics.dead_guest_count is not None else float('NaN'))
+            self.DEAD_GUEST_COUNT.labels(shelfname=shelfname)._value.set(
+                shelf_metrics.dead_guest_count if shelf_metrics.dead_guest_count is not None else float('NaN')
+            )
 
 
 @dataclasses.dataclass
@@ -2580,10 +2411,7 @@ class TaskMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_overall_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        queue: str, actor: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of all encountered messages.
@@ -2601,10 +2429,7 @@ class TaskMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_overall_errored_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        queue: str, actor: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of all errored messages.
@@ -2622,10 +2447,7 @@ class TaskMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_overall_retried_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        queue: str, actor: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of all retried messages.
@@ -2643,10 +2465,7 @@ class TaskMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_overall_rejected_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        queue: str, actor: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of all rejected messages.
@@ -2664,10 +2483,7 @@ class TaskMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_current_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        queue: str, actor: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of messages currently being processed.
@@ -2685,10 +2501,7 @@ class TaskMetrics(MetricsBase):
     @staticmethod
     @with_context
     def dec_current_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        queue: str, actor: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Decrement number of all messages currently being processed.
@@ -2706,10 +2519,7 @@ class TaskMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_current_delayed_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        queue: str, actor: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of delayed messages.
@@ -2727,10 +2537,7 @@ class TaskMetrics(MetricsBase):
     @staticmethod
     @with_context
     def dec_current_delayed_messages(
-        queue: str,
-        actor: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        queue: str, actor: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Decrement number of delayed messages.
@@ -2753,7 +2560,7 @@ class TaskMetrics(MetricsBase):
         duration: int,
         poolname: Optional[str],
         logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        cache: redis.Redis,
     ) -> Result[None, Failure]:
         """
         Increment number of messages in a duration bucket by one.
@@ -2772,20 +2579,14 @@ class TaskMetrics(MetricsBase):
         bucket = min(threshold for threshold in MESSAGE_DURATION_BUCKETS if threshold > duration)
 
         inc_metric_field(
-            logger,
-            cache,
-            TaskMetrics._KEY_MESSAGE_DURATIONS,
-            f'{queue}:{actor}:{bucket}:{poolname or "undefined"}'
+            logger, cache, TaskMetrics._KEY_MESSAGE_DURATIONS, f'{queue}:{actor}:{bucket}:{poolname or "undefined"}'
         )
 
         return Ok(None)
 
     @with_context
     def do_sync(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis,
-        session: sqlalchemy.orm.session.Session
+        self, logger: gluetool.log.ContextAdapter, cache: redis.Redis, session: sqlalchemy.orm.session.Session
     ) -> None:
         """
         Load values from the storage and update this container with up-to-date values.
@@ -2800,6 +2601,7 @@ class TaskMetrics(MetricsBase):
         # TODO: find a better way how to make broker aware of all tasks. We rely on `resolve_actor` importing
         # all subpackages, but that's hard to update.
         from .tasks import BROKER, resolve_actor
+
         resolve_actor('worker_ping')
 
         # queue:actor => count
@@ -2828,23 +2630,21 @@ class TaskMetrics(MetricsBase):
             for field, count in get_metric_fields(logger, cache, self._KEY_CURRENT_DELAYED_MESSAGES).items()
         }
 
-        self.current_task_request_count = {
-            actorname: 0
-            for actorname in BROKER.actors
-        }
+        self.current_task_request_count = {actorname: 0 for actorname in BROKER.actors}
 
-        self.current_task_request_count.update({
-            record[0]: record[1]
-            for record in cast(
-                List[Tuple[str, int]],
-                session.query(
-                    artemis_db.TaskRequest.taskname,
-                    sqlalchemy.func.count(artemis_db.TaskRequest.taskname)
+        self.current_task_request_count.update(
+            {
+                record[0]: record[1]
+                for record in cast(
+                    List[Tuple[str, int]],
+                    session.query(
+                        artemis_db.TaskRequest.taskname, sqlalchemy.func.count(artemis_db.TaskRequest.taskname)
+                    )
+                    .group_by(artemis_db.TaskRequest.taskname)
+                    .all(),
                 )
-                .group_by(artemis_db.TaskRequest.taskname)
-                .all()
-            )
-        })
+            }
+        )
 
         # queue:actor:bucket:poolname => count
         # deal with older version which had only three dimensions (no poolname)
@@ -2871,49 +2671,49 @@ class TaskMetrics(MetricsBase):
             'overall_message_count',
             'Overall total number of messages processed by queue and actor.',
             ['queue_name', 'actor_name'],
-            registry=registry
+            registry=registry,
         )
 
         self.OVERALL_ERRORED_MESSAGE_COUNT = Counter(
             'overall_errored_message_count',
             'Overall total number of errored messages by queue and actor.',
             ['queue_name', 'actor_name'],
-            registry=registry
+            registry=registry,
         )
 
         self.OVERALL_RETRIED_MESSAGE_COUNT = Counter(
             'overall_retried_message_count',
             'Overall total number of retried messages by queue and actor.',
             ['queue_name', 'actor_name'],
-            registry=registry
+            registry=registry,
         )
 
         self.OVERALL_REJECTED_MESSAGE_COUNT = Counter(
             'overall_rejected_message_count',
             'Overall total number of rejected messages by queue and actor.',
             ['queue_name', 'actor_name'],
-            registry=registry
+            registry=registry,
         )
 
         self.CURRENT_MESSAGE_COUNT = Gauge(
             'current_message_count',
             'Current number of messages being processed by queue and actor.',
             ['queue_name', 'actor_name'],
-            registry=registry
+            registry=registry,
         )
 
         self.CURRENT_DELAYED_MESSAGE_COUNT = Gauge(
             'current_delayed_message_count',
             'Current number of messages being delayed by queue and actor.',
             ['queue_name', 'actor_name'],
-            registry=registry
+            registry=registry,
         )
 
         self.CURRENT_TASK_REQUEST_COUNT = Gauge(
             'current_task_request_count',
             'Current number of task requests per actor.',
             ['actor_name'],
-            registry=registry
+            registry=registry,
         )
 
         self.MESSAGE_DURATIONS = Histogram(
@@ -2959,7 +2759,6 @@ class TaskMetrics(MetricsBase):
         # Then, update each bucket with number of observations, and each sum with (observations * bucket threshold)
         # since we don't track the exact duration, just what bucket it falls into.
         for (queue_name, actor_name, bucket_threshold, poolname), count in self.message_durations.items():
-
             bucket_index = MESSAGE_DURATION_BUCKETS.index(
                 prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
             )
@@ -2985,11 +2784,7 @@ class APIMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_request_durations(
-        method: str,
-        path: str,
-        duration: float,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        method: str, path: str, duration: float, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of HTTP requests in a duration bucket by one.
@@ -3006,23 +2801,14 @@ class APIMetrics(MetricsBase):
 
         bucket = min(threshold for threshold in HTTP_REQUEST_DURATION_BUCKETS if threshold > duration)
 
-        inc_metric_field(
-            logger,
-            cache,
-            APIMetrics._KEY_REQUEST_DURATIONS,
-            f'{method}:{bucket}:{path}'
-        )
+        inc_metric_field(logger, cache, APIMetrics._KEY_REQUEST_DURATIONS, f'{method}:{bucket}:{path}')
 
         return Ok(None)
 
     @staticmethod
     @with_context
     def inc_requests(
-        method: str,
-        path: str,
-        status: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        method: str, path: str, status: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of completed requests.
@@ -3041,10 +2827,7 @@ class APIMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_requests_in_progress(
-        method: str,
-        path: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        method: str, path: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of current requests.
@@ -3062,10 +2845,7 @@ class APIMetrics(MetricsBase):
     @staticmethod
     @with_context
     def dec_requests_in_progress(
-        method: str,
-        path: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        method: str, path: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Decrement number of current requests.
@@ -3094,21 +2874,21 @@ class APIMetrics(MetricsBase):
             'Time spent processing a request.',
             ['method', 'path'],
             buckets=HTTP_REQUEST_DURATION_BUCKETS,
-            registry=registry
+            registry=registry,
         )
 
         self.REQUEST_COUNT = Counter(
             'http_requests_count',
             'Request count by method, path and status line.',
             ['method', 'path', 'status'],
-            registry=registry
+            registry=registry,
         )
 
         self.REQUESTS_INPROGRESS_COUNT = Gauge(
             'http_requests_inprogress_count',
             'Requests in progress by method and path',
             ['method', 'path'],
-            registry=registry
+            registry=registry,
         )
 
     @with_context
@@ -3160,26 +2940,18 @@ class APIMetrics(MetricsBase):
                 prometheus_client.utils.INF if bucket_threshold == 'inf' else int(bucket_threshold)
             )
 
-            self.REQUEST_DURATIONS \
-                .labels(method=method, path=path) \
-                ._buckets[bucket_index].set(count)
-            self.REQUEST_DURATIONS \
-                .labels(method=method, path=path) \
-                ._sum.inc(float(bucket_threshold) * count)
+            self.REQUEST_DURATIONS.labels(method=method, path=path)._buckets[bucket_index].set(count)
+            self.REQUEST_DURATIONS.labels(method=method, path=path)._sum.inc(float(bucket_threshold) * count)
 
         reset_counters(self.REQUEST_COUNT)
 
         for (method, status, path), count in self.request_count.items():
-            self.REQUEST_COUNT \
-                .labels(method=method, path=path, status=status) \
-                ._value.set(count)
+            self.REQUEST_COUNT.labels(method=method, path=path, status=status)._value.set(count)
 
         reset_counters(self.REQUESTS_INPROGRESS_COUNT)
 
         for (method, path), count in self.request_inprogress_count.items():
-            self.REQUESTS_INPROGRESS_COUNT \
-                .labels(method=method, path=path) \
-                ._value.set(count)
+            self.REQUESTS_INPROGRESS_COUNT.labels(method=method, path=path)._value.set(count)
 
 
 @dataclasses.dataclass
@@ -3204,11 +2976,7 @@ class WorkerMetrics(MetricsBase):
 
     @staticmethod
     @with_context
-    def update_worker_ping(
-        *,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
+    def update_worker_ping(*, logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[None, Failure]:
         """
         Update worker ping timestamp.
 
@@ -3218,10 +2986,7 @@ class WorkerMetrics(MetricsBase):
         """
 
         set_metric(
-            logger,
-            cache,
-            WorkerMetrics._KEY_WORKER_PING,
-            int(datetime.datetime.timestamp(datetime.datetime.utcnow()))
+            logger, cache, WorkerMetrics._KEY_WORKER_PING, int(datetime.datetime.timestamp(datetime.datetime.utcnow()))
         )
 
         return Ok(None)
@@ -3229,12 +2994,7 @@ class WorkerMetrics(MetricsBase):
     @staticmethod
     @with_context
     def update_worker_counts(
-        *,
-        worker: str,
-        processes: int,
-        threads: int,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        *, worker: str, processes: int, threads: int, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Update metrics for a given worker.
@@ -3252,7 +3012,7 @@ class WorkerMetrics(MetricsBase):
             cache,
             WorkerMetrics._KEY_WORKER_PROCESS_COUNT.format(worker=worker),  # noqa: FS002
             processes,
-            ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value
+            ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value,
         )
 
         set_metric(
@@ -3260,7 +3020,7 @@ class WorkerMetrics(MetricsBase):
             cache,
             WorkerMetrics._KEY_WORKER_THREAD_COUNT.format(worker=worker),  # noqa: FS002
             threads,
-            ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value
+            ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value,
         )
 
         set_metric(
@@ -3268,7 +3028,7 @@ class WorkerMetrics(MetricsBase):
             cache,
             WorkerMetrics._KEY_UPDATED_TIMESTAMP.format(worker=worker),  # noqa: FS002
             int(datetime.datetime.timestamp(datetime.datetime.utcnow())),
-            ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value
+            ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value,
         )
 
         return Ok(None)
@@ -3276,9 +3036,7 @@ class WorkerMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_worker_process_restart_count(
-        worker: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        worker: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase the worker process counter by 1.
@@ -3292,7 +3050,7 @@ class WorkerMetrics(MetricsBase):
         inc_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_WORKER_PROCESS_RESTART_COUNT.format(worker=worker)  # noqa: FS002
+            WorkerMetrics._KEY_WORKER_PROCESS_RESTART_COUNT.format(worker=worker),  # noqa: FS002
         )
 
         return Ok(None)
@@ -3306,38 +3064,25 @@ class WorkerMetrics(MetricsBase):
 
         super().do_register_with_prometheus(registry)
 
-        self.WORKER_PING = Gauge(
-            'worker_ping',
-            'Last time worker ping task has been executed.',
-            registry=registry
-        )
+        self.WORKER_PING = Gauge('worker_ping', 'Last time worker ping task has been executed.', registry=registry)
 
         self.WORKER_PROCESS_COUNT = Gauge(
-            'worker_process_count',
-            'Number of processes by worker.',
-            ['worker'],
-            registry=registry
+            'worker_process_count', 'Number of processes by worker.', ['worker'], registry=registry
         )
 
         self.WORKER_THREAD_COUNT = Gauge(
-            'worker_thread_count',
-            'Number of threads by worker.',
-            ['worker'],
-            registry=registry
+            'worker_thread_count', 'Number of threads by worker.', ['worker'], registry=registry
         )
 
         self.WORKER_PROCESS_RESTART_COUNT = Counter(
             'worker_process_restart_count',
             'Number of worker process restarts, by worker.',
             ['worker'],
-            registry=registry
+            registry=registry,
         )
 
         self.WORKER_UPDATED_TIMESTAMP = Gauge(
-            'worker_updated_timestamp',
-            'Last time worker info info has been updated.',
-            ['worker'],
-            registry=registry
+            'worker_updated_timestamp', 'Last time worker info info has been updated.', ['worker'], registry=registry
         )
 
     @with_context
@@ -3396,24 +3141,18 @@ class WorkerMetrics(MetricsBase):
         self.WORKER_UPDATED_TIMESTAMP.clear()
 
         for worker, processes in self.worker_process_count.items():
-            self.WORKER_PROCESS_COUNT \
-                .labels(worker=worker) \
-                .set(processes)
+            self.WORKER_PROCESS_COUNT.labels(worker=worker).set(processes)
 
         for worker, threads in self.worker_thread_count.items():
-            self.WORKER_THREAD_COUNT \
-                .labels(worker=worker) \
-                .set(threads)
+            self.WORKER_THREAD_COUNT.labels(worker=worker).set(threads)
 
         for worker, restarts in self.worker_process_restart_count.items():
-            self.WORKER_PROCESS_RESTART_COUNT \
-                .labels(worker=worker) \
-                ._value.set(restarts)
+            self.WORKER_PROCESS_RESTART_COUNT.labels(worker=worker)._value.set(restarts)
 
         for worker, timestamp in self.worker_updated_timestamp.items():
-            self.WORKER_UPDATED_TIMESTAMP \
-                .labels(worker=worker) \
-                .set(timestamp if timestamp is None else float(timestamp))
+            self.WORKER_UPDATED_TIMESTAMP.labels(worker=worker).set(
+                timestamp if timestamp is None else float(timestamp)
+            )
 
     @staticmethod
     def spawn_metrics_refresher(
@@ -3453,11 +3192,7 @@ class WorkerMetrics(MetricsBase):
                 else:
                     processes, threads = r_metrics.unwrap()
 
-                    WorkerMetrics.update_worker_counts(
-                        worker=worker_name,
-                        processes=processes,
-                        threads=threads
-                    )
+                    WorkerMetrics.update_worker_counts(worker=worker_name, processes=processes, threads=threads)
 
                 time.sleep(interval)
 
@@ -3490,8 +3225,7 @@ class DispatcherMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_dispatched_task_invocations(
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of task dispatcher invocations.
@@ -3507,9 +3241,7 @@ class DispatcherMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_successful_dispatched_tasks(
-        actor_name: str,
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        actor_name: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of successfull task dispatches.
@@ -3526,10 +3258,7 @@ class DispatcherMetrics(MetricsBase):
 
     @staticmethod
     @with_context
-    def inc_failed_dispatched_tasks(
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
-    ) -> Result[None, Failure]:
+    def inc_failed_dispatched_tasks(logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Result[None, Failure]:
         """
         Increment number of task sequence dispatcher invocations.
 
@@ -3544,8 +3273,7 @@ class DispatcherMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_dispatched_task_sequence_invocations(
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of failed task sequence dispatches.
@@ -3561,9 +3289,7 @@ class DispatcherMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_successful_dispatched_task_sequence(
-        actor_names: List[str],
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        actor_names: List[str], logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of successfull task sequences dispatches.
@@ -3581,8 +3307,7 @@ class DispatcherMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_failed_dispatched_task_sequences(
-        logger: gluetool.log.ContextAdapter,
-        cache: redis.Redis
+        logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of failed task sequences dispatches.
@@ -3605,41 +3330,33 @@ class DispatcherMetrics(MetricsBase):
         super().do_register_with_prometheus(registry)
 
         self.DISPATCHED_TASK_INVOCATIONS_COUNT = Counter(
-            'dispatched_task_invocations_count',
-            'Count of dispatched tasks by task name.',
-            registry=registry
+            'dispatched_task_invocations_count', 'Count of dispatched tasks by task name.', registry=registry
         )
 
         self.DISPATCHED_TASK_SUCCESS_COUNT = Counter(
             'dispatched_task_success_count',
             'Count of dispatched tasks by task name.',
             ['actor_name'],
-            registry=registry
+            registry=registry,
         )
 
         self.DISPATCHED_TASK_FAILURE_COUNT = Counter(
-            'dispatched_task_failed_count',
-            'Count of dispatched tasks by task name.',
-            registry=registry
+            'dispatched_task_failed_count', 'Count of dispatched tasks by task name.', registry=registry
         )
 
         self.DISPATCHED_TASK_SEQUENCE_INVOCATIONS_COUNT = Counter(
-            'dispatched_task_sequence_invocations_count',
-            'Count of dispatched tasks by task name.',
-            registry=registry
+            'dispatched_task_sequence_invocations_count', 'Count of dispatched tasks by task name.', registry=registry
         )
 
         self.DISPATCHED_TASK_SEQUENCE_SUCCESS_COUNT = Counter(
             'dispatched_task_sequence_success_count',
             'Count of dispatched tasks by task name.',
             ['actor_names'],
-            registry=registry
+            registry=registry,
         )
 
         self.DISPATCHED_TASK_SEQUENCE_FAILURE_COUNT = Counter(
-            'dispatched_task_sequence_failed_count',
-            'Count of dispatched tasks by task name.',
-            registry=registry
+            'dispatched_task_sequence_failed_count', 'Count of dispatched tasks by task name.', registry=registry
         )
 
     @with_context
@@ -3657,17 +3374,14 @@ class DispatcherMetrics(MetricsBase):
 
         # actor_name => count
         self.dispatched_task_success_count = {
-            field: count
-            for field, count in get_metric_fields(logger, cache, self._KEY_DISPATCHED_TASK_SUCCESS).items()
+            field: count for field, count in get_metric_fields(logger, cache, self._KEY_DISPATCHED_TASK_SUCCESS).items()
         }
 
         self.dispatched_task_failure_count = get_metric(logger, cache, self._KEY_DISPATCHED_TASK_FAILURE) or 0
 
-        self.dispatched_task_sequence_invocations_count = get_metric(
-            logger,
-            cache,
-            self._KEY_DISPATCHED_TASK_SEQUENCE_INVOCATIONS
-        ) or 0
+        self.dispatched_task_sequence_invocations_count = (
+            get_metric(logger, cache, self._KEY_DISPATCHED_TASK_SEQUENCE_INVOCATIONS) or 0
+        )
 
         # actor_names => count
         self.dispatched_task_sequence_success_count = {
@@ -3675,11 +3389,9 @@ class DispatcherMetrics(MetricsBase):
             for field, count in get_metric_fields(logger, cache, self._KEY_DISPATCHED_TASK_SEQUENCE_SUCCESS).items()
         }
 
-        self.dispatched_task_sequence_failure_count = get_metric(
-            logger,
-            cache,
-            self._KEY_DISPATCHED_TASK_SEQUENCE_FAILURE
-        ) or 0
+        self.dispatched_task_sequence_failure_count = (
+            get_metric(logger, cache, self._KEY_DISPATCHED_TASK_SEQUENCE_FAILURE) or 0
+        )
 
     def do_update_prometheus(self) -> None:
         """
@@ -3695,18 +3407,14 @@ class DispatcherMetrics(MetricsBase):
         self.DISPATCHED_TASK_INVOCATIONS_COUNT._value.set(self.dispatched_task_invocations_count)
 
         for actor_name, count in self.dispatched_task_success_count.items():
-            self.DISPATCHED_TASK_SUCCESS_COUNT \
-                .labels(actor_name=actor_name) \
-                ._value.set(count)
+            self.DISPATCHED_TASK_SUCCESS_COUNT.labels(actor_name=actor_name)._value.set(count)
 
         self.DISPATCHED_TASK_FAILURE_COUNT._value.set(self.dispatched_task_failure_count)
 
         self.DISPATCHED_TASK_SEQUENCE_INVOCATIONS_COUNT._value.set(self.dispatched_task_sequence_invocations_count)
 
         for actor_names, count in self.dispatched_task_sequence_success_count.items():
-            self.DISPATCHED_TASK_SEQUENCE_SUCCESS_COUNT \
-                .labels(actor_names=actor_names) \
-                ._value.set(count)
+            self.DISPATCHED_TASK_SEQUENCE_SUCCESS_COUNT.labels(actor_names=actor_names)._value.set(count)
 
         self.DISPATCHED_TASK_SEQUENCE_FAILURE_COUNT._value.set(self.dispatched_task_sequence_failure_count)
 
@@ -3744,32 +3452,31 @@ class Metrics(MetricsBase):
         self.PACKAGE_INFO = Info(
             'artemis_package',
             'Artemis packaging info. Labels provide information about package versions.',
-            registry=registry
+            registry=registry,
         )
 
         self.IDENTITY_INFO = Info(
             'artemis_identity',
             'Artemis identity info. Labels provide information about identity aspects.',
-            registry=registry
+            registry=registry,
         )
 
         # Since these values won't ever change, we can already set metrics and be done with it.
-        self.PACKAGE_INFO.info({
-            'package_version': __VERSION__,
-            'image_digest': os.getenv('ARTEMIS_IMAGE_DIGEST', '<undefined>'),
-            'image_url': os.getenv('ARTEMIS_IMAGE_URL', '<undefined>')
-        })
+        self.PACKAGE_INFO.info(
+            {
+                'package_version': __VERSION__,
+                'image_digest': os.getenv('ARTEMIS_IMAGE_DIGEST', '<undefined>'),
+                'image_url': os.getenv('ARTEMIS_IMAGE_URL', '<undefined>'),
+            }
+        )
 
-        self.IDENTITY_INFO.info({
-            'api_node': platform.node(),
-            'artemis_deployment': os.getenv('ARTEMIS_DEPLOYMENT', '<undefined>')
-        })
+        self.IDENTITY_INFO.info(
+            {'api_node': platform.node(), 'artemis_deployment': os.getenv('ARTEMIS_DEPLOYMENT', '<undefined>')}
+        )
 
     @with_context
     def render_prometheus_metrics(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        db: artemis_db.DB
+        self, logger: gluetool.log.ContextAdapter, db: artemis_db.DB
     ) -> Result[bytes, Failure]:
         """
         Render plaintext output of Prometheus metrics representing values in this tree of metrics.
@@ -3799,12 +3506,7 @@ class Metrics(MetricsBase):
         return safe_call(_render)
 
 
-def inc_metric(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    metric: str,
-    amount: int = 1
-) -> None:
+def inc_metric(logger: gluetool.log.ContextAdapter, cache: redis.Redis, metric: str, amount: int = 1) -> None:
     """
     Increment a metric counter by 1. If metric does not exist yet, it is set to `0` and incremented.
 
@@ -3814,22 +3516,11 @@ def inc_metric(
     :param amount: amount to increment by.
     """
 
-    with Sentry.start_span(
-        TracingOp.FUNCTION,
-        description='inc_metric',
-        tags={
-            'metric': metric
-        }
-    ):
+    with Sentry.start_span(TracingOp.FUNCTION, description='inc_metric', tags={'metric': metric}):
         inc_cache_value(logger, cache, metric, amount=amount)
 
 
-def dec_metric(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    metric: str,
-    amount: int = 1
-) -> None:
+def dec_metric(logger: gluetool.log.ContextAdapter, cache: redis.Redis, metric: str, amount: int = 1) -> None:
     """
     Decrement a metric counter by 1. If metric does not exist yet, it is set to `0` and decremented.
 
@@ -3839,22 +3530,12 @@ def dec_metric(
     :param amount: amount to decrement by.
     """
 
-    with Sentry.start_span(
-        TracingOp.FUNCTION,
-        description='dec_metric',
-        tags={
-            'metric': metric
-        }
-    ):
+    with Sentry.start_span(TracingOp.FUNCTION, description='dec_metric', tags={'metric': metric}):
         dec_cache_value(logger, cache, metric, amount=amount)
 
 
 def inc_metric_field(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    metric: str,
-    field: str,
-    amount: int = 1
+    logger: gluetool.log.ContextAdapter, cache: redis.Redis, metric: str, field: str, amount: int = 1
 ) -> None:
     """
     Increment a metric field counter by 1. If metric field does not exist yet, it is set to `0` and incremented.
@@ -3866,22 +3547,12 @@ def inc_metric_field(
     :param amount: amount to increment by.
     """
 
-    with Sentry.start_span(
-        TracingOp.FUNCTION,
-        description='inc_metric_field',
-        tags={
-            'metric': metric
-        }
-    ):
+    with Sentry.start_span(TracingOp.FUNCTION, description='inc_metric_field', tags={'metric': metric}):
         inc_cache_field(logger, cache, metric, field, amount=amount)
 
 
 def dec_metric_field(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    metric: str,
-    field: str,
-    amount: int = 1
+    logger: gluetool.log.ContextAdapter, cache: redis.Redis, metric: str, field: str, amount: int = 1
 ) -> None:
     """
     Decrement a metric field counter by 1. If metric field does not exist yet, it is set to `0` and decremented.
@@ -3893,21 +3564,11 @@ def dec_metric_field(
     :param amount: amount to decrement by.
     """
 
-    with Sentry.start_span(
-        TracingOp.FUNCTION,
-        description='dec_metric_field',
-        tags={
-            'metric': metric
-        }
-    ):
+    with Sentry.start_span(TracingOp.FUNCTION, description='dec_metric_field', tags={'metric': metric}):
         dec_cache_field(logger, cache, metric, field, amount=amount)
 
 
-def get_metric(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    metric: str
-) -> Optional[int]:
+def get_metric(logger: gluetool.log.ContextAdapter, cache: redis.Redis, metric: str) -> Optional[int]:
     """
     Return a metric counter for the given metric.
 
@@ -3921,13 +3582,7 @@ def get_metric(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `get` with `cast` calls.
 
-    with Sentry.start_span(
-        TracingOp.FUNCTION,
-        description='get_metric',
-        tags={
-            'metric': metric
-        }
-    ):
+    with Sentry.start_span(TracingOp.FUNCTION, description='get_metric', tags={'metric': metric}):
         value: Optional[bytes] = get_cache_value(logger, cache, metric)
 
         return value if value is None else int(value)
@@ -3938,7 +3593,7 @@ def set_metric(
     cache: redis.Redis,
     metric: str,
     value: Optional[int] = None,
-    ttl: Optional[int] = None
+    ttl: Optional[int] = None,
 ) -> None:
     """
     Set a metric counter for the given metric.
@@ -3954,21 +3609,11 @@ def set_metric(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `get` with `cast` calls.
 
-    with Sentry.start_span(
-        TracingOp.FUNCTION,
-        description='set_metric',
-        tags={
-            'metric': metric
-        }
-    ):
+    with Sentry.start_span(TracingOp.FUNCTION, description='set_metric', tags={'metric': metric}):
         set_cache_value(logger, cache, metric, value=str(value).encode() if value is not None else None, ttl=ttl)
 
 
-def get_metric_fields(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    metric: str
-) -> Dict[str, int]:
+def get_metric_fields(logger: gluetool.log.ContextAdapter, cache: redis.Redis, metric: str) -> Dict[str, int]:
     """
     Return a mapping between fields and corresponding counters representing the given metric.
 
@@ -3982,14 +3627,5 @@ def get_metric_fields(
     # and convert values to integers. To make things more complicated, lack of type annotations forces us
     # to wrap `hgetall` with `cast` calls.
 
-    with Sentry.start_span(
-        TracingOp.FUNCTION,
-        description='get_metric_fields',
-        tags={
-            'metric': metric
-        }
-    ):
-        return {
-            field.decode(): int(value)
-            for field, value in iter_cache_fields(logger, cache, metric)
-        }
+    with Sentry.start_span(TracingOp.FUNCTION, description='get_metric_fields', tags={'metric': metric}):
+        return {field.decode(): int(value) for field, value in iter_cache_fields(logger, cache, metric)}

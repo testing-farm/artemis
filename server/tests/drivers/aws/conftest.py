@@ -15,6 +15,6 @@ def fixture_aws_pool(logger: gluetool.log.ContextAdapter) -> tft.artemis.drivers
         {
             'access-key-id': 'dummy-access-key-id',
             'secret-access-key': 'dummy-secret-access-key',
-            'default-region': 'dummy-default-region'
-        }
+            'default-region': 'dummy-default-region',
+        },
     )

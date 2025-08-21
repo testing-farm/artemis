@@ -54,8 +54,7 @@ class Workspace(_Workspace):
             assert self.master_key
 
             r_ssh_timeout = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(
-                session=self.session,
-                entityname=self.pool.poolname
+                session=self.session, entityname=self.pool.poolname
             )
 
             if r_ssh_timeout.is_error:
@@ -72,7 +71,7 @@ class Workspace(_Workspace):
                     ssh_options=self.pool.ssh_options,
                     poolname=self.pool.poolname,
                     commandname='prepare-post-install-script.copy-to-remote',
-                    cause_extractor=self.pool.cli_error_cause_extractor
+                    cause_extractor=self.pool.cli_error_cause_extractor,
                 )
 
             if r_upload.is_error:
@@ -86,7 +85,7 @@ class Workspace(_Workspace):
                 ssh_timeout=r_ssh_timeout.unwrap(),
                 poolname=self.pool.poolname,
                 commandname='prepare-post-install-script.execute',
-                cause_extractor=self.pool.cli_error_cause_extractor
+                cause_extractor=self.pool.cli_error_cause_extractor,
             )
 
             if r_ssh.is_error:
@@ -96,11 +95,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -116,17 +111,9 @@ class Workspace(_Workspace):
 
     @classmethod
     def prepare_post_install_script(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.SHELF_LOOKUP))
@@ -134,5 +121,5 @@ def prepare_post_install_script(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.prepare_post_install_script),
         logger=get_guest_logger('prepare-post-install-script', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

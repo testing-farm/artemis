@@ -60,8 +60,7 @@ class Workspace(_Workspace):
 
             else:
                 r_guest_watchdog_dispatch_delay = KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY.get_value(
-                    entityname=self.pool.poolname,
-                    session=self.session
+                    entityname=self.pool.poolname, session=self.session
                 )
 
                 if r_guest_watchdog_dispatch_delay.is_error:
@@ -140,11 +139,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -160,17 +155,9 @@ class Workspace(_Workspace):
 
     @classmethod
     def prepare_finalize_post_connect(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.SHELF_LOOKUP))
@@ -178,5 +165,5 @@ def prepare_finalize_post_connect(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.prepare_finalize_post_connect),
         logger=get_guest_logger(Workspace.TASKNAME, _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

@@ -9,6 +9,7 @@ Revises: a31dd2a66069
 Create Date: 2021-02-12 15:05:51.412826
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -26,7 +27,7 @@ def upgrade() -> None:
         sa.Column('poolname', sa.String(), nullable=False),
         sa.Column('tag', sa.String(), nullable=False),
         sa.Column('value', sa.String(), nullable=False),
-        sa.PrimaryKeyConstraint('poolname', 'tag')
+        sa.PrimaryKeyConstraint('poolname', 'tag'),
     )
     # ### end Alembic commands ###
 

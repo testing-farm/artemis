@@ -24,47 +24,51 @@ DRAMATIQ_PATH = shutil.which('dramatiq')
 
 @click.command()
 @click.option(
-    '-p', '--processes',
+    '-p',
+    '--processes',
     metavar='PROCESSES',
     help=f'Number of worker processes to spawn. (default: {DEFAULT_PROCESS_COUNT})',
     default=None,
-    envvar='ARTEMIS_WORKER_PROCESSES'
+    envvar='ARTEMIS_WORKER_PROCESSES',
 )
 @click.option(
-    '-t', '--threads',
+    '-t',
+    '--threads',
     metavar='THREADS',
     help=f'Number of worker threads to spawn per process. (default: {DEFAULT_THREAD_COUNT})',
     default=None,
-    envvar='ARTEMIS_WORKER_THREADS'
+    envvar='ARTEMIS_WORKER_THREADS',
 )
 @click.option(
-    '-q', '--queue',
+    '-q',
+    '--queue',
     metavar='QUEUE',
     multiple=True,
     help='If specified, worker will listen to only the given queues. (default: unset, all queues are followed)',
     default=[],
-    envvar='ARTEMIS_WORKER_QUEUES'
+    envvar='ARTEMIS_WORKER_QUEUES',
 )
 @click.option(
-    '-T', '--tasks',
+    '-T',
+    '--tasks',
     metavar='MODULE',
     multiple=True,
     help='If specified, only tasks from these modules will run. (default: unset, all tasks will run)',
-    default=[]
+    default=[],
 )
 @click.option(
     '--queue-prefetch',
     metavar='N',
     help='Number of messages to prefetch from regular queues. (default: 2 for each worker thread)',
     default=None,
-    envvar='ARTEMIS_WORKER_PREFETCH'
+    envvar='ARTEMIS_WORKER_PREFETCH',
 )
 @click.option(
     '--delay-queue-prefetch',
     metavar='N',
     help='Number of messages to prefetch from delay queues. (default: 1000 for each worker thread)',
     default=None,
-    envvar='ARTEMIS_WORKER_PREFETCH_DELAYED'
+    envvar='ARTEMIS_WORKER_PREFETCH_DELAYED',
 )
 def cmd_root(
     processes: Optional[int],
@@ -72,7 +76,7 @@ def cmd_root(
     queue: Tuple[str, ...],
     tasks: List[str],
     queue_prefetch: Optional[int],
-    delay_queue_prefetch: Optional[int]
+    delay_queue_prefetch: Optional[int],
 ) -> None:
     logger = get_logger()
 
@@ -81,9 +85,7 @@ def cmd_root(
 
         sys.exit(1)
 
-    cmd: List[str] = [
-        'dramatiq'
-    ]
+    cmd: List[str] = ['dramatiq']
 
     # We need to place tasks first and then options - when reversed, Dramatiq
     # would be unable to process command-line with queue names and task names
@@ -142,11 +144,7 @@ def cmd_root(
 
     logger.info(f'dramatiq command-line: {" ".join(shlex.quote(s) for s in cmd)}')
 
-    os.execve(
-        DRAMATIQ_PATH,
-        cmd,
-        env
-    )
+    os.execve(DRAMATIQ_PATH, cmd, env)
 
 
 if __name__ == '__main__':

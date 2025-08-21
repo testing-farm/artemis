@@ -27,7 +27,7 @@ KNOB_WORKER_PING_TASK_SCHEDULE: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_WORKER_PING_SCHEDULE',
     cast_from_str=str,
-    default='*/5 * * * *'
+    default='*/5 * * * *',
 )
 
 
@@ -44,10 +44,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session
     ) -> 'Workspace':
         """
         Create workspace.
@@ -62,10 +59,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def worker_ping(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session
     ) -> DoerReturnType:
         """
         Update worker ping timestamp.
@@ -81,11 +75,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session).begin().run().complete().final_result
 
 
 @task(periodic=periodiq.cron(KNOB_WORKER_PING_TASK_SCHEDULE.value))
@@ -94,7 +84,4 @@ def worker_ping() -> None:
     Update worker ping timestamp.
     """
 
-    task_core(
-        cast(DoerType, Workspace.worker_ping),
-        logger=TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME)
-    )
+    task_core(cast(DoerType, Workspace.worker_ping), logger=TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME))

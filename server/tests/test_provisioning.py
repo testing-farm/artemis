@@ -45,7 +45,7 @@ def fixture_matrix_from_file() -> List[MatrixItem]:
                     compose=gluetool.utils.render_template(matrix_item_spec['compose'], **variables),
                     arch=matrix_item_spec['arch'],
                     pool=matrix_item_spec.get('pool'),
-                    deadline=deadline
+                    deadline=deadline,
                 )
             ]
 
@@ -55,7 +55,7 @@ def fixture_matrix_from_file() -> List[MatrixItem]:
 @pytest.mark.remote_integration
 @pytest.mark.skipif(
     os.getenv('HERD_MATRIX_FILEPATH') is None,
-    reason='Provide file with desired provisioning matrix via HERD_MATRIX_FILEPATH envvar'
+    reason='Provide file with desired provisioning matrix via HERD_MATRIX_FILEPATH envvar',
 )
 def test_provision_matrix_file(matrix_from_file: List[MatrixItem]) -> None:
     def populate(guests: List[GuestRequest]) -> None:
@@ -67,7 +67,7 @@ def test_provision_matrix_file(matrix_from_file: List[MatrixItem]) -> None:
                 arch=matrix_item.arch,
                 pool=matrix_item.pool,
                 compose_raw=matrix_item.compose,
-                deadline=matrix_item.deadline
+                deadline=matrix_item.deadline,
             )
 
             if guest is not None:
@@ -75,9 +75,7 @@ def test_provision_matrix_file(matrix_from_file: List[MatrixItem]) -> None:
 
     guests = run_herd(populate)
 
-    table = [
-        ['guestname', 'compose', 'compose', 'arch', 'pool', 'state']
-    ]
+    table = [['guestname', 'compose', 'compose', 'arch', 'pool', 'state']]
 
     for guest in guests:
         assert guest.guestname is not None
@@ -85,11 +83,11 @@ def test_provision_matrix_file(matrix_from_file: List[MatrixItem]) -> None:
         table += [
             [
                 guest.guestname,
-                guest.details["compose_raw"],
-                guest.details["compose"],
-                guest.details["arch"],
+                guest.details['compose_raw'],
+                guest.details['compose'],
+                guest.details['arch'],
                 guest.details['pool'],
-                guest.state
+                guest.state,
             ]
         ]
 

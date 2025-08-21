@@ -75,16 +75,16 @@ class Workspace(_Workspace):
                 provisioning_progress = r_progress.unwrap()
 
                 new_guest_data = {
-                    '_pool_data': self.gr.pool_data.update(
-                        self.gr.poolname, provisioning_progress.pool_data
-                    )
+                    '_pool_data': self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data)
                 }
 
                 if provisioning_progress.ssh_info is not None:
-                    new_guest_data.update({
-                        'ssh_username': provisioning_progress.ssh_info.username,
-                        'ssh_port': provisioning_progress.ssh_info.port
-                    })
+                    new_guest_data.update(
+                        {
+                            'ssh_username': provisioning_progress.ssh_info.username,
+                            'ssh_port': provisioning_progress.ssh_info.port,
+                        }
+                    )
 
                 if provisioning_progress.address is not None:
                     new_guest_data['address'] = provisioning_progress.address
@@ -93,7 +93,7 @@ class Workspace(_Workspace):
                 provisioning_progress = ProvisioningProgress(
                     state=ProvisioningState.CANCEL,
                     pool_data=self.gr.pool_data.mine(self.pool, self.pool.pool_data_class),
-                    pool_failures=[Failure('pool is disabled')]
+                    pool_failures=[Failure('pool is disabled')],
                 )
 
             # not returning here - pool was able to recover and proceed
@@ -111,7 +111,7 @@ class Workspace(_Workspace):
                     set_values=new_guest_data,
                     # UNBOUND
                     current_pool_data=current_pool_data,
-                    delay=provisioning_progress.delay_update
+                    delay=provisioning_progress.delay_update,
                 )
 
             elif provisioning_progress.state == ProvisioningState.CANCEL:
@@ -123,11 +123,7 @@ class Workspace(_Workspace):
                     self.logger,
                     self.db,
                     self.session,
-                    TaskCall(
-                        actor=update_guest_request,
-                        args=(self.guestname,),
-                        arg_names=('guestname',)
-                    )
+                    TaskCall(actor=update_guest_request, args=(self.guestname,), arg_names=('guestname',)),
                 ):
                     self._reschedule()
 
@@ -145,7 +141,7 @@ class Workspace(_Workspace):
                         current_state=GuestState.PROMISED,
                         set_values=new_guest_data,
                         # UNBOUND
-                        current_pool_data=current_pool_data
+                        current_pool_data=current_pool_data,
                     )
 
                 else:
@@ -160,16 +156,12 @@ class Workspace(_Workspace):
                         set_values=new_guest_data,
                         # UNBOUND
                         current_pool_data=current_pool_data,
-                        delay=KNOB_DISPATCH_PREPARE_DELAY.value
+                        delay=KNOB_DISPATCH_PREPARE_DELAY.value,
                     )
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -185,11 +177,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def update_guest_request(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Inspect the provisioning progress of a given request, and update info Artemis holds for this request.
@@ -201,11 +189,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PROMISED, GuestState.SHELF_LOOKUP))
@@ -219,5 +203,5 @@ def update_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.update_guest_request),
         logger=get_guest_logger('update-guest-request', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

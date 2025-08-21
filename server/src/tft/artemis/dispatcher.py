@@ -20,9 +20,7 @@ from .tasks import update_guest_log  # noqa: F401, isort:skip
 
 
 def handle_task_request(
-    root_logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    task_request: TaskRequest
+    root_logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, task_request: TaskRequest
 ) -> None:
     with Sentry.start_span(TracingOp.FUNCTION, description='dispatch_task_request') as tracing_span:
         logger = TaskLogger(root_logger, f'task-request#{task_request.id}')
@@ -35,9 +33,7 @@ def handle_task_request(
 
         # TODO: teach format_task_invocation() to accept actor name so we could log task before
         # we try to find its actor
-        formatted_args = [
-            str(arg) for arg in task_arguments
-        ]
+        formatted_args = [str(arg) for arg in task_arguments]
 
         if task_request.delay is not None:
             formatted_args.append(f'delay={task_request.delay}')
@@ -45,10 +41,7 @@ def handle_task_request(
         logger.info(f'about to schedule task {task_request.taskname}({", ".join(formatted_args)})')
 
         def _log_failure(failure: Failure, message: str) -> None:
-            failure.update(
-                task_name=task_request.taskname,
-                task_args=task_request.arguments
-            ).handle(logger, message)
+            failure.update(task_name=task_request.taskname, task_args=task_request.arguments).handle(logger, message)
 
             DispatcherMetrics.inc_failed_dispatched_tasks()
 
@@ -65,20 +58,14 @@ def handle_task_request(
         tracing_span.set_data('task_call', task_call.serialize())
 
         r_dispatch = dispatch_task(
-            logger,
-            task_call.actor,
-            *task_arguments,
-            delay=task_request.delay,
-            task_request_id=task_request.id
+            logger, task_call.actor, *task_arguments, delay=task_request.delay, task_request_id=task_request.id
         )
 
         if r_dispatch.is_error:
             return _log_failure(r_dispatch.unwrap_error(), 'failed to dispatch task')
 
         r_delete: DMLResult[TaskRequest] = execute_dml(
-            logger,
-            session,
-            sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_request.id)
+            logger, session, sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_request.id)
         )
 
         if r_delete.is_error:
@@ -92,7 +79,7 @@ def handle_task_request(
 def handle_task_sequence_request(
     root_logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    task_sequence_request: TaskSequenceRequest
+    task_sequence_request: TaskSequenceRequest,
 ) -> None:
     with Sentry.start_span(TracingOp.FUNCTION, description='dispatch_task_sequence_request') as tracing_span:
         logger = TaskLogger(root_logger, f'task-sequence-request#{task_sequence_request.id}')
@@ -101,16 +88,15 @@ def handle_task_sequence_request(
 
         logger.begin()
 
-        r_task_requests = SafeQuery.from_session(session, TaskRequest) \
-            .filter(TaskRequest.task_sequence_request_id == task_sequence_request.id) \
-            .order_by(TaskRequest.id.asc()) \
+        r_task_requests = (
+            SafeQuery.from_session(session, TaskRequest)
+            .filter(TaskRequest.task_sequence_request_id == task_sequence_request.id)
+            .order_by(TaskRequest.id.asc())
             .all()
+        )
 
         if r_task_requests.is_error:
-            Failure.from_failure(
-                'failed to fetch task requests',
-                r_task_requests.unwrap_error()
-            ).handle(logger)
+            Failure.from_failure('failed to fetch task requests', r_task_requests.unwrap_error()).handle(logger)
 
             return
 
@@ -134,21 +120,16 @@ def handle_task_sequence_request(
         log_dict_yaml(
             logger.info,
             f'about to schedule task sequence #{task_sequence_request.id}',
-            [
-                repr(task_call) for task_call in task_calls
-            ]
+            [repr(task_call) for task_call in task_calls],
         )
 
         tracing_span.set_data('task_sequence_call', [task_call.serialize() for task_call in task_calls])
 
         r_dispatch = dispatch_sequence(
             logger,
-            [
-                (task_call.task_request_id, task_call.actor, task_call.args)
-                for task_call in task_calls
-            ],
+            [(task_call.task_request_id, task_call.actor, task_call.args) for task_call in task_calls],
             delay=task_calls[0].delay,
-            task_sequence_request_id=task_sequence_request.id
+            task_sequence_request_id=task_sequence_request.id,
         )
 
         if r_dispatch.is_error:
@@ -156,9 +137,7 @@ def handle_task_sequence_request(
 
         for task_call in task_calls:
             r_delete: DMLResult[TaskRequest] = execute_dml(
-                logger,
-                session,
-                sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_call.task_request_id)
+                logger, session, sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_call.task_request_id)
             )
 
             if r_delete.is_error:
@@ -167,15 +146,15 @@ def handle_task_sequence_request(
         r_sequence_delete: DMLResult[TaskSequenceRequest] = execute_dml(
             logger,
             session,
-            sqlalchemy.delete(TaskSequenceRequest).where(TaskSequenceRequest.id == task_sequence_request.id)
+            sqlalchemy.delete(TaskSequenceRequest).where(TaskSequenceRequest.id == task_sequence_request.id),
         )
 
         if r_sequence_delete.is_error:
             return _log_failure(r_sequence_delete.unwrap_error(), 'failed to remove task sequence request')
 
-        DispatcherMetrics.inc_successful_dispatched_task_sequence([
-            task_call.actor.actor_name for task_call in task_calls
-        ])
+        DispatcherMetrics.inc_successful_dispatched_task_sequence(
+            [task_call.actor.actor_name for task_call in task_calls]
+        )
 
         logger.finished()
 
@@ -189,19 +168,20 @@ def pick_task_request(
     DispatcherMetrics.inc_dispatched_task_invocations()
 
     with Sentry.start_transaction(TracingOp.FUNCTION, 'dispatcher') as tracing_transaction:
-        with Sentry.start_span(TracingOp.FUNCTION, 'handle_task_request'), \
-                transaction(logger, session) as transaction_result:
-            r_pending_task = SafeQuery.from_session(session, TaskRequest) \
-                .filter(TaskRequest.task_sequence_request_id.is_(None)) \
-                .limit(1) \
-                .with_skip_locked() \
+        with (
+            Sentry.start_span(TracingOp.FUNCTION, 'handle_task_request'),
+            transaction(logger, session) as transaction_result,
+        ):
+            r_pending_task = (
+                SafeQuery.from_session(session, TaskRequest)
+                .filter(TaskRequest.task_sequence_request_id.is_(None))
+                .limit(1)
+                .with_skip_locked()
                 .one_or_none()
+            )
 
             if r_pending_task.is_error:
-                Failure.from_failure(
-                    'failed to fetch pending task',
-                    r_pending_task.unwrap_error()
-                ).handle(logger)
+                Failure.from_failure('failed to fetch pending task', r_pending_task.unwrap_error()).handle(logger)
 
                 return False
 
@@ -233,16 +213,15 @@ def pick_task_sequence_request(
     DispatcherMetrics.inc_dispatched_task_sequence_invocations()
 
     with Sentry.start_transaction(TracingOp.FUNCTION, 'dispatcher'):
-        with Sentry.start_span(TracingOp.FUNCTION, 'handle_task_sequence_request'), \
-                transaction(logger, session) as transaction_result:
-            r_pending_task_sequence = SafeQuery.from_session(session, TaskSequenceRequest) \
-                .limit(1) \
-                .one_or_none()
+        with (
+            Sentry.start_span(TracingOp.FUNCTION, 'handle_task_sequence_request'),
+            transaction(logger, session) as transaction_result,
+        ):
+            r_pending_task_sequence = SafeQuery.from_session(session, TaskSequenceRequest).limit(1).one_or_none()
 
             if r_pending_task_sequence.is_error:
                 Failure.from_failure(
-                    'failed to fetch task sequence request',
-                    r_pending_task_sequence.unwrap_error()
+                    'failed to fetch task sequence request', r_pending_task_sequence.unwrap_error()
                 ).handle(logger)
 
                 return False

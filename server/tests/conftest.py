@@ -39,9 +39,7 @@ from . import MockPatcher
 
 # The default list of database URLs we test against. Serves as a safe parameter when
 # no other URLs were requested via `--against-db-url`.
-DEFAULT_DB_URLS = [
-    'sqlite://'
-]
+DEFAULT_DB_URLS = ['sqlite://']
 
 
 def pytest_addoption(parser: _pytest.config.argparsing.Parser) -> None:
@@ -51,7 +49,7 @@ def pytest_addoption(parser: _pytest.config.argparsing.Parser) -> None:
         action='append',
         # Default list is applied later - should it be applied here, user would have no way to get rid of the defaults.
         default=[],
-        help='Database URLs to run tests against. Specify multiple times for more DB dialects.'
+        help='Database URLs to run tests against. Specify multiple times for more DB dialects.',
     )
 
 
@@ -99,10 +97,7 @@ def mockpatch(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> MockPatcher:
     """
 
     def _mockpatch(
-        obj: Any,
-        member_name: str,
-        obj_name: Optional[str] = None,
-        return_value: Optional[Any] = dataclasses.MISSING
+        obj: Any, member_name: str, obj_name: Optional[str] = None, return_value: Optional[Any] = dataclasses.MISSING
     ) -> MagicMock:
         mock = MagicMock(name=f'{member_name}<M>' if obj_name is None else f'{obj_name}.{member_name}<M>')
 
@@ -140,10 +135,7 @@ def logger(caplog: _pytest.logging.LogCaptureFixture) -> gluetool.log.ContextAda
 def db(logger: gluetool.log.ContextAdapter, db_url: str) -> Generator[tft.artemis.db.DB, None, None]:
     parsed_url = sqlalchemy.engine.url.make_url(db_url)
 
-    dialect_name = cast(
-        Callable[[], sqlalchemy.engine.interfaces.Dialect],
-        parsed_url.get_dialect
-    )().name
+    dialect_name = cast(Callable[[], sqlalchemy.engine.interfaces.Dialect], parsed_url.get_dialect)().name
 
     if dialect_name != 'sqlalchemy':
         if sqlalchemy_utils.functions.database_exists(db_url):
@@ -164,8 +156,7 @@ def db(logger: gluetool.log.ContextAdapter, db_url: str) -> Generator[tft.artemi
 
 @pytest.fixture
 def session(
-    logger: gluetool.log.ContextAdapter,
-    db: tft.artemis.db.DB
+    logger: gluetool.log.ContextAdapter, db: tft.artemis.db.DB
 ) -> Generator[sqlalchemy.orm.session.Session, None, None]:
     with db.get_session(logger) as session:
         yield session
@@ -189,9 +180,7 @@ def skip_postgresql(session: sqlalchemy.orm.session.Session) -> None:
 
 @pytest.fixture(name='schema_actual')
 def fixture_schema_actual(
-    request: _pytest.fixtures.FixtureRequest,
-    logger: gluetool.log.ContextAdapter,
-    db: tft.artemis.db.DB
+    request: _pytest.fixtures.FixtureRequest, logger: gluetool.log.ContextAdapter, db: tft.artemis.db.DB
 ) -> None:
     alembic_config = alembic.config.Config()
     alembic_config.set_main_option('script_location', os.path.join(request.config.rootpath, 'alembic'))
@@ -204,115 +193,114 @@ def fixture_schema_actual(
 def fixture_schema_initialized_actual(
     session: sqlalchemy.orm.session.Session,
     # TODO: cannot use `usefixtures` for a fixture - find a pytest issue where this is tracked
-    schema_actual: Any
+    schema_actual: Any,
 ) -> None:
     import tft.artemis.environment
 
     session.execute(sqlalchemy.insert(tft.artemis.db.User).values(username='dummy-user', role='ADMIN'))
-    session.execute(sqlalchemy.insert(tft.artemis.db.SSHKey).values(
-        keyname='dummy-ssh-key',
-        enabled=True,
-        ownername='dummy-user',
-        file='',
-        private='',
-        public=''
-    ))
+    session.execute(
+        sqlalchemy.insert(tft.artemis.db.SSHKey).values(
+            keyname='dummy-ssh-key', enabled=True, ownername='dummy-user', file='', private='', public=''
+        )
+    )
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.Pool).values(
-        poolname='dummy-pool',
-        driver='localhost',
-        _parameters={}
-    ))
+    session.execute(
+        sqlalchemy.insert(tft.artemis.db.Pool).values(poolname='dummy-pool', driver='localhost', _parameters={})
+    )
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.GuestShelf).values(
-        shelfname='dummy-shelf',
-        ownername='dummy-user',
-        state=tft.artemis.guest.GuestState.READY
-    ))
+    session.execute(
+        sqlalchemy.insert(tft.artemis.db.GuestShelf).values(
+            shelfname='dummy-shelf', ownername='dummy-user', state=tft.artemis.guest.GuestState.READY
+        )
+    )
 
-    session.execute(tft.artemis.db.GuestRequest.create_query(
-        'dummy-guest',
-        tft.artemis.environment.Environment(
-            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-            kickstart=tft.artemis.environment.Kickstart()
-        ),
-        'dummy-user',
-        None,
-        'dummy-ssh-key',
-        22,
-        'root',
-        None,
-        None,
-        False,
-        False,
-        None,
-        [],
-        None,
-        None,
-        [],
-        # security-group-rules-ingress
-        None,
-        # security-group-rules-egress
-        None
-    ))
+    session.execute(
+        tft.artemis.db.GuestRequest.create_query(
+            'dummy-guest',
+            tft.artemis.environment.Environment(
+                hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+                os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+                kickstart=tft.artemis.environment.Kickstart(),
+            ),
+            'dummy-user',
+            None,
+            'dummy-ssh-key',
+            22,
+            'root',
+            None,
+            None,
+            False,
+            False,
+            None,
+            [],
+            None,
+            None,
+            [],
+            # security-group-rules-ingress
+            None,
+            # security-group-rules-egress
+            None,
+        )
+    )
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest).values(
-        guestname='dummy-guest-with-shelf',
-        _environment=tft.artemis.environment.Environment(
-            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-            kickstart=tft.artemis.environment.Kickstart()
-        ).serialize(),
-        ownername='dummy-user',
-        shelfname='dummy-shelf',
-        ssh_keyname='dummy-ssh-key',
-        ssh_port=22,
-        ssh_username='root',
-        priorityname=None,
-        _user_data={},
-        skip_prepare_verify_ssh=False,
-        post_install_script=None,
-        _log_types=[],
-        state=tft.artemis.guest.GuestState.READY,
-        state_mtime=datetime.datetime.utcnow(),
-        poolname='dummy-pool',
-        _pool_data=json.dumps({}),
-        _on_ready=[]
-    ))
+    session.execute(
+        sqlalchemy.insert(tft.artemis.db.GuestRequest).values(
+            guestname='dummy-guest-with-shelf',
+            _environment=tft.artemis.environment.Environment(
+                hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+                os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+                kickstart=tft.artemis.environment.Kickstart(),
+            ).serialize(),
+            ownername='dummy-user',
+            shelfname='dummy-shelf',
+            ssh_keyname='dummy-ssh-key',
+            ssh_port=22,
+            ssh_username='root',
+            priorityname=None,
+            _user_data={},
+            skip_prepare_verify_ssh=False,
+            post_install_script=None,
+            _log_types=[],
+            state=tft.artemis.guest.GuestState.READY,
+            state_mtime=datetime.datetime.utcnow(),
+            poolname='dummy-pool',
+            _pool_data=json.dumps({}),
+            _on_ready=[],
+        )
+    )
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.GuestRequest).values(
-        guestname='dummy-shelved-guest',
-        _environment=tft.artemis.environment.Environment(
-            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-            kickstart=tft.artemis.environment.Kickstart()
-        ).serialize(),
-        ownername='dummy-user',
-        shelfname='dummy-shelf',
-        ssh_keyname='dummy-ssh-key',
-        ssh_port=22,
-        ssh_username='root',
-        priorityname=None,
-        _user_data={},
-        skip_prepare_verify_ssh=False,
-        post_install_script=None,
-        _log_types=[],
-        state=tft.artemis.guest.GuestState.SHELVED,
-        state_mtime=datetime.datetime.utcnow(),
-        poolname='dummy-pool',
-        _pool_data=json.dumps({}),
-        _on_ready=None
-    ))
+    session.execute(
+        sqlalchemy.insert(tft.artemis.db.GuestRequest).values(
+            guestname='dummy-shelved-guest',
+            _environment=tft.artemis.environment.Environment(
+                hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+                os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+                kickstart=tft.artemis.environment.Kickstart(),
+            ).serialize(),
+            ownername='dummy-user',
+            shelfname='dummy-shelf',
+            ssh_keyname='dummy-ssh-key',
+            ssh_port=22,
+            ssh_username='root',
+            priorityname=None,
+            _user_data={},
+            skip_prepare_verify_ssh=False,
+            post_install_script=None,
+            _log_types=[],
+            state=tft.artemis.guest.GuestState.SHELVED,
+            state_mtime=datetime.datetime.utcnow(),
+            poolname='dummy-pool',
+            _pool_data=json.dumps({}),
+            _on_ready=None,
+        )
+    )
 
     session.commit()
 
 
 @pytest.fixture(name='redis')
 def fixture_redis(
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
-    tmpdir: py.path.local,
-    logger: gluetool.log.ContextAdapter
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch, tmpdir: py.path.local, logger: gluetool.log.ContextAdapter
 ) -> Generator[None, None, None]:
     redislite.client.logger.setLevel(logging.DEBUG)
 
@@ -326,17 +314,9 @@ def fixture_redis(
     monkeypatch.setattr(tft.artemis, 'get_cache', get_cache)
     monkeypatch.setattr(tft.artemis.context, 'get_cache', get_cache)
 
-    monkeypatch.setattr(
-        tft.artemis.context,
-        'CACHE',
-        mock_contextvar
-    )
+    monkeypatch.setattr(tft.artemis.context, 'CACHE', mock_contextvar)
 
-    monkeypatch.setitem(
-        tft.artemis.context.CONTEXT_PROVIDERS,
-        ('cache', redis.Redis),
-        mock_contextvar
-    )
+    monkeypatch.setitem(tft.artemis.context.CONTEXT_PROVIDERS, ('cache', redis.Redis), mock_contextvar)
 
     yield
 
@@ -349,8 +329,7 @@ def fixture_broker(
     redis: redis.Redis,
 ) -> dramatiq.broker.Broker:
     def get_broker(
-        logger: gluetool.log.ContextAdapter,
-        application_name: Optional[str] = None
+        logger: gluetool.log.ContextAdapter, application_name: Optional[str] = None
     ) -> dramatiq.broker.Broker:
         middleware = tft.artemis.get_broker_middleware(logger)
         broker = dramatiq.brokers.stub.StubBroker(middleware=middleware)
@@ -391,12 +370,9 @@ def fixture_current_message() -> Generator[dramatiq.MessageProxy, None, None]:
     message = dramatiq.Message(
         queue_name='dummy-queue-name',
         actor_name='dummy-actor-name',
-        args=(
-            MagicMock(name='mock_actor_arg1'),
-            MagicMock(name='mock_actor_arg2')
-        ),
+        args=(MagicMock(name='mock_actor_arg1'), MagicMock(name='mock_actor_arg2')),
         kwargs=dict(),
-        options=dict()
+        options=dict(),
     )
 
     proxy = dramatiq.MessageProxy(message)

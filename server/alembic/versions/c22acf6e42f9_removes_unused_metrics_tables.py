@@ -9,6 +9,7 @@ Revises: 7adee582ada3
 Create Date: 2021-03-01 17:03:20.417063
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -38,27 +39,33 @@ def downgrade() -> None:
         sa.Column('to_pool', sa.VARCHAR(length=250), nullable=False),
         sa.Column('count', sa.INTEGER(), nullable=True),
         sa.Column('updated', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['from_pool'], ['pools.poolname'], ),
-        sa.ForeignKeyConstraint(['to_pool'], ['pools.poolname'], ),
-        sa.PrimaryKeyConstraint('from_pool', 'to_pool')
+        sa.ForeignKeyConstraint(
+            ['from_pool'],
+            ['pools.poolname'],
+        ),
+        sa.ForeignKeyConstraint(
+            ['to_pool'],
+            ['pools.poolname'],
+        ),
+        sa.PrimaryKeyConstraint('from_pool', 'to_pool'),
     )
     op.create_table(
         'metrics_provisioning_success',
         sa.Column('pool', sa.VARCHAR(), nullable=False),
         sa.Column('count', sa.INTEGER(), nullable=False),
-        sa.PrimaryKeyConstraint('pool')
+        sa.PrimaryKeyConstraint('pool'),
     )
     op.create_table(
         'metrics_policy_calls',
         sa.Column('policy_name', sa.VARCHAR(), nullable=False),
         sa.Column('count', sa.INTEGER(), nullable=True),
-        sa.PrimaryKeyConstraint('policy_name')
+        sa.PrimaryKeyConstraint('policy_name'),
     )
     op.create_table(
         'metrics_policy_cancellations',
         sa.Column('policy_name', sa.VARCHAR(), nullable=False),
         sa.Column('count', sa.INTEGER(), nullable=True),
-        sa.PrimaryKeyConstraint('policy_name')
+        sa.PrimaryKeyConstraint('policy_name'),
     )
     op.create_table(
         'metrics_policy_rulings',
@@ -66,7 +73,7 @@ def downgrade() -> None:
         sa.Column('pool_name', sa.VARCHAR(), nullable=False),
         sa.Column('allowed', sa.BOOLEAN(), nullable=False),
         sa.Column('count', sa.INTEGER(), nullable=True),
-        sa.PrimaryKeyConstraint('policy_name', 'pool_name', 'allowed')
+        sa.PrimaryKeyConstraint('policy_name', 'pool_name', 'allowed'),
     )
     op.create_table(
         'metrics_failover_success',
@@ -74,8 +81,14 @@ def downgrade() -> None:
         sa.Column('to_pool', sa.VARCHAR(length=250), nullable=False),
         sa.Column('count', sa.INTEGER(), nullable=True),
         sa.Column('updated', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['from_pool'], ['pools.poolname'], ),
-        sa.ForeignKeyConstraint(['to_pool'], ['pools.poolname'], ),
-        sa.PrimaryKeyConstraint('from_pool', 'to_pool')
+        sa.ForeignKeyConstraint(
+            ['from_pool'],
+            ['pools.poolname'],
+        ),
+        sa.ForeignKeyConstraint(
+            ['to_pool'],
+            ['pools.poolname'],
+        ),
+        sa.PrimaryKeyConstraint('from_pool', 'to_pool'),
     )
     # ### end Alembic commands ###

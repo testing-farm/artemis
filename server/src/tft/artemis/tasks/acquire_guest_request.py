@@ -49,11 +49,7 @@ class Workspace(_Workspace):
             if self.is_pool_enabled:
                 skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
 
-                result = self.pool.acquire_guest(
-                    self.logger,
-                    self.session,
-                    self.gr
-                )
+                result = self.pool.acquire_guest(self.logger, self.session, self.gr)
 
                 if result.is_error:
                     return self._error(result, 'failed to provision')
@@ -72,16 +68,16 @@ class Workspace(_Workspace):
                 }
 
                 if provisioning_progress.ssh_info is not None:
-                    new_guest_values.update({
-                        'ssh_username': provisioning_progress.ssh_info.username,
-                        'ssh_port': provisioning_progress.ssh_info.port
-                    })
+                    new_guest_values.update(
+                        {
+                            'ssh_username': provisioning_progress.ssh_info.username,
+                            'ssh_port': provisioning_progress.ssh_info.port,
+                        }
+                    )
 
             else:
                 provisioning_progress = ProvisioningProgress(
-                    state=ProvisioningState.CANCEL,
-                    pool_data=PoolData(),
-                    pool_failures=[Failure('pool is disabled')]
+                    state=ProvisioningState.CANCEL, pool_data=PoolData(), pool_failures=[Failure('pool is disabled')]
                 )
 
             if provisioning_progress.state == ProvisioningState.PENDING:
@@ -94,10 +90,8 @@ class Workspace(_Workspace):
                     current_state=GuestState.PROVISIONING,
                     set_values=new_guest_values,
                     pool=self.gr.poolname,
-                    pool_data=self.gr.pool_data.update(
-                        self.gr.poolname, provisioning_progress.pool_data
-                    ),
-                    delay=provisioning_progress.delay_update
+                    pool_data=self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data),
+                    delay=provisioning_progress.delay_update,
                 )
 
                 if self.result:
@@ -106,10 +100,7 @@ class Workspace(_Workspace):
                     # be tracked.
                     return
 
-                self._progress(
-                    'pool-resources-requested',
-                    pool_data=provisioning_progress.pool_data.serialize()
-                )
+                self._progress('pool-resources-requested', pool_data=provisioning_progress.pool_data.serialize())
 
             elif provisioning_progress.state == ProvisioningState.CANCEL:
                 self._progress('provisioning cancelled')
@@ -127,8 +118,8 @@ class Workspace(_Workspace):
                     TaskCall(
                         actor=acquire_guest_request,
                         args=(self.gr.guestname, self.pool.poolname),
-                        arg_names=('guestname', 'poolname')
-                    )
+                        arg_names=('guestname', 'poolname'),
+                    ),
                 ):
                     self._reschedule()
 
@@ -151,10 +142,7 @@ class Workspace(_Workspace):
                         address=provisioning_progress.address,
                         set_values=new_guest_values,
                         pool=self.gr.poolname,
-                        pool_data=self.gr.pool_data.update(
-                            self.gr.poolname,
-                            provisioning_progress.pool_data
-                        )
+                        pool_data=self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data),
                     )
 
                 else:
@@ -169,11 +157,8 @@ class Workspace(_Workspace):
                         address=provisioning_progress.address,
                         set_values=new_guest_values,
                         pool=self.gr.poolname,
-                        current_pool_data=self.gr.pool_data.update(
-                            self.gr.poolname,
-                            provisioning_progress.pool_data
-                        ),
-                        delay=KNOB_DISPATCH_PREPARE_DELAY.value
+                        current_pool_data=self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data),
+                        delay=KNOB_DISPATCH_PREPARE_DELAY.value,
                     )
 
                 if self.result:
@@ -186,11 +171,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -206,11 +187,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def acquire_guest_request(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Inspect the provisioning progress of a given request, and update info Artemis holds for this request.
@@ -222,11 +199,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.SHELF_LOOKUP))
@@ -234,5 +207,5 @@ def acquire_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.acquire_guest_request),
         logger=get_guest_logger(Workspace.TASKNAME, _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )
