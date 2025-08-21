@@ -38,7 +38,7 @@ KNOB_GC_GUEST_LOG_BLOBS_SCHEDULE: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_GC_GUEST_LOG_BLOBS_SCHEDULE',
     cast_from_str=str,
-    default='15 */4 * * *'
+    default='15 */4 * * *',
 )
 
 
@@ -48,7 +48,7 @@ KNOB_GC_GUEST_LOG_BLOBS_THRESHOLD: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_GC_GUEST_LOG_BLOBS_THRESHOLD',
     cast_from_str=int,
-    default=86400 * 30  # 30 days
+    default=86400 * 30,  # 30 days
 )
 
 
@@ -68,16 +68,17 @@ class Workspace(_Workspace):
         with self.transaction():
             # TODO: INTERVAL is PostgreSQL-specific. We don't plan to use another DB, but, if we chose to,
             # this would have to be rewritten.
-            guest_count_subquery = self.session.query(
-                GuestRequest.guestname
-            ).subquery('t')
+            guest_count_subquery = self.session.query(GuestRequest.guestname).subquery('t')
 
             query = sqlalchemy.delete(GuestLogBlob)
             query = query.where(GuestLogBlob.guestname.not_in(guest_count_subquery))  # type: ignore[arg-type]
-            query = query.where(sqlalchemy.func.age(GuestLogBlob.ctime) >= sqlalchemy.func.cast(
-                f'{KNOB_GC_GUEST_LOG_BLOBS_THRESHOLD.value} SECONDS',  # type: ignore[arg-type]
-                sqlalchemy.dialects.postgresql.INTERVAL
-            ))
+            query = query.where(
+                sqlalchemy.func.age(GuestLogBlob.ctime)
+                >= sqlalchemy.func.cast(
+                    f'{KNOB_GC_GUEST_LOG_BLOBS_THRESHOLD.value} SECONDS',  # type: ignore[arg-type]
+                    sqlalchemy.dialects.postgresql.INTERVAL,
+                )
+            )
 
             r: DMLResult[GuestLogBlob] = execute_dml(self.logger, self.session, query)
 
@@ -88,10 +89,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session
     ) -> 'Workspace':
         """
         Create workspace.
@@ -106,10 +104,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def gc_guest_log_blobs(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session
     ) -> DoerReturnType:
         """
         Remove old guest log blobs.
@@ -120,11 +115,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session).begin().run().complete().final_result
 
 
 @task(
@@ -132,14 +123,11 @@ class Workspace(_Workspace):
     singleton_no_retry_on_lock_fail=True,
     periodic=periodiq.cron(KNOB_GC_GUEST_LOG_BLOBS_SCHEDULE.value),
     priority=TaskPriority.LOW,
-    queue_name=TaskQueue.PERIODIC
+    queue_name=TaskQueue.PERIODIC,
 )
 def worker_ping() -> None:
     """
     Remove old guest log blobs.
     """
 
-    task_core(
-        cast(DoerType, Workspace.gc_guest_log_blobs),
-        logger=TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME)
-    )
+    task_core(cast(DoerType, Workspace.gc_guest_log_blobs), logger=TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME))

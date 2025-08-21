@@ -19,23 +19,13 @@ def test_irrelevant_hw_constraints(
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
     flavors: List[AWSFlavor],
-    image: AWSPoolImageInfo
+    image: AWSPoolImageInfo,
 ) -> None:
     cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(
-        return_value=constraints_from_environment_requirements(
-            {
-                'memory': '> 0'
-            }
-        )
+        return_value=constraints_from_environment_requirements({'memory': '> 0'})
     )
 
-    suitable_flavors = aws_pool._filter_flavors_hw_constraints(
-        logger,
-        session,
-        guest_request,
-        image,
-        flavors
-    )
+    suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
     assert suitable_flavors == flavors
 
@@ -46,19 +36,11 @@ def test_no_constraints(
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
     flavors: List[AWSFlavor],
-    image: AWSPoolImageInfo
+    image: AWSPoolImageInfo,
 ) -> None:
-    cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(
-        return_value=Ok(None)
-    )
+    cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(return_value=Ok(None))
 
-    suitable_flavors = aws_pool._filter_flavors_hw_constraints(
-        logger,
-        session,
-        guest_request,
-        image,
-        flavors
-    )
+    suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
     assert suitable_flavors == flavors
 
@@ -69,27 +51,15 @@ def test_boot_method_match(
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
     flavors: List[AWSFlavor],
-    image: AWSPoolImageInfo
+    image: AWSPoolImageInfo,
 ) -> None:
     image.boot.method = ['uefi']
 
     cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(
-        return_value=constraints_from_environment_requirements(
-            {
-                'boot': {
-                    'method': '= uefi'
-                }
-            }
-        )
+        return_value=constraints_from_environment_requirements({'boot': {'method': '= uefi'}})
     )
 
-    suitable_flavors = aws_pool._filter_flavors_hw_constraints(
-        logger,
-        session,
-        guest_request,
-        image,
-        flavors
-    )
+    suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
     assert [flavor.id for flavor in suitable_flavors] == ['x86_64.3', 'aarch64.1']
 
@@ -100,26 +70,14 @@ def test_boot_method_mismatch(
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
     flavors: List[AWSFlavor],
-    image: AWSPoolImageInfo
+    image: AWSPoolImageInfo,
 ) -> None:
     image.boot.method = ['uefi']
 
     cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(
-        return_value=constraints_from_environment_requirements(
-            {
-                'boot': {
-                    'method': 'none'
-                }
-            }
-        )
+        return_value=constraints_from_environment_requirements({'boot': {'method': 'none'}})
     )
 
-    suitable_flavors = aws_pool._filter_flavors_hw_constraints(
-        logger,
-        session,
-        guest_request,
-        image,
-        flavors
-    )
+    suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
     assert not suitable_flavors

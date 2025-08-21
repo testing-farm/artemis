@@ -38,11 +38,7 @@ import sphinx_typlog_theme
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.autodoc.typehints',
-    'sphinx_autodoc_typehints'
-]
+extensions = ['sphinx.ext.autodoc', 'sphinx.ext.autodoc.typehints', 'sphinx_autodoc_typehints']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -114,7 +110,7 @@ html_theme_path = [sphinx_typlog_theme.get_path()]
 # documentation.
 #
 html_theme_options = {
-  'logo': 'logo.png',
+    'logo': 'logo.png',
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,

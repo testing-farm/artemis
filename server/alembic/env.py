@@ -51,7 +51,7 @@ def run_migrations_offline() -> None:
         url=os.getenv('ARTEMIS_DB_URL'),
         target_metadata=target_metadata,
         literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
+        dialect_opts={'paramstyle': 'named'},
     )
 
     with context.begin_transaction():
@@ -83,7 +83,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             render_as_batch=True,
-            process_revision_directives=process_revision_directives
+            process_revision_directives=process_revision_directives,
         )
 
         with context.begin_transaction():

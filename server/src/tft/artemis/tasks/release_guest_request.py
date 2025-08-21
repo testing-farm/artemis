@@ -65,10 +65,9 @@ class Workspace(_Workspace):
             r_delete: DMLResult[GuestRequest] = execute_dml(
                 self.logger,
                 self.session,
-                sqlalchemy
-                .delete(GuestRequest)
+                sqlalchemy.delete(GuestRequest)
                 .where(GuestRequest.guestname == self.guestname)
-                .where(GuestRequest.state == GuestState.CONDEMNED)
+                .where(GuestRequest.state == GuestState.CONDEMNED),
             )
 
             if r_delete.is_error:
@@ -78,11 +77,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -98,11 +93,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def release_guest_request(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Schedule release of guest request resources.
@@ -114,11 +105,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(TaskPriority.LOW)
@@ -132,5 +119,5 @@ def release_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.release_guest_request),
         logger=get_guest_logger('release-guest-request', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

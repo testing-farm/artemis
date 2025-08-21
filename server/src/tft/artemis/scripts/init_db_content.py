@@ -55,8 +55,7 @@ def _load_bundled_schema(logger: gluetool.log.ContextAdapter) -> Tuple[JSONSchem
 
 
 def _load_local_schema(
-    logger: gluetool.log.ContextAdapter,
-    basedir: str
+    logger: gluetool.log.ContextAdapter, basedir: str
 ) -> Tuple[JSONSchemaType, Dict[str, JSONSchemaType]]:
     logger.info(f'validating server config against schema from {basedir}')
 
@@ -92,8 +91,7 @@ def _load_local_schema(
 
 
 def _load_remote_schema(
-    logger: gluetool.log.ContextAdapter,
-    baseurl: str
+    logger: gluetool.log.ContextAdapter, baseurl: str
 ) -> Tuple[JSONSchemaType, Dict[str, JSONSchemaType]]:
     logger.info(f'validating server config against schema from {baseurl}')
 
@@ -103,10 +101,7 @@ def _load_remote_schema(
         logger.debug(f'fetching schema {url}')
 
         try:
-            response = requests.get(
-                url,
-                verify=not KNOB_DISABLE_CERT_VERIFICATION.value
-            )
+            response = requests.get(url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
 
             if response.status_code == 404:
                 return Ok({})
@@ -114,12 +109,7 @@ def _load_remote_schema(
             response.raise_for_status()
 
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc(
-                'failed to fetch schema',
-                exc,
-                baseurl=baseurl,
-                schema=path
-            ))
+            return Error(Failure.from_exc('failed to fetch schema', exc, baseurl=baseurl, schema=path))
 
         return construct_validation_schema(response.text)
 
@@ -157,7 +147,7 @@ def validate_config(
     logger: gluetool.log.ContextAdapter,
     server_config: Dict[str, Any],
     schema: JSONSchemaType,
-    driver_schemas: Dict[str, JSONSchemaType]
+    driver_schemas: Dict[str, JSONSchemaType],
 ) -> Result[List[str], Failure]:
     """
     Validate a server configuration data using a JSON schema.
@@ -174,23 +164,13 @@ def validate_config(
     if r_validation.is_error:
         return Error(r_validation.unwrap_error())
 
-    validation_errors += [
-        f'server: {error}'
-        for error in r_validation.unwrap()
-    ]
+    validation_errors += [f'server: {error}' for error in r_validation.unwrap()]
 
     for pool in server_config.get('pools', []):
-        failure_details = {
-            'pool': pool.get('name'),
-            'pool_driver': pool.get('driver')
-        }
+        failure_details = {'pool': pool.get('name'), 'pool_driver': pool.get('driver')}
 
         if pool.get('driver') not in driver_schemas:
-            return Error(Failure(
-                'driver schema not defined',
-                driver_schemas=driver_schemas,
-                **failure_details
-            ))
+            return Error(Failure('driver schema not defined', driver_schemas=driver_schemas, **failure_details))
 
         schema = driver_schemas[pool.get('driver')]
 
@@ -201,19 +181,12 @@ def validate_config(
 
             return r_validation
 
-        validation_errors += [
-            f'pool "{pool.get("name")}": {error}'
-            for error in r_validation.unwrap()
-        ]
+        validation_errors += [f'pool "{pool.get("name")}": {error}' for error in r_validation.unwrap()]
 
     return Ok(validation_errors)
 
 
-def config_to_db(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    server_config: Dict[str, Any]
-) -> None:
+def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
     # Note: the current approach of "init schema" is crappy, it basically either succeeds or fails at
     # the first conflict, skipping the rest. To avoid collisions, it must be refactored, and sooner
     # or later CLI will take over once we get full support for user accounts.
@@ -236,15 +209,12 @@ def config_to_db(
     validation_errors = r_validation.unwrap()
 
     if validation_errors:
-        gluetool.log.log_dict(
-            logger.error,
-            'configuration schema validation failed',
-            validation_errors
-        )
+        gluetool.log.log_dict(logger.error, 'configuration schema validation failed', validation_errors)
 
         sys.exit(1)
 
     with db.transaction(logger) as (session, t):
+
         def _add_tags(poolname: str, input_tags: GuestTagsType) -> None:
             for tag, value in input_tags.items():
                 logger.info(f'  Adding {tag}={value}')
@@ -253,17 +223,10 @@ def config_to_db(
                     logger,
                     session,
                     GuestTag,
-                    {
-                        GuestTag.poolname: poolname,
-                        GuestTag.tag: tag
-                    },
+                    {GuestTag.poolname: poolname, GuestTag.tag: tag},
                     GuestTag.__table_args__[0],
-                    insert_data={
-                        GuestTag.value: value
-                    },
-                    update_data={
-                        'value': value
-                    }
+                    insert_data={GuestTag.value: value},
+                    update_data={'value': value},
                 )
 
                 assert r.is_ok and r.unwrap() is True, 'Failed to initialize guest tag record'
@@ -290,12 +253,10 @@ def config_to_db(
                 logger,
                 session,
                 PriorityGroup,
-                {
-                    PriorityGroup.name: priority_group_config['name']
-                },
+                {PriorityGroup.name: priority_group_config['name']},
                 PriorityGroup.__table_args__[0],
                 # TODO: `ON CONFLICT DO NOTHING` UPSERT makes the mess out of expected rows, both 0 and 1 are valid.
-                expected_records=(0, 1)
+                expected_records=(0, 1),
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize priority group record'
@@ -326,17 +287,10 @@ def config_to_db(
                 logger,
                 session,
                 Pool,
-                {
-                    Pool.poolname: poolname
-                },
+                {Pool.poolname: poolname},
                 Pool.__table_args__[0],
-                insert_data={
-                    Pool.driver: pool_config['driver'],
-                    Pool._parameters: pool_parameters
-                },
-                update_data={
-                    '_parameters': pool_parameters
-                }
+                insert_data={Pool.driver: pool_config['driver'], Pool._parameters: pool_parameters},
+                update_data={'_parameters': pool_parameters},
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize pool record'
@@ -356,23 +310,18 @@ def config_to_db(
                 logger,
                 session,
                 User,
-                {
-                    User.username: username
-                },
+                {User.username: username},
                 User.__table_args__[0],
-                insert_data={
-                    User.admin_token: admin_token_hash,
-                    User.provisioning_token: provisioning_token_hash
-                },
+                insert_data={User.admin_token: admin_token_hash, User.provisioning_token: provisioning_token_hash},
                 # TODO: `ON CONFLICT DO NOTHING` UPSERT makes the mess out of expected rows, both 0 and 1 are valid.
-                expected_records=(0, 1)
+                expected_records=(0, 1),
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize user record'
 
-#            if r.unwrap() is True:
-#                logger.info('Default admin token for user "{}" is "{}"'.format(username, admin_token))
-#                logger.info('Default provisioning token for user "{}" is "{}"'.format(username, provisioning_token))
+        #    if r.unwrap() is True:
+        #        logger.info('Default admin token for user "{}" is "{}"'.format(username, admin_token))
+        #        logger.info('Default provisioning token for user "{}" is "{}"'.format(username, provisioning_token))
 
         # In one of the future patches, this will get few changes:
         #
@@ -402,16 +351,11 @@ def config_to_db(
                 logger,
                 session,
                 GuestShelf,
-                {
-                    GuestShelf.shelfname: shelfname
-                },
+                {GuestShelf.shelfname: shelfname},
                 GuestShelf.__table_args__[0],
-                insert_data={
-                    GuestShelf.ownername: shelf_config['owner'],
-                    GuestShelf.state: GuestState.READY
-                },
+                insert_data={GuestShelf.ownername: shelf_config['owner'], GuestShelf.state: GuestState.READY},
                 # TODO: `ON CONFLICT DO NOTHING` UPSERT makes the mess out of expected rows, both 0 and 1 are valid.
-                expected_records=(0, 1)
+                expected_records=(0, 1),
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize shelf record'
@@ -427,9 +371,7 @@ def config_to_db(
                 logger,
                 session,
                 SSHKey,
-                {
-                    SSHKey.keyname: key_config['name']
-                },
+                {SSHKey.keyname: key_config['name']},
                 SSHKey.__table_args__[0],
                 insert_data={
                     SSHKey.enabled: True,
@@ -438,8 +380,7 @@ def config_to_db(
                     SSHKey.public: key_config['public'].strip(),
                     # When adding new key, leave `file` column empty - it will be dropped in the future,
                     # and we do not have any usable value for it.
-                    SSHKey.file: ''
-
+                    SSHKey.file: '',
                 },
                 update_data={
                     # But, when *updating* the key, do not touch the `file` column - we do not want to overwrite.
@@ -447,8 +388,8 @@ def config_to_db(
                     # worked with keys in extra files, and we keep that information safe. We just don't have it
                     # for any *new* keys...
                     'private': private,
-                    'public': key_config['public'].strip()
-                }
+                    'public': key_config['public'].strip(),
+                },
             )
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize SSH key record'
@@ -467,10 +408,7 @@ def cmd_root(ctx: Any) -> None:
     pass
 
 
-@cmd_root.command(
-    name='config-to-db',
-    help='Write the given configuration into DB. Obeys all environment variables.'
-)
+@cmd_root.command(name='config-to-db', help='Write the given configuration into DB. Obeys all environment variables.')
 @click.pass_context
 def cmd_config_to_db(ctx: Any) -> None:
     logger = get_logger()
@@ -482,13 +420,14 @@ def cmd_config_to_db(ctx: Any) -> None:
 
 @cmd_root.command(
     name='validate-config',
-    help='Validate the given configuration, without changing the DB. Obeys all environment variables.'
+    help='Validate the given configuration, without changing the DB. Obeys all environment variables.',
 )
 @click.option(
-    '--schema', 'custom_schema',
+    '--schema',
+    'custom_schema',
     metavar='DIRPATH|URL',
     default=None,
-    help='If specified, the given schema would be used instead of the packaged one.'
+    help='If specified, the given schema would be used instead of the packaged one.',
 )
 @click.pass_context
 def cmd_validate_config(ctx: Any, custom_schema: Optional[str] = None) -> None:

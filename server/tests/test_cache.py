@@ -18,11 +18,7 @@ def fixture_lockname() -> str:
     return f'test-lock-{uuid.uuid4()}'
 
 
-def test_lock_sanity(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    lockname: str
-) -> None:
+def test_lock_sanity(logger: gluetool.log.ContextAdapter, cache: redis.Redis, lockname: str) -> None:
     token = tft.artemis.cache.acquire_lock(logger, cache, lockname)
 
     assert token is not None
@@ -35,10 +31,7 @@ def test_lock_sanity(
 
 
 def test_lock_ttl_expired(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    caplog: _pytest.logging.LogCaptureFixture,
-    lockname: str
+    logger: gluetool.log.ContextAdapter, cache: redis.Redis, caplog: _pytest.logging.LogCaptureFixture, lockname: str
 ) -> None:
     token = tft.artemis.cache.acquire_lock(logger, cache, lockname, ttl=5)
 
@@ -54,10 +47,7 @@ def test_lock_ttl_expired(
 
 
 def test_lock_ownership_change(
-    logger: gluetool.log.ContextAdapter,
-    cache: redis.Redis,
-    caplog: _pytest.logging.LogCaptureFixture,
-    lockname: str
+    logger: gluetool.log.ContextAdapter, cache: redis.Redis, caplog: _pytest.logging.LogCaptureFixture, lockname: str
 ) -> None:
     token = tft.artemis.cache.acquire_lock(logger, cache, lockname)
 

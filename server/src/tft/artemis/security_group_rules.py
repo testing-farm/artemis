@@ -50,8 +50,10 @@ class SecurityGroupRules(SerializableContainer):
 
     @classmethod
     def unserialize(cls, serialized: Dict[str, Any]) -> 'SecurityGroupRules':
-        return SecurityGroupRules(ingress=[SecurityGroupRule.unserialize(rule) for rule in serialized['ingress']],
-                                  egress=[SecurityGroupRule.unserialize(rule) for rule in serialized['egress']])
+        return SecurityGroupRules(
+            ingress=[SecurityGroupRule.unserialize(rule) for rule in serialized['ingress']],
+            egress=[SecurityGroupRule.unserialize(rule) for rule in serialized['egress']],
+        )
 
     @classmethod
     def load_from_pool_config(cls, serialized_config: List[Dict[str, Any]]) -> Result['SecurityGroupRules', Failure]:
@@ -63,7 +65,6 @@ class SecurityGroupRules(SerializableContainer):
         res = SecurityGroupRules()
         rules_from_config = []
         for rule in serialized_config:
-
             # Either port or port_min/port_max have to be defined in config, look for port_min/port_max first
             port_min = rule.get('port_min')
             if not port_min:
@@ -84,8 +85,15 @@ class SecurityGroupRules(SerializableContainer):
             # Convert list of cidrs to multiple rules with 1 cidr per rule
             for cidr in rule['cidr']:
                 try:
-                    rules_from_config.append(SecurityGroupRule(type=rule['type'], protocol=str(rule['protocol']),
-                                                               port_min=port_min, port_max=port_max, cidr=cidr))
+                    rules_from_config.append(
+                        SecurityGroupRule(
+                            type=rule['type'],
+                            protocol=str(rule['protocol']),
+                            port_min=port_min,
+                            port_max=port_max,
+                            cidr=cidr,
+                        )
+                    )
                 except ValueError as err:
                     return Error(Failure.from_exc('Failed to parse CIDR', err))
 

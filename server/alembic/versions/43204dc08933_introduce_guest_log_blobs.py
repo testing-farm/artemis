@@ -9,6 +9,7 @@ Revises: ec3239807678
 Create Date: 2024-03-11 15:02:33.977026
 
 """
+
 from typing import Union
 
 import sqlalchemy as sa
@@ -24,15 +25,9 @@ depends_on = None
 
 def get_enum_type() -> Union[sa.Enum, postgresql.ENUM]:
     if op.get_bind().dialect.name == 'postgresql':
-        return postgresql.ENUM(
-            name='guestlogcontenttype',
-            create_type=False
-        )
+        return postgresql.ENUM(name='guestlogcontenttype', create_type=False)
 
-    return sa.Enum(
-        name='guestlogcontenttype',
-        create_type=False
-    )
+    return sa.Enum(name='guestlogcontenttype', create_type=False)
 
 
 def upgrade() -> None:
@@ -47,9 +42,9 @@ def upgrade() -> None:
         sa.Column('content', sa.Text(), server_default='', nullable=False),
         sa.ForeignKeyConstraint(
             ['guestname', 'logname', 'contenttype'],
-            ['guest_logs.guestname', 'guest_logs.logname', 'guest_logs.contenttype']
+            ['guest_logs.guestname', 'guest_logs.logname', 'guest_logs.contenttype'],
         ),
-        sa.PrimaryKeyConstraint('guestname', 'logname', 'contenttype', 'ctime')
+        sa.PrimaryKeyConstraint('guestname', 'logname', 'contenttype', 'ctime'),
     )
 
     with op.batch_alter_table('guest_logs', schema=None) as batch_op:

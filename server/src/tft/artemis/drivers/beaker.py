@@ -77,7 +77,7 @@ KNOB_RESERVATION_DURATION: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_BEAKER_RESERVATION_DURATION',
     cast_from_str=int,
-    default=86400
+    default=86400,
 )
 
 KNOB_RESERVATION_EXTENSION_COMMAND_TEMPLATE: Knob[str] = Knob(
@@ -86,7 +86,7 @@ KNOB_RESERVATION_EXTENSION_COMMAND_TEMPLATE: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_BEAKER_RESERVATION_EXTENSION_COMMAND_TEMPLATE',
     cast_from_str=str,
-    default='echo {{ (EXTENSION_TIME / 3600) | int }} | extendtesttime.sh'
+    default='echo {{ (EXTENSION_TIME / 3600) | int }} | extendtesttime.sh',
 )
 
 KNOB_RESERVATION_EXTENSION_TIME: Knob[int] = Knob(
@@ -95,7 +95,7 @@ KNOB_RESERVATION_EXTENSION_TIME: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_BEAKER_RESERVATION_EXTENSION_TIME',
     cast_from_str=int,
-    default=8 * 60 * 60
+    default=8 * 60 * 60,
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -105,7 +105,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
-    default='artemis-image-map-beaker.yaml'
+    default='artemis-image-map-beaker.yaml',
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
@@ -115,7 +115,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
-    default='{{ os.compose }}'
+    default='{{ os.compose }}',
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN: Knob[str] = Knob(
@@ -125,7 +125,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN',
     cast_from_str=str,
-    default=r'^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?$'
+    default=r'^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?$',
 )
 
 
@@ -136,7 +136,7 @@ KNOB_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     has_db=True,
     envvar='ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT',
     cast_from_str=int,
-    default=15
+    default=15,
 )
 
 KNOB_JOB_WHITEBOARD_TEMPLATE: Knob[str] = Knob(
@@ -146,7 +146,7 @@ KNOB_JOB_WHITEBOARD_TEMPLATE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_BEAKER_JOB_WHITEBOARD_TEMPLATE',
     cast_from_str=str,
-    default='[artemis] [{{ DEPLOYMENT }}] {{ GUESTNAME }}'
+    default='[artemis] [{{ DEPLOYMENT }}] {{ GUESTNAME }}',
 )
 
 KNOB_INSTALLATION_TIMEOUT: Knob[int] = Knob(
@@ -156,7 +156,7 @@ KNOB_INSTALLATION_TIMEOUT: Knob[int] = Knob(
     per_entity=True,
     envvar='ARTEMIS_BEAKER_INSTALLATION_TIMEOUT',
     cast_from_str=int,
-    default=1800
+    default=1800,
 )
 
 KNOB_BKR_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
@@ -169,7 +169,7 @@ KNOB_BKR_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
     per_entity=True,
     envvar='ARTEMIS_BEAKER_BKR_TIMEOUT_TERMINATION',
     cast_from_str=int,
-    default=120
+    default=120,
 )
 
 
@@ -190,7 +190,7 @@ class BkrErrorCauses(PoolErrorCauses):
 
 CLI_ERROR_PATTERNS = {
     BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE: re.compile(r'^Exception: .+:No distro tree matches Recipe:'),
-    BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE: re.compile(r'^Recipe ID \d+ does not match any systems')
+    BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE: re.compile(r'^Recipe ID \d+ does not match any systems'),
 }
 
 
@@ -258,8 +258,7 @@ class JobTaskResult:
 
 
 def parse_job_task_results(
-    logger: gluetool.log.ContextAdapter,
-    job_results: bs4.BeautifulSoup
+    logger: gluetool.log.ContextAdapter, job_results: bs4.BeautifulSoup
 ) -> Result[List[JobTaskResult], Failure]:
     """
     Parse job results and return tasks and their results.
@@ -274,21 +273,25 @@ def parse_job_task_results(
     for task_element in job_results.find_all('task'):
         if list(task_element.find_all('result')):
             for task_result_element in task_element.find_all('result'):
-                results.append(JobTaskResult(
+                results.append(
+                    JobTaskResult(
+                        taskname=task_element['name'],
+                        task_result=task_element['result'],
+                        task_status=task_element['status'],
+                        phasename=task_result_element['path'],
+                        phase_result=task_result_element['result'],
+                        message=task_result_element.string or None,
+                    )
+                )
+
+        else:
+            results.append(
+                JobTaskResult(
                     taskname=task_element['name'],
                     task_result=task_element['result'],
                     task_status=task_element['status'],
-                    phasename=task_result_element['path'],
-                    phase_result=task_result_element['result'],
-                    message=task_result_element.string or None
-                ))
-
-        else:
-            results.append(JobTaskResult(
-                taskname=task_element['name'],
-                task_result=task_element['result'],
-                task_status=task_element['status']
-            ))
+                )
+            )
 
     return Ok(results)
 
@@ -301,7 +304,7 @@ OPERATOR_SIGN_TO_OPERATOR = {
     Operator.GT: '>',
     Operator.GTE: '>=',
     Operator.LT: '<',
-    Operator.LTE: '<='
+    Operator.LTE: '<=',
 }
 
 
@@ -322,9 +325,7 @@ def operator_to_beaker_op(operator: Operator, value: str) -> Tuple[str, str]:
 
 
 def _translate_constraint_by_config(
-    constraint: Constraint,
-    guest_request: GuestRequest,
-    translations: List[ConstraintTranslationConfigType]
+    constraint: Constraint, guest_request: GuestRequest, translations: List[ConstraintTranslationConfigType]
 ) -> Result[bs4.BeautifulSoup, Failure]:
     for translation in translations:
         if translation['operator'] != constraint.operator.value:
@@ -338,34 +339,28 @@ def _translate_constraint_by_config(
             continue
 
         r_rendered_raw_element = render_template(
-            translation['element'],
-            CONSTRAINT=constraint,
-            **template_environment(guest_request=guest_request)
+            translation['element'], CONSTRAINT=constraint, **template_environment(guest_request=guest_request)
         )
 
         if r_rendered_raw_element.is_error:
-            return Error(Failure.from_failure(
-                'failed to render constraint XML',
-                r_rendered_raw_element.unwrap_error(),
-                constraint=repr(constraint),
-                constraint_name=constraint.name
-            ))
+            return Error(
+                Failure.from_failure(
+                    'failed to render constraint XML',
+                    r_rendered_raw_element.unwrap_error(),
+                    constraint=repr(constraint),
+                    constraint_name=constraint.name,
+                )
+            )
 
         try:
             return Ok(bs4.BeautifulSoup(r_rendered_raw_element.unwrap(), 'xml'))
 
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to parse XML',
-                exc,
-                source=translation['element']
-            ))
+            return Error(Failure.from_exc('failed to parse XML', exc, source=translation['element']))
 
-    return Error(Failure(
-        'constraint not supported by driver',
-        constraint=repr(constraint),
-        constraint_name=constraint.name
-    ))
+    return Error(
+        Failure('constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name)
+    )
 
 
 def constraint_to_beaker_filter(
@@ -392,7 +387,8 @@ def constraint_to_beaker_filter(
                 guest_request,
                 pool,
                 constraint_parents=constraint_parents + [constraint],
-                constraint_siblings=constraint.constraints)
+                constraint_siblings=constraint.constraints,
+            )
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -410,7 +406,8 @@ def constraint_to_beaker_filter(
                 guest_request,
                 pool,
                 constraint_parents=constraint_parents + [constraint],
-                constraint_siblings=constraint.constraints)
+                constraint_siblings=constraint.constraints,
+            )
 
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
@@ -428,11 +425,7 @@ def constraint_to_beaker_filter(
             return _translate_constraint_by_config(
                 constraint,
                 guest_request,
-                pool.pool_config
-                    .get('hw-constraints', {})
-                    .get('boot', {})
-                    .get('method', {})
-                    .get('translations', [])
+                pool.pool_config.get('hw-constraints', {}).get('boot', {}).get('method', {}).get('translations', []),
             )
 
     if constraint_name.property == 'compatible':  # noqa: SIM102
@@ -442,11 +435,10 @@ def constraint_to_beaker_filter(
             r_config_constraint = _translate_constraint_by_config(
                 constraint,
                 guest_request,
-                pool.pool_config
-                    .get('hw-constraints', {})
-                    .get('compatible', {})
-                    .get('distro', {})
-                    .get('translations', [])
+                pool.pool_config.get('hw-constraints', {})
+                .get('compatible', {})
+                .get('distro', {})
+                .get('translations', []),
             )
 
             if r_config_constraint.is_error:
@@ -503,8 +495,7 @@ def constraint_to_beaker_filter(
 
         elif constraint_name.child_property == 'flag':
             op, value = operator_to_beaker_op(
-                Operator.EQ if constraint.operator is Operator.CONTAINS else Operator.NEQ,
-                str(constraint.value)
+                Operator.EQ if constraint.operator is Operator.CONTAINS else Operator.NEQ, str(constraint.value)
             )
 
             flag = _new_tag('flag', op=op, value=value)
@@ -512,10 +503,7 @@ def constraint_to_beaker_filter(
             cpu.append(flag)
 
         else:
-            return Error(Failure(
-                'constraint not supported by driver',
-                constraint=repr(constraint)
-            ))
+            return Error(Failure('constraint not supported by driver', constraint=repr(constraint)))
 
         return Ok(cpu)
 
@@ -528,8 +516,7 @@ def constraint_to_beaker_filter(
         if constraint_name.child_property == 'size':
             # `disk.size` is represented as quantity, for Beaker XML we need to convert to bytes, integer.
             op, value = operator_to_beaker_op(
-                constraint.operator,
-                str(int(cast(SizeType, constraint.value).to('B').magnitude))
+                constraint.operator, str(int(cast(SizeType, constraint.value).to('B').magnitude))
             )
 
             size = _new_tag('size', op=op, value=value)
@@ -544,11 +531,11 @@ def constraint_to_beaker_filter(
             disk.append(model)
 
         else:
-            return Error(Failure(
-                'constraint not supported by driver',
-                constraint=repr(constraint),
-                constraint_name=constraint.name
-            ))
+            return Error(
+                Failure(
+                    'constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name
+                )
+            )
 
         # 4th parent is a group collecting all `disk` entries
         if len(constraint_parents) >= 4:
@@ -556,11 +543,13 @@ def constraint_to_beaker_filter(
 
             # This should not happen unless environment parsing changes.
             if not isinstance(parent, And):
-                return Error(Failure(
-                    'failed to find proper parent of disk constraint',
-                    constraint=repr(constraint),
-                    constraint_name=constraint.name
-                ))
+                return Error(
+                    Failure(
+                        'failed to find proper parent of disk constraint',
+                        constraint=repr(constraint),
+                        constraint_name=constraint.name,
+                    )
+                )
 
             group = _new_tag('and')
 
@@ -568,7 +557,7 @@ def constraint_to_beaker_filter(
                 'key_value',
                 key='NR_DISKS',
                 op=OPERATOR_SIGN_TO_OPERATOR[Operator.GTE],
-                value=str(len(parent.constraints))
+                value=str(len(parent.constraints)),
             )
 
             group.append(disk)
@@ -592,8 +581,7 @@ def constraint_to_beaker_filter(
     if constraint_name.property == 'memory':
         # `memory` is represented as quantity, for Beaker XML we need to convert to mibibytes, integer.
         op, value = operator_to_beaker_op(
-            constraint.operator,
-            str(int(cast(SizeType, constraint.value).to('MiB').magnitude))
+            constraint.operator, str(int(cast(SizeType, constraint.value).to('MiB').magnitude))
         )
 
         system = _new_tag('system')
@@ -604,10 +592,7 @@ def constraint_to_beaker_filter(
         return Ok(system)
 
     if constraint_name.property == 'hostname':
-        op, value = operator_to_beaker_op(
-            constraint.operator,
-            str(constraint.value)
-        )
+        op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
         hostname = _new_tag('hostname', op=op, value=value)
         if constraint.operator == Operator.NOTMATCH:
@@ -618,45 +603,39 @@ def constraint_to_beaker_filter(
         return Ok(hostname)
 
     if constraint_name.property == 'tpm':
-        op, value = operator_to_beaker_op(
-            constraint.operator,
-            str(constraint.value)
-        )
+        op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
-        return Ok(_new_tag('key_value', key="TPM", op=op, value=str(constraint.value)))
+        return Ok(_new_tag('key_value', key='TPM', op=op, value=str(constraint.value)))
 
     if constraint_name.property == 'virtualization':
         if constraint_name.child_property == 'is_supported':
             return _translate_constraint_by_config(
                 constraint,
                 guest_request,
-                pool.pool_config
-                    .get('hw-constraints', {})
-                    .get('virtualization', {})
-                    .get('is_supported', {})
-                    .get('translations', [])
+                pool.pool_config.get('hw-constraints', {})
+                .get('virtualization', {})
+                .get('is_supported', {})
+                .get('translations', []),
             )
 
         if constraint_name.child_property == 'is_virtualized':
             return _translate_constraint_by_config(
                 constraint,
                 guest_request,
-                pool.pool_config
-                    .get('hw-constraints', {})
-                    .get('virtualization', {})
-                    .get('is_virtualized', {})
-                    .get('translations', [])
+                pool.pool_config.get('hw-constraints', {})
+                .get('virtualization', {})
+                .get('is_virtualized', {})
+                .get('translations', []),
             )
 
         if constraint_name.child_property == 'hypervisor':
             return _translate_constraint_by_config(
                 constraint,
                 guest_request,
-                pool.pool_config
-                    .get('hw-constraints', {})
-                    .get('virtualization', {})
-                    .get('hypervisor', {})
-                    .get('translations', [])
+                pool.pool_config.get('hw-constraints', {})
+                .get('virtualization', {})
+                .get('hypervisor', {})
+                .get('translations', []),
             )
 
     if constraint_name.property == 'network':
@@ -664,11 +643,13 @@ def constraint_to_beaker_filter(
             return Ok(_new_tag('or'))
 
         if constraint_name.child_property == 'type' and constraint.value != 'eth':
-            return Error(Failure(
-                'only eth networks are supported for beaker constraints',
-                constraint=repr(constraint_siblings),
-                constraint_name=constraint.name
-            ))
+            return Error(
+                Failure(
+                    'only eth networks are supported for beaker constraints',
+                    constraint=repr(constraint_siblings),
+                    constraint_name=constraint.name,
+                )
+            )
 
         # 3rd parent is a group collecting all `network` entries
         if len(constraint_parents) >= 3:
@@ -676,54 +657,45 @@ def constraint_to_beaker_filter(
 
             # This should not happen unless environment parsing changes.
             if not isinstance(parent, And):
-                return Error(Failure(
-                    'failed to find proper parent of network constraint',
-                    constraint=repr(constraint),
-                    constraint_name=constraint.name
-                ))
+                return Error(
+                    Failure(
+                        'failed to find proper parent of network constraint',
+                        constraint=repr(constraint),
+                        constraint_name=constraint.name,
+                    )
+                )
 
-            return Ok(_new_tag(
-                'key_value',
-                key="NR_ETH",
-                op=OPERATOR_SIGN_TO_OPERATOR[Operator.GTE],
-                value=str(len(parent.constraints))
-            ))
+            return Ok(
+                _new_tag(
+                    'key_value',
+                    key='NR_ETH',
+                    op=OPERATOR_SIGN_TO_OPERATOR[Operator.GTE],
+                    value=str(len(parent.constraints)),
+                )
+            )
 
-        return Error(Failure(
-            'constraint not supported by driver',
-            constraint=repr(constraint),
-            constraint_name=constraint.name
-        ))
+        return Error(
+            Failure('constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name)
+        )
 
     if constraint_name.property == 'zcrypt':
         if constraint_name.child_property == 'adapter':
             return _translate_constraint_by_config(
                 constraint,
                 guest_request,
-                pool.pool_config
-                    .get('hw-constraints', {})
-                    .get('zcrypt', {})
-                    .get('adapter', {})
-                    .get('translations', [])
+                pool.pool_config.get('hw-constraints', {}).get('zcrypt', {}).get('adapter', {}).get('translations', []),
             )
 
         if constraint_name.child_property == 'mode':
             return _translate_constraint_by_config(
                 constraint,
                 guest_request,
-                pool.pool_config
-                    .get('hw-constraints', {})
-                    .get('zcrypt', {})
-                    .get('mode', {})
-                    .get('translations', [])
+                pool.pool_config.get('hw-constraints', {}).get('zcrypt', {}).get('mode', {}).get('translations', []),
             )
 
     if constraint_name.property == 'beaker':  # noqa: SIM102
         if constraint_name.child_property == 'pool':
-            op, value = operator_to_beaker_op(
-                constraint.operator,
-                str(constraint.value)
-            )
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             pool_container = _new_tag('pool', value=value)
             if constraint.operator == Operator.NEQ:
@@ -732,11 +704,9 @@ def constraint_to_beaker_filter(
                 return Ok(group)
             return Ok(pool_container)
 
-    return Error(Failure(
-        'constraint not supported by driver',
-        constraint=repr(constraint),
-        constraint_name=constraint.name
-    ))
+    return Error(
+        Failure('constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name)
+    )
 
 
 def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, Failure]:
@@ -750,13 +720,7 @@ def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, F
             siblings = [
                 sibling
                 for sibling in el.parent.find_all(
-                    tag_name,
-                    attrs={
-                        'key': key,
-                        'op': el.attrs['op'],
-                        'value': el.attrs['value']
-                    },
-                    resursive=False
+                    tag_name, attrs={'key': key, 'op': el.attrs['op'], 'value': el.attrs['value']}, resursive=False
                 )
                 if sibling is not el
             ]
@@ -794,14 +758,15 @@ def _prune_beaker_filter(tree: bs4.BeautifulSoup) -> Result[bs4.BeautifulSoup, F
         return changes
 
     for _ in range(5):
-        changes = \
-            _remove_empty('or') \
-            + _remove_empty('and') \
-            + _remove_empty('system') \
-            + _remove_singles('or') \
-            + _remove_singles('and') \
-            + _remove_duplicates('key_value', 'NR_ETH') \
+        changes = (
+            _remove_empty('or')
+            + _remove_empty('and')
+            + _remove_empty('system')
+            + _remove_singles('or')
+            + _remove_singles('and')
+            + _remove_duplicates('key_value', 'NR_ETH')
             + _remove_duplicates('key_value', 'NR_DISKS')
+        )
 
         if changes == 0:
             break
@@ -836,20 +801,11 @@ def environment_to_beaker_filter(
     constraints = r_constraints.unwrap()
 
     if constraints is None:
-        r_beaker_filter = constraint_to_beaker_filter(
-            Constraint.from_arch(environment.hw.arch),
-            guest_request,
-            pool
-        )
+        r_beaker_filter = constraint_to_beaker_filter(Constraint.from_arch(environment.hw.arch), guest_request, pool)
 
     else:
         r_beaker_filter = constraint_to_beaker_filter(
-            And([
-                Constraint.from_arch(environment.hw.arch),
-                constraints
-            ]),
-            guest_request,
-            pool
+            And([Constraint.from_arch(environment.hw.arch), constraints]), guest_request, pool
         )
 
     if r_beaker_filter.is_error:
@@ -1001,7 +957,7 @@ def create_beaker_filter(
     guest_request: GuestRequest,
     pool: 'BeakerDriver',
     avoid_groups: List[str],
-    avoid_hostnames: List[str]
+    avoid_hostnames: List[str],
 ) -> Result[Optional[bs4.BeautifulSoup], Failure]:
     """
     From given inputs, create a Beaker filter.
@@ -1076,12 +1032,7 @@ class BeakerDriver(PoolDriver):
     #: Template for a cache key holding avoid groups hostnames.
     POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY = 'pool.{}.avoid-groups.hostnames'
 
-    def __init__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        poolname: str,
-        pool_config: Dict[str, Any]
-    ) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
 
         self.avoid_groups_hostnames_cache_key = self.POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY.format(self.poolname)  # noqa: FS002,E501
@@ -1098,7 +1049,7 @@ class BeakerDriver(PoolDriver):
         return Ok(capabilities)
 
     @property
-    def image_info_mapper(self) -> HookImageInfoMapper[BeakerPoolImageInfo]:   # type: ignore[override]
+    def image_info_mapper(self) -> HookImageInfoMapper[BeakerPoolImageInfo]:  # type: ignore[override]
         return HookImageInfoMapper(self, 'BEAKER_ENVIRONMENT_TO_IMAGE')
 
     @property
@@ -1112,10 +1063,12 @@ class BeakerDriver(PoolDriver):
         if r_avoid_hostnames.is_error:
             return Error(r_avoid_hostnames.unwrap_error())
 
-        return Ok(sum(
-            (group.hostnames for group in r_avoid_hostnames.unwrap().values()),
-            self.pool_config.get('avoid-hostnames', [])
-        ))
+        return Ok(
+            sum(
+                (group.hostnames for group in r_avoid_hostnames.unwrap().values()),
+                self.pool_config.get('avoid-hostnames', []),
+            )
+        )
 
     @property
     def beaker_pools(self) -> Result[List[BeakerPool], Failure]:
@@ -1141,10 +1094,12 @@ class BeakerDriver(PoolDriver):
             try:
                 re.compile(pattern)
             except Exception:
-                return Error(Failure(
-                    'failed to re.compile the pattern',
-                    pattern=pattern,
-                ))
+                return Error(
+                    Failure(
+                        'failed to re.compile the pattern',
+                        pattern=pattern,
+                    )
+                )
             patterns.append(pattern)
 
         return Ok(patterns)
@@ -1163,11 +1118,7 @@ class BeakerDriver(PoolDriver):
                 compiled_patterns.append(re.compile(pattern))
 
             except Exception as exc:
-                return Error(Failure.from_exc(
-                    'failed to compile task result pattern',
-                    exc,
-                    pattern=pattern
-                ))
+                return Error(Failure.from_exc('failed to compile task result pattern', exc, pattern=pattern))
 
         return Ok(compiled_patterns)
 
@@ -1182,11 +1133,7 @@ class BeakerDriver(PoolDriver):
             return Ok(re.compile(pattern))
 
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to compile ignore-avc-on-compose pattern',
-                exc,
-                pattern=pattern
-            ))
+            return Error(Failure.from_exc('failed to compile ignore-avc-on-compose pattern', exc, pattern=pattern))
 
     @property
     def installation_method_map(self) -> Result[List[Tuple[Pattern[str], str]], Failure]:
@@ -1195,25 +1142,15 @@ class BeakerDriver(PoolDriver):
 
         for pattern, method in patterns_in.items():
             try:
-                patterns_out.append((
-                    re.compile(pattern),
-                    method
-                ))
+                patterns_out.append((re.compile(pattern), method))
 
             except Exception:
-                return Error(Failure(
-                    'failed to compile installation method pattern',
-                    pattern=pattern,
-                    method=method
-                ))
+                return Error(Failure('failed to compile installation method pattern', pattern=pattern, method=method))
 
         return Ok(patterns_out)
 
     def _run_bkr(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        options: List[str],
-        commandname: Optional[str] = None
+        self, logger: gluetool.log.ContextAdapter, options: List[str], commandname: Optional[str] = None
     ) -> Result[CLIOutput, Failure]:
         """
         Run bkr command with additional options
@@ -1232,14 +1169,11 @@ class BeakerDriver(PoolDriver):
         bkr_command: List[str] = [
             'bkr',
             # Subcommand is the first item of `options`...
-            options[0]
+            options[0],
         ]
 
         if self.pool_config.get('username') and self.pool_config.get('password'):
-            bkr_command += [
-                '--username', self.pool_config['username'],
-                '--password', self.pool_config['password']
-            ]
+            bkr_command += ['--username', self.pool_config['username'], '--password', self.pool_config['password']]
 
         # ... and the rest are its options.
         bkr_command += options[1:]
@@ -1252,7 +1186,7 @@ class BeakerDriver(PoolDriver):
             poolname=self.poolname,
             commandname=commandname,
             cause_extractor=bkr_error_cause_extractor,
-            deadline=datetime.timedelta(seconds=r_timeout.unwrap())
+            deadline=datetime.timedelta(seconds=r_timeout.unwrap()),
         )
 
         if r_run.is_error:
@@ -1261,10 +1195,7 @@ class BeakerDriver(PoolDriver):
         return Ok(r_run.unwrap())
 
     def _handle_no_distro_matches_recipe_error(
-        self,
-        failure: Failure,
-        guest_request: GuestRequest,
-        pool_data: Optional[BeakerPoolData] = None
+        self, failure: Failure, guest_request: GuestRequest, pool_data: Optional[BeakerPoolData] = None
     ) -> Result[ProvisioningProgress, Failure]:
         # TODO: it would be cleaner to use some "empty" pool data but there are types guarding the pool data
         # from ever to be optional. But since we return CANCEL anyway, it should be safe until we find a better
@@ -1275,16 +1206,10 @@ class BeakerDriver(PoolDriver):
 
         PoolMetrics.inc_error(self.poolname, BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE)
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.CANCEL,
-            pool_data=pool_data,
-            pool_failures=[failure]
-        ))
+        return Ok(ProvisioningProgress(state=ProvisioningState.CANCEL, pool_data=pool_data, pool_failures=[failure]))
 
     def release_pool_resources(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        raw_resource_ids: SerializedPoolResourcesIDs
+        self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
         resource_ids = BeakerPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
@@ -1292,19 +1217,14 @@ class BeakerDriver(PoolDriver):
             r_output = self._run_bkr(logger, ['job-cancel', resource_ids.job_id], commandname='bkr.job-cancel')
 
             if r_output.is_error:
-                return Error(Failure.from_failure(
-                    'failed to cancel job',
-                    r_output.unwrap_error()
-                ))
+                return Error(Failure.from_failure('failed to cancel job', r_output.unwrap_error()))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
     def map_image_name_to_image_info(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        imagename: str
+        self, logger: gluetool.log.ContextAdapter, imagename: str
     ) -> Result[PoolImageInfo, Failure]:
         # TODO: is it true that `name` is equal to `id` in Beaker? Is really each `name` we get from
         # the `compose` => `image name` mapping really the same as "ID" of the distro? I believe this
@@ -1317,47 +1237,46 @@ class BeakerDriver(PoolDriver):
         r_pattern = KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN.get_value(entityname=self.poolname)
 
         if r_pattern.is_error:
-            return Error(Failure.from_failure(
-                'failed to lookup image pattern',
-                r_pattern.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to lookup image pattern', r_pattern.unwrap_error()))
 
         pattern = r_pattern.unwrap()
 
         match = re.match(pattern, imagename)
 
         if not match:
-            return Error(Failure(
-                'failed to extract components from image mapping',
-                pattern=pattern,
-                imagename=imagename
-            ))
+            return Error(
+                Failure('failed to extract components from image mapping', pattern=pattern, imagename=imagename)
+            )
 
         groups = match.groupdict()
 
         try:
-            return Ok(BeakerPoolImageInfo(
-                name=groups['distro'],
-                id=groups['distro'],
-                arch=None,
-                boot=FlavorBoot(),
-                ssh=PoolImageSSHInfo(),
-                supports_kickstart=True,
-                variant=groups['variant']
-            ))
+            return Ok(
+                BeakerPoolImageInfo(
+                    name=groups['distro'],
+                    id=groups['distro'],
+                    arch=None,
+                    boot=FlavorBoot(),
+                    ssh=PoolImageSSHInfo(),
+                    supports_kickstart=True,
+                    variant=groups['variant'],
+                )
+            )
 
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to extract components from image mapping',
-                exc,
-                pattern=pattern,
-                imagename=imagename,
-                groups=groups
-            ))
+            return Error(
+                Failure.from_exc(
+                    'failed to extract components from image mapping',
+                    exc,
+                    pattern=pattern,
+                    imagename=imagename,
+                    groups=groups,
+                )
+            )
 
     def _create_bkr_kickstart_options(
-            self,
-            kickstart: Kickstart,
+        self,
+        kickstart: Kickstart,
     ) -> List[str]:
         options = []
 
@@ -1386,7 +1305,7 @@ class BeakerDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        distro: BeakerPoolImageInfo
+        distro: BeakerPoolImageInfo,
     ) -> Result[List[str], Failure]:
         r_whiteboard_template = KNOB_JOB_WHITEBOARD_TEMPLATE.get_value(entityname=self.poolname)
 
@@ -1394,8 +1313,7 @@ class BeakerDriver(PoolDriver):
             return Error(r_whiteboard_template.unwrap_error())
 
         r_whiteboard = render_template(
-            r_whiteboard_template.unwrap(),
-            **template_environment(guest_request=guest_request)
+            r_whiteboard_template.unwrap(), **template_environment(guest_request=guest_request)
         )
 
         if r_whiteboard.is_error:
@@ -1419,13 +1337,18 @@ class BeakerDriver(PoolDriver):
             'workflow-simple',
             '--dry-run',
             '--prettyxml',
-            '--distro', distro.id,
-            '--arch', guest_request.environment.hw.arch,
+            '--distro',
+            distro.id,
+            '--arch',
+            guest_request.environment.hw.arch,
             # Using reservesys task instead of --reserve, because reservesys adds extendtesttime.sh
             # script we can use to extend existing reservation.
-            '--task', '/distribution/reservesys',
-            '--taskparam', f'RESERVETIME={str(KNOB_RESERVATION_DURATION.value)}',
-            '--whiteboard', r_whiteboard.unwrap()
+            '--task',
+            '/distribution/reservesys',
+            '--taskparam',
+            f'RESERVETIME={str(KNOB_RESERVATION_DURATION.value)}',
+            '--whiteboard',
+            r_whiteboard.unwrap(),
         ]
 
         if distro.variant is not None:
@@ -1437,12 +1360,9 @@ class BeakerDriver(PoolDriver):
         if guest_request.environment.has_ks_specification:
             command += self._create_bkr_kickstart_options(guest_request.environment.kickstart)
 
-        space = ':'.join([
-            guest_request.environment.os.compose,
-            guest_request.environment.hw.arch,
-            distro.id,
-            distro.variant or ''
-        ])
+        space = ':'.join(
+            [guest_request.environment.os.compose, guest_request.environment.hw.arch, distro.id, distro.variant or '']
+        )
 
         for pattern, method in installation_method_map:
             if not pattern.match(space):
@@ -1454,10 +1374,7 @@ class BeakerDriver(PoolDriver):
         return Ok(command)
 
     def _create_job_xml(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[bs4.BeautifulSoup, Failure]:
         """
         Create job xml with bkr workflow-simple and environment variables
@@ -1479,11 +1396,7 @@ class BeakerDriver(PoolDriver):
             return Error(r_avoid_groups.unwrap_error())
 
         r_beaker_filter = create_beaker_filter(
-            guest_request.environment,
-            guest_request,
-            self,
-            r_avoid_groups.unwrap(),
-            r_avoid_hostnames.unwrap()
+            guest_request.environment, guest_request, self, r_avoid_groups.unwrap(), r_avoid_hostnames.unwrap()
         )
 
         if r_beaker_filter.is_error:
@@ -1504,19 +1417,11 @@ class BeakerDriver(PoolDriver):
         if r_wow_options.is_error:
             return Error(r_wow_options.unwrap_error())
 
-        self.log_acquisition_attempt(
-            logger,
-            session,
-            guest_request,
-            image=distro
-        )
+        self.log_acquisition_attempt(logger, session, guest_request, image=distro)
 
         r_workflow_simple = self._run_bkr(logger, r_wow_options.unwrap(), commandname='bkr.workflow-simple')
         if r_workflow_simple.is_error:
-            return Error(Failure.from_failure(
-                'failed to create job',
-                r_workflow_simple.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to create job', r_workflow_simple.unwrap_error()))
 
         bkr_output = r_workflow_simple.unwrap()
 
@@ -1524,11 +1429,7 @@ class BeakerDriver(PoolDriver):
             job_xml = bs4.BeautifulSoup(bkr_output.stdout, 'xml')
 
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to parse job XML',
-                exc,
-                command_output=bkr_output.process_output
-            ))
+            return Error(Failure.from_exc('failed to parse job XML', exc, command_output=bkr_output.process_output))
 
         if beaker_filter is None:
             return Ok(job_xml)
@@ -1539,10 +1440,7 @@ class BeakerDriver(PoolDriver):
         host_requires = job_xml.find_all('hostRequires')
 
         if len(job_xml.find_all('hostRequires')) != 1:
-            return Error(Failure(
-                'job XML is missing hostRequires element',
-                job=job_xml.prettify()
-            ))
+            return Error(Failure('job XML is missing hostRequires element', job=job_xml.prettify()))
 
         list(host_requires)[0].append(beaker_filter)
 
@@ -1550,11 +1448,7 @@ class BeakerDriver(PoolDriver):
 
         return Ok(job_xml)
 
-    def _submit_job(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        job: bs4.BeautifulSoup
-    ) -> Result[str, Failure]:
+    def _submit_job(self, logger: gluetool.log.ContextAdapter, job: bs4.BeautifulSoup) -> Result[str, Failure]:
         """
         Submit a Beaker job.
 
@@ -1566,67 +1460,48 @@ class BeakerDriver(PoolDriver):
 
         log_xml(self.logger.debug, 'job to submit', job)
 
-        with create_tempfile(
-            file_contents=job.prettify(),
-            prefix='beaker-job-',
-            suffix='.xml'
-        ) as job_filepath:
+        with create_tempfile(file_contents=job.prettify(), prefix='beaker-job-', suffix='.xml') as job_filepath:
             # Temporary file has limited permissions, but we'd like to make the file inspectable.
             os.chmod(job_filepath, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
 
             r_job_submit = self._run_bkr(logger, ['job-submit', job_filepath], commandname='bkr.job-submit')
 
         if r_job_submit.is_error:
-            return Error(Failure.from_failure(
-                'failed to submit job',
-                r_job_submit.unwrap_error(),
-                job=job.prettify()
-            ))
+            return Error(Failure.from_failure('failed to submit job', r_job_submit.unwrap_error(), job=job.prettify()))
 
         bkr_output = r_job_submit.unwrap()
 
         # Parse job id from output
         try:
             # Submitted: ['J:1806666']
-            first_job_index = bkr_output.stdout.index('\'') + 1
-            last_job_index = len(bkr_output.stdout) - bkr_output.stdout[::-1].index('\'') - 1
+            first_job_index = bkr_output.stdout.index("'") + 1
+            last_job_index = len(bkr_output.stdout) - bkr_output.stdout[::-1].index("'") - 1
 
             # J:1806666
             job_id = bkr_output.stdout[first_job_index:last_job_index]
 
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'cannot convert job-submit output to job ID',
-                exc,
-                command_output=bkr_output.process_output
-            ))
+            return Error(
+                Failure.from_exc(
+                    'cannot convert job-submit output to job ID', exc, command_output=bkr_output.process_output
+                )
+            )
 
         logger.info(f'Job submitted: {job_id}')
 
         return Ok(job_id)
 
     def _create_job(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[str, Failure]:
-        r_job_xml = self._create_job_xml(
-            logger,
-            session,
-            guest_request
-        )
+        r_job_xml = self._create_job_xml(logger, session, guest_request)
 
         if r_job_xml.is_error:
             return Error(r_job_xml.unwrap_error())
 
         return self._submit_job(logger, r_job_xml.unwrap())
 
-    def _get_job_results(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        job_id: str
-    ) -> Result[bs4.BeautifulSoup, Failure]:
+    def _get_job_results(self, logger: gluetool.log.ContextAdapter, job_id: str) -> Result[bs4.BeautifulSoup, Failure]:
         """
         Run 'bkr job-results' comand and return job results.
 
@@ -1638,10 +1513,7 @@ class BeakerDriver(PoolDriver):
         r_results = self._run_bkr(logger, ['job-results', job_id], commandname='bkr.job-results')
 
         if r_results.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch job results',
-                r_results.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to fetch job results', r_results.unwrap_error()))
 
         bkr_output = r_results.unwrap()
 
@@ -1649,16 +1521,12 @@ class BeakerDriver(PoolDriver):
             return Ok(bs4.BeautifulSoup(bkr_output.stdout, 'xml'))
 
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to parse job results XML',
-                exc,
-                command_output=bkr_output.process_output
-            ))
+            return Error(
+                Failure.from_exc('failed to parse job results XML', exc, command_output=bkr_output.process_output)
+            )
 
     def _parse_recipe_install_start(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        job_results: bs4.BeautifulSoup
+        self, logger: gluetool.log.ContextAdapter, job_results: bs4.BeautifulSoup
     ) -> Result[Optional[datetime.datetime], Failure]:
         """
         Parse job results and return guest installation start time.
@@ -1671,10 +1539,9 @@ class BeakerDriver(PoolDriver):
         install = job_results.find('installation')
 
         if not install:
-            return Error(Failure(
-                'installation element was not found in job results',
-                job_results=job_results.prettify()
-            ))
+            return Error(
+                Failure('installation element was not found in job results', job_results=job_results.prettify())
+            )
 
         install_start = install.get('install_started', None)
 
@@ -1684,16 +1551,10 @@ class BeakerDriver(PoolDriver):
         try:
             return Ok(datetime.datetime.fromisoformat(install_start))
         except ValueError as exc:
-            return Error(Failure.from_exc(
-                'parsing installation start time failed',
-                exc,
-                date=install_start
-            ))
+            return Error(Failure.from_exc('parsing installation start time failed', exc, date=install_start))
 
     def _parse_job_status(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        job_results: bs4.BeautifulSoup
+        self, logger: gluetool.log.ContextAdapter, job_results: bs4.BeautifulSoup
     ) -> Result[Tuple[str, str, Optional[str]], Failure]:
         """
         Parse job results and return its result and status.
@@ -1704,37 +1565,24 @@ class BeakerDriver(PoolDriver):
         """
 
         if not job_results.find('job') or len(job_results.find_all('job')) != 1:
-            return Error(Failure(
-                'job results XML has unknown structure',
-                job_results=job_results.prettify()
-            ))
+            return Error(Failure('job results XML has unknown structure', job_results=job_results.prettify()))
 
         job = job_results.find('job')
 
         if not job['result']:
-            return Error(Failure(
-                'job results XML does not contain result attribute',
-                job_results=job_results.prettify()
-            ))
+            return Error(
+                Failure('job results XML does not contain result attribute', job_results=job_results.prettify())
+            )
 
         if not job['status']:
-            return Error(Failure(
-                'job results XML does not contain status attribute',
-                job_results=job_results.prettify()
-            ))
-
-        return Ok(
-            (
-                job['result'].lower(),
-                job['status'].lower(),
-                job_results.find('recipe').attrs.get('system')
+            return Error(
+                Failure('job results XML does not contain status attribute', job_results=job_results.prettify())
             )
-        )
+
+        return Ok((job['result'].lower(), job['status'].lower(), job_results.find('recipe').attrs.get('system')))
 
     def _parse_guest_address(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        job_results: bs4.BeautifulSoup
+        self, logger: gluetool.log.ContextAdapter, job_results: bs4.BeautifulSoup
     ) -> Result[str, Failure]:
         """
         Parse job results and return guest address
@@ -1745,46 +1593,33 @@ class BeakerDriver(PoolDriver):
         """
 
         if not job_results.find('recipe')['system']:
-            return Error(Failure(
-                'System element was not found in job results',
-                job_results=job_results.prettify()
-            ))
+            return Error(Failure('System element was not found in job results', job_results=job_results.prettify()))
 
         return Ok(job_results.find('recipe')['system'])
 
     def _analyze_beaker_logs(
-        self,
-        log_urls: List[str],
-        patterns: List[Pattern[str]]
+        self, log_urls: List[str], patterns: List[Pattern[str]]
     ) -> Result[Optional[List[str]], Failure]:
-
         failures = []
         for url in log_urls:
             try:
-                response = requests.get(url,
-                                        verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                                        timeout=KNOB_HTTP_TIMEOUT.value)
+                response = requests.get(
+                    url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value, timeout=KNOB_HTTP_TIMEOUT.value
+                )
                 response.raise_for_status()
 
             except requests.exceptions.RequestException as exc:
-                return Error(Failure.from_exc(
-                    'failed to fetch Beaker log URL',
-                    exc,
-                    url=url
-                ))
+                return Error(Failure.from_exc('failed to fetch Beaker log URL', exc, url=url))
 
             for pattern in patterns:
                 if not any(pattern.search(line.decode('utf-8', 'ignore')) for line in response.iter_lines()):
                     continue
-                failures.append(f"The pattern found in console log: {pattern}")
+                failures.append(f'The pattern found in console log: {pattern}')
 
         return Ok(failures)
 
     def update_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
@@ -1830,14 +1665,11 @@ class BeakerDriver(PoolDriver):
         log_table(
             logger.info,
             f'current job status {guest_request.pool_data.mine(self, BeakerPoolData).job_id}:{job_result}:{job_status}',
-            [
-                ['Task', 'Result', 'Status', 'Phase', 'Phase result', 'Message']
-            ] + [
-                [item or '' for item in dataclasses.astuple(job_task_result)]
-                for job_task_result in job_task_results
-            ],
+            [['Task', 'Result', 'Status', 'Phase', 'Phase result', 'Message']]
+            + [[item or '' for item in dataclasses.astuple(job_task_result)] for job_task_result in job_task_results],
             headers='firstrow',
-            tablefmt='psql')
+            tablefmt='psql',
+        )
 
         if job_result == 'pass':
             r_guest_address = self._parse_guest_address(logger, job_results)
@@ -1845,14 +1677,16 @@ class BeakerDriver(PoolDriver):
             if r_guest_address.is_error:
                 return Error(r_guest_address.unwrap_error())
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.COMPLETE,
-                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                address=r_guest_address.unwrap()
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.COMPLETE,
+                    pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                    address=r_guest_address.unwrap(),
+                )
+            )
 
         if job_result == 'new':
-            r_console_log = self._get_beaker_machine_log_url(logger, guest_request, "console.log")
+            r_console_log = self._get_beaker_machine_log_url(logger, guest_request, 'console.log')
             if r_console_log.is_error:
                 return Error(r_console_log.unwrap_error())
             # fetch console log, grab patterns
@@ -1867,17 +1701,21 @@ class BeakerDriver(PoolDriver):
                     return Error(r_is_failed.unwrap_error())
                 failures = r_is_failed.unwrap()
                 if failures:
-                    return Ok(ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                        pool_failures=[Failure(
-                            'beaker job failed',
-                            job_result=job_result,
-                            job_status=job_status,
-                            job_results=job_results.prettify(),
-                            failures=failures
-                        )]
-                    ))
+                    return Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                            pool_failures=[
+                                Failure(
+                                    'beaker job failed',
+                                    job_result=job_result,
+                                    job_status=job_status,
+                                    job_results=job_results.prettify(),
+                                    failures=failures,
+                                )
+                            ],
+                        )
+                    )
 
             # Check how long the guest has been in installing state
             if job_status == 'installing':
@@ -1902,25 +1740,31 @@ class BeakerDriver(PoolDriver):
                         system,
                         guest_request.environment.os.compose,
                         guest_request.environment.hw.arch,
-                        BkrErrorCauses.JOB_INSTALLATION_TIMEOUT
+                        BkrErrorCauses.JOB_INSTALLATION_TIMEOUT,
                     )
 
-                    return Ok(ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                        pool_failures=[Failure(
-                            'installation did not finish in time',
-                            job_result=job_result,
-                            job_status=job_status,
-                            job_results=job_results.prettify()
-                        )]
-                    ))
+                    return Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                            pool_failures=[
+                                Failure(
+                                    'installation did not finish in time',
+                                    job_result=job_result,
+                                    job_status=job_status,
+                                    job_results=job_results.prettify(),
+                                )
+                            ],
+                        )
+                    )
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                delay_update=r_delay.unwrap()
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.PENDING,
+                    pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                    delay_update=r_delay.unwrap(),
+                )
+            )
 
         job_failed: Optional[BkrErrorCauses] = None
 
@@ -1964,8 +1808,9 @@ class BeakerDriver(PoolDriver):
 
                 ignore_avc_on_compose_pattern = r_ignore_avc_on_compose_pattern.unwrap()
 
-                if ignore_avc_on_compose_pattern \
-                        and ignore_avc_on_compose_pattern.match(guest_request.environment.os.compose):
+                if ignore_avc_on_compose_pattern and ignore_avc_on_compose_pattern.match(
+                    guest_request.environment.os.compose
+                ):
                     r_guest_address = self._parse_guest_address(logger, job_results)
 
                     if r_guest_address.is_error:
@@ -1973,17 +1818,21 @@ class BeakerDriver(PoolDriver):
 
                     logger.info('ignoring AVC denials during installation')
 
-                    return Ok(ProvisioningProgress(
-                        state=ProvisioningState.COMPLETE,
-                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                        pool_failures=[Failure(
-                            'AVC denials during installation',
-                            job_result=job_result,
-                            job_status=job_status,
-                            job_results=job_results.prettify()
-                        )],
-                        address=r_guest_address.unwrap()
-                    ))
+                    return Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.COMPLETE,
+                            pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                            pool_failures=[
+                                Failure(
+                                    'AVC denials during installation',
+                                    job_result=job_result,
+                                    job_status=job_status,
+                                    job_results=job_results.prettify(),
+                                )
+                            ],
+                            address=r_guest_address.unwrap(),
+                        )
+                    )
 
             if any(
                 error_cause_extractor(result.message) == BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
@@ -1999,34 +1848,32 @@ class BeakerDriver(PoolDriver):
                 system,
                 guest_request.environment.os.compose,
                 guest_request.environment.hw.arch,
-                job_failed
+                job_failed,
             )
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.CANCEL,
-                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                pool_failures=[Failure(
-                    'beaker job failed',
-                    job_result=job_result,
-                    job_status=job_status,
-                    job_results=job_results.prettify(),
-                    cause=job_failed.value,
-                    system=system
-                )]
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                    pool_failures=[
+                        Failure(
+                            'beaker job failed',
+                            job_result=job_result,
+                            job_status=job_status,
+                            job_results=job_results.prettify(),
+                            cause=job_failed.value,
+                            system=system,
+                        )
+                    ],
+                )
+            )
 
-        return Error(Failure(
-            'unknown status',
-            job_result=job_result,
-            job_status=job_status,
-            job_results=job_results.prettify()
-        ))
+        return Error(
+            Failure('unknown status', job_result=job_result, job_status=job_status, job_results=job_results.prettify())
+        )
 
     def guest_watchdog(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[WatchdogState, Failure]:
         """
         Perform any periodic tasks the driver might need to apply while the request is in use.
@@ -2050,7 +1897,7 @@ class BeakerDriver(PoolDriver):
         r_command = render_template(
             KNOB_RESERVATION_EXTENSION_COMMAND_TEMPLATE.value,
             EXTENSION_TIME=KNOB_RESERVATION_EXTENSION_TIME.value,
-            **template_environment(guest_request=guest_request)
+            **template_environment(guest_request=guest_request),
         )
 
         if r_command.is_error:
@@ -2065,22 +1912,16 @@ class BeakerDriver(PoolDriver):
             ssh_options=self.ssh_options,
             poolname=self.poolname,
             commandname='bkr.extend',
-            cause_extractor=bkr_error_cause_extractor
+            cause_extractor=bkr_error_cause_extractor,
         )
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to extend guest reservation',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to extend guest reservation', r_output.unwrap_error()))
 
         return Ok(WatchdogState.CONTINUE)
 
     def can_acquire(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
@@ -2161,7 +2002,7 @@ class BeakerDriver(PoolDriver):
             'network.length',
             'network.expanded_length',
             'zcrypt.adapter',
-            'zcrypt.mode'
+            'zcrypt.mode',
         ]
 
         for span in constraints.spans(logger):
@@ -2179,10 +2020,7 @@ class BeakerDriver(PoolDriver):
         return Ok(CanAcquire())
 
     def acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
@@ -2207,8 +2045,10 @@ class BeakerDriver(PoolDriver):
         if r_create_job.is_error:
             failure = r_create_job.unwrap_error()
 
-            if failure.command_output \
-               and bkr_error_cause_extractor(failure.command_output) == BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE:
+            if (
+                failure.command_output
+                and bkr_error_cause_extractor(failure.command_output) == BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE
+            ):
                 return self._handle_no_distro_matches_recipe_error(failure, guest_request)
 
             return Error(r_create_job.unwrap_error())
@@ -2217,17 +2057,16 @@ class BeakerDriver(PoolDriver):
         # after. The reason of this solution is slow beaker system provisioning. It can take hours and
         # we can't use a thread for so large amount of time.
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.PENDING,
-            pool_data=BeakerPoolData(job_id=r_create_job.unwrap()),
-            delay_update=r_delay.unwrap()
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=BeakerPoolData(job_id=r_create_job.unwrap()),
+                delay_update=r_delay.unwrap(),
+            )
+        )
 
     def release_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -2239,15 +2078,11 @@ class BeakerDriver(PoolDriver):
             return Ok(None)
 
         return self.dispatch_resource_cleanup(
-            logger,
-            session,
-            BeakerPoolResourcesIDs(job_id=pool_data.job_id),
-            guest_request=guest_request
+            logger, session, BeakerPoolResourcesIDs(job_id=pool_data.job_id), guest_request=guest_request
         )
 
     def fetch_pool_resources_metrics(
-        self,
-        logger: gluetool.log.ContextAdapter
+        self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
         r_resources = super().fetch_pool_resources_metrics(logger)
 
@@ -2258,35 +2093,28 @@ class BeakerDriver(PoolDriver):
 
         # Resource usage - instances and flavors
         def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[str], Failure]:
-            r_query_instances = self._run_bkr(
-                logger,
-                ['system-list', '--mine'],
-                commandname='bkr.system-list'
-            )
+            r_query_instances = self._run_bkr(logger, ['system-list', '--mine'], commandname='bkr.system-list')
 
             if r_query_instances.is_error:
                 failure = r_query_instances.unwrap_error()
                 command_output = cast(Optional[ProcessOutput], failure.details.get('command_output', None))
 
-                if command_output and command_output.stderr \
-                        and 'nothing matches' in command_output.stderr.strip().lower():
+                if (
+                    command_output
+                    and command_output.stderr
+                    and 'nothing matches' in command_output.stderr.strip().lower()
+                ):
                     # This is a a valid result, meaning "0 machines". Setting our "raw output" to a corresponding value
                     # instead of adding some special flag. Empty list has 0 items, 0 machines...
 
                     return Ok([])
 
-                return Error(Failure.from_failure(
-                    'failed to fetch system list',
-                    r_query_instances.unwrap_error()
-                ))
+                return Error(Failure.from_failure('failed to fetch system list', r_query_instances.unwrap_error()))
 
             return Ok(r_query_instances.unwrap().stdout.splitlines())
 
         def _update_instance_usage(
-            logger: gluetool.log.ContextAdapter,
-            usage: PoolResourcesUsage,
-            raw_instance: str,
-            flavor: Optional[Flavor]
+            logger: gluetool.log.ContextAdapter, usage: PoolResourcesUsage, raw_instance: str, flavor: Optional[Flavor]
         ) -> Result[None, Failure]:
             assert usage.instances is not None  # narrow type
 
@@ -2299,11 +2127,7 @@ class BeakerDriver(PoolDriver):
             return Ok(None)
 
         r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
-            logger,
-            resources.usage,
-            _fetch_instances,
-            None,
-            _update_instance_usage
+            logger, resources.usage, _fetch_instances, None, _update_instance_usage
         )
 
         if r_instances_usage.is_error:
@@ -2313,12 +2137,7 @@ class BeakerDriver(PoolDriver):
 
     def _fetch_avoid_group_hostnames(self, logger: ContextAdapter, groupname: str) -> Result[List[str], Failure]:
         r_list = self._run_bkr(
-            logger,
-            [
-                'system-list',
-                '--pool', f'{groupname}'
-            ],
-            commandname='bkr.system-list-owned-by-group'
+            logger, ['system-list', '--pool', f'{groupname}'], commandname='bkr.system-list-owned-by-group'
         )
 
         if r_list.is_error:
@@ -2327,18 +2146,19 @@ class BeakerDriver(PoolDriver):
                 stderr = process_output_to_str(failure.command_output, stream='stderr')
 
                 if stderr and stderr.strip() == 'Nothing Matches':
-                    return Error(Failure.from_failure(
-                        'The Beaker pool does not exist or is empty',
-                        r_list.unwrap_error().update(groupname=groupname)
-                    ))
-            return Error(Failure.from_failure(
-                'failed to fetch systems owned by a group',
-                r_list.unwrap_error().update(groupname=groupname)
-            ))
+                    return Error(
+                        Failure.from_failure(
+                            'The Beaker pool does not exist or is empty',
+                            r_list.unwrap_error().update(groupname=groupname),
+                        )
+                    )
+            return Error(
+                Failure.from_failure(
+                    'failed to fetch systems owned by a group', r_list.unwrap_error().update(groupname=groupname)
+                )
+            )
 
-        return Ok([
-            hostname.strip() for hostname in r_list.unwrap().stdout.splitlines()
-        ])
+        return Ok([hostname.strip() for hostname in r_list.unwrap().stdout.splitlines()])
 
     def refresh_avoid_groups_hostnames(self, logger: ContextAdapter) -> Result[None, Failure]:
         groups: List[AvoidGroupHostnames] = []
@@ -2354,18 +2174,10 @@ class BeakerDriver(PoolDriver):
             if r_list.is_error:
                 return Error(r_list.unwrap_error())
 
-            groups.append(AvoidGroupHostnames(
-                groupname=groupname,
-                hostnames=r_list.unwrap()
-            ))
+            groups.append(AvoidGroupHostnames(groupname=groupname, hostnames=r_list.unwrap()))
 
         r_refresh = refresh_cached_mapping(
-            CACHE.get(),
-            self.avoid_groups_hostnames_cache_key,
-            {
-                h.groupname: h
-                for h in groups
-            }
+            CACHE.get(), self.avoid_groups_hostnames_cache_key, {h.groupname: h for h in groups}
         )
 
         if r_refresh.is_error:
@@ -2377,10 +2189,7 @@ class BeakerDriver(PoolDriver):
         return get_cached_mapping(CACHE.get(), self.avoid_groups_hostnames_cache_key, AvoidGroupHostnames)
 
     def _get_beaker_machine_log_url(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        beaker_logname: str
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, beaker_logname: str
     ) -> Result[Optional[str], Failure]:
         """
         Extract location (URL) of Beaker machine log.
@@ -2409,11 +2218,7 @@ class BeakerDriver(PoolDriver):
         return Ok(logs[0]['href'])
 
     def _update_guest_log_url(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog,
-        beaker_logname: str
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog, beaker_logname: str
     ) -> Result[GuestLogUpdateProgress, Failure]:
         r_url = self._get_beaker_machine_log_url(logger, guest_request, beaker_logname)
 
@@ -2432,19 +2237,13 @@ class BeakerDriver(PoolDriver):
     # while keeping their Beaker-native names available at the same time.
     @guest_log_updater('beaker', 'console:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_console_dump_url(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         return self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
 
     @guest_log_updater('beaker', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_dump_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         r_update = self._update_guest_log_url(logger, guest_request, guest_log, 'console.log')
 
@@ -2459,52 +2258,31 @@ class BeakerDriver(PoolDriver):
         assert progress.url is not None
 
         try:
-            response = requests.get(progress.url,
-                                    verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
-                                    timeout=KNOB_HTTP_TIMEOUT.value)
+            response = requests.get(
+                progress.url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value, timeout=KNOB_HTTP_TIMEOUT.value
+            )
             response.raise_for_status()
 
         except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc(
-                'failed to fetch Beaker log URL',
-                exc,
-                url=progress.url
-            ))
+            return Error(Failure.from_exc('failed to fetch Beaker log URL', exc, url=progress.url))
 
-        return Ok(GuestLogUpdateProgress.from_unabridged(
-            logger,
-            guest_log,
-            response.text
-        ))
+        return Ok(GuestLogUpdateProgress.from_unabridged(logger, guest_log, response.text))
 
     @guest_log_updater('beaker', 'sys.log:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_sys_log_url(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         return self._update_guest_log_url(logger, guest_request, guest_log, 'sys.log')
 
-    def trigger_reboot(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[None, Failure]:
-
+    def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         assert guest_request.address is not None
 
         r_output = self._run_bkr(
-            logger,
-            ['system-power', '--action=reboot', guest_request.address],
-            commandname='bkr.system-reboot'
+            logger, ['system-power', '--action=reboot', guest_request.address], commandname='bkr.system-reboot'
         )
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to trigger instance reboot',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to trigger instance reboot', r_output.unwrap_error()))
 
         return Ok(None)
 

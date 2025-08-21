@@ -30,8 +30,9 @@ def get_cache(logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)
     return get_artemis_cache(logger)
 
 
-def get_auth_context(request: Request,
-                     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]) -> AuthContext:
+def get_auth_context(
+    request: Request, logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+) -> AuthContext:
     r_ctx = AuthContext.extract(request)
 
     # If the context does not exist, it means we have a handler that requests it, by adding

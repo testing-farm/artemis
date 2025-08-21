@@ -41,7 +41,7 @@ KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     has_db=True,
     envvar='ARTEMIS_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT',
     cast_from_str=int,
-    default=15
+    default=15,
 )
 
 
@@ -79,14 +79,13 @@ class Workspace(_Workspace):
                 ssh_options=self.pool.ssh_options,
                 poolname=self.pool.poolname,
                 commandname='prepare-verify-ssh.shell-ping',
-                cause_extractor=self.pool.cli_error_cause_extractor
+                cause_extractor=self.pool.cli_error_cause_extractor,
             )
 
             if r_ping.is_error:
                 # We do not want the generic "failed CLI" error here, to make SSH verification issues stand out more.
                 return self._fail(
-                    Failure.from_failure('failed to verify SSH', r_ping.unwrap_error()),
-                    'failed to verify SSH'
+                    Failure.from_failure('failed to verify SSH', r_ping.unwrap_error()), 'failed to verify SSH'
                 )
 
             next_task = prepare_finalize_pre_connect
@@ -104,11 +103,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -124,11 +119,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def prepare_verify_ssh(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Verify guest's SSH connection is up and ready.
@@ -140,11 +131,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.SHELF_LOOKUP))
@@ -158,5 +145,5 @@ def prepare_verify_ssh(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.prepare_verify_ssh),
         logger=get_guest_logger('prepare-verify-ssh', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

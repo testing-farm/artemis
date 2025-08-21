@@ -9,6 +9,7 @@ Revises: 51c5e4b2a7ac
 Create Date: 2021-02-09 15:25:23.460167
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -25,13 +26,13 @@ def upgrade() -> None:
         'metrics_policy_calls',
         sa.Column('policy_name', sa.String(), nullable=False),
         sa.Column('count', sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint('policy_name')
+        sa.PrimaryKeyConstraint('policy_name'),
     )
     op.create_table(
         'metrics_policy_cancellations',
         sa.Column('policy_name', sa.String(), nullable=False),
         sa.Column('count', sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint('policy_name')
+        sa.PrimaryKeyConstraint('policy_name'),
     )
     op.create_table(
         'metrics_policy_rulings',
@@ -39,7 +40,7 @@ def upgrade() -> None:
         sa.Column('pool_name', sa.String(), nullable=False),
         sa.Column('allowed', sa.Boolean(), nullable=False),
         sa.Column('count', sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint('policy_name', 'pool_name', 'allowed')
+        sa.PrimaryKeyConstraint('policy_name', 'pool_name', 'allowed'),
     )
     # ### end Alembic commands ###
 

@@ -67,3 +67,8 @@ artemis-cli = "tft.artemis_cli.artemis_cli:cli_root"
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"
+quote-style = "single"

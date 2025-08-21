@@ -38,7 +38,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
-    default='artemis-image-map-ibmcloud-power.yaml'
+    default='artemis-image-map-ibmcloud-power.yaml',
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
@@ -48,7 +48,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
-    default='{{ os.compose }}'
+    default='{{ os.compose }}',
 )
 
 ConfigImageFilter = TypedDict(
@@ -56,7 +56,7 @@ ConfigImageFilter = TypedDict(
     {
         'name-regex': str,
     },
-    total=False
+    total=False,
 )
 
 
@@ -83,12 +83,9 @@ class IBMCloudPowerSession(IBMCloudSession):
 
         r_set_target_workspace = self._run_cmd(
             logger,
-            [
-                'pi', 'workspace',
-                'target', self.pool.pool_config['workspace-crn']
-            ],
+            ['pi', 'workspace', 'target', self.pool.pool_config['workspace-crn']],
             json_format=False,
-            commandname='ibmcloud.workspace-target'
+            commandname='ibmcloud.workspace-target',
         )
         if r_set_target_workspace.is_error:
             return Error(Failure.from_failure('failed to set target workspace', r_set_target_workspace.unwrap_error()))
@@ -123,9 +120,7 @@ class IBMCloudPowerDriver(PoolDriver):
         return HookImageInfoMapper(self, 'IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE')
 
     def map_image_name_to_image_info(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        imagename: str
+        self, logger: gluetool.log.ContextAdapter, imagename: str
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
@@ -157,21 +152,17 @@ class IBMCloudPowerDriver(PoolDriver):
 
             with IBMCloudPowerSession(logger, self) as session:
                 r_images_list = session.run(
-                    logger,
-                    ['pi', 'image', 'list', '--json'],
-                    commandname='ibmcloud.pi-image-list'
+                    logger, ['pi', 'image', 'list', '--json'], commandname='ibmcloud.pi-image-list'
                 )
 
                 if r_images_list.is_error:
-                    return Error(Failure.from_failure(
-                        'failed to fetch image information',
-                        r_images_list.unwrap_error()
-                    ))
+                    return Error(
+                        Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error())
+                    )
 
             images: List[PoolImageInfo] = []
             for image in cast(List[APIImageType], cast(Dict[str, Any], r_images_list.unwrap()).get('images', [])):
                 try:
-
                     # Apply wild-card filter if specified, unfortunately no way to filter by name or regex via cli
                     if name_pattern and not name_pattern.match(image['name']):
                         continue
@@ -184,21 +175,21 @@ class IBMCloudPowerDriver(PoolDriver):
                     if arch_pattern and not arch_pattern.match(arch):
                         continue
 
-                    images.append(IBMCloudPowerPoolImageInfo(
-                        href=image['href'],
-                        id=image['imageID'],
-                        name=image['name'],
-                        arch=arch,
-                        boot=FlavorBoot(),
-                        ssh=PoolImageSSHInfo(),
-                        supports_kickstart=False
-                    ))
+                    images.append(
+                        IBMCloudPowerPoolImageInfo(
+                            href=image['href'],
+                            id=image['imageID'],
+                            name=image['name'],
+                            arch=arch,
+                            boot=FlavorBoot(),
+                            ssh=PoolImageSSHInfo(),
+                            supports_kickstart=False,
+                        )
+                    )
                 except KeyError as exc:
-                    return Error(Failure.from_exc(
-                        'malformed image description',
-                        exc,
-                        image_info=r_images_list.unwrap()
-                    ))
+                    return Error(
+                        Failure.from_exc('malformed image description', exc, image_info=r_images_list.unwrap())
+                    )
 
             log_dict_yaml(self.logger.debug, 'image filters', filters)
             log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
@@ -228,10 +219,7 @@ class IBMCloudPowerDriver(PoolDriver):
         return Ok(images)
 
     def acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
@@ -288,27 +276,29 @@ class IBMCloudPowerDriver(PoolDriver):
                 return Ok(['--processors', str(float(constraint.value))])
             else:
                 # other cpu properties, like ex. stepping, are not supported, so let's raise a clear error
-                return Error(Failure('constraint not supported by driver', constraint=repr(constraint),
-                                     constraint_name=constraint.name))
+                return Error(
+                    Failure(
+                        'constraint not supported by driver',
+                        constraint=repr(constraint),
+                        constraint_name=constraint.name,
+                    )
+                )
         elif constraint_name.property == 'memory':
             # Although not mentioned in the docs, there are minimal constraints here, the amount of memory cannot be
             # less than 2 GB. So need to take that into consideration.
-            return Ok([
-                '--memory',
-                str(max(float(cast(SizeType, constraint.value).to('GB').magnitude), 2))
-            ])
+            return Ok(['--memory', str(max(float(cast(SizeType, constraint.value).to('GB').magnitude), 2))])
         else:
             # Nothing else is supported yet
-            return Error(Failure('constraint not supported by driver', constraint=repr(constraint),
-                                 constraint_name=constraint.name))
+            return Error(
+                Failure(
+                    'constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name
+                )
+            )
 
         return Ok(res)
 
     def can_acquire(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
@@ -385,8 +375,7 @@ class IBMCloudPowerDriver(PoolDriver):
         return Ok(CanAcquire())
 
     def fetch_pool_resources_metrics(
-        self,
-        logger: gluetool.log.ContextAdapter
+        self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
         r_resources = super().fetch_pool_resources_metrics(logger)
 
@@ -401,32 +390,28 @@ class IBMCloudPowerDriver(PoolDriver):
             # Resource usage - instances and flavors
             def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
                 r_list_instances = session.run(
-                    logger,
-                    ['pi', 'instance', 'list', '--json'],
-                    commandname='ibmcloud.power.instances-list'
+                    logger, ['pi', 'instance', 'list', '--json'], commandname='ibmcloud.power.instances-list'
                 )
 
                 if r_list_instances.is_error:
-                    return Error(Failure.from_failure(
-                        'Could not list instances',
-                        r_list_instances.unwrap_error()
-                    ))
+                    return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
 
                 raw_instances: List[Dict[str, Any]] = []
 
                 for raw_instance_entry in cast(
-                    List[Dict[str, Any]],
-                    cast(Dict[str, Any], r_list_instances.unwrap()).get('pwmInstances', [])
+                    List[Dict[str, Any]], cast(Dict[str, Any], r_list_instances.unwrap()).get('pwmInstances', [])
                 ):
                     # To get network details need to additionally get instance details
                     r_show_instance = self._show_guest(logger, raw_instance_entry['id'])
 
                     if r_show_instance.is_error:
-                        return Error(Failure.from_failure(
-                            'Could not get instance details',
-                            r_show_instance.unwrap_error(),
-                            raw_instance_entry=raw_instance_entry
-                        ))
+                        return Error(
+                            Failure.from_failure(
+                                'Could not get instance details',
+                                r_show_instance.unwrap_error(),
+                                raw_instance_entry=raw_instance_entry,
+                            )
+                        )
 
                     raw_instance = r_show_instance.unwrap()
 
@@ -442,7 +427,7 @@ class IBMCloudPowerDriver(PoolDriver):
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
                 raw_instance: Dict[str, Any],
-                flavor: Optional[Flavor]
+                flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
                 assert usage.instances is not None  # narrow type
                 assert usage.cores is not None  # narrow type
@@ -464,7 +449,7 @@ class IBMCloudPowerDriver(PoolDriver):
                 _fetch_instances,
                 # TODO: once we find the flavor name, we can update its usage.
                 lambda raw_instance: 'dummy-flavor-name-does-not-exist',
-                _update_instance_usage
+                _update_instance_usage,
             )
 
             if r_instances_usage.is_error:
@@ -472,9 +457,7 @@ class IBMCloudPowerDriver(PoolDriver):
 
             # Get pool network metrics
             r_show_network = session.run(
-                logger,
-                ['pi', 'subnet', 'get', subnet_id, '--json'],
-                commandname='ibmcloud.power.show-network'
+                logger, ['pi', 'subnet', 'get', subnet_id, '--json'], commandname='ibmcloud.power.show-network'
             )
             if r_show_network.is_error:
                 return Error(Failure.from_failure('Could not get network metrics', r_show_network.unwrap_error()))
@@ -487,12 +470,8 @@ class IBMCloudPowerDriver(PoolDriver):
         return Ok(resources)
 
     def _do_acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
@@ -520,12 +499,7 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_constraint_args.is_error:
             return Error(r_constraint_args.unwrap_error())
 
-        self.log_acquisition_attempt(
-            logger,
-            session,
-            guest_request,
-            image=image
-        )
+        self.log_acquisition_attempt(logger, session, guest_request, image=image)
 
         # A combination of ArtemisGuestLabel-ArtemisGuestName doesn't pass the ibmcloud max name length, so let's cut
         # to just ArtemisGuestName that is definitely unique even on multiple simultaneous create requests for the same
@@ -537,26 +511,27 @@ class IBMCloudPowerDriver(PoolDriver):
         tags = {
             **r_base_tags.unwrap(),
         }
-        instance_name = f"{tags['ArtemisGuestLabel']}-{tags['ArtemisGuestName'].split('-')[0]}"
+        instance_name = f'{tags["ArtemisGuestLabel"]}-{tags["ArtemisGuestName"].split("-")[0]}'
 
         def _create(user_data_file: Optional[str] = None) -> Result[JSONType, Failure]:
             with IBMCloudPowerSession(logger, self) as session:
                 create_cmd_args = [
-                    'pi', 'instance', 'create',
+                    'pi',
+                    'instance',
+                    'create',
                     instance_name,
-                    '--subnets', self.pool_config['subnet-id'],
-                    '--image', image.id,
-                    '--key-name', self.pool_config['master-key-name'],
+                    '--subnets',
+                    self.pool_config['subnet-id'],
+                    '--image',
+                    image.id,
+                    '--key-name',
+                    self.pool_config['master-key-name'],
                     '--json',
                 ] + r_constraint_args.unwrap()
                 if user_data_file:
                     create_cmd_args += ['--user-data', f'@{user_data_file}']
 
-                r_instance_create = session.run(
-                    logger,
-                    create_cmd_args,
-                    commandname='ibmcloud.instance-create'
-                )
+                r_instance_create = session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
 
                 if r_instance_create.is_error:
                     return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
@@ -564,8 +539,9 @@ class IBMCloudPowerDriver(PoolDriver):
 
         r_post_install_script = self.generate_post_install_script(guest_request)
         if r_post_install_script.is_error:
-            return Error(Failure.from_failure('Could not generate post-install script',
-                                              r_post_install_script.unwrap_error()))
+            return Error(
+                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+            )
 
         post_install_script = r_post_install_script.unwrap()
         if post_install_script:
@@ -582,18 +558,17 @@ class IBMCloudPowerDriver(PoolDriver):
         if not created.get('pvmInstanceID'):
             return Error(Failure('Instance id not found'))
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.PENDING,
-            pool_data=IBMCloudPoolData(instance_id=created['pvmInstanceID'], instance_name=created['serverName']),
-            delay_update=r_delay.unwrap(),
-            ssh_info=image.ssh
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=IBMCloudPoolData(instance_id=created['pvmInstanceID'], instance_name=created['serverName']),
+                delay_update=r_delay.unwrap(),
+                ssh_info=image.ssh,
+            )
+        )
 
     def update_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
@@ -625,50 +600,48 @@ class IBMCloudPowerDriver(PoolDriver):
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
         if status == 'build':
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=pool_data,
-                delay_update=r_delay.unwrap()
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.PENDING, pool_data=pool_data, delay_update=r_delay.unwrap()
+                )
+            )
 
         if status == 'active':
             # Will be taking ip of the network interface for the pool config network
-            ip_address = next((addr['ipAddress'] for addr in output['addresses']
-                               if addr['networkID'] == self.pool_config['subnet-id']), None)
+            ip_address = next(
+                (
+                    addr['ipAddress']
+                    for addr in output['addresses']
+                    if addr['networkID'] == self.pool_config['subnet-id']
+                ),
+                None,
+            )
 
             if not ip_address:
                 return Error(Failure('VM has reached active state but no ip address can be retrieved'))
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.COMPLETE,
-                pool_data=pool_data,
-                address=ip_address
-            ))
+            return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=ip_address))
 
         PoolMetrics.inc_error(self.poolname, IBMCloudPowerErrorCauses.UNEXPECTED_INSTANCE_STATE)
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.CANCEL,
-            pool_data=pool_data,
-            pool_failures=[Failure(f'instance ended up in an unexpected state "{status}"')]
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.CANCEL,
+                pool_data=pool_data,
+                pool_failures=[Failure(f'instance ended up in an unexpected state "{status}"')],
+            )
+        )
 
-    def _show_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        instance_id: str
-    ) -> Result[Dict[str, Any], Failure]:
+    def _show_guest(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Dict[str, Any], Failure]:
         with IBMCloudPowerSession(logger, self) as session:
             r_instance_info = session.run(
-                logger,
-                ['pi', 'instance', 'get', instance_id, '--json'],
-                commandname='ibmcloud.pi.vm-show')
+                logger, ['pi', 'instance', 'get', instance_id, '--json'], commandname='ibmcloud.pi.vm-show'
+            )
 
             if r_instance_info.is_error:
-                return Error(Failure.from_failure(
-                    'failed to fetch instance information',
-                    r_instance_info.unwrap_error()
-                ))
+                return Error(
+                    Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error())
+                )
 
             res = cast(Dict[str, Any], r_instance_info.unwrap())
 
@@ -679,10 +652,7 @@ class IBMCloudPowerDriver(PoolDriver):
             return Ok(res)
 
     def release_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -698,18 +668,12 @@ class IBMCloudPowerDriver(PoolDriver):
         # assorted_resource_ids: List[Dict[str, str]] = []
 
         return self.dispatch_resource_cleanup(
-            logger,
-            session,
-            IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id),
-            guest_request=guest_request
+            logger, session, IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id), guest_request=guest_request
         )
 
     def release_pool_resources(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        raw_resource_ids: SerializedPoolResourcesIDs
+        self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
-
         resource_ids = IBMCloudPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.instance_id is not None:
@@ -720,18 +684,14 @@ class IBMCloudPowerDriver(PoolDriver):
                     logger,
                     ['pi', 'instance', 'delete', resource_ids.instance_id],
                     json_format=False,
-                    commandname='ibmcloud.pi.instance-delete'
+                    commandname='ibmcloud.pi.instance-delete',
                 )
                 if r_delete_instance.is_error:
                     return Error(Failure.from_failure('Failed to cleanup instance', r_delete_instance.unwrap_error()))
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
-    def trigger_reboot(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[None, Failure]:
+    def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 
         assert pool_data.instance_id is not None
@@ -740,13 +700,11 @@ class IBMCloudPowerDriver(PoolDriver):
             r_output = session.run(
                 logger,
                 ['pi', 'instance', 'action', '-o', 'hard-reboot', pool_data.instance_id],
-                commandname='ibmcloud.pi.vm-reboot')
+                commandname='ibmcloud.pi.vm-reboot',
+            )
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to trigger instance reboot',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to trigger instance reboot', r_output.unwrap_error()))
 
         return Ok(None)
 

@@ -30,17 +30,12 @@ DEFAULT_EVENTS_SORT_ORDER = 'desc'
 NO_AUTH = [
     re.compile(r'(?:/v\d+\.\d+\.\d+)?/_docs(?:/.+)?'),
     re.compile(r'(?:/v\d+\.\d+\.\d+)?/_schema(?:/.+)?'),
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/metrics')
+    re.compile(r'(?:/v\d+\.\d+\.\d+)?/metrics'),
 ]
 
-PROVISIONING_AUTH = [
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/guests(?:/.+)?')
-]
+PROVISIONING_AUTH = [re.compile(r'(?:/v\d+\.\d+\.\d+)?/guests(?:/.+)?')]
 
-ADMIN_AUTH = [
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/users(?:/.+)?'),
-    re.compile(r'(?:/v\d+\.\d+\.\d+)?/_status(?:/.+)?')
-]
+ADMIN_AUTH = [re.compile(r'(?:/v\d+\.\d+\.\d+)?/users(?:/.+)?'), re.compile(r'(?:/v\d+\.\d+\.\d+)?/_status(?:/.+)?')]
 
 #: This header is added by our authorization middleware, to transport an auth context to route handlers.
 #:
@@ -92,14 +87,11 @@ class AuthContext:
         'is_invalid_request',
         'is_authenticated',
         'is_authorized',
-        'username'
+        'username',
     )
 
     def serialize(self) -> str:
-        return json.dumps({
-            field: getattr(self, field)
-            for field in self._serialized_fields
-        })
+        return json.dumps({field: getattr(self, field) for field in self._serialized_fields})
 
     @classmethod
     def unserialize(cls, serialized: str, request: Request) -> 'AuthContext':
@@ -108,7 +100,7 @@ class AuthContext:
         ctx = AuthContext(
             request=request,
             is_authentication_enabled=unserialized['is_authentication_enabled'],
-            is_authorization_enabled=unserialized['is_authorization_enabled']
+            is_authorization_enabled=unserialized['is_authorization_enabled'],
         )
 
         for field in AuthContext._serialized_fields:
@@ -133,10 +125,7 @@ class AuthContext:
         serialized_ctx = request.headers.get(AUTH_CTX_HEADER)
 
         if serialized_ctx is None:
-            return Error(Failure(
-                'undefined auth context',
-                request_path=request.url.path
-            ))
+            return Error(Failure('undefined auth context', request_path=request.url.path))
 
         return Ok(AuthContext.unserialize(serialized_ctx, request))
 
@@ -178,11 +167,7 @@ class AuthContext:
         except Exception:
             self.is_invalid_request = True
 
-    def verify_auth_basic(
-        self,
-        session: sqlalchemy.orm.session.Session,
-        token_type: str
-    ) -> None:
+    def verify_auth_basic(self, session: sqlalchemy.orm.session.Session, token_type: str) -> None:
         self._extract_credentials_basic()
 
         if self.is_empty:
@@ -194,9 +179,11 @@ class AuthContext:
         assert self.username is not None
         assert self.token is not None
 
-        r_user = artemis_db.SafeQuery.from_session(session, artemis_db.User) \
-            .filter(artemis_db.User.username == self.username) \
+        r_user = (
+            artemis_db.SafeQuery.from_session(session, artemis_db.User)
+            .filter(artemis_db.User.username == self.username)
             .one_or_none()
+        )
 
         if r_user.is_error:
             raise errors.InternalServerError(caused_by=r_user.unwrap_error())
@@ -295,11 +282,7 @@ class GuestResponse(BaseModel):
             shelf=guest.shelfname,
             environment=guest.environment.serialize(),
             address=guest.address,
-            ssh=GuestSSHInfo(
-                username=guest.ssh_username,
-                port=guest.ssh_port,
-                keyname=guest.ssh_keyname
-            ),
+            ssh=GuestSSHInfo(username=guest.ssh_username, port=guest.ssh_port, keyname=guest.ssh_keyname),
             state=GuestState(guest.state),
             state_mtime=guest.state_mtime,
             mtime=guest.mtime,
@@ -313,7 +296,7 @@ class GuestResponse(BaseModel):
             watchdog_dispatch_delay=guest.watchdog_dispatch_delay,
             watchdog_period_delay=guest.watchdog_period_delay,
             poolname=guest.poolname,
-            last_poolname=guest.last_poolname
+            last_poolname=guest.last_poolname,
         )
 
 
@@ -325,12 +308,7 @@ class GuestEvent(BaseModel):
 
     @classmethod
     def from_db(cls, event: artemis_db.GuestEvent) -> 'GuestEvent':
-        return cls(
-            eventname=event.eventname,
-            guestname=event.guestname,
-            details=event.details,
-            updated=event.updated
-        )
+        return cls(eventname=event.eventname, guestname=event.guestname, details=event.details, updated=event.updated)
 
 
 @dataclasses.dataclass
@@ -340,10 +318,7 @@ class GuestShelfResponse:
 
     @classmethod
     def from_db(cls, shelf: artemis_db.GuestShelf) -> 'GuestShelfResponse':
-        return cls(
-            shelfname=shelf.shelfname,
-            owner=shelf.ownername
-        )
+        return cls(shelfname=shelf.shelfname, owner=shelf.ownername)
 
 
 class SnapshotRequest(BaseModel):
@@ -361,7 +336,7 @@ class SnapshotResponse:
         return cls(
             snapshotname=snapshot_request.snapshotname,
             guestname=snapshot_request.guestname,
-            state=GuestState(snapshot_request.state)
+            state=GuestState(snapshot_request.state),
         )
 
 
@@ -507,15 +482,9 @@ class GuestLogResponse:
             state=artemis_db.GuestLogState(log.state),
             contenttype=artemis_db.GuestLogContentType(log.contenttype),
             url=log.url,
-            blobs=[
-                GuestLogBlobResponse(
-                    ctime=blob.ctime,
-                    content=blob.content
-                )
-                for blob in log.blobs
-            ],
+            blobs=[GuestLogBlobResponse(ctime=blob.ctime, content=blob.content) for blob in log.blobs],
             updated=log.updated,
-            expires=log.expires
+            expires=log.expires,
         )
 
 

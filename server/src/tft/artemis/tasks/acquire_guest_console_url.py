@@ -55,16 +55,12 @@ class Workspace(_Workspace):
                     'console_url': console_url_data.url,
                     'console_url_expires': console_url_data.expires,
                 },
-                current_pool_data=self.gr._pool_data
+                current_pool_data=self.gr._pool_data,
             )
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -80,11 +76,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def acquire_guest_console_url(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Inspect the provisioning progress of a given request, and update info Artemis holds for this request.
@@ -96,11 +88,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task()
@@ -108,5 +96,5 @@ def acquire_guest_console_url(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.acquire_guest_console_url),
         logger=get_guest_logger(Workspace.TASKNAME, _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

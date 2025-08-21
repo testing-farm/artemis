@@ -54,10 +54,12 @@ class Workspace(_Workspace):
             assert self.gr
 
             # Verify we can return the guest to the shelf
-            r_shelf = SafeQuery.from_session(self.session, GuestShelf) \
-                .filter(GuestShelf.shelfname == self.gr.shelfname) \
-                .filter(GuestShelf.state == GuestState.READY) \
+            r_shelf = (
+                SafeQuery.from_session(self.session, GuestShelf)
+                .filter(GuestShelf.shelfname == self.gr.shelfname)
+                .filter(GuestShelf.state == GuestState.READY)
                 .one_or_none()
+            )
 
             if r_shelf.is_error:
                 return self._error(r_shelf, 'failed to load shelf')
@@ -70,10 +72,7 @@ class Workspace(_Workspace):
 
                 else:
                     self.update_guest_state_and_request_task(
-                        GuestState.CONDEMNED,
-                        release_guest_request,
-                        self.guestname,
-                        current_state=self.current_state
+                        GuestState.CONDEMNED, release_guest_request, self.guestname, current_state=self.current_state
                     )
 
             shelf: Optional[GuestShelf] = r_shelf.unwrap()
@@ -82,10 +81,12 @@ class Workspace(_Workspace):
                 _release()
                 return
 
-            r_shelved_count = SafeQuery.from_session(self.session, GuestRequest) \
-                .filter(GuestRequest.shelfname == shelf.shelfname) \
-                .filter(GuestRequest.state == GuestState.SHELVED) \
+            r_shelved_count = (
+                SafeQuery.from_session(self.session, GuestRequest)
+                .filter(GuestRequest.shelfname == shelf.shelfname)
+                .filter(GuestRequest.state == GuestState.SHELVED)
                 .count()
+            )
 
             if r_shelved_count.is_error:
                 return self._error(r_shelved_count, 'failed to load the number of shelved guests')
@@ -115,10 +116,7 @@ class Workspace(_Workspace):
             from .shelved_guest_watchdog import shelved_guest_watchdog
 
             self.update_guest_state_and_request_task(
-                GuestState.SHELVED,
-                shelved_guest_watchdog,
-                self.guestname,
-                current_state=self.current_state
+                GuestState.SHELVED, shelved_guest_watchdog, self.guestname, current_state=self.current_state
             )
 
     @classmethod
@@ -128,7 +126,7 @@ class Workspace(_Workspace):
         session: sqlalchemy.orm.session.Session,
         db: DB,
         guestname: str,
-        current_state: GuestState
+        current_state: GuestState,
     ) -> 'Workspace':
         workspace = Workspace(logger, session, db, guestname=guestname, task=cls.TASKNAME)
 
@@ -143,7 +141,7 @@ class Workspace(_Workspace):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         guestname: str,
-        current_state: str
+        current_state: str,
     ) -> DoerReturnType:
         """
         Try to return the guest to a shelf. Otherwise dispatch guest release.
@@ -161,12 +159,9 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls \
-            .create(logger, session, db, guestname, GuestState(current_state)) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return (
+            cls.create(logger, session, db, guestname, GuestState(current_state)).begin().run().complete().final_result
+        )
 
 
 @task(TaskPriority.LOW)
@@ -180,5 +175,5 @@ def return_guest_to_shelf(guestname: str, current_state: str) -> None:
     task_core(
         cast(DoerType, Workspace.return_guest_to_shelf),
         logger=get_guest_logger('return-guest-to-shelf', _ROOT_LOGGER, guestname),
-        doer_args=(guestname, current_state)
+        doer_args=(guestname, current_state),
     )

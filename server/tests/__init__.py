@@ -35,7 +35,7 @@ class MockPatcher(Protocol):
         obj: Any,
         member_name: str,
         obj_name: Optional[str] = None,
-        return_value: Optional[Any] = dataclasses.MISSING
+        return_value: Optional[Any] = dataclasses.MISSING,
     ) -> MagicMock:
         pass
 
@@ -83,9 +83,7 @@ class SEARCH(PatternMatching):
 
 
 def assert_log(
-    caplog: _pytest.logging.LogCaptureFixture,
-    evaluator: Callable[[Iterable[Any]], bool] = any,
-    **tests: Any
+    caplog: _pytest.logging.LogCaptureFixture, evaluator: Callable[[Iterable[Any]], bool] = any, **tests: Any
 ) -> None:
     """
     Assert log contains a record - logged message - with given properties. Those are specified as keyword
@@ -117,11 +115,7 @@ def assert_log(
         # We don't modify the field name and "expected" value, but the function will be a custom lambda calling
         # proper `re` method.
         if isinstance(expected_value, PatternMatching):
-            operators.append((
-                field_name,
-                lambda a, b: a.method(b) is not None,
-                expected_value
-            ))
+            operators.append((field_name, lambda a, b: a.method(b) is not None, expected_value))
 
             continue
 
@@ -129,34 +123,21 @@ def assert_log(
         # what we need here, so we don't have to build our own `lambda a, b: a == b`. We might use more than just
         # `eq` in the future, so let's start with `operator` right away.
 
-        operators.append((
-            field_name,
-            operator.eq,
-            expected_value
-        ))
+        operators.append((field_name, operator.eq, expected_value))
 
     # Given a logging record, apply all field/operator/value triplets, and make sure all match the actual
     # record properties.
     def _cmp(record: logging.LogRecord) -> bool:
-        return all([
-            op(expected_value, getattr(record, field_name))
-            for field_name, op, expected_value in operators
-        ])
+        return all([op(expected_value, getattr(record, field_name)) for field_name, op, expected_value in operators])
 
     # Final step: apply our "make sure field/operator/value triplets match given record" to each and every record,
     # and reduce per-record results into a single answer. By default, `any` is used which means that any record
     # matching all field/operator/value triples yield the final "yes, such a record exists".
-    assert evaluator([
-        _cmp(record)
-        for record in caplog.records
-    ]), LOG_ASSERT_MESAGE.render(fields=tests)
+    assert evaluator([_cmp(record) for record in caplog.records]), LOG_ASSERT_MESAGE.render(fields=tests)
 
 
 def assert_failure_log(
-    caplog: _pytest.logging.LogCaptureFixture,
-    failure_message: str,
-    exception_label: Optional[str] = None,
-    **tests: Any
+    caplog: _pytest.logging.LogCaptureFixture, failure_message: str, exception_label: Optional[str] = None, **tests: Any
 ) -> None:
     """
     A failure log is just a special log record, with a nicely formatted message describing the aspects
@@ -174,8 +155,4 @@ def assert_failure_log(
     if exception_label:
         message = f'{message}(?:.*\n)+    {exception_label}'
 
-    assert_log(
-        caplog,
-        message=SEARCH(message),
-        levelno=logging.ERROR
-    )
+    assert_log(caplog, message=SEARCH(message), levelno=logging.ERROR)

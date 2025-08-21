@@ -9,6 +9,7 @@ Revises: 2a205a7d6150
 Create Date: 2020-09-16 13:40:01.642000
 
 """
+
 from typing import Union
 
 import sqlalchemy as sa
@@ -24,22 +25,13 @@ depends_on = None
 
 def get_enum_type() -> Union[sa.Enum, postgresql.ENUM]:
     if op.get_bind().dialect.name == 'postgresql':
-        enum = postgresql.ENUM(
-            'USER',
-            'ADMIN',
-            name='userroles',
-            create_type=False
-        )
+        enum = postgresql.ENUM('USER', 'ADMIN', name='userroles', create_type=False)
 
         enum.create(op.get_bind())
 
         return enum
 
-    return sa.Enum(
-        'USER',
-        'ADMIN',
-        name='userroles'
-    )
+    return sa.Enum('USER', 'ADMIN', name='userroles')
 
 
 def upgrade() -> None:
@@ -49,9 +41,7 @@ def upgrade() -> None:
         batch_op.add_column(
             sa.Column('provisioning_token', sa.String(length=32), server_default='undefined', nullable=False)
         )
-        batch_op.add_column(
-            sa.Column('role', get_enum_type(), server_default='USER', nullable=False)
-        )
+        batch_op.add_column(sa.Column('role', get_enum_type(), server_default='USER', nullable=False))
 
     # ### end Alembic commands ###
 
@@ -64,6 +54,6 @@ def downgrade() -> None:
         batch_op.drop_column('admin_token')
 
     if op.get_bind().dialect.name == 'postgresql':
-        batch_op.execute("DROP TYPE userroles;")
+        batch_op.execute('DROP TYPE userroles;')
 
     # ### end Alembic commands ###

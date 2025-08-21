@@ -39,7 +39,7 @@ KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_SCHEDULE',
     cast_from_str=str,
-    default='*/5 * * * *'
+    default='*/5 * * * *',
 )
 
 
@@ -67,15 +67,12 @@ class Workspace(_Workspace):
             self.dispatch_task(
                 refresh_pool_image_info,
                 pool.poolname,
-                logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname)
+                logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname),
             )
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session
     ) -> 'Workspace':
         """
         Create workspace.
@@ -90,10 +87,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def refresh_pool_image_info_dispatcher(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session
     ) -> DoerReturnType:
         """
         Schedule refresh of hostname groups to avoid for suitable pools.
@@ -109,11 +103,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session).begin().run().complete().final_result
 
 
 @task(
@@ -121,7 +111,7 @@ class Workspace(_Workspace):
     singleton_no_retry_on_lock_fail=True,
     periodic=periodiq.cron(KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE.value),
     priority=TaskPriority.HIGH,
-    queue_name=TaskQueue.PERIODIC
+    queue_name=TaskQueue.PERIODIC,
 )
 def refresh_pool_image_info_dispatcher() -> None:
     """
@@ -140,5 +130,5 @@ def refresh_pool_image_info_dispatcher() -> None:
     task_core(
         cast(DoerType, Workspace.refresh_pool_image_info_dispatcher),
         logger=TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME),
-        session_read_only=True
+        session_read_only=True,
     )

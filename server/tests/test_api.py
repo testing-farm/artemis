@@ -35,33 +35,38 @@ def fixture_api_client(api_server: fastapi.applications.FastAPI) -> fastapi.test
     return fastapi.testclient.TestClient(api_server)
 
 
-@pytest.mark.parametrize('path', [
-    '/_docs',
-    '/metrics',
-    '/guests/'
-])
+@pytest.mark.parametrize('path', ['/_docs', '/metrics', '/guests/'])
 def test_rewrite_request_path_nop(path: str) -> None:
     assert rewrite_request_path(path) == path
 
 
-@pytest.mark.parametrize('request_path, rewritten_path', [
-    ('/guests/foo-bar-79', '/guests/GUESTNAME'),
-    ('/guests/foo-bar-79/events', '/guests/GUESTNAME/events'),
-    ('/guests/foo-bar-79/snapshots', '/guests/GUESTNAME/snapshots'),
-    ('/guests/foo-bar-79/snapshots/baz-97', '/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
-    ('/guests/foo-bar-79/snapshots/baz-97/restore', '/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore'),
-    ('/guests/foo-bar-79/logs/console:dump/blob', '/guests/GUESTNAME/logs/console:dump/blob'),
-    ('/current/guests/foo-bar-79', '/current/guests/GUESTNAME'),
-    ('/current/guests/foo-bar-79/events', '/current/guests/GUESTNAME/events'),
-    ('/current/guests/foo-bar-79/snapshots', '/current/guests/GUESTNAME/snapshots'),
-    ('/current/guests/foo-bar-79/snapshots/baz-97', '/current/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
-    ('/current/guests/foo-bar-79/snapshots/baz-97/restore', '/current/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore'),
-    ('/v0.0.17/guests/foo-bar-79', '/v0.0.17/guests/GUESTNAME'),
-    ('/v0.0.17/guests/foo-bar-79/events', '/v0.0.17/guests/GUESTNAME/events'),
-    ('/v0.0.17/guests/foo-bar-79/snapshots', '/v0.0.17/guests/GUESTNAME/snapshots'),
-    ('/v0.0.17/guests/foo-bar-79/snapshots/baz-97', '/v0.0.17/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
-    ('/v0.0.17/guests/foo-bar-79/snapshots/baz-97/restore', '/v0.0.17/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore')
-])
+@pytest.mark.parametrize(
+    'request_path, rewritten_path',
+    [
+        ('/guests/foo-bar-79', '/guests/GUESTNAME'),
+        ('/guests/foo-bar-79/events', '/guests/GUESTNAME/events'),
+        ('/guests/foo-bar-79/snapshots', '/guests/GUESTNAME/snapshots'),
+        ('/guests/foo-bar-79/snapshots/baz-97', '/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
+        ('/guests/foo-bar-79/snapshots/baz-97/restore', '/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore'),
+        ('/guests/foo-bar-79/logs/console:dump/blob', '/guests/GUESTNAME/logs/console:dump/blob'),
+        ('/current/guests/foo-bar-79', '/current/guests/GUESTNAME'),
+        ('/current/guests/foo-bar-79/events', '/current/guests/GUESTNAME/events'),
+        ('/current/guests/foo-bar-79/snapshots', '/current/guests/GUESTNAME/snapshots'),
+        ('/current/guests/foo-bar-79/snapshots/baz-97', '/current/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
+        (
+            '/current/guests/foo-bar-79/snapshots/baz-97/restore',
+            '/current/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore',
+        ),
+        ('/v0.0.17/guests/foo-bar-79', '/v0.0.17/guests/GUESTNAME'),
+        ('/v0.0.17/guests/foo-bar-79/events', '/v0.0.17/guests/GUESTNAME/events'),
+        ('/v0.0.17/guests/foo-bar-79/snapshots', '/v0.0.17/guests/GUESTNAME/snapshots'),
+        ('/v0.0.17/guests/foo-bar-79/snapshots/baz-97', '/v0.0.17/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
+        (
+            '/v0.0.17/guests/foo-bar-79/snapshots/baz-97/restore',
+            '/v0.0.17/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore',
+        ),
+    ],
+)
 def test_rewrite_request_path(request_path: str, rewritten_path: str) -> None:
     assert rewrite_request_path(request_path) == rewritten_path
 
@@ -81,9 +86,7 @@ def test_api_about(api_client: fastapi.testclient.TestClient) -> None:
         'image_url': None,
         'artemis_deployment': 'undefined-deployment',
         'artemis_deployment_environment': 'undefined-deployment-environment',
-        'api_versions': [
-            version for version, _ in tft.artemis.api.environment.API_MILESTONES
-        ]
+        'api_versions': [version for version, _ in tft.artemis.api.environment.API_MILESTONES],
     }
 
 
@@ -110,10 +113,7 @@ def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
 
 @pytest.mark.usefixtures('schema_actual')
 def test_metrics(
-    api_client: fastapi.testclient.TestClient,
-    db: tft.artemis.db.DB,
-    logger: gluetool.log.ContextAdapter,
-    redis: None
+    api_client: fastapi.testclient.TestClient, db: tft.artemis.db.DB, logger: gluetool.log.ContextAdapter, redis: None
 ) -> None:
     response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/metrics')
 
@@ -164,67 +164,44 @@ def test_metrics(
         # Pool errors
         ('pool_errors', 'counter'),
         ('cli_calls', 'counter'),
-        ('cli_call_duration_seconds', 'histogram')
+        ('cli_call_duration_seconds', 'histogram'),
     )
     data = response.content.decode('utf-8')
     for metric_name, metric_type in expected_metrics:
         if metric_type == 'counter':
-            assert re.search(f'^# TYPE {metric_name}_total {metric_type}$', data, re.M) is not None, \
+            assert re.search(f'^# TYPE {metric_name}_total {metric_type}$', data, re.M) is not None, (
                 f'metric "{metric_name}_total" not found in the output'
+            )
 
         else:
-            assert re.search(f'^# TYPE {metric_name} {metric_type}$', data, re.M) is not None, \
+            assert re.search(f'^# TYPE {metric_name} {metric_type}$', data, re.M) is not None, (
                 f'metric "{metric_name}" not found in the output'
+            )
 
 
-@pytest.mark.parametrize(('path', 'patterns', 'expected'), [
-    (
-        '/_docs',
-        tft.artemis.api.models.NO_AUTH,
-        True
-    ),
-    (
-        '/_docs',
-        tft.artemis.api.models.PROVISIONING_AUTH,
-        False
-    ),
-    (
-        '/guests',
-        tft.artemis.api.models.PROVISIONING_AUTH,
-        True
-    ),
-    (
-        '/guests/foo/snapshots',
-        tft.artemis.api.models.PROVISIONING_AUTH,
-        True
-    ),
-    (
-        '/v0.0.24/guests/foo/snapshots',
-        tft.artemis.api.models.PROVISIONING_AUTH,
-        True
-    )
-])
+@pytest.mark.parametrize(
+    ('path', 'patterns', 'expected'),
+    [
+        ('/_docs', tft.artemis.api.models.NO_AUTH, True),
+        ('/_docs', tft.artemis.api.models.PROVISIONING_AUTH, False),
+        ('/guests', tft.artemis.api.models.PROVISIONING_AUTH, True),
+        ('/guests/foo/snapshots', tft.artemis.api.models.PROVISIONING_AUTH, True),
+        ('/v0.0.24/guests/foo/snapshots', tft.artemis.api.models.PROVISIONING_AUTH, True),
+    ],
+)
 def test_auth_matches_path(path: str, patterns: List[Pattern[str]], expected: bool) -> None:
-    assert tft.artemis.api.models.matches_path(
-        MagicMock(url=MagicMock(path=path)),
-        patterns
-    ) is expected
+    assert tft.artemis.api.models.matches_path(MagicMock(url=MagicMock(path=path)), patterns) is expected
 
 
 @pytest.fixture(name='mock_request')
 def fixture_mock_request() -> fastapi.Request:
-    scope = {'type': 'http',
-             'headers': [('SomeHeader', 'SomeHeaderValue')]}
+    scope = {'type': 'http', 'headers': [('SomeHeader', 'SomeHeaderValue')]}
     return fastapi.Request(scope=scope)
 
 
 @pytest.fixture(name='auth_context')
 def fixture_auth_context(mock_request: fastapi.Request) -> AuthContext:
-    return AuthContext(
-        mock_request,
-        is_authentication_enabled=True,
-        is_authorization_enabled=True
-    )
+    return AuthContext(mock_request, is_authentication_enabled=True, is_authorization_enabled=True)
 
 
 def _compare_contexts(first: AuthContext, second: AuthContext) -> None:
@@ -271,16 +248,19 @@ def test_auth_context_extract_credentials_basic_none(auth_context: AuthContext) 
     assert auth_context.token is None
 
 
-@pytest.mark.parametrize('payload', [
-    'wrong-type-missing-credentials',
-    'wrong-type dummy credentials',
-    'Basic',
-    f'Basic {base64.b64encode(b"username-and-nothing-more").decode()}',
-    f'Basic {base64.b64encode(b"username-only:").decode()}',
-    f'Basic {base64.b64encode(b":password-only").decode()}',
-    f'Basic {base64.b64encode(b"some-url-decoding%20").decode()}',
-    f'Basic foobar{base64.b64encode(b"broken base64").decode()}',
-])
+@pytest.mark.parametrize(
+    'payload',
+    [
+        'wrong-type-missing-credentials',
+        'wrong-type dummy credentials',
+        'Basic',
+        f'Basic {base64.b64encode(b"username-and-nothing-more").decode()}',
+        f'Basic {base64.b64encode(b"username-only:").decode()}',
+        f'Basic {base64.b64encode(b":password-only").decode()}',
+        f'Basic {base64.b64encode(b"some-url-decoding%20").decode()}',
+        f'Basic foobar{base64.b64encode(b"broken base64").decode()}',
+    ],
+)
 def test_auth_context_extract_credentials_basic_bad_payload(auth_context: AuthContext, payload: str) -> None:
     _add_to_headers(auth_context.request, ('Authorization', payload))
 
@@ -295,10 +275,9 @@ def test_auth_context_extract_credentials_basic_bad_payload(auth_context: AuthCo
 
 
 def test_auth_context_extract_credentials_basic(auth_context: AuthContext) -> None:
-    _add_to_headers(auth_context.request, (
-        'Authorization',
-        f'Basic {base64.b64encode(b"dummy-user:dummy-password").decode()}'
-    ))
+    _add_to_headers(
+        auth_context.request, ('Authorization', f'Basic {base64.b64encode(b"dummy-user:dummy-password").decode()}')
+    )
 
     auth_context._extract_credentials_basic()
 
@@ -323,12 +302,14 @@ def schema_test_db_user(db: tft.artemis.db.DB, session: sqlalchemy.orm.session.S
 def schema_test_db_user_user(session: sqlalchemy.orm.session.Session, schema_test_db_user: None) -> None:
     from tft.artemis.db import User, UserRoles
 
-    session.add(User(
-        username='dummy-user',
-        role=UserRoles.USER.value,
-        provisioning_token=User.hash_token('dummy-user-provisioning-token'),
-        admin_token=User.hash_token('dummy-user-admin-token')
-    ))
+    session.add(
+        User(
+            username='dummy-user',
+            role=UserRoles.USER.value,
+            provisioning_token=User.hash_token('dummy-user-provisioning-token'),
+            admin_token=User.hash_token('dummy-user-admin-token'),
+        )
+    )
 
     session.commit()
 
@@ -337,19 +318,20 @@ def schema_test_db_user_user(session: sqlalchemy.orm.session.Session, schema_tes
 def schema_test_db_user_admin(session: sqlalchemy.orm.session.Session, schema_test_db_user: None) -> None:
     from tft.artemis.db import User, UserRoles
 
-    session.add(User(
-        username='dummy-admin',
-        role=UserRoles.ADMIN.value,
-        provisioning_token=User.hash_token('dummy-admin-provisioning-token'),
-        admin_token=User.hash_token('dummy-admin-admin-token')
-    ))
+    session.add(
+        User(
+            username='dummy-admin',
+            role=UserRoles.ADMIN.value,
+            provisioning_token=User.hash_token('dummy-admin-provisioning-token'),
+            admin_token=User.hash_token('dummy-admin-admin-token'),
+        )
+    )
 
     session.commit()
 
 
 def test_auth_context_verify_auth_basic_empty(
-    auth_context:
-    AuthContext, session: sqlalchemy.orm.session.Session
+    auth_context: AuthContext, session: sqlalchemy.orm.session.Session
 ) -> None:
     auth_context.is_empty = True
 
@@ -364,8 +346,7 @@ def test_auth_context_verify_auth_basic_empty(
 
 
 def test_auth_context_verify_auth_basic_invalid(
-    auth_context: AuthContext,
-    session: sqlalchemy.orm.session.Session
+    auth_context: AuthContext, session: sqlalchemy.orm.session.Session
 ) -> None:
     auth_context.is_empty = True
     auth_context.is_invalid_request = True
@@ -382,13 +363,11 @@ def test_auth_context_verify_auth_basic_invalid(
 
 @pytest.mark.usefixtures('schema_test_db_user')
 def test_auth_context_verify_auth_basic_no_such_user(
-    session: sqlalchemy.orm.session.Session,
-    auth_context: AuthContext
+    session: sqlalchemy.orm.session.Session, auth_context: AuthContext
 ) -> None:
-    _add_to_headers(auth_context.request, (
-        'Authorization',
-        f'Basic {base64.b64encode(b"wrong-username:dummy-password").decode()}'
-    ))
+    _add_to_headers(
+        auth_context.request, ('Authorization', f'Basic {base64.b64encode(b"wrong-username:dummy-password").decode()}')
+    )
 
     auth_context.verify_auth_basic(session, 'whatever')
 
@@ -402,12 +381,12 @@ def test_auth_context_verify_auth_basic_no_such_user(
 
 @pytest.mark.usefixtures('schema_test_db_user_user')
 def test_auth_context_verify_auth_basic_provisioning_valid(
-    session: sqlalchemy.orm.session.Session,
-    auth_context: AuthContext
+    session: sqlalchemy.orm.session.Session, auth_context: AuthContext
 ) -> None:
-    _add_to_headers(auth_context.request,
-                    ('Authorization',
-                     f'Basic {base64.b64encode(b"dummy-user:dummy-user-provisioning-token").decode()}'))
+    _add_to_headers(
+        auth_context.request,
+        ('Authorization', f'Basic {base64.b64encode(b"dummy-user:dummy-user-provisioning-token").decode()}'),
+    )
 
     auth_context.verify_auth_basic(session, 'provisioning')
 
@@ -421,13 +400,12 @@ def test_auth_context_verify_auth_basic_provisioning_valid(
 
 @pytest.mark.usefixtures('schema_test_db_user_user')
 def test_auth_context_verify_auth_basic_provisioning_invalid_type(
-    session: sqlalchemy.orm.session.Session,
-    auth_context: AuthContext
+    session: sqlalchemy.orm.session.Session, auth_context: AuthContext
 ) -> None:
-    _add_to_headers(auth_context.request, (
-        'Authorization',
-        f'Basic {base64.b64encode(b"dummy-user:dummy-user-provisioning-token").decode()}'
-    ))
+    _add_to_headers(
+        auth_context.request,
+        ('Authorization', f'Basic {base64.b64encode(b"dummy-user:dummy-user-provisioning-token").decode()}'),
+    )
 
     auth_context.verify_auth_basic(session, 'admin')
 
@@ -441,13 +419,11 @@ def test_auth_context_verify_auth_basic_provisioning_invalid_type(
 
 @pytest.mark.usefixtures('schema_test_db_user_user')
 def test_auth_context_verify_auth_basic_provisioning_invalid_token(
-    session: sqlalchemy.orm.session.Session,
-    auth_context: AuthContext
+    session: sqlalchemy.orm.session.Session, auth_context: AuthContext
 ) -> None:
-    _add_to_headers(auth_context.request, (
-        'Authorization',
-        f'Basic {base64.b64encode(b"dummy-user:wrong-password").decode()}'
-    ))
+    _add_to_headers(
+        auth_context.request, ('Authorization', f'Basic {base64.b64encode(b"dummy-user:wrong-password").decode()}')
+    )
 
     auth_context.verify_auth_basic(session, 'admin')
 
@@ -461,13 +437,12 @@ def test_auth_context_verify_auth_basic_provisioning_invalid_token(
 
 @pytest.mark.usefixtures('schema_test_db_user_admin')
 def test_auth_context_verify_auth_basic_admin_valid(
-    session: sqlalchemy.orm.session.Session,
-    auth_context: AuthContext
+    session: sqlalchemy.orm.session.Session, auth_context: AuthContext
 ) -> None:
-    _add_to_headers(auth_context.request, (
-        'Authorization',
-        f'Basic {base64.b64encode(b"dummy-admin:dummy-admin-admin-token").decode()}'
-    ))
+    _add_to_headers(
+        auth_context.request,
+        ('Authorization', f'Basic {base64.b64encode(b"dummy-admin:dummy-admin-admin-token").decode()}'),
+    )
 
     auth_context.verify_auth_basic(session, 'admin')
 
@@ -481,13 +456,12 @@ def test_auth_context_verify_auth_basic_admin_valid(
 
 @pytest.mark.usefixtures('schema_test_db_user_user')
 def test_auth_context_verify_auth_basic_admin_invalid_type(
-    session: sqlalchemy.orm.session.Session,
-    auth_context: AuthContext
+    session: sqlalchemy.orm.session.Session, auth_context: AuthContext
 ) -> None:
-    _add_to_headers(auth_context.request, (
-        'Authorization',
-        f'Basic {base64.b64encode(b"dummy-admin:dummy-admin-admin-token").decode()}'
-    ))
+    _add_to_headers(
+        auth_context.request,
+        ('Authorization', f'Basic {base64.b64encode(b"dummy-admin:dummy-admin-admin-token").decode()}'),
+    )
 
     auth_context.verify_auth_basic(session, 'provisioning')
 
@@ -501,13 +475,11 @@ def test_auth_context_verify_auth_basic_admin_invalid_type(
 
 @pytest.mark.usefixtures('schema_test_db_user_admin')
 def test_auth_context_verify_auth_basic_admin_invalid_token(
-    session: sqlalchemy.orm.session.Session,
-    auth_context: AuthContext
+    session: sqlalchemy.orm.session.Session, auth_context: AuthContext
 ) -> None:
-    _add_to_headers(auth_context.request, (
-        'Authorization',
-        f'Basic {base64.b64encode(b"dummy-admin:wrong-password").decode()}'
-    ))
+    _add_to_headers(
+        auth_context.request, ('Authorization', f'Basic {base64.b64encode(b"dummy-admin:wrong-password").decode()}')
+    )
 
     auth_context.verify_auth_basic(session, 'admin')
 
@@ -523,7 +495,7 @@ def test_auth_context_verify_auth_no_auth(
     db: tft.artemis.db.DB,
     logger: gluetool.log.ContextAdapter,
     auth_context: AuthContext,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(auth_context.request.scope, 'path', '/_docs')
     auth_context.verify_auth(logger, db)
@@ -540,7 +512,7 @@ def test_auth_context_verify_auth_provisioning(
     db: tft.artemis.db.DB,
     logger: gluetool.log.ContextAdapter,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
-    auth_context: AuthContext
+    auth_context: AuthContext,
 ) -> None:
     monkeypatch.setitem(auth_context.request.scope, 'path', '/guests/foo')
 
@@ -569,15 +541,11 @@ def test_auth_context_verify_auth_admin(
     db: tft.artemis.db.DB,
     logger: gluetool.log.ContextAdapter,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
-    auth_context: AuthContext
+    auth_context: AuthContext,
 ) -> None:
     monkeypatch.setitem(auth_context.request.scope, 'path', '/users/foo')
 
-    mock_user = MagicMock(
-        name='user<mock>',
-        role=tft.artemis.db.UserRoles.ADMIN,
-        is_admin=True
-    )
+    mock_user = MagicMock(name='user<mock>', role=tft.artemis.db.UserRoles.ADMIN, is_admin=True)
 
     def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: str) -> None:
         assert token_type == 'admin'
@@ -602,15 +570,11 @@ def test_auth_context_verify_auth_admin_with_user_role(
     db: tft.artemis.db.DB,
     logger: gluetool.log.ContextAdapter,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
-    auth_context: AuthContext
+    auth_context: AuthContext,
 ) -> None:
     monkeypatch.setitem(auth_context.request.scope, 'path', '/users/foo')
 
-    mock_user = MagicMock(
-        name='user<mock>',
-        role=tft.artemis.db.UserRoles.USER,
-        is_admin=False
-    )
+    mock_user = MagicMock(name='user<mock>', role=tft.artemis.db.UserRoles.USER, is_admin=False)
 
     def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: str) -> None:
         assert token_type == 'admin'
@@ -653,11 +617,8 @@ def fixture_mock_middleware(
 
 
 def test_auth_middleware_disabled_authentication(
-    db: tft.artemis.db.DB,
-    auth_context: AuthContext,
-    client_mocked_middleware: fastapi.testclient.TestClient
+    db: tft.artemis.db.DB, auth_context: AuthContext, client_mocked_middleware: fastapi.testclient.TestClient
 ) -> None:
-
     auth_context.is_authentication_enabled = False
     client_mocked_middleware.get('/guests')
 
@@ -674,9 +635,7 @@ def test_auth_middleware_disabled_authentication(
 
 
 def test_auth_middleware_disabled_authorization(
-    db: tft.artemis.db.DB,
-    auth_context: AuthContext,
-    client_mocked_middleware: fastapi.testclient.TestClient
+    db: tft.artemis.db.DB, auth_context: AuthContext, client_mocked_middleware: fastapi.testclient.TestClient
 ) -> None:
     auth_context.is_authorization_enabled = False
     client_mocked_middleware.get('/guests')
@@ -693,9 +652,7 @@ def test_auth_middleware_disabled_authorization(
 
 
 def test_auth_middleware_invalid_request(
-    db: tft.artemis.db.DB,
-    auth_context: AuthContext,
-    client_mocked_middleware: fastapi.testclient.TestClient
+    db: tft.artemis.db.DB, auth_context: AuthContext, client_mocked_middleware: fastapi.testclient.TestClient
 ) -> None:
     auth_context.is_invalid_request = True
 
@@ -715,9 +672,7 @@ def test_auth_middleware_invalid_request(
 
 @pytest.mark.skip('Enable when authentication becomes mandatory')
 def test_auth_middleware_require_authentication(
-    db: tft.artemis.db.DB,
-    auth_context: AuthContext,
-    client_mocked_middleware: fastapi.testclient.TestClient
+    db: tft.artemis.db.DB, auth_context: AuthContext, client_mocked_middleware: fastapi.testclient.TestClient
 ) -> None:
     auth_context.is_invalid_request = True
 
@@ -736,9 +691,7 @@ def test_auth_middleware_require_authentication(
 
 
 def test_auth_middleware_full(
-    db: tft.artemis.db.DB,
-    auth_context: AuthContext,
-    client_mocked_middleware: fastapi.testclient.TestClient
+    db: tft.artemis.db.DB, auth_context: AuthContext, client_mocked_middleware: fastapi.testclient.TestClient
 ) -> None:
     auth_context.is_authorized = True
     client_mocked_middleware.get('/guests')
@@ -765,70 +718,42 @@ def fixture_schemas(logger: gluetool.log.ContextAdapter) -> Dict[str, tft.artemi
     ('environment', 'schema_version', 'valid'),
     [
         (
-            Environment(
-                hw=HWRequirements(arch='x86_64'),
-                os=OsRequirements(compose='foo'),
-                kickstart=Kickstart()
-            ),
+            Environment(hw=HWRequirements(arch='x86_64'), os=OsRequirements(compose='foo'), kickstart=Kickstart()),
             'v0.0.55',
-            True
+            True,
         ),
         (
             Environment(
-                hw=HWRequirements(
-                    arch='x86_64',
-                    constraints={
-                        'tpm': {
-                            'version': 2
-                        }
-                    }
-                ),
+                hw=HWRequirements(arch='x86_64', constraints={'tpm': {'version': 2}}),
                 os=OsRequirements(compose='foo'),
-                kickstart=Kickstart()
+                kickstart=Kickstart(),
             ),
             'v0.0.55',
-            False
+            False,
         ),
         (
             Environment(
-                hw=HWRequirements(
-                    arch='x86_64',
-                    constraints={
-                        'tpm': {
-                            'version': '2'
-                        }
-                    }
-                ),
+                hw=HWRequirements(arch='x86_64', constraints={'tpm': {'version': '2'}}),
                 os=OsRequirements(compose='foo'),
-                kickstart=Kickstart()
+                kickstart=Kickstart(),
             ),
             'v0.0.55',
-            True
-        )
-    ]
+            True,
+        ),
+    ],
 )
 def test_validate_environment(
     environment: Environment,
     schema_version: str,
     valid: bool,
     logger: gluetool.log.ContextAdapter,
-    schemas: Dict[str, tft.artemis.JSONSchemaType]
+    schemas: Dict[str, tft.artemis.JSONSchemaType],
 ) -> None:
     schema = schemas[schema_version]
 
     if valid:
-        tft.artemis.api.routers._validate_environment(
-            logger,
-            environment.serialize(),
-            schema,
-            {}
-        )
+        tft.artemis.api.routers._validate_environment(logger, environment.serialize(), schema, {})
 
     else:
         with pytest.raises(tft.artemis.api.errors.BadRequestError):
-            tft.artemis.api.routers._validate_environment(
-                logger,
-                environment.serialize(),
-                schema,
-                {}
-            )
+            tft.artemis.api.routers._validate_environment(logger, environment.serialize(), schema, {})

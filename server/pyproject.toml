@@ -196,3 +196,8 @@ lint.ignore = [
 combine-as-imports = true
 force-sort-within-sections = false
 known-first-party = ["tft"]
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"
+quote-style = "single"

@@ -67,14 +67,10 @@ class KnobSourceEnv(KnobSource[T]):
 
         assert self.knob.cast_from_str is not None
 
-        return Ok(
-            self.knob.cast_from_str(os.environ[envvar])
-        )
+        return Ok(self.knob.cast_from_str(os.environ[envvar]))
 
     def to_repr(self) -> List[str]:
-        return [
-            f'envvar="{self.envvar}"'
-        ]
+        return [f'envvar="{self.envvar}"']
 
 
 class KnobSourceEnvGlobal(KnobSourceEnv[T]):
@@ -103,12 +99,7 @@ class KnobSourceEnvPerEntity(KnobSourceEnv[T]):
     :param type_cast: a callback used to cast the raw string to the correct type.
     """
 
-    def get_value(
-        self,
-        *,
-        entityname: Optional[str] = None,
-        **kwargs: Any
-    ) -> Result[Optional[T], 'Failure']:
+    def get_value(self, *, entityname: Optional[str] = None, **kwargs: Any) -> Result[Optional[T], 'Failure']:
         if entityname is None:
             from . import Failure
 
@@ -148,13 +139,9 @@ class KnobSourceDefault(KnobSource[T]):
 
     def to_repr(self) -> List[str]:
         if self.default_label is None:
-            return [
-                f'default="{self.default}"'
-            ]
+            return [f'default="{self.default}"']
 
-        return [
-            f'default="{self.default_label}" ({self.default})'
-        ]
+        return [f'default="{self.default_label}" ({self.default})']
 
 
 class KnobSourceDB(KnobSource[T]):
@@ -170,15 +157,10 @@ class KnobSourceDB(KnobSource[T]):
         from . import Failure
         from .db import Knob as KnobRecord, SafeQuery
 
-        r = SafeQuery.from_session(session, KnobRecord) \
-            .filter(KnobRecord.knobname == knobname) \
-            .one_or_none()
+        r = SafeQuery.from_session(session, KnobRecord).filter(KnobRecord.knobname == knobname).one_or_none()
 
         if r.is_error:
-            return Error(Failure.from_failure(
-                'Cannot fetch knob value from db',
-                r.unwrap_error()
-            ))
+            return Error(Failure.from_failure('Cannot fetch knob value from db', r.unwrap_error()))
 
         record = r.unwrap()
 
@@ -188,9 +170,7 @@ class KnobSourceDB(KnobSource[T]):
         return Ok(cast(T, record.value))
 
     def to_repr(self) -> List[str]:
-        return [
-            'has-db=yes'
-        ]
+        return ['has-db=yes']
 
 
 class KnobSourceDBGlobal(KnobSourceDB[T]):
@@ -199,10 +179,7 @@ class KnobSourceDBGlobal(KnobSourceDB[T]):
     """
 
     def get_value(  # type: ignore[override]  # match parent
-        self,
-        *,
-        session: Session,
-        **kwargs: Any
+        self, *, session: Session, **kwargs: Any
     ) -> Result[Optional[T], 'Failure']:
         return self._fetch_from_db(session, self.knob.knobname)
 
@@ -219,11 +196,7 @@ class KnobSourceDBPerEntity(KnobSourceDB[T]):
     """
 
     def get_value(  # type: ignore[override]  # match parent
-        self,
-        *,
-        session: Session,
-        entityname: Optional[str] = None,
-        **kwargs: Any
+        self, *, session: Session, entityname: Optional[str] = None, **kwargs: Any
     ) -> Result[Optional[T], 'Failure']:
         if entityname is None:
             return Error(Failure('entityname must be specified'))
@@ -330,9 +303,7 @@ class Knob(Generic[T]):
 
     #: List of patterns matching knob names that belong to knobs with per-entity capability. These names cannot be
     #: used for normal knobs.
-    RESERVED_PATTERNS: List[Pattern[str]] = [
-        re.compile(r'^([a-z\-.]+):.+$')
-    ]
+    RESERVED_PATTERNS: List[Pattern[str]] = [re.compile(r'^([a-z\-.]+):.+$')]
 
     def __init__(
         self,
@@ -343,7 +314,7 @@ class Knob(Generic[T]):
         envvar: Optional[str] = None,
         default: Optional[T] = None,
         default_label: Optional[str] = None,
-        cast_from_str: Optional[Callable[[str], T]] = None
+        cast_from_str: Optional[Callable[[str], T]] = None,
     ) -> None:
         self.knobname = knobname
         self.help = inspect.cleandoc(help)
@@ -389,10 +360,7 @@ class Knob(Generic[T]):
             self._sources.append(KnobSourceDefault(self, default, default_label=default_label))
 
         if not self._sources:
-            raise KnobError(
-                self,
-                'no source specified - no DB, envvar or default value.'
-            )
+            raise KnobError(self, 'no source specified - no DB, envvar or default value.')
 
         # If the knob isn't backed by a database, it should be possible to deduce its value *now*,
         # as it depends on envvar or default value. For such knobs, we provide a shortcut, easy-to-use
@@ -415,7 +383,7 @@ class Knob(Generic[T]):
                 raise KnobError(
                     self,
                     'no DB, yet other sources do not provide value! To fix, add an envvar or default value.',
-                    failure=failure
+                    failure=failure,
                 )
 
             return value
@@ -441,10 +409,7 @@ class Knob(Generic[T]):
         return f'<Knob: {self.knobname}: {" ".join(traits)}>'
 
     def _get_value(
-        self,
-        skip_db: bool = False,
-        skip_per_entity: bool = False,
-        **kwargs: Any
+        self, skip_db: bool = False, skip_per_entity: bool = False, **kwargs: Any
     ) -> Tuple[Optional[T], Optional['Failure']]:
         """
         The core method for getting the knob value. Returns two items:
@@ -546,7 +511,8 @@ KNOB_LOGGING_LEVEL: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_LEVEL',
     cast_from_str=lambda s: logging._nameToLevel.get(s.strip().upper(), logging.INFO),
-    default=logging.INFO)
+    default=logging.INFO,
+)
 
 KNOB_LOGGING_JSON: Knob[bool] = Knob(
     'logging.json',
@@ -554,7 +520,7 @@ KNOB_LOGGING_JSON: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_JSON',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=True
+    default=True,
 )
 
 KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
@@ -564,7 +530,7 @@ KNOB_CONFIG_DIRPATH: Knob[str] = Knob(
     envvar='ARTEMIS_CONFIG_DIR',
     cast_from_str=lambda s: os.path.expanduser(s.strip()),
     default=os.getcwd(),
-    default_label='$CWD'
+    default_label='$CWD',
 )
 
 KNOB_BROKER_URL: Knob[str] = Knob(
@@ -576,7 +542,7 @@ KNOB_BROKER_URL: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_BROKER_URL',
     cast_from_str=str,
-    default='amqp://guest:guest@127.0.0.1:5672'
+    default='amqp://guest:guest@127.0.0.1:5672',
 )
 
 KNOB_CACHE_URL: Knob[str] = Knob(
@@ -585,7 +551,7 @@ KNOB_CACHE_URL: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_CACHE_URL',
     cast_from_str=str,
-    default='redis://127.0.0.1:6379'
+    default='redis://127.0.0.1:6379',
 )
 
 KNOB_BROKER_CONFIRM_DELIVERY: Knob[bool] = Knob(
@@ -596,16 +562,10 @@ KNOB_BROKER_CONFIRM_DELIVERY: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_BROKER_CONFIRM_DELIVERY',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=True
+    default=True,
 )
 
-KNOB_DB_URL: Knob[str] = Knob(
-    'db.url',
-    'Database URL.',
-    has_db=False,
-    envvar='ARTEMIS_DB_URL',
-    cast_from_str=str
-)
+KNOB_DB_URL: Knob[str] = Knob('db.url', 'Database URL.', has_db=False, envvar='ARTEMIS_DB_URL', cast_from_str=str)
 
 KNOB_VAULT_PASSWORD: Knob[Optional[str]] = Knob(
     'vault.password',
@@ -613,7 +573,7 @@ KNOB_VAULT_PASSWORD: Knob[Optional[str]] = Knob(
     has_db=False,
     envvar='ARTEMIS_VAULT_PASSWORD',
     cast_from_str=str,
-    default=''  # "empty" password, not set
+    default='',  # "empty" password, not set
 )
 
 KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
@@ -623,7 +583,7 @@ KNOB_VAULT_PASSWORD_FILEPATH: Knob[str] = Knob(
     envvar='ARTEMIS_VAULT_PASSWORD_FILE',
     cast_from_str=lambda s: os.path.expanduser(s.strip()),
     default=os.path.expanduser('~/.vault_password'),
-    default_label='$HOME/.vault_password'
+    default_label='$HOME/.vault_password',
 )
 
 KNOB_LOGGING_DB_QUERIES: Knob[bool] = Knob(
@@ -632,7 +592,7 @@ KNOB_LOGGING_DB_QUERIES: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_DB_QUERIES',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_LOGGING_DB_SLOW_QUERIES: Knob[bool] = Knob(
@@ -645,7 +605,7 @@ KNOB_LOGGING_DB_SLOW_QUERIES: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_DB_SLOW_QUERIES',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD: Knob[float] = Knob(
@@ -655,7 +615,7 @@ KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD: Knob[float] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_DB_SLOW_QUERY_THRESHOLD',
     cast_from_str=float,
-    default=10.0
+    default=10.0,
 )
 
 
@@ -665,7 +625,7 @@ KNOB_LOGGING_DB_POOL: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_DB_POOL',
     cast_from_str=str,
-    default='no'
+    default='no',
 )
 
 KNOB_DB_POOL_SIZE: Knob[int] = Knob(
@@ -674,7 +634,7 @@ KNOB_DB_POOL_SIZE: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_DB_POOL_SIZE',
     cast_from_str=int,
-    default=20
+    default=20,
 )
 
 KNOB_DB_POOL_MAX_OVERFLOW: Knob[int] = Knob(
@@ -683,7 +643,7 @@ KNOB_DB_POOL_MAX_OVERFLOW: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_DB_POOL_MAX_OVERFLOW',
     cast_from_str=int,
-    default=10
+    default=10,
 )
 
 KNOB_POOL_ENABLED: Knob[bool] = Knob(
@@ -693,7 +653,7 @@ KNOB_POOL_ENABLED: Knob[bool] = Knob(
     per_entity=True,
     envvar='ARTEMIS_POOL_ENABLED',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=True
+    default=True,
 )
 
 KNOB_SHELF_MAX_GUESTS: Knob[int] = Knob(
@@ -703,7 +663,7 @@ KNOB_SHELF_MAX_GUESTS: Knob[int] = Knob(
     per_entity=True,
     envvar='ARTEMIS_SHELF_MAX_GUESTS',
     cast_from_str=int,
-    default=10
+    default=10,
 )
 
 KNOB_WORKER_PROCESS_METRICS_ENABLED: Knob[bool] = Knob(
@@ -713,7 +673,7 @@ KNOB_WORKER_PROCESS_METRICS_ENABLED: Knob[bool] = Knob(
     per_entity=False,
     envvar='ARTEMIS_WORKER_PROCESS_METRICS_ENABLED',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=True
+    default=True,
 )
 
 KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK: Knob[int] = Knob(
@@ -723,7 +683,7 @@ KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK: Knob[int] = Knob(
     per_entity=False,
     envvar='ARTEMIS_WORKER_PROCESS_METRICS_UPDATE_TICK',
     cast_from_str=int,
-    default=60
+    default=60,
 )
 
 KNOB_WORKER_PROCESS_METRICS_TTL: Knob[int] = Knob(
@@ -733,7 +693,7 @@ KNOB_WORKER_PROCESS_METRICS_TTL: Knob[int] = Knob(
     per_entity=False,
     envvar='ARTEMIS_WORKER_PROCESS_METRICS_TTL',
     cast_from_str=int,
-    default=120
+    default=120,
 )
 
 KNOB_WORKER_TRAFFIC_METRICS_ENABLED: Knob[bool] = Knob(
@@ -743,7 +703,7 @@ KNOB_WORKER_TRAFFIC_METRICS_ENABLED: Knob[bool] = Knob(
     per_entity=False,
     envvar='ARTEMIS_WORKER_TRAFFIC_METRICS_ENABLED',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=True
+    default=True,
 )
 
 KNOB_WORKER_TRAFFIC_METRICS_TTL: Knob[int] = Knob(
@@ -754,7 +714,7 @@ KNOB_WORKER_TRAFFIC_METRICS_TTL: Knob[int] = Knob(
     envvar='ARTEMIS_WORKER_TRAFFIC_METRICS_TTL',
     cast_from_str=int,
     # The value should be comparable to how long tasks can take, which depends on resources available to workers.
-    default=600
+    default=600,
 )
 
 KNOB_DEPLOYMENT: Knob[str] = Knob(
@@ -763,7 +723,7 @@ KNOB_DEPLOYMENT: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_DEPLOYMENT',
     cast_from_str=str,
-    default='undefined-deployment'
+    default='undefined-deployment',
 )
 
 KNOB_COMPONENT: Knob[str] = Knob(
@@ -772,7 +732,7 @@ KNOB_COMPONENT: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_COMPONENT',
     cast_from_str=str,
-    default='undefined-component'
+    default='undefined-component',
 )
 
 KNOB_DEPLOYMENT_ENVIRONMENT: Knob[str] = Knob(
@@ -781,7 +741,7 @@ KNOB_DEPLOYMENT_ENVIRONMENT: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_DEPLOYMENT_ENVIRONMENT',
     cast_from_str=str,
-    default='undefined-deployment-environment'
+    default='undefined-deployment-environment',
 )
 
 KNOB_SENTRY_DSN: Knob[Optional[str]] = Knob(
@@ -791,7 +751,7 @@ KNOB_SENTRY_DSN: Knob[Optional[str]] = Knob(
     envvar='ARTEMIS_SENTRY_DSN',
     cast_from_str=str,
     # TODO: Knob cannot use None as actual default value. Needs a fix.
-    default='undefined'
+    default='undefined',
 )
 
 KNOB_SENTRY_EVENT_URL_TEMPLATE: Knob[Optional[str]] = Knob(
@@ -801,7 +761,7 @@ KNOB_SENTRY_EVENT_URL_TEMPLATE: Knob[Optional[str]] = Knob(
     envvar='ARTEMIS_SENTRY_EVENT_URL_TEMPLATE',
     cast_from_str=str,
     # TODO: Knob cannot use None as actual default value. Needs a fix.
-    default='undefined'
+    default='undefined',
 )
 
 KNOB_SENTRY_DISABLE_CERT_VERIFICATION: Knob[bool] = Knob(
@@ -810,7 +770,7 @@ KNOB_SENTRY_DISABLE_CERT_VERIFICATION: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_SENTRY_DISABLE_CERT_VERIFICATION',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_SENTRY_INTEGRATIONS: Knob[str] = Knob(
@@ -821,7 +781,7 @@ KNOB_SENTRY_INTEGRATIONS: Knob[str] = Knob(
     cast_from_str=str,
     # The rest is just default list of integrations.
     # https://docs.sentry.io/platforms/python/configuration/integrations/default-integrations/
-    default='logging,stdlib,excepthook,dedupe,atexit,modules,argv,threading'
+    default='logging,stdlib,excepthook,dedupe,atexit,modules,argv,threading',
 )
 
 KNOB_TRACING_ENABLED: Knob[bool] = Knob(
@@ -830,7 +790,7 @@ KNOB_TRACING_ENABLED: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_TRACING_ENABLED',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_SENTRY_ISSUES_SAMPLE_RATE: Knob[float] = Knob(
@@ -842,7 +802,7 @@ KNOB_SENTRY_ISSUES_SAMPLE_RATE: Knob[float] = Knob(
     has_db=False,
     envvar='ARTEMIS_SENTRY_ISSUES_SAMPLE_RATE',
     cast_from_str=float,
-    default=1.0
+    default=1.0,
 )
 
 KNOB_SENTRY_TRACING_SAMPLE_RATE: Knob[float] = Knob(
@@ -854,7 +814,7 @@ KNOB_SENTRY_TRACING_SAMPLE_RATE: Knob[float] = Knob(
     has_db=False,
     envvar='ARTEMIS_SENTRY_TRACING_SAMPLE_RATE',
     cast_from_str=float,
-    default=1.0
+    default=1.0,
 )
 
 KNOB_LOGGING_SENTRY: Knob[bool] = Knob(
@@ -863,7 +823,7 @@ KNOB_LOGGING_SENTRY: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_SENTRY',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_LOGGING_SINGLETON_LOCKS: Knob[bool] = Knob(
@@ -872,7 +832,7 @@ KNOB_LOGGING_SINGLETON_LOCKS: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_SINGLETON_LOCKS',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_TEMPLATE_VARIABLE_DELIMITERS: Knob[str] = Knob(
@@ -886,7 +846,7 @@ KNOB_TEMPLATE_VARIABLE_DELIMITERS: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_TEMPLATE_VARIABLE_DELIMITERS',
     cast_from_str=str,
-    default='{{,}}'
+    default='{{,}}',
 )
 
 KNOB_TEMPLATE_BLOCK_DELIMITERS: Knob[str] = Knob(
@@ -900,7 +860,7 @@ KNOB_TEMPLATE_BLOCK_DELIMITERS: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_TEMPLATE_BLOCK_DELIMITERS',
     cast_from_str=str,
-    default='{%,%}'  # noqa: FS003
+    default='{%,%}',  # noqa: FS003
 )
 
 KNOB_WORKER_MAX_TASKS_PER_PROCESS: Knob[int] = Knob(
@@ -909,7 +869,7 @@ KNOB_WORKER_MAX_TASKS_PER_PROCESS: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_WORKER_MAX_TASKS_PER_PROCESS',
     cast_from_str=int,
-    default=0
+    default=0,
 )
 
 KNOB_DISABLE_CERT_VERIFICATION: Knob[bool] = Knob(
@@ -918,7 +878,7 @@ KNOB_DISABLE_CERT_VERIFICATION: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_DISABLE_CERT_VERIFICATION',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_HTTP_TIMEOUT: Knob[int] = Knob(
@@ -927,7 +887,7 @@ KNOB_HTTP_TIMEOUT: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_HTTP_TIMEOUT',
     cast_from_str=int,
-    default=60
+    default=60,
 )
 
 

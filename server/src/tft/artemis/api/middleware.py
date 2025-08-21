@@ -43,7 +43,7 @@ KNOB_API_ENABLE_AUTHENTICATION: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_ENABLE_AUTHENTICATION',
     cast_from_str=normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
@@ -55,7 +55,7 @@ KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_ENABLE_AUTHORIZATION',
     cast_from_str=normalize_bool_option,
-    default=False
+    default=False,
 )
 
 
@@ -65,7 +65,7 @@ class BaseHTTPMiddleware(FastAPIBaseHTTPMiddleware):
 
         return (
             f'{request.method} {request.scope["path"]} HTTP/{request.scope["http_version"]}',
-            f'{client[0] if client else "<unknown>"}:{client[1] if client else "<unknown>"}'
+            f'{client[0] if client else "<unknown>"}:{client[1] if client else "<unknown>"}',
         )
 
     def get_request_label(self, request: Request) -> str:
@@ -78,11 +78,7 @@ class BaseHTTPMiddleware(FastAPIBaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         with Sentry.start_span(
-            TracingOp.HTTP_SERVER,
-            'api-request.middleware',
-            tags={
-                'midleware': self.__class__.__name__
-            }
+            TracingOp.HTTP_SERVER, 'api-request.middleware', tags={'midleware': self.__class__.__name__}
         ):
             return await self.do_dispatch(request, call_next)
 
@@ -111,7 +107,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
         ctx = AuthContext(
             request=request,
             is_authentication_enabled=KNOB_API_ENABLE_AUTHENTICATION.value,
-            is_authorization_enabled=KNOB_API_ENABLE_AUTHORIZATION.value
+            is_authorization_enabled=KNOB_API_ENABLE_AUTHORIZATION.value,
         )
 
         ctx.inject()
@@ -146,10 +142,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         except errors.ArtemisHTTPError as error:
-            return Response(
-                status_code=error.status_code,
-                content=json.dumps(error.detail),
-                headers=error.headers)
+            return Response(status_code=error.status_code, content=json.dumps(error.detail), headers=error.headers)
 
 
 def rewrite_request_path(path: str) -> str:
@@ -177,7 +170,7 @@ def rewrite_request_path(path: str) -> str:
 
 class PrometheusMiddleware(BaseHTTPMiddleware):
     async def do_dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        status = "500 Internal Server Error"
+        status = '500 Internal Server Error'
 
         start_time = time.monotonic()
 
@@ -239,7 +232,7 @@ class ProfileMiddleware(BaseHTTPMiddleware):
     async def do_dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         from . import API_PROFILE_PATH_PATTERN, KNOB_API_PROFILING_LIMIT, KNOB_API_VERBOSE_PROFILING
 
-        if not API_PROFILE_PATH_PATTERN.match(request.scope["path"]):
+        if not API_PROFILE_PATH_PATTERN.match(request.scope['path']):
             return await call_next(request)
 
         logger = get_logger()
@@ -266,17 +259,19 @@ class TracingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         client = request.scope.get('client')
 
-        with sentry_sdk.isolation_scope() as scope, Sentry.start_transaction(
-            TracingOp.HTTP_SERVER,
-            'api-request',
-            scope=scope,
-            data={
-                'http.request.client':
-                    f'{client[0] if client else "<unknown>"}:{client[1] if client else "<unknown>"}',
-                'http.request.method': request.method,
-                'http.request.path': request.scope['path']
-            }
-        ) as tracing_transaction:
+        with (
+            sentry_sdk.isolation_scope() as scope,
+            Sentry.start_transaction(
+                TracingOp.HTTP_SERVER,
+                'api-request',
+                scope=scope,
+                data={
+                    'http.request.client': f'{client[0] if client else "<unknown>"}:{client[1] if client else "<unknown>"}',  # noqa: E501
+                    'http.request.method': request.method,
+                    'http.request.path': request.scope['path'],
+                },
+            ) as tracing_transaction,
+        ):
             request.state.tracing_trace = tracing_transaction.trace_id
             request.state.tracing_scope = scope
             request.state.tracing_transaction = tracing_transaction
@@ -300,10 +295,7 @@ class RequestCancelledMiddleware(BaseHTTPMiddleware):
                 end = datetime.datetime.utcnow()
 
                 Failure(
-                    'client disconnected from API',
-                    delay=str(end - start),
-                    client=client,
-                    path=request.scope['path']
+                    'client disconnected from API', delay=str(end - start), client=client, path=request.scope['path']
                 ).handle(logger)
 
 
@@ -311,5 +303,5 @@ MIDDLEWARE = {
     'request-cancelled': RequestCancelledMiddleware,
     'authorization': AuthorizationMiddleware,
     'prometheus': PrometheusMiddleware,
-    'rss-watcher': RSSWatcherMiddleware
+    'rss-watcher': RSSWatcherMiddleware,
 }

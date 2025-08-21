@@ -9,6 +9,7 @@ Revises: c22acf6e42f9
 Create Date: 2021-03-15 16:38:09.928170
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -37,6 +38,6 @@ def downgrade() -> None:
         sa.Column('diskspace', sa.BIGINT(), nullable=True),
         sa.Column('snapshots', sa.BIGINT(), nullable=True),
         sa.CheckConstraint("dimension IN ('LIMITS', 'USAGE')", name='poolresourcesmetricsdimensions'),
-        sa.PrimaryKeyConstraint('poolname', 'dimension')
+        sa.PrimaryKeyConstraint('poolname', 'dimension'),
     )
     # ### end Alembic commands ###

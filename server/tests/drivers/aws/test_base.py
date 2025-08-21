@@ -16,7 +16,7 @@ AWS_TAGS_EXAMPLES: Dict[str, str] = {
     'tag4': '',
     'tag5': 'foo bar',
     'tag6': 'foo "bar"',
-    'tag7': 'foo \'bar\''
+    'tag7': "foo 'bar'",
 }
 
 
@@ -28,7 +28,7 @@ def test_serialize_tags() -> None:
         'Key=tag4,Value=""',
         'Key=tag5,Value=foo bar',
         'Key=tag6,Value=foo <quote>bar<quote>',
-        'Key=tag7,Value=foo <singlequote>bar<singlequote>'
+        'Key=tag7,Value=foo <singlequote>bar<singlequote>',
     ]
 
 
@@ -39,11 +39,9 @@ def test_tags_to_tags_specifications() -> None:
     ]
 
 
-@pytest.mark.parametrize(('api_arch', 'artemis_arch'), [
-    ('x86_64', 'x86_64'),
-    ('arm64', 'aarch64'),
-    ('i386', 'i386'),
-    ('x86_64_mac', 'x86_64_mac')
-])
+@pytest.mark.parametrize(
+    ('api_arch', 'artemis_arch'),
+    [('x86_64', 'x86_64'), ('arm64', 'aarch64'), ('i386', 'i386'), ('x86_64_mac', 'x86_64_mac')],
+)
 def test_aws_arch_to_arch(api_arch: str, artemis_arch: Optional[str]) -> None:
     assert tft.artemis.drivers.aws._aws_arch_to_arch(api_arch) == artemis_arch

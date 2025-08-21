@@ -17,20 +17,11 @@ def test_sanity(
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
     flavors: List[AWSFlavor],
-    image: AWSPoolImageInfo
+    image: AWSPoolImageInfo,
 ) -> None:
-    cast(MagicMock, guest_request).requests_guest_log = MagicMock(
-        'guest_request.requests_guest_log',
-        return_value=True
-    )
+    cast(MagicMock, guest_request).requests_guest_log = MagicMock('guest_request.requests_guest_log', return_value=True)
 
-    suitable_flavors = aws_pool._filter_flavors_console_url_support(
-        logger,
-        session,
-        guest_request,
-        image,
-        flavors
-    )
+    suitable_flavors = aws_pool._filter_flavors_console_url_support(logger, session, guest_request, image, flavors)
 
     assert [flavor.id for flavor in suitable_flavors] == ['x86_64.1', 'x86_64.3', 'aarch64.1']
 
@@ -41,19 +32,12 @@ def test_not_requested(
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
     flavors: List[AWSFlavor],
-    image: AWSPoolImageInfo
+    image: AWSPoolImageInfo,
 ) -> None:
     cast(MagicMock, guest_request).requests_guest_log = MagicMock(
-        'guest_request.requests_guest_log',
-        return_value=False
+        'guest_request.requests_guest_log', return_value=False
     )
 
-    suitable_flavors = aws_pool._filter_flavors_console_url_support(
-        logger,
-        session,
-        guest_request,
-        image,
-        flavors
-    )
+    suitable_flavors = aws_pool._filter_flavors_console_url_support(logger, session, guest_request, image, flavors)
 
     assert suitable_flavors == flavors

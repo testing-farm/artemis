@@ -40,7 +40,7 @@ KNOB_UPDATE_GUEST_LOG_DELAY: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOGS_UPDATE_TICK',
     cast_from_str=int,
-    default=60
+    default=60,
 )
 
 
@@ -68,11 +68,13 @@ class Workspace(_Workspace):
 
             assert self.gr
 
-            r_guest_log = SafeQuery.from_session(self.session, GuestLog) \
-                .filter(GuestLog.guestname == self.gr.guestname) \
-                .filter(GuestLog.logname == self.logname) \
-                .filter(GuestLog.contenttype == self.contenttype) \
+            r_guest_log = (
+                SafeQuery.from_session(self.session, GuestLog)
+                .filter(GuestLog.guestname == self.gr.guestname)
+                .filter(GuestLog.logname == self.logname)
+                .filter(GuestLog.contenttype == self.contenttype)
                 .one_or_none()
+            )
 
             if r_guest_log.is_error:
                 return self._error(r_guest_log, 'failed to fetch the log')
@@ -96,16 +98,11 @@ class Workspace(_Workspace):
                     logname=guest_log.logname,
                     contenttype=guest_log.contenttype.value,
                     current_state=guest_log.state.value,
-                    **kwargs
+                    **kwargs,
                 )
 
             if guest_log is None:
-                return self._fail(
-                    Failure(
-                        'no such guest log'
-                    ),
-                    'no such guest log'
-                )
+                return self._fail(Failure('no such guest log'), 'no such guest log')
 
             if guest_log.state == GuestLogState.ERROR:
                 # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
@@ -125,7 +122,7 @@ class Workspace(_Workspace):
                     self.session,
                     state=GuestLogState.COMPLETE,
                     expires=guest_log.expires,
-                    url=guest_log.url
+                    url=guest_log.url,
                 )
 
                 if r_log_update.is_error:
@@ -165,7 +162,7 @@ class Workspace(_Workspace):
                         self.session,
                         state=GuestLogState.UNSUPPORTED,
                         expires=guest_log.expires,
-                        url=guest_log.url
+                        url=guest_log.url,
                     )
 
                     if r_log_update.is_error:
@@ -173,9 +170,9 @@ class Workspace(_Workspace):
 
                     return
 
-                r_update: Result[GuestLogUpdateProgress, Failure] = Ok(GuestLogUpdateProgress(
-                    state=GuestLogState.UNSUPPORTED
-                ))
+                r_update: Result[GuestLogUpdateProgress, Failure] = Ok(
+                    GuestLogUpdateProgress(state=GuestLogState.UNSUPPORTED)
+                )
 
             elif guest_log.state == GuestLogState.UNSUPPORTED:
                 # If the guest request reached its final states, there's no chance for a pool change in the future,
@@ -188,7 +185,7 @@ class Workspace(_Workspace):
                         self.session,
                         state=GuestLogState.UNSUPPORTED,
                         expires=guest_log.expires,
-                        url=guest_log.url
+                        url=guest_log.url,
                     )
 
                     if r_log_update.is_error:
@@ -196,11 +193,7 @@ class Workspace(_Workspace):
 
                     return
 
-                r_update = self.pool.update_guest_log(
-                    self.logger,
-                    self.gr,
-                    guest_log
-                )
+                r_update = self.pool.update_guest_log(self.logger, self.gr, guest_log)
 
             elif guest_log.state == GuestLogState.COMPLETE:
                 if not guest_log.is_expired:
@@ -208,18 +201,10 @@ class Workspace(_Workspace):
 
                     return
 
-                r_update = self.pool.update_guest_log(
-                    self.logger,
-                    self.gr,
-                    guest_log
-                )
+                r_update = self.pool.update_guest_log(self.logger, self.gr, guest_log)
 
             elif guest_log.state == GuestLogState.PENDING or guest_log.state == GuestLogState.IN_PROGRESS:
-                r_update = self.pool.update_guest_log(
-                    self.logger,
-                    self.gr,
-                    guest_log
-                )
+                r_update = self.pool.update_guest_log(self.logger, self.gr, guest_log)
 
             if r_update.is_error:
                 return self._error(r_update, 'failed to update the log')
@@ -233,7 +218,7 @@ class Workspace(_Workspace):
                 self.session,
                 state=update_progress.state,
                 expires=update_progress.expires,
-                url=update_progress.url
+                url=update_progress.url,
             )
 
             if r_log_update.is_error:
@@ -257,7 +242,7 @@ class Workspace(_Workspace):
                 self.guestname,
                 self.logname,
                 self.contenttype.value,
-                delay=update_progress.delay_update or KNOB_UPDATE_GUEST_LOG_DELAY.value
+                delay=update_progress.delay_update or KNOB_UPDATE_GUEST_LOG_DELAY.value,
             )
 
     @classmethod
@@ -268,7 +253,7 @@ class Workspace(_Workspace):
         session: sqlalchemy.orm.session.Session,
         guestname: str,
         logname: str,
-        contenttype: GuestLogContentType
+        contenttype: GuestLogContentType,
     ) -> 'Workspace':
         """
         Create workspace.
@@ -295,7 +280,7 @@ class Workspace(_Workspace):
         session: sqlalchemy.orm.session.Session,
         guestname: str,
         logname: str,
-        contenttype: GuestLogContentType
+        contenttype: GuestLogContentType,
     ) -> DoerReturnType:
         """
         Inspect the provisioning progress of a given request, and update info Artemis holds for this request.
@@ -307,11 +292,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, guestname, logname, contenttype) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname, logname, contenttype).begin().run().complete().final_result
 
 
 @task(tail_handler=LoggingTailHandler())
@@ -319,5 +300,5 @@ def update_guest_log(guestname: str, logname: str, contenttype: str) -> None:
     task_core(
         cast(DoerType, Workspace.update_guest_log),
         logger=get_guest_logger(Workspace.TASKNAME, _ROOT_LOGGER, guestname),
-        doer_args=(guestname, logname, GuestLogContentType(contenttype))
+        doer_args=(guestname, logname, GuestLogContentType(contenttype)),
     )

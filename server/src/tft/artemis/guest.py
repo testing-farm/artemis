@@ -81,9 +81,7 @@ class GuestLogger(gluetool.log.ContextAdapter):
         :param guestname: snapshot request name to add.
         """
 
-        super().__init__(logger, {
-            'ctx_guest_name': (10, guestname)
-        })
+        super().__init__(logger, {'ctx_guest_name': (10, guestname)})
 
     @property
     def guestname(self) -> str:
@@ -109,9 +107,7 @@ class ShelfLogger(gluetool.log.ContextAdapter):
         :param shelfname: guest shelf name to add.
         """
 
-        super().__init__(logger, {
-            'ctx_shelf_name': (12, shelfname)
-        })
+        super().__init__(logger, {'ctx_shelf_name': (12, shelfname)})
 
     @property
     def shelfname(self) -> str:
@@ -137,9 +133,7 @@ class SnapshotLogger(gluetool.log.ContextAdapter):
         :param snapshotname: snapshot request name to add.
         """
 
-        super().__init__(logger, {
-            'ctx_snapshot_name': (11, snapshotname)
-        })
+        super().__init__(logger, {'ctx_snapshot_name': (11, snapshotname)})
 
     @property
     def snapshotname(self) -> str:

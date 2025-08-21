@@ -101,8 +101,8 @@ ConfigFlavorCPUSpecType = TypedDict(
         'model': Optional[int],
         'model-name': Optional[str],
         'stepping': Optional[int],
-        'flag': Optional[List[str]]
-    }
+        'flag': Optional[List[str]],
+    },
 )
 
 
@@ -112,7 +112,7 @@ ConfigFlavorDiskSpecificSpecType = TypedDict(
     {
         'size': Optional[Union[int, str]],
         'model-name': Optional[str],
-    }
+    },
 )
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].disk (expansion)
@@ -123,14 +123,11 @@ ConfigFlavorDiskExpansionSpecType = TypedDict(
         'min-size': Optional[Union[int, str]],
         'max-size': Optional[Union[int, str]],
         'model-name': Optional[str],
-    }
+    },
 )
 
 ConfigFlavorDiskExpandedSpecType = TypedDict(
-    'ConfigFlavorDiskExpandedSpecType',
-    {
-        'additional-disks': ConfigFlavorDiskExpansionSpecType
-    }
+    'ConfigFlavorDiskExpandedSpecType', {'additional-disks': ConfigFlavorDiskExpansionSpecType}
 )
 
 ConfigFlavorDiskSpecType = Union[ConfigFlavorDiskSpecificSpecType, ConfigFlavorDiskExpandedSpecType]
@@ -143,8 +140,8 @@ ConfigFlavorGPUSpecType = TypedDict(
         'device-name': Optional[str],
         'vendor': Optional[int],
         'vendor-name': Optional[str],
-        'driver': Optional[str]
-    }
+        'driver': Optional[str],
+    },
 )
 
 
@@ -156,11 +153,7 @@ class ConfigFlavorTPMSpecType(TypedDict):
 #: pools[].parameters.{custom-flavors,patch-flavors}[].virtualization
 ConfigFlavorVirtualizationSpecType = TypedDict(
     'ConfigFlavorVirtualizationSpecType',
-    {
-        'is-supported': Optional[bool],
-        'is-virtualized': Optional[bool],
-        'hypervisor': Optional[str]
-    }
+    {'is-supported': Optional[bool], 'is-virtualized': Optional[bool], 'hypervisor': Optional[str]},
 )
 
 
@@ -187,8 +180,8 @@ ConfigPatchFlavorSpecType = TypedDict(
         'gpu': ConfigFlavorGPUSpecType,
         'tpm': ConfigFlavorTPMSpecType,
         'virtualization': ConfigFlavorVirtualizationSpecType,
-        'boot': ConfigFlavorBootSpecType
-    }
+        'boot': ConfigFlavorBootSpecType,
+    },
 )
 
 
@@ -216,23 +209,13 @@ class ConfigImageSSHSpecType(TypedDict, total=False):
 
 
 ConfigImageSpecType = TypedDict(
-    'ConfigImageSpecType',
-    {
-        'name': str,
-        'name-regex': str,
-        'ssh': ConfigImageSSHSpecType,
-        'supports-kickstart': bool
-    }
+    'ConfigImageSpecType', {'name': str, 'name-regex': str, 'ssh': ConfigImageSSHSpecType, 'supports-kickstart': bool}
 )
 
 
 #: pools[].capabilities.disable-guest-logs
 ConfigCapabilitiesDisableGuestLogType = TypedDict(
-    'ConfigCapabilitiesDisableGuestLogType',
-    {
-        'log-name': str,
-        'content-type': str
-    }
+    'ConfigCapabilitiesDisableGuestLogType', {'log-name': str, 'content-type': str}
 )
 
 
@@ -244,8 +227,8 @@ ConfigCapabilitiesType = TypedDict(
         'supports-hostnames': Union[str, bool],
         'supports-snapshots': Union[str, bool],
         'supports-spot-instances': Union[str, bool],
-        'disable-guest-logs': List[ConfigCapabilitiesDisableGuestLogType]
-    }
+        'disable-guest-logs': List[ConfigCapabilitiesDisableGuestLogType],
+    },
 )
 
 
@@ -262,7 +245,7 @@ KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     per_entity=True,
     envvar='ARTEMIS_DISPATCH_RESOURCE_CLEANUP_DELAY',
     cast_from_str=int,
-    default=0
+    default=0,
 )
 
 KNOB_CLI_COMMAND_TIMEOUT_PATTERNS: Knob[str] = Knob(
@@ -271,7 +254,7 @@ KNOB_CLI_COMMAND_TIMEOUT_PATTERNS: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS',
     cast_from_str=str,
-    default=r'3600:.*'
+    default=r'3600:.*',
 )
 
 KNOB_CLI_COMMAND_TIMEOUT_KILL_DELAY: Knob[int] = Knob(
@@ -280,7 +263,7 @@ KNOB_CLI_COMMAND_TIMEOUT_KILL_DELAY: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_KILL_DELAY',
     cast_from_str=int,
-    default=10
+    default=10,
 )
 
 KNOB_LOGGING_SLOW_CLI_COMMANDS: Knob[bool] = Knob(
@@ -292,7 +275,7 @@ KNOB_LOGGING_SLOW_CLI_COMMANDS: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_SLOW_CLI_COMMANDS',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD: Knob[float] = Knob(
@@ -301,7 +284,7 @@ KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD: Knob[float] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_SLOW_CLI_COMMAND_THRESHOLD',
     cast_from_str=float,
-    default=10.0
+    default=10.0,
 )
 
 KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN: Knob[str] = Knob(
@@ -310,7 +293,7 @@ KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN',
     cast_from_str=str,
-    default=r'.*'
+    default=r'.*',
 )
 
 KNOB_UPDATE_GUEST_REQUEST_TICK: Knob[int] = Knob(
@@ -321,7 +304,7 @@ KNOB_UPDATE_GUEST_REQUEST_TICK: Knob[int] = Knob(
     per_entity=True,
     envvar='ARTEMIS_UPDATE_GUEST_REQUEST_TICK',
     cast_from_str=int,
-    default=30
+    default=30,
 )
 
 KNOB_LOGGING_CLI_OUTPUT: Knob[bool] = Knob(
@@ -332,7 +315,7 @@ KNOB_LOGGING_CLI_OUTPUT: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_CLI_COMMANDS',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_LOGGING_CLI_COMMAND_PATTERN: Knob[str] = Knob(
@@ -341,7 +324,7 @@ KNOB_LOGGING_CLI_COMMAND_PATTERN: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_LOG_CLI_COMMAND_PATTERN',
     cast_from_str=str,
-    default=r'.*'
+    default=r'.*',
 )
 
 KNOB_DEFAULT_POST_INSTALL_TEMPLATE: Knob[str] = Knob(
@@ -354,7 +337,7 @@ KNOB_DEFAULT_POST_INSTALL_TEMPLATE: Knob[str] = Knob(
 {% if GUEST_REQUEST.post_install_script %}
 {{ GUEST_REQUEST.post_install_script }}
 {% endif %}
-"""
+""",
 )
 
 KNOB_CLI_SESSION_CONFIGURATION_DIR: Knob[str] = Knob(
@@ -363,7 +346,7 @@ KNOB_CLI_SESSION_CONFIGURATION_DIR: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_CLI_SESSION_CONFIGURATION_DIR',
     cast_from_str=str,
-    default='/var/tmp/artemis/cli-sessions'
+    default='/var/tmp/artemis/cli-sessions',
 )
 
 KNOB_PARALLEL_CLI_SESSIONS: Knob[int] = Knob(
@@ -374,7 +357,7 @@ KNOB_PARALLEL_CLI_SESSIONS: Knob[int] = Knob(
     envvar='ARTEMIS_MAX_PARALLEL_CLI_SESSIONS',
     cast_from_str=int,
     # NOTE(ivasilev) The number of parallel sessions is still trial and error, let's keep 4 for now and increase later.
-    default=4
+    default=4,
 )
 
 
@@ -386,7 +369,7 @@ except Exception as exc:
     Failure.from_exc(
         'failed to compile ARTEMIS_LOG_SLOW_CLI_COMMAND_PATTERN pattern',
         exc,
-        pattern=KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN.value
+        pattern=KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN.value,
     ).handle(LOGGER.get())
 
     sys.exit(1)
@@ -398,9 +381,7 @@ try:
 
 except Exception as exc:
     Failure.from_exc(
-        'failed to compile ARTEMIS_LOG_CLI_COMMAND_PATTERN pattern',
-        exc,
-        pattern=KNOB_LOGGING_CLI_COMMAND_PATTERN.value
+        'failed to compile ARTEMIS_LOG_CLI_COMMAND_PATTERN pattern', exc, pattern=KNOB_LOGGING_CLI_COMMAND_PATTERN.value
     ).handle(LOGGER.get())
 
     sys.exit(1)
@@ -409,10 +390,7 @@ except Exception as exc:
 # Precompile the timeout command patterns
 try:
     CLI_TIMEOUT_PATTERNS: List[Tuple[Pattern[str], int]] = [
-        (
-            re.compile(command_pattern.split(':', 1)[1]),
-            int(command_pattern.split(':', 1)[0])
-        )
+        (re.compile(command_pattern.split(':', 1)[1]), int(command_pattern.split(':', 1)[0]))
         for command_pattern in KNOB_CLI_COMMAND_TIMEOUT_PATTERNS.value.split(';')
     ]
 
@@ -420,7 +398,7 @@ except Exception as exc:
     Failure.from_exc(
         'failed to compile ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS pattern',
         exc,
-        pattern=KNOB_CLI_COMMAND_TIMEOUT_PATTERNS.value
+        pattern=KNOB_CLI_COMMAND_TIMEOUT_PATTERNS.value,
     ).handle(LOGGER.get())
 
     sys.exit(1)
@@ -435,12 +413,12 @@ if hasattr(shlex, 'join'):
     command_join = getattr(shlex, 'join')
 
 else:
+
     def command_join(split_command: Iterable[str]) -> str:
         return ' '.join(shlex.quote(arg) for arg in split_command)
 
 
 class _AnyArchitecture:
-
     def __repr__(self) -> str:
         return '<Any>'
 
@@ -462,9 +440,7 @@ class CLIOutput:
 
 class PoolLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str) -> None:
-        super().__init__(logger, {
-            'ctx_pool_name': (10, poolname)
-        })
+        super().__init__(logger, {'ctx_pool_name': (10, poolname)})
 
     @property
     def poolname(self) -> str:
@@ -485,10 +461,7 @@ class CommonPoolErrorCauses(enum.Enum):
 
 
 #: A type for callables extracting CLI error cause from process output.
-PoolErrorCauseExtractor = Callable[
-    [gluetool.utils.ProcessOutput],
-    PoolErrorCauses
-]
+PoolErrorCauseExtractor = Callable[[gluetool.utils.ProcessOutput], PoolErrorCauses]
 
 
 @dataclasses.dataclass(repr=False)
@@ -540,25 +513,17 @@ class PoolImageInfo(SerializableContainer):
 
 class FlavorKeyGetterType(Protocol):
     def __call__(
-        self,
-        flavor: Flavor
+        self, flavor: Flavor
     ) -> Tuple[int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
         pass
 
 
 def flavor_to_key(
-    flavor: Flavor
+    flavor: Flavor,
 ) -> Tuple[int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
     # All are optional, meaning "don't care", and in this sorting it doesn't matter (possible?)
     # TODO: better algorithm would be better, one aware of optional values (first? last?)
-    return (
-        flavor.cpu.cores or 0,
-        flavor.memory or 0,
-        tuple(
-            disk.size or 0
-            for disk in flavor.disk
-        )
-    )
+    return (flavor.cpu.cores or 0, flavor.memory or 0, tuple(disk.size or 0 for disk in flavor.disk))
 
 
 @dataclasses.dataclass
@@ -610,6 +575,7 @@ class ConsoleUrlData:
     """
     Base class for guest console data.
     """
+
     type: str
     url: str
     expires: datetime.datetime
@@ -671,10 +637,7 @@ class CanAcquire:
 
     @classmethod
     def cannot(cls, message: str, recoverable: bool = False) -> 'CanAcquire':
-        return CanAcquire(
-            can_acquire=False,
-            reason=Failure(message, recoverable=recoverable)
-        )
+        return CanAcquire(can_acquire=False, reason=Failure(message, recoverable=recoverable))
 
 
 class ProvisioningState(enum.Enum):
@@ -779,8 +742,9 @@ class PoolResourcesIDs(SerializableContainer):
     @classmethod
     def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
         # Convert ctime string to datetime object
-        serialized['ctime'] = datetime.datetime.strptime(serialized['ctime'], RESOURCE_CTIME_FMT) \
-            if serialized['ctime'] else None
+        serialized['ctime'] = (
+            datetime.datetime.strptime(serialized['ctime'], RESOURCE_CTIME_FMT) if serialized['ctime'] else None
+        )
 
         return cls(**serialized)
 
@@ -794,9 +758,7 @@ class PoolResourcesIDs(SerializableContainer):
 
 
 def _parse_flavor_disk_size(
-    field_name: str,
-    value: Optional[Union[str, int]],
-    disk: FlavorDisk
+    field_name: str, value: Optional[Union[str, int]], disk: FlavorDisk
 ) -> Result[Optional[SizeType], Failure]:
     if value is None:
         return Ok(None)
@@ -806,13 +768,11 @@ def _parse_flavor_disk_size(
     r_value = safe_call(UNITS, str(value))
 
     if r_value.is_error:
-        return Error(Failure.from_failure(
-            f'failed to parse flavor disk.{field_name}',
-            r_value.unwrap_error(),
-            details={
-                property_name: value
-            }
-        ))
+        return Error(
+            Failure.from_failure(
+                f'failed to parse flavor disk.{field_name}', r_value.unwrap_error(), details={property_name: value}
+            )
+        )
 
     raw_value = r_value.unwrap()
 
@@ -823,10 +783,7 @@ def _parse_flavor_disk_size(
     return Ok(real_value)
 
 
-def _apply_flavor_specification(
-    flavor: Flavor,
-    flavor_spec: ConfigFlavorSpecType
-) -> Result[None, Failure]:
+def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecType) -> Result[None, Failure]:
     """
     Apply a flavor specification - originating from the configuration - to a given flavor.
 
@@ -880,11 +837,7 @@ def _apply_flavor_specification(
             patched_disks.append(disk)
 
             if 'additional-disks' not in disk_patch:
-                r_size = _parse_flavor_disk_size(
-                    'size',
-                    disk_patch.get('size'),
-                    disk
-                )
+                r_size = _parse_flavor_disk_size('size', disk_patch.get('size'), disk)
 
                 if r_size.is_error:
                     return Error(r_size.unwrap_error())
@@ -898,20 +851,12 @@ def _apply_flavor_specification(
                 disk.is_expansion = True
                 disk.max_additional_items = expansion_disk_patch['max-count']
 
-                r_size = _parse_flavor_disk_size(
-                    'min-size',
-                    expansion_disk_patch['min-size'],
-                    disk
-                )
+                r_size = _parse_flavor_disk_size('min-size', expansion_disk_patch['min-size'], disk)
 
                 if r_size.is_error:
                     return Error(r_size.unwrap_error())
 
-                r_size = _parse_flavor_disk_size(
-                    'max-size',
-                    expansion_disk_patch['max-size'],
-                    disk
-                )
+                r_size = _parse_flavor_disk_size('max-size', expansion_disk_patch['max-size'], disk)
 
                 if r_size.is_error:
                     return Error(r_size.unwrap_error())
@@ -961,9 +906,7 @@ def _apply_flavor_specification(
 
 
 def _patch_flavors(
-    logger: gluetool.log.ContextAdapter,
-    flavors: Dict[str, Flavor],
-    patches: List[ConfigPatchFlavorSpecType]
+    logger: gluetool.log.ContextAdapter, flavors: Dict[str, Flavor], patches: List[ConfigPatchFlavorSpecType]
 ) -> Result[None, Failure]:
     """
     "Patch" existing flavors as specified by configuration.
@@ -991,16 +934,12 @@ def _patch_flavors(
                 flavor_name_pattern = re.compile(flavorname)
 
             except re.error as exc:
-                return Error(Failure.from_exc(
-                    'failed to compile patched flavor name-regex',
-                    exc,
-                    flavorname=flavorname
-                ))
+                return Error(
+                    Failure.from_exc('failed to compile patched flavor name-regex', exc, flavorname=flavorname)
+                )
 
             target_flavors = [
-                flavor
-                for flavor in flavors.values()
-                if flavor_name_pattern.match(flavor.name) is not None
+                flavor for flavor in flavors.values() if flavor_name_pattern.match(flavor.name) is not None
             ]
 
         else:
@@ -1008,27 +947,21 @@ def _patch_flavors(
             assert False, 'unreachable'
 
         if not target_flavors:
-            return Error(Failure(
-                'unknown patched flavor',
-                flavorname=flavorname
-            ))
+            return Error(Failure('unknown patched flavor', flavorname=flavorname))
 
         for target_flavor in target_flavors:
             r_apply_spec = _apply_flavor_specification(target_flavor, patch_spec)
 
             if r_apply_spec.is_error:
-                return Error(r_apply_spec.unwrap_error().update(
-                    flavorname=flavorname,
-                    target_flavorname=target_flavor.name
-                ))
+                return Error(
+                    r_apply_spec.unwrap_error().update(flavorname=flavorname, target_flavorname=target_flavor.name)
+                )
 
     return Ok(None)
 
 
 def _custom_flavors(
-    logger: gluetool.log.ContextAdapter,
-    flavors: Dict[str, Flavor],
-    patches: List[ConfigCustomFlavorSpecType]
+    logger: gluetool.log.ContextAdapter, flavors: Dict[str, Flavor], patches: List[ConfigCustomFlavorSpecType]
 ) -> Result[List[Flavor], Failure]:
     """
     Create custom flavors based on existing ones.
@@ -1052,11 +985,7 @@ def _custom_flavors(
         basename = custom_flavor_spec['base']
 
         if basename not in flavors:
-            return Error(Failure(
-                'unknown base flavor',
-                customname=customname,
-                basename=basename
-            ))
+            return Error(Failure('unknown base flavor', customname=customname, basename=basename))
 
         base_flavor = flavors[basename]
 
@@ -1069,10 +998,7 @@ def _custom_flavors(
 
         if r_apply_spec.is_error:
             failure = r_apply_spec.unwrap_error()
-            failure.update(
-                customname=customname,
-                basename=basename
-            )
+            failure.update(customname=customname, basename=basename)
 
             return Error(failure)
 
@@ -1081,10 +1007,7 @@ def _custom_flavors(
     return Ok(custom_flavors)
 
 
-def _apply_image_specification(
-    image: PoolImageInfo,
-    image_spec: ConfigImageSpecType
-) -> Result[None, Failure]:
+def _apply_image_specification(image: PoolImageInfo, image_spec: ConfigImageSpecType) -> Result[None, Failure]:
     """
     Apply an image specification - originating from the configuration - to a given image.
 
@@ -1118,15 +1041,10 @@ class GuestLogBlob:
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_log: GuestLog,
-        overwrite: bool = False
+        overwrite: bool = False,
     ) -> Result[None, Failure]:
         if guest_log.blobs and overwrite:
-            return guest_log.blobs[0].update(
-                logger,
-                session,
-                content=self.content,
-                content_hash=self.content_hash
-            )
+            return guest_log.blobs[0].update(logger, session, content=self.content, content_hash=self.content_hash)
 
         else:
             return GuestLogBlobDB.create(
@@ -1137,7 +1055,7 @@ class GuestLogBlob:
                 contenttype=guest_log.contenttype,
                 ctime=self.ctime,
                 content=self.content,
-                content_hash=self.content_hash
+                content_hash=self.content_hash,
             )
 
     @classmethod
@@ -1151,7 +1069,7 @@ class GuestLogBlob:
         return cls(
             ctime=datetime.datetime.utcnow(),
             content=content,
-            content_hash=hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
+            content_hash=hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest(),
         )
 
 
@@ -1177,7 +1095,7 @@ class GuestLogUpdateProgress:
         log: GuestLog,
         timestamp: Optional[datetime.datetime],
         content: Optional[str],
-        is_known_callback: Callable[[GuestLog, datetime.datetime, str, str], bool]
+        is_known_callback: Callable[[GuestLog, datetime.datetime, str, str], bool],
     ) -> 'GuestLogUpdateProgress':
         """
         Create guest log progress update from new "snapshot" content.
@@ -1209,9 +1127,7 @@ class GuestLogUpdateProgress:
 
             return GuestLogUpdateProgress(
                 state=GuestLogState.IN_PROGRESS,
-                blobs=[
-                    GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
-                ]
+                blobs=[GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)],
             )
 
         for blob in log.blobs:
@@ -1226,9 +1142,7 @@ class GuestLogUpdateProgress:
 
         return GuestLogUpdateProgress(
             state=GuestLogState.IN_PROGRESS,
-            blobs=[
-                GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)
-            ]
+            blobs=[GuestLogBlob(ctime=timestamp, content=content, content_hash=content_hash)],
         )
 
     @classmethod
@@ -1257,22 +1171,14 @@ class GuestLogUpdateProgress:
         if not log.blobs:
             logger.info(f'first log blob: {blob.ctime} {blob.content_hash}')
 
-            return GuestLogUpdateProgress(
-                state=GuestLogState.IN_PROGRESS,
-                overwrite=True,
-                blobs=[blob]
-            )
+            return GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, overwrite=True, blobs=[blob])
 
         for existing_blob in log.blobs:
             logger.info(f'existing log blob: {existing_blob.ctime} {existing_blob.content_hash}')
 
         logger.info(f'overwrite log blob: {blob.ctime} {blob.content_hash}')
 
-        return GuestLogUpdateProgress(
-            state=GuestLogState.IN_PROGRESS,
-            overwrite=True,
-            blobs=[blob]
-        )
+        return GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, overwrite=True, blobs=[blob])
 
 
 #
@@ -1291,9 +1197,7 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
         self.pool = pool
 
     def map_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
         """
         Map given guest request to images.
@@ -1304,9 +1208,7 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
         raise NotImplementedError
 
     def map(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
         """
         Map given guest request to images.
@@ -1322,11 +1224,9 @@ class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
         images = r_images.unwrap()
 
         if not images:
-            return Error(Failure(
-                'cannot map guest request to image',
-                environment=guest_request.environment,
-                recoverable=False
-            ))
+            return Error(
+                Failure('cannot map guest request to image', environment=guest_request.environment, recoverable=False)
+            )
 
         return Ok(images)
 
@@ -1342,9 +1242,7 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
         self.hook_name = hook_name
 
     def map_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
         r_engine = hook_engine(self.hook_name)
 
@@ -1355,12 +1253,7 @@ class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
 
         r_images = cast(
             Result[List[_PoolImageInfoTypeVar], Failure],
-            engine.run_hook(
-                self.hook_name,
-                logger=logger,
-                pool=self.pool,
-                environment=guest_request.environment
-            )
+            engine.run_hook(self.hook_name, logger=logger, pool=self.pool, environment=guest_request.environment),
         )
 
         if r_images.is_error:
@@ -1373,18 +1266,13 @@ class GuestLogUpdaterType(Protocol):
     __name__: str
 
     def __call__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         pass
 
 
 def guest_log_updater(
-    drivername: str,
-    logname: str,
-    contenttype: GuestLogContentType
+    drivername: str, logname: str, contenttype: GuestLogContentType
 ) -> Callable[[GuestLogUpdaterType], GuestLogUpdaterType]:
     def wrapper(func: GuestLogUpdaterType) -> GuestLogUpdaterType:
         PoolDriver.guest_log_updaters[(drivername, logname, contenttype)] = func.__name__
@@ -1395,19 +1283,17 @@ def guest_log_updater(
 
 
 def render_tags(
-    logger: gluetool.log.ContextAdapter,
-    tags: GuestTagsType,
-    vars: Dict[str, Any]
+    logger: gluetool.log.ContextAdapter, tags: GuestTagsType, vars: Dict[str, Any]
 ) -> Result[GuestTagsType, Failure]:
     for name, tag_template in tags.items():
         r_rendered = render_template(tag_template, **vars)
 
         if r_rendered.is_error:
-            return Error(Failure.from_failure(
-                'failed to render guest tags',
-                r_rendered.unwrap_error(),
-                tag_template=tag_template
-            ))
+            return Error(
+                Failure.from_failure(
+                    'failed to render guest tags', r_rendered.unwrap_error(), tag_template=tag_template
+                )
+            )
 
         tags[name] = r_rendered.unwrap()
 
@@ -1432,12 +1318,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     #: Hold all known guest log updaters, with key being driver name, log name and its content type.
     guest_log_updaters: Dict[Tuple[str, str, GuestLogContentType], str] = {}
 
-    def __init__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        poolname: str,
-        pool_config: Dict[str, Any]
-    ) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
         super().__init__(logger)
 
         self.poolname = poolname
@@ -1453,10 +1334,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     @staticmethod
     def _instantiate(
-        logger: gluetool.log.ContextAdapter,
-        driver_name: str,
-        poolname: str,
-        pool_config: Dict[str, Any]
+        logger: gluetool.log.ContextAdapter, driver_name: str, poolname: str, pool_config: Dict[str, Any]
     ) -> Result['PoolDriver', Failure]:
         pool_driver_class = PoolDriver._drivers_registry.get(driver_name)
 
@@ -1475,13 +1353,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
     # Because sometimes we just don't know whether the given pool actually exists or not...
     @staticmethod
     def load_or_none(
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        poolname: str
+        logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
     ) -> Result[Optional['PoolDriver'], Failure]:
-        r_pool_record = SafeQuery.from_session(session, Pool) \
-            .filter(Pool.poolname == poolname) \
-            .one_or_none()
+        r_pool_record = SafeQuery.from_session(session, Pool).filter(Pool.poolname == poolname).one_or_none()
 
         if r_pool_record.is_error:
             return Error(r_pool_record.unwrap_error())
@@ -1521,9 +1395,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     # ... and sometimes, we are pretty sure the pool does exist, and it's a hard error if we can't find it.
     @staticmethod
     def load(
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        poolname: str
+        logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
     ) -> Result['PoolDriver', Failure]:
         r_pool = PoolDriver.load_or_none(logger, session, poolname)
 
@@ -1533,10 +1405,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         pool = r_pool.unwrap()
 
         if pool is None:
-            return Error(Failure(
-                'no such pool',
-                poolname=poolname
-            ))
+            return Error(Failure('no such pool', poolname=poolname))
 
         return Ok(pool)
 
@@ -1547,9 +1416,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     @staticmethod
     def load_all(
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        enabled_only: bool = True
+        logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, enabled_only: bool = True
     ) -> Result[List['PoolDriver'], Failure]:
         r_pools = SafeQuery.from_session(session, Pool).all()
 
@@ -1582,10 +1449,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__}: {self.poolname}>'
 
-    def is_enabled(
-        self,
-        session: sqlalchemy.orm.session.Session
-    ) -> Result[bool, Failure]:
+    def is_enabled(self, session: sqlalchemy.orm.session.Session) -> Result[bool, Failure]:
         return KNOB_POOL_ENABLED.get_value(session=session, entityname=self.poolname)
 
     @property
@@ -1621,7 +1485,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[FlavorT]
+        suitable_flavors: List[FlavorT],
     ) -> List[FlavorT]:
         """
         Make sure the image and flavor architecture match each other.
@@ -1630,12 +1494,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if image.arch is None:
             return suitable_flavors
 
-        return list(logging_filter(
-            logger,
-            suitable_flavors,
-            'image and flavor arch matches',
-            lambda logger, flavor: flavor.arch == image.arch
-        ))
+        return list(
+            logging_filter(
+                logger,
+                suitable_flavors,
+                'image and flavor arch matches',
+                lambda logger, flavor: flavor.arch == image.arch,
+            )
+        )
 
     def dispatch_resource_cleanup(
         self,
@@ -1643,7 +1509,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         session: sqlalchemy.orm.session.Session,
         *resource_ids: PoolResourcesIDs,
         guest_request: Optional[GuestRequest] = None,
-        delay: Optional[int] = None
+        delay: Optional[int] = None,
     ) -> Result[None, Failure]:
         """
         Schedule a removal of pool resources.
@@ -1681,7 +1547,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 self.poolname,
                 resource_id.serialize_to_json(),
                 guest_request.guestname if guest_request else None,
-                delay=delay
+                delay=delay,
             )
 
         return _request_task_sequence(
@@ -1693,18 +1559,16 @@ class PoolDriver(gluetool.log.LoggerMixin):
                     (
                         self.poolname,
                         resource_id.serialize_to_json(),
-                        guest_request.guestname if guest_request else None
-                    )
+                        guest_request.guestname if guest_request else None,
+                    ),
                 )
                 for resource_id in resource_ids
             ],
-            delay=delay
+            delay=delay,
         )
 
     def release_pool_resources(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        raw_resources_ids: SerializedPoolResourcesIDs
+        self, logger: gluetool.log.ContextAdapter, raw_resources_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
         """
         Release any pool resources identified by provided IDs.
@@ -1722,10 +1586,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def can_acquire(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy the given environment.
@@ -1778,18 +1639,18 @@ class PoolDriver(gluetool.log.LoggerMixin):
             if not capabilities.supports_native_kickstart and guest_request.skip_prepare_verify_ssh:
                 return Ok(CanAcquire.cannot('SSH access is required to perform non-native kickstart installation'))
 
-            if guest_request.environment.kickstart.metadata is not None and any([
-                m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
-                for m in guest_request.environment.kickstart.metadata.split()
-            ]):
+            if guest_request.environment.kickstart.metadata is not None and any(
+                [
+                    m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
+                    for m in guest_request.environment.kickstart.metadata.split()
+                ]
+            ):
                 return Ok(CanAcquire.cannot('unsupported kickstart metadata option specified'))
 
         return Ok(CanAcquire())
 
     def _map_image_name_to_image_info_by_cache(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        imagename: str
+        self, logger: gluetool.log.ContextAdapter, imagename: str
     ) -> Result[PoolImageInfo, Failure]:
         """
         Retrieve pool-specific information for a given image name from pool image info cache.
@@ -1803,17 +1664,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
         ii = r_ii.unwrap()
 
         if ii is None:
-            return Error(Failure(
-                'cannot find image by name',
-                imagename=imagename
-            ))
+            return Error(Failure('cannot find image by name', imagename=imagename))
 
         return Ok(ii)
 
     def map_image_name_to_image_info(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        imagename: str
+        self, logger: gluetool.log.ContextAdapter, imagename: str
     ) -> Result[PoolImageInfo, Failure]:
         """
         Search pool resources, and find a pool-specific information for an image identified by the given name.
@@ -1823,9 +1679,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     # TODO: I dislike the naming scheme here very much...
     def _map_environment_to_flavor_info_by_cache_by_name_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        flavorname: str
+        self, logger: gluetool.log.ContextAdapter, flavorname: str
     ) -> Result[Optional[Flavor], Failure]:
         """
         Find a flavor matching the given name.
@@ -1833,12 +1687,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :returns: a flavor info or ``None`` if such a name does not exist.
         """
 
-        r_flavor = get_cached_mapping_item(
-            CACHE.get(),
-            self.flavor_info_cache_key,
-            flavorname,
-            self.flavor_info_class
-        )
+        r_flavor = get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
 
         if r_flavor.is_error:
             return Error(r_flavor.unwrap_error())
@@ -1846,9 +1695,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return r_flavor
 
     def _map_environment_to_flavor_info_by_cache_by_name(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        flavorname: str
+        self, logger: gluetool.log.ContextAdapter, flavorname: str
     ) -> Result[Flavor, Failure]:
         """
         Find a flavor matching the given name.
@@ -1864,10 +1711,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         picked_flavor = r_flavor.unwrap()
 
         if picked_flavor is None:
-            return Error(Failure(
-                'no such flavor',
-                flavorname=flavorname
-            ))
+            return Error(Failure('no such flavor', flavorname=flavorname))
 
         return Ok(picked_flavor)
 
@@ -1875,7 +1719,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         environment: Environment,
-        sort_key_getter: FlavorKeyGetterType = flavor_to_key
+        sort_key_getter: FlavorKeyGetterType = flavor_to_key,
     ) -> Result[List[Flavor], Failure]:
         """
         Evaluate the given environment, and return flavors suitable for the environment given its HW constraints.
@@ -1941,7 +1785,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         flavor: Optional[Flavor] = None,
-        image: Optional[PoolImageInfo] = None
+        image: Optional[PoolImageInfo] = None,
     ) -> Result[None, Failure]:
         details: Any = {}
         scrubbed_details: Any = {}
@@ -1956,20 +1800,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         log_dict_yaml(logger.info, 'provisioning from', details)
 
-        guest_request.log_event(
-            logger,
-            session,
-            'acquisition-attempt',
-            **scrubbed_details
-        )
+        guest_request.log_event(logger, session, 'acquisition-attempt', **scrubbed_details)
 
         return Ok(None)
 
     def acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified by `environment`.
@@ -1988,10 +1824,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def update_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Update provisioning progress of a given request. The method is expected to check what :py:meth:`acquire_guest`
@@ -2011,10 +1844,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def guest_watchdog(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[WatchdogState, Failure]:
         """
         Perform any periodic tasks the driver might need to apply while the request is in use.
@@ -2025,11 +1855,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(WatchdogState.COMPLETE)
 
-    def stop_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest: GuestRequest
-    ) -> Result[bool, Failure]:
+    def stop_guest(self, logger: gluetool.log.ContextAdapter, guest: GuestRequest) -> Result[bool, Failure]:
         """
         Instructs a guest to stop.
 
@@ -2039,11 +1865,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError
 
-    def start_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest: GuestRequest
-    ) -> Result[bool, Failure]:
+    def start_guest(self, logger: gluetool.log.ContextAdapter, guest: GuestRequest) -> Result[bool, Failure]:
         """
         Instructs a guest to stop.
 
@@ -2074,10 +1896,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def release_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -2086,9 +1905,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def acquire_console_url(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:
         """
         Acquire a guest console url.
@@ -2097,9 +1914,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def create_snapshot(
-        self,
-        guest_request: GuestRequest,
-        snapshot_request: SnapshotRequest
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Create snapshot of given guest.
@@ -2114,10 +1929,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def update_snapshot(
-        self,
-        guest_request: GuestRequest,
-        snapshot_request: SnapshotRequest,
-        start_again: bool = True
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Update progress of snapshot creation.
@@ -2145,11 +1957,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
         raise NotImplementedError
 
-    def restore_snapshot(
-        self,
-        guest_request: GuestRequest,
-        snapshot_request: SnapshotRequest
-    ) -> Result[bool, Failure]:
+    def restore_snapshot(self, guest_request: GuestRequest, snapshot_request: SnapshotRequest) -> Result[bool, Failure]:
         """
         Restore the guest to the snapshot.
 
@@ -2162,11 +1970,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def get_guest_log_updater(self, guest_log: GuestLog) -> Optional[GuestLogUpdaterType]:
-        updater_name = self.guest_log_updaters.get((
-            self.drivername,
-            guest_log.logname,
-            GuestLogContentType(guest_log.contenttype)
-        ))
+        updater_name = self.guest_log_updaters.get(
+            (self.drivername, guest_log.logname, GuestLogContentType(guest_log.contenttype))
+        )
 
         if updater_name is None:
             return None
@@ -2174,10 +1980,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return cast(GuestLogUpdaterType, getattr(self, updater_name, None))
 
     def update_guest_log(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         """
         Call driver-specific code to update a given guest log.
@@ -2199,17 +2002,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         updater = self.get_guest_log_updater(guest_log)
 
         if updater is None:
-            return Ok(GuestLogUpdateProgress(
-                state=GuestLogState.ERROR
-            ))
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.ERROR))
 
         return updater(logger, guest_request, guest_log)
 
-    def trigger_reboot(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[None, Failure]:
+    def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         """
         Trigger a hard reboot of a guest.
         """
@@ -2247,12 +2044,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 ]
 
             else:
-                return Error(Failure(
-                    'cannot parse supported architectures',
-                    # converting to string because at this point, we don't know what's the type, and the failure
-                    # might land in db, causing troubles to serialization.
-                    supported_architectures=repr(supported_architectures)
-                ))
+                return Error(
+                    Failure(
+                        'cannot parse supported architectures',
+                        # converting to string because at this point, we don't know what's the type, and the failure
+                        # might land in db, causing troubles to serialization.
+                        supported_architectures=repr(supported_architectures),
+                    )
+                )
 
         if 'supports-snapshots' in capabilities_config:
             capabilities.supports_snapshots = gluetool.utils.normalize_bool_option(
@@ -2281,18 +2080,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 disabled_log = (log_spec['log-name'], GuestLogContentType(log_spec['content-type']))
 
                 capabilities.supported_guest_logs = [
-                    guest_log
-                    for guest_log in capabilities.supported_guest_logs
-                    if guest_log != disabled_log
+                    guest_log for guest_log in capabilities.supported_guest_logs if guest_log != disabled_log
                 ]
 
         return Result.Ok(capabilities)
 
     def get_guest_tags(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[GuestTagsType, Failure]:
         """
         Get all tags applicable for a given guest request.
@@ -2319,23 +2113,21 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         tags: GuestTagsType = {
             **{r.tag: r.value for r in system_tags.unwrap()},
-            **{r.tag: r.value for r in pool_tags.unwrap()}
+            **{r.tag: r.value for r in pool_tags.unwrap()},
         }
 
         if guest_request.user_data:
-            tags.update({
-                key: value if value is not None else 'null'
-                for key, value in (guest_request.user_data or {}).items()
-            })
+            tags.update(
+                {key: value if value is not None else 'null' for key, value in (guest_request.user_data or {}).items()}
+            )
 
         tags['ArtemisGuestName'] = guest_request.guestname
         # TODO: drivers could accept a template for the name, to allow custom naming schemes
         tags['ArtemisGuestLabel'] = f'artemis-guest-{datetime.datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")}'
 
-        r_rendered_tags = render_tags(logger, tags, {
-            'GUESTNAME': guest_request.guestname,
-            'ENVIRONMENT': guest_request.environment
-        })
+        r_rendered_tags = render_tags(
+            logger, tags, {'GUESTNAME': guest_request.guestname, 'ENVIRONMENT': guest_request.environment}
+        )
 
         if r_rendered_tags.is_error:
             return Error(r_rendered_tags.unwrap_error())
@@ -2343,8 +2135,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return Ok(r_rendered_tags.unwrap())
 
     def _fetch_pool_resources_metrics_from_config(
-        self,
-        logger: gluetool.log.ContextAdapter
+        self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
         """
         Initialize resource metrics with data specified by the pool configuration - purely optional, but this
@@ -2368,12 +2159,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 setattr(metrics.limits, field_name, int(configured_limits[field_name]))
 
             except ValueError as exc:
-                return Error(Failure.from_exc(
-                    'failed to parse configured pool limit',
-                    exc,
-                    field_name=field_name,
-                    field_value=configured_limits[field_name]
-                ))
+                return Error(
+                    Failure.from_exc(
+                        'failed to parse configured pool limit',
+                        exc,
+                        field_name=field_name,
+                        field_value=configured_limits[field_name],
+                    )
+                )
 
         return Ok(metrics)
 
@@ -2381,20 +2174,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         usage: PoolResourcesUsage,
-        fetch: Callable[
-            [gluetool.log.ContextAdapter],
-            Result[List[T], Failure]
-        ],
-        flavor_name_getter: Optional[
-            Callable[
-                [T],
-                str
-            ]
-        ],
-        update: Callable[
-            [gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[Flavor]],
-            Result[None, Failure]
-        ]
+        fetch: Callable[[gluetool.log.ContextAdapter], Result[List[T], Failure]],
+        flavor_name_getter: Optional[Callable[[T], str]],
+        update: Callable[[gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[Flavor]], Result[None, Failure]],
     ) -> Result[None, Failure]:
         """
         A helper implementation for constructing pool flavor usage metrics.
@@ -2415,10 +2197,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if r_flavors.is_error:
             return Error(r_flavors.unwrap_error())
 
-        flavors = {
-            flavor.name: flavor
-            for flavor in r_flavors.unwrap()
-        }
+        flavors = {flavor.name: flavor for flavor in r_flavors.unwrap()}
 
         usage.instances = 0
         usage.cores = 0
@@ -2439,11 +2218,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                     flavor_name = flavor_name_getter(raw_instance)
 
                 except Exception as exc:
-                    return Error(Failure.from_exc(
-                        'malformed instance description',
-                        exc,
-                        raw_instance=raw_instance
-                    ))
+                    return Error(Failure.from_exc('malformed instance description', exc, raw_instance=raw_instance))
 
                 flavor = flavors.get(flavor_name)
 
@@ -2459,24 +2234,21 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 r_update = update(logger, usage, raw_instance, flavor)
 
             except Exception as exc:
-                return Error(Failure.from_exc(
-                    'failed to extract instance resource info',
-                    exc,
-                    raw_instance=raw_instance
-                ))
+                return Error(
+                    Failure.from_exc('failed to extract instance resource info', exc, raw_instance=raw_instance)
+                )
 
             if r_update.is_error:
-                return Error(Failure.from_failure(
-                    'failed to extract instance resource info',
-                    r_update.unwrap_error(),
-                    raw_instance=raw_instance
-                ))
+                return Error(
+                    Failure.from_failure(
+                        'failed to extract instance resource info', r_update.unwrap_error(), raw_instance=raw_instance
+                    )
+                )
 
         return Ok(None)
 
     def fetch_pool_resources_metrics(
-        self,
-        logger: gluetool.log.ContextAdapter
+        self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
         """
         Responsible for fetching the most up-to-date resources metrics.
@@ -2489,10 +2261,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return self._fetch_pool_resources_metrics_from_config(logger)
 
-    def refresh_pool_resources_metrics(
-        self,
-        logger: gluetool.log.ContextAdapter
-    ) -> Result[None, Failure]:
+    def refresh_pool_resources_metrics(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         """
         Responsible for updating the database records with the most up-to-date
         metrics. For that purpose, it calls
@@ -2573,9 +2342,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return render_template(post_install_template, **template_environment(guest_request))
 
     def _patch_pool_image_info_from_config(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        images: Dict[str, PoolImageInfo]
+        self, logger: gluetool.log.ContextAdapter, images: Dict[str, PoolImageInfo]
     ) -> Result[None, Failure]:
         """
         "Patch" existing images as specified by configuration. Some information may not be available via API,
@@ -2604,42 +2371,30 @@ class PoolDriver(gluetool.log.LoggerMixin):
                     image_name_pattern = re.compile(imagename)
 
                 except re.error as exc:
-                    return Error(Failure.from_exc(
-                        'failed to compile patched image name-regex',
-                        exc,
-                        imagename=imagename
-                    ))
+                    return Error(
+                        Failure.from_exc('failed to compile patched image name-regex', exc, imagename=imagename)
+                    )
 
-                target_images = [
-                    image
-                    for image in images.values()
-                    if image_name_pattern.match(image.name) is not None
-                ]
+                target_images = [image for image in images.values() if image_name_pattern.match(image.name) is not None]
 
             else:
                 assert False, 'unreachable'
 
             if not target_images:
-                return Error(Failure(
-                    'unknown patched image',
-                    imagename=imagename
-                ))
+                return Error(Failure('unknown patched image', imagename=imagename))
 
             for target_image in target_images:
                 r_apply_spec = _apply_image_specification(target_image, patch_image_spec)
 
                 if r_apply_spec.is_error:
-                    return Error(r_apply_spec.unwrap_error().update(
-                        imagename=imagename,
-                        target_imagename=target_image.name
-                    ))
+                    return Error(
+                        r_apply_spec.unwrap_error().update(imagename=imagename, target_imagename=target_image.name)
+                    )
 
         return Ok(None)
 
     def _update_pool_image_info_from_config(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        images: List[PoolImageInfo]
+        self, logger: gluetool.log.ContextAdapter, images: List[PoolImageInfo]
     ) -> Result[List[PoolImageInfo], Failure]:
         """
         "Fetch" image infos from the driver configuration. This includes both custom image and patch information.
@@ -2647,16 +2402,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param images: actual existing images that serve as basis for custom images.
         """
 
-        image_map = {
-            image.name: image
-            for image in images
-        }
+        image_map = {image.name: image for image in images}
 
         if 'patch-images' in self.pool_config:
-            r_patched_images = self._patch_pool_image_info_from_config(
-                logger,
-                image_map
-            )
+            r_patched_images = self._patch_pool_image_info_from_config(logger, image_map)
 
             if r_patched_images.is_error:
                 return Error(r_patched_images.unwrap_error())
@@ -2692,13 +2441,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         patched_images = r_updated_images.unwrap()
 
         r_refresh = refresh_cached_mapping(
-            CACHE.get(),
-            self.image_info_cache_key,
-            {
-                ii.name: ii
-                for ii in patched_images
-                if ii.name
-            }
+            CACHE.get(), self.image_info_cache_key, {ii.name: ii for ii in patched_images if ii.name}
         )
 
         if r_refresh.is_error:
@@ -2718,18 +2461,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def do_fetch_pool_flavor_info(
         self,
         logger: gluetool.log.ContextAdapter,
-        fetch: Callable[
-            [gluetool.log.ContextAdapter],
-            Result[List[T], Failure]
-        ],
-        name_getter: Callable[
-            [T],
-            str
-        ],
-        constructor: Callable[
-            [gluetool.log.ContextAdapter, T],
-            Iterator[Result[Flavor, Failure]]
-        ]
+        fetch: Callable[[gluetool.log.ContextAdapter], Result[List[T], Failure]],
+        name_getter: Callable[[T], str],
+        constructor: Callable[[gluetool.log.ContextAdapter, T], Iterator[Result[Flavor, Failure]]],
     ) -> Result[List[Flavor], Failure]:
         """
         A helper implementation for constructing flavor info.
@@ -2766,11 +2500,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 flavor_name = name_getter(raw_flavor)
 
             except Exception as exc:
-                return Error(Failure.from_exc(
-                    'malformed flavor description',
-                    exc,
-                    raw_flavor=raw_flavor
-                ))
+                return Error(Failure.from_exc('malformed flavor description', exc, raw_flavor=raw_flavor))
 
             if flavor_name_pattern is not None and not flavor_name_pattern.match(flavor_name):
                 continue
@@ -2778,20 +2508,16 @@ class PoolDriver(gluetool.log.LoggerMixin):
             try:
                 for r_flavor in constructor(logger, raw_flavor):
                     if r_flavor.is_error:
-                        return Error(Failure.from_failure(
-                            'failed to extract flavor info',
-                            r_flavor.unwrap_error(),
-                            raw_flavor=raw_flavor
-                        ))
+                        return Error(
+                            Failure.from_failure(
+                                'failed to extract flavor info', r_flavor.unwrap_error(), raw_flavor=raw_flavor
+                            )
+                        )
 
                     flavors.append(r_flavor.unwrap())
 
             except Exception as exc:
-                return Error(Failure.from_exc(
-                    'failed to extract flavor info',
-                    exc,
-                    raw_flavor=raw_flavor
-                ))
+                return Error(Failure.from_exc('failed to extract flavor info', exc, raw_flavor=raw_flavor))
 
         return Ok(flavors)
 
@@ -2807,9 +2533,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return Ok([])
 
     def _fetch_custom_pool_flavor_info_from_config(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        flavors: Dict[str, Flavor]
+        self, logger: gluetool.log.ContextAdapter, flavors: Dict[str, Flavor]
     ) -> Result[List[Flavor], Failure]:
         """
         "Fetch" custom flavors specified in driver configuration. These are clones of existing flavors, but with
@@ -2819,15 +2543,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         return _custom_flavors(
-            logger,
-            flavors,
-            cast(List[ConfigCustomFlavorSpecType], self.pool_config.get('custom-flavors', []))
+            logger, flavors, cast(List[ConfigCustomFlavorSpecType], self.pool_config.get('custom-flavors', []))
         )
 
     def _fetch_patched_pool_flavor_info_from_config(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        flavors: Dict[str, Flavor]
+        self, logger: gluetool.log.ContextAdapter, flavors: Dict[str, Flavor]
     ) -> Result[None, Failure]:
         """
         "Patch" existing flavors as specified by configuration. Some information may not be available via API,
@@ -2837,15 +2557,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         return _patch_flavors(
-            logger,
-            flavors,
-            cast(List[ConfigPatchFlavorSpecType], self.pool_config.get('patch-flavors', []))
+            logger, flavors, cast(List[ConfigPatchFlavorSpecType], self.pool_config.get('patch-flavors', []))
         )
 
     def _fetch_pool_flavor_info_from_config(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        flavors: List[Flavor]
+        self, logger: gluetool.log.ContextAdapter, flavors: List[Flavor]
     ) -> Result[List[Flavor], Failure]:
         """
         "Fetch" flavor infos from the driver configuration. This includes both custom flavors and patch information.
@@ -2853,16 +2569,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param flavors: actual existing flavors that serve as basis for custom flavors.
         """
 
-        flavors_map = {
-            flavor.name: flavor
-            for flavor in flavors
-        }
+        flavors_map = {flavor.name: flavor for flavor in flavors}
 
         if 'custom-flavors' in self.pool_config:
-            r_custom_flavors = self._fetch_custom_pool_flavor_info_from_config(
-                logger,
-                flavors_map
-            )
+            r_custom_flavors = self._fetch_custom_pool_flavor_info_from_config(logger, flavors_map)
 
             if r_custom_flavors.is_error:
                 return Error(r_custom_flavors.unwrap_error())
@@ -2871,10 +2581,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 flavors_map[flavor.name] = flavor
 
         if 'patch-flavors' in self.pool_config:
-            r_patched_flavors = self._fetch_patched_pool_flavor_info_from_config(
-                logger,
-                flavors_map
-            )
+            r_patched_flavors = self._fetch_patched_pool_flavor_info_from_config(logger, flavors_map)
 
             if r_patched_flavors.is_error:
                 return Error(r_patched_flavors.unwrap_error())
@@ -2910,13 +2617,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         all_flavors = real_flavors + r_config_flavors.unwrap()
 
         r_refresh = refresh_cached_mapping(
-            CACHE.get(),
-            self.flavor_info_cache_key,
-            {
-                fi.name: fi
-                for fi in all_flavors
-                if fi.name
-            }
+            CACHE.get(), self.flavor_info_cache_key, {fi.name: fi for fi in all_flavors if fi.name}
         )
 
         if r_refresh.is_error:
@@ -2966,10 +2667,7 @@ def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -
     match_obj = regex.search(output[key])
 
     if not match_obj:
-        return Error(Failure(
-            'failed to parse an IP address',
-            input=output[key]
-        ))
+        return Error(Failure('failed to parse an IP address', input=output[key]))
 
     return Ok(match_obj.group(1))
 
@@ -2985,7 +2683,7 @@ def run_cli_tool(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
 ) -> Result[CLIOutput, Failure]:
     """
     Run a given command, and return its output.
@@ -3041,11 +2739,13 @@ def run_cli_tool(
         command = [
             'timeout',
             '--preserve-status',
-            '--kill-after', str(KNOB_CLI_COMMAND_TIMEOUT_KILL_DELAY.value),
-            '--signal', 'SIGTERM',
+            '--kill-after',
+            str(KNOB_CLI_COMMAND_TIMEOUT_KILL_DELAY.value),
+            '--signal',
+            'SIGTERM',
             '--verbose',
             str(actual_timeout),
-            *command
+            *command,
         ]
 
     start_time = time.monotonic()
@@ -3059,7 +2759,7 @@ def run_cli_tool(
                 commandname,
                 output.exit_code,
                 command_time,
-                cause=cause_extractor(output) if cause_extractor is not None else None
+                cause=cause_extractor(output) if cause_extractor is not None else None,
             )
 
         # We are expected to log the command when either one of these conditions is true:
@@ -3070,21 +2770,19 @@ def run_cli_tool(
         def _log() -> None:
             assert command_scrubber is not None
 
-            Failure(
-                'detected a slow CLI command',
-                command_output=output,
-                time=command_time,
-                **failure_details
-            ).handle(logger, label='CLI output')
+            Failure('detected a slow CLI command', command_output=output, time=command_time, **failure_details).handle(
+                logger, label='CLI output'
+            )
 
-        if KNOB_LOGGING_CLI_OUTPUT.value \
-           and CLI_COMMAND_PATTERN.match(joined_command):
+        if KNOB_LOGGING_CLI_OUTPUT.value and CLI_COMMAND_PATTERN.match(joined_command):
             _log()
             return
 
-        if KNOB_LOGGING_SLOW_CLI_COMMANDS.value \
-           and SLOW_CLI_COMMAND_PATTERN.match(joined_command) \
-           and command_time < KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD.value:
+        if (
+            KNOB_LOGGING_SLOW_CLI_COMMANDS.value
+            and SLOW_CLI_COMMAND_PATTERN.match(joined_command)
+            and command_time < KNOB_LOGGING_SLOW_CLI_COMMAND_THRESHOLD.value
+        ):
             _log()
             return
 
@@ -3095,23 +2793,14 @@ def run_cli_tool(
     except gluetool.glue.GlueCommandError as exc:
         _log_command(exc.output)
 
-        return Error(Failure.from_exc(
-            'error running CLI command',
-            exc,
-            command_output=exc.output,
-            **failure_details
-        ))
+        return Error(Failure.from_exc('error running CLI command', exc, command_output=exc.output, **failure_details))
 
     else:
         _log_command(output)
 
     if output.stdout is None:
         if not allow_empty:
-            return Error(Failure(
-                'CLI did not emit any output',
-                command_output=output,
-                **failure_details
-            ))
+            return Error(Failure('CLI did not emit any output', command_output=output, **failure_details))
 
         output_stdout = ''
 
@@ -3119,29 +2808,21 @@ def run_cli_tool(
         # We *know* for sure that `output.stdout` is not `None`, therefore `process_output_to_str` can never return
         # `None`. Type checking can't infere this information, therefore it believes the return value may be `None`,
         # and complains about type collision with variable set in the `if` branch above (which is *not* `Optional`).
-        output_stdout = cast(
-            str,
-            process_output_to_str(output, stream='stdout')
-        )
+        output_stdout = cast(str, process_output_to_str(output, stream='stdout'))
 
     if json_output:
         if not output_stdout:
-            return Error(Failure(
-                'CLI did not emit any output, cannot treat as JSON',
-                command_output=output,
-                **failure_details
-            ))
+            return Error(
+                Failure('CLI did not emit any output, cannot treat as JSON', command_output=output, **failure_details)
+            )
 
         try:
             return Ok(CLIOutput(output, output_stdout, json=json.loads(output_stdout)))
 
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to convert string to JSON',
-                exc=exc,
-                command_output=output,
-                **failure_details
-            ))
+            return Error(
+                Failure.from_exc('failed to convert string to JSON', exc=exc, command_output=output, **failure_details)
+            )
 
     return Ok(CLIOutput(output, output_stdout))
 
@@ -3158,7 +2839,7 @@ def run_remote(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -3166,27 +2847,33 @@ def run_remote(
     ssh_options = ssh_options or []
 
     with create_tempfile(file_contents=key.private) as private_key_filepath:
-        ssh_command = [
-            'ssh',
-            '-i', private_key_filepath,
-            '-o', 'UserKnownHostsFile=/dev/null',
-            '-o', 'StrictHostKeyChecking=no',
-            '-o', f'ConnectTimeout={ssh_timeout}'
-        ] + ssh_options + [
-            '-l', guest_request.ssh_username,
-            '-p', str(guest_request.ssh_port),
-            guest_request.address,
-            # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
-            # parameters. Therefore joining it into a single string here, instead of bothering the caller.
-            command_join(command)
-        ]
+        ssh_command = (
+            [
+                'ssh',
+                '-i',
+                private_key_filepath,
+                '-o',
+                'UserKnownHostsFile=/dev/null',
+                '-o',
+                'StrictHostKeyChecking=no',
+                '-o',
+                f'ConnectTimeout={ssh_timeout}',
+            ]
+            + ssh_options
+            + [
+                '-l',
+                guest_request.ssh_username,
+                '-p',
+                str(guest_request.ssh_port),
+                guest_request.address,
+                # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
+                # parameters. Therefore joining it into a single string here, instead of bothering the caller.
+                command_join(command),
+            ]
+        )
 
         return run_cli_tool(
-            logger,
-            ssh_command,
-            poolname=poolname,
-            commandname=commandname,
-            cause_extractor=cause_extractor
+            logger, ssh_command, poolname=poolname, commandname=commandname, cause_extractor=cause_extractor
         )
 
 
@@ -3203,7 +2890,7 @@ def copy_to_remote(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -3211,24 +2898,29 @@ def copy_to_remote(
     ssh_options = ssh_options or []
 
     with create_tempfile(file_contents=key.private) as private_key_filepath:
-        scp_command = [
-            'scp',
-            '-i', private_key_filepath,
-            '-o', 'UserKnownHostsFile=/dev/null',
-            '-o', 'StrictHostKeyChecking=no',
-            '-o', f'ConnectTimeout={ssh_timeout}'
-        ] + ssh_options + [
-            '-P', str(guest_request.ssh_port),
-            src,
-            f'{guest_request.ssh_username}@{guest_request.address}:{dst}',
-        ]
+        scp_command = (
+            [
+                'scp',
+                '-i',
+                private_key_filepath,
+                '-o',
+                'UserKnownHostsFile=/dev/null',
+                '-o',
+                'StrictHostKeyChecking=no',
+                '-o',
+                f'ConnectTimeout={ssh_timeout}',
+            ]
+            + ssh_options
+            + [
+                '-P',
+                str(guest_request.ssh_port),
+                src,
+                f'{guest_request.ssh_username}@{guest_request.address}:{dst}',
+            ]
+        )
 
         return run_cli_tool(
-            logger,
-            scp_command,
-            poolname=poolname,
-            commandname=commandname,
-            cause_extractor=cause_extractor
+            logger, scp_command, poolname=poolname, commandname=commandname, cause_extractor=cause_extractor
         )
 
 
@@ -3245,7 +2937,7 @@ def copy_from_remote(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -3253,24 +2945,24 @@ def copy_from_remote(
     ssh_options = ssh_options or []
 
     with create_tempfile(file_contents=key.private) as private_key_filepath:
-        scp_command = [
-            'scp',
-            '-i', private_key_filepath,
-            '-o', 'UserKnownHostsFile=/dev/null',
-            '-o', 'StrictHostKeyChecking=no',
-            '-o', f'ConnectTimeout={ssh_timeout}'
-        ] + ssh_options + [
-            '-P', str(guest_request.ssh_port),
-            f'{guest_request.ssh_username}@{guest_request.address}:{src}',
-            dst
-        ]
+        scp_command = (
+            [
+                'scp',
+                '-i',
+                private_key_filepath,
+                '-o',
+                'UserKnownHostsFile=/dev/null',
+                '-o',
+                'StrictHostKeyChecking=no',
+                '-o',
+                f'ConnectTimeout={ssh_timeout}',
+            ]
+            + ssh_options
+            + ['-P', str(guest_request.ssh_port), f'{guest_request.ssh_username}@{guest_request.address}:{src}', dst]
+        )
 
         return run_cli_tool(
-            logger,
-            scp_command,
-            poolname=poolname,
-            commandname=commandname,
-            cause_extractor=cause_extractor
+            logger, scp_command, poolname=poolname, commandname=commandname, cause_extractor=cause_extractor
         )
 
 
@@ -3284,7 +2976,7 @@ def ping_shell_remote(
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None
+    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
 ) -> Result[bool, Failure]:
     """
     Try to run a simple ``echo`` command on a given guest, and verify its output.
@@ -3306,7 +2998,7 @@ def ping_shell_remote(
         ssh_options=ssh_options,
         poolname=poolname,
         commandname=commandname,
-        cause_extractor=cause_extractor
+        cause_extractor=cause_extractor,
     )
 
     if r_ssh.is_error:
@@ -3315,10 +3007,7 @@ def ping_shell_remote(
     ssh_output = r_ssh.unwrap()
 
     if ssh_output.stdout.strip() != 'ping':
-        return Error(Failure(
-            'did not receive expected response',
-            command_output=ssh_output.process_output
-        ))
+        return Error(Failure('did not receive expected response', command_output=ssh_output.process_output))
 
     return Ok(True)
 
@@ -3354,6 +3043,7 @@ class CLISessionPermanentDir:
     credentials, which in turn enables concurrent use of cloud cli for different
     pools and guest requests.
     """
+
     CLI_PREFIX = 'cli'
     CLI_CMD = 'cli'
     CLI_CONFIG_DIR_ENV_VAR = 'CLI_CONFIG_DIR'
@@ -3377,7 +3067,7 @@ class CLISessionPermanentDir:
 
         self.session_dir_path = os.path.join(
             r_session_dir_path.unwrap(),
-            f'{self.CLI_PREFIX}-{self.pool.poolname}-{random.randint(1, self.parallel_sessions)}'
+            f'{self.CLI_PREFIX}-{self.pool.poolname}-{random.randint(1, self.parallel_sessions)}',
         )
 
         if not os.path.exists(self.session_dir_path):
@@ -3417,12 +3107,9 @@ class CLISessionPermanentDir:
         logger: gluetool.log.ContextAdapter,
         options: List[str],
         json_format: bool = True,
-        commandname: Optional[str] = None
+        commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
-        environ = {
-            **os.environ,
-            self.CLI_CONFIG_DIR_ENV_VAR: self.session_dir_path
-        }
+        environ = {**os.environ, self.CLI_CONFIG_DIR_ENV_VAR: self.session_dir_path}
 
         session_dir_fd = os.open(self.session_dir_path, os.O_RDONLY)
 
@@ -3432,11 +3119,13 @@ class CLISessionPermanentDir:
         except OSError as err:
             fcntl.flock(session_dir_fd, fcntl.LOCK_UN)
             os.close(session_dir_fd)
-            return Error(Failure.from_exc(
-                'Failed to obtain the lock - another command is running',
-                err,
-                session_dir_path=self.session_dir_path
-            ))
+            return Error(
+                Failure.from_exc(
+                    'Failed to obtain the lock - another command is running',
+                    err,
+                    session_dir_path=self.session_dir_path,
+                )
+            )
 
         # Run command, isolation should be guaranteed now
         r_run = run_cli_tool(
@@ -3447,7 +3136,7 @@ class CLISessionPermanentDir:
             command_scrubber=lambda cmd: ([self.CLI_PREFIX] + options),
             poolname=self.pool.poolname,
             commandname=commandname,
-            cause_extractor=self.pool.cli_error_cause_extractor
+            cause_extractor=self.pool.cli_error_cause_extractor,
         )
 
         # Release the lock
@@ -3471,7 +3160,7 @@ class CLISessionPermanentDir:
         logger: gluetool.log.ContextAdapter,
         options: List[str],
         json_format: bool = True,
-        commandname: Optional[str] = None
+        commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
         if self._login_result is not None and self._login_result.is_error:
             return Error(self._login_result.unwrap_error())

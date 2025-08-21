@@ -38,7 +38,7 @@ KNOB_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD',
     cast_from_str=int,
-    default=600
+    default=600,
 )
 
 KNOB_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
@@ -48,7 +48,7 @@ KNOB_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT: Knob[int] = Knob(
     has_db=True,
     envvar='ARTEMIS_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT',
     cast_from_str=int,
-    default=15
+    default=15,
 )
 
 
@@ -85,8 +85,7 @@ class Workspace(_Workspace):
             assert self.master_key
 
             r_timeout = KNOB_SHELVED_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT.get_value(
-                session=self.session,
-                entityname=self.pool.poolname
+                session=self.session, entityname=self.pool.poolname
             )
 
             if r_timeout.is_error:
@@ -100,7 +99,7 @@ class Workspace(_Workspace):
                 ssh_options=self.pool.ssh_options,
                 poolname=self.pool.poolname,
                 commandname=f'{Workspace.TASKNAME}.shell-ping',
-                cause_extractor=self.pool.cli_error_cause_extractor
+                cause_extractor=self.pool.cli_error_cause_extractor,
             )
 
             if r_ping.is_error:
@@ -111,28 +110,19 @@ class Workspace(_Workspace):
                 ShelfMetrics.inc_dead(self.gr.shelfname)
 
                 self.update_guest_state_and_request_task(
-                    GuestState.CONDEMNED,
-                    release_guest_request,
-                    self.guestname,
-                    current_state=GuestState.SHELVED
+                    GuestState.CONDEMNED, release_guest_request, self.guestname, current_state=GuestState.SHELVED
                 )
 
                 ShelfMetrics.inc_removals(self.gr.shelfname)
 
             else:
                 self.dispatch_task(
-                    shelved_guest_watchdog,
-                    self.guestname,
-                    delay=KNOB_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD.value
+                    shelved_guest_watchdog, self.guestname, delay=KNOB_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD.value
                 )
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -148,11 +138,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def shelved_guest_watchdog(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Invoke watchdog task to verify a shelved guest is still reachable and a viable candidate to serve another GR.
@@ -169,11 +155,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.READY, GuestState.ERROR))

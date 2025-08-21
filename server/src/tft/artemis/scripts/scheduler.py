@@ -16,11 +16,12 @@ PERIODIQ_PATH = shutil.which('periodiq')
 
 @click.command()
 @click.option(
-    '-T', '--tasks',
+    '-T',
+    '--tasks',
     metavar='MODULE',
     multiple=True,
     help='If specified, only tasks from these modules will run. (default: unset, all tasks will run)',
-    default=[]
+    default=[],
 )
 def cmd_root(tasks: List[str]) -> None:
     logger = get_logger()
@@ -30,9 +31,7 @@ def cmd_root(tasks: List[str]) -> None:
 
         sys.exit(1)
 
-    cmd: List[str] = [
-        'periodiq'
-    ]
+    cmd: List[str] = ['periodiq']
 
     if tasks:
         logger.info(f'scheduling limited set of tasks: {", ".join(tasks)}')
@@ -44,11 +43,7 @@ def cmd_root(tasks: List[str]) -> None:
 
         cmd += list(find_task_modules())
 
-    os.execve(
-        PERIODIQ_PATH,
-        cmd,
-        os.environ.copy()
-    )
+    os.execve(PERIODIQ_PATH, cmd, os.environ.copy())
 
 
 if __name__ == '__main__':

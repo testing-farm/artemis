@@ -10,11 +10,7 @@ from tft.artemis.tasks import DoerType, TaskLogger
 
 
 def assert_task_core_call(
-    task_core: MagicMock,
-    taskname: str,
-    doer: DoerType,
-    *doer_args: Any,
-    test_guest_logger: Optional[str] = None
+    task_core: MagicMock, taskname: str, doer: DoerType, *doer_args: Any, test_guest_logger: Optional[str] = None
 ) -> None:
     """
     Test properties of a mock representing :py:func:`tft.artemis.task.task_core`.

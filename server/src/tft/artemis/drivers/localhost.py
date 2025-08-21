@@ -19,29 +19,18 @@ class LocalhostDriver(PoolDriver):
     drivername = 'localhost'
 
     def acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        self.log_acquisition_attempt(
-            logger,
-            session,
-            guest_request
+        self.log_acquisition_attempt(logger, session, guest_request)
+
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.COMPLETE, pool_data=PoolData(), address='127.0.0.1', ssh_info=PoolImageSSHInfo()
+            )
         )
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.COMPLETE,
-            pool_data=PoolData(),
-            address='127.0.0.1',
-            ssh_info=PoolImageSSHInfo()
-        ))
-
     def release_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.

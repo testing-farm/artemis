@@ -40,9 +40,7 @@ class Counters(Base):
     subname = Column(Text(), default='')
     subcount = Column(Integer, default=0)
 
-    __table_args__ = (
-        PrimaryKeyConstraint('name'),
-    )
+    __table_args__ = (PrimaryKeyConstraint('name'),)
 
 
 @pytest.fixture
@@ -81,13 +79,7 @@ def schema_test_db_counters_2records(session: sqlalchemy.orm.session.Session, sc
 
 @pytest.fixture(name='mock_session')
 def fixture_mock_session(db: DB, mockpatch: MockPatcher) -> MagicMock:
-    mock_session = MagicMock(
-        name='Session<mock>',
-        transaction=MagicMock(
-            name='Transaction<mock>',
-            is_active=True
-        )
-    )
+    mock_session = MagicMock(name='Session<mock>', transaction=MagicMock(name='Transaction<mock>', is_active=True))
 
     mockpatch(db, 'sessionmaker_autocommit').return_value = mock_session
     mockpatch(db, 'sessionmaker_transactional').return_value = mock_session
@@ -134,10 +126,7 @@ def test_session(logger: gluetool.log.ContextAdapter, db: DB) -> None:
 
 
 def assert_upsert_counter(
-    session: sqlalchemy.orm.session.Session,
-    count: int,
-    subname: str = '',
-    subcount: int = 0
+    session: sqlalchemy.orm.session.Session, count: int, subname: str = '', subcount: int = 0
 ) -> Counters:
     records = SafeQuery.from_session(session, Counters).all().unwrap()
 
@@ -159,16 +148,10 @@ def test_upsert(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.ses
         logger,
         session,
         Counters,
-        {
-            Counters.name: 'foo'
-        },
+        {Counters.name: 'foo'},
         Counters.__table_args__[0],
-        insert_data={
-            Counters.count: 1
-        },
-        update_data={
-            'count': Counters.count + 1
-        }
+        insert_data={Counters.count: 1},
+        update_data={'count': Counters.count + 1},
     )
 
     assert r.is_ok
@@ -180,16 +163,7 @@ def test_upsert(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.ses
 @pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
 def test_upsert_no_update(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
     r = upsert(
-        logger,
-        session,
-        Counters,
-        {
-            Counters.name: 'foo'
-        },
-        Counters.__table_args__[0],
-        insert_data={
-            Counters.count: 1
-        }
+        logger, session, Counters, {Counters.name: 'foo'}, Counters.__table_args__[0], insert_data={Counters.count: 1}
     )
 
     assert r.is_ok
@@ -204,17 +178,10 @@ def test_upsert_compound_key(logger: gluetool.log.ContextAdapter, session: sqlal
         logger,
         session,
         Counters,
-        {
-            Counters.name: 'foo',
-            Counters.subname: 'bar'
-        },
+        {Counters.name: 'foo', Counters.subname: 'bar'},
         Counters.__table_args__[0],
-        insert_data={
-            Counters.count: 1
-        },
-        update_data={
-            'count': Counters.count + 1
-        }
+        insert_data={Counters.count: 1},
+        update_data={'count': Counters.count + 1},
     )
 
     assert r.is_ok
@@ -229,18 +196,13 @@ def test_upsert_multiple_values(logger: gluetool.log.ContextAdapter, session: sq
         logger,
         session,
         Counters,
-        {
-            Counters.name: 'foo'
-        },
+        {Counters.name: 'foo'},
         Counters.__table_args__[0],
-        insert_data={
-            Counters.count: 1,
-            Counters.subcount: 1
-        },
+        insert_data={Counters.count: 1, Counters.subcount: 1},
         update_data={
             'count': Counters.count + 1,
             'subcount': Counters.subcount + 1,
-        }
+        },
     )
 
     assert r.is_ok
@@ -256,16 +218,10 @@ def test_upsert_multiple_upserts(logger: gluetool.log.ContextAdapter, session: s
             logger,
             session,
             Counters,
-            {
-                Counters.name: 'foo'
-            },
+            {Counters.name: 'foo'},
             Counters.__table_args__[0],
-            insert_data={
-                Counters.count: 1
-            },
-            update_data={
-                'count': Counters.count + 1
-            }
+            insert_data={Counters.count: 1},
+            update_data={'count': Counters.count + 1},
         )
 
         assert r.is_ok
@@ -285,16 +241,10 @@ def test_upsert_multiple_commits(logger: gluetool.log.ContextAdapter, session: s
             logger,
             session,
             Counters,
-            {
-                Counters.name: 'foo'
-            },
+            {Counters.name: 'foo'},
             Counters.__table_args__[0],
-            insert_data={
-                Counters.count: 1
-            },
-            update_data={
-                'count': Counters.count + 1
-            }
+            insert_data={Counters.count: 1},
+            update_data={'count': Counters.count + 1},
         )
 
         assert r.is_ok
@@ -360,7 +310,7 @@ def test_safe_query_no_change_on_error(
     caplog: _pytest.logging.LogCaptureFixture,
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
 ) -> None:
     """
     If query already encoutered an error, it should not apply any additional methods nor return any valid records.
@@ -387,7 +337,7 @@ def test_safe_query_no_change_on_error(
 def test_safe_query_get_error(
     caplog: _pytest.logging.LogCaptureFixture,
     logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session
+    session: sqlalchemy.orm.session.Session,
 ) -> None:
     """
     Test handling of genuine SQLAlchemy error: without any schema or records, fetch a record.
@@ -407,7 +357,7 @@ def test_safe_query_get_error(
     assert_failure_log(
         caplog,
         'failed to retrieve query result',
-        exception_label=r'OperationalError: \(sqlite3\.OperationalError\) no such table: counters'
+        exception_label=r'OperationalError: \(sqlite3\.OperationalError\) no such table: counters',
     )
 
 
@@ -415,21 +365,15 @@ def test_safe_query_get_error(
 def test_transaction_no_transactions(
     caplog: _pytest.logging.LogCaptureFixture,
     logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session
+    session: sqlalchemy.orm.session.Session,
 ) -> None:
     """
     Test whether :py:func:`transaction` behaves correctly when facing non-transactional session.
     """
 
-    query1 = sqlalchemy.insert(Counters).values(
-        name='counter1',
-        count=1
-    )
+    query1 = sqlalchemy.insert(Counters).values(name='counter1', count=1)
 
-    query2 = sqlalchemy.insert(Counters).values(
-        name='counter2',
-        count=2
-    )
+    query2 = sqlalchemy.insert(Counters).values(name='counter2', count=2)
 
     with transaction(logger, session) as r:
         session.execute(query1)
@@ -447,26 +391,18 @@ def test_transaction_no_transactions(
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_initialized_actual')
-def test_transaction(
-    caplog: _pytest.logging.LogCaptureFixture,
-    logger: gluetool.log.ContextAdapter,
-    db: DB
-) -> None:
+def test_transaction(caplog: _pytest.logging.LogCaptureFixture, logger: gluetool.log.ContextAdapter, db: DB) -> None:
     """
     Test whether :py:func:`transaction` behaves correctly when wrapping non-conflicting queries.
     """
 
     with db.get_session(logger) as session:
         update = tft.artemis.tasks._guest_state_update_query(
-            'dummy-guest',
-            GuestState.PROVISIONING,
-            current_state=GuestState.SHELF_LOOKUP
+            'dummy-guest', GuestState.PROVISIONING, current_state=GuestState.SHELF_LOOKUP
         ).unwrap()
 
         insert = sqlalchemy.insert(GuestEvent).values(
-            updated=datetime.datetime.utcnow(),
-            guestname='dummy-guest',
-            eventname='dummy-event'
+            updated=datetime.datetime.utcnow(), guestname='dummy-guest', eventname='dummy-event'
         )
 
         with transaction(logger, session) as r:
@@ -475,10 +411,9 @@ def test_transaction(
 
         assert r.complete is True
 
-        requests = SafeQuery.from_session(session, GuestRequest) \
-            .filter(GuestRequest.guestname == 'dummy-guest') \
-            .all() \
-            .unwrap()
+        requests = (
+            SafeQuery.from_session(session, GuestRequest).filter(GuestRequest.guestname == 'dummy-guest').all().unwrap()
+        )
 
         assert len(requests) == 1
         # TODO: cast shouldn't be needed, sqlalchemy should annouce .state as enum - maybe with more recent stubs?
@@ -496,7 +431,7 @@ def test_transaction_conflict(
     caplog: _pytest.logging.LogCaptureFixture,
     logger: gluetool.log.ContextAdapter,
     db: DB,
-    session: sqlalchemy.orm.session.Session
+    session: sqlalchemy.orm.session.Session,
 ) -> None:
     """
     Test whether :py:func:`transaction` intercepts and reports transaction rollback.
@@ -510,15 +445,11 @@ def test_transaction_conflict(
     def thread1() -> None:
         with db.get_session(logger) as session:
             update = tft.artemis.tasks._guest_state_update_query(
-                'dummy-guest',
-                GuestState.PROVISIONING,
-                current_state=GuestState.SHELF_LOOKUP
+                'dummy-guest', GuestState.PROVISIONING, current_state=GuestState.SHELF_LOOKUP
             ).unwrap()
 
             insert = sqlalchemy.insert(GuestEvent).values(
-                updated=datetime.datetime.utcnow(),
-                guestname='dummy-guest',
-                eventname='dummy-event'
+                updated=datetime.datetime.utcnow(), guestname='dummy-guest', eventname='dummy-event'
             )
 
             with transaction(logger, session) as r:
@@ -536,15 +467,11 @@ def test_transaction_conflict(
     def thread2() -> None:
         with db.get_session(logger) as session:
             update = tft.artemis.tasks._guest_state_update_query(
-                'dummy-guest',
-                GuestState.PROMISED,
-                current_state=GuestState.SHELF_LOOKUP
+                'dummy-guest', GuestState.PROMISED, current_state=GuestState.SHELF_LOOKUP
             ).unwrap()
 
             insert = sqlalchemy.insert(GuestEvent).values(
-                updated=datetime.datetime.utcnow(),
-                guestname='dummy-guest',
-                eventname='another-dummy-event'
+                updated=datetime.datetime.utcnow(), guestname='dummy-guest', eventname='another-dummy-event'
             )
 
             with transaction(logger, session) as r:

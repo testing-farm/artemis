@@ -60,7 +60,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
-    default='artemis-image-map-azure.yaml'
+    default='artemis-image-map-azure.yaml',
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
@@ -70,7 +70,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_AZURE_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
-    default='{{ os.compose }}'
+    default='{{ os.compose }}',
 )
 
 KNOB_RESOURCE_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
@@ -80,7 +80,7 @@ KNOB_RESOURCE_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE',
     cast_from_str=str,
-    default='{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}'
+    default='{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}',
 )
 
 KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK: Knob[int] = Knob(
@@ -89,7 +89,7 @@ KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_AZURE_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK',
     cast_from_str=int,
-    default=300
+    default=300,
 )
 
 
@@ -99,19 +99,12 @@ AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'Microsoft.Compute/disks': ResourceType.DISK,
     'Microsoft.Network/publicIPAddresses': ResourceType.STATIC_IP,
     'Microsoft.Network/networkInterfaces': ResourceType.NETWORK_INTERFACE,
-    'Microsoft.Network/networkSecurityGroups': ResourceType.SECURITY_GROUP
+    'Microsoft.Network/networkSecurityGroups': ResourceType.SECURITY_GROUP,
 }
 
 
 ConfigImageFilter = TypedDict(
-    'ConfigImageFilter',
-    {
-        'name-regex': str,
-        'offer': str,
-        'publisher': str,
-        'sku': str
-    },
-    total=False
+    'ConfigImageFilter', {'name-regex': str, 'offer': str, 'publisher': str, 'sku': str}, total=False
 )
 
 
@@ -228,12 +221,9 @@ class AzureSession:
         logger: gluetool.log.ContextAdapter,
         options: List[str],
         json_format: bool = True,
-        commandname: Optional[str] = None
+        commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
-        environ = {
-            **os.environ,
-            'AZURE_CONFIG_DIR': self.session_directory.name
-        }
+        environ = {**os.environ, 'AZURE_CONFIG_DIR': self.session_directory.name}
 
         r_run = run_cli_tool(
             logger,
@@ -243,7 +233,7 @@ class AzureSession:
             command_scrubber=lambda cmd: (['azure'] + options),
             poolname=self.pool.poolname,
             commandname=commandname,
-            cause_extractor=awscli_error_cause_extractor
+            cause_extractor=awscli_error_cause_extractor,
         )
 
         if r_run.is_error:
@@ -258,8 +248,10 @@ class AzureSession:
         if self.pool.pool_config['username'] and self.pool.pool_config['password']:
             login_cmd = [
                 'login',
-                '--username', self.pool.pool_config['username'],
-                '--password', self.pool.pool_config['password']
+                '--username',
+                self.pool.pool_config['username'],
+                '--password',
+                self.pool.pool_config['password'],
             ]
             if self.pool.pool_config['login'] == 'service-principal':
                 login_cmd.extend(['--service-principal', '--tenant', self.pool.pool_config['tenant']])
@@ -267,10 +259,7 @@ class AzureSession:
             r_login = self._run_cmd(logger, login_cmd, commandname='az.login')
 
             if r_login.is_error:
-                return Error(Failure.from_failure(
-                    'failed to log into tenant',
-                    r_login.unwrap_error()
-                ))
+                return Error(Failure.from_failure('failed to log into tenant', r_login.unwrap_error()))
 
         return Ok(None)
 
@@ -279,7 +268,7 @@ class AzureSession:
         logger: gluetool.log.ContextAdapter,
         options: List[str],
         json_format: bool = True,
-        commandname: Optional[str] = None
+        commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
         if self._login_result is not None and self._login_result.is_error:
             return Error(self._login_result.unwrap_error())
@@ -321,9 +310,7 @@ class AzureDriver(PoolDriver):
         return Ok(capabilities)
 
     def map_image_name_to_image_info(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        imagename: str
+        self, logger: gluetool.log.ContextAdapter, imagename: str
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
@@ -332,11 +319,10 @@ class AzureDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: AzurePoolImageInfo
+        image: AzurePoolImageInfo,
     ) -> Result[AzureFlavor, Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
-            logger,
-            guest_request.environment
+            logger, guest_request.environment
         )
 
         if r_suitable_flavors.is_error:
@@ -344,28 +330,18 @@ class AzureDriver(PoolDriver):
 
         suitable_flavors = cast(List[AzureFlavor], r_suitable_flavors.unwrap())
 
-        suitable_flavors = self.filter_flavors_image_arch(
-            logger,
-            session,
-            guest_request,
-            image,
-            suitable_flavors
-        )
+        suitable_flavors = self.filter_flavors_image_arch(logger, session, guest_request, image, suitable_flavors)
 
         # NOTE(ivasilev) hardware requirements not supported atm so skipping all related flavor filtering
 
         if not suitable_flavors:
             if self.pool_config.get('use-default-flavor-when-no-suitable', True):
                 guest_request.log_warning_event(
-                    logger,
-                    session,
-                    'no suitable flavors, using default',
-                    poolname=self.poolname
+                    logger, session, 'no suitable flavors, using default', poolname=self.poolname
                 )
 
                 r_default_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(
-                    logger,
-                    self.pool_config['default-flavor']
+                    logger, self.pool_config['default-flavor']
                 )
 
                 if r_default_flavor.is_error:
@@ -373,30 +349,19 @@ class AzureDriver(PoolDriver):
 
                 return Ok(cast(AzureFlavor, r_default_flavor.unwrap()))
 
-            guest_request.log_warning_event(
-                logger,
-                session,
-                'no suitable flavors',
-                poolname=self.poolname
-            )
+            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
 
             return Error(Failure('no suitable flavor'))
 
         if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
             logger.info('default flavor among suitable ones, using it')
 
-            return Ok([
-                flavor
-                for flavor in suitable_flavors
-                if flavor.name == self.pool_config['default-flavor']
-            ][0])
+            return Ok([flavor for flavor in suitable_flavors if flavor.name == self.pool_config['default-flavor']][0])
 
         return Ok(suitable_flavors[0])
 
     def release_pool_resources(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        raw_resource_ids: SerializedPoolResourcesIDs
+        self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
         # NOTE(ivasilev) If the resource_group matches the one in pool config's guest-request-group, then the cleanup
         # will be solely relying on removing all resources tagged with the instance-id tag one by one.
@@ -408,13 +373,9 @@ class AzureDriver(PoolDriver):
             with AzureSession(logger, self) as session:
                 return session.run_az(
                     logger,
-                    [
-                        'resource', 'delete',
-                        '--verbose',
-                        '--ids', resource_id
-                    ],
+                    ['resource', 'delete', '--verbose', '--ids', resource_id],
                     json_format=False,
-                    commandname='az.resource-delete'
+                    commandname='az.resource-delete',
                 )
 
         resource_ids = AzurePoolResourcesIDs.unserialize_from_json(raw_resource_ids)
@@ -428,11 +389,14 @@ class AzureDriver(PoolDriver):
                         logger,
                         ['group', 'delete', '--name', resource_group, '-y'],
                         commandname='az.group-delete',
-                        json_format=False
+                        json_format=False,
                     )
                     if r_remove_resource_group.is_error:
-                        return Error(Failure.from_failure('failed to remove resource group',
-                                                          r_remove_resource_group.unwrap_error()))
+                        return Error(
+                            Failure.from_failure(
+                                'failed to remove resource group', r_remove_resource_group.unwrap_error()
+                            )
+                        )
 
         # storage containers used for console log have to be cleaned up separately - they belong to a different
         # resource group and can't be tagged out of the box so need special treatment
@@ -441,17 +405,24 @@ class AzureDriver(PoolDriver):
                 r_remove_storage = session.run_az(
                     logger,
                     [
-                        'storage', 'container-rm', 'delete',
-                        '--name', resource_ids.boot_log_container,
-                        '--storage-account', self.pool_config['boot-log-storage'],
-                        '-y'
+                        'storage',
+                        'container-rm',
+                        'delete',
+                        '--name',
+                        resource_ids.boot_log_container,
+                        '--storage-account',
+                        self.pool_config['boot-log-storage'],
+                        '-y',
                     ],
                     json_format=False,
                     commandname='az.storage-container-rm',
                 )
                 if r_remove_storage.is_error:
-                    return Error(Failure.from_failure('failed to remove storage container for boot logs',
-                                                      r_remove_storage.unwrap_error()))
+                    return Error(
+                        Failure.from_failure(
+                            'failed to remove storage container for boot logs', r_remove_storage.unwrap_error()
+                        )
+                    )
                 # TODO(ivasilev) Start tracking blobs usage?
 
         if resource_ids.instance_id is not None:
@@ -459,35 +430,34 @@ class AzureDriver(PoolDriver):
                 r_delete = _delete_resource(resource_ids.instance_id)
 
                 if r_delete.is_error:
-                    return Error(Failure.from_failure(
-                        'failed to remove Azure resource',
-                        r_delete.unwrap_error(),
-                        resource_id=resource_ids.instance_id
-                    ))
+                    return Error(
+                        Failure.from_failure(
+                            'failed to remove Azure resource',
+                            r_delete.unwrap_error(),
+                            resource_id=resource_ids.instance_id,
+                        )
+                    )
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         if resource_ids.assorted_resource_ids is not None:
             for resource in resource_ids.assorted_resource_ids:
                 if resource_group == self.pool_config.get('guest-resource-group'):
-                    r_delete = _delete_resource(resource["id"])
+                    r_delete = _delete_resource(resource['id'])
 
                     if r_delete.is_error:
-                        return Error(Failure.from_failure(
-                            'failed to remove Azure resource',
-                            r_delete.unwrap_error(),
-                            resource_id=resource['id']
-                        ))
+                        return Error(
+                            Failure.from_failure(
+                                'failed to remove Azure resource', r_delete.unwrap_error(), resource_id=resource['id']
+                            )
+                        )
 
                 self.inc_costs(logger, AZURE_RESOURCE_TYPE[resource['type']], resource_ids.ctime)
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
     def can_acquire(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
@@ -523,10 +493,7 @@ class AzureDriver(PoolDriver):
         return Ok(CanAcquire())
 
     def update_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
@@ -551,28 +518,25 @@ class AzureDriver(PoolDriver):
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
         if status == 'failed':
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.CANCEL,
-                pool_data=pool_data,
-                pool_failures=[Failure('instance ended up in "failed" state')]
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=pool_data,
+                    pool_failures=[Failure('instance ended up in "failed" state')],
+                )
+            )
 
         r_ip_address = vm_info_to_ip(output, 'publicIps' if self.use_public_ip else 'privateIps')
 
         if r_ip_address.is_error:
             return Error(r_ip_address.unwrap_error())
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.COMPLETE,
-            pool_data=pool_data,
-            address=r_ip_address.unwrap()
-        ))
+        return Ok(
+            ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=r_ip_address.unwrap())
+        )
 
     def release_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -588,14 +552,13 @@ class AzureDriver(PoolDriver):
         resource_ids: List[AzurePoolResourcesIDs] = []
 
         if pool_data.instance_id is not None:
-            resource_ids.append(AzurePoolResourcesIDs(instance_id=pool_data.instance_id,
-                                                      resource_group=pool_data.resource_group))
+            resource_ids.append(
+                AzurePoolResourcesIDs(instance_id=pool_data.instance_id, resource_group=pool_data.resource_group)
+            )
 
         with AzureSession(logger, self) as az_session:
             r_tagged_resources = az_session.run_az(
-                logger,
-                ['resource', 'list', '--tag', f'uid={pool_data.instance_name}'],
-                commandname='az.resource-list'
+                logger, ['resource', 'list', '--tag', f'uid={pool_data.instance_name}'], commandname='az.resource-list'
             )
 
         if r_tagged_resources.is_error:
@@ -608,10 +571,11 @@ class AzureDriver(PoolDriver):
         ]
 
         if assorted_resource_ids:
-            resource_ids.append(AzurePoolResourcesIDs(
-                assorted_resource_ids=assorted_resource_ids,
-                resource_group=pool_data.resource_group
-            ))
+            resource_ids.append(
+                AzurePoolResourcesIDs(
+                    assorted_resource_ids=assorted_resource_ids, resource_group=pool_data.resource_group
+                )
+            )
 
         r_boot_log_storage = self._find_boot_log_storage_container(logger, guest_request)
 
@@ -623,21 +587,12 @@ class AzureDriver(PoolDriver):
             Failure('Could not get the name of log storage container for cleanup').handle(logger)
 
         else:
-            resource_ids.append(AzurePoolResourcesIDs(
-                boot_log_container=r_boot_log_storage.unwrap()['name']
-            ))
+            resource_ids.append(AzurePoolResourcesIDs(boot_log_container=r_boot_log_storage.unwrap()['name']))
 
-        return self.dispatch_resource_cleanup(
-            logger,
-            session,
-            *resource_ids,
-            guest_request=guest_request
-        )
+        return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
 
     def create_snapshot(
-        self,
-        guest_request: GuestRequest,
-        snapshot_request: SnapshotRequest
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Create snapshot of a guest.
@@ -652,10 +607,7 @@ class AzureDriver(PoolDriver):
         raise NotImplementedError
 
     def update_snapshot(
-        self,
-        guest_request: GuestRequest,
-        snapshot_request: SnapshotRequest,
-        start_again: bool = True
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Update state of the snapshot.
@@ -684,11 +636,7 @@ class AzureDriver(PoolDriver):
         """
         raise NotImplementedError
 
-    def restore_snapshot(
-        self,
-        guest_request: GuestRequest,
-        snapshot_request: SnapshotRequest
-    ) -> Result[bool, Failure]:
+    def restore_snapshot(self, guest_request: GuestRequest, snapshot_request: SnapshotRequest) -> Result[bool, Failure]:
         """
         Restore the guest to the snapshot.
 
@@ -701,10 +649,7 @@ class AzureDriver(PoolDriver):
         raise NotImplementedError
 
     def acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
@@ -726,32 +671,21 @@ class AzureDriver(PoolDriver):
             guest_request,
         )
 
-    def _show_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[Any, Failure]:
+    def _show_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[Any, Failure]:
         instance_id = guest_request.pool_data.mine(self, AzurePoolData).instance_id
 
         if not instance_id:
             return Error(Failure('Need an instance ID to fetch any information about a guest'))
 
         with AzureSession(logger, self) as session:
-            r_output = session.run_az(
-                logger,
-                ['vm', 'show', '-d', '--ids', instance_id],
-                commandname='az.vm-show')
+            r_output = session.run_az(logger, ['vm', 'show', '-d', '--ids', instance_id], commandname='az.vm-show')
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch instance information',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to fetch instance information', r_output.unwrap_error()))
         return Ok(r_output.unwrap())
 
     def fetch_pool_resources_metrics(
-        self,
-        logger: gluetool.log.ContextAdapter
+        self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
         r_resources = super().fetch_pool_resources_metrics(logger)
 
@@ -764,21 +698,14 @@ class AzureDriver(PoolDriver):
             # Resource usage - instances and flavors
             def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Any], Failure]:
                 return cast(
-                    Result[List[Any], Failure],
-                    session.run_az(
-                        logger,
-                        [
-                            'vm', 'list'
-                        ],
-                        commandname='az.vm-list'
-                    )
+                    Result[List[Any], Failure], session.run_az(logger, ['vm', 'list'], commandname='az.vm-list')
                 )
 
             def _update_instance_usage(
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
                 raw_instance: Any,
-                flavor: Optional[Flavor]
+                flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
                 assert usage.instances is not None  # narrow type
 
@@ -792,7 +719,7 @@ class AzureDriver(PoolDriver):
                 _fetch_instances,
                 # TODO: once we find the flavor name, we can update its usage.
                 lambda raw_instance: 'dummy-flavor-name-does-not-exist',
-                _update_instance_usage
+                _update_instance_usage,
             )
 
         if r_instances_usage.is_error:
@@ -814,22 +741,17 @@ class AzureDriver(PoolDriver):
         def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
             list_flavors_cmd = ['vm', 'list-sizes', '--location', self.pool_config['default-location']]
             with AzureSession(logger, self) as session:
-                r_flavors_list = session.run_az(
-                    logger,
-                    list_flavors_cmd,
-                    commandname='az.vm-flavors-list'
-                )
+                r_flavors_list = session.run_az(logger, list_flavors_cmd, commandname='az.vm-flavors-list')
 
                 if r_flavors_list.is_error:
-                    return Error(Failure.from_failure(
-                        'failed to fetch flavors information',
-                        r_flavors_list.unwrap_error()))
+                    return Error(
+                        Failure.from_failure('failed to fetch flavors information', r_flavors_list.unwrap_error())
+                    )
 
             return Ok(cast(List[Dict[str, Any]], r_flavors_list.unwrap()))
 
         def _constructor(
-            logger: gluetool.log.ContextAdapter,
-            raw_flavor: Dict[str, Any]
+            logger: gluetool.log.ContextAdapter, raw_flavor: Dict[str, Any]
         ) -> Iterator[Result[Flavor, Failure]]:
             max_data_disk_count = int(raw_flavor['maxDataDiskCount'])
             # diskspace is reported in MB
@@ -837,25 +759,22 @@ class AzureDriver(PoolDriver):
             if max_data_disk_count > 1:
                 disks.append(FlavorDisk(is_expansion=True, max_additional_items=max_data_disk_count - 1))
 
-            yield Ok(AzureFlavor(
-                name=raw_flavor['name'],
-                id=raw_flavor['name'],
-                cpu=FlavorCpu(
-                    processors=int(raw_flavor['numberOfCores'])
-                ),
-                # memory is reported in MB
-                memory=UNITS.Quantity(int(raw_flavor['memoryInMB']), UNITS.megabytes),
-                disk=FlavorDisks(disks),
-                resource_disk_size=UNITS.Quantity(int(raw_flavor['resourceDiskSizeInMB']), UNITS.megabytes),
-                network=FlavorNetworks([FlavorNetwork(type='eth')]),
-                virtualization=FlavorVirtualization()
-            ))
+            yield Ok(
+                AzureFlavor(
+                    name=raw_flavor['name'],
+                    id=raw_flavor['name'],
+                    cpu=FlavorCpu(processors=int(raw_flavor['numberOfCores'])),
+                    # memory is reported in MB
+                    memory=UNITS.Quantity(int(raw_flavor['memoryInMB']), UNITS.megabytes),
+                    disk=FlavorDisks(disks),
+                    resource_disk_size=UNITS.Quantity(int(raw_flavor['resourceDiskSizeInMB']), UNITS.megabytes),
+                    network=FlavorNetworks([FlavorNetwork(type='eth')]),
+                    virtualization=FlavorVirtualization(),
+                )
+            )
 
         return self.do_fetch_pool_flavor_info(
-            self.logger,
-            _fetch,
-            lambda raw_flavor: cast(str, raw_flavor['name']),
-            _constructor
+            self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
@@ -881,17 +800,12 @@ class AzureDriver(PoolDriver):
                         return Error(Failure.from_exc('failed to compile regex', exc))
 
             with AzureSession(logger, self) as session:
-                r_images_list = session.run_az(
-                    logger,
-                    list_images_cmd,
-                    commandname='az.vm-image-list'
-                )
+                r_images_list = session.run_az(logger, list_images_cmd, commandname='az.vm-image-list')
 
                 if r_images_list.is_error:
-                    return Error(Failure.from_failure(
-                        'failed to fetch image information',
-                        r_images_list.unwrap_error()
-                    ))
+                    return Error(
+                        Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error())
+                    )
 
             images: List[PoolImageInfo] = []
             for image in cast(List[APIImageType], r_images_list.unwrap()):
@@ -899,25 +813,25 @@ class AzureDriver(PoolDriver):
                     # Apply wild-card filter if specified, unfortunately no way to filter by urn via azure cli
                     if name_pattern and not name_pattern.match(image['urn']):
                         continue
-                    images.append(AzurePoolImageInfo(
-                        name=image['urn'],
-                        id=image['urn'],
-                        urn=image['urn'],
-                        offer=image['offer'],
-                        publisher=image['publisher'],
-                        sku=image['sku'],
-                        version=image['version'],
-                        arch=_azure_arch_to_arch(image['architecture']),
-                        boot=FlavorBoot(),
-                        ssh=PoolImageSSHInfo(),
-                        supports_kickstart=False
-                    ))
+                    images.append(
+                        AzurePoolImageInfo(
+                            name=image['urn'],
+                            id=image['urn'],
+                            urn=image['urn'],
+                            offer=image['offer'],
+                            publisher=image['publisher'],
+                            sku=image['sku'],
+                            version=image['version'],
+                            arch=_azure_arch_to_arch(image['architecture']),
+                            boot=FlavorBoot(),
+                            ssh=PoolImageSSHInfo(),
+                            supports_kickstart=False,
+                        )
+                    )
                 except KeyError as exc:
-                    return Error(Failure.from_exc(
-                        'malformed image description',
-                        exc,
-                        image_info=r_images_list.unwrap()
-                    ))
+                    return Error(
+                        Failure.from_exc('malformed image description', exc, image_info=r_images_list.unwrap())
+                    )
 
             log_dict_yaml(self.logger.debug, 'image filters', filters)
             log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
@@ -947,10 +861,7 @@ class AzureDriver(PoolDriver):
         return Ok(images)
 
     def _do_acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
@@ -978,22 +889,15 @@ class AzureDriver(PoolDriver):
         if not pairs:
             return Error(Failure('no suitable image/flavor combination found'))
 
-        log_dict_yaml(logger.info, 'available image/flavor combinations', [
-            {
-                'flavor': flavor.serialize(),
-                'image': image.serialize()
-            } for image, flavor in pairs
-        ])
+        log_dict_yaml(
+            logger.info,
+            'available image/flavor combinations',
+            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
+        )
 
         image, instance_type = pairs[0]
 
-        self.log_acquisition_attempt(
-            logger,
-            session,
-            guest_request,
-            flavor=instance_type,
-            image=image
-        )
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=instance_type, image=image)
 
         r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
@@ -1024,8 +928,7 @@ class AzureDriver(PoolDriver):
             r_ssh_key = _get_master_key()
 
             if r_ssh_key.is_error:
-                return Error(Failure.from_failure('could not obtain artemis ssh key',
-                                                  r_ssh_key.unwrap_error()))
+                return Error(Failure.from_failure('could not obtain artemis ssh key', r_ssh_key.unwrap_error()))
 
             ssh_key = r_ssh_key.unwrap()
 
@@ -1042,12 +945,7 @@ class AzureDriver(PoolDriver):
             tags_options = []
 
             if tags:
-                tags_options = [
-                    '--tags'
-                ] + [
-                    f'{tag}={value}'
-                    for tag, value in tags.items()
-                ]
+                tags_options = ['--tags'] + [f'{tag}={value}' for tag, value in tags.items()]
 
             with AzureSession(logger, self) as session:
                 if resource_group != self.pool_config.get('guest-resource-group'):
@@ -1055,23 +953,35 @@ class AzureDriver(PoolDriver):
                     r_create_resource_group = session.run_az(
                         logger,
                         [
-                            'group', 'create',
-                            '--location', self.pool_config['default-location'],
-                            '--name', resource_group
-                        ] + tags_options,
-                        commandname='az.vm-create'
+                            'group',
+                            'create',
+                            '--location',
+                            self.pool_config['default-location'],
+                            '--name',
+                            resource_group,
+                        ]
+                        + tags_options,
+                        commandname='az.vm-create',
                     )
 
                     if r_create_resource_group.is_error:
-                        return Error(Failure.from_failure('failed to create resource group',
-                                                          r_create_resource_group.unwrap_error()))
+                        return Error(
+                            Failure.from_failure(
+                                'failed to create resource group', r_create_resource_group.unwrap_error()
+                            )
+                        )
 
                 az_vm_create_options = [
-                    'vm', 'create',
-                    '--resource-group', resource_group,
-                    '--image', image.id,
-                    '--name', tags['ArtemisGuestLabel'],
-                    '--size', instance_type.name
+                    'vm',
+                    'create',
+                    '--resource-group',
+                    resource_group,
+                    '--image',
+                    image.id,
+                    '--name',
+                    tags['ArtemisGuestLabel'],
+                    '--size',
+                    instance_type.name,
                 ] + tags_options
 
                 if custom_data_filename:
@@ -1083,16 +993,21 @@ class AzureDriver(PoolDriver):
                     r_create_storage = session.run_az(
                         logger,
                         [
-                            'storage', 'account', 'create',
-                            '--resource-group', self.pool_config['default-resource-group'],
-                            '--name', self.pool_config['boot-log-storage']
+                            'storage',
+                            'account',
+                            'create',
+                            '--resource-group',
+                            self.pool_config['default-resource-group'],
+                            '--name',
+                            self.pool_config['boot-log-storage'],
                         ],
-                        commandname='az.storage-account-create'
+                        commandname='az.storage-account-create',
                     )
 
                     if r_create_storage.is_error:
-                        return Error(Failure.from_failure('failed to create a storage account',
-                                                          r_create_storage.unwrap_error()))
+                        return Error(
+                            Failure.from_failure('failed to create a storage account', r_create_storage.unwrap_error())
+                        )
 
                     az_vm_create_options += ['--boot-diagnostics-storage', self.pool_config['boot-log-storage']]
 
@@ -1100,16 +1015,11 @@ class AzureDriver(PoolDriver):
                     az_vm_create_options += ['--ssh-key-values', ssh_key_filepath]
 
                     # Resource group / boot log storage pre-created, ssh_key passed -> time to create a vm
-                    return session.run_az(
-                        logger,
-                        az_vm_create_options,
-                        commandname='az.vm-create'
-                    )
+                    return session.run_az(logger, az_vm_create_options, commandname='az.vm-create')
 
         # Let's figure out a resource group for guest. If one is defined in pool config - we should be using it,
         # otherwise let's create a new one specifically for this vm to make cleanup fast and easy.
         if not self.pool_config.get('guest-resource-group'):
-
             r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
             if r_resource_group_template.is_error:
                 return Error(Failure('Could not get resource_group_name template'))
@@ -1118,7 +1028,7 @@ class AzureDriver(PoolDriver):
                 r_resource_group_template.unwrap(),
                 GUESTNAME=guest_request.guestname,
                 ENVIRONMENT=guest_request.environment,
-                TAGS=tags
+                TAGS=tags,
             )
             if r_resource_group_template.is_error:
                 return Error(Failure('Could not render resource_group_name template'))
@@ -1129,8 +1039,9 @@ class AzureDriver(PoolDriver):
 
         r_post_install_script = self.generate_post_install_script(guest_request)
         if r_post_install_script.is_error:
-            return Error(Failure.from_failure('Could not generate post-install script',
-                                              r_post_install_script.unwrap_error()))
+            return Error(
+                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+            )
 
         post_install_script = r_post_install_script.unwrap()
         if post_install_script:
@@ -1156,10 +1067,12 @@ class AzureDriver(PoolDriver):
             r_vm_show = azure_session.run_az(
                 logger,
                 [
-                    'vm', 'show',
-                    '--id', output['id'],
+                    'vm',
+                    'show',
+                    '--id',
+                    output['id'],
                 ],
-                commandname='vm-show'
+                commandname='vm-show',
             )
         if r_vm_show.is_error:
             return Error(r_vm_show.unwrap_error())
@@ -1167,43 +1080,53 @@ class AzureDriver(PoolDriver):
         vm_info = cast(Dict[str, Any], r_vm_show.unwrap())
 
         # There is no chance that the guest will be ready in this step
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.PENDING,
-            pool_data=AzurePoolData(
-                instance_id=output['id'],
-                instance_name=tags['ArtemisGuestLabel'],
-                vm_id=vm_info['vmId'],
-                resource_group=resource_group
-            ),
-            delay_update=r_delay.unwrap(),
-            ssh_info=image.ssh
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=AzurePoolData(
+                    instance_id=output['id'],
+                    instance_name=tags['ArtemisGuestLabel'],
+                    vm_id=vm_info['vmId'],
+                    resource_group=resource_group,
+                ),
+                delay_update=r_delay.unwrap(),
+                ssh_info=image.ssh,
+            )
+        )
 
     def _find_boot_log_storage_container(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> Result[Dict[str, str], Failure]:
-
         pool_data = guest_request.pool_data.mine(self, AzurePoolData)
 
         if not self.pool_config.get('boot-log-storage'):
             return Error(Failure('Boot log storage container is not specified by the pool'))
 
         with AzureSession(logger, self) as session:
-            az_options = ['storage', 'container', 'list',
-                          '--auth-mode', 'login', '--account-name', self.pool_config['boot-log-storage']]
+            az_options = [
+                'storage',
+                'container',
+                'list',
+                '--auth-mode',
+                'login',
+                '--account-name',
+                self.pool_config['boot-log-storage'],
+            ]
             r_container_list = session.run_az(logger, az_options, commandname='az.storage-container-list')
 
             if r_container_list.is_error:
-                return Error(Failure.from_failure('Could not retrieve list of storage containers',
-                                                  r_container_list.unwrap_error()))
+                return Error(
+                    Failure.from_failure(
+                        'Could not retrieve list of storage containers', r_container_list.unwrap_error()
+                    )
+                )
 
             containers = cast(List[Dict[str, str]], r_container_list.unwrap())
 
             # Now let's find the storage container that ends with vmId of the machine.
             storage_container = next(
-                (c for c in containers if pool_data.vm_id and c['name'].endswith(pool_data.vm_id)), None)
+                (c for c in containers if pool_data.vm_id and c['name'].endswith(pool_data.vm_id)), None
+            )
             if not storage_container:
                 # Could not find a storage container for serial log - something weird is going on, can't proceed
                 return Error(Failure('Could not find a storage container'))
@@ -1211,12 +1134,8 @@ class AzureDriver(PoolDriver):
             return Ok(storage_container)
 
     def _fetch_guest_console_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[
-            Union[Tuple[None, None], Tuple[datetime.datetime, Optional[str]]],
-            Failure]:
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> Result[Union[Tuple[None, None], Tuple[datetime.datetime, Optional[str]]], Failure]:
         """
         Retrieve last modification date of the serial console log and its contents directly from storage container.
         """
@@ -1229,18 +1148,30 @@ class AzureDriver(PoolDriver):
         with AzureSession(logger, self) as session:
             r_storage_container = self._find_boot_log_storage_container(logger, guest_request)
             if r_storage_container.is_error:
-                return Error(Failure.from_failure('Could not get name of log storage container for serial console log',
-                                                  r_storage_container.unwrap_error()))
+                return Error(
+                    Failure.from_failure(
+                        'Could not get name of log storage container for serial console log',
+                        r_storage_container.unwrap_error(),
+                    )
+                )
             storage_container = r_storage_container.unwrap()
 
             # Let's find a serial console log among blobs stored
-            az_options = ['storage', 'blob', 'list', '--container-name', storage_container['name'],
-                          '--auth-mode', 'key', '--account-name', self.pool_config['boot-log-storage']]
+            az_options = [
+                'storage',
+                'blob',
+                'list',
+                '--container-name',
+                storage_container['name'],
+                '--auth-mode',
+                'key',
+                '--account-name',
+                self.pool_config['boot-log-storage'],
+            ]
             r_blob_list = session.run_az(logger, az_options, commandname='az.storage-blob-list')
 
             if r_blob_list.is_error:
-                return Error(Failure.from_failure('Could not get a list of stored blobs',
-                                                  r_blob_list.unwrap_error()))
+                return Error(Failure.from_failure('Could not get a list of stored blobs', r_blob_list.unwrap_error()))
 
             blobs = cast(List[Dict[str, Any]], r_blob_list.unwrap())
             # The one we need will end with a serialconsole.log
@@ -1249,21 +1180,32 @@ class AzureDriver(PoolDriver):
                 return Error(Failure('Could not find a serial console log'))
 
             # Let's now download the console log contents directly from storage container
-            az_options = ['storage', 'blob', 'download', '--name', serial_console_log['name'],
-                          '--container-name', storage_container['name'],
-                          '--account-name', self.pool_config['boot-log-storage']]
-            r_blob_download = session.run_az(logger, az_options, json_format=False,
-                                             commandname='az-storage-blob-download')
+            az_options = [
+                'storage',
+                'blob',
+                'download',
+                '--name',
+                serial_console_log['name'],
+                '--container-name',
+                storage_container['name'],
+                '--account-name',
+                self.pool_config['boot-log-storage'],
+            ]
+            r_blob_download = session.run_az(
+                logger, az_options, json_format=False, commandname='az-storage-blob-download'
+            )
             if r_blob_download.is_error:
-                return Error(Failure.from_failure('Could not download a serial console log blob',
-                                                  r_blob_download.unwrap_error()))
+                return Error(
+                    Failure.from_failure('Could not download a serial console log blob', r_blob_download.unwrap_error())
+                )
 
             blob = cast(str, r_blob_download.unwrap())
             # Need to get rid of all 0x00 characters to make a db-saveable string
-            blob = blob.replace('\x00', '\uFFFD')
+            blob = blob.replace('\x00', '\ufffd')
             try:
-                timestamp = datetime.datetime.strptime(serial_console_log['properties']['lastModified'],
-                                                       '%Y-%m-%dT%H:%M:%S%z')
+                timestamp = datetime.datetime.strptime(
+                    serial_console_log['properties']['lastModified'], '%Y-%m-%dT%H:%M:%S%z'
+                )
 
             except KeyError as exc:
                 return Error(Failure.from_exc('Could not access lastModified property of the blob', exc))
@@ -1274,10 +1216,7 @@ class AzureDriver(PoolDriver):
 
     @guest_log_updater('azure', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_dump_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         """
         Update console.dump/blob guest log.
@@ -1291,10 +1230,11 @@ class AzureDriver(PoolDriver):
         pool_data = guest_request.pool_data.mine(self, AzurePoolData)
         # No vm id -> no guest log
         if pool_data.vm_id is None:
-            return Ok(GuestLogUpdateProgress(
-                state=GuestLogState.PENDING,
-                delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
-            ))
+            return Ok(
+                GuestLogUpdateProgress(
+                    state=GuestLogState.PENDING, delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
+                )
+            )
 
         timestamp, output = self._fetch_guest_console_blob(logger, guest_request).unwrap()
 
@@ -1303,40 +1243,29 @@ class AzureDriver(PoolDriver):
             guest_log,
             timestamp,
             output,
-            lambda guest_log, timestamp, content, content_hash: timestamp in guest_log.blob_timestamps
+            lambda guest_log, timestamp, content, content_hash: timestamp in guest_log.blob_timestamps,
         )
 
         progress.delay_update = KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
 
         return Ok(progress)
 
-    def trigger_reboot(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[None, Failure]:
+    def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         pool_data = guest_request.pool_data.mine_or_none(self, AzurePoolData)
 
         if not pool_data:
             return Ok(None)
 
         if pool_data.instance_id is None:
-            return Error(Failure(
-                'failed to trigger instance reboot without instance ID'
-            ))
+            return Error(Failure('failed to trigger instance reboot without instance ID'))
 
         with AzureSession(logger, self) as session:
             r_output = session.run_az(
-                logger,
-                ['vm', 'restart', '--force', '--ids', pool_data.instance_id],
-                commandname='az.vm-reboot'
+                logger, ['vm', 'restart', '--force', '--ids', pool_data.instance_id], commandname='az.vm-reboot'
             )
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to trigger instance reboot',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to trigger instance reboot', r_output.unwrap_error()))
 
         return Ok(None)
 

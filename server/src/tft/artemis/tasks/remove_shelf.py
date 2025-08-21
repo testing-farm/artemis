@@ -9,6 +9,7 @@ Remove shelf and schedule the removal of all shelved guests
     Task MUST be aware of the possibility of another task performing the same job at the same time. All changes
     MUST preserve consistent and restartable state.
 """
+
 from typing import List, cast
 
 import gluetool.log
@@ -49,10 +50,12 @@ class Workspace(_Workspace):
             if self.result:
                 return
 
-            r_guests = SafeQuery.from_session(self.session, GuestRequest) \
-                .filter(GuestRequest.shelfname == self.shelfname) \
-                .filter(GuestRequest.state == GuestState.SHELVED) \
+            r_guests = (
+                SafeQuery.from_session(self.session, GuestRequest)
+                .filter(GuestRequest.shelfname == self.shelfname)
+                .filter(GuestRequest.state == GuestState.SHELVED)
                 .all()
+            )
 
             if r_guests.is_error:
                 return self._error(r_guests, 'failed to load shelved guests')
@@ -70,27 +73,27 @@ class Workspace(_Workspace):
                     release_guest_request,
                     guest.guestname,
                     current_state=GuestState.SHELVED,
-                    set_values={
-                        'shelfname': None
-                    },
-                    poolname=guest.poolname
+                    set_values={'shelfname': None},
+                    poolname=guest.poolname,
                 )
 
                 if r.is_error:
                     return self._error(r, f'failed to update guest {guest.guestname} and schedule its release')
 
-            update_query = sqlalchemy.update(GuestRequest) \
-                .where(GuestRequest.shelfname == self.shelfname) \
-                .values(shelfname=None)
+            update_query = (
+                sqlalchemy.update(GuestRequest).where(GuestRequest.shelfname == self.shelfname).values(shelfname=None)
+            )
 
             r_update: DMLResult[GuestRequest] = execute_dml(self.logger, self.session, update_query)
 
             if r_update.is_error:
                 return self._error(r_update, 'failed to remove shelf from active guest requests')
 
-            delete_query = sqlalchemy.delete(GuestShelf) \
-                .where(GuestShelf.shelfname == self.shelfname) \
+            delete_query = (
+                sqlalchemy.delete(GuestShelf)
+                .where(GuestShelf.shelfname == self.shelfname)
                 .where(GuestShelf.state == GuestState.CONDEMNED)
+            )
 
             r_delete: DMLResult[GuestShelf] = execute_dml(self.logger, self.session, delete_query)
 
@@ -99,11 +102,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        shelfname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, shelfname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -122,11 +121,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def remove_shelf(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        shelfname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, shelfname: str
     ) -> DoerReturnType:
         """
         Schedule the release of all guests belonging to shelf, remove the shelf from all active GRs, and remove the
@@ -139,11 +134,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, shelfname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, shelfname).begin().run().complete().final_result
 
 
 @task()
@@ -157,5 +148,5 @@ def remove_shelf(shelfname: str) -> None:
     task_core(
         cast(DoerType, Workspace.remove_shelf),
         logger=get_shelf_logger(Workspace.TASKNAME, _ROOT_LOGGER, shelfname),
-        doer_args=(shelfname,)
+        doer_args=(shelfname,),
     )

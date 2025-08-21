@@ -9,6 +9,7 @@ Revises: 17445bd3cd8d
 Create Date: 2021-03-24 14:16:04.358895
 
 """
+
 from alembic import op
 
 # revision identifiers, used by Alembic.

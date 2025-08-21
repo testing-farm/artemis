@@ -25,7 +25,7 @@ KNOB_CACHE_PATTERN_MAPS: Knob[bool] = Knob(
     per_entity=True,
     envvar='ARTEMIS_CACHE_PATTERN_MAPS',
     default=True,
-    cast_from_str=gluetool.utils.normalize_bool_option
+    cast_from_str=gluetool.utils.normalize_bool_option,
 )
 
 
@@ -34,9 +34,7 @@ _PATTERN_MAP_CACHE_LOCK = threading.Lock()
 
 
 def get_pattern_map(
-    logger: gluetool.log.ContextAdapter,
-    filepath: str,
-    use_cache: bool = True
+    logger: gluetool.log.ContextAdapter, filepath: str, use_cache: bool = True
 ) -> Result[gluetool.utils.PatternMap, Failure]:
     if not use_cache:
         try:
@@ -84,7 +82,7 @@ def map_environment_to_imagename_by_pattern_map(
     environment: Environment,
     needle_template: str,
     mapping_filename: Optional[str] = None,
-    mapping_filepath: Optional[str] = None
+    mapping_filepath: Optional[str] = None,
 ) -> Result[List[str], Failure]:
     """
     Using a given pattern mapping file, try to map an environment to its corresponding image name.
@@ -146,7 +144,7 @@ def map_environment_to_image_info(
     environment: Environment,
     needle_template: str,
     mapping_filename: Optional[str] = None,
-    mapping_filepath: Optional[str] = None
+    mapping_filepath: Optional[str] = None,
 ) -> ImageInfoMapperResultType[PoolImageInfo]:
     """
     Using a given pattern mapping file, try to map a compose, as specified by a given environment, to the corresponding
@@ -175,7 +173,7 @@ def map_environment_to_image_info(
             environment,
             needle_template,
             mapping_filename=mapping_filename,
-            mapping_filepath=mapping_filepath
+            mapping_filepath=mapping_filepath,
         )
 
         if r_image_names.is_error:
@@ -184,17 +182,19 @@ def map_environment_to_image_info(
         imagenames = r_image_names.unwrap()
 
         if not imagenames:
-            log_dict_yaml(logger.info, 'compose not mapped to image names', {
-                'environment': environment.serialize(),
-                'image-names': imagenames
-            })
+            log_dict_yaml(
+                logger.info,
+                'compose not mapped to image names',
+                {'environment': environment.serialize(), 'image-names': imagenames},
+            )
 
             return Ok([])
 
-        log_dict_yaml(logger.info, 'compose mapped to image names', {
-            'environment': environment.serialize(),
-            'image-names': imagenames
-        })
+        log_dict_yaml(
+            logger.info,
+            'compose mapped to image names',
+            {'environment': environment.serialize(), 'image-names': imagenames},
+        )
 
         images = []
 
@@ -206,16 +206,9 @@ def map_environment_to_image_info(
 
             images.append(r_image.unwrap())
 
-        log_dict_yaml(logger.info, 'compose mapped to image', {
-            'environment': environment.serialize(),
-            'image': images
-        })
+        log_dict_yaml(logger.info, 'compose mapped to image', {'environment': environment.serialize(), 'image': images})
 
         return Ok(images)
 
     except Exception as exc:
-        return Error(Failure.from_exc(
-            'crashed while mapping environment to image',
-            exc,
-            environment=environment
-        ))
+        return Error(Failure.from_exc('crashed while mapping environment to image', exc, environment=environment))

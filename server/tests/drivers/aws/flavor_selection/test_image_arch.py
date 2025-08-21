@@ -16,15 +16,9 @@ def test_sanity(
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
     flavors: List[AWSFlavor],
-    image: AWSPoolImageInfo
+    image: AWSPoolImageInfo,
 ) -> None:
-    suitable_flavors = aws_pool.filter_flavors_image_arch(
-        logger,
-        session,
-        guest_request,
-        image,
-        flavors
-    )
+    suitable_flavors = aws_pool.filter_flavors_image_arch(logger, session, guest_request, image, flavors)
 
     assert [flavor.id for flavor in suitable_flavors] == ['x86_64.1', 'x86_64.2', 'x86_64.3']
 
@@ -35,16 +29,10 @@ def test_no_arch(
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
     flavors: List[AWSFlavor],
-    image: AWSPoolImageInfo
+    image: AWSPoolImageInfo,
 ) -> None:
     image.arch = None
 
-    suitable_flavors = aws_pool.filter_flavors_image_arch(
-        logger,
-        session,
-        guest_request,
-        image,
-        flavors
-    )
+    suitable_flavors = aws_pool.filter_flavors_image_arch(logger, session, guest_request, image, flavors)
 
     assert suitable_flavors == flavors

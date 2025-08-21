@@ -51,7 +51,7 @@ class Workspace(_Workspace):
         guestname: Optional[str] = None,
         task: Optional[str] = None,
         db: Optional[DB] = None,
-        **default_details: Any
+        **default_details: Any,
     ) -> None:
         super().__init__(logger, session, guestname=guestname, task=task, db=db)
 
@@ -71,18 +71,14 @@ class Workspace(_Workspace):
                 ]
 
             except Exception as exc:
-                return self._fail(
-                    Failure.from_exc('failed to parse log types', exc),
-                    'failed to parse log types'
-                )
+                return self._fail(Failure.from_exc('failed to parse log types', exc), 'failed to parse log types')
 
         try:
             environment = Environment.unserialize(self.guest_template.environment)
 
         except Exception as exc:
             return self._fail(
-                Failure.from_exc('failed to parse environment', exc),
-                'failed to parse guest template environment'
+                Failure.from_exc('failed to parse environment', exc), 'failed to parse guest template environment'
             )
 
         with self.transaction():
@@ -121,14 +117,10 @@ class Workspace(_Workspace):
                     bypass_shelf_lookup=True,
                     on_ready=[(return_guest_to_shelf, [GuestState.READY.value])],
                     security_group_rules_ingress=None,
-                    security_group_rules_egress=None
+                    security_group_rules_egress=None,
                 )
 
-                r_create: DMLResult[GuestRequest] = execute_dml(
-                    self.logger,
-                    self.session,
-                    stmt
-                )
+                r_create: DMLResult[GuestRequest] = execute_dml(self.logger, self.session, stmt)
 
                 if r_create.is_error:
                     return self._error(r_create, 'failed to create new guest')
@@ -138,7 +130,8 @@ class Workspace(_Workspace):
                     self.session,
                     guestname,
                     'created',
-                    environment=environment.serialize(), user_data=self.guest_template.user_data
+                    environment=environment.serialize(),
+                    user_data=self.guest_template.user_data,
                 )
 
                 self.request_task(guest_shelf_lookup, guestname)
@@ -151,7 +144,7 @@ class Workspace(_Workspace):
         session: sqlalchemy.orm.session.Session,
         shelfname: str,
         guest_template: str,
-        guest_count: str
+        guest_count: str,
     ) -> 'Workspace':
         """
         Create workspace.
@@ -171,7 +164,7 @@ class Workspace(_Workspace):
             task=cls.TASKNAME,
             shelfname=shelfname,
             guest_template=GuestRequestSchema(**json.loads(guest_template)),
-            guest_count=int(guest_count)
+            guest_count=int(guest_count),
         )
 
     @classmethod
@@ -182,7 +175,7 @@ class Workspace(_Workspace):
         session: sqlalchemy.orm.session.Session,
         shelfname: str,
         guest_template: str,
-        guest_count: str
+        guest_count: str,
     ) -> DoerReturnType:
         """
         Create and dispatch provisioning for the specified number of new guests.
@@ -201,11 +194,13 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, shelfname, guest_template, guest_count) \
-            .begin() \
-            .run() \
-            .complete() \
+        return (
+            cls.create(logger, db, session, shelfname, guest_template, guest_count)
+            .begin()
+            .run()
+            .complete()
             .final_result
+        )
 
 
 @task()
@@ -219,5 +214,5 @@ def preprovision(shelfname: str, guest_template: str, guest_count: str) -> None:
     task_core(
         cast(DoerType, Workspace.preprovision),
         logger=get_shelf_logger(Workspace.TASKNAME, _ROOT_LOGGER, shelfname),
-        doer_args=(shelfname, guest_template, guest_count)
+        doer_args=(shelfname, guest_template, guest_count),
     )

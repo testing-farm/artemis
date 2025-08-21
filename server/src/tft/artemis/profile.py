@@ -77,11 +77,7 @@ class Profiler:
 
         self.stop_time = time.time()
 
-    def format(
-        self,
-        sort_stats: Tuple[str, str] = ('cumulative', 'time'),
-        limit: int = 30
-    ) -> str:
+    def format(self, sort_stats: Tuple[str, str] = ('cumulative', 'time'), limit: int = 30) -> str:
         """
         Format captured profiling data report.
 
@@ -108,23 +104,12 @@ class Profiler:
 
         if self._callstack_profiler is not None:
             if self.verbose:
-                kwargs: Dict[str, Any] = {
-                    'show_all': True,
-                    'timeline': True
-                }
+                kwargs: Dict[str, Any] = {'show_all': True, 'timeline': True}
 
             else:
-                kwargs = {
-                    'show_all': False,
-                    'timeline': False,
-                    'short_mode': True
-                }
+                kwargs = {'show_all': False, 'timeline': False, 'short_mode': True}
 
-            lines += self._callstack_profiler.output_text(
-                unicode=False,
-                color=True,
-                **kwargs
-            ).splitlines()
+            lines += self._callstack_profiler.output_text(unicode=False, color=True, **kwargs).splitlines()
             lines += ['']
 
         return '\n'.join(lines)
@@ -134,7 +119,7 @@ class Profiler:
         logger: gluetool.log.ContextAdapter,
         label: str,
         sort_stats: Tuple[str, str] = ('cumulative', 'time'),
-        limit: int = 30
+        limit: int = 30,
     ) -> None:
         """
         Log captured profiling data report.

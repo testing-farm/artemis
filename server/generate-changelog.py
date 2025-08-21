@@ -22,19 +22,11 @@ $ git show | poetry run ./generate-changelog.py
 """
 
 
-SECTION_NAMES = [
-    'Added',
-    'Changed',
-    'Deprecated',
-    'Removed',
-    'Fixed',
-    'Security'
-]
+SECTION_NAMES = ['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security']
 
 
 SECTION_PATTERNS = {
-    re.compile(rf'(?i)^{section_name.lower()}\s*:\s*.+$'): section_name
-    for section_name in SECTION_NAMES
+    re.compile(rf'(?i)^{section_name.lower()}\s*:\s*.+$'): section_name for section_name in SECTION_NAMES
 }
 
 
@@ -51,10 +43,7 @@ def usage() -> None:
 
 
 def main() -> None:
-    section_items: Dict[str, List[str]] = {
-        section_name: []
-        for section_name in SECTION_NAMES
-    }
+    section_items: Dict[str, List[str]] = {section_name: [] for section_name in SECTION_NAMES}
 
     for line in sys.stdin:
         line = line.strip()

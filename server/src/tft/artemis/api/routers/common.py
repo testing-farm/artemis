@@ -31,29 +31,21 @@ from . import (
 )
 
 router_knobs = APIRouter(
-    prefix="/knobs",
-    tags=["knobs"],
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Not found"}}
+    prefix='/knobs', tags=['knobs'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
 )
 
 router_users = APIRouter(
-    prefix="/users",
-    tags=["users"],
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Not found"}}
+    prefix='/users', tags=['users'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
 )
 
 router__status = APIRouter(
-    prefix="/_status",
-    tags=["status"],
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Not found"}}
+    prefix='/_status', tags=['status'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
 )
 
-router_default = APIRouter(
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Not found"}}
-)
+router_default = APIRouter(responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}})
 
 
-@router_default.get("/metrics", status_code=status.HTTP_200_OK)
+@router_default.get('/metrics', status_code=status.HTTP_200_OK)
 @with_tracing
 def show_metrics(
     request: Request,
@@ -63,11 +55,9 @@ def show_metrics(
     return get_metrics(request=request, db=db, metrics_tree=get_metrics_tree(), logger=logger)
 
 
-@router_default.get("/about", status_code=status.HTTP_200_OK)
+@router_default.get('/about', status_code=status.HTTP_200_OK)
 @with_tracing
-def show_about(
-    request: Request
-) -> AboutResponse:
+def show_about(request: Request) -> AboutResponse:
     return get_about(request)
 
 
@@ -76,7 +66,7 @@ def show_about(
 def get_knobs(
     manager: Annotated[KnobManager, Depends(KnobManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-    request: Request
+    request: Request,
 ) -> List[KnobResponse]:
     return manager.entry_get_knobs(manager=manager, logger=logger)
 
@@ -87,7 +77,7 @@ def get_knob(
     knobname: str,
     manager: Annotated[KnobManager, Depends(KnobManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-    request: Request
+    request: Request,
 ) -> KnobResponse:
     return manager.entry_get_knob(knobname=knobname, manager=manager, logger=logger)
 
@@ -99,7 +89,7 @@ def set_knob(
     payload: KnobUpdateRequest,
     manager: Annotated[KnobManager, Depends(KnobManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-    request: Request
+    request: Request,
 ) -> KnobResponse:
     return manager.entry_set_knob(knobname=knobname, payload=payload, manager=manager, logger=logger)
 
@@ -110,7 +100,7 @@ def delete_knob(
     knobname: str,
     manager: Annotated[KnobManager, Depends(KnobManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-    request: Request
+    request: Request,
 ) -> None:
     return manager.entry_delete_knob(knobname=knobname, manager=manager, logger=logger)
 
@@ -119,7 +109,7 @@ def delete_knob(
 @with_tracing
 def get_users(
     manager: Annotated[UserManager, Depends(UserManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> List[UserResponse]:
     return manager.entry_get_users(manager, logger)
 
@@ -129,7 +119,7 @@ def get_users(
 def get_user(
     username: str,
     manager: Annotated[UserManager, Depends(UserManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> UserResponse:
     return manager.entry_get_user(manager, username, logger)
 
@@ -140,7 +130,7 @@ def create_user(
     username: str,
     user_request: CreateUserRequest,
     manager: Annotated[UserManager, Depends(UserManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> UserResponse:
     return manager.entry_create_user(username=username, manager=manager, user_request=user_request, logger=logger)
 
@@ -150,7 +140,7 @@ def create_user(
 def delete_user(
     username: str,
     manager: Annotated[UserManager, Depends(UserManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)]
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> None:
     return manager.entry_delete_user(username=username, manager=manager, logger=logger)
 
@@ -172,6 +162,6 @@ def get_workers_traffic(
     manager: Annotated[CacheManager, Depends(StatusManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     cache: Annotated['redis.Redis', Depends(get_cache)],
-    request: Request
+    request: Request,
 ) -> Response:
     return StatusManager.entry_workers_traffic(manager=manager, logger=logger, cache=cache)

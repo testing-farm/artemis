@@ -9,6 +9,7 @@ Revises: 8c470c3f4331
 Create Date: 2020-10-02 15:38:06.976919
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -27,9 +28,15 @@ def upgrade() -> None:
         sa.Column('to_pool', sa.String(length=250)),
         sa.Column('count', sa.Integer()),
         sa.Column('updated', sa.DateTime()),
-        sa.ForeignKeyConstraint(['from_pool'], ['pools.poolname'], ),
-        sa.ForeignKeyConstraint(['to_pool'], ['pools.poolname'], ),
-        sa.PrimaryKeyConstraint('from_pool', 'to_pool')
+        sa.ForeignKeyConstraint(
+            ['from_pool'],
+            ['pools.poolname'],
+        ),
+        sa.ForeignKeyConstraint(
+            ['to_pool'],
+            ['pools.poolname'],
+        ),
+        sa.PrimaryKeyConstraint('from_pool', 'to_pool'),
     )
     with op.batch_alter_table('metrics', schema=None) as batch_op:
         batch_op.drop_column('_id')

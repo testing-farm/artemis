@@ -9,6 +9,7 @@ Revises: cf1a39506196
 Create Date: 2022-04-23 23:35:43.348556
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -27,7 +28,7 @@ def upgrade() -> None:
         sa.Column('taskname', sa.Text(), nullable=False),
         sa.Column('arguments', sa.JSON(), nullable=False),
         sa.Column('delay', sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
+        sa.PrimaryKeyConstraint('id'),
     )
     # ### end Alembic commands ###
 

@@ -41,7 +41,7 @@ KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY: Knob[int] = Knob(
     per_entity=True,
     envvar='ARTEMIS_ACTOR_GUEST_REQUEST_WATCHDOG_DISPATCH_DELAY',
     cast_from_str=int,
-    default=600
+    default=600,
 )
 
 
@@ -54,7 +54,7 @@ KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD: Knob[int] = Knob(
     per_entity=True,
     envvar='ARTEMIS_ACTOR_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD',
     cast_from_str=int,
-    default=3600
+    default=3600,
 )
 
 
@@ -111,8 +111,7 @@ class Workspace(_Workspace):
 
             else:
                 r_delay = KNOB_GUEST_REQUEST_WATCHDOG_DISPATCH_PERIOD.get_value(
-                    entityname=self.pool.poolname,
-                    session=self.session
+                    entityname=self.pool.poolname, session=self.session
                 )
 
                 if r_delay.is_error:
@@ -120,19 +119,11 @@ class Workspace(_Workspace):
 
                 delay = r_delay.unwrap()
 
-            self.dispatch_task(
-                guest_request_watchdog,
-                self.guestname,
-                delay=delay
-            )
+            self.dispatch_task(guest_request_watchdog, self.guestname, delay=delay)
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -148,11 +139,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def guest_request_watchdog(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Invoke driver's watchdog task for a given guest request.
@@ -169,11 +156,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        final_result = cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        final_result = cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
         if final_result.is_error:
             final_result.unwrap_error().fail_guest_request = False
@@ -192,5 +175,5 @@ def guest_request_watchdog(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.guest_request_watchdog),
         logger=get_guest_logger(Workspace.TASKNAME, _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )
