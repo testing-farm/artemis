@@ -26,6 +26,7 @@ from ..environment import (
     FlavorNetwork,
     FlavorNetworks,
     FlavorVirtualization,
+    SizeType,
 )
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
@@ -61,16 +62,6 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     envvar='ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
     default='{{ os.compose }}'
-)
-
-KNOB_DEFAULT_ROOT_PARTITION_SIZE_IBMCLOUD_S390X: Knob[int] = Knob(
-    'ibmcloud.guests.default-root-partition-size',
-    'Default boot volume partition size in GB for ibmcloud vpc guests',
-    has_db=False,
-    per_entity=True,
-    envvar='ARTEMIS_IBMCLOUD_VPC_DEFAULT_GUEST_PARTITION_SIZE',
-    cast_from_str=int,
-    default=42
 )
 
 IBMCLOUD_RESOURCE_TYPE: Dict[str, ResourceType] = {
@@ -785,16 +776,14 @@ class IBMCloudVPCDriver(PoolDriver):
                 except KeyError:
                     return Error(Failure('Subnet details have no vpc information'))
 
-                # For now let's take boot partition size from the knob, later on will use disk size of artificial
-                # flavors like happz suggested
-                r_boot_partition_size = KNOB_DEFAULT_ROOT_PARTITION_SIZE_IBMCLOUD_S390X.get_value(
-                    entityname=self.poolname)
-
-                if r_boot_partition_size.is_error:
-                    return Error(r_boot_partition_size.unwrap_error())
-
-                boot_volume_specs = {"name": instance_name, "volume": {"capacity": r_boot_partition_size.unwrap(),
-                                                                       "profile": {"name": "general-purpose"}}}
+                root_disk_size: Optional[SizeType] = None
+                # If disk size is defined in flavor -> let's use it, otherwise take defaults from pool config
+                if instance_type.disk and instance_type.disk[0].size is not None:
+                    root_disk_size = instance_type.disk[0].size
+                else:
+                    # let's take boot partition size from the driver config
+                    if 'default-root-disk-size' in self.pool_config:
+                        root_disk_size = UNITS.Quantity(self.pool_config["default-root-disk-size"], UNITS.gibibytes)
 
                 # Now we are all set to create an instance
                 create_cmd_args = [
@@ -808,8 +797,14 @@ class IBMCloudVPCDriver(PoolDriver):
                     '--allow-ip-spoofing=false',
                     '--keys', self.pool_config['master-key-name'],
                     '--output', 'json',
-                    '--boot-volume', json.dumps(boot_volume_specs)
                 ]
+                # If root_disk_size is specified will be passing specific --volume details
+                if root_disk_size:
+                    boot_volume_specs = {"name": instance_name,
+                                         "volume": {"capacity": int(root_disk_size.to('GiB').magnitude),
+                                                    "profile": {"name": "general-purpose"}}}
+                    create_cmd_args += ['--boot-volume', json.dumps(boot_volume_specs)]
+
                 if user_data_file:
                     create_cmd_args += ['--user-data', f'@{user_data_file}']
 

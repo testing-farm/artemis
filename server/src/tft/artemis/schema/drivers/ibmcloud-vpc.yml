@@ -52,6 +52,9 @@ properties:
     type: boolean
     default: true
 
+  default-root-disk-size:
+    type: integer
+
   post-install-template:
     type: string
 
