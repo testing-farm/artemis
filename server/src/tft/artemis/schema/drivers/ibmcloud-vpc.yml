@@ -42,6 +42,9 @@ properties:
   flavor-regex:
     type: string
 
+  custom-flavors:
+    type: array
+
   default-flavor:
     type: string
 

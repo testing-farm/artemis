@@ -791,7 +791,7 @@ class IBMCloudVPCDriver(PoolDriver):
                     instance_name,
                     vpc_id,
                     self.pool_config['zone'],
-                    instance_type.name,
+                    instance_type.id,
                     self.pool_config['subnet-id'],
                     '--image', image.id,
                     '--allow-ip-spoofing=false',
