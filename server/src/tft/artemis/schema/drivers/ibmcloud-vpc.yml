@@ -42,6 +42,9 @@ properties:
   flavor-regex:
     type: string
 
+  custom-flavors:
+    type: array
+
   default-flavor:
     type: string
 
@@ -51,6 +54,9 @@ properties:
   use-default-flavor-when-no-suitable:
     type: boolean
     default: true
+
+  default-root-disk-size:
+    type: integer
 
   post-install-template:
     type: string
