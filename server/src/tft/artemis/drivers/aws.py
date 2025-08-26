@@ -1500,6 +1500,16 @@ class AWSDriver(PoolDriver):
         )
 
     @property
+    def _pool_security_groups(self) -> List[str]:
+        """Get security groups from pool config as a list."""
+        security_group_config = self.pool_config.get('security-group', [])
+
+        if isinstance(security_group_config, list):
+            return security_group_config
+
+        return [security_group_config]
+
+    @property
     def use_public_ip(self) -> bool:
         return normalize_bool_option(self.pool_config.get('use-public-ip', False))
 
@@ -2161,7 +2171,7 @@ class AWSDriver(PoolDriver):
 
         if not self.pool_config.get('security-group-rules') and self.pool_config.get('security-group'):
             # 2 security groups per guest case
-            res_security_groups.append(self.pool_config['security-group'])
+            res_security_groups.extend(self._pool_security_groups)
 
         if self.pool_config.get('security-group-rules'):
             # 1 security group per guest case, custom and pool merged into one secgroup
@@ -2349,8 +2359,7 @@ class AWSDriver(PoolDriver):
             security_group_ids = r_create_guest_sg.unwrap()
 
         else:
-            assert self.pool_config['security-group']
-            security_group_ids = [self.pool_config['security-group']]
+            security_group_ids = self._pool_security_groups
 
         logger.info(f'Using security groups {security_group_ids}')
 
@@ -2445,7 +2454,7 @@ class AWSDriver(PoolDriver):
             pool_data=AWSPoolData(
                 instance_id=instance_id,
                 security_group=(security_group_ids[0]
-                                if security_group_ids[0] != self.pool_config.get('security-group') else None)),
+                                if security_group_ids[0] not in self._pool_security_groups else None)),
             delay_update=r_delay.unwrap(),
             ssh_info=image.ssh
         ))
@@ -2484,8 +2493,7 @@ class AWSDriver(PoolDriver):
             security_group_ids = r_create_guest_sg.unwrap()
 
         else:
-            assert self.pool_config['security-group']
-            security_group_ids = [self.pool_config['security-group']]
+            security_group_ids = self._pool_security_groups
 
         logger.info(f'Using security groups {security_group_ids}')
 
@@ -2557,7 +2565,7 @@ class AWSDriver(PoolDriver):
             pool_data=AWSPoolData(
                 spot_instance_id=spot_instance_id,
                 security_group=(security_group_ids[0]
-                                if security_group_ids[0] != self.pool_config.get('security-group') else None)),
+                                if security_group_ids[0] not in self._pool_security_groups else None)),
             delay_update=r_delay.unwrap(),
             ssh_info=image.ssh
         ))
