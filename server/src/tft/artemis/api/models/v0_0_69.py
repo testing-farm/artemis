@@ -34,5 +34,5 @@ class GuestLogResponse_v0_0_69:  # noqa: N801
             url=log.url,
             blob='\n'.join(blob_components),
             updated=log.updated,
-            expires=log.expires
+            expires=log.expires,
         )

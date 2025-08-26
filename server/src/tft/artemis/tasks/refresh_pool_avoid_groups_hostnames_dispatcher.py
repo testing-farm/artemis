@@ -40,7 +40,7 @@ KNOB_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE',
     cast_from_str=str,
-    default='*/5 * * * *'
+    default='*/5 * * * *',
 )
 
 
@@ -75,15 +75,12 @@ class Workspace(_Workspace):
             self.dispatch_task(
                 refresh_pool_avoid_groups_hostnames,
                 pool.poolname,
-                logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname)
+                logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname),
             )
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session
     ) -> 'Workspace':
         """
         Create workspace.
@@ -98,10 +95,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def refresh_pool_avoid_groups_hostnames_dispatcher(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session
     ) -> DoerReturnType:
         """
         Schedule refresh of hostname groups to avoid for suitable pools.
@@ -117,17 +111,13 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session).begin().run().complete().final_result
 
 
 @task(
     periodic=periodiq.cron(KNOB_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE.value),
     priority=TaskPriority.HIGH,
-    queue_name=TaskQueue.PERIODIC
+    queue_name=TaskQueue.PERIODIC,
 )
 def refresh_pool_avoid_groups_hostnames_dispatcher() -> None:
     """
@@ -137,5 +127,5 @@ def refresh_pool_avoid_groups_hostnames_dispatcher() -> None:
     task_core(
         cast(DoerType, Workspace.refresh_pool_avoid_groups_hostnames_dispatcher),
         logger=TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME),
-        session_read_only=True
+        session_read_only=True,
     )

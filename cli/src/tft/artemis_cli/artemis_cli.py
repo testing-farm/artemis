@@ -15,8 +15,7 @@ import time
 import urllib
 import urllib.parse
 from time import sleep
-from typing import (Any, Callable, Dict, Generator, Iterator, List, Optional,
-                    cast)
+from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, cast
 
 import click
 import click_completion
@@ -27,15 +26,36 @@ import rich.table
 import semver
 import stackprinter
 
-from . import (DEFAULT_API_RETRIES, DEFAULT_API_TIMEOUT,
-               DEFAULT_RETRY_BACKOFF_FACTOR, GUEST_STATE_COLORS, GUEST_STATES,
-               BasicAuthConfiguration, Configuration, ConfigurationTree,
-               RichYAML, artemis_create, artemis_delete, artemis_inspect,
-               artemis_update, confirm, fetch_artemis, load_yaml,
-               print_broker_tasks, print_events, print_guest_logs,
-               print_guests, print_json, print_knobs, print_shelves,
-               print_table, print_tasks, print_users, print_yaml,
-               validate_struct)
+from . import (
+    DEFAULT_API_RETRIES,
+    DEFAULT_API_TIMEOUT,
+    DEFAULT_RETRY_BACKOFF_FACTOR,
+    GUEST_STATE_COLORS,
+    GUEST_STATES,
+    BasicAuthConfiguration,
+    Configuration,
+    ConfigurationTree,
+    RichYAML,
+    artemis_create,
+    artemis_delete,
+    artemis_inspect,
+    artemis_update,
+    confirm,
+    fetch_artemis,
+    load_yaml,
+    print_broker_tasks,
+    print_events,
+    print_guest_logs,
+    print_guests,
+    print_json,
+    print_knobs,
+    print_shelves,
+    print_table,
+    print_tasks,
+    print_users,
+    print_yaml,
+    validate_struct,
+)
 
 # to prevent infinite loop in pagination support
 PAGINATION_MAX_COUNT = 10000
@@ -46,7 +66,7 @@ stackprinter.set_excepthook(
     show_signature=True,
     show_vals='all',
     reverse=False,
-    add_summary=False
+    add_summary=False,
 )
 
 click_completion.init()
@@ -74,7 +94,7 @@ API_FEATURE_VERSIONS = {
         ('skip-prepare-verify-ssh', '0.0.24'),
         ('hw-constraints', '0.0.19'),
         ('arch-under-hw', '0.0.19'),
-        ('supported-baseline', '0.0.17')
+        ('supported-baseline', '0.0.17'),
     )
 }
 
@@ -96,40 +116,40 @@ ALLOWED_LOGS = [
 ]
 
 # Won't be validating CIDR and 65535 max port range with regex here, not worth it
-SECURITY_GROUP_RULE_FORMAT = re.compile(r"(tcp|ip|icmp|udp|-1|[0-255]):(.*):(\d{1,5}-\d{1,5}|\d{1,5}|-1)")
+SECURITY_GROUP_RULE_FORMAT = re.compile(
+    r'(tcp|ip|icmp|udp|-1|[0-255]):(.*):(\d{1,5}-\d{1,5}|\d{1,5}|-1)'
+)
 
 
 @click.group()
 @click.pass_context
 @click.option(
-    '-o', '--output-format',
+    '-o',
+    '--output-format',
     type=click.Choice(['table', 'json', 'yaml']),
     default='table',
-    help='Format of table-like output'
+    help='Format of table-like output',
 )
 @click.option(
     '--config',
     type=str,
     default=click.get_app_dir('artemis-cli'),
-    help='Path to the configuration directory'
+    help='Path to the configuration directory',
 )
 @click.option(
     '--api-timeout',
     type=int,
     default=DEFAULT_API_TIMEOUT,
-    help='API request timeout (seconds)'
+    help='API request timeout (seconds)',
 )
 @click.option(
-    '--api-retries',
-    type=int,
-    default=DEFAULT_API_RETRIES,
-    help='Number of API retries'
+    '--api-retries', type=int, default=DEFAULT_API_RETRIES, help='Number of API retries'
 )
 @click.option(
     '--api-retry-backoff-factor',
     type=int,
     default=DEFAULT_RETRY_BACKOFF_FACTOR,
-    help='API retry backoff factor (seconds)'
+    help='API retry backoff factor (seconds)',
 )
 def cli_root(
     ctx: Any,
@@ -137,21 +157,22 @@ def cli_root(
     output_format: str,
     api_timeout: int,
     api_retries: int,
-    api_retry_backoff_factor: int
+    api_retry_backoff_factor: int,
 ) -> None:
     ctx.ensure_object(Configuration)
 
-    cfg = cast(
-        Configuration,
-        ctx.obj
-    )
+    cfg = cast(Configuration, ctx.obj)
 
     cfg.config_dirpath = os.path.expanduser(config)
     cfg.config_filepath = os.path.join(cfg.config_dirpath, 'config.yaml')
 
-    if not os.path.exists(cfg.config_dirpath) or not os.path.exists(cfg.config_filepath):
+    if not os.path.exists(cfg.config_dirpath) or not os.path.exists(
+        cfg.config_filepath
+    ):
         if ctx.invoked_subcommand != 'init':
-            cfg.logger.info(f'Config file {cfg.config_filepath} does not exists, running configuration wizard.')
+            cfg.logger.info(
+                f'Config file {cfg.config_filepath} does not exists, running configuration wizard.'
+            )
 
         ctx.invoke(cmd_init)
         sys.exit(0)
@@ -163,7 +184,7 @@ def cli_root(
     if not validation.result or cfg.raw_config is None:
         cfg.logger.error(
             f'Config file {cfg.config_filepath} must be updated, found following validation errors:',
-            exit=False
+            exit=False,
         )
 
         for error in validation.errors:
@@ -190,26 +211,40 @@ def cli_root(
     cfg.install_http_retries(api_timeout, api_retries, api_retry_backoff_factor)
 
     cfg.artemis_api_url = cfg.raw_config['artemis_api_url']
-    cfg.artemis_api_version = semver.VersionInfo.parse(cfg.raw_config['artemis_api_version'])
+    cfg.artemis_api_version = semver.VersionInfo.parse(
+        cfg.raw_config['artemis_api_version']
+    )
     assert cfg.artemis_api_url is not None
 
     if 'broker' in cfg.raw_config:
-        cfg.broker_management_hostname = cfg.raw_config['broker']['management']['hostname']
+        cfg.broker_management_hostname = cfg.raw_config['broker']['management'][
+            'hostname'
+        ]
         cfg.broker_management_port = cfg.raw_config['broker']['management']['port']
-        cfg.broker_management_username = cfg.raw_config['broker']['management']['username']
-        cfg.broker_management_password = cfg.raw_config['broker']['management']['password']
+        cfg.broker_management_username = cfg.raw_config['broker']['management'][
+            'username'
+        ]
+        cfg.broker_management_password = cfg.raw_config['broker']['management'][
+            'password'
+        ]
 
     if 'authentication' in cfg.raw_config:
         cfg.authentication_method = cfg.raw_config['authentication']['method']
 
         if cfg.authentication_method == 'basic':
             if 'basic' not in cfg.raw_config['authentication']:
-                cfg.logger.error('Authentication method "basic" requires "basic" configuration')
+                cfg.logger.error(
+                    'Authentication method "basic" requires "basic" configuration'
+                )
 
             cfg.basic_auth = BasicAuthConfiguration(
                 username=cfg.raw_config['authentication']['basic']['username'],
-                provisioning_token=cfg.raw_config['authentication']['basic']['tokens']['provisioning'],
-                admin_token=cfg.raw_config['authentication']['basic']['tokens']['admin']
+                provisioning_token=cfg.raw_config['authentication']['basic']['tokens'][
+                    'provisioning'
+                ],
+                admin_token=cfg.raw_config['authentication']['basic']['tokens'][
+                    'admin'
+                ],
             )
 
     if 'provisioning_poll_interval' in cfg.raw_config:
@@ -226,85 +261,109 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--keyname', required=True, help='name of ssh key')
 @click.option('--priority-group', help='name of priority group')
 @click.option('--arch', required=True, help='architecture')
-@click.option('--hw-constraints', required=False, default=None, help='Optional HW constraints.')
-@click.option('--kickstart', required=False, default=None, help='Optional Kickstart specification.')
-@click.option('--shelf', required=False, default=None, help='Shelf to use to serve the request')
+@click.option(
+    '--hw-constraints', required=False, default=None, help='Optional HW constraints.'
+)
+@click.option(
+    '--kickstart',
+    required=False,
+    default=None,
+    help='Optional Kickstart specification.',
+)
+@click.option(
+    '--shelf', required=False, default=None, help='Shelf to use to serve the request'
+)
 @click.option('--compose', required=True, help='compose id')
 @click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
-@click.option('--spot-instance/--no-spot-instance', is_flag=True, default=None, help='require spot instance support')
-@click.option('--post-install-script', help='Path to user data script to be executed after vm becomes active')
-@click.option('--security-group-rule-ingress', multiple=True,
-              help='An additional ingress security group rule in PROTOCOL:comma-separated CIDRs:PORT format')
-@click.option('--security-group-rule-egress', multiple=True,
-              help='An additional egress security group rule in PROTOCOL:comma-separated CIDRs:PORT format')
+@click.option(
+    '--spot-instance/--no-spot-instance',
+    is_flag=True,
+    default=None,
+    help='require spot instance support',
+)
+@click.option(
+    '--post-install-script',
+    help='Path to user data script to be executed after vm becomes active',
+)
+@click.option(
+    '--security-group-rule-ingress',
+    multiple=True,
+    help='An additional ingress security group rule in PROTOCOL:comma-separated CIDRs:PORT format',
+)
+@click.option(
+    '--security-group-rule-egress',
+    multiple=True,
+    help='An additional egress security group rule in PROTOCOL:comma-separated CIDRs:PORT format',
+)
 @click.option(
     '--skip-prepare-verify-ssh/--no-skip-prepare-verify-ssh',
     is_flag=True,
     default=False,
-    help='If set, provisioning will skip SSH verification step.'
+    help='If set, provisioning will skip SSH verification step.',
 )
 @click.option(
-    '--user-data',
-    default=None,
-    help='Optional JSON mapping to attach to the request.'
+    '--user-data', default=None, help='Optional JSON mapping to attach to the request.'
 )
-@click.option('--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting')
-@click.option('--log-types', '-l', default=None, metavar='logname:contenttype',
-              help='Types of logs that guest should support', type=click.Choice(ALLOWED_LOGS), multiple=True)
+@click.option(
+    '--wait', is_flag=True, help='Wait for guest provisioning to finish before exiting'
+)
+@click.option(
+    '--log-types',
+    '-l',
+    default=None,
+    metavar='logname:contenttype',
+    help='Types of logs that guest should support',
+    type=click.Choice(ALLOWED_LOGS),
+    multiple=True,
+)
 @click.option(
     '--watchdog-dispatch-delay',
     type=int,
     default=None,
-    help='Watchdog dispatch delay in seconds'
+    help='Watchdog dispatch delay in seconds',
 )
 @click.option(
     '--watchdog-period-delay',
     type=int,
     default=None,
-    help='Watchdog dispatch period in seconds'
+    help='Watchdog dispatch period in seconds',
 )
 @click.option(
-    '--count',
-    type=int,
-    default=1,
-    help='How many guests to provision at once'
+    '--count', type=int, default=1, help='How many guests to provision at once'
 )
 @click.option(
     '--test',
     is_flag=True,
     default=False,
-    help='If specified, provisioned guest(s) would be returned right after provisioning'
+    help='If specified, provisioned guest(s) would be returned right after provisioning',
 )
 @click.pass_context
 def cmd_guest_create(
-        ctx: Any,
-        count: int,
-        keyname: Optional[str] = None,
-        arch: Optional[str] = None,
-        hw_constraints: Optional[str] = None,
-        kickstart: Optional[str] = None,
-        shelf: Optional[str] = None,
-        compose: Optional[str] = None,
-        pool: Optional[str] = None,
-        snapshots: Optional[bool] = None,
-        spot_instance: Optional[bool] = None,
-        priority_group: Optional[str] = None,
-        post_install_script: Optional[str] = None,
-        security_group_rule_ingress: Optional[List[str]] = None,
-        security_group_rule_egress: Optional[List[str]] = None,
-        skip_prepare_verify_ssh: bool = False,
-        user_data: Optional[str] = None,
-        wait: Optional[bool] = None,
-        log_types: Optional[List[str]] = None,
-        watchdog_dispatch_delay: Optional[int] = None,
-        watchdog_period_delay: Optional[int] = None,
-        test: bool = False
+    ctx: Any,
+    count: int,
+    keyname: Optional[str] = None,
+    arch: Optional[str] = None,
+    hw_constraints: Optional[str] = None,
+    kickstart: Optional[str] = None,
+    shelf: Optional[str] = None,
+    compose: Optional[str] = None,
+    pool: Optional[str] = None,
+    snapshots: Optional[bool] = None,
+    spot_instance: Optional[bool] = None,
+    priority_group: Optional[str] = None,
+    post_install_script: Optional[str] = None,
+    security_group_rule_ingress: Optional[List[str]] = None,
+    security_group_rule_egress: Optional[List[str]] = None,
+    skip_prepare_verify_ssh: bool = False,
+    user_data: Optional[str] = None,
+    wait: Optional[bool] = None,
+    log_types: Optional[List[str]] = None,
+    watchdog_dispatch_delay: Optional[int] = None,
+    watchdog_period_delay: Optional[int] = None,
+    test: bool = False,
 ) -> None:
-    cfg = cast(
-        Configuration,
-        ctx.obj
-    )
+    cfg = cast(Configuration, ctx.obj)
 
     if test and not wait:
         cfg.logger.error('--test cannot be used without --wait')
@@ -317,20 +376,23 @@ def cmd_guest_create(
         'environment': environment,
         'keyname': keyname,
         'priority_group': 'default-priority',
-        'user_data': {}
+        'user_data': {},
     }
 
     if cfg.artemis_api_version < API_FEATURE_VERSIONS['supported-baseline']:
-        cfg.logger.error('Unsupported API version {}, the oldest supported is {}'.format(
-            cfg.artemis_api_version,
-            API_FEATURE_VERSIONS['supported-baseline']
-        ))
+        cfg.logger.error(
+            'Unsupported API version {}, the oldest supported is {}'.format(
+                cfg.artemis_api_version, API_FEATURE_VERSIONS['supported-baseline']
+            )
+        )
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['skip-prepare-verify-ssh']:
         data['skip_prepare_verify_ssh'] = skip_prepare_verify_ssh
 
     elif skip_prepare_verify_ssh is True:
-        cfg.logger.error('--skip-prepare-verify-ssh is supported with API v0.0.24 and newer')
+        cfg.logger.error(
+            '--skip-prepare-verify-ssh is supported with API v0.0.24 and newer'
+        )
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['watchdog-delay']:
         data['watchdog_dispatch_delay'] = watchdog_dispatch_delay
@@ -338,12 +400,11 @@ def cmd_guest_create(
 
     elif watchdog_dispatch_delay is not None or watchdog_period_delay is not None:
         cfg.logger.error(
-            f'custom watchdog delays are available with API {API_FEATURE_VERSIONS["watchdog-delay"]} and newer')
+            f'custom watchdog delays are available with API {API_FEATURE_VERSIONS["watchdog-delay"]} and newer'
+        )
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['hw-constraints']:
-        environment['hw'] = {
-            'arch': arch
-        }
+        environment['hw'] = {'arch': arch}
 
         if hw_constraints is not None:
             try:
@@ -368,13 +429,17 @@ def cmd_guest_create(
                 cfg.logger.error(f'failed to parse kickstart data: {exc}')
 
     elif kickstart is not None:
-        cfg.logger.error(f'--kickstart is supported with API {API_FEATURE_VERSIONS["kickstart"]} and newer')
+        cfg.logger.error(
+            f'--kickstart is supported with API {API_FEATURE_VERSIONS["kickstart"]} and newer'
+        )
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['shelving']:
         data['shelfname'] = shelf
 
     elif shelf is not None:
-        cfg.logger.error(f'--shelf is supported with API {API_FEATURE_VERSIONS["shelving"]} and newer')
+        cfg.logger.error(
+            f'--shelf is supported with API {API_FEATURE_VERSIONS["shelving"]} and newer'
+        )
 
     if user_data is not None:
         try:
@@ -410,7 +475,7 @@ def cmd_guest_create(
                 cfg.logger.info('post-install-script argument is treated as a url')
 
                 # NOTE(ivasilev) content is bytes so a decode step is necessary
-                post_install = res.content.decode("utf-8")
+                post_install = res.content.decode('utf-8')
 
         # If neither of the first 2 steps worked - treat as raw data
         if not post_install:
@@ -428,7 +493,9 @@ def cmd_guest_create(
         for sg_rule in sg_data:
             matches = re.match(SECURITY_GROUP_RULE_FORMAT, sg_rule)
             if not matches:
-                cfg.logger.error('Bad format of security group rule, should be PROTOCOL:CIDR:PORT')
+                cfg.logger.error(
+                    'Bad format of security group rule, should be PROTOCOL:CIDR:PORT'
+                )
                 sys.exit(1)
 
             protocol, cidrs, port = matches[1], matches[2], matches[3]
@@ -453,18 +520,23 @@ def cmd_guest_create(
                         'protocol': protocol,
                         'cidr': cidr,
                         'port_min': port_min,
-                        'port_max': port_max
+                        'port_max': port_max,
                     }
                 )
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['security-group-rules']:
-        _add_secgroup_rules('security_group_rules_ingress', security_group_rule_ingress or [])
-        _add_secgroup_rules('security_group_rules_egress', security_group_rule_egress or [])
+        _add_secgroup_rules(
+            'security_group_rules_ingress', security_group_rule_ingress or []
+        )
+        _add_secgroup_rules(
+            'security_group_rules_egress', security_group_rule_egress or []
+        )
 
     elif security_group_rule_ingress or security_group_rule_egress:
         cfg.logger.error(
             '--security-group-rule-* options are supported with API '
-            f'{API_FEATURE_VERSIONS["security-group-rules"]} and newer')
+            f'{API_FEATURE_VERSIONS["security-group-rules"]} and newer'
+        )
         sys.exit(1)
 
     if cfg.artemis_api_version >= API_FEATURE_VERSIONS['log-types']:
@@ -472,7 +544,9 @@ def cmd_guest_create(
         data['log_types'] = list({tuple(log.split('/', 1)) for log in log_types})
 
     elif log_types:
-        cfg.logger.error(f'--log-types is supported with API {API_FEATURE_VERSIONS["log-types"]} and newer')
+        cfg.logger.error(
+            f'--log-types is supported with API {API_FEATURE_VERSIONS["log-types"]} and newer'
+        )
         sys.exit(1)
 
     def _create_guests() -> Generator[Any, None, None]:
@@ -489,6 +563,7 @@ def cmd_guest_create(
         return
 
     if cfg.output_format == 'table':
+
         def before() -> None:
             cfg.console.clear()
 
@@ -501,6 +576,7 @@ def cmd_guest_create(
             pass
 
     else:
+
         def before() -> None:
             pass
 
@@ -565,7 +641,11 @@ def cmd_guest_create(
 
 
 @cmd_guest.command(name='inspect', short_help='Inspect provisioning request')
-@click.argument('guestname', metavar='ID', default=None,)
+@click.argument(
+    'guestname',
+    metavar='ID',
+    default=None,
+)
 @click.pass_obj
 def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
     response = artemis_inspect(cfg, 'guests', guestname)
@@ -581,11 +661,18 @@ def cmd_guest_inspect(cfg: Configuration, guestname: str) -> None:
 @click.option(
     '--continue-on-error/--no-continue-on-error',
     default=False,
-    help='When set, errors would be logged but CLI would continue with next guest request in the list'
+    help='When set, errors would be logged but CLI would continue with next guest request in the list',
 )
-@click.argument('guestnames', metavar='ID...', default=None, nargs=-1,)
+@click.argument(
+    'guestnames',
+    metavar='ID...',
+    default=None,
+    nargs=-1,
+)
 @click.pass_obj
-def cmd_cancel(cfg: Configuration, guestnames: List[str], continue_on_error: bool = False) -> None:
+def cmd_cancel(
+    cfg: Configuration, guestnames: List[str], continue_on_error: bool = False
+) -> None:
     for guestname in guestnames:
         response = artemis_delete(cfg, 'guests', guestname)
 
@@ -596,34 +683,28 @@ def cmd_cancel(cfg: Configuration, guestnames: List[str], continue_on_error: boo
             cfg.logger.error(f'guest {guestname} not found', exit=not continue_on_error)
 
         elif response.status_code == 409:
-            cfg.logger.warning(f'guest {guestname} is shelved or owns snapshots, remove them first')
+            cfg.logger.warning(
+                f'guest {guestname} is shelved or owns snapshots, remove them first'
+            )
 
         else:
             cfg.logger.unhandled_api_response(response, exit=not continue_on_error)
 
 
 @cmd_guest.command(name='list', short_help='List provisioning requests')
-@click.option(
-    '--sort-by',
-    type=click.Choice(['ctime']),
-    default='ctime'
-)
-@click.option(
-    '--sort-order',
-    type=click.Choice(['asc', 'desc']),
-    default='asc'
-)
+@click.option('--sort-by', type=click.Choice(['ctime']), default='ctime')
+@click.option('--sort-order', type=click.Choice(['asc', 'desc']), default='asc')
 @click.option(
     '--jq-filter',
     type=str,
-    help='An optional jq-like filter applied to the list of all guest requests retrieved.'
+    help='An optional jq-like filter applied to the list of all guest requests retrieved.',
 )
 @click.pass_obj
 def cmd_guest_list(
     cfg: Configuration,
     sort_by: str = 'ctime',
     sort_order: str = 'asc',
-    jq_filter: Optional[str] = None
+    jq_filter: Optional[str] = None,
 ) -> None:
     response = artemis_inspect(cfg, 'guests', '')
 
@@ -651,14 +732,14 @@ def cmd_guest_list(
 @click.option('--last', type=int, default=None, help='Last N events')
 @click.pass_obj
 def cmd_guest_events(
-        cfg: Configuration,
-        page_size: int,
-        guestname: Optional[str] = None,
-        page: Optional[int] = None,
-        since: Optional[str] = None,
-        until: Optional[str] = None,
-        first: Optional[int] = None,
-        last: Optional[int] = None
+    cfg: Configuration,
+    page_size: int,
+    guestname: Optional[str] = None,
+    page: Optional[int] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    first: Optional[int] = None,
+    last: Optional[int] = None,
 ) -> None:
     """
     Prints event log.
@@ -670,7 +751,7 @@ def cmd_guest_events(
     params: Dict[str, Any] = {
         # sorting by 'updated', 'asc' is default, 'desc' is used for --last
         'sort_field': 'updated',
-        'sort_by': 'asc'
+        'sort_by': 'asc',
     }
 
     for param in ['page_size', 'page', 'since', 'until']:
@@ -742,39 +823,38 @@ def cmd_guest_events(
 
 
 @cmd_guest.command(name='logs', short_help='Get specific logs from the guest')
-@click.argument('guestname', metavar='ID', default=None,)
+@click.argument(
+    'guestname',
+    metavar='ID',
+    default=None,
+)
 @click.option(
     '--log',
     'logname',
     required=True,
     type=click.Choice(choices=ALLOWED_LOGS),
     metavar='LOG-NAME:VARIANT/CONTENT-TYPE',
-    help='A log to acquire. '
-    f'One of {", ".join(ALLOWED_LOGS)}.'
+    help=f'A log to acquire. One of {", ".join(ALLOWED_LOGS)}.',
 )
-@click.option('--wait', is_flag=True, default=False, help='Poll the server till the log is ready')
+@click.option(
+    '--wait', is_flag=True, default=False, help='Poll the server till the log is ready'
+)
 @click.option('--force', is_flag=True, default=False, help='Force request')
 @click.pass_obj
 def cmd_guest_log(
-        cfg: Configuration,
-        guestname: str,
-        logname: str,
-        wait: bool,
-        force: bool
+    cfg: Configuration, guestname: str, logname: str, wait: bool, force: bool
 ) -> None:
     if force:
         response = fetch_artemis(
             cfg,
             f'/guests/{guestname}/logs/{logname}',
             method='post',
-            allow_statuses=[202]
+            allow_statuses=[202],
         )
 
     else:
         response = fetch_artemis(
-            cfg,
-            f'/guests/{guestname}/logs/{logname}',
-            allow_statuses=[200, 404, 409]
+            cfg, f'/guests/{guestname}/logs/{logname}', allow_statuses=[200, 404, 409]
         )
 
         if response.status_code == 404:
@@ -783,7 +863,7 @@ def cmd_guest_log(
                 cfg,
                 f'/guests/{guestname}/logs/{logname}',
                 method='post',
-                allow_statuses=[202]
+                allow_statuses=[202],
             )
 
         elif response.status_code == 409:
@@ -794,7 +874,7 @@ def cmd_guest_log(
                 cfg,
                 f'/guests/{guestname}/logs/{logname}',
                 method='post',
-                allow_statuses=[202]
+                allow_statuses=[202],
             )
 
     if not response.ok:
@@ -809,12 +889,14 @@ def cmd_guest_log(
     else:
         cfg.console.clear()
 
-        with cfg.console.status('Waiting for guest log to become ready...', spinner='dots'):
+        with cfg.console.status(
+            'Waiting for guest log to become ready...', spinner='dots'
+        ):
             while True:
                 response = fetch_artemis(
                     cfg,
                     f'/guests/{guestname}/logs/{logname}',
-                    allow_statuses=[200, 404, 409]
+                    allow_statuses=[200, 404, 409],
                 )
 
                 # the request may still report conflict, until Artemis actually gets to it.
@@ -833,9 +915,11 @@ def cmd_guest_log(
                     if state in ('complete', 'unsupported', 'error'):
                         break
 
-                    if state == 'in-progress' \
-                            and logname.endswith('/blob') \
-                            and any([log.get('blob'), log.get('blobs')]):
+                    if (
+                        state == 'in-progress'
+                        and logname.endswith('/blob')
+                        and any([log.get('blob'), log.get('blobs')])
+                    ):
                         break
 
                 else:
@@ -851,23 +935,22 @@ def cmd_guest_log(
 
 
 @cmd_guest.command(name='reboot', short_help='Trigger hard reboot of the guest')
-@click.argument('guestname', metavar='ID', default=None,)
+@click.argument(
+    'guestname',
+    metavar='ID',
+    default=None,
+)
 @click.pass_obj
-def cmd_trigger_reboot(
-        cfg: Configuration,
-        guestname: str
-) -> None:
+def cmd_trigger_reboot(cfg: Configuration, guestname: str) -> None:
     assert cfg.artemis_api_version is not None
 
     if cfg.artemis_api_version < API_FEATURE_VERSIONS['guest-reboot']:
         cfg.logger.error(
-            f'guest reboot is available with API {API_FEATURE_VERSIONS["guest-reboot"]} and newer')
+            f'guest reboot is available with API {API_FEATURE_VERSIONS["guest-reboot"]} and newer'
+        )
 
     response = fetch_artemis(
-        cfg,
-        f'/guests/{guestname}/reboot',
-        method='post',
-        allow_statuses=[202]
+        cfg, f'/guests/{guestname}/reboot', method='post', allow_statuses=[202]
     )
 
     if not response.ok:
@@ -884,13 +967,14 @@ def cmd_console(cfg: Configuration) -> None:
 
 
 @cmd_console.command(name='url', short_help='Acquire console url of a guest')
-@click.argument('guestname', metavar='ID', default=None,)
+@click.argument(
+    'guestname',
+    metavar='ID',
+    default=None,
+)
 @click.pass_obj
 def cmd_console_url(cfg: Configuration, guestname: str) -> None:
-    response = fetch_artemis(
-        cfg,
-        f'/guests/{guestname}/logs/console/url'
-    )
+    response = fetch_artemis(cfg, f'/guests/{guestname}/logs/console/url')
 
     if response.ok:
         print_guest_logs(cfg, [response.json()])
@@ -932,20 +1016,31 @@ Feel free to quit anytime, nothing is saved until the very last step.
     tmp_config_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
 
     with tmp_config_file:
-        print(f"""---
+        print(
+            f"""---
 
 artemis_api_url: {artemis_api_url}
 artemis_api_version: {artemis_api_version}
-""", file=tmp_config_file)
+""",
+            file=tmp_config_file,
+        )
 
         tmp_config_file.flush()
 
     cfg.console.rule()
 
-    if confirm('Do you wish to view the configuration file, possibly modifying it?', default=True, console=cfg.console):
+    if confirm(
+        'Do you wish to view the configuration file, possibly modifying it?',
+        default=True,
+        console=cfg.console,
+    ):
         click.edit(filename=tmp_config_file.name)
 
-    if confirm('Do you wish to save this as your configuration file?', default=False, console=cfg.console):
+    if confirm(
+        'Do you wish to save this as your configuration file?',
+        default=False,
+        console=cfg.console,
+    ):
         assert cfg.config_dirpath is not None
         assert cfg.config_filepath is not None
 
@@ -972,7 +1067,7 @@ def cmd_knob(cfg: Configuration) -> None:
 @click.option(
     '--jq-filter',
     type=str,
-    help='An optional jq-like filter applied to the list of all knobs retrieved.'
+    help='An optional jq-like filter applied to the list of all knobs retrieved.',
 )
 @click.pass_obj
 def cmd_knob_list(cfg: Configuration, jq_filter: Optional[str] = None) -> None:
@@ -990,10 +1085,7 @@ def cmd_knob_list(cfg: Configuration, jq_filter: Optional[str] = None) -> None:
 @cmd_knob.command(name='get', short_help='Get knob value')
 @click.argument('knobname', required=True, type=str)
 @click.pass_obj
-def cmd_knob_get(
-        cfg: Configuration,
-        knobname: str
-) -> None:
+def cmd_knob_get(cfg: Configuration, knobname: str) -> None:
     response = artemis_inspect(cfg, 'knobs', knobname)
 
     if response.ok:
@@ -1010,11 +1102,7 @@ def cmd_knob_get(
 @click.argument('knobname', required=True, type=str)
 @click.argument('value', required=True, type=str)
 @click.pass_obj
-def cmd_knob_set(
-        cfg: Configuration,
-        knobname: str,
-        value: str
-) -> None:
+def cmd_knob_set(cfg: Configuration, knobname: str, value: str) -> None:
     response = artemis_update(cfg, f'knobs/{knobname}', {'value': value})
 
     if response.ok:
@@ -1030,10 +1118,7 @@ def cmd_knob_set(
 @cmd_knob.command(name='delete', short_help='Remove knob')
 @click.argument('knobname', required=True, type=str)
 @click.pass_obj
-def cmd_knob_delete(
-        cfg: Configuration,
-        knobname: str
-) -> None:
+def cmd_knob_delete(cfg: Configuration, knobname: str) -> None:
     response = artemis_delete(cfg, 'knobs', knobname)
 
     if response.ok:
@@ -1081,7 +1166,9 @@ def cmd_shelf_inspect(cfg: Configuration, shelfname: str) -> None:
         cfg.logger.unhandled_api_response(response)
 
 
-@cmd_shelf.command(name='delete', short_help='Remove a guest shelf and release all shelved guests')
+@cmd_shelf.command(
+    name='delete', short_help='Remove a guest shelf and release all shelved guests'
+)
 @click.argument('shelfname', required=True, type=str)
 @click.pass_obj
 def cmd_shelf_delete(cfg: Configuration, shelfname: str) -> None:
@@ -1098,27 +1185,19 @@ def cmd_shelf_delete(cfg: Configuration, shelfname: str) -> None:
 
 
 @cmd_shelf.command(name='list', short_help='List available shelves')
-@click.option(
-    '--sort-by',
-    type=click.Choice(['shelfname']),
-    default='shelfname'
-)
-@click.option(
-    '--sort-order',
-    type=click.Choice(['asc', 'desc']),
-    default='asc'
-)
+@click.option('--sort-by', type=click.Choice(['shelfname']), default='shelfname')
+@click.option('--sort-order', type=click.Choice(['asc', 'desc']), default='asc')
 @click.option(
     '--jq-filter',
     type=str,
-    help='An optional jq-like filter applied to the list of all shelves retrieved.'
+    help='An optional jq-like filter applied to the list of all shelves retrieved.',
 )
 @click.pass_obj
 def cmd_shelf_list(
     cfg: Configuration,
     sort_by: str = 'shelfname',
     sort_order: str = 'asc',
-    jq_filter: Optional[str] = None
+    jq_filter: Optional[str] = None,
 ) -> None:
     response = artemis_inspect(cfg, 'shelves', '')
 
@@ -1146,11 +1225,18 @@ def cmd_shelf_guest(cfg: Configuration) -> None:
 @click.option(
     '--continue-on-error/--no-continue-on-error',
     default=False,
-    help='When set, errors would be logged but CLI would continue with next guest request in the list'
+    help='When set, errors would be logged but CLI would continue with next guest request in the list',
 )
-@click.argument('guestnames', metavar='ID...', default=None, nargs=-1,)
+@click.argument(
+    'guestnames',
+    metavar='ID...',
+    default=None,
+    nargs=-1,
+)
 @click.pass_obj
-def cmd_cancel_shelved_guest(cfg: Configuration, guestnames: List[str], continue_on_error: bool = False) -> None:
+def cmd_cancel_shelved_guest(
+    cfg: Configuration, guestnames: List[str], continue_on_error: bool = False
+) -> None:
     for guestname in guestnames:
         response = artemis_delete(cfg, 'shelves/guests', guestname)
 
@@ -1158,7 +1244,9 @@ def cmd_cancel_shelved_guest(cfg: Configuration, guestnames: List[str], continue
             cfg.logger.success(f'guest {guestname} has been cancelled')
 
         elif response.status_code == 404:
-            cfg.logger.error(f'shelved guest {guestname} not found', exit=not continue_on_error)
+            cfg.logger.error(
+                f'shelved guest {guestname} not found', exit=not continue_on_error
+            )
 
         else:
             cfg.logger.unhandled_api_response(response, exit=not continue_on_error)
@@ -1180,7 +1268,7 @@ def cmd_token(cfg: Configuration) -> None:
 @click.option(
     '--jq-filter',
     type=str,
-    help='An optional jq-like filter applied to the list of all users retrieved.'
+    help='An optional jq-like filter applied to the list of all users retrieved.',
 )
 @click.pass_obj
 def cmd_user_list(cfg: Configuration, jq_filter: Optional[str] = None) -> None:
@@ -1198,10 +1286,7 @@ def cmd_user_list(cfg: Configuration, jq_filter: Optional[str] = None) -> None:
 @cmd_user.command(name='inspect', short_help='Inspect a user')
 @click.argument('username', required=True, type=str)
 @click.pass_obj
-def cmd_user_inspect(
-    cfg: Configuration,
-    username: str
-) -> None:
+def cmd_user_inspect(cfg: Configuration, username: str) -> None:
     response = artemis_inspect(cfg, 'users', username)
 
     if response.ok:
@@ -1213,13 +1298,11 @@ def cmd_user_inspect(
 
 @cmd_user.command(name='create', short_help='Create a user')
 @click.argument('username', required=True, type=str)
-@click.argument('role', required=True, type=click.Choice(['USER', 'ADMIN'], case_sensitive=False))
+@click.argument(
+    'role', required=True, type=click.Choice(['USER', 'ADMIN'], case_sensitive=False)
+)
 @click.pass_obj
-def cmd_user_create(
-        cfg: Configuration,
-        username: str,
-        role: str
-) -> None:
+def cmd_user_create(cfg: Configuration, username: str, role: str) -> None:
     response = artemis_create(cfg, f'users/{username}', {'role': role})
 
     if response.ok:
@@ -1232,10 +1315,7 @@ def cmd_user_create(
 @cmd_user.command(name='delete', short_help='Delete a user')
 @click.argument('username', required=True, type=str)
 @click.pass_obj
-def cmd_user_delete(
-    cfg: Configuration,
-    username: str
-) -> None:
+def cmd_user_delete(cfg: Configuration, username: str) -> None:
     response = artemis_delete(cfg, 'users', username)
 
     if response.ok:
@@ -1248,15 +1328,15 @@ def cmd_user_delete(
         cfg.logger.unhandled_api_response(response)
 
 
-@cmd_token.command(name='reset', short_help='Reset user\'s token')
+@cmd_token.command(name='reset', short_help="Reset user's token")
 @click.argument('username', required=True, type=str)
-@click.argument('tokentype', required=True, type=click.Choice(['provisioning', 'admin'], case_sensitive=False))
+@click.argument(
+    'tokentype',
+    required=True,
+    type=click.Choice(['provisioning', 'admin'], case_sensitive=False),
+)
 @click.pass_obj
-def cmd_user_token_reset(
-    cfg: Configuration,
-    username: str,
-    tokentype: str
-) -> None:
+def cmd_user_token_reset(cfg: Configuration, username: str, tokentype: str) -> None:
     response = artemis_create(cfg, f'users/{username}/tokens/{tokentype}/reset', {})
 
     if response.ok:
@@ -1332,9 +1412,9 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 Align(
                     '[red]Here will be a content...[/red]',
                     align='center',
-                    vertical='middle'
+                    vertical='middle',
                 ),
-                **kwargs
+                **kwargs,
             )
 
             self.layout = layout
@@ -1350,12 +1430,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
 
     class AboutPanel(RefreshablePanel):
         def __init__(self, layout: Layout, layout_cell: str) -> None:
-            super().__init__(
-                layout,
-                layout_cell,
-                title='About',
-                title_align='left'
-            )
+            super().__init__(layout, layout_cell, title='About', title_align='left')
 
         def do_refresh(self) -> Any:
             with status('Updating "about"...'):
@@ -1370,21 +1445,18 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
 
     class BrokerPanel(RefreshablePanel):
         def __init__(self, layout: Layout, layout_cell: str) -> None:
-            super().__init__(
-                layout,
-                layout_cell,
-                title='Broker',
-                title_align='left'
-            )
+            super().__init__(layout, layout_cell, title='Broker', title_align='left')
 
-            self.enabled = bool(cfg.tree and cfg.tree.broker and cfg.tree.broker.metrics)
+            self.enabled = bool(
+                cfg.tree and cfg.tree.broker and cfg.tree.broker.metrics
+            )
 
         def do_refresh(self) -> Any:
             if not self.enabled:
                 return Align(
                     '[yellow]Broker stats not available[/yellow]',
                     align='center',
-                    vertical='middle'
+                    vertical='middle',
                 )
 
             assert cfg.tree
@@ -1399,18 +1471,17 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             ready = _extract_metric(metrics, 'rabbitmq_queue_messages_ready')
             unacked = _extract_metric(metrics, 'rabbitmq_queue_messages_unacked')
 
-            return ' | '.join([
-                f'[yellow]{ready:.0f} ready[/yellow]',
-                f'[red]{unacked:.0f} unacked[/red]'
-            ])
+            return ' | '.join(
+                [
+                    f'[yellow]{ready:.0f} ready[/yellow]',
+                    f'[red]{unacked:.0f} unacked[/red]',
+                ]
+            )
 
     class WorkerPanel(RefreshablePanel):
         def __init__(self, layout: Layout, layout_cell: str) -> None:
             super().__init__(
-                layout,
-                layout_cell,
-                title='Worker slots',
-                title_align='left'
+                layout, layout_cell, title='Worker slots', title_align='left'
             )
 
             self.enabled = True
@@ -1428,20 +1499,17 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             occupied_slots = len([task for task in tasks if task['actor'] != '<empty>'])
             free_slots = len([task for task in tasks if task['actor'] == '<empty>'])
 
-            return ' | '.join([
-                f'[yellow]{all_slots} total[/yellow]',
-                f'[blue]{occupied_slots} occupied[/blue]',
-                f'[green]{free_slots} free[/green]',
-            ])
+            return ' | '.join(
+                [
+                    f'[yellow]{all_slots} total[/yellow]',
+                    f'[blue]{occupied_slots} occupied[/blue]',
+                    f'[green]{free_slots} free[/green]',
+                ]
+            )
 
     class DBPanel(RefreshablePanel):
         def __init__(self, layout: Layout, layout_cell: str) -> None:
-            super().__init__(
-                layout,
-                layout_cell,
-                title='DB',
-                title_align='left'
-            )
+            super().__init__(layout, layout_cell, title='DB', title_align='left')
 
             self.enabled = bool(cfg.tree and cfg.tree.db and cfg.tree.db.metrics)
 
@@ -1450,7 +1518,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 return Align(
                     '[yellow]DB stats not available[/yellow]',
                     align='center',
-                    vertical='middle'
+                    vertical='middle',
                 )
 
             assert cfg.tree
@@ -1465,34 +1533,39 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             active = _extract_metric(
                 metrics,
                 'pg_stat_activity_count',
-                labels=lambda labels:
-                    labels.get('application_name', '').startswith('artemis-') and labels.get('state') == 'active'
+                labels=lambda labels: labels.get('application_name', '').startswith(
+                    'artemis-'
+                )
+                and labels.get('state') == 'active',
             )
             idle = _extract_metric(
                 metrics,
                 'pg_stat_activity_count',
-                labels=lambda labels:
-                    labels.get('application_name', '').startswith('artemis-') and labels.get('state') == 'idle'
+                labels=lambda labels: labels.get('application_name', '').startswith(
+                    'artemis-'
+                )
+                and labels.get('state') == 'idle',
             )
             idle_in_transaction = _extract_metric(
                 metrics,
                 'pg_stat_activity_count',
-                labels=lambda labels:
-                    labels.get('application_name', '').startswith('artemis-') and labels.get('idle in transaction') == 'idle'  # noqa: E501
+                labels=lambda labels: labels.get('application_name', '').startswith(
+                    'artemis-'
+                )
+                and labels.get('idle in transaction') == 'idle',  # noqa: E501
             )
 
-            return ' | '.join([
-                f'[green]{active:.0f} active[/green]',
-                f'[yellow]{idle:.0f} idle[/yellow]',
-                f'[red]{idle_in_transaction:.0f} idle in transaction[/red]'
-            ])
+            return ' | '.join(
+                [
+                    f'[green]{active:.0f} active[/green]',
+                    f'[yellow]{idle:.0f} idle[/yellow]',
+                    f'[red]{idle_in_transaction:.0f} idle in transaction[/red]',
+                ]
+            )
 
     class TasksPanel(RefreshablePanel):
         def __init__(self, layout: Layout, layout_cell: str) -> None:
-            super().__init__(
-                layout,
-                layout_cell
-            )
+            super().__init__(layout, layout_cell)
 
             self.enabled = True
 
@@ -1507,7 +1580,11 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
 
             now = datetime.datetime.utcnow()
 
-            tasks.sort(key=lambda task: (now - datetime.datetime.fromisoformat(task['ctime'])).total_seconds())
+            tasks.sort(
+                key=lambda task: (
+                    now - datetime.datetime.fromisoformat(task['ctime'])
+                ).total_seconds()
+            )
 
             table = Table(expand=True)
 
@@ -1535,19 +1612,14 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 table.add_row(
                     actor,
                     RichYAML.from_data(args) if args else '',
-                    f'[yellow]{age_label}[/yellow] {task["ctime"]}'
+                    f'[yellow]{age_label}[/yellow] {task["ctime"]}',
                 )
 
             return table
 
     class GuestsPanel(RefreshablePanel):
         def __init__(self, layout: Layout, layout_cell: str) -> None:
-            super().__init__(
-                layout,
-                layout_cell,
-                title='Guests',
-                title_align='left'
-            )
+            super().__init__(layout, layout_cell, title='Guests', title_align='left')
 
             self.enabled = True
 
@@ -1564,15 +1636,14 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 state: _extract_metric(
                     metrics,
                     'current_guest_request_count',
-                    labels=lambda labels: labels.get('state') == state
+                    labels=lambda labels: labels.get('state') == state,
                 )
                 for state in GUEST_STATES
             }
 
             return ' | '.join(
-                [
-                    f'[green]{sum(states.values()):.0f} total[/green]'
-                ] + [
+                [f'[green]{sum(states.values()):.0f} total[/green]']
+                + [
                     f'[{GUEST_STATE_COLORS[state]}]{states[state]:.0f} {state}[/{GUEST_STATE_COLORS[state]}]'
                     for state in GUEST_STATES
                 ]
@@ -1585,18 +1656,25 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             Layout(name='header-top', size=3),
             Layout(GuestsPanel(layout, 'header-bottom'), name='header-bottom', size=3),
             Layout(TasksPanel(layout, 'content'), name='content'),
-            Layout(f'Updating state every {tick} seconds...', name='footer', size=1)
+            Layout(f'Updating state every {tick} seconds...', name='footer', size=1),
         )
 
         layout['header-top'].split_row(
             Layout(Panel(''), name='header-top.left', ratio=3),
-            Layout(AboutPanel(layout, 'header-top.right'), name='header-top.right')
+            Layout(AboutPanel(layout, 'header-top.right'), name='header-top.right'),
         )
 
         layout['header-top.left'].split_row(
-            Layout(WorkerPanel(layout, 'header-top.left.left'), name='header-top.left.left'),
-            Layout(BrokerPanel(layout, 'header-top.left.middle'), name='header-top.left.middle'),
-            Layout(DBPanel(layout, 'header-top.left.right'), name='header-top.left.right')
+            Layout(
+                WorkerPanel(layout, 'header-top.left.left'), name='header-top.left.left'
+            ),
+            Layout(
+                BrokerPanel(layout, 'header-top.left.middle'),
+                name='header-top.left.middle',
+            ),
+            Layout(
+                DBPanel(layout, 'header-top.left.right'), name='header-top.left.right'
+            ),
         )
 
         return layout
@@ -1629,7 +1707,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
     def _extract_metric(
         metrics: List[Sample],
         name: str,
-        labels: Optional[Callable[[Dict[str, str]], bool]] = None
+        labels: Optional[Callable[[Dict[str, str]], bool]] = None,
     ) -> float:
         return sum(
             sample[2]
@@ -1642,7 +1720,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
         cast(WorkerPanel, layout['header-top.left.left'].renderable),
         cast(BrokerPanel, layout['header-top.left.middle'].renderable),
         cast(DBPanel, layout['header-top.left.right'].renderable),
-        cast(TasksPanel, layout['content'].renderable)
+        cast(TasksPanel, layout['content'].renderable),
     ]
 
     slow_panels: List[RefreshablePanel] = [
@@ -1650,7 +1728,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
     ]
 
     with Live(layout, screen=True, auto_refresh=True):
-        for panel in (fast_panels + slow_panels):
+        for panel in fast_panels + slow_panels:
             panel.refresh()
 
         while True:
@@ -1664,8 +1742,12 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 panel.refresh()
 
 
-@cmd_status.command(name='top', short_help='Display current tasks in a top-like fashion')
-@click.option('--tick', metavar='N', type=int, default=10, help='Refresh output every N seconds')
+@cmd_status.command(
+    name='top', short_help='Display current tasks in a top-like fashion'
+)
+@click.option(
+    '--tick', metavar='N', type=int, default=10, help='Refresh output every N seconds'
+)
 @click.pass_obj
 def cmd_status_top(cfg: Configuration, tick: int) -> None:
     if cfg.output_format in ('json', 'yaml'):
@@ -1676,11 +1758,19 @@ def cmd_status_top(cfg: Configuration, tick: int) -> None:
     _status_top_full(cfg, tick)
 
 
-@cmd_status.command(name='broker', short_help='Display current broker messages in a top-like fashion')
-@click.option('--tick', metavar='N', type=int, default=10, help='Refresh output every N seconds')
-@click.option('--include-dead-letters', is_flag=True, help='Report also dead letter queues.')
+@cmd_status.command(
+    name='broker', short_help='Display current broker messages in a top-like fashion'
+)
+@click.option(
+    '--tick', metavar='N', type=int, default=10, help='Refresh output every N seconds'
+)
+@click.option(
+    '--include-dead-letters', is_flag=True, help='Report also dead letter queues.'
+)
 @click.pass_obj
-def cmd_status_broker(cfg: Configuration, tick: int, include_dead_letters: bool) -> None:
+def cmd_status_broker(
+    cfg: Configuration, tick: int, include_dead_letters: bool
+) -> None:
     assert cfg.broker_management_hostname
     assert cfg.broker_management_port
     assert cfg.broker_management_username
@@ -1688,15 +1778,22 @@ def cmd_status_broker(cfg: Configuration, tick: int, include_dead_letters: bool)
 
     rabbitmqadm_command: List[str] = [
         'rabbitmqadmin',
-        '--format', 'pretty_json',
-        '--host', cfg.broker_management_hostname,
-        '--port', str(cfg.broker_management_port),
-        '--username', cfg.broker_management_username,
-        '--password', cfg.broker_management_password
+        '--format',
+        'pretty_json',
+        '--host',
+        cfg.broker_management_hostname,
+        '--port',
+        str(cfg.broker_management_port),
+        '--username',
+        cfg.broker_management_username,
+        '--password',
+        cfg.broker_management_password,
     ]
 
     with cfg.console.status('Updating broker task list...', spinner='dots') as status:
-        queues = json.loads(subprocess.check_output(rabbitmqadm_command + ['list', 'queues']).decode())
+        queues = json.loads(
+            subprocess.check_output(rabbitmqadm_command + ['list', 'queues']).decode()
+        )
 
         while True:
             status.update('Updating broker task list...')
@@ -1708,11 +1805,12 @@ def cmd_status_broker(cfg: Configuration, tick: int, include_dead_letters: bool)
 
                     output = json.loads(
                         subprocess.check_output(
-                            rabbitmqadm_command + [
+                            rabbitmqadm_command
+                            + [
                                 'get',
                                 f'queue={queue["name"]}',
                                 'ackmode=ack_requeue_true',
-                                'count=999999'
+                                'count=999999',
                             ]
                         )
                     )

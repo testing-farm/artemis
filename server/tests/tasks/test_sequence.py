@@ -35,7 +35,7 @@ def test_sequence(
     worker: dramatiq.Worker,
     actor: Actor,
     caplog: _pytest.logging.LogCaptureFixture,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
 ) -> None:
     results: List[str] = []
     mock_uuids = ['uuid1', 'uuid2', 'uuid3', 'uuid4', 'uuid5', 'uuid6']
@@ -60,7 +60,7 @@ def test_sequence(
             (2, actor, ('foo2', 'bar2')),
             (3, actor, ('foo3', 'bar3')),
         ],
-        on_complete=(actor, ('foo4', 'bar4'))
+        on_complete=(actor, ('foo4', 'bar4')),
     )
 
     assert r.is_ok
@@ -126,15 +126,10 @@ on-complete:
             pipe_ignore: true
     task-request:
         id:
-        sequence-id:""")
+        sequence-id:"""),
     )
 
     broker.join(actor.queue_name)
     worker.join()
 
-    assert results == [
-        'foo1', 'bar1',
-        'foo2', 'bar2',
-        'foo3', 'bar3',
-        'foo4', 'bar4'
-    ]
+    assert results == ['foo1', 'bar1', 'foo2', 'bar2', 'foo3', 'bar3', 'foo4', 'bar4']

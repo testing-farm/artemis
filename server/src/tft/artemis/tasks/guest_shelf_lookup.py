@@ -54,20 +54,19 @@ class Workspace(_Workspace):
 
             if not self.gr.shelfname or self.gr.bypass_shelf_lookup is True:
                 self.update_guest_state_and_request_task(
-                    GuestState.ROUTING,
-                    route_guest_request,
-                    self.guestname,
-                    current_state=GuestState.SHELF_LOOKUP
+                    GuestState.ROUTING, route_guest_request, self.guestname, current_state=GuestState.SHELF_LOOKUP
                 )
 
                 return
 
             selected_guest: Optional[GuestRequest] = None
 
-            r_guests = SafeQuery.from_session(self.session, GuestRequest) \
-                .filter(GuestRequest.shelfname == self.gr.shelfname) \
-                .filter(GuestRequest.state == GuestState.SHELVED) \
+            r_guests = (
+                SafeQuery.from_session(self.session, GuestRequest)
+                .filter(GuestRequest.shelfname == self.gr.shelfname)
+                .filter(GuestRequest.state == GuestState.SHELVED)
                 .all()
+            )
 
             if r_guests.is_error:
                 return self._error(r_guests, 'failed to load shelved guests')
@@ -80,11 +79,13 @@ class Workspace(_Workspace):
                 guest = shelved_guests.pop(random.randrange(0, len(shelved_guests)))
 
                 # TODO: Better environment and log types validation?
-                if self.gr.ssh_keyname == guest.ssh_keyname \
-                        and self.gr.environment == guest.environment \
-                        and self.gr.skip_prepare_verify_ssh == guest.skip_prepare_verify_ssh \
-                        and self.gr.log_types == guest.log_types \
-                        and self.gr.post_install_script == guest.post_install_script:
+                if (
+                    self.gr.ssh_keyname == guest.ssh_keyname
+                    and self.gr.environment == guest.environment
+                    and self.gr.skip_prepare_verify_ssh == guest.skip_prepare_verify_ssh
+                    and self.gr.log_types == guest.log_types
+                    and self.gr.post_install_script == guest.post_install_script
+                ):
                     selected_guest = guest
 
                     ShelfMetrics.inc_hits(self.gr.shelfname)
@@ -98,7 +99,7 @@ class Workspace(_Workspace):
                         set_values={
                             attr: getattr(selected_guest, attr)
                             for attr in ['poolname', 'address', 'ssh_port', 'ssh_username', '_pool_data']
-                        }
+                        },
                     )
 
                     r_delete: DMLResult[GuestRequest] = execute_dml(
@@ -106,7 +107,7 @@ class Workspace(_Workspace):
                         self.session,
                         sqlalchemy.delete(GuestRequest)
                         .where(GuestRequest.guestname == selected_guest.guestname)
-                        .where(GuestRequest.state == GuestState.SHELVED)
+                        .where(GuestRequest.state == GuestState.SHELVED),
                     )
 
                     if r_delete.is_error:
@@ -118,19 +119,12 @@ class Workspace(_Workspace):
                 ShelfMetrics.inc_misses(self.gr.shelfname)
 
                 self.update_guest_state_and_request_task(
-                    GuestState.ROUTING,
-                    route_guest_request,
-                    self.guestname,
-                    current_state=GuestState.SHELF_LOOKUP
+                    GuestState.ROUTING, route_guest_request, self.guestname, current_state=GuestState.SHELF_LOOKUP
                 )
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         """
         Create workspace.
@@ -146,11 +140,7 @@ class Workspace(_Workspace):
 
     @classmethod
     def guest_shelf_lookup(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Try to find and use a suitable guest from the specified shelf. Otherwise dispatch routing.
@@ -167,11 +157,7 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.SHELF_LOOKUP, GuestState.SHELF_LOOKUP))
@@ -185,5 +171,5 @@ def guest_shelf_lookup(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.guest_shelf_lookup),
         logger=get_guest_logger(Workspace.TASKNAME, _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

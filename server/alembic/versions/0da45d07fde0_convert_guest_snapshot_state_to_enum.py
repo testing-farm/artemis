@@ -9,6 +9,7 @@ Revises: 9844f8f59644
 Create Date: 2021-07-27 18:38:03.569577
 
 """
+
 from typing import Union
 
 import sqlalchemy as sa
@@ -41,7 +42,7 @@ def get_enum_type() -> Union[sa.Enum, postgresql.ENUM]:
             'STOPPED',
             'STARTING',
             name='gueststate',
-            create_type=False
+            create_type=False,
         )
 
         enum.create(op.get_bind())
@@ -64,8 +65,9 @@ def get_enum_type() -> Union[sa.Enum, postgresql.ENUM]:
         'STOPPING',
         'STOPPED',
         'STARTING',
-        name='gueststate'
+        name='gueststate',
     )
+
 
 # This revision replaces a varchar column with a custom enum. To perform the change correctly, without
 # breaking existing records, we need several steps:
@@ -134,4 +136,4 @@ def downgrade() -> None:
 
     with op.batch_alter_table('guest_requests', schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
-            batch_op.execute(sa.text("DROP TYPE gueststate;"))
+            batch_op.execute(sa.text('DROP TYPE gueststate;'))

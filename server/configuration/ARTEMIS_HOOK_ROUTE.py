@@ -46,17 +46,13 @@ from tft.artemis.routing_policies import (
 #: If there are OpenStack pools still in the mix, then prefer these pools over the rest. If there are no OpenStack
 #: pools allowed anymore, return the original list: *prefer*, not *use only*.
 policy_prefer_openstack = create_preferrence_filter_by_driver_class(
-    'prefer-openstack',
-    tft.artemis.drivers.openstack.OpenStackDriver
+    'prefer-openstack', tft.artemis.drivers.openstack.OpenStackDriver
 )
 
 
 #: If there are AWS pools still in the mix, then prefer these pools over the rest. If there are no AWS
 #: pools allowed anymore, return the original list: *prefer*, not *use only*.
-policy_prefer_aws = create_preferrence_filter_by_driver_class(
-    'prefer-aws',
-    tft.artemis.drivers.aws.AWSDriver
-)
+policy_prefer_aws = create_preferrence_filter_by_driver_class('prefer-aws', tft.artemis.drivers.aws.AWSDriver)
 
 
 #: If there are cloud-backed pools still in the mix, then prefer these pools over more expensive pools (like Beaker).
@@ -68,7 +64,7 @@ policy_prefer_clouds = create_preferrence_filter_by_driver_class(
     tft.artemis.drivers.gcp.GCPDriver,
     tft.artemis.drivers.ibmcloudpower.IBMCloudPowerDriver,
     tft.artemis.drivers.ibmcloudvpc.IBMCloudVPCDriver,
-    tft.artemis.drivers.openstack.OpenStackDriver
+    tft.artemis.drivers.openstack.OpenStackDriver,
 )
 
 
@@ -101,6 +97,6 @@ def hook_ROUTE(  # noqa: N802
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     guest_request: GuestRequest,
-    pools: List[PoolDriver]
+    pools: List[PoolDriver],
 ) -> PolicyReturnType:
     return run_routing_policies(logger, session, guest_request, pools, POLICIES)

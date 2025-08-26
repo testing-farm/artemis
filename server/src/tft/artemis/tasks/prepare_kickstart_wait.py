@@ -51,7 +51,7 @@ KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY: Knob[int] = Knob(
     has_db=True,
     envvar='ARTEMIS_PREPARE_KICKSTART_WAIT_INITIAL_DELAY',
     cast_from_str=int,
-    default=300
+    default=300,
 )
 
 KNOB_PREPARE_KICKSTART_WAIT_RETRY_DELAY: Knob[int] = Knob(
@@ -61,7 +61,7 @@ KNOB_PREPARE_KICKSTART_WAIT_RETRY_DELAY: Knob[int] = Knob(
     has_db=True,
     envvar='ARTEMIS_PREPARE_KICKSTART_WAIT_RETRY_DELAY',
     cast_from_str=int,
-    default=120
+    default=120,
 )
 
 
@@ -106,8 +106,7 @@ class Workspace(_Workspace):
 
             # Load the SSH timeout value.
             r_ssh_timeout = KNOB_PREPARE_KICKSTART_SSH_TIMEOUT.get_value(
-                session=self.session,
-                entityname=self.pool.poolname
+                session=self.session, entityname=self.pool.poolname
             )
 
             if r_ssh_timeout.is_error:
@@ -139,18 +138,20 @@ class Workspace(_Workspace):
                         ssh_options=self.pool.ssh_options,
                         ssh_timeout=ssh_timeout,
                         poolname=self.pool.poolname,
-                        commandname='prepare-kickstart-wait.fetch-log'
+                        commandname='prepare-kickstart-wait.fetch-log',
                     )
 
                     with open(dst) as f:
                         blob = GuestLogBlob.from_content(f.read())
                         logname = f'{log_type.value}.log:dump'
 
-                        r_guest_log = SafeQuery.from_session(self.session, GuestLog) \
-                            .filter(GuestLog.guestname == self.gr.guestname) \
-                            .filter(GuestLog.logname == logname) \
-                            .filter(GuestLog.contenttype == GuestLogContentType.BLOB) \
+                        r_guest_log = (
+                            SafeQuery.from_session(self.session, GuestLog)
+                            .filter(GuestLog.guestname == self.gr.guestname)
+                            .filter(GuestLog.logname == logname)
+                            .filter(GuestLog.contenttype == GuestLogContentType.BLOB)
                             .one_or_none()
+                        )
 
                         if r_guest_log.is_error:
                             return self._error(r_guest_log, f'failed to load the log {logname}', no_effect=True)
@@ -158,11 +159,7 @@ class Workspace(_Workspace):
                         log = r_guest_log.unwrap()
 
                         if log is not None:
-                            r_store_log = log.update(
-                                self.logger,
-                                self.session,
-                                GuestLogState.COMPLETE
-                            )
+                            r_store_log = log.update(self.logger, self.session, GuestLogState.COMPLETE)
 
                             if r_store_log.is_error:
                                 return self._error(r_store_log, f'failed to update the log {logname}', no_effect=True)
@@ -173,7 +170,7 @@ class Workspace(_Workspace):
                                 self.gr.guestname,
                                 logname,
                                 GuestLogContentType.BLOB,
-                                GuestLogState.COMPLETE
+                                GuestLogState.COMPLETE,
                             )
 
                             if r_create_log.is_error:
@@ -185,9 +182,7 @@ class Workspace(_Workspace):
 
                         if r_store_blob.is_error:
                             return self._error(
-                                r_store_blob,
-                                f'failed to store the blob for the log {logname}',
-                                no_effect=True
+                                r_store_blob, f'failed to store the blob for the log {logname}', no_effect=True
                             )
 
             def _pull_logs(finished: bool = False) -> Result[None, Failure]:
@@ -210,13 +205,13 @@ class Workspace(_Workspace):
                 ssh_options=self.pool.ssh_options,
                 poolname=self.pool.poolname,
                 commandname='prepare-verify-ssh.shell-ping',
-                cause_extractor=self.pool.cli_error_cause_extractor
+                cause_extractor=self.pool.cli_error_cause_extractor,
             )
 
             if r_ping.is_error:
                 return self._fail(
                     Failure.from_failure('failed to connect to the guest', r_ping.unwrap_error()),
-                    'failed to connect to the guest'
+                    'failed to connect to the guest',
                 )
 
             # Try to determine whether the installation in progress
@@ -228,7 +223,7 @@ class Workspace(_Workspace):
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
                 poolname=self.pool.poolname,
-                commandname='prepare-kickstart-wait.check-inprogress'
+                commandname='prepare-kickstart-wait.check-inprogress',
             )
 
             if not r_inprogress.is_error:
@@ -241,7 +236,7 @@ class Workspace(_Workspace):
                     ssh_options=self.pool.ssh_options,
                     ssh_timeout=ssh_timeout,
                     poolname=self.pool.poolname,
-                    commandname='prepare-kickstart-wait.check-error'
+                    commandname='prepare-kickstart-wait.check-error',
                 )
 
                 if not r_iserror.is_error:
@@ -253,24 +248,19 @@ class Workspace(_Workspace):
 
                     return self._fail(
                         Failure('the installation terminated with an error', recoverable=False),
-                        'the installation terminated with an error'
+                        'the installation terminated with an error',
                     )
 
                 self._progress('install-inprogress')
 
                 r_delay = KNOB_PREPARE_KICKSTART_WAIT_RETRY_DELAY.get_value(
-                    session=self.session,
-                    entityname=self.pool.poolname
+                    session=self.session, entityname=self.pool.poolname
                 )
 
                 if r_delay.is_error:
                     return self._error(r_delay, 'failed to load task retry delay')
 
-                self.request_task(
-                    prepare_kickstart_wait,
-                    self.guestname,
-                    delay=r_delay.unwrap()
-                )
+                self.request_task(prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
 
                 return
 
@@ -283,7 +273,7 @@ class Workspace(_Workspace):
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
                 poolname=self.pool.poolname,
-                commandname='prepare-kickstart-wait.check-inprogress'
+                commandname='prepare-kickstart-wait.check-inprogress',
             )
 
             if r_install.is_error:
@@ -296,34 +286,19 @@ class Workspace(_Workspace):
                 self._fail(r_logs.unwrap_error(), 'failed to fetch and store kickstart logs', no_effect=True)
 
             # Dispatch next task.
-            self.request_task(
-                prepare_finalize_pre_connect,
-                self.guestname
-            )
+            self.request_task(prepare_finalize_pre_connect, self.guestname)
 
     @classmethod
     def create(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> 'Workspace':
         return cls(logger, session, db=db, guestname=guestname, task=TASK_NAME)
 
     @classmethod
     def prepare_kickstart_wait(
-        cls,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
-        return cls.create(logger, db, session, guestname) \
-            .begin() \
-            .run() \
-            .complete() \
-            .final_result
+        return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.PREPARING, GuestState.ERROR))
@@ -337,5 +312,5 @@ def prepare_kickstart_wait(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.prepare_kickstart_wait),
         logger=get_guest_logger(TASK_NAME, _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

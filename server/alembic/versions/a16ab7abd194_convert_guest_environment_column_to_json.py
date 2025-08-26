@@ -9,6 +9,7 @@ Revises: 968af7e432c2
 Create Date: 2021-07-30 10:07:45.042143
 
 """
+
 from alembic import op
 
 from tft.artemis.db import convert_column_json_to_str, convert_column_str_to_json

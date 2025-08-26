@@ -54,13 +54,7 @@ class Workspace(_Workspace):
             assert self.gr
 
             r_ruling = cast(
-                PolicyReturnType,
-                self.run_hook(
-                    'ROUTE',
-                    session=self.session,
-                    guest_request=self.gr,
-                    pools=self.pools
-                )
+                PolicyReturnType, self.run_hook('ROUTE', session=self.session, guest_request=self.gr, pools=self.pools)
             )
 
             if r_ruling.is_error:
@@ -71,10 +65,7 @@ class Workspace(_Workspace):
             if ruling.cancel:
                 self._progress('routing-cancelled')
 
-                self.update_guest_state(
-                    GuestState.ERROR,
-                    current_state=GuestState.ROUTING
-                )
+                self.update_guest_state(GuestState.ERROR, current_state=GuestState.ROUTING)
 
                 return
 
@@ -93,28 +84,19 @@ class Workspace(_Workspace):
                 acquire_guest_request,
                 self.guestname,
                 current_state=GuestState.ROUTING,
-                set_values={
-                    'poolname': new_poolname
-                },
-                poolname=new_poolname
+                set_values={'poolname': new_poolname},
+                poolname=new_poolname,
             )
 
             # If new pool has been chosen, log failover.
             if new_poolname != current_poolname:
-                self._guest_request_event(
-                    'routing-failover',
-                    current_pool=current_poolname,
-                    new_pool=new_poolname
-                )
+                self._guest_request_event('routing-failover', current_pool=current_poolname, new_pool=new_poolname)
 
                 metrics.ProvisioningMetrics.inc_failover(current_poolname, new_poolname)
 
     @staticmethod
     def route_guest_request(
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        guestname: str
+        logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, guestname: str
     ) -> DoerReturnType:
         """
         Find the most suitable pool for a given request, and dispatch its provisioning.
@@ -131,11 +113,13 @@ class Workspace(_Workspace):
         :returns: task result.
         """
 
-        return Workspace(logger, session, db, guestname=guestname, task='route-guest-request') \
-            .begin() \
-            .run() \
-            .complete() \
+        return (
+            Workspace(logger, session, db, guestname=guestname, task='route-guest-request')
+            .begin()
+            .run()
+            .complete()
             .final_result
+        )
 
 
 @task(tail_handler=ProvisioningTailHandler(GuestState.ROUTING, GuestState.ERROR))
@@ -149,5 +133,5 @@ def route_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.route_guest_request),
         logger=get_guest_logger('route-guest-request', _ROOT_LOGGER, guestname),
-        doer_args=(guestname,)
+        doer_args=(guestname,),
     )

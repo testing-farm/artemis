@@ -48,6 +48,7 @@ class ValidationResult(NamedTuple):
     """
     Represents schema validation result
     """
+
     result: bool
     errors: List[Any]
 
@@ -60,14 +61,16 @@ class Logger:
     def __init__(
         self,
         context: Optional[str] = None,
-        console: Optional[rich.console.Console] = None
+        console: Optional[rich.console.Console] = None,
     ) -> None:
         self.context = context
         self.console = console or DEFAULT_LOGGING_CONSOLE
 
         self._context_prefix = f'[{context}] ' if context else ''
 
-    def info(self, msg: str, icon: str = ':information:', colorize: bool = True) -> None:
+    def info(
+        self, msg: str, icon: str = ':information:', colorize: bool = True
+    ) -> None:
         if colorize:
             color_enable, color_reset = '[white]', '[/white]'
 
@@ -85,7 +88,9 @@ class Logger:
 
         self.console.print(f'{icon} {color_enable}{msg}{color_reset}')
 
-    def warning(self, msg: str, icon: str = ':heavy_exclamation_mark:', colorize: bool = True) -> None:
+    def warning(
+        self, msg: str, icon: str = ':heavy_exclamation_mark:', colorize: bool = True
+    ) -> None:
         if colorize:
             color_enable, color_reset = '[yellow]', '[/yellow]'
 
@@ -100,7 +105,7 @@ class Logger:
         icon: str = ':-1:',
         colorize: bool = True,
         exception: bool = False,
-        exit: bool = True
+        exit: bool = True,
     ) -> None:
         if colorize:
             color_enable, color_reset = '[red]', '[/red]'
@@ -116,17 +121,14 @@ class Logger:
         if exit:
             sys.exit(1)
 
-    def unhandled_api_response(self, response: requests.Response, exit: bool = True) -> None:
-        message = [
-            f'unhandled API response, HTTP {response.status_code}'
-        ]
+    def unhandled_api_response(
+        self, response: requests.Response, exit: bool = True
+    ) -> None:
+        message = [f'unhandled API response, HTTP {response.status_code}']
 
         if response.content:
             try:
-                message += [
-                    '',
-                    f'API message: {response.json()["message"]}'
-                ]
+                message += ['', f'API message: {response.json()["message"]}']
 
             except Exception:
                 self.warning('cannot extract better message from API response')
@@ -140,7 +142,9 @@ class TimeoutHTTPAdapter(requests.adapters.HTTPAdapter):
 
         super().__init__(*args, **kwargs)
 
-    def send(self, request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:  # type: ignore[override]
+    def send(  # type: ignore[override]
+        self, request: requests.PreparedRequest, **kwargs: Any
+    ) -> requests.Response:
         kwargs.setdefault('timeout', self.timeout)
 
         return super().send(request, **kwargs)
@@ -214,10 +218,7 @@ class Configuration:
     http_session: requests.Session = dataclasses.field(default_factory=requests.Session)
 
     def install_http_retries(
-        self,
-        timeout: int,
-        retries: int,
-        retry_backoff_factor: int
+        self, timeout: int, retries: int, retry_backoff_factor: int
     ) -> None:
         retry_strategy = requests.packages.urllib3.util.retry.Retry(  # type: ignore[attr-defined]
             total=retries,
@@ -226,17 +227,14 @@ class Configuration:
                 500,  # Internal Server Error
                 502,  # Bad Gateway
                 503,  # Service Unavailable
-                504   # Gateway Timeout
+                504,  # Gateway Timeout
             ],
-            allowed_methods=[
-                'HEAD', 'GET', 'POST', 'DELETE', 'PUT'
-            ],
-            backoff_factor=retry_backoff_factor
+            allowed_methods=['HEAD', 'GET', 'POST', 'DELETE', 'PUT'],
+            backoff_factor=retry_backoff_factor,
         )
 
         timeout_adapter = TimeoutHTTPAdapter(
-            timeout=timeout,
-            max_retries=retry_strategy
+            timeout=timeout, max_retries=retry_strategy
         )
 
         self.http_session.mount('https://', timeout_adapter)
@@ -275,16 +273,15 @@ class RichYAML:
     """
 
     def __init__(
-        self,
-        yaml: str,
-        indent: Optional[int] = 2,
-        highlight: bool = True
+        self, yaml: str, indent: Optional[int] = 2, highlight: bool = True
     ) -> None:
         # normalize by converting from string to data structure and back, and apply indent
         data = _string_to_yaml(yaml)
         yaml = _yaml_to_string(data, indent=indent)
 
-        highlighter = YAMLHighlighter() if highlight else rich.highlighter.NullHighlighter()
+        highlighter = (
+            YAMLHighlighter() if highlight else rich.highlighter.NullHighlighter()
+        )
         self.text = highlighter(yaml)
 
         self.text.no_wrap = True
@@ -292,10 +289,7 @@ class RichYAML:
 
     @classmethod
     def from_data(
-        cls,
-        data: Any,
-        indent: Optional[int] = 2,
-        highlight: bool = True
+        cls, data: Any, indent: Optional[int] = 2, highlight: bool = True
     ) -> 'RichYAML':
         return cls(_yaml_to_string(data), indent=indent, highlight=highlight)
 
@@ -314,7 +308,9 @@ def save_yaml(data: Any, filepath: str) -> None:
 
 
 def validate_struct(data: Any, schema_name: Any) -> ValidationResult:
-    schema_filepath = pkg_resources.resource_filename('tft.artemis_cli', f'schemas/{schema_name}.yaml')
+    schema_filepath = pkg_resources.resource_filename(
+        'tft.artemis_cli', f'schemas/{schema_name}.yaml'
+    )
     schema = load_yaml(schema_filepath)
 
     try:
@@ -325,10 +321,7 @@ def validate_struct(data: Any, schema_name: Any) -> ValidationResult:
     except jsonschema.exceptions.ValidationError:
         validator = jsonschema.Draft4Validator(schema)
 
-        return ValidationResult(
-            False,
-            validator.iter_errors(data)
-        )
+        return ValidationResult(False, validator.iter_errors(data))
 
 
 def fetch_remote(
@@ -338,9 +331,8 @@ def fetch_remote(
     method: str = 'get',
     request_kwargs: Optional[Dict[str, Any]] = None,
     on_error: Optional[Callable[[requests.Response, Dict[str, Any]], None]] = None,
-    allow_statuses: Optional[List[int]] = None
+    allow_statuses: Optional[List[int]] = None,
 ) -> requests.Response:
-
     allow_statuses = allow_statuses or [200, 201]
 
     logger = logger or Logger()
@@ -365,7 +357,9 @@ def fetch_remote(
             on_error(res, request_kwargs)
 
         else:
-            logger.error(f'Failed to communicate with remote url {url}, responded with code {res.status_code}')
+            logger.error(
+                f'Failed to communicate with remote url {url}, responded with code {res.status_code}'
+            )
 
     return res
 
@@ -377,7 +371,7 @@ def fetch_artemis(
     method: str = 'get',
     request_kwargs: Optional[Dict[str, Any]] = None,
     logger: Optional[Logger] = None,
-    allow_statuses: Optional[List[int]] = None
+    allow_statuses: Optional[List[int]] = None,
 ) -> requests.Response:
     assert cfg.artemis_api_url is not None
 
@@ -386,7 +380,9 @@ def fetch_artemis(
     def _error_callback(res: requests.Response, request_kwargs: Dict[str, Any]) -> None:
         assert logger is not None
 
-        json_dump = str(RichYAML.from_data(res.json()).text).strip() if url is None else ''
+        json_dump = (
+            str(RichYAML.from_data(res.json()).text).strip() if url is None else ''
+        )
 
         logger.error(f"""
 Failed to communicate with Artemis API Server, responded with code {res.status_code}: {res.reason}'
@@ -413,7 +409,7 @@ Response: {res.status_code} {res.reason}
         request_kwargs['auth'] = HTTPBasicAuth(
             cfg.basic_auth.username,
             # TODO: pick proper token based on URL
-            cfg.basic_auth.provisioning_token
+            cfg.basic_auth.provisioning_token,
         )
 
     if url is None:
@@ -429,7 +425,7 @@ Response: {res.status_code} {res.reason}
         method=method,
         request_kwargs=request_kwargs,
         on_error=_error_callback,
-        allow_statuses=allow_statuses
+        allow_statuses=allow_statuses,
     )
 
 
@@ -439,13 +435,13 @@ def artemis_inspect(
     rid: str,
     params: Optional[Dict[str, Any]] = None,
     data: Optional[Dict[str, Any]] = None,
-    logger: Optional[Logger] = None
+    logger: Optional[Logger] = None,
 ) -> requests.Response:
     return fetch_artemis(
         cfg,
         f'/{resource}/{rid}',
         request_kwargs={'json': data, 'params': params},
-        logger=logger
+        logger=logger,
     )
 
 
@@ -453,14 +449,10 @@ def artemis_create(
     cfg: Configuration,
     resource: str,
     data: Dict[str, Any],
-    logger: Optional[Logger] = None
+    logger: Optional[Logger] = None,
 ) -> requests.Response:
     return fetch_artemis(
-        cfg,
-        f'/{resource}',
-        method='post',
-        request_kwargs={'json': data},
-        logger=logger
+        cfg, f'/{resource}', method='post', request_kwargs={'json': data}, logger=logger
     )
 
 
@@ -468,14 +460,10 @@ def artemis_update(
     cfg: Configuration,
     resource: str,
     data: Dict[str, Any],
-    logger: Optional[Logger] = None
+    logger: Optional[Logger] = None,
 ) -> requests.Response:
     return fetch_artemis(
-        cfg,
-        f'/{resource}',
-        method='put',
-        request_kwargs={'json': data},
-        logger=logger
+        cfg, f'/{resource}', method='put', request_kwargs={'json': data}, logger=logger
     )
 
 
@@ -484,29 +472,26 @@ def artemis_restore(
     resource: str,
     rid: str,
     data: Optional[Dict[str, Any]] = None,
-    logger: Optional[Logger] = None
+    logger: Optional[Logger] = None,
 ) -> requests.Response:
     return fetch_artemis(
         cfg,
         f'/{resource}/{rid}/restore',
         method='post',
         request_kwargs={'json': data},
-        logger=logger
+        logger=logger,
     )
 
 
 def artemis_delete(
-    cfg: Configuration,
-    resource: str,
-    rid: str,
-    logger: Optional[Logger] = None
+    cfg: Configuration, resource: str, rid: str, logger: Optional[Logger] = None
 ) -> requests.Response:
     return fetch_artemis(
         cfg,
         f'{resource}/{rid}',
         method='delete',
         logger=logger,
-        allow_statuses=[200, 201, 204, 404, 409]
+        allow_statuses=[200, 201, 204, 404, 409],
     )
 
 
@@ -514,7 +499,7 @@ def confirm(
     msg: str,
     default: bool = False,
     abort: bool = False,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
 ) -> Any:
     console = console or DEFAULT_CONSOLE
 
@@ -529,11 +514,15 @@ def confirm(
     return False
 
 
-def print_panel(panel: rich.panel.Panel, console: Optional[rich.console.Console] = None) -> None:
+def print_panel(
+    panel: rich.panel.Panel, console: Optional[rich.console.Console] = None
+) -> None:
     (console or DEFAULT_CONSOLE).print(panel)
 
 
-def print_table(table: rich.table.Table, console: Optional[rich.console.Console] = None) -> None:
+def print_table(
+    table: rich.table.Table, console: Optional[rich.console.Console] = None
+) -> None:
     (console or DEFAULT_CONSOLE).print(table)
 
 
@@ -549,9 +538,7 @@ CollectionType = List[Dict[str, Any]]
 
 
 def apply_jq_filter(
-    cfg: Configuration,
-    collection: CollectionType,
-    jq_filter: Optional[str] = None
+    cfg: Configuration, collection: CollectionType, jq_filter: Optional[str] = None
 ) -> CollectionType:
     if jq_filter is None:
         return collection
@@ -571,7 +558,7 @@ def print_collection(
     tabulate: Callable[[CollectionType], rich.table.Table],
     jq_filter: Optional[str] = None,
     console: Optional[rich.console.Console] = None,
-    panel_title: Optional[str] = None
+    panel_title: Optional[str] = None,
 ) -> None:
     collection = apply_jq_filter(cfg, collection, jq_filter=jq_filter)
 
@@ -579,11 +566,9 @@ def print_collection(
         if panel_title:
             print_panel(
                 rich.panel.Panel(
-                    tabulate(collection),
-                    title=panel_title,
-                    title_align='left'
+                    tabulate(collection), title=panel_title, title_align='left'
                 ),
-                console=console
+                console=console,
             )
 
         else:
@@ -616,7 +601,7 @@ GUEST_STATE_COLORS = {
     'preparing': 'cyan',
     'ready': 'green',
     'condemned': 'red',
-    'error': 'red'
+    'error': 'red',
 }
 
 
@@ -627,31 +612,36 @@ def colorize_guest_state(state: str) -> str:
 
 
 def about_artemis(cfg: Configuration) -> requests.Response:
-    return fetch_artemis(
-        cfg,
-        '/about',
-        logger=cfg.logger
-    )
+    return fetch_artemis(cfg, '/about', logger=cfg.logger)
 
 
 def print_guests(
     cfg: Configuration,
     guests: CollectionType,
     jq_filter: Optional[str] = None,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
 ) -> None:
     def tabulate(guests: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
 
         for header in [
-            'Guestname', 'Compose', 'Arch', 'Pool', 'State', 'CTime / SMTime / MTime', 'Address', 'User Data',
-            'Security Group Rules', 'Shelf',
+            'Guestname',
+            'Compose',
+            'Arch',
+            'Pool',
+            'State',
+            'CTime / SMTime / MTime',
+            'Address',
+            'User Data',
+            'Security Group Rules',
+            'Shelf',
         ]:
             table.add_column(header, no_wrap=(header == 'Guestname'))
 
         for guest in guests:
-            security_group_rules = (
-                (guest.get('security_group_rules_ingress') or []) + (guest.get('security_group_rules_egress') or []))
+            security_group_rules = (guest.get('security_group_rules_ingress') or []) + (
+                guest.get('security_group_rules_egress') or []
+            )
 
             table.add_row(
                 guest['guestname'],
@@ -662,8 +652,10 @@ def print_guests(
                 f'{guest["ctime"]}\n{guest["state_mtime"]}\n{guest.get("mtime", "")}',
                 guest['address'],
                 RichYAML.from_data(guest['user_data']) if guest['user_data'] else '',
-                RichYAML.from_data(security_group_rules if security_group_rules else ''),
-                guest.get('shelf', '')
+                RichYAML.from_data(
+                    security_group_rules if security_group_rules else ''
+                ),
+                guest.get('shelf', ''),
             )
 
         return table
@@ -675,14 +667,12 @@ def print_shelves(
     cfg: Configuration,
     shelves: CollectionType,
     jq_filter: Optional[str] = None,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
 ) -> None:
     def tabulate(guests: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
 
-        for header in [
-            'Shelfname'
-        ]:
+        for header in ['Shelfname']:
             table.add_column(header, no_wrap=(header == 'Shelfname'))
 
         for shelf in shelves:
@@ -697,14 +687,14 @@ _eventname_emojis = {
     'entered-task': ':point_right:',
     'finished-task': ':point_left:',
     'state-changed': ':birthday_cake:',
-    'created': ':baby:'
+    'created': ':baby:',
 }
 
 
 def print_events(
     cfg: Configuration,
     events: CollectionType,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
 ) -> None:
     def tabulate(events: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
@@ -728,12 +718,7 @@ def print_events(
             eventname_emoji = _eventname_emojis.get(eventname, ':information:')
             eventname = f'{eventname_emoji} {eventname}'
 
-            table.add_row(
-                event['updated'],
-                eventname,
-                event['guestname'],
-                details
-            )
+            table.add_row(event['updated'], eventname, event['guestname'], details)
 
         return table
 
@@ -744,7 +729,7 @@ def print_knobs(
     cfg: Configuration,
     knobs: CollectionType,
     jq_filter: Optional[str] = None,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
 ) -> None:
     def tabulate(knobs: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
@@ -755,10 +740,12 @@ def print_knobs(
         for knob in sorted(knobs, key=lambda x: cast(str, x['name'])):
             table.add_row(
                 knob['name'],
-                ('yes' if knob['value'] else 'no') if isinstance(knob['value'], bool) else str(knob['value']),
+                ('yes' if knob['value'] else 'no')
+                if isinstance(knob['value'], bool)
+                else str(knob['value']),
                 knob['cast'],
                 'yes' if knob['editable'] else 'no',
-                knob['help']
+                knob['help'],
             )
 
         return table
@@ -770,7 +757,7 @@ def print_users(
     cfg: Configuration,
     users: CollectionType,
     jq_filter: Optional[str] = None,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
 ) -> None:
     def tabulate(users: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
@@ -779,10 +766,7 @@ def print_users(
             table.add_column(header)
 
         for user in sorted(users, key=lambda x: cast(str, x['username'])):
-            table.add_row(
-                user['username'],
-                user['role']
-            )
+            table.add_row(user['username'], user['role'])
 
         return table
 
@@ -792,12 +776,20 @@ def print_users(
 def print_guest_logs(
     cfg: Configuration,
     logs: CollectionType,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
 ) -> None:
     def tabulate(logs: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
 
-        for header in ['Content Type', 'State', 'URL', 'Blob', 'Ctime', 'Updated', 'Expires']:
+        for header in [
+            'Content Type',
+            'State',
+            'URL',
+            'Blob',
+            'Ctime',
+            'Updated',
+            'Expires',
+        ]:
             table.add_column(header)
 
         def sanitize(text: str) -> str:
@@ -825,7 +817,7 @@ def print_guest_logs(
                     format_log(log['blob']),
                     '',
                     log['updated'],
-                    log['expires']
+                    log['expires'],
                 )
 
             else:
@@ -836,29 +828,15 @@ def print_guest_logs(
                     '',
                     '',
                     log['updated'],
-                    log['expires']
+                    log['expires'],
                 )
 
                 for blob in log['blobs']:
                     table.add_row(
-                        '',
-                        '',
-                        '',
-                        format_log(blob['content']),
-                        blob['ctime'],
-                        '',
-                        ''
+                        '', '', '', format_log(blob['content']), blob['ctime'], '', ''
                     )
 
-                    table.add_row(
-                        '',
-                        '',
-                        '',
-                        '',
-                        '',
-                        '',
-                        ''
-                    )
+                    table.add_row('', '', '', '', '', '', '')
 
         return table
 
@@ -868,12 +846,16 @@ def print_guest_logs(
 def print_tasks(
     cfg: Configuration,
     tasks: CollectionType,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
 ) -> None:
     def tabulate(tasks: CollectionType) -> rich.table.Table:
         now = datetime.datetime.utcnow()
 
-        tasks.sort(key=lambda task: (now - datetime.datetime.fromisoformat(task['ctime'])).total_seconds())
+        tasks.sort(
+            key=lambda task: (
+                now - datetime.datetime.fromisoformat(task['ctime'])
+            ).total_seconds()
+        )
 
         table = rich.table.Table()
 
@@ -901,7 +883,7 @@ def print_tasks(
             table.add_row(
                 actor,
                 RichYAML.from_data(args) if args else '',
-                f'[yellow]{age_label}[/yellow] {task["ctime"]}'
+                f'[yellow]{age_label}[/yellow] {task["ctime"]}',
             )
 
         return table
@@ -912,13 +894,15 @@ def print_tasks(
         free_slots = len([task for task in tasks if task['actor'] == '<empty>'])
 
         panel = rich.panel.Panel(
-            ' | '.join([
-                f'[yellow]{all_slots} total[/yellow]',
-                f'[blue]{occupied_slots} occupied[/blue]',
-                f'[green]{free_slots} free[/green]',
-            ]),
+            ' | '.join(
+                [
+                    f'[yellow]{all_slots} total[/yellow]',
+                    f'[blue]{occupied_slots} occupied[/blue]',
+                    f'[green]{free_slots} free[/green]',
+                ]
+            ),
             title='Worker slots',
-            title_align='left'
+            title_align='left',
         )
 
         (console or DEFAULT_CONSOLE).print(panel)
@@ -929,7 +913,7 @@ def print_tasks(
 def print_broker_tasks(
     cfg: Configuration,
     tasks: CollectionType,
-    console: Optional[rich.console.Console] = None
+    console: Optional[rich.console.Console] = None,
 ) -> None:
     def tabulate(tasks: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
@@ -951,9 +935,8 @@ def print_broker_tasks(
                 task['actor_name'].replace('_', '-'),
                 RichYAML.from_data(args) if args else '',
                 datetime.datetime.fromtimestamp(
-                    int(task['message_timestamp']) / 1000,
-                    tz=None
-                ).strftime("%Y-%m-%dT%H:%M:%S.%f")
+                    int(task['message_timestamp']) / 1000, tz=None
+                ).strftime('%Y-%m-%dT%H:%M:%S.%f'),
             )
 
         return table

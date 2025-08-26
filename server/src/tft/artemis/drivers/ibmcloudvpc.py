@@ -51,7 +51,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
-    default='artemis-image-map-ibmcloud-vpc.yaml'
+    default='artemis-image-map-ibmcloud-vpc.yaml',
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
@@ -61,7 +61,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
-    default='{{ os.compose }}'
+    default='{{ os.compose }}',
 )
 
 IBMCLOUD_RESOURCE_TYPE: Dict[str, ResourceType] = {
@@ -69,7 +69,7 @@ IBMCLOUD_RESOURCE_TYPE: Dict[str, ResourceType] = {
     'subnet': ResourceType.VIRTUAL_NETWORK,
     'volume': ResourceType.DISK,
     'floating-ip': ResourceType.STATIC_IP,
-    'security-group': ResourceType.SECURITY_GROUP
+    'security-group': ResourceType.SECURITY_GROUP,
 }
 
 
@@ -108,7 +108,7 @@ def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None
             yield name[:TAG_MAX_LENGTH], ''
 
         elif value:
-            yield name, value[:TAG_MAX_LENGTH - len(name) - 1]
+            yield name, value[: TAG_MAX_LENGTH - len(name) - 1]
 
         else:
             yield name, ''
@@ -127,10 +127,7 @@ def _serialize_tags(tags: GuestTagsType) -> List[str]:
     See https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui for more details.
     """
 
-    return [
-        f'{name}:{value}' if value else name
-        for name, value in _sanitize_tags(tags)
-    ]
+    return [f'{name}:{value}' if value else name for name, value in _sanitize_tags(tags)]
 
 
 class APIImageType(TypedDict):
@@ -151,9 +148,9 @@ ConfigImageFilter = TypedDict(
         'status': str,
         'user-data-format': str,
         'name-regex': str,
-        'arch-regex': str
+        'arch-regex': str,
     },
-    total=False
+    total=False,
 )
 
 
@@ -170,13 +167,15 @@ class IBMCloudSession(CLISessionPermanentDir):
             logger,
             [
                 'login',
-                '--apikey', self.pool.pool_config['api-key'],
-                '-r', self.pool.pool_config['default-region'],
+                '--apikey',
+                self.pool.pool_config['api-key'],
+                '-r',
+                self.pool.pool_config['default-region'],
                 # Do not ask if existing plugins need update, trust the process
-                '-q'
+                '-q',
             ],
             json_format=False,
-            commandname='ibmcloud.login'
+            commandname='ibmcloud.login',
         )
         if r_login.is_error:
             return Error(Failure.from_failure('failed to log into tenant', r_login.unwrap_error()))
@@ -294,17 +293,12 @@ class IBMCloudVPCDriver(PoolDriver):
                     return Error(Failure.from_exc('failed to compile regex', exc))
 
             with IBMCloudSession(logger, self) as session:
-                r_images_list = session.run(
-                    logger,
-                    list_images_cmd,
-                    commandname='ibmcloud.vm-image-list'
-                )
+                r_images_list = session.run(logger, list_images_cmd, commandname='ibmcloud.vm-image-list')
 
                 if r_images_list.is_error:
-                    return Error(Failure.from_failure(
-                        'failed to fetch image information',
-                        r_images_list.unwrap_error()
-                    ))
+                    return Error(
+                        Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error())
+                    )
 
             images: List[PoolImageInfo] = []
             for image in cast(List[APIImageType], r_images_list.unwrap()):
@@ -316,24 +310,24 @@ class IBMCloudVPCDriver(PoolDriver):
                     arch = image['operating_system']['architecture']
                     if arch_pattern and not arch_pattern.match(arch):
                         continue
-                    images.append(IBMCloudVPCPoolImageInfo(
-                        crn=image['crn'],
-                        id=image['id'],
-                        name=image['name'],
-                        status=image['status'],
-                        visibility=image['visibility'],
-                        user_data_format=image['user_data_format'],
-                        arch=arch,
-                        boot=FlavorBoot(),
-                        ssh=PoolImageSSHInfo(),
-                        supports_kickstart=False
-                    ))
+                    images.append(
+                        IBMCloudVPCPoolImageInfo(
+                            crn=image['crn'],
+                            id=image['id'],
+                            name=image['name'],
+                            status=image['status'],
+                            visibility=image['visibility'],
+                            user_data_format=image['user_data_format'],
+                            arch=arch,
+                            boot=FlavorBoot(),
+                            ssh=PoolImageSSHInfo(),
+                            supports_kickstart=False,
+                        )
+                    )
                 except KeyError as exc:
-                    return Error(Failure.from_exc(
-                        'malformed image description',
-                        exc,
-                        image_info=r_images_list.unwrap()
-                    ))
+                    return Error(
+                        Failure.from_exc('malformed image description', exc, image_info=r_images_list.unwrap())
+                    )
 
             log_dict_yaml(self.logger.debug, 'image filters', filters)
             log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
@@ -370,19 +364,18 @@ class IBMCloudVPCDriver(PoolDriver):
                 r_flavors_list = session.run(
                     self.logger,
                     ['is', 'instance-profiles', '--output', 'json'],
-                    commandname='ibmcloud.is-instance-profiles'
+                    commandname='ibmcloud.is-instance-profiles',
                 )
 
                 if r_flavors_list.is_error:
-                    return Error(Failure.from_failure(
-                        'failed to fetch flavors information',
-                        r_flavors_list.unwrap_error()))
+                    return Error(
+                        Failure.from_failure('failed to fetch flavors information', r_flavors_list.unwrap_error())
+                    )
 
             return Ok(cast(List[Dict[str, Any]], r_flavors_list.unwrap()))
 
         def _constructor(
-            logger: gluetool.log.ContextAdapter,
-            raw_flavor: Dict[str, Any]
+            logger: gluetool.log.ContextAdapter, raw_flavor: Dict[str, Any]
         ) -> Iterator[Result[Flavor, Failure]]:
             raw_disks = cast(List[Any], raw_flavor.get('disks', []))
 
@@ -392,9 +385,7 @@ class IBMCloudVPCDriver(PoolDriver):
 
             else:
                 # diskspace is reported in GB
-                disks = [
-                    FlavorDisk(size=UNITS.Quantity(int(raw_disks[0]['size']['value']), UNITS.gigabytes))
-                ]
+                disks = [FlavorDisk(size=UNITS.Quantity(int(raw_disks[0]['size']['value']), UNITS.gigabytes))]
 
                 if len(raw_disks) > 1:
                     disks.append(FlavorDisk(is_expansion=True, max_additional_items=len(raw_disks) - 1))
@@ -416,9 +407,7 @@ class IBMCloudVPCDriver(PoolDriver):
                 IBMCloudFlavor(
                     name=raw_flavor['name'],
                     id=raw_flavor['name'],
-                    cpu=FlavorCpu(
-                        processors=int(raw_flavor['vcpu_count']['value'])
-                    ),
+                    cpu=FlavorCpu(processors=int(raw_flavor['vcpu_count']['value'])),
                     memory=UNITS.Quantity(int(raw_flavor['memory']['value']), UNITS.gibibytes),
                     disk=FlavorDisks(disks),
                     network=FlavorNetworks(networks),
@@ -429,15 +418,11 @@ class IBMCloudVPCDriver(PoolDriver):
             )
 
         return self.do_fetch_pool_flavor_info(
-            self.logger,
-            _fetch,
-            lambda raw_flavor: cast(str, raw_flavor['name']),
-            _constructor
+            self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
     def fetch_pool_resources_metrics(
-        self,
-        logger: gluetool.log.ContextAdapter
+        self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
         r_resources = super().fetch_pool_resources_metrics(logger)
 
@@ -452,31 +437,26 @@ class IBMCloudVPCDriver(PoolDriver):
             # Resource usage - instances and flavors
             def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
                 r_list_instances = session.run(
-                    logger,
-                    ['is', 'instances', '--json'],
-                    commandname='ibm.is.instances-list'
+                    logger, ['is', 'instances', '--json'], commandname='ibm.is.instances-list'
                 )
 
                 if r_list_instances.is_error:
-                    return Error(Failure.from_failure(
-                        'Could not list instances',
-                        r_list_instances.unwrap_error()
-                    ))
+                    return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
 
-                return Ok([
-                    raw_instance
-                    for raw_instance in cast(List[Dict[str, Any]], r_list_instances.unwrap())
-                    if subnet_id in [
-                        nics.get('subnet', {}).get('id')
-                        for nics in raw_instance.get('network_interfaces', [])
+                return Ok(
+                    [
+                        raw_instance
+                        for raw_instance in cast(List[Dict[str, Any]], r_list_instances.unwrap())
+                        if subnet_id
+                        in [nics.get('subnet', {}).get('id') for nics in raw_instance.get('network_interfaces', [])]
                     ]
-                ])
+                )
 
             def _update_instance_usage(
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
                 raw_instance: Dict[str, Any],
-                flavor: Optional[Flavor]
+                flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
                 assert usage.instances is not None  # narrow type
                 assert usage.cores is not None  # narrow type
@@ -501,7 +481,7 @@ class IBMCloudVPCDriver(PoolDriver):
                 _fetch_instances,
                 # TODO: once we find the flavor name, we can update its usage.
                 lambda raw_instance: 'dummy-flavor-name-does-not-exist',
-                _update_instance_usage
+                _update_instance_usage,
             )
 
             if r_instances_usage.is_error:
@@ -509,9 +489,7 @@ class IBMCloudVPCDriver(PoolDriver):
 
             # Get pool network metrics
             r_show_network = session.run(
-                logger,
-                ['is', 'subnet', subnet_id, '--json'],
-                commandname='ibmcloud.is.show-network'
+                logger, ['is', 'subnet', subnet_id, '--json'], commandname='ibmcloud.is.show-network'
             )
             if r_show_network.is_error:
                 return Error(Failure.from_failure('Could not get network metrics', r_show_network.unwrap_error()))
@@ -520,19 +498,18 @@ class IBMCloudVPCDriver(PoolDriver):
 
             # drop network address and broadcast
             resources.limits.networks[subnet_id] = PoolNetworkResources(
-                addresses=int(network['total_ipv4_address_count']) - 2)
+                addresses=int(network['total_ipv4_address_count']) - 2
+            )
             # It's expected that used addresses won't precisely match number of instances on this network, as some
             # ips from the subnet range are additionally reserved for dns/dhcp/etc
             resources.usage.networks[subnet_id] = PoolNetworkResources(
-                addresses=int(network['total_ipv4_address_count']) - int(network['available_ipv4_address_count']))
+                addresses=int(network['total_ipv4_address_count']) - int(network['available_ipv4_address_count'])
+            )
 
         return Ok(resources)
 
     def can_acquire(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
         """
         Find our whether this driver can provision a guest that would satisfy
@@ -586,19 +563,19 @@ class IBMCloudVPCDriver(PoolDriver):
         if not pairs:
             return Ok(CanAcquire.cannot('no suitable image/instance_type combination found'))
 
-        log_dict_yaml(logger.info, 'available image/instance_type combinations', [
-            {
-                'instance_type': instance_type.serialize(),
-                'image': image.serialize()
-            } for image, instance_type in pairs
-        ])
+        log_dict_yaml(
+            logger.info,
+            'available image/instance_type combinations',
+            [
+                {'instance_type': instance_type.serialize(), 'image': image.serialize()}
+                for image, instance_type in pairs
+            ],
+        )
 
         return Ok(CanAcquire())
 
     def map_image_name_to_image_info(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        imagename: str
+        self, logger: gluetool.log.ContextAdapter, imagename: str
     ) -> Result[PoolImageInfo, Failure]:
         return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
@@ -607,11 +584,10 @@ class IBMCloudVPCDriver(PoolDriver):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: IBMCloudVPCPoolImageInfo
+        image: IBMCloudVPCPoolImageInfo,
     ) -> Result[IBMCloudFlavor, Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
-            logger,
-            guest_request.environment
+            logger, guest_request.environment
         )
 
         if r_suitable_flavors.is_error:
@@ -619,28 +595,18 @@ class IBMCloudVPCDriver(PoolDriver):
 
         suitable_flavors = cast(List[IBMCloudFlavor], r_suitable_flavors.unwrap())
 
-        suitable_flavors = self.filter_flavors_image_arch(
-            logger,
-            session,
-            guest_request,
-            image,
-            suitable_flavors
-        )
+        suitable_flavors = self.filter_flavors_image_arch(logger, session, guest_request, image, suitable_flavors)
 
         # FIXME The whole default flavor dance is identical between Azure / aws / openstack / now ibmcloud and is
         # the candidate for generalization.
         if not suitable_flavors:
             if self.pool_config.get('use-default-flavor-when-no-suitable', True):
                 guest_request.log_warning_event(
-                    logger,
-                    session,
-                    'no suitable flavors, using default',
-                    poolname=self.poolname
+                    logger, session, 'no suitable flavors, using default', poolname=self.poolname
                 )
 
                 r_default_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(
-                    logger,
-                    self.pool_config['default-flavor']
+                    logger, self.pool_config['default-flavor']
                 )
 
                 if r_default_flavor.is_error:
@@ -648,31 +614,19 @@ class IBMCloudVPCDriver(PoolDriver):
 
                 return Ok(cast(IBMCloudFlavor, r_default_flavor.unwrap()))
 
-            guest_request.log_warning_event(
-                logger,
-                session,
-                'no suitable flavors',
-                poolname=self.poolname
-            )
+            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
 
             return Error(Failure('no suitable flavor'))
 
         if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
             logger.info('default flavor among suitable ones, using it')
 
-            return Ok([
-                flavor
-                for flavor in suitable_flavors
-                if flavor.name == self.pool_config['default-flavor']
-            ][0])
+            return Ok([flavor for flavor in suitable_flavors if flavor.name == self.pool_config['default-flavor']][0])
 
         return Ok(suitable_flavors[0])
 
     def acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified
@@ -695,12 +649,8 @@ class IBMCloudVPCDriver(PoolDriver):
         )
 
     def _do_acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-
         # FIXME Again, that is massive code duplication -> same flavor/image pairs choosing algo is happeing in
         # other drivers.
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
@@ -729,22 +679,15 @@ class IBMCloudVPCDriver(PoolDriver):
         if not pairs:
             return Error(Failure('no suitable image/flavor combination found'))
 
-        log_dict_yaml(logger.info, 'available image/flavor combinations', [
-            {
-                'flavor': flavor.serialize(),
-                'image': image.serialize()
-            } for image, flavor in pairs
-        ])
+        log_dict_yaml(
+            logger.info,
+            'available image/flavor combinations',
+            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
+        )
 
         image, instance_type = pairs[0]
 
-        self.log_acquisition_attempt(
-            logger,
-            session,
-            guest_request,
-            flavor=instance_type,
-            image=image
-        )
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=instance_type, image=image)
 
         r_tags = self.get_guest_tags(logger, session, guest_request)
 
@@ -756,7 +699,7 @@ class IBMCloudVPCDriver(PoolDriver):
         # A combination of ArtemisGuestLabel-ArtemisGuestName doesn't pass the ibmcloud max name length, so let's cut
         # ArtemisGuestName to the first section and use this fragment together with ArtemisGuestLabel. This way the
         # result is definitely unique even on multiple simultaneous create requests for the same pool
-        instance_name = f"{tags['ArtemisGuestLabel']}-{tags['ArtemisGuestName'].split('-')[0]}"
+        instance_name = f'{tags["ArtemisGuestLabel"]}-{tags["ArtemisGuestName"].split("-")[0]}'
 
         def _create(user_data_file: Optional[str] = None) -> Result[JSONType, Failure]:
             # get VPC id
@@ -764,11 +707,14 @@ class IBMCloudVPCDriver(PoolDriver):
                 r_subnet_show = session.run(
                     logger,
                     ['is', 'subnet', self.pool_config['subnet-id'], '--output', 'json'],
-                    commandname='ibmcloud-show-subnet'
+                    commandname='ibmcloud-show-subnet',
                 )
                 if r_subnet_show.is_error:
-                    return Error(Failure.from_failure('Failed to execute show subnet details command',
-                                                      r_subnet_show.unwrap_error()))
+                    return Error(
+                        Failure.from_failure(
+                            'Failed to execute show subnet details command', r_subnet_show.unwrap_error()
+                        )
+                    )
 
                 try:
                     vpc_id = cast(Dict[str, Any], r_subnet_show.unwrap())['vpc']['id']
@@ -782,36 +728,40 @@ class IBMCloudVPCDriver(PoolDriver):
                 else:
                     # let's take boot partition size from the driver config
                     if 'default-root-disk-size' in self.pool_config:
-                        root_disk_size = UNITS.Quantity(self.pool_config["default-root-disk-size"], UNITS.gibibytes)
+                        root_disk_size = UNITS.Quantity(self.pool_config['default-root-disk-size'], UNITS.gibibytes)
 
                 # Now we are all set to create an instance
                 create_cmd_args = [
-                    'is', 'instance-create',
+                    'is',
+                    'instance-create',
                     instance_name,
                     vpc_id,
                     self.pool_config['zone'],
                     instance_type.id,
                     self.pool_config['subnet-id'],
-                    '--image', image.id,
+                    '--image',
+                    image.id,
                     '--allow-ip-spoofing=false',
-                    '--keys', self.pool_config['master-key-name'],
-                    '--output', 'json',
+                    '--keys',
+                    self.pool_config['master-key-name'],
+                    '--output',
+                    'json',
                 ]
                 # If root_disk_size is specified will be passing specific --volume details
                 if root_disk_size:
-                    boot_volume_specs = {"name": instance_name,
-                                         "volume": {"capacity": int(root_disk_size.to('GiB').magnitude),
-                                                    "profile": {"name": "general-purpose"}}}
+                    boot_volume_specs = {
+                        'name': instance_name,
+                        'volume': {
+                            'capacity': int(root_disk_size.to('GiB').magnitude),
+                            'profile': {'name': 'general-purpose'},
+                        },
+                    }
                     create_cmd_args += ['--boot-volume', json.dumps(boot_volume_specs)]
 
                 if user_data_file:
                     create_cmd_args += ['--user-data', f'@{user_data_file}']
 
-                r_instance_create = session.run(
-                    logger,
-                    create_cmd_args,
-                    commandname='ibmcloud.instance-create'
-                )
+                r_instance_create = session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
 
                 if r_instance_create.is_error:
                     return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
@@ -819,8 +769,9 @@ class IBMCloudVPCDriver(PoolDriver):
 
         r_post_install_script = self.generate_post_install_script(guest_request)
         if r_post_install_script.is_error:
-            return Error(Failure.from_failure('Could not generate post-install script',
-                                              r_post_install_script.unwrap_error()))
+            return Error(
+                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+            )
 
         post_install_script = r_post_install_script.unwrap()
         if post_install_script:
@@ -837,18 +788,16 @@ class IBMCloudVPCDriver(PoolDriver):
         if not created['id']:
             return Error(Failure('Instance id not found'))
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.PENDING,
-            pool_data=IBMCloudPoolData(instance_id=created['id'], instance_name=created['name']),
-            delay_update=r_delay.unwrap(),
-            ssh_info=image.ssh
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=IBMCloudPoolData(instance_id=created['id'], instance_name=created['name']),
+                delay_update=r_delay.unwrap(),
+                ssh_info=image.ssh,
+            )
+        )
 
-    def _show_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[Any, Failure]:
+    def _show_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[Any, Failure]:
         instance_id = guest_request.pool_data.mine(self, IBMCloudPoolData).instance_id
         res: Dict[str, Any] = {}
 
@@ -857,39 +806,30 @@ class IBMCloudVPCDriver(PoolDriver):
 
         with IBMCloudSession(logger, self) as session:
             r_instance_info = session.run(
-                logger,
-                ['is', 'instance', instance_id, '--output', 'json'],
-                commandname='ibmcloud.vm-show')
+                logger, ['is', 'instance', instance_id, '--output', 'json'], commandname='ibmcloud.vm-show'
+            )
 
             if r_instance_info.is_error:
-                return Error(Failure.from_failure(
-                    'failed to fetch instance information',
-                    r_instance_info.unwrap_error()
-                ))
+                return Error(
+                    Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error())
+                )
 
             res = cast(Dict[str, Any], r_instance_info.unwrap())
 
             # Now send another request to resource api to retrieve tags information
-            r_resource_info = session.run(
-                logger,
-                ['resource', 'search', f'name:{res["name"]}', '--output', 'json']
-            )
+            r_resource_info = session.run(logger, ['resource', 'search', f'name:{res["name"]}', '--output', 'json'])
 
             if r_resource_info.is_error:
-                return Error(Failure.from_failure(
-                    'failed to fetch resource information',
-                    r_resource_info.unwrap_error()
-                ))
+                return Error(
+                    Failure.from_failure('failed to fetch resource information', r_resource_info.unwrap_error())
+                )
 
             res['tags'] = cast(Dict[str, Any], r_resource_info.unwrap()).get('tags')
 
         return Ok(res)
 
     def update_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Called for unifinished guest. What ``acquire_guest`` started, this method can complete. By returning a guest
@@ -934,12 +874,15 @@ class IBMCloudVPCDriver(PoolDriver):
                 r_tag_instance = ibm_session.run(
                     logger,
                     [
-                        'resource', 'tag-attach',
-                        '--tag-names', ','.join(_serialize_tags(tags)),
-                        '--resource-name', output['name'],
+                        'resource',
+                        'tag-attach',
+                        '--tag-names',
+                        ','.join(_serialize_tags(tags)),
+                        '--resource-name',
+                        output['name'],
                     ],
                     json_format=False,
-                    commandname='ibmcloud.tag-attach'
+                    commandname='ibmcloud.tag-attach',
                 )
 
                 if r_tag_instance.is_error:
@@ -949,36 +892,31 @@ class IBMCloudVPCDriver(PoolDriver):
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
         if status == 'starting':
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=pool_data,
-                delay_update=r_delay.unwrap()
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.PENDING, pool_data=pool_data, delay_update=r_delay.unwrap()
+                )
+            )
 
         if status == 'running':
             # Currently there is no support for public ips, so just taking primary ip
             ip_address = output['primary_network_interface']['primary_ip'].get('address')
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.COMPLETE,
-                pool_data=pool_data,
-                address=ip_address
-            ))
+            return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=ip_address))
 
         # Let's consider all other states as something unexpected and thus a failure
         PoolMetrics.inc_error(self.poolname, IBMCloudVPCErrorCauses.UNEXPECTED_INSTANCE_STATE)
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.CANCEL,
-            pool_data=pool_data,
-            pool_failures=[Failure(f'instance ended up in an unexpected state "{status}"')]
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.CANCEL,
+                pool_data=pool_data,
+                pool_failures=[Failure(f'instance ended up in an unexpected state "{status}"')],
+            )
+        )
 
     def release_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -1009,18 +947,12 @@ class IBMCloudVPCDriver(PoolDriver):
         # ]
 
         return self.dispatch_resource_cleanup(
-            logger,
-            session,
-            IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id),
-            guest_request=guest_request
+            logger, session, IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id), guest_request=guest_request
         )
 
     def release_pool_resources(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        raw_resource_ids: SerializedPoolResourcesIDs
+        self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
-
         resource_ids = IBMCloudPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.instance_id is not None:
@@ -1031,18 +963,14 @@ class IBMCloudVPCDriver(PoolDriver):
                     logger,
                     ['is', 'instance-delete', resource_ids.instance_id, '-f'],
                     json_format=False,
-                    commandname='ibmcloud.instance-delete'
+                    commandname='ibmcloud.instance-delete',
                 )
                 if r_delete_instance.is_error:
                     return Error(Failure.from_failure('Failed to cleanup instance', r_delete_instance.unwrap_error()))
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
-    def trigger_reboot(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[None, Failure]:
+    def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 
         assert pool_data.instance_id is not None
@@ -1051,13 +979,11 @@ class IBMCloudVPCDriver(PoolDriver):
             r_output = session.run(
                 logger,
                 ['is', 'instance-reboot', pool_data.instance_id, '--force', '--now-wait'],
-                commandname='ibmcloud.instance-reboot')
+                commandname='ibmcloud.instance-reboot',
+            )
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to trigger instance reboot',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to trigger instance reboot', r_output.unwrap_error()))
 
         return Ok(None)
 

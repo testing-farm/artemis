@@ -62,11 +62,7 @@ class GuestResponse_v0_0_72(BaseModel):  # noqa: N801
             shelf=guest.shelfname,
             environment=guest.environment.serialize(),
             address=guest.address,
-            ssh=GuestSSHInfo(
-                username=guest.ssh_username,
-                port=guest.ssh_port,
-                keyname=guest.ssh_keyname
-            ),
+            ssh=GuestSSHInfo(username=guest.ssh_username, port=guest.ssh_port, keyname=guest.ssh_keyname),
             state=GuestState(guest.state),
             state_mtime=guest.state_mtime,
             mtime=guest.mtime,
@@ -81,8 +77,14 @@ class GuestResponse_v0_0_72(BaseModel):  # noqa: N801
             watchdog_period_delay=guest.watchdog_period_delay,
             poolname=guest.poolname,
             last_poolname=guest.last_poolname,
-            security_group_rules_ingress=([rule.serialize() for rule in guest.security_group_rules_ingress]
-                                          if guest.security_group_rules_ingress else None),
-            security_group_rules_egress=([rule.serialize() for rule in guest.security_group_rules_egress]
-                                         if guest.security_group_rules_egress else None)
+            security_group_rules_ingress=(
+                [rule.serialize() for rule in guest.security_group_rules_ingress]
+                if guest.security_group_rules_ingress
+                else None
+            ),
+            security_group_rules_egress=(
+                [rule.serialize() for rule in guest.security_group_rules_egress]
+                if guest.security_group_rules_egress
+                else None
+            ),
         )

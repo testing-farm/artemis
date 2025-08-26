@@ -38,5 +38,5 @@ def hook_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE(  # noqa: N802
         pool,
         environment,
         r_needle_template.unwrap(),
-        mapping_filepath=os.path.abspath(r_mapping_filepath.unwrap())
+        mapping_filepath=os.path.abspath(r_mapping_filepath.unwrap()),
     )

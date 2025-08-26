@@ -14,7 +14,7 @@ IBMVPC_TAGS_EXAMPLES: Dict[str, str] = {
     'tag4': '',
     'tag5': 'foo bar',
     'tag6': 'foo "bar"',
-    'tag7': 'foo \'bar\'',
+    'tag7': "foo 'bar'",
     'tag8': 'https://foo.bar/~baz',
     # This one is exactly matching the limit...
     'tag9': 'a' * (tft.artemis.drivers.ibmcloudvpc.TAG_MAX_LENGTH - 5),
@@ -23,7 +23,7 @@ IBMVPC_TAGS_EXAMPLES: Dict[str, str] = {
     # And this one has a name that is way too long.
     'c' * tft.artemis.drivers.ibmcloudvpc.TAG_MAX_LENGTH: 'ddddd',
     # Some real-world usage
-    'COLDSTORE_URL': f'http://artifacts.osci.redhat.com//baseos-ci//brew-build/66/53/25/66532507//https___{"f" * 45}-ci-test-brew-ts_tmt-artemis/7663//'  # noqa: E501
+    'COLDSTORE_URL': f'http://artifacts.osci.redhat.com//baseos-ci//brew-build/66/53/25/66532507//https___{"f" * 45}-ci-test-brew-ts_tmt-artemis/7663//',  # noqa: E501
 }
 
 
@@ -40,5 +40,5 @@ def test_serialize_tags() -> None:
         f'tag9:{"a" * (tft.artemis.drivers.ibmcloudvpc.TAG_MAX_LENGTH - 5)}',
         f'tag10:{"a" * (tft.artemis.drivers.ibmcloudvpc.TAG_MAX_LENGTH - 6)}',
         'c' * tft.artemis.drivers.ibmcloudvpc.TAG_MAX_LENGTH,
-        f'COLDSTORE_URL:http___artifacts.osci.redhat.com__baseos-ci__brew-build_66_53_25_66532507__https___{"f" * 31}'
+        f'COLDSTORE_URL:http___artifacts.osci.redhat.com__baseos-ci__brew-build_66_53_25_66532507__https___{"f" * 31}',
     ]

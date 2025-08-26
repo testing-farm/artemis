@@ -41,7 +41,7 @@ import sphinx_typlog_theme
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autodoc.typehints',
-    'sphinx_autodoc_typehints'
+    'sphinx_autodoc_typehints',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -114,7 +114,7 @@ html_theme_path = [sphinx_typlog_theme.get_path()]
 # documentation.
 #
 html_theme_options = {
-  'logo': 'logo.png',
+    'logo': 'logo.png',
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,
@@ -128,6 +128,11 @@ html_static_path = ['_static']
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'artemis-server-doc'
 
-autodoc_default_flags = ['members', 'undoc-members', 'show-inheritance', 'private-members']
+autodoc_default_flags = [
+    'members',
+    'undoc-members',
+    'show-inheritance',
+    'private-members',
+]
 # This one works, but it's a bit uglier than the default value (`signature`).
 # autodoc_typehints = 'description'

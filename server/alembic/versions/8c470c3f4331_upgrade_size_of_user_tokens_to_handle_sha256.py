@@ -24,33 +24,14 @@ depends_on = None
 # would render them unusable. Therefore both upgrade and downgrade work with string columns without any particular
 # size, allowing the downgrade to proceed.
 
+
 def upgrade() -> None:
     with op.batch_alter_table('users', schema=None) as batch_op:
-        batch_op.alter_column(
-            'admin_token',
-            type_=sa.String(),
-            server_default='undefined',
-            nullable=False
-        )
-        batch_op.alter_column(
-            'provisioning_token',
-            type_=sa.String(),
-            server_default='undefined',
-            nullable=False
-        )
+        batch_op.alter_column('admin_token', type_=sa.String(), server_default='undefined', nullable=False)
+        batch_op.alter_column('provisioning_token', type_=sa.String(), server_default='undefined', nullable=False)
 
 
 def downgrade() -> None:
     with op.batch_alter_table('users', schema=None) as batch_op:
-        batch_op.alter_column(
-            'admin_token',
-            type_=sa.String(),
-            server_default='undefined',
-            nullable=False
-        )
-        batch_op.alter_column(
-            'provisioning_token',
-            type_=sa.String(),
-            server_default='undefined',
-            nullable=False
-        )
+        batch_op.alter_column('admin_token', type_=sa.String(), server_default='undefined', nullable=False)
+        batch_op.alter_column('provisioning_token', type_=sa.String(), server_default='undefined', nullable=False)

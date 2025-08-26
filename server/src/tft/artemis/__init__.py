@@ -81,9 +81,7 @@ __VERSION__ = pkg_resources.get_distribution('tft-artemis').version
 # Install additional Jinja2 filters. This must be done before we call `render_template` for the first
 # time, because Jinja2 reuses anonymous environments.
 
-jinja2.filters.FILTERS.update(
-    jinja2_ansible_filters.core_filters.FilterModule().filters()
-)
+jinja2.filters.FILTERS.update(jinja2_ansible_filters.core_filters.FilterModule().filters())
 
 # Now we can import our stuff without any fear we'd miss DEFAULT_FILTERS update
 from . import (  # noqa: E402
@@ -110,12 +108,7 @@ if TYPE_CHECKING:
     from .tasks import TaskCall
 
 stackprinter.set_excepthook(
-    style='darkbg2',
-    source_lines=7,
-    show_signature=True,
-    show_vals='all',
-    reverse=False,
-    add_summary=False
+    style='darkbg2', source_lines=7, show_signature=True, show_vals='all', reverse=False, add_summary=False
 )
 
 
@@ -129,18 +122,9 @@ DATETIME_FMT: str = '%Y-%m-%dT%H:%M:%S.%f'
 
 ExceptionInfoType = Union[
     # returned by sys.exc_info()
-    Tuple[
-        Type[BaseException],
-        BaseException,
-        Optional[TracebackType]
-    ],
-
+    Tuple[Type[BaseException], BaseException, Optional[TracebackType]],
     # this is way of saying "nothing happened, everything's fine"
-    Tuple[
-        None,
-        None,
-        None
-    ]
+    Tuple[None, None, None],
 ]
 
 # Type variable used in generic types
@@ -181,10 +165,7 @@ def get_logger() -> gluetool.log.ContextAdapter:
 
     gluetool.color.switch(True)
 
-    return gluetool.log.Logging.setup_logger(
-        level=KNOB_LOGGING_LEVEL.value,
-        json_output=KNOB_LOGGING_JSON.value
-    )
+    return gluetool.log.Logging.setup_logger(level=KNOB_LOGGING_LEVEL.value, json_output=KNOB_LOGGING_JSON.value)
 
 
 # This knob needs to live in this module, because its default value includes
@@ -200,7 +181,7 @@ _KNOB_RELEASE: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_RELEASE',
     cast_from_str=str,
-    default=__VERSION__
+    default=__VERSION__,
 )
 
 
@@ -210,6 +191,7 @@ def get_release() -> str:
     # Fixing it will take more work than simple move of functions around.
 
     return f'artemis@{__VERSION__}'
+
 
 #    r_release = render_template(_KNOB_RELEASE.value, __VERSION__=__VERSION__)
 #
@@ -258,8 +240,7 @@ class Sentry:
         r_integrations = KNOB_SENTRY_INTEGRATIONS.get_value()
 
         if r_integrations.is_error:
-            r_integrations.unwrap_error() \
-                .handle(logger, label='Failed to load Sentry integrations', sentry=False)
+            r_integrations.unwrap_error().handle(logger, label='Failed to load Sentry integrations', sentry=False)
 
             return []
 
@@ -274,23 +255,23 @@ class Sentry:
             failure_details: Dict[str, Any] = {
                 'integration_name': integration_name,
                 'module_name': module_name,
-                'class_name': class_name
+                'class_name': class_name,
             }
 
             try:
                 module = importlib.import_module(module_name)
 
             except Exception as exc:
-                Failure.from_exc('Failed to import Sentry integration', exc, **failure_details) \
-                    .handle(logger, sentry=False)
+                Failure.from_exc('Failed to import Sentry integration', exc, **failure_details).handle(
+                    logger, sentry=False
+                )
 
                 return []
 
             klass = getattr(module, class_name, None)
 
             if klass is None:
-                Failure('Failed to find Sentry integration', **failure_details) \
-                    .handle(logger, sentry=False)
+                Failure('Failed to find Sentry integration', **failure_details).handle(logger, sentry=False)
 
                 return []
 
@@ -303,8 +284,9 @@ class Sentry:
                     integration = klass()
 
             except Exception as exc:
-                Failure.from_exc('Failed to instantiate Sentry integration', exc, **failure_details) \
-                    .handle(logger, sentry=False)
+                Failure.from_exc('Failed to instantiate Sentry integration', exc, **failure_details).handle(
+                    logger, sentry=False
+                )
 
                 return []
 
@@ -325,15 +307,14 @@ class Sentry:
         self.enabled = True
 
         if KNOB_SENTRY_DISABLE_CERT_VERIFICATION.value is True:
+
             def _get_pool_options(
-                self: sentry_sdk.transport.HttpTransport,
-                *args: Any,
-                **kwargs: Any
+                self: sentry_sdk.transport.HttpTransport, *args: Any, **kwargs: Any
             ) -> Dict[str, Any]:
                 return {
                     # num_pools is a bit cryptic, but comes from the original method
                     'num_pools': 2,
-                    'cert_reqs': 'CERT_NONE'
+                    'cert_reqs': 'CERT_NONE',
                 }
 
             sentry_sdk.transport.HttpTransport._get_pool_options = _get_pool_options  # type: ignore[method-assign]
@@ -359,14 +340,11 @@ class Sentry:
             # integrations.
             default_integrations=False,
             enable_db_query_source=False,
-
             # Issues
             sample_rate=KNOB_SENTRY_ISSUES_SAMPLE_RATE.value,
-
             # Tracing
             enable_tracing=KNOB_TRACING_ENABLED.value,
             traces_sample_rate=KNOB_SENTRY_TRACING_SAMPLE_RATE.value,
-
             # Profiling
             # We do not use Sentry for profiling
             profiles_sample_rate=0.0,
@@ -407,12 +385,7 @@ class Sentry:
         return contexts
 
     @classmethod
-    def _apply_tracing_info(
-        cls,
-        span: SpanT,
-        tags: Dict[str, Any],
-        data: Dict[str, Any]
-    ) -> SpanT:
+    def _apply_tracing_info(cls, span: SpanT, tags: Dict[str, Any], data: Dict[str, Any]) -> SpanT:
         for name, value in tags.items():
             span.set_tag(name, value)
 
@@ -430,7 +403,7 @@ class Sentry:
         scope: Optional[sentry_sdk.Scope] = None,
         tags: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
     ) -> Generator[sentry_sdk.tracing.Transaction, None, None]:
         """
         Start new tracing transaction.
@@ -455,20 +428,10 @@ class Sentry:
         with scope.start_transaction(op=op.value, name=description) as transaction:
             assert isinstance(transaction, sentry_sdk.tracing.Transaction)
 
-            for name, value in {
-                **cls.get_default_contexts(),
-                **(context or {})
-            }.items():
+            for name, value in {**cls.get_default_contexts(), **(context or {})}.items():
                 transaction.set_context(name, value)
 
-            yield cls._apply_tracing_info(
-                transaction,
-                {
-                    **cls.get_default_tags(),
-                    **(tags or {})
-                },
-                data or {}
-            )
+            yield cls._apply_tracing_info(transaction, {**cls.get_default_tags(), **(tags or {})}, data or {})
 
     @classmethod
     @contextlib.contextmanager
@@ -478,7 +441,7 @@ class Sentry:
         description: Optional[str] = None,
         scope: Optional[sentry_sdk.Scope] = None,
         tags: Optional[Dict[str, Any]] = None,
-        data: Optional[Dict[str, Any]] = None
+        data: Optional[Dict[str, Any]] = None,
     ) -> Generator[sentry_sdk.tracing.Span, None, None]:
         """
         Start new tracing span.
@@ -499,14 +462,7 @@ class Sentry:
         scope = scope or sentry_sdk.get_current_scope()
 
         with scope.start_span(op=op.value, name=description) as span:
-            yield cls._apply_tracing_info(
-                span,
-                {
-                    **cls.get_default_tags(),
-                    **(tags or {})
-                },
-                data or {}
-            )
+            yield cls._apply_tracing_info(span, {**cls.get_default_tags(), **(tags or {})}, data or {})
 
 
 SENTRY = Sentry()
@@ -678,15 +634,8 @@ def format_dict_yaml(data: Any) -> str:
     return stream.getvalue()
 
 
-def log_dict_yaml(
-    writer: gluetool.log.LoggingFunctionType,
-    intro: str,
-    data: Any
-) -> None:
-    writer(f'{intro}:\n{format_dict_yaml(data)}', extra={
-        'raw_intro': intro,
-        'raw_struct': data
-    })
+def log_dict_yaml(writer: gluetool.log.LoggingFunctionType, intro: str, data: Any) -> None:
+    writer(f'{intro}:\n{format_dict_yaml(data)}', extra={'raw_intro': intro, 'raw_struct': data})
 
 
 def process_output_to_str(output: gluetool.utils.ProcessOutput, stream: str = 'stdout') -> Optional[str]:
@@ -739,7 +688,7 @@ class Failure:
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
-        **details: Any
+        **details: Any,
     ):
         self.message = message
         self.exc_info = exc_info
@@ -780,11 +729,7 @@ class Failure:
             # This is what `traceback.extract_tb` does, but `extract_tb` does not let us save frame locals,
             # and we would like to see them, at least in Sentry.
             self.traceback = _traceback.StackSummary.extract(
-                cast(
-                    Generator[Tuple[FrameType, int], None, None],
-                    _traceback.walk_tb(exc_info[2])
-                ),
-                capture_locals=True
+                cast(Generator[Tuple[FrameType, int], None, None], _traceback.walk_tb(exc_info[2])), capture_locals=True
             )
             self.traceback.reverse()
 
@@ -799,11 +744,7 @@ class Failure:
             f = sys._getframe().f_back
 
             self.traceback = _traceback.StackSummary.extract(
-                cast(
-                    Generator[Tuple[FrameType, int], None, None],
-                    _traceback.walk_stack(f)
-                ),
-                capture_locals=True
+                cast(Generator[Tuple[FrameType, int], None, None], _traceback.walk_stack(f)), capture_locals=True
             )
             self.traceback.reverse()
 
@@ -821,15 +762,11 @@ class Failure:
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
-        **details: Any
+        **details: Any,
     ) -> 'Failure':
         return Failure(
             message,
-            exc_info=(
-                exc.__class__,
-                exc,
-                exc.__traceback__
-            ),
+            exc_info=(exc.__class__, exc, exc.__traceback__),
             caused_by=caused_by,
             recoverable=recoverable,
             fail_guest_request=fail_guest_request,
@@ -837,7 +774,7 @@ class Failure:
             command_output=command_output,
             environment=environment,
             task_call=task_call,
-            **details
+            **details,
         )
 
     @classmethod
@@ -851,7 +788,7 @@ class Failure:
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
-        **details: Any
+        **details: Any,
     ) -> 'Failure':
         """
         Create a new ``Failure`` instance, representing a higher-level view of the problem that's been
@@ -878,7 +815,7 @@ class Failure:
             command_output=command_output,
             environment=environment,
             task_call=task_call,
-            **details
+            **details,
         )
 
     def update(
@@ -888,7 +825,7 @@ class Failure:
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
-        **details: Any
+        **details: Any,
     ) -> 'Failure':
         self.details.update(details)
 
@@ -907,11 +844,7 @@ class Failure:
         return self
 
     @classmethod
-    def _exception_details(
-        cls,
-        exc: BaseException,
-        scrubbed_command: Optional[List[str]]
-    ) -> Dict[str, str]:
+    def _exception_details(cls, exc: BaseException, scrubbed_command: Optional[List[str]]) -> Dict[str, str]:
         # Special handling of GlueCommandError - when logged, it reports the full command,
         # possibly revealing credentials and other sensitive details.
         #
@@ -927,13 +860,10 @@ class Failure:
 
             return {
                 'instance': f'Command "{" ".join(scrubbed_command)}" failed with exit code {exc.output.exit_code}',
-                'type': 'GlueCommandError'
+                'type': 'GlueCommandError',
             }
 
-        return {
-            'instance': str(exc),
-            'type': str(type(exc))
-        }
+        return {'instance': str(exc), 'type': str(type(exc))}
 
     @property
     def command_output(self) -> Optional[gluetool.utils.ProcessOutput]:
@@ -970,15 +900,16 @@ class Failure:
             event_details['caused_by'] = self.caused_by.get_event_details()
 
         if self.sentry_event_url:
-            event_details['sentry'] = {
-                'event_id': self.sentry_event_id,
-                'event_url': self.sentry_event_url
-            }
+            event_details['sentry'] = {'event_id': self.sentry_event_id, 'event_url': self.sentry_event_url}
 
         return event_details
 
     @classmethod
-    def _serialize_traceback(cls, message: str, frames: _traceback.StackSummary, ) -> Dict[str, Any]:
+    def _serialize_traceback(
+        cls,
+        message: str,
+        frames: _traceback.StackSummary,
+    ) -> Dict[str, Any]:
         """
         Based on Sentry's stack trace serialization, this helper takes care of serializing
         a traceback saved by ``Failure`` instance itself, i.e. when there was no exception.
@@ -988,12 +919,8 @@ class Failure:
         # Sentry SDK uses several types to carry lines of code, deal with all of them.
         def _stringify(
             v: Union[
-                str,
-                sentry_sdk.utils.AnnotatedValue,
-                List[str],
-                List[Union[sentry_sdk.utils.AnnotatedValue, str]],
-                None
-            ]
+                str, sentry_sdk.utils.AnnotatedValue, List[str], List[Union[sentry_sdk.utils.AnnotatedValue, str]], None
+            ],
         ) -> Iterator[str]:
             if v is None:
                 yield ''
@@ -1032,11 +959,13 @@ class Failure:
                 pre_context, context_line, post_context = sentry_sdk.utils.get_lines_from_file(filename, lineno - 1)
 
                 # Pre/post context is supposed to be a list of lines, the context line a string.
-                frame_result.update({
-                    'pre_context': list(_stringify(pre_context)),
-                    'context_line': '\n'.join(_stringify(context_line)),
-                    'post_context': list(_stringify(post_context))
-                })
+                frame_result.update(
+                    {
+                        'pre_context': list(_stringify(pre_context)),
+                        'context_line': '\n'.join(_stringify(context_line)),
+                        'post_context': list(_stringify(post_context)),
+                    }
+                )
 
             if frame.locals:
                 frame_result['vars'] = frame.locals
@@ -1054,12 +983,8 @@ class Failure:
             # nice and good looking event.
             'type': message,
             'value': None,
-            'mechanism': {
-                'type': 'generic'
-            },
-            'stacktrace': {
-                'frames': result
-            }
+            'mechanism': {'type': 'generic'},
+            'stacktrace': {'frames': result},
         }
 
     def get_sentry_contexts(self) -> Dict[str, Dict[str, Any]]:
@@ -1069,7 +994,7 @@ class Failure:
         contexts['contexts'] = {
             'guestname': self.details.get('guestname'),
             'snapshotname': self.details.get('snapshotname'),
-            'poolname': self.details.get('poolname')
+            'poolname': self.details.get('poolname'),
         }
 
         return contexts
@@ -1113,14 +1038,12 @@ class Failure:
             # Convert our traceback to format understood by Sentry, and store it in `data['stacktrace']` where Sentry
             # expects it to find when generating the message for submission.
 
-            event.update({
-                'level': 'error',
-                'exception': {
-                    'values': [
-                        Failure._serialize_traceback(self.message, self.traceback)
-                    ]
+            event.update(
+                {
+                    'level': 'error',
+                    'exception': {'values': [Failure._serialize_traceback(self.message, self.traceback)]},
                 }
-            })
+            )
 
         if 'environment' in extra:
             extra['environment'] = extra['environment'].serialize()
@@ -1128,24 +1051,16 @@ class Failure:
         if 'task_call' in extra:
             extra['task_call'] = extra['task_call'].serialize()
 
-        event.update({
-            'message': f'Failure: {self.message}'
-        })
+        event.update({'message': f'Failure: {self.message}'})
 
-        tags.update({
-            key: value
-            for key, value in self.details.items()
-            if key.startswith(('api_request_', 'api_response_'))
-        })
+        tags.update(
+            {key: value for key, value in self.details.items() if key.startswith(('api_request_', 'api_response_'))}
+        )
 
         if self.caused_by:
             caused_by_data, caused_by_tags, caused_by_extra = self.caused_by.get_sentry_details()
 
-            extra['caused_by'] = {
-                'data': caused_by_data,
-                'tags': caused_by_tags,
-                'extra': caused_by_extra
-            }
+            extra['caused_by'] = {'data': caused_by_data, 'tags': caused_by_tags, 'extra': caused_by_extra}
 
         return event, tags, extra
 
@@ -1177,7 +1092,7 @@ class Failure:
 
             details['command_output'] = {
                 'stdout': process_output_to_str(command_output, stream='stdout'),
-                'stderr': process_output_to_str(command_output, stream='stderr')
+                'stderr': process_output_to_str(command_output, stream='stderr'),
             }
 
         if 'environment' in details:
@@ -1190,17 +1105,11 @@ class Failure:
             details['caused-by'] = self.caused_by.get_log_details()
 
         if self.sentry_event_url:
-            details['sentry'] = {
-                'event_id': self.sentry_event_id,
-                'event_url': self.sentry_event_url
-            }
+            details['sentry'] = {'event_id': self.sentry_event_id, 'event_url': self.sentry_event_url}
 
         return details
 
-    def _printable(
-        self,
-        label: str = _DEFAULT_FAILURE_LOG_LABEL
-    ) -> str:
+    def _printable(self, label: str = _DEFAULT_FAILURE_LOG_LABEL) -> str:
         return f'{label}\n\n{format_dict_yaml(self.get_log_details())}'
 
     def __str__(self) -> str:
@@ -1209,11 +1118,7 @@ class Failure:
     def __repr__(self) -> str:
         return f'<Failure: message="{self.message}">'
 
-    def log(
-        self,
-        log_fn: gluetool.log.LoggingFunctionType,
-        label: str = _DEFAULT_FAILURE_LOG_LABEL
-    ) -> None:
+    def log(self, log_fn: gluetool.log.LoggingFunctionType, label: str = _DEFAULT_FAILURE_LOG_LABEL) -> None:
         exc_info = self.exc_info if self.exc_info else (None, None, None)
 
         log_fn(self._printable(label=label), exc_info=exc_info)
@@ -1268,7 +1173,7 @@ class Failure:
         logger: gluetool.log.ContextAdapter,
         label: str = _DEFAULT_FAILURE_LOG_LABEL,
         sentry: bool = True,
-        **details: Any
+        **details: Any,
     ) -> None:
         self.details.update(details)
 
@@ -1283,10 +1188,7 @@ def get_config() -> Dict[str, Any]:
 
     return cast(
         Dict[str, Any],
-        gluetool.utils.load_yaml(
-            os.path.join(KNOB_CONFIG_DIRPATH.value, 'server.yml'),
-            logger=get_logger()
-        )
+        gluetool.utils.load_yaml(os.path.join(KNOB_CONFIG_DIRPATH.value, 'server.yml'), logger=get_logger()),
     )
 
 
@@ -1313,28 +1215,17 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
                 logger,
                 # TODO: worker_name made out of node & pid leads to way too many labels!
                 # worker_name
-                f'worker-{KNOB_COMPONENT.value}'
+                f'worker-{KNOB_COMPONENT.value}',
             )
         )
 
     if KNOB_WORKER_PROCESS_METRICS_ENABLED.value is True:
         from .knobs import KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK
 
-        middleware.append(
-            artemis_middleware.WorkerMetrics(
-                worker_name,
-                KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK.value
-            )
-        )
+        middleware.append(artemis_middleware.WorkerMetrics(worker_name, KNOB_WORKER_PROCESS_METRICS_UPDATE_TICK.value))
 
     if KNOB_WORKER_TRAFFIC_METRICS_ENABLED.value is True:
-        middleware.append(
-            artemis_middleware.WorkerTraffic(
-                logger,
-                get_cache(logger),
-                worker_name
-            )
-        )
+        middleware.append(artemis_middleware.WorkerTraffic(logger, get_cache(logger), worker_name))
 
     middleware += [
         artemis_middleware.AgeLimit(),
@@ -1347,15 +1238,14 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
         artemis_middleware.Prometheus(),
         artemis_middleware.Retries(),
         periodiq.PeriodiqMiddleware(),
-        artemis_middleware.SingletonTask(get_cache(logger))
+        artemis_middleware.SingletonTask(get_cache(logger)),
     ]
 
     return middleware
 
 
 def get_broker(
-    logger: gluetool.log.ContextAdapter,
-    application_name: Optional[str] = None
+    logger: gluetool.log.ContextAdapter, application_name: Optional[str] = None
 ) -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
     from .knobs import KNOB_BROKER_CONFIRM_DELIVERY, KNOB_BROKER_URL
 
@@ -1378,8 +1268,7 @@ def get_broker(
         parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
 
         parsed_query: Dict[str, Union[str, Dict[str, str]]] = {
-            k: v
-            for k, v in urllib.parse.parse_qsl(parsed_url.query)
+            k: v for k, v in urllib.parse.parse_qsl(parsed_url.query)
         }
 
         parsed_query['client_properties'] = client_properties
@@ -1390,15 +1279,13 @@ def get_broker(
             path=parsed_url.path,
             params=parsed_url.params,
             query=urllib.parse.urlencode(parsed_query),
-            fragment=parsed_url.fragment
+            fragment=parsed_url.fragment,
         ).geturl()
 
     logger.debug(f'final broker URL is {broker_url}')
 
     broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
-        confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value,
-        middleware=middleware,
-        url=broker_url
+        confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value, middleware=middleware, url=broker_url
     )
 
     dramatiq.set_broker(broker)
@@ -1409,10 +1296,7 @@ def get_broker(
 def get_cache(logger: gluetool.log.ContextAdapter) -> redis.Redis:
     from .knobs import KNOB_CACHE_URL
 
-    return cast(
-        Callable[[str], redis.Redis],
-        redis.Redis.from_url
-    )(KNOB_CACHE_URL.value)
+    return cast(Callable[[str], redis.Redis], redis.Redis.from_url)(KNOB_CACHE_URL.value)
 
 
 def get_db(logger: gluetool.log.ContextAdapter, application_name: Optional[str] = None) -> artemis_db.DB:
@@ -1427,17 +1311,8 @@ def get_db(logger: gluetool.log.ContextAdapter, application_name: Optional[str] 
 
     from .knobs import KNOB_DB_URL
 
-    with Sentry.start_span(
-        TracingOp.DB,
-        tags={
-            'appname': application_name
-        }
-    ):
-        return artemis_db.DB(
-            logger,
-            KNOB_DB_URL.value,
-            application_name=application_name
-        )
+    with Sentry.start_span(TracingOp.DB, tags={'appname': application_name}):
+        return artemis_db.DB(logger, KNOB_DB_URL.value, application_name=application_name)
 
 
 def safe_call(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> Result[T, Failure]:
@@ -1478,10 +1353,7 @@ def safe_call(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> Result[T
 
 
 def safe_call_and_handle(
-    logger: gluetool.log.ContextAdapter,
-    fn: Callable[P, T],
-    *args: P.args,
-    **kwargs: P.kwargs
+    logger: gluetool.log.ContextAdapter, fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs
 ) -> Optional[T]:
     """
     Call given function, with provided arguments. If the call fails, log the resulting failure before returning it.
@@ -1528,17 +1400,10 @@ def construct_validation_schema(data: Any) -> Result[JSONSchemaType, Failure]:
     :param data: raw YAML/JSON data representing the schema.
     """
 
-    r_schema = safe_call(
-        gluetool.utils.from_yaml,
-        data,
-        loader_type='safe'
-    )
+    r_schema = safe_call(gluetool.utils.from_yaml, data, loader_type='safe')
 
     if r_schema.is_error:
-        return Error(Failure.from_failure(
-            'failed to construct schema',
-            r_schema.unwrap_error()
-        ))
+        return Error(Failure.from_failure('failed to construct schema', r_schema.unwrap_error()))
 
     return Ok(cast(JSONSchemaType, r_schema.unwrap()))
 
@@ -1550,18 +1415,10 @@ def load_validation_schema(schema_path: str) -> Result[JSONSchemaType, Failure]:
     :param schema_path: path to a schema file.
     """
 
-    r_schema = safe_call(
-        gluetool.utils.load_yaml,
-        schema_path,
-        loader_type='safe'
-    )
+    r_schema = safe_call(gluetool.utils.load_yaml, schema_path, loader_type='safe')
 
     if r_schema.is_error:
-        return Error(Failure.from_failure(
-            'failed to load schema',
-            r_schema.unwrap_error(),
-            schema_path=schema_path
-        ))
+        return Error(Failure.from_failure('failed to load schema', r_schema.unwrap_error(), schema_path=schema_path))
 
     return Ok(cast(JSONSchemaType, r_schema.unwrap()))
 
@@ -1610,7 +1467,7 @@ def logging_filter(
     logger: gluetool.log.ContextAdapter,
     items: List[T],
     filter_name: str,
-    filter_callable: Callable[[gluetool.log.ContextAdapter, T], bool]
+    filter_callable: Callable[[gluetool.log.ContextAdapter, T], bool],
 ) -> Generator[T, None, None]:
     for item in items:
         if filter_callable(logger, item):
@@ -1628,9 +1485,7 @@ try:
 
 except Exception as exc:
     Failure.from_exc(
-        'failed to compile template variable delimiters',
-        exc,
-        delimiters=KNOB_TEMPLATE_VARIABLE_DELIMITERS.value
+        'failed to compile template variable delimiters', exc, delimiters=KNOB_TEMPLATE_VARIABLE_DELIMITERS.value
     ).handle(get_logger())
 
     sys.exit(1)
@@ -1640,9 +1495,7 @@ try:
 
 except Exception as exc:
     Failure.from_exc(
-        'failed to compile template block delimiters',
-        exc,
-        delimiters=KNOB_TEMPLATE_BLOCK_DELIMITERS.value
+        'failed to compile template block delimiters', exc, delimiters=KNOB_TEMPLATE_BLOCK_DELIMITERS.value
     ).handle(get_logger())
 
     sys.exit(1)
@@ -1655,18 +1508,13 @@ def render_template(template: str, **kwargs: Any) -> Result[str, Failure]:
             variable_start_string=TEMPLATE_VARIABLE_DELIMITERS[0],
             variable_end_string=TEMPLATE_VARIABLE_DELIMITERS[1],
             block_start_string=TEMPLATE_BLOCK_DELIMITERS[0],
-            block_end_string=TEMPLATE_BLOCK_DELIMITERS[1]
+            block_end_string=TEMPLATE_BLOCK_DELIMITERS[1],
         )
 
         return Ok(_template.render(**kwargs).strip())
 
     except Exception as exc:
-        return Error(Failure.from_exc(
-            'failed to render template',
-            exc,
-            template=template,
-            variables=kwargs
-        ))
+        return Error(Failure.from_exc('failed to render template', exc, template=template, variables=kwargs))
 
 
 def template_environment(guest_request: Optional[artemis_db.GuestRequest]) -> Dict[str, Any]:
@@ -1674,15 +1522,17 @@ def template_environment(guest_request: Optional[artemis_db.GuestRequest]) -> Di
 
     env: Dict[str, Any] = {
         'DEPLOYMENT': KNOB_DEPLOYMENT.value,
-        'DEPLOYMENT_ENVIRONMENT': KNOB_DEPLOYMENT_ENVIRONMENT.value
+        'DEPLOYMENT_ENVIRONMENT': KNOB_DEPLOYMENT_ENVIRONMENT.value,
     }
 
     if guest_request is not None:
-        env.update({
-            'GUEST_REQUEST': guest_request,
-            'GUESTNAME': guest_request.guestname,
-            'ENVIRONMENT': guest_request.environment
-        })
+        env.update(
+            {
+                'GUEST_REQUEST': guest_request,
+                'GUESTNAME': guest_request.guestname,
+                'ENVIRONMENT': guest_request.environment,
+            }
+        )
 
     return env
 

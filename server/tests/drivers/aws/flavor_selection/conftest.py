@@ -15,9 +15,7 @@ from tft.artemis.environment import UNITS, FlavorBoot
 
 @pytest.fixture(name='guest_request', scope='function')
 def fixture_guest_request(name: str = 'dummy-guest-request') -> MagicMock:
-    return MagicMock(
-        name=name
-    )
+    return MagicMock(name=name)
 
 
 @pytest.fixture(name='image', scope='function')
@@ -32,7 +30,7 @@ def fixture_image() -> AWSPoolImageInfo:
         block_device_mappings=[],
         ena_support=False,
         boot_mode=None,
-        supports_kickstart=False
+        supports_kickstart=False,
     )
 
 
@@ -45,11 +43,7 @@ def fixture_flavors() -> List[AWSFlavor]:
             arch='x86_64',
             memory=UNITS('4 GiB'),
             ena_support='supported',
-            boot=FlavorBoot(
-                method=[
-                    'bios'
-                ]
-            )
+            boot=FlavorBoot(method=['bios']),
         ),
         AWSFlavor(
             name='generic x86_64 flavor',
@@ -57,37 +51,22 @@ def fixture_flavors() -> List[AWSFlavor]:
             arch='x86_64',
             memory=UNITS('4 GiB'),
             ena_support='unsupported',
-            boot=FlavorBoot(
-                method=[
-                    'bios'
-                ]
-            )
+            boot=FlavorBoot(method=['bios']),
         ),
-
         AWSFlavor(
             name='nitro-backed x86_64 flavor',
             id='x86_64.3',
             arch='x86_64',
             memory=UNITS('4 GiB'),
             ena_support='required',
-            boot=FlavorBoot(
-                method=[
-                    'bios',
-                    'uefi'
-                ]
-            )
+            boot=FlavorBoot(method=['bios', 'uefi']),
         ),
-
         AWSFlavor(
             name='generic aarch64 flavor',
             id='aarch64.1',
             arch='aarch64',
             memory=UNITS('4 GiB'),
             ena_support='required',
-            boot=FlavorBoot(
-                method=[
-                    'uefi'
-                ]
-            )
-        )
+            boot=FlavorBoot(method=['uefi']),
+        ),
     ]

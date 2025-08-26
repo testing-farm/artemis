@@ -215,7 +215,7 @@ KNOB_ACTOR_DEFAULT_RETRIES_COUNT: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_RETRIES',
     cast_from_str=int,
-    default=5
+    default=5,
 )
 
 KNOB_ACTOR_DEFAULT_MIN_BACKOFF: Knob[int] = Knob(
@@ -224,7 +224,7 @@ KNOB_ACTOR_DEFAULT_MIN_BACKOFF: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_MIN_BACKOFF',
     cast_from_str=int,
-    default=15
+    default=15,
 )
 
 KNOB_ACTOR_DEFAULT_MAX_BACKOFF: Knob[int] = Knob(
@@ -233,7 +233,7 @@ KNOB_ACTOR_DEFAULT_MAX_BACKOFF: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_MAX_BACKOFF',
     cast_from_str=int,
-    default=60
+    default=60,
 )
 
 KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE: Knob[int] = Knob(
@@ -242,7 +242,7 @@ KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_SINGLETON_DEADLINE',
     cast_from_str=int,
-    default=300
+    default=300,
 )
 
 KNOB_ACTOR_DEFAULT_PRIORITY: Knob[int] = Knob(
@@ -252,7 +252,7 @@ KNOB_ACTOR_DEFAULT_PRIORITY: Knob[int] = Knob(
     envvar='ARTEMIS_ACTOR_DEFAULT_PRIORITY',
     cast_from_str=cast_priority,
     default=TaskPriority.DEFAULT.value,
-    default_label='DEFAULT'
+    default_label='DEFAULT',
 )
 
 KNOB_ACTOR_DEFAULT_QUEUE: Knob[str] = Knob(
@@ -261,7 +261,7 @@ KNOB_ACTOR_DEFAULT_QUEUE: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_DEFAULT_QUEUE',
     cast_from_str=cast_queue,
-    default=TaskQueue.DEFAULT.value
+    default=TaskQueue.DEFAULT.value,
 )
 
 KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
@@ -270,7 +270,7 @@ KNOB_CLOSE_AFTER_DISPATCH: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_CLOSE_AFTER_DISPATCH',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=False
+    default=False,
 )
 
 KNOB_DISPATCH_PREPARE_DELAY: Knob[int] = Knob(
@@ -282,7 +282,7 @@ KNOB_DISPATCH_PREPARE_DELAY: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_DISPATCH_PREPARE_DELAY',
     cast_from_str=int,
-    default=60
+    default=60,
 )
 
 KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
@@ -291,7 +291,7 @@ KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD',
     cast_from_str=int,
-    default=5
+    default=5,
 )
 
 KNOB_OFFLOAD_TASKS: Knob[bool] = Knob(
@@ -300,7 +300,7 @@ KNOB_OFFLOAD_TASKS: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_OFFLOAD_TASKS',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=True
+    default=True,
 )
 
 KNOB_TRACE_TASKS_AS_EVENTS: Knob[bool] = Knob(
@@ -309,7 +309,7 @@ KNOB_TRACE_TASKS_AS_EVENTS: Knob[bool] = Knob(
     has_db=False,
     envvar='ARTEMIS_TRACE_TASKS_AS_EVENTS',
     cast_from_str=gluetool.utils.normalize_bool_option,
-    default=True
+    default=True,
 )
 
 POOL_DRIVERS = {
@@ -383,9 +383,8 @@ class DoerType(Protocol):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         *args: ActorArgumentType,
-        **kwargs: ActorArgumentType
-    ) -> DoerReturnType:
-        ...
+        **kwargs: ActorArgumentType,
+    ) -> DoerReturnType: ...
 
 
 # Task actor type.
@@ -415,38 +414,27 @@ class Actor(Protocol):
     queue_name: str
     options: ActorOptions
 
-    def __call__(self, *args: ActorArgumentType) -> None:
-        ...
+    def __call__(self, *args: ActorArgumentType) -> None: ...
 
-    def send(
-        self,
-        *args: ActorArgumentType
-    ) -> None:
-        ...
+    def send(self, *args: ActorArgumentType) -> None: ...
 
     def send_with_options(
         self,
         args: Optional[Tuple[ActorArgumentType, ...]] = None,
         kwargs: Optional[Dict[str, Any]] = None,
         delay: Optional[int] = None,
-        **options: Any
-    ) -> None:
-        ...
+        **options: Any,
+    ) -> None: ...
 
-    def message(
-        self,
-        *args: ActorArgumentType
-    ) -> dramatiq.Message:
-        ...
+    def message(self, *args: ActorArgumentType) -> dramatiq.Message: ...
 
     def message_with_options(
         self,
         args: Optional[Tuple[ActorArgumentType, ...]] = None,
         delay: Optional[int] = None,
         pipe_ignore: bool = False,
-        **options: Any
-    ) -> dramatiq.Message:
-        ...
+        **options: Any,
+    ) -> dramatiq.Message: ...
 
 
 @dataclasses.dataclass(repr=False)
@@ -474,9 +462,7 @@ class TaskCall(SerializableContainer):
     _tail_handler: Optional['TailHandler'] = None
 
     def __repr__(self) -> str:
-        formatted_args = [
-            str(arg) for arg in self.args
-        ]
+        formatted_args = [str(arg) for arg in self.args]
 
         if self.delay is not None:
             formatted_args.append(f'delay={self.delay}')
@@ -490,10 +476,7 @@ class TaskCall(SerializableContainer):
         """
 
         if self._named_args is None:
-            self._named_args = {
-                name: arg
-                for name, arg in zip(self.arg_names, self.args)
-            }
+            self._named_args = {name: arg for name, arg in zip(self.arg_names, self.args)}
 
         return self._named_args
 
@@ -514,9 +497,7 @@ class TaskCall(SerializableContainer):
         return [self.named_args[name] for name in names]
 
     def logger(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        failure_details: Optional[Dict[str, Any]] = None
+        self, logger: gluetool.log.ContextAdapter, failure_details: Optional[Dict[str, Any]] = None
     ) -> gluetool.log.ContextAdapter:
         logger = TaskLogger(logger, self.actor.actor_name.replace('_', '-'), message=self.broker_message)
 
@@ -569,7 +550,7 @@ class TaskCall(SerializableContainer):
         delay: Optional[int] = None,
         broker_message: Optional[dramatiq.Message] = None,
         task_request_id: Optional[int] = None,
-        task_sequence_request_id: Optional[int] = None
+        task_sequence_request_id: Optional[int] = None,
     ) -> 'TaskCall':
         signature = inspect.signature(actor.fn)
         arg_names = tuple(name for name in signature.parameters)
@@ -583,7 +564,7 @@ class TaskCall(SerializableContainer):
             delay=delay,
             broker_message=broker_message,
             task_request_id=task_request_id,
-            task_sequence_request_id=task_sequence_request_id
+            task_sequence_request_id=task_sequence_request_id,
         )
 
     @classmethod
@@ -593,7 +574,7 @@ class TaskCall(SerializableContainer):
         broker_message: dramatiq.Message,
         delay: Optional[int] = None,
         task_request_id: Optional[int] = None,
-        task_sequence_request_id: Optional[int] = None
+        task_sequence_request_id: Optional[int] = None,
     ) -> 'TaskCall':
         return cls._construct(
             cast('Actor', broker.get_actor(broker_message.actor_name)),
@@ -601,7 +582,7 @@ class TaskCall(SerializableContainer):
             delay=delay,
             broker_message=broker_message,
             task_request_id=task_request_id,
-            task_sequence_request_id=task_sequence_request_id
+            task_sequence_request_id=task_sequence_request_id,
         )
 
     @classmethod
@@ -611,33 +592,32 @@ class TaskCall(SerializableContainer):
         *args: ActorArgumentType,
         delay: Optional[int] = None,
         task_request_id: Optional[int] = None,
-        task_sequence_request_id: Optional[int] = None
+        task_sequence_request_id: Optional[int] = None,
     ) -> 'TaskCall':
         return cls._construct(
             actor,
             *args,
             delay=delay,
             task_request_id=task_request_id,
-            task_sequence_request_id=task_sequence_request_id
+            task_sequence_request_id=task_sequence_request_id,
         )
 
     @classmethod
-    def from_task_request(
-        cls,
-        request: TaskRequest
-    ) -> Result['TaskCall', Failure]:
+    def from_task_request(cls, request: TaskRequest) -> Result['TaskCall', Failure]:
         r_actor = resolve_actor(request.taskname)
 
         if r_actor.is_error:
             return Error(r_actor.unwrap_error())
 
-        return Ok(cls._construct(
-            r_actor.unwrap(),
-            *request.arguments,
-            delay=request.delay,
-            task_request_id=request.id,
-            task_sequence_request_id=request.task_sequence_request_id
-        ))
+        return Ok(
+            cls._construct(
+                r_actor.unwrap(),
+                *request.arguments,
+                delay=request.delay,
+                task_request_id=request.id,
+                task_sequence_request_id=request.task_sequence_request_id,
+            )
+        )
 
     def serialize(self) -> Dict[str, Any]:
         return {
@@ -648,12 +628,9 @@ class TaskCall(SerializableContainer):
                 'id': self.broker_message_id,
                 'age': self.age,
                 'queue': self.broker_message.queue_name if self.broker_message else None,
-                'options': self.broker_message.options if self.broker_message else {}
+                'options': self.broker_message.options if self.broker_message else {},
             },
-            'task-request': {
-                'id': self.task_request_id,
-                'sequence-id': self.task_sequence_request_id
-            }
+            'task-request': {'id': self.task_request_id, 'sequence-id': self.task_sequence_request_id},
         }
 
     @classmethod
@@ -663,40 +640,22 @@ class TaskCall(SerializableContainer):
 
 class DispatchTaskType(Protocol):
     def __call__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        task: Actor,
-        *args: ActorArgumentType,
-        delay: Optional[int] = None
-    ) -> Result[None, Failure]:
-        ...
+        self, logger: gluetool.log.ContextAdapter, task: Actor, *args: ActorArgumentType, delay: Optional[int] = None
+    ) -> Result[None, Failure]: ...
 
 
 # Types of functions we use to handle success and failures.
 class SuccessHandlerType(Protocol):
-    def __call__(
-        self,
-        eventname: str,
-        return_value: DoerReturnType = SUCCESS
-    ) -> DoerReturnType:
-        ...
+    def __call__(self, eventname: str, return_value: DoerReturnType = SUCCESS) -> DoerReturnType: ...
 
 
 class FailureHandlerType(Protocol):
-    def __call__(
-        self,
-        result: Result[Any, Failure],
-        label: str,
-        sentry: bool = True
-    ) -> DoerReturnType:
-        ...
+    def __call__(self, result: Result[Any, Failure], label: str, sentry: bool = True) -> DoerReturnType: ...
 
 
 class MessageLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, message: dramatiq.Message) -> None:
-        super().__init__(logger, {
-            'ctx_message_id': (5, message.message_id)
-        })
+        super().__init__(logger, {'ctx_message_id': (5, message.message_id)})
 
     @property
     def message_id(self) -> str:
@@ -705,10 +664,7 @@ class MessageLogger(gluetool.log.ContextAdapter):
 
 class TaskLogger(gluetool.log.ContextAdapter):
     def __init__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        task_name: str,
-        message: Optional[dramatiq.Message] = None
+        self, logger: gluetool.log.ContextAdapter, task_name: str, message: Optional[dramatiq.Message] = None
     ) -> None:
         if not message:
             message_proxy = CURRENT_MESSAGE.get(None)
@@ -717,9 +673,7 @@ class TaskLogger(gluetool.log.ContextAdapter):
         if message:
             logger = MessageLogger(logger, message)
 
-        super().__init__(logger, {
-            'ctx_task_name': (30, task_name)
-        })
+        super().__init__(logger, {'ctx_task_name': (30, task_name)})
 
     @property
     def taskname(self) -> str:
@@ -740,10 +694,7 @@ class TaskLogger(gluetool.log.ContextAdapter):
 
 
 def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:
-    var_value = os.getenv(
-        f'ARTEMIS_ACTOR_{actor_name.upper()}_{var_name}',
-        default
-    )
+    var_value = os.getenv(f'ARTEMIS_ACTOR_{actor_name.upper()}_{var_name}', default)
 
     # We don't bother about milliseconds in backoff values. For a sake of simplicity
     # variables stores value in seconds and here we convert it back to milliseconds
@@ -757,7 +708,7 @@ def actor_kwargs(
     actor_name: str,
     priority: TaskPriority = TaskPriority.DEFAULT,
     queue_name: TaskQueue = TaskQueue.DEFAULT,
-    periodic: Optional[periodiq.CronSpec] = None
+    periodic: Optional[periodiq.CronSpec] = None,
 ) -> Dict[str, Any]:
     # We need to preserve the special queues requested by tasks, but still giving maintainers a chance
     # to change that. Therefore we accept the priority and queue name as parameters, and use them as
@@ -772,21 +723,13 @@ def actor_kwargs(
     # We want to support two ways how to specify priority: using names of our predefined priorities ("high"),
     # or by a number, for tweaks needed by maintainers ("101"). We get the maintainers' input, and try to
     # translate it to either enum member, or an integer.
-    priority_input: str = actor_control_value(
-        actor_name,
-        'PRIORITY',
-        priority.name
-    )
+    priority_input: str = actor_control_value(actor_name, 'PRIORITY', priority.name)
 
     # Queues are easier: we have a list of predefined queues, but just like priorities, maintainers can specify
     # their own ones. There's no second-level test though, calling `str()` on queue name makes no sense since it's
     # already a string, and pretty much any string can be a queue name. We use `int()` on given priority because
     # priorities can be only integers.
-    queue_input: str = actor_control_value(
-        actor_name,
-        'QUEUE',
-        queue_name.name
-    )
+    queue_input: str = actor_control_value(actor_name, 'QUEUE', queue_name.name)
 
     try:
         priority_actual = TaskPriority[priority_input.upper()].value
@@ -812,7 +755,7 @@ def actor_kwargs(
         'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value)),
         'singleton_deadline': int(
             actor_control_value(actor_name, 'SINGLETON_DEADLINE', KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE.value)
-        )
+        ),
     }
 
     if periodic is not None:
@@ -863,10 +806,7 @@ def resolve_actor(actorname: str) -> Result[Actor, Failure]:
     return Ok(actor)
 
 
-GuestFieldStates = Dict[
-    str,
-    Union[str, int, None, datetime.datetime, GuestState, SerializedPoolDataMapping]
-]
+GuestFieldStates = Dict[str, Union[str, int, None, datetime.datetime, GuestState, SerializedPoolDataMapping]]
 
 
 #: Type variable representing :py:class:_Workspace and its child classes.
@@ -921,7 +861,7 @@ class task:  # noqa: N801
         periodic: Optional[periodiq.CronSpec] = None,
         tail_handler: Optional['TailHandler'] = None,
         singleton: bool = False,
-        singleton_no_retry_on_lock_fail: bool = False
+        singleton_no_retry_on_lock_fail: bool = False,
     ) -> None:
         self.priority = priority
         self.queue_name = queue_name
@@ -936,10 +876,7 @@ class task:  # noqa: N801
         actor_name_uppersized = fn.__name__.upper()
 
         dramatiq_kwargs = actor_kwargs(
-            actor_name_uppersized,
-            periodic=self.periodic,
-            priority=self.priority,
-            queue_name=self.queue_name
+            actor_name_uppersized, periodic=self.periodic, priority=self.priority, queue_name=self.queue_name
         )
 
         dramatiq_actor = dramatiq.actor(
@@ -947,7 +884,7 @@ class task:  # noqa: N801
             tail_handler=self.tail_handler,
             singleton=self.singleton,
             singleton_no_retry_on_lock_fail=self.singleton_no_retry_on_lock_fail,
-            **dramatiq_kwargs
+            **dramatiq_kwargs,
         )
 
         return cast(Actor, dramatiq_actor)
@@ -960,7 +897,7 @@ def run_doer_multithread(
     fn: DoerType,
     actor_name: str,
     *args: ActorArgumentType,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> DoerReturnType:
     """
     Run a given function - "doer" - isolated in its own thread. This thread then serves as a landing
@@ -1009,8 +946,7 @@ def run_doer_multithread(
 
     try:
         executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1,
-            thread_name_prefix=threading.current_thread().name
+            max_workers=1, thread_name_prefix=threading.current_thread().name
         )
 
         logger.debug(f'submitting task doer {fn.__name__}')
@@ -1072,7 +1008,7 @@ def run_doer_singlethread(
     fn: DoerType,
     actor_name: str,
     *args: ActorArgumentType,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> DoerReturnType:
     """
     Run a given function - "doer" - in the current thread.
@@ -1094,13 +1030,7 @@ def run_doer_singlethread(
             profiler = Profiler(verbose=verbose_profile)
             profiler.start()
 
-        with Sentry.start_span(
-            TracingOp.FUNCTION,
-            description='run_doer',
-            tags={
-                'taskname': fn.__name__
-            }
-        ):
+        with Sentry.start_span(TracingOp.FUNCTION, description='run_doer', tags={'taskname': fn.__name__}):
             result = fn(logger, db, session, *args, **kwargs)
 
     except dramatiq.middleware.Interrupt as exc:
@@ -1111,16 +1041,10 @@ def run_doer_singlethread(
             profiler.log(logger, 'profiling report (inner)')
 
         if isinstance(exc, dramatiq.middleware.TimeLimitExceeded):
-            failure = Failure.from_exc(
-                'task time depleted',
-                exc
-            )
+            failure = Failure.from_exc('task time depleted', exc)
 
         elif isinstance(exc, dramatiq.middleware.Shutdown):
-            failure = Failure.from_exc(
-                'worker shutdown requested',
-                exc
-            )
+            failure = Failure.from_exc('worker shutdown requested', exc)
 
         else:
             failure = Failure('unhandled interrupt exception')
@@ -1150,7 +1074,7 @@ def _task_core(
     doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None,
     session_isolation: bool = True,
-    session_read_only: bool = False
+    session_read_only: bool = False,
 ) -> None:
     rss = RSSWatcher()
 
@@ -1193,15 +1117,7 @@ def _task_core(
         assert doer_args is not None
         assert doer_kwargs is not None
 
-        doer_result = run_doer(
-            logger,
-            db,
-            session,
-            doer,
-            actor_name,
-            *doer_args,
-            **doer_kwargs
-        )
+        doer_result = run_doer(logger, db, session, doer, actor_name, *doer_args, **doer_kwargs)
 
         # "Ignored" failures - failures the tasks don't wish to repeat by running the task again - need
         # special handling: we have to mark the guest request as failed. Without this step, client will
@@ -1226,7 +1142,7 @@ def _task_core(
             logger,
             session,
             guestname,
-            GuestState.ERROR
+            GuestState.ERROR,
             # TODO: poolname=?
         )
 
@@ -1239,10 +1155,7 @@ def _task_core(
             state_change_failure = r_state_change.unwrap_error()
 
             # Describes *when* this change was needed, i.e. what we attempted to do. Brings more context for humans.
-            failure = Failure.from_failure(
-                'failed to mark guest request as failed',
-                state_change_failure
-            )
+            failure = Failure.from_failure('failed to mark guest request as failed', state_change_failure)
 
             # State change failed because of recoverable failure => use it as an excuse to try again. We can expect the
             # task to fail, but we will get another chance to mark the guest as failed. This effectively drops the
@@ -1311,7 +1224,7 @@ def task_core(
     doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[Dict[str, Any]] = None,
     session_isolation: bool = True,
-    session_read_only: bool = False
+    session_read_only: bool = False,
 ) -> None:
     task_call = TaskCall.from_message(BROKER, CURRENT_MESSAGE.get())
 
@@ -1320,12 +1233,8 @@ def task_core(
     with Sentry.start_transaction(
         TracingOp.QUEUE_TASK,
         'task',
-        tags={
-            'taskname': task_call.actor.actor_name
-        },
-        data={
-            'task_call': task_call.serialize()
-        }
+        tags={'taskname': task_call.actor.actor_name},
+        data={'task_call': task_call.serialize()},
     ) as tracing_transaction:
         if 'poolname' in task_call.named_args:
             tracing_transaction.set_tag('poolname', task_call.named_args['poolname'])
@@ -1333,12 +1242,8 @@ def task_core(
         with Sentry.start_span(
             TracingOp.FUNCTION,
             description='run_task',
-            tags={
-                'taskname': task_call.actor.actor_name
-            },
-            data={
-                'task_call': task_call.serialize()
-            }
+            tags={'taskname': task_call.actor.actor_name},
+            data={'task_call': task_call.serialize()},
         ) as tracing_span:
             if 'poolname' in task_call.named_args:
                 tracing_span.set_tag('poolname', task_call.named_args['poolname'])
@@ -1351,7 +1256,7 @@ def task_core(
                 doer_args=doer_args,
                 doer_kwargs=doer_kwargs,
                 session_isolation=session_isolation,
-                session_read_only=session_read_only
+                session_read_only=session_read_only,
             )
 
 
@@ -1365,31 +1270,21 @@ def _randomize_delay(delay: int) -> int:
     return max(0, delay + int(random.uniform(-KNOB_DELAY_UNIFORM_SPREAD.value, KNOB_DELAY_UNIFORM_SPREAD.value)))
 
 
-def serialize_task_invocation(
-    task: TaskCall
-) -> Dict[str, Any]:
-    return {
-        'tasks': task.serialize()
-    }
+def serialize_task_invocation(task: TaskCall) -> Dict[str, Any]:
+    return {'tasks': task.serialize()}
 
 
-def serialize_task_group_invocation(
-    tasks: List[TaskCall],
-    on_complete: Optional[TaskCall] = None
-) -> Dict[str, Any]:
+def serialize_task_group_invocation(tasks: List[TaskCall], on_complete: Optional[TaskCall] = None) -> Dict[str, Any]:
     return {
         'group': [task_call.serialize() for task_call in tasks],
-        'on-complete': on_complete.serialize() if on_complete is not None else None
+        'on-complete': on_complete.serialize() if on_complete is not None else None,
     }
 
 
-def serialize_task_sequence_invocation(
-    tasks: List[TaskCall],
-    on_complete: Optional[TaskCall] = None
-) -> Dict[str, Any]:
+def serialize_task_sequence_invocation(tasks: List[TaskCall], on_complete: Optional[TaskCall] = None) -> Dict[str, Any]:
     return {
         'sequence': [task_call.serialize() for task_call in tasks],
-        'on-complete': on_complete.serialize() if on_complete is not None else None
+        'on-complete': on_complete.serialize() if on_complete is not None else None,
     }
 
 
@@ -1398,7 +1293,7 @@ def dispatch_task(
     task: Actor,
     *args: ActorArgumentType,
     delay: Optional[int] = None,
-    task_request_id: Optional[int] = None
+    task_request_id: Optional[int] = None,
 ) -> Result[None, Failure]:
     """
     Dispatch a given task.
@@ -1419,21 +1314,13 @@ def dispatch_task(
     with Sentry.start_span(
         TracingOp.QUEUE_SUBMIT,
         description='dispatch_task',
-        tags={
-            'taskname': task_call.actor.actor_name
-        },
-        data={
-            'task_call': task_call.serialize()
-        }
+        tags={'taskname': task_call.actor.actor_name},
+        data={'task_call': task_call.serialize()},
     ):
         r = safe_call(BROKER.enqueue, message, delay=actual_delay)
 
     if r.is_error:
-        return Error(Failure.from_failure(
-            'failed to dispatch task',
-            r.unwrap_error(),
-            task_call=task_call
-        ))
+        return Error(Failure.from_failure('failed to dispatch task', r.unwrap_error(), task_call=task_call))
 
     log_dict_yaml(logger.info, 'scheduled task', serialize_task_invocation(task_call))
 
@@ -1450,7 +1337,7 @@ def dispatch_group(
     tasks: List[Actor],
     *args: ActorArgumentType,
     on_complete: Optional[Actor] = None,
-    delay: Optional[int] = None
+    delay: Optional[int] = None,
 ) -> Result[None, Failure]:
     """
     Dispatch given tasks as a group.
@@ -1466,15 +1353,9 @@ def dispatch_group(
     actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
 
     try:
-        messages = [
-            task.message(*args)
-            for task in tasks
-        ]
+        messages = [task.message(*args) for task in tasks]
 
-        task_calls: List[TaskCall] = [
-            TaskCall.from_message(BROKER, message, delay=delay)
-            for message in messages
-        ]
+        task_calls: List[TaskCall] = [TaskCall.from_message(BROKER, message, delay=delay) for message in messages]
 
         on_complete_task_call: Optional[TaskCall] = None
 
@@ -1491,7 +1372,7 @@ def dispatch_group(
         log_dict_yaml(
             logger.info,
             'scheduled group',
-            serialize_task_group_invocation(task_calls, on_complete=on_complete_task_call)
+            serialize_task_group_invocation(task_calls, on_complete=on_complete_task_call),
         )
 
         if KNOB_CLOSE_AFTER_DISPATCH.value:
@@ -1500,12 +1381,11 @@ def dispatch_group(
             BROKER.connection.close()
 
     except Exception as exc:
-        return Error(Failure.from_exc(
-            'failed to dispatch group',
-            exc,
-            group_tasks=task_calls,
-            group_on_complete=on_complete_task_call
-        ))
+        return Error(
+            Failure.from_exc(
+                'failed to dispatch group', exc, group_tasks=task_calls, group_on_complete=on_complete_task_call
+            )
+        )
 
     return Ok(None)
 
@@ -1515,7 +1395,7 @@ def dispatch_sequence(
     tasks: List[Tuple[Optional[int], Actor, Tuple[ActorArgumentType, ...]]],
     on_complete: Optional[Tuple[Actor, Tuple[ActorArgumentType, ...]]] = None,
     delay: Optional[int] = None,
-    task_sequence_request_id: Optional[int] = None
+    task_sequence_request_id: Optional[int] = None,
 ) -> Result[None, Failure]:
     """
     Dispatch given tasks as a pipeline.
@@ -1533,17 +1413,11 @@ def dispatch_sequence(
     actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
 
     # Add `pipe_ignore` to disable result propagation. We ignore task results.
-    messages = [
-        task.message_with_options(args=args, pipe_ignore=True)
-        for _, task, args in tasks
-    ]
+    messages = [task.message_with_options(args=args, pipe_ignore=True) for _, task, args in tasks]
 
     task_calls: List[TaskCall] = [
         TaskCall.from_message(
-            BROKER,
-            message,
-            task_request_id=task_request_id,
-            task_sequence_request_id=task_sequence_request_id
+            BROKER, message, task_request_id=task_request_id, task_sequence_request_id=task_sequence_request_id
         )
         for (task_request_id, _, _), message in zip(tasks, messages)
     ]
@@ -1561,23 +1435,23 @@ def dispatch_sequence(
     with Sentry.start_span(
         TracingOp.QUEUE_SUBMIT,
         description='dispatch_sequence',
-        data={
-            'task_calls': serialize_task_sequence_invocation(task_calls, on_complete_task_call)
-        }
+        data={'task_calls': serialize_task_sequence_invocation(task_calls, on_complete_task_call)},
     ):
         r = safe_call(pipeline.run, delay=actual_delay)
 
     if r.is_error:
-        return Error(Failure.from_failure(
-            'failed to dispatch task sequence',
-            r.unwrap_error(),
-            task_calls=serialize_task_sequence_invocation(task_calls, on_complete_task_call)
-        ))
+        return Error(
+            Failure.from_failure(
+                'failed to dispatch task sequence',
+                r.unwrap_error(),
+                task_calls=serialize_task_sequence_invocation(task_calls, on_complete_task_call),
+            )
+        )
 
     log_dict_yaml(
         logger.info,
         'scheduled sequence',
-        serialize_task_sequence_invocation(task_calls, on_complete=on_complete_task_call)
+        serialize_task_sequence_invocation(task_calls, on_complete=on_complete_task_call),
     )
 
     if KNOB_CLOSE_AFTER_DISPATCH.value:
@@ -1594,25 +1468,22 @@ def _request_task(
     task: Actor,
     *task_arguments: ActorArgumentType,
     delay: Optional[int] = None,
-    task_sequence_request_id: Optional[int] = None
+    task_sequence_request_id: Optional[int] = None,
 ) -> Result[None, Failure]:
     r = TaskRequest.create(
-        logger,
-        session,
-        task,
-        *task_arguments,
-        delay=delay,
-        task_sequence_request_id=task_sequence_request_id
+        logger, session, task, *task_arguments, delay=delay, task_sequence_request_id=task_sequence_request_id
     )
 
     if r.is_error:
-        return Error(Failure.from_failure(
-            'failed to add task request',
-            r.unwrap_error(),
-            task_name=task.actor_name,
-            task_args=task_arguments,
-            task_sequence_request_id=task_sequence_request_id
-        ))
+        return Error(
+            Failure.from_failure(
+                'failed to add task request',
+                r.unwrap_error(),
+                task_name=task.actor_name,
+                task_args=task_arguments,
+                task_sequence_request_id=task_sequence_request_id,
+            )
+        )
 
     task_request_id = r.unwrap()
 
@@ -1620,14 +1491,14 @@ def _request_task(
         log_dict_yaml(
             logger.info,
             f'requested task #{task_request_id}',
-            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
+            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize(),
         )
 
     else:
         log_dict_yaml(
             logger.info,
             f'requested task #{task_sequence_request_id}/#{task_request_id}',
-            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize()
+            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize(),
         )
 
     return Ok(None)
@@ -1637,15 +1508,12 @@ def _request_task_sequence(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]],
-    delay: Optional[int] = None
+    delay: Optional[int] = None,
 ) -> Result[None, Failure]:
     r = TaskSequenceRequest.create(logger, session)
 
     if r.is_error:
-        return Error(Failure.from_failure(
-            'failed to add task sequence request',
-            r.unwrap_error()
-        ))
+        return Error(Failure.from_failure('failed to add task sequence request', r.unwrap_error()))
 
     task_sequence_request_id = r.unwrap()
 
@@ -1654,28 +1522,16 @@ def _request_task_sequence(
     for i, (task, task_arguments) in enumerate(tasks):
         if i == 0:
             r_task = _request_task(
-                logger,
-                session,
-                task,
-                *task_arguments,
-                delay=delay,
-                task_sequence_request_id=task_sequence_request_id
+                logger, session, task, *task_arguments, delay=delay, task_sequence_request_id=task_sequence_request_id
             )
 
         else:
             r_task = _request_task(
-                logger,
-                session,
-                task,
-                *task_arguments,
-                task_sequence_request_id=task_sequence_request_id
+                logger, session, task, *task_arguments, task_sequence_request_id=task_sequence_request_id
             )
 
         if r_task.is_error:
-            return Error(Failure.from_failure(
-                'failed to add task request',
-                r_task.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to add task request', r_task.unwrap_error()))
 
     return Ok(None)
 
@@ -1685,7 +1541,7 @@ def _guest_state_update_query(
     new_state: GuestState,
     current_state: Optional[GuestState] = None,
     set_values: Optional[GuestFieldStates] = None,
-    current_pool_data: Optional[SerializedPoolDataMapping] = None
+    current_pool_data: Optional[SerializedPoolDataMapping] = None,
 ) -> Result[sqlalchemy.Update, Failure]:
     """
     Create an ``UPDATE`` query for guest request state change.
@@ -1702,9 +1558,7 @@ def _guest_state_update_query(
 
     now = datetime.datetime.utcnow()
 
-    query = sqlalchemy \
-        .update(GuestRequest) \
-        .where(GuestRequest.guestname == guestname)
+    query = sqlalchemy.update(GuestRequest).where(GuestRequest.guestname == guestname)
 
     if current_state is not None:
         query = query.where(GuestRequest.state == current_state)
@@ -1714,16 +1568,10 @@ def _guest_state_update_query(
 
     if set_values:
         values = set_values
-        values.update({
-            'state': new_state,
-            'state_mtime': now
-        })
+        values.update({'state': new_state, 'state_mtime': now})
 
     else:
-        values = {
-            'state': new_state,
-            'state_mtime': now
-        }
+        values = {'state': new_state, 'state_mtime': now}
 
     query = query.values(**values)
 
@@ -1739,7 +1587,7 @@ def _update_guest_state(
     set_values: Optional[GuestFieldStates] = None,
     poolname: Optional[str] = None,
     current_pool_data: Optional[SerializedPoolDataMapping] = None,
-    **details: Any
+    **details: Any,
 ) -> Result[None, Failure]:
     current_state_label = current_state.value if current_state is not None else '<ignored>'
 
@@ -1748,10 +1596,7 @@ def _update_guest_state(
 
         return Error(
             Failure.from_failure(
-                message,
-                r.unwrap_error(),
-                current_state=current_state_label,
-                new_state=new_state.value
+                message, r.unwrap_error(), current_state=current_state_label, new_state=new_state.value
             ).update(poolname=poolname, **details)
         )
 
@@ -1762,7 +1607,7 @@ def _update_guest_state(
         new_state=new_state,
         current_state=current_state,
         set_values=set_values,
-        current_pool_data=current_pool_data
+        current_pool_data=current_pool_data,
     )
 
     if r_query.is_error:
@@ -1804,7 +1649,7 @@ def _update_guest_state_and_request_task(
     poolname: Optional[str] = None,
     current_pool_data: Optional[SerializedPoolDataMapping] = None,
     delay: Optional[int] = None,
-    **details: Any
+    **details: Any,
 ) -> Result[None, Failure]:
     current_state_label = current_state.value if current_state is not None else '<ignored>'
 
@@ -1818,7 +1663,7 @@ def _update_guest_state_and_request_task(
                 current_state=current_state_label,
                 new_state=new_state.value,
                 task_name=task.actor_name,
-                task_args=task_arguments
+                task_args=task_arguments,
             ).update(poolname=poolname, **details)
         )
 
@@ -1829,7 +1674,7 @@ def _update_guest_state_and_request_task(
         new_state=new_state,
         current_state=current_state,
         set_values=set_values,
-        current_pool_data=current_pool_data
+        current_pool_data=current_pool_data,
     )
 
     if r_state_update_query.is_error:
@@ -1867,14 +1712,14 @@ def _update_guest_state_and_request_task(
 
 @with_context
 def _get_ssh_key(
-    ownername: str,
-    keyname: str,
-    session: sqlalchemy.orm.session.Session
+    ownername: str, keyname: str, session: sqlalchemy.orm.session.Session
 ) -> Result[Optional[SSHKey], Failure]:
-    return SafeQuery.from_session(session, SSHKey) \
-        .filter(SSHKey.ownername == ownername) \
-        .filter(SSHKey.keyname == keyname) \
+    return (
+        SafeQuery.from_session(session, SSHKey)
+        .filter(SSHKey.ownername == ownername)
+        .filter(SSHKey.keyname == keyname)
         .one_or_none()
+    )
 
 
 def _get_master_key() -> Result[SSHKey, Failure]:
@@ -1891,26 +1736,12 @@ def _get_master_key() -> Result[SSHKey, Failure]:
     return Ok(master_key)
 
 
-def get_pool_logger(
-    task_name: str,
-    logger: gluetool.log.ContextAdapter,
-    poolname: str
-) -> TaskLogger:
-    return TaskLogger(
-        PoolLogger(logger, poolname),
-        task_name
-    )
+def get_pool_logger(task_name: str, logger: gluetool.log.ContextAdapter, poolname: str) -> TaskLogger:
+    return TaskLogger(PoolLogger(logger, poolname), task_name)
 
 
-def get_guest_logger(
-    task_name: str,
-    logger: gluetool.log.ContextAdapter,
-    guestname: str
-) -> TaskLogger:
-    return TaskLogger(
-        GuestLogger(logger, guestname),
-        task_name
-    )
+def get_guest_logger(task_name: str, logger: gluetool.log.ContextAdapter, guestname: str) -> TaskLogger:
+    return TaskLogger(GuestLogger(logger, guestname), task_name)
 
 
 def get_shelf_logger(
@@ -1918,25 +1749,13 @@ def get_shelf_logger(
     logger: gluetool.log.ContextAdapter,
     shelfname: str,
 ) -> TaskLogger:
-    return TaskLogger(
-        ShelfLogger(logger, shelfname),
-        task_name
-    )
+    return TaskLogger(ShelfLogger(logger, shelfname), task_name)
 
 
 def get_snapshot_logger(
-    task_name: str,
-    logger: gluetool.log.ContextAdapter,
-    guestname: str,
-    snapshotname: str
+    task_name: str, logger: gluetool.log.ContextAdapter, guestname: str, snapshotname: str
 ) -> TaskLogger:
-    return TaskLogger(
-        SnapshotLogger(
-            GuestLogger(logger, guestname),
-            snapshotname
-        ),
-        task_name
-    )
+    return TaskLogger(SnapshotLogger(GuestLogger(logger, guestname), snapshotname), task_name)
 
 
 # TODO: all of the helpers could be converted to chainable methods, suitable for direct use with `step` decorator.
@@ -1985,7 +1804,7 @@ class Workspace:
         guestname: Optional[str] = None,
         task: Optional[str] = None,
         db: Optional[DB] = None,
-        **default_details: Any
+        **default_details: Any,
     ) -> None:
         self.logger = logger
         self.db = db or get_root_db(logger)
@@ -2031,21 +1850,13 @@ class Workspace:
         return Error(Failure('task did not produce final result'))
 
     def _event(self, event: str, **details: Any) -> None:
-        log_dict_yaml(self.logger.info, 'logged event', {
-            'eventname': event,
-            'details': details
-        })
+        log_dict_yaml(self.logger.info, 'logged event', {'eventname': event, 'details': details})
 
     def _guest_request_event(self, event: str, **details: Any) -> None:
         assert self.guestname
 
         GuestRequest.log_event_by_guestname(
-            self.logger,
-            self.session,
-            self.guestname,
-            event,
-            **self.spice_details,
-            **details
+            self.logger, self.session, self.guestname, event, **self.spice_details, **details
         )
 
     @contextlib.contextmanager
@@ -2127,22 +1938,11 @@ class Workspace:
         if not self.result:
             self.result = RESCHEDULE
 
-    def _fail(
-        self,
-        failure: Failure,
-        label: str,
-        no_effect: bool = False
-    ) -> None:
+    def _fail(self, failure: Failure, label: str, no_effect: bool = False) -> None:
         failure.handle(self.logger, label=label, sentry=True, guestname=self.guestname, **self.spice_details)
 
         if self.guestname:
-            GuestRequest.log_error_event_by_guestname(
-                self.logger,
-                self.session,
-                self.guestname,
-                label,
-                failure
-            )
+            GuestRequest.log_error_event_by_guestname(self.logger, self.session, self.guestname, label, failure)
 
         else:
             self._event(label, failure=failure.get_event_details())
@@ -2154,21 +1954,11 @@ class Workspace:
             else:
                 self.result = IGNORE(Error(failure))
 
-    def fail(
-        self,
-        failure: Failure,
-        label: str,
-        no_effect: bool = False
-    ) -> None:
+    def fail(self, failure: Failure, label: str, no_effect: bool = False) -> None:
         with self.transaction():
             self._fail(failure, label, no_effect=no_effect)
 
-    def _error(
-        self,
-        error: Result[Any, Failure],
-        label: str,
-        no_effect: bool = False
-    ) -> None:
+    def _error(self, error: Result[Any, Failure], label: str, no_effect: bool = False) -> None:
         self._fail(error.unwrap_error(), label, no_effect=no_effect)
 
     def update_guest_state(
@@ -2178,7 +1968,7 @@ class Workspace:
         set_values: Optional[GuestFieldStates] = None,
         poolname: Optional[str] = None,
         current_pool_data: Optional[SerializedPoolDataMapping] = None,
-        **details: Any
+        **details: Any,
     ) -> None:
         if self.result:
             return
@@ -2194,7 +1984,7 @@ class Workspace:
             set_values=set_values,
             poolname=poolname or (self.gr.poolname if self.gr else None),
             current_pool_data=current_pool_data,
-            **details
+            **details,
         )
 
         if r.is_error:
@@ -2204,12 +1994,8 @@ class Workspace:
     #
     #
 
-    def load_guest_request(
-        self,
-        guestname: str,
-        state: Optional[GuestState] = None
-    ) -> Self:
-        """ Load a guest request from a database, as long as it is in a given state. """
+    def load_guest_request(self, guestname: str, state: Optional[GuestState] = None) -> Self:
+        """Load a guest request from a database, as long as it is in a given state."""
 
         if self.result:
             return self
@@ -2217,15 +2003,19 @@ class Workspace:
         self.guestname = guestname
 
         if state is None:
-            r = SafeQuery.from_session(self.session, GuestRequest) \
-                .filter(GuestRequest.guestname == guestname) \
+            r = (
+                SafeQuery.from_session(self.session, GuestRequest)
+                .filter(GuestRequest.guestname == guestname)
                 .one_or_none()
+            )
 
         else:
-            r = SafeQuery.from_session(self.session, GuestRequest) \
-                .filter(GuestRequest.guestname == guestname) \
-                .filter(GuestRequest.state == state) \
+            r = (
+                SafeQuery.from_session(self.session, GuestRequest)
+                .filter(GuestRequest.guestname == guestname)
+                .filter(GuestRequest.state == state)
                 .one_or_none()
+            )
 
         if r.is_error:
             self._error(r, 'failed to load guest request')
@@ -2256,14 +2046,7 @@ class Workspace:
         self.master_key = r.unwrap()
 
         if self.master_key is None:
-            self._fail(
-                Failure(
-                    'no such SSH key',
-                    ownername='artemis',
-                    keyname='master-key'
-                ),
-                'failed to find SSH key'
-            )
+            self._fail(Failure('no such SSH key', ownername='artemis', keyname='master-key'), 'failed to find SSH key')
             return self
 
         return self
@@ -2274,8 +2057,7 @@ class Workspace:
 
         self.shelfname = shelfname
 
-        query = SafeQuery.from_session(self.session, GuestShelf) \
-            .filter(GuestShelf.shelfname == shelfname)
+        query = SafeQuery.from_session(self.session, GuestShelf).filter(GuestShelf.shelfname == shelfname)
 
         if state is not None:
             query = query.filter(GuestShelf.state == state)
@@ -2337,11 +2119,7 @@ class Workspace:
 
         assert self.guestname
 
-        r_events = GuestEvent.fetch(
-            self.session,
-            eventname=eventname,
-            guestname=self.guestname
-        )
+        r_events = GuestEvent.fetch(self.session, eventname=eventname, guestname=self.guestname)
 
         if r_events.is_error:
             return self._error(r_events, 'failed to fetch events')
@@ -2349,11 +2127,7 @@ class Workspace:
         self.guest_events = r_events.unwrap()
 
     def dispatch_task(
-        self,
-        task: Actor,
-        *args: Any,
-        delay: Optional[int] = None,
-        logger: Optional[gluetool.log.ContextAdapter] = None
+        self, task: Actor, *args: Any, delay: Optional[int] = None, logger: Optional[gluetool.log.ContextAdapter] = None
     ) -> None:
         if self.result:
             return
@@ -2365,12 +2139,7 @@ class Workspace:
         if r.is_error:
             self._error(r, 'failed to dispatch task')
 
-    def request_task(
-        self,
-        task: Actor,
-        *task_arguments: ActorArgumentType,
-        delay: Optional[int] = None
-    ) -> None:
+    def request_task(self, task: Actor, *task_arguments: ActorArgumentType, delay: Optional[int] = None) -> None:
         if self.result:
             return
 
@@ -2380,9 +2149,7 @@ class Workspace:
             self._error(r, 'failed to create task request')
 
     def request_task_sequence(
-        self,
-        tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]],
-        delay: Optional[int] = None
+        self, tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]], delay: Optional[int] = None
     ) -> None:
         if self.result:
             return
@@ -2400,19 +2167,9 @@ class Workspace:
 
         engine = r_engine.unwrap()
 
-        with Sentry.start_span(
-            TracingOp.FUNCTION,
-            description='run_hook',
-            tags={
-                'hookname': hook_name
-            }
-        ):
+        with Sentry.start_span(TracingOp.FUNCTION, description='run_hook', tags={'hookname': hook_name}):
             try:
-                r = engine.run_hook(
-                    hook_name,
-                    logger=self.logger,
-                    **kwargs
-                )
+                r = engine.run_hook(hook_name, logger=self.logger, **kwargs)
 
             except Exception as exc:
                 r = Error(Failure.from_exc('unhandled hook error', exc))
@@ -2458,7 +2215,7 @@ class Workspace:
         poolname: Optional[str] = None,
         current_pool_data: Optional[SerializedPoolDataMapping] = None,
         delay: Optional[int] = None,
-        **details: Any
+        **details: Any,
     ) -> Self:
         """
         Update guest request state and plan a follow-up task.
@@ -2481,7 +2238,7 @@ class Workspace:
             poolname=poolname or (self.gr.poolname if self.gr else None),
             current_pool_data=current_pool_data,
             delay=delay,
-            **details
+            **details,
         )
 
         if r.is_error:
@@ -2500,26 +2257,18 @@ class GuestRequestWorkspace(Workspace):
         db: DB,
         guestname: str,
         task: Optional[str] = None,
-        **default_details: Any
+        **default_details: Any,
     ) -> None:
         super().__init__(logger, session, guestname=guestname, task=task, db=db, **default_details)
 
 
 class TailHandler:
     def get_failure_details(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        task_call: TaskCall
+        self, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, task_call: TaskCall
     ) -> Dict[str, str]:
         return {}
 
-    def get_logger(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        task_call: TaskCall
-    ) -> gluetool.log.ContextAdapter:
+    def get_logger(self, logger: gluetool.log.ContextAdapter, task_call: TaskCall) -> gluetool.log.ContextAdapter:
         return logger
 
     def do_handle_tail(
@@ -2528,16 +2277,12 @@ class TailHandler:
         db: DB,
         session: sqlalchemy.orm.session.Session,
         task_call: TaskCall,
-        failure_details: Dict[str, str]
+        failure_details: Dict[str, str],
     ) -> DoerReturnType:
         raise NotImplementedError
 
     def handle_tail(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        task_call: TaskCall
+        self, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, task_call: TaskCall
     ) -> bool:
         logger = self.get_logger(logger, task_call)
         failure_details = self.get_failure_details(logger, db, session, task_call)
@@ -2560,11 +2305,9 @@ class TailHandler:
 
                 return True
 
-            Failure(
-                'unexpected outcome of tail handler',
-                task_call=task_call,
-                **cast(Any, failure_details)
-            ).handle(logger)
+            Failure('unexpected outcome of tail handler', task_call=task_call, **cast(Any, failure_details)).handle(
+                logger
+            )
 
             return False
 
@@ -2581,25 +2324,17 @@ class ProvisioningTailHandler(TailHandler):
             GuestState.PROVISIONING,
             GuestState.PROMISED,
             GuestState.PREPARING,
-            GuestState.READY
+            GuestState.READY,
         ],
         # Note: when adding newly supported new state, be sure to add a corresponding reaction to the `do_handle_tail()`
         # method.
-        new_state: Literal[
-            GuestState.SHELF_LOOKUP,
-            GuestState.ROUTING,
-            GuestState.ERROR
-        ]
+        new_state: Literal[GuestState.SHELF_LOOKUP, GuestState.ROUTING, GuestState.ERROR],
     ) -> None:
         self.current_state = current_state
         self.new_state = new_state
 
     def get_failure_details(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        task_call: TaskCall
+        self, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, task_call: TaskCall
     ) -> Dict[str, str]:
         details: Dict[str, str] = {}
 
@@ -2608,11 +2343,7 @@ class ProvisioningTailHandler(TailHandler):
 
         return details
 
-    def get_logger(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        task_call: TaskCall
-    ) -> gluetool.log.ContextAdapter:
+    def get_logger(self, logger: gluetool.log.ContextAdapter, task_call: TaskCall) -> gluetool.log.ContextAdapter:
         return TaskLogger(logger, 'provisioning-tail')
 
     def do_handle_tail(
@@ -2621,15 +2352,9 @@ class ProvisioningTailHandler(TailHandler):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         task_call: TaskCall,
-        failure_details: Dict[str, str]
+        failure_details: Dict[str, str],
     ) -> DoerReturnType:
-        workspace = Workspace(
-            logger,
-            session,
-            db=db,
-            task='provisioning-tail',
-            **failure_details
-        )
+        workspace = Workspace(logger, session, db=db, task='provisioning-tail', **failure_details)
 
         workspace._begin()
 
@@ -2637,10 +2362,7 @@ class ProvisioningTailHandler(TailHandler):
         # we need to report the failure, and that's usually done by calling `error`.
         # Which needs guestname...
         if not task_call.has_args('guestname'):
-            r: DoerReturnType = Error(Failure(
-                'cannot handle chain tail with undefined arguments',
-                task_call=task_call
-            ))
+            r: DoerReturnType = Error(Failure('cannot handle chain tail with undefined arguments', task_call=task_call))
 
             workspace._error(r, 'failed to extract actor arguments')
 
@@ -2658,11 +2380,7 @@ class ProvisioningTailHandler(TailHandler):
 
         assert workspace.gr
 
-        set_values: GuestFieldStates = {
-            'poolname': None,
-            'last_poolname': workspace.gr.poolname,
-            'address': None
-        }
+        set_values: GuestFieldStates = {'poolname': None, 'last_poolname': workspace.gr.poolname, 'address': None}
 
         if workspace.gr.poolname:
             workspace.spice_details['poolname'] = workspace.gr.poolname
@@ -2674,10 +2392,7 @@ class ProvisioningTailHandler(TailHandler):
 
             assert workspace.pool
 
-            pool_data = workspace.gr.pool_data.mine(
-                workspace.pool,
-                workspace.pool.pool_data_class
-            )
+            pool_data = workspace.gr.pool_data.mine(workspace.pool, workspace.pool.pool_data_class)
 
             # Release guest and its resources but only if pool is not asked to keep resources allocated.
             if not pool_data.is_empty and not workspace.pool.preserve_for_investigation:
@@ -2688,10 +2403,7 @@ class ProvisioningTailHandler(TailHandler):
 
                     return RESCHEDULE
 
-            set_values['_pool_data'] = workspace.gr.pool_data.reset(
-                workspace.gr.poolname,
-                pool_data
-            )
+            set_values['_pool_data'] = workspace.gr.pool_data.reset(workspace.gr.poolname, pool_data)
 
         if self.new_state == GuestState.SHELF_LOOKUP:
             from .guest_shelf_lookup import guest_shelf_lookup
@@ -2702,7 +2414,7 @@ class ProvisioningTailHandler(TailHandler):
                 workspace.guestname,
                 current_state=self.current_state,
                 current_pool_data=workspace.gr._pool_data,
-                set_values=set_values
+                set_values=set_values,
             )
 
         elif self.new_state == GuestState.ROUTING:
@@ -2714,7 +2426,7 @@ class ProvisioningTailHandler(TailHandler):
                 workspace.guestname,
                 current_state=self.current_state,
                 current_pool_data=workspace.gr._pool_data,
-                set_values=set_values
+                set_values=set_values,
             )
 
         elif self.new_state == GuestState.ERROR:
@@ -2722,16 +2434,13 @@ class ProvisioningTailHandler(TailHandler):
                 self.new_state,
                 current_state=self.current_state,
                 current_pool_data=workspace.gr._pool_data,
-                set_values=set_values
+                set_values=set_values,
             )
 
         else:
             workspace._fail(
-                Failure(
-                    'unhandled new state in provisioning tail handler',
-                    new_state=self.new_state.value
-                ),
-                'unhandled new state in provisioning tail handler'
+                Failure('unhandled new state in provisioning tail handler', new_state=self.new_state.value),
+                'unhandled new state in provisioning tail handler',
             )
 
             return workspace.result
@@ -2748,11 +2457,7 @@ class ProvisioningTailHandler(TailHandler):
 
 class LoggingTailHandler(TailHandler):
     def get_failure_details(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        db: DB,
-        session: sqlalchemy.orm.session.Session,
-        task_call: TaskCall
+        self, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, task_call: TaskCall
     ) -> Dict[str, str]:
         details: Dict[str, str] = {}
 
@@ -2767,11 +2472,7 @@ class LoggingTailHandler(TailHandler):
 
         return details
 
-    def get_logger(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        task_call: TaskCall
-    ) -> gluetool.log.ContextAdapter:
+    def get_logger(self, logger: gluetool.log.ContextAdapter, task_call: TaskCall) -> gluetool.log.ContextAdapter:
         return TaskLogger(logger, 'logging-tail')
 
     def do_handle_tail(
@@ -2780,15 +2481,9 @@ class LoggingTailHandler(TailHandler):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         task_call: TaskCall,
-        failure_details: Dict[str, str]
+        failure_details: Dict[str, str],
     ) -> DoerReturnType:
-        workspace = Workspace(
-            logger,
-            session,
-            db=db,
-            task='logging-tail',
-            **failure_details
-        )
+        workspace = Workspace(logger, session, db=db, task='logging-tail', **failure_details)
 
         workspace._begin()
 
@@ -2796,32 +2491,25 @@ class LoggingTailHandler(TailHandler):
         # we need to report the failure, and that's usually done by calling `error`.
         # Which needs guestname...
         if not task_call.has_args('guestname', 'logname', 'contenttype'):
-            r: DoerReturnType = Error(Failure(
-                'cannot handle logging tail with undefined arguments',
-                task_call=task_call
-            ))
+            r: DoerReturnType = Error(
+                Failure('cannot handle logging tail with undefined arguments', task_call=task_call)
+            )
 
             workspace._error(r, 'failed to extract actor arguments')
 
             return IGNORE(r)
 
-        guestname, logname, _contenttype = task_call.extract_args(
-            'guestname',
-            'logname',
-            'contenttype'
-        )
+        guestname, logname, _contenttype = task_call.extract_args('guestname', 'logname', 'contenttype')
 
         contenttype = GuestLogContentType(_contenttype)
 
-        query = sqlalchemy \
-            .update(GuestLog) \
-            .where(GuestLog.guestname == guestname) \
-            .where(GuestLog.logname == logname) \
-            .where(GuestLog.contenttype == contenttype) \
-            .values(
-                updated=datetime.datetime.utcnow(),
-                state=GuestLogState.ERROR
-            )
+        query = (
+            sqlalchemy.update(GuestLog)
+            .where(GuestLog.guestname == guestname)
+            .where(GuestLog.logname == logname)
+            .where(GuestLog.contenttype == contenttype)
+            .values(updated=datetime.datetime.utcnow(), state=GuestLogState.ERROR)
+        )
 
         r_store: DMLResult[GuestLog] = execute_dml(logger, workspace.session, query)
 

@@ -19,13 +19,12 @@ def test_bdm_find_free_device_name_empty() -> None:
 
 
 def test_bdm_find_free_device_name_real_root() -> None:
-    mappings = tft.artemis.drivers.aws.BlockDeviceMappings([
-        # Root device, for those /dev/sda1 is reserved
-        {
-            'DeviceName': '/dev/sda1',
-            'Ebs': {}
-        }
-    ])
+    mappings = tft.artemis.drivers.aws.BlockDeviceMappings(
+        [
+            # Root device, for those /dev/sda1 is reserved
+            {'DeviceName': '/dev/sda1', 'Ebs': {}}
+        ]
+    )
 
     r_name = mappings.find_free_device_name()
 
@@ -34,29 +33,16 @@ def test_bdm_find_free_device_name_real_root() -> None:
 
 
 def test_bdm_find_free_device_name() -> None:
-    mappings = tft.artemis.drivers.aws.BlockDeviceMappings([
-        # Root device, for those /dev/sda1 is reserved
-        {
-            'DeviceName': '/dev/sda1',
-            'Ebs': {}
-        },
-        {
-            'DeviceName': '/dev/sdb',
-            'Ebs': {}
-        },
-        {
-            'DeviceName': '/dev/sdf',
-            'Ebs': {}
-        },
-        {
-            'DeviceName': '/dev/sdg',
-            'Ebs': {}
-        },
-        {
-            'DeviceName': '/dev/sdp',
-            'Ebs': {}
-        }
-    ])
+    mappings = tft.artemis.drivers.aws.BlockDeviceMappings(
+        [
+            # Root device, for those /dev/sda1 is reserved
+            {'DeviceName': '/dev/sda1', 'Ebs': {}},
+            {'DeviceName': '/dev/sdb', 'Ebs': {}},
+            {'DeviceName': '/dev/sdf', 'Ebs': {}},
+            {'DeviceName': '/dev/sdg', 'Ebs': {}},
+            {'DeviceName': '/dev/sdp', 'Ebs': {}},
+        ]
+    )
 
     r_name = mappings.find_free_device_name()
 
@@ -100,11 +86,9 @@ def test_bdm_enlarge_exhausted_names(monkeypatch: _pytest.monkeypatch.MonkeyPatc
     assert len(mappings) == 0
 
 
-@pytest.mark.parametrize(('api_arch', 'artemis_arch'), [
-    ('x86_64', 'x86_64'),
-    ('arm64', 'aarch64'),
-    ('i386', 'i386'),
-    ('x86_64_mac', 'x86_64_mac')
-])
+@pytest.mark.parametrize(
+    ('api_arch', 'artemis_arch'),
+    [('x86_64', 'x86_64'), ('arm64', 'aarch64'), ('i386', 'i386'), ('x86_64_mac', 'x86_64_mac')],
+)
 def test_aws_arch_to_arch(api_arch: str, artemis_arch: Optional[str]) -> None:
     assert tft.artemis.drivers.aws._aws_arch_to_arch(api_arch) == artemis_arch

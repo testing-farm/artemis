@@ -8,6 +8,7 @@ Revises:
 Create Date: 2020-07-21 15:51:55.334506
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -27,31 +28,27 @@ def upgrade() -> None:
         sa.Column('guestname', sa.String(length=250), nullable=False),
         sa.Column('eventname', sa.String(length=250), nullable=False),
         sa.Column('details', sa.Text(), nullable=True),
-        sa.PrimaryKeyConstraint('_id')
+        sa.PrimaryKeyConstraint('_id'),
     )
     op.create_table(
         'metrics',
         sa.Column('_id', sa.Integer(), nullable=False),
         sa.Column('count', sa.Integer(), nullable=True),
         sa.Column('updated', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('_id')
+        sa.PrimaryKeyConstraint('_id'),
     )
     op.create_table(
         'pools',
         sa.Column('poolname', sa.String(length=250), nullable=False),
         sa.Column('driver', sa.String(length=250), nullable=False),
         sa.Column('parameters', sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint('poolname')
+        sa.PrimaryKeyConstraint('poolname'),
     )
     op.create_table(
-        'priority_groups',
-        sa.Column('name', sa.String(length=250), nullable=False),
-        sa.PrimaryKeyConstraint('name')
+        'priority_groups', sa.Column('name', sa.String(length=250), nullable=False), sa.PrimaryKeyConstraint('name')
     )
     op.create_table(
-        'users',
-        sa.Column('username', sa.String(length=250), nullable=False),
-        sa.PrimaryKeyConstraint('username')
+        'users', sa.Column('username', sa.String(length=250), nullable=False), sa.PrimaryKeyConstraint('username')
     )
     op.create_table(
         'sshkeys',
@@ -59,8 +56,11 @@ def upgrade() -> None:
         sa.Column('enabled', sa.Boolean(), nullable=True),
         sa.Column('ownername', sa.String(length=250), nullable=False),
         sa.Column('file', sa.String(length=250), nullable=False),
-        sa.ForeignKeyConstraint(['ownername'], ['users.username'], ),
-        sa.PrimaryKeyConstraint('keyname')
+        sa.ForeignKeyConstraint(
+            ['ownername'],
+            ['users.username'],
+        ),
+        sa.PrimaryKeyConstraint('keyname'),
     )
     op.create_table(
         'guest_requests',
@@ -75,11 +75,23 @@ def upgrade() -> None:
         sa.Column('ssh_port', sa.Integer(), nullable=False),
         sa.Column('ssh_username', sa.String(length=250), nullable=False),
         sa.Column('pool_data', sa.Text(), nullable=False),
-        sa.ForeignKeyConstraint(['ownername'], ['users.username'], ),
-        sa.ForeignKeyConstraint(['poolname'], ['pools.poolname'], ),
-        sa.ForeignKeyConstraint(['priorityname'], ['priority_groups.name'], ),
-        sa.ForeignKeyConstraint(['ssh_keyname'], ['sshkeys.keyname'], ),
-        sa.PrimaryKeyConstraint('guestname')
+        sa.ForeignKeyConstraint(
+            ['ownername'],
+            ['users.username'],
+        ),
+        sa.ForeignKeyConstraint(
+            ['poolname'],
+            ['pools.poolname'],
+        ),
+        sa.ForeignKeyConstraint(
+            ['priorityname'],
+            ['priority_groups.name'],
+        ),
+        sa.ForeignKeyConstraint(
+            ['ssh_keyname'],
+            ['sshkeys.keyname'],
+        ),
+        sa.PrimaryKeyConstraint('guestname'),
     )
     op.create_table(
         'snapshot_requests',
@@ -88,9 +100,15 @@ def upgrade() -> None:
         sa.Column('poolname', sa.String(length=250), nullable=True),
         sa.Column('state', sa.String(length=250), nullable=False),
         sa.Column('start_again', sa.Boolean(), nullable=False),
-        sa.ForeignKeyConstraint(['guestname'], ['guest_requests.guestname'], ),
-        sa.ForeignKeyConstraint(['poolname'], ['pools.poolname'], ),
-        sa.PrimaryKeyConstraint('snapshotname')
+        sa.ForeignKeyConstraint(
+            ['guestname'],
+            ['guest_requests.guestname'],
+        ),
+        sa.ForeignKeyConstraint(
+            ['poolname'],
+            ['pools.poolname'],
+        ),
+        sa.PrimaryKeyConstraint('snapshotname'),
     )
     # ### end Alembic commands ###
 
