@@ -32,9 +32,8 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
-    CanAcquire,
+    FlavorBasedPoolDriver,
     GuestTagsType,
-    HookImageInfoMapper,
     PoolErrorCauses,
     PoolImageSSHInfo,
     ProvisioningProgress,
@@ -236,12 +235,14 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     user_data_format: str
 
 
-class IBMCloudVPCDriver(PoolDriver):
+class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloudFlavor]):
     drivername = 'ibmcloud-vpc'
 
     image_info_class = IBMCloudVPCPoolImageInfo
     flavor_info_class = IBMCloudFlavor
     pool_data_class = IBMCloudPoolData
+
+    _image_map_hook_name = 'IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE'
 
     def __init__(
         self,
@@ -250,11 +251,6 @@ class IBMCloudVPCDriver(PoolDriver):
         pool_config: Dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
-
-    # TODO: return value does not match supertype - it should, it does, but mypy ain't happy: why?
-    @property
-    def image_info_mapper(self) -> HookImageInfoMapper[IBMCloudVPCPoolImageInfo]:  # type: ignore[override]
-        return HookImageInfoMapper(self, 'IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE')
 
     def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
         def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:
@@ -508,84 +504,13 @@ class IBMCloudVPCDriver(PoolDriver):
 
         return Ok(resources)
 
-    def can_acquire(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[CanAcquire, Failure]:
-        """
-        Find our whether this driver can provision a guest that would satisfy
-        the given environment.
-        """
-
-        r_answer = super().can_acquire(logger, session, guest_request)
-
-        if r_answer.is_error:
-            return Error(r_answer.unwrap_error())
-
-        if r_answer.unwrap().can_acquire is False:
-            return r_answer
-
-        # Disallow HW constraints the driver does not implement yet
-        if guest_request.environment.has_hw_constraints:
-            r_constraints = guest_request.environment.get_hw_constraints()
-
-            if r_constraints.is_error:
-                return Error(r_constraints.unwrap_error())
-
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
-
-        images = r_images.unwrap()
-
-        if not images:
-            return Ok(CanAcquire.cannot('compose not supported'))
-
-        # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
-
-            if not images:
-                return Ok(CanAcquire.cannot('compose does not support kickstart'))
-
-        # Check that there is a suitable flavor
-        pairs: List[Tuple[IBMCloudVPCPoolImageInfo, IBMCloudFlavor]] = []
-        for image in images:
-            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
-            if r_instance_type.is_error:
-                return Error(r_instance_type.unwrap_error())
-            instance_type = r_instance_type.unwrap()
-
-            if instance_type is None:
-                continue
-
-            pairs.append((image, instance_type))
-
-        if not pairs:
-            return Ok(CanAcquire.cannot('no suitable image/instance_type combination found'))
-
-        log_dict_yaml(
-            logger.info,
-            'available image/instance_type combinations',
-            [
-                {'instance_type': instance_type.serialize(), 'image': image.serialize()}
-                for image, instance_type in pairs
-            ],
-        )
-
-        return Ok(CanAcquire())
-
-    def map_image_name_to_image_info(
-        self, logger: gluetool.log.ContextAdapter, imagename: str
-    ) -> Result[PoolImageInfo, Failure]:
-        return self._map_image_name_to_image_info_by_cache(logger, imagename)
-
-    def _env_to_instance_type(
+    def _guest_request_to_flavor_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: IBMCloudVPCPoolImageInfo,
-    ) -> Result[IBMCloudFlavor, Failure]:
+    ) -> Result[Optional[IBMCloudFlavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger, guest_request.environment
         )
@@ -616,7 +541,7 @@ class IBMCloudVPCDriver(PoolDriver):
 
             guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
 
-            return Error(Failure('no suitable flavor'))
+            return Ok(None)
 
         if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
             logger.info('default flavor among suitable ones, using it')
@@ -658,36 +583,21 @@ class IBMCloudVPCDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_images = self.image_info_mapper.map(logger, guest_request)
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
-        images = r_images.unwrap()
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
 
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
 
-        pairs: List[Tuple[IBMCloudVPCPoolImageInfo, IBMCloudFlavor]] = []
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
 
-        for image in images:
-            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
-            if r_instance_type.is_error:
-                return Error(r_instance_type.unwrap_error())
+            return Error(Failure(can_acquire.reason.message))
 
-            pairs.append((image, r_instance_type.unwrap()))
+        image, flavor = pairs[0]
 
-        if not pairs:
-            return Error(Failure('no suitable image/flavor combination found'))
-
-        log_dict_yaml(
-            logger.info,
-            'available image/flavor combinations',
-            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
-        )
-
-        image, instance_type = pairs[0]
-
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=instance_type, image=image)
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
         r_tags = self.get_guest_tags(logger, session, guest_request)
 
@@ -723,8 +633,8 @@ class IBMCloudVPCDriver(PoolDriver):
 
                 root_disk_size: Optional[SizeType] = None
                 # If disk size is defined in flavor -> let's use it, otherwise take defaults from pool config
-                if instance_type.disk and instance_type.disk[0].size is not None:
-                    root_disk_size = instance_type.disk[0].size
+                if flavor.disk and flavor.disk[0].size is not None:
+                    root_disk_size = flavor.disk[0].size
                 else:
                     # let's take boot partition size from the driver config
                     if 'default-root-disk-size' in self.pool_config:
@@ -737,7 +647,7 @@ class IBMCloudVPCDriver(PoolDriver):
                     instance_name,
                     vpc_id,
                     self.pool_config['zone'],
-                    instance_type.id,
+                    flavor.id,
                     self.pool_config['subnet-id'],
                     '--image',
                     image.id,

@@ -64,11 +64,9 @@ from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, P
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
-    CanAcquire,
+    FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
     GuestTagsType,
-    HookImageInfoMapper,
-    ImageInfoMapperResultType,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -404,31 +402,6 @@ class AWSPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
     spot_instance_id: Optional[str] = None
     security_group: Optional[str] = None
-
-
-class AWSHookImageInfoMapper(HookImageInfoMapper[AWSPoolImageInfo]):
-    def map_or_none(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> ImageInfoMapperResultType[AWSPoolImageInfo]:
-        r_images = super().map_or_none(logger, guest_request)
-
-        if r_images.is_error:
-            return r_images
-
-        images = r_images.unwrap()
-
-        # console/URL logs require ENA support
-        if guest_request.requests_guest_log('console:interactive', GuestLogContentType.URL):
-            images = list(
-                logging_filter(
-                    logger,
-                    images,
-                    'console.interactive requires image ENA support',
-                    lambda logger, image: image.ena_support,
-                )
-            )
-
-        return Ok(images)
 
 
 def _base64_encode(data: str) -> str:
@@ -1381,12 +1354,14 @@ def _aws_boot_to_boot(boot_method: str) -> FlavorBootMethodType:
     return cast(FlavorBootMethodType, boot_method)
 
 
-class AWSDriver(PoolDriver):
+class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
     drivername = 'aws'
 
     image_info_class = AWSPoolImageInfo
     flavor_info_class = AWSFlavor
     pool_data_class = AWSPoolData
+
+    _image_map_hook_name = 'AWS_ENVIRONMENT_TO_IMAGE'
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
@@ -1397,11 +1372,6 @@ class AWSDriver(PoolDriver):
             'AWS_DEFAULT_REGION': self.pool_config['default-region'],
             'AWS_DEFAULT_OUTPUT': 'json',
         }
-
-    # TODO: return value does not match supertype - it should, it does, but mypy ain't happy: why?
-    @property
-    def image_info_mapper(self) -> AWSHookImageInfoMapper:  # type: ignore[override]  # does not match supertype
-        return AWSHookImageInfoMapper(self, 'AWS_ENVIRONMENT_TO_IMAGE')
 
     @property
     def _image_owners(self) -> List[str]:
@@ -1420,6 +1390,36 @@ class AWSDriver(PoolDriver):
     @property
     def use_public_ip(self) -> bool:
         return normalize_bool_option(self.pool_config.get('use-public-ip', False))
+
+    # ignore[override]: mismatch with PoolImageInfoT in the parent, will be resolved with later patches focusing on
+    # the deduplication.
+    def _guest_request_to_image_or_none(  # type: ignore[override]
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+    ) -> Result[List[AWSPoolImageInfo], Failure]:
+        r_images: Result[List[AWSPoolImageInfo], Failure] = super()._guest_request_to_image_or_none(
+            logger, session, guest_request
+        )
+
+        if r_images.is_error:
+            return r_images
+
+        images = r_images.unwrap()
+
+        # console/URL logs require ENA support
+        if guest_request.requests_guest_log('console:interactive', GuestLogContentType.URL):
+            images = list(
+                logging_filter(
+                    logger,
+                    images,
+                    'console.interactive requires image ENA support',
+                    lambda logger, image: image.ena_support,
+                )
+            )
+
+        return Ok(images)
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
@@ -1498,70 +1498,6 @@ class AWSDriver(PoolDriver):
             self.inc_costs(logger, ResourceType.SECURITY_GROUP, resource_ids.ctime)
 
         return Ok(ReleasePoolResourcesState.RELEASED)
-
-    def can_acquire(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[CanAcquire, Failure]:
-        r_answer = super().can_acquire(logger, session, guest_request)
-
-        if r_answer.is_error:
-            return Error(r_answer.unwrap_error())
-
-        if r_answer.unwrap().can_acquire is False:
-            return r_answer
-
-        # Disallow HW constraints the driver does not implement yet
-        if guest_request.environment.has_hw_constraints:
-            r_constraints = guest_request.environment.get_hw_constraints()
-
-            if r_constraints.is_error:
-                return Error(r_constraints.unwrap_error())
-
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
-
-        images = r_images.unwrap()
-
-        if not images:
-            return Ok(CanAcquire.cannot('compose not supported'))
-
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
-
-            if not images:
-                return Ok(CanAcquire.cannot('compose does not support kickstart'))
-
-        pairs: List[Tuple[AWSPoolImageInfo, Flavor]] = []
-
-        for image in images:
-            r_type = self._env_to_instance_type_or_none(logger, session, guest_request, image)
-
-            if r_type.is_error:
-                return Error(r_type.unwrap_error())
-
-            flavor = r_type.unwrap()
-
-            if flavor is None:
-                continue
-
-            pairs.append((image, flavor))
-
-        if not pairs:
-            return Ok(CanAcquire.cannot('no suitable image/flavor combination found'))
-
-        log_dict_yaml(
-            logger.info,
-            'available image/flavor combinations',
-            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
-        )
-
-        return Ok(CanAcquire())
-
-    def map_image_name_to_image_info(
-        self, logger: gluetool.log.ContextAdapter, imagename: str
-    ) -> Result[PoolImageInfo, Failure]:
-        return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
     def _filter_flavors_console_url_support(
         self,
@@ -1693,7 +1629,7 @@ class AWSDriver(PoolDriver):
             )
         )
 
-    def _env_to_instance_type_or_none(
+    def _guest_request_to_flavor_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
@@ -1756,25 +1692,6 @@ class AWSDriver(PoolDriver):
             )
 
         return Ok(suitable_flavors[0])
-
-    def _env_to_instance_type(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
-    ) -> Result[AWSFlavor, Failure]:
-        r_flavor = self._env_to_instance_type_or_none(logger, session, guest_request, image)
-
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
-
-        flavor = r_flavor.unwrap()
-
-        if flavor is None:
-            return Error(Failure('no suitable flavor'))
-
-        return Ok(flavor)
 
     def _describe_instance(self, guest_request: GuestRequest) -> Result[InstanceOwnerType, Failure]:
         aws_options = [
@@ -2693,36 +2610,19 @@ class AWSDriver(PoolDriver):
     ) -> Result[ProvisioningProgress, Failure]:
         log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
 
-        # find out image from enviroment
-        r_images = self.image_info_mapper.map(logger, guest_request)
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
 
-        images = r_images.unwrap()
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
 
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
 
-        pairs: List[Tuple[AWSPoolImageInfo, AWSFlavor]] = []
+            return Error(Failure(can_acquire.reason.message))
 
-        for image in images:
-            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
-            if r_instance_type.is_error:
-                return Error(r_instance_type.unwrap_error())
-
-            pairs.append((image, r_instance_type.unwrap()))
-
-        if not pairs:
-            return Error(Failure('no suitable image/flavor combination found'))
-
-        log_dict_yaml(
-            logger.info,
-            'available image/flavor combinations',
-            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
-        )
-
-        image, instance_type = pairs[0]
+        image, flavor = pairs[0]
 
         # If this pool provides spot instances, we start the provisioning by submitting a spot instance request.
         # After that, we request an update to be scheduled, to check progress of this spot request. If successfull,
@@ -2733,12 +2633,12 @@ class AWSDriver(PoolDriver):
         # is no explicit request to transition from spot instance request to instance updates - once spot request is
         # fulfilled, we're given instance ID to work with.
 
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=instance_type, image=image)
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
         if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
-            return self._request_spot_instance(logger, session, guest_request, instance_type, image)
+            return self._request_spot_instance(logger, session, guest_request, flavor, image)
 
-        return self._request_instance(logger, session, guest_request, instance_type, image)
+        return self._request_instance(logger, session, guest_request, flavor, image)
 
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest

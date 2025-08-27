@@ -49,7 +49,6 @@ from . import (
     CanAcquire,
     CLIOutput,
     GuestLogUpdateProgress,
-    HookImageInfoMapper,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -1029,6 +1028,8 @@ class BeakerDriver(PoolDriver):
     image_info_class = BeakerPoolImageInfo
     pool_data_class = BeakerPoolData
 
+    _image_map_hook_name = 'BEAKER_ENVIRONMENT_TO_IMAGE'
+
     #: Template for a cache key holding avoid groups hostnames.
     POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY = 'pool.{}.avoid-groups.hostnames'
 
@@ -1047,10 +1048,6 @@ class BeakerDriver(PoolDriver):
         ]
 
         return Ok(capabilities)
-
-    @property
-    def image_info_mapper(self) -> HookImageInfoMapper[BeakerPoolImageInfo]:  # type: ignore[override]
-        return HookImageInfoMapper(self, 'BEAKER_ENVIRONMENT_TO_IMAGE')
 
     @property
     def avoid_groups(self) -> Result[List[str], Failure]:
@@ -1223,7 +1220,7 @@ class BeakerDriver(PoolDriver):
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
-    def map_image_name_to_image_info(
+    def image_name_to_image_info(
         self, logger: gluetool.log.ContextAdapter, imagename: str
     ) -> Result[PoolImageInfo, Failure]:
         # TODO: is it true that `name` is equal to `id` in Beaker? Is really each `name` we get from
@@ -1404,7 +1401,9 @@ class BeakerDriver(PoolDriver):
 
         beaker_filter = r_beaker_filter.unwrap()
 
-        r_distros = self.image_info_mapper.map(logger, guest_request)
+        r_distros: Result[List[BeakerPoolImageInfo], Failure] = self._guest_request_to_image(
+            logger, session, guest_request
+        )
 
         if r_distros.is_error:
             return Error(r_distros.unwrap_error())
@@ -1923,15 +1922,6 @@ class BeakerDriver(PoolDriver):
     def can_acquire(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
-        """
-        Find our whether this driver can provision a guest that would satisfy
-        the given environment.
-
-        :param Environment environment: environmental requirements a guest must satisfy.
-        :rtype: result.Result[bool, Failure]
-        :returns: Ok with True if guest can be acquired.
-        """
-
         # First, check the parent class, maybe its tests already have the answer.
         r_answer = super().can_acquire(logger, session, guest_request)
 
@@ -1941,7 +1931,9 @@ class BeakerDriver(PoolDriver):
         if r_answer.unwrap().can_acquire is False:
             return r_answer
 
-        r_distros = self.image_info_mapper.map_or_none(logger, guest_request)
+        r_distros: Result[List[BeakerPoolImageInfo], Failure] = self._guest_request_to_image_or_none(
+            logger, session, guest_request
+        )
         if r_distros.is_error:
             return Error(r_distros.unwrap_error())
 
