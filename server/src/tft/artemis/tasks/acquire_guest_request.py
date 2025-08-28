@@ -6,7 +6,7 @@ from typing import cast
 import gluetool.log
 import sqlalchemy.orm.session
 
-from .. import Failure
+from .. import Failure, log_dict_yaml
 from ..db import DB
 from ..drivers import PoolData, ProvisioningProgress, ProvisioningState
 from ..guest import GuestState
@@ -48,6 +48,8 @@ class Workspace(_Workspace):
 
             if self.is_pool_enabled:
                 skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
+
+                log_dict_yaml(self.logger.info, 'provisioning environment', self.gr._environment)
 
                 result = self.pool.acquire_guest(self.logger, self.session, self.gr)
 

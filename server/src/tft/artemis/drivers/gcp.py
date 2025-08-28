@@ -363,8 +363,6 @@ class GCPDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None,
     ) -> Result[ProvisioningProgress, Failure]:
-        log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
-
         delay_cfg_option_read_result = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
         if delay_cfg_option_read_result.is_error:
             return Error(delay_cfg_option_read_result.unwrap_error())

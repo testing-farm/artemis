@@ -2014,19 +2014,6 @@ class BeakerDriver(PoolDriver):
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        """
-        Acquire one guest from the pool. The guest must satisfy requirements specified
-        by `environment`.
-
-        :param Environment environment: environmental requirements a guest must satisfy.
-        :param Key master_key: master key to upload to the guest.
-        :rtype: result.Result[Guest, str]
-        :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
-            of error.
-        """
-
-        log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
-
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:

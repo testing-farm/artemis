@@ -18,7 +18,7 @@ from gluetool.result import Error, Ok, Result
 from keystoneauth1.identity import v3
 from novaclient import client as nocl
 
-from .. import Failure, JSONType, log_dict_yaml, process_output_to_str, safe_call
+from .. import Failure, JSONType, process_output_to_str, safe_call
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import (
     UNITS,
@@ -396,11 +396,9 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
                 )
             )
 
-    def _do_acquire_guest(
+    def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
-
         r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
 
         if r_delay.is_error:
@@ -679,21 +677,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             return Error(Failure.from_failure('failed to rebuild instance', r_output.unwrap_error()))
 
         return Ok(True)
-
-    def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        """
-        Acquire one guest from the pool. The guest must satisfy requirements specified
-        by `environment`.
-
-        :param Environment environment: environmental requirements a guest must satisfy.
-        :param Key key: master key to upload to the guest.
-        :rtype: result.Result[Guest, Failure]
-        :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
-            of error.
-        """
-        return self._do_acquire_guest(logger, session, guest_request)
 
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
