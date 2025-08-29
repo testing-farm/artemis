@@ -523,7 +523,7 @@ class PoolResources(PoolMetricsBase):
     _KEY = 'metrics.pool.{poolname}.resources.{dimension}'  # noqa: FS003
     _KEY_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.resources.{dimension}.updated_timestamp'  # noqa: FS003
 
-    _TRIVIAL_FIELDS = ('instances', 'cores', 'memory', 'diskspace', 'snapshots')
+    _TRIVIAL_FIELDS = ('instances', 'cores', 'memory', 'diskspace')
     _COMPOUND_FIELDS = ('networks',)
 
     instances: Optional[int]
@@ -546,11 +546,6 @@ class PoolResources(PoolMetricsBase):
     diskspace: Optional[int]
     """
     Size of disk space, in bytes.
-    """
-
-    snapshots: Optional[int]
-    """
-    Number of instance snapshots.
     """
 
     networks: dict[str, PoolNetworkResources] = dataclasses.field(default_factory=dict)
@@ -587,7 +582,6 @@ class PoolResources(PoolMetricsBase):
         self.cores = None
         self.memory = None
         self.diskspace = None
-        self.snapshots = None
         self.networks = {}
         self.flavors = {}
 
@@ -695,7 +689,6 @@ class PoolResourcesDepleted:
     cores: bool = False
     memory: bool = False
     diskspace: bool = False
-    snapshots: bool = False
 
     # Depleted networks are listed as names only, no deeper structure. We could change this to mapping between
     # network names and, for example, a boolean or a structure describing which network resource is depleted, but
@@ -1431,7 +1424,6 @@ class PoolsMetrics(MetricsBase):
         self.POOL_RESOURCES_CORES = _create_pool_resource_metric('cores')
         self.POOL_RESOURCES_MEMORY = _create_pool_resource_metric('memory', unit='bytes')
         self.POOL_RESOURCES_DISKSPACE = _create_pool_resource_metric('diskspace', unit='bytes')
-        self.POOL_RESOURCES_SNAPSHOTS = _create_pool_resource_metric('snapshot')
 
         self.POOL_RESOURCES_NETWORK_ADDRESSES = _create_network_resource_metric('addresses')
 
@@ -1531,7 +1523,6 @@ class PoolsMetrics(MetricsBase):
                 (self.POOL_RESOURCES_CORES, 'cores'),
                 (self.POOL_RESOURCES_MEMORY, 'memory'),
                 (self.POOL_RESOURCES_DISKSPACE, 'diskspace'),
-                (self.POOL_RESOURCES_SNAPSHOTS, 'snapshots'),
             ]:
                 limit = getattr(pool_metrics.resources.limits, metric_name)
                 usage = getattr(pool_metrics.resources.usage, metric_name)

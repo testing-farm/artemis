@@ -322,25 +322,6 @@ class GuestShelfResponse:
         return cls(shelfname=shelf.shelfname, owner=shelf.ownername)
 
 
-class SnapshotRequest(BaseModel):
-    start_again: bool
-
-
-@dataclasses.dataclass
-class SnapshotResponse:
-    snapshotname: str
-    guestname: str
-    state: GuestState
-
-    @classmethod
-    def from_db(cls, snapshot_request: artemis_db.SnapshotRequest) -> 'SnapshotResponse':
-        return cls(
-            snapshotname=snapshot_request.snapshotname,
-            guestname=snapshot_request.guestname,
-            state=GuestState(snapshot_request.state),
-        )
-
-
 @dataclasses.dataclass
 class ConsoleUrlResponse:
     url: Optional[str]

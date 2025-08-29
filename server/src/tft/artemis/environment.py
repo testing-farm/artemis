@@ -2055,6 +2055,8 @@ class Environment(SerializableContainer):
     os: OsRequirements
     kickstart: Kickstart
     pool: Optional[str] = None
+
+    # Deprecated, is kept for backward compatibility with older APIs.
     snapshots: bool = False
 
     #: If set, the request limits the instance to be either a spot instance, or a regular one. If left unset,

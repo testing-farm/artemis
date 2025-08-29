@@ -43,7 +43,7 @@ from ...environment import Environment
 from ...guest import GuestState
 from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_TRACING_ENABLED, Knob
 from ...security_group_rules import SecurityGroupRule
-from ...tasks import Actor, TaskCall, _get_ssh_key, get_snapshot_logger
+from ...tasks import Actor, TaskCall, _get_ssh_key
 from .. import environment as global_env, errors
 from ..dependencies import get_db, get_logger
 from ..errors import InternalServerError
@@ -61,8 +61,6 @@ from ..models import (
     KnobResponse,
     KnobUpdateRequest,
     PreprovisioningRequest,
-    SnapshotRequest,
-    SnapshotResponse,
     TokenResetResponse,
     TokenTypes,
     UserResponse,
@@ -308,37 +306,21 @@ class GuestRequestManager:
                 extra_actor_args = [GuestState.CONDEMNED.value]
 
             if guest_request.state != GuestState.CONDEMNED:
-                snapshot_count_subquery = (
-                    session.query(
-                        sqlalchemy.func.count(artemis_db.SnapshotRequest.snapshotname).label('snapshot_count')
-                    )
-                    .filter(artemis_db.SnapshotRequest.guestname == guestname)
-                    .subquery('t')
-                )
-
-                query = (
+                r_state: artemis_db.DMLResult[artemis_db.GuestRequest] = artemis_db.execute_dml(
+                    guest_logger,
+                    session,
                     sqlalchemy.update(artemis_db.GuestRequest)
                     .where(artemis_db.GuestRequest.guestname == guestname)
-                    .where(snapshot_count_subquery.c.snapshot_count == 0)
-                    .values(state=GuestState.CONDEMNED)
+                    .values(state=GuestState.CONDEMNED),
                 )
 
-                r_state: artemis_db.DMLResult[artemis_db.GuestRequest] = artemis_db.execute_dml(
-                    guest_logger, session, query
-                )
-
-                # The query can miss either with existing snapshots, or when the guest request has been
-                # removed from DB already. The "gone already" situation could be better expressed by
-                # returning "404 Not Found", but we can't tell which of these two situations caused the
-                # change to go vain, therefore returning general "409 Conflict", expressing our believe
-                # user should resolve the conflict and try again.
                 if r_state.is_error:
                     failure = r_state.unwrap_error()
 
-                    if failure.details.get('serialization_failure', False):
-                        raise errors.ConflictError(
-                            logger=guest_logger, caused_by=failure, failure_details=failure_details
-                        )
+                    # TODO: distinguish between "not found" and "crashed" errors. If we have to, of course.
+                    raise errors.NoSuchEntityError(
+                        logger=guest_logger, caused_by=failure, failure_details=failure_details
+                    )
 
                     raise errors.InternalServerError(
                         logger=guest_logger, caused_by=failure, failure_details=failure_details
@@ -952,119 +934,6 @@ class GuestShelfManager:
                     task_request_id=task_request_id,
                 ).serialize(),
             )
-
-
-class SnapshotRequestManager:
-    def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
-        self.db = db
-
-    def get_snapshot(
-        self, logger: gluetool.log.ContextAdapter, guestname: str, snapshotname: str
-    ) -> Optional[SnapshotResponse]:
-        with get_session(logger, self.db, read_only=True) as (session, _):
-            r_snapshot_request_record = (
-                artemis_db.SafeQuery.from_session(session, artemis_db.SnapshotRequest)
-                .filter(artemis_db.SnapshotRequest.snapshotname == snapshotname)
-                .filter(artemis_db.SnapshotRequest.guestname == guestname)
-                .one_or_none()
-            )
-
-            if r_snapshot_request_record.is_error:
-                raise errors.InternalServerError(caused_by=r_snapshot_request_record.unwrap_error())
-
-            snapshot_request_record = r_snapshot_request_record.unwrap()
-
-            if snapshot_request_record is None:
-                return None
-
-            return SnapshotResponse.from_db(snapshot_request_record)
-
-    def create_snapshot(
-        self, guestname: str, snapshot_request: SnapshotRequest, logger: gluetool.log.ContextAdapter
-    ) -> SnapshotResponse:
-        snapshotname = str(uuid.uuid4())
-
-        failure_details = {'guestname': guestname, 'snapshotname': snapshotname}
-
-        snapshot_logger = get_snapshot_logger('create-snapshot-request', logger, guestname, snapshotname)
-
-        with get_session(logger, self.db) as (session, _):
-            execute_dml(
-                snapshot_logger,
-                session,
-                sqlalchemy.insert(artemis_db.SnapshotRequest).values(
-                    snapshotname=snapshotname,
-                    guestname=guestname,
-                    poolname=None,
-                    state=GuestState.PENDING,
-                    start_again=snapshot_request.start_again,
-                ),
-                conflict_error=errors.InternalServerError,
-                failure_details=failure_details,
-            )
-
-            artemis_db.GuestRequest.log_event_by_guestname(
-                snapshot_logger, session, guestname, 'created', snapshotname=snapshotname
-            )
-
-        sr = self.get_snapshot(logger, guestname, snapshotname)
-
-        if sr is None:
-            # Now isn't this just funny... We just created the record, how could it be missing? There's probably
-            # no point in trying to clean up what we started - if the guest is missing, right after we created it,
-            # then things went south. At least it would get logged.
-            raise errors.InternalServerError(logger=snapshot_logger, failure_details=failure_details)
-
-        return sr
-
-    def delete_snapshot(self, guestname: str, snapshotname: str, logger: gluetool.log.ContextAdapter) -> None:
-        from ...tasks import get_snapshot_logger
-
-        snapshot_logger = get_snapshot_logger('delete-snapshot-request', logger, guestname, snapshotname)
-
-        with get_session(logger, self.db) as (session, _):
-            query = (
-                sqlalchemy.update(artemis_db.SnapshotRequest)
-                .where(artemis_db.SnapshotRequest.snapshotname == snapshotname)
-                .where(artemis_db.SnapshotRequest.guestname == guestname)
-                .values(state=GuestState.CONDEMNED)
-            )
-
-            # Unline guest requests, here seem to be no possibility of conflict or relationships we must
-            # preserve. Given the query, snapshot request already being removed seems to be the only option
-            # here - what else could cause the query *not* marking the record as condemned?
-            execute_dml(snapshot_logger, session, query, conflict_error=errors.NoSuchEntityError)
-
-            artemis_db.GuestRequest.log_event_by_guestname(snapshot_logger, session, guestname, 'snapshot-condemned')
-
-    def restore_snapshot(
-        self, guestname: str, snapshotname: str, logger: gluetool.log.ContextAdapter
-    ) -> SnapshotResponse:
-        from ...tasks import get_snapshot_logger
-
-        snapshot_logger = get_snapshot_logger('delete-snapshot-request', logger, guestname, snapshotname)
-
-        with get_session(logger, self.db) as (session, _):
-            query = (
-                sqlalchemy.update(artemis_db.SnapshotRequest)
-                .where(artemis_db.SnapshotRequest.snapshotname == snapshotname)
-                .where(artemis_db.SnapshotRequest.guestname == guestname)
-                .where(artemis_db.SnapshotRequest.state != GuestState.CONDEMNED)
-                .values(state=GuestState.RESTORING)
-            )
-
-            # Similarly to guest request removal, two options exist: either the snapshot is already gone,
-            # or it's marked as condemned. Again, we cannot tell which of these happened. "404 Not Found"
-            # would better express the former, but sticking with "409 Conflict" to signal user there's a
-            # conflict of some kind, and after resolving it - e.g. by inspecting the snapshot request - user
-            # should decide how to proceed.
-            execute_dml(snapshot_logger, session, query)
-
-            snapshot_response = self.get_snapshot(logger, guestname, snapshotname)
-
-            assert snapshot_response is not None
-
-            return snapshot_response
 
 
 class KnobManager:

@@ -65,7 +65,6 @@ from ..db import (
     Pool,
     PoolTag,
     SafeQuery,
-    SnapshotRequest,
     SSHKey,
 )
 from ..environment import (
@@ -241,7 +240,6 @@ ConfigCapabilitiesType = TypedDict(
     {
         'supported-architectures': Union[Literal['any'], list[str]],
         'supports-hostnames': Union[str, bool],
-        'supports-snapshots': Union[str, bool],
         'supports-spot-instances': Union[str, bool],
         'disable-guest-logs': list[ConfigCapabilitiesDisableGuestLogType],
     },
@@ -598,8 +596,6 @@ def flavor_to_key(
 class PoolCapabilities:
     supported_architectures: Union[list[str], _AnyArchitecture] = AnyArchitecture
 
-    #: If set, the pool driver can handle snapshots.
-    supports_snapshots: bool = False
     supports_console_url: bool = False
 
     #: If set, the pool provides spot instances. Otherwise, only regular instances are supported.
@@ -1608,7 +1604,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Release any pool resources identified by provided IDs.
 
         This method should implement the actual removal of cloud VM, instances, volumes, IP addresses and other
-        resources that together comprise what has been provisioned for a guest or snapshot. Instead of performing
+        resources that together comprise what has been provisioned for a guest. Instead of performing
         this "cleanup" in the main acquire/update/release chains, the chains should schedule execution of this method
         by calling :py:meth:`dispatch_resource_cleanup`. This will let them proceed with update of their given guest
         without worrying about the cleaup after the previous - possibly crashed - provisioning attempt.
@@ -1872,46 +1868,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(WatchdogState.COMPLETE)
 
-    def stop_guest(self, logger: gluetool.log.ContextAdapter, guest: GuestRequest) -> Result[bool, Failure]:
-        """
-        Instructs a guest to stop.
-
-        :param Guest guest: a guest to be stopped
-        :rtype: result.Result[bool, Failure]
-        """
-
-        raise NotImplementedError
-
-    def start_guest(self, logger: gluetool.log.ContextAdapter, guest: GuestRequest) -> Result[bool, Failure]:
-        """
-        Instructs a guest to stop.
-
-        :param Guest guest: a guest to be started
-        :rtype: result.Result[bool, Failure]
-        """
-
-        raise NotImplementedError
-
-    def is_guest_stopped(self, guest: GuestRequest) -> Result[bool, Failure]:
-        """
-        Check if a guest is stopped
-
-        :param Guest guest: a guest to be checked
-        :rtype: result.Result[bool, Failure]
-        """
-
-        raise NotImplementedError
-
-    def is_guest_running(self, guest: GuestRequest) -> Result[bool, Failure]:
-        """
-        Check if a guest is running
-
-        :param Guest guest: a guest to be checked
-        :rtype: result.Result[bool, Failure]
-        """
-
-        raise NotImplementedError
-
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -1928,62 +1884,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Acquire a guest console url.
         """
 
-        raise NotImplementedError
-
-    def create_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        """
-        Create snapshot of given guest.
-
-        Method is expected to return :py:class:`ProvisioningProgress` instance, with ``is_acquired`` signaling
-        whether the process has finished or not. If set to ``False``, :py:meth:`update_snapshot` call will be
-        scheduled by Artemis core, to check and update the progress.
-
-        :param guest_request: guest request to provision for.
-        :param snapshot_request: snapshot request to satisfy.
-        """
-        raise NotImplementedError
-
-    def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
-    ) -> Result[ProvisioningProgress, Failure]:
-        """
-        Update progress of snapshot creation.
-
-        Method is expected to return :py:class:`ProvisioningProgress` instance, with ``is_acquired`` signaling
-        whether the process has finished or not. If set to ``False``, :py:meth:`update_snapshot` call will be
-        scheduled by Artemis core, to check and update the progress.
-
-        :param guest_request: guest request to provision for.
-        :param snapshot_request: snapshot request to update.
-        """
-        raise NotImplementedError
-
-    def remove_snapshot(
-        self,
-        snapshot_request: SnapshotRequest,
-    ) -> Result[bool, Failure]:
-        """
-        Remove snapshot from the pool.
-
-        :param Snapshot snapshot: snapshot to remove
-        :rtype: result.Result[bool, Failure]
-        :returns: :py:class:`result.result` with either `bool`
-            or specification of error.
-        """
-        raise NotImplementedError
-
-    def restore_snapshot(self, guest_request: GuestRequest, snapshot_request: SnapshotRequest) -> Result[bool, Failure]:
-        """
-        Restore the guest to the snapshot.
-
-        :param SnapshotRequest snapshot_request: snapshot request to process
-        :param Guest guest: a guest, which will be restored
-        :rtype: result.Result[bool, Failure]
-        :returns: :py:class:`result.result` with either `bool`
-            or specification of error.
-        """
         raise NotImplementedError
 
     def get_guest_log_updater(self, guest_log: GuestLog) -> Optional[GuestLogUpdaterType]:
@@ -2069,11 +1969,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
                         supported_architectures=repr(supported_architectures),
                     )
                 )
-
-        if 'supports-snapshots' in capabilities_config:
-            capabilities.supports_snapshots = gluetool.utils.normalize_bool_option(
-                capabilities_config['supports-snapshots']
-            )
 
         if 'supports-spot-instances' in capabilities_config:
             capabilities.supports_spot_instances = gluetool.utils.normalize_bool_option(
@@ -2240,7 +2135,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
         usage.cores = 0
         usage.memory = 0
         usage.diskspace = 0
-        usage.snapshots = 0
 
         r_raw_instances = fetch(logger)
 

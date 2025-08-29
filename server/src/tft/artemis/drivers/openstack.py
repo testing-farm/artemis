@@ -25,7 +25,7 @@ from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
 from .. import Failure, JSONType, process_output_to_str, safe_call
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
     Environment,
     Flavor,
@@ -216,7 +216,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
         capabilities.supports_console_url = True
-        capabilities.supports_snapshots = True
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.BLOB),
             ('console:interactive', GuestLogContentType.URL),
@@ -333,19 +332,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         )
 
         return instance
-
-    def _show_snapshot(
-        self,
-        snapshot_request: SnapshotRequest,
-    ) -> Result[Any, Failure]:
-        os_options = ['image', 'show', snapshot_request.snapshotname]
-
-        r_output = self._run_os(os_options, commandname='os.image-show')
-
-        if r_output.is_error:
-            return Error(Failure.from_failure('failed to fetch snapshot information', r_output.unwrap_error()))
-
-        return Ok(r_output.unwrap())
 
     def _get_glance(self) -> Result[glanceclient.Client, Failure]:
         sess = self.login_session(self.logger)
@@ -469,55 +455,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
 
         return Ok(instance.status.lower())
 
-    def is_guest_stopped(self, guest_request: GuestRequest) -> Result[bool, Failure]:
-        r_status = self._get_guest_status(guest_request)
-
-        if r_status.is_error:
-            return Error(r_status.unwrap_error())
-        status = r_status.unwrap()
-
-        return Ok(status == 'shutoff')
-
-    def is_guest_running(self, guest_request: GuestRequest) -> Result[bool, Failure]:
-        r_status = self._get_guest_status(guest_request)
-
-        if r_status.is_error:
-            return Error(r_status.unwrap_error())
-        status = r_status.unwrap()
-
-        return Ok(status == 'active')
-
-    def stop_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
-        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
-
-        if not pool_data.instance_id:
-            return Error(Failure('cannot stop guest without instance ID'))
-
-        logger.info('stoping the guest instance')
-        os_options = ['server', 'stop', pool_data.instance_id]
-        r_stop = self._run_os(os_options, json_format=False, commandname='os.server-stop')
-
-        if r_stop.is_error:
-            return Error(Failure.from_failure('failed to stop instance', r_stop.unwrap_error()))
-
-        return Ok(True)
-
-    def start_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
-        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
-
-        if not pool_data.instance_id:
-            return Error(Failure('cannot start guest without instance ID'))
-
-        logger.info('starting the guest instance')
-        os_options = ['server', 'start', pool_data.instance_id]
-        r_start = self._run_os(os_options, json_format=False, commandname='os.server-start')
-
-        if r_start.is_error:
-            return Error(Failure.from_failure('failed to start instance', r_start.unwrap_error()))
-            return Error(r_start.unwrap_error())
-
-        return Ok(True)
-
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:
@@ -544,84 +481,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
                 expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value),
             )
         )
-
-    def create_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
-
-        if not pool_data.instance_id:
-            return Error(Failure('cannot create snapshot without instance ID'))
-
-        os_options = ['server', 'image', 'create', '--name', snapshot_request.snapshotname, pool_data.instance_id]
-
-        r_output = self._run_os(os_options, commandname='os.server-image-create')
-
-        if r_output.is_error:
-            return Error(Failure.from_failure('failed to create snapshot', r_output.unwrap_error()))
-
-        return Ok(
-            ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=guest_request.pool_data.mine(self, OpenStackPoolData),
-            )
-        )
-
-    def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
-    ) -> Result[ProvisioningProgress, Failure]:
-        r_output = self._show_snapshot(snapshot_request)
-
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
-
-        output = r_output.unwrap()
-
-        if not output:
-            return Error(Failure('Image show commmand output is empty'))
-
-        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
-
-        status = output['status']
-        self.logger.info(f'snapshot status is {status}')
-
-        if status != 'active':
-            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
-
-        return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data))
-
-    def remove_snapshot(
-        self,
-        snapshot_request: SnapshotRequest,
-    ) -> Result[bool, Failure]:
-        r_glance = self._get_glance()
-        if r_glance.is_error:
-            return Error(r_glance.unwrap_error())
-        r_output = safe_call(r_glance.unwrap().images.delete, snapshot_request.snapshotname)
-
-        if r_output.is_error:
-            return Error(Failure.from_failure('failed to delete snapshot', r_output.unwrap_error()))
-
-        return Ok(True)
-
-    def restore_snapshot(
-        self,
-        guest_request: GuestRequest,
-        snapshot_request: SnapshotRequest,
-    ) -> Result[bool, Failure]:
-        pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
-
-        if not pool_data.instance_id:
-            return Ok(False)
-
-        os_options = ['server', 'rebuild', '--image', snapshot_request.snapshotname, '--wait', pool_data.instance_id]
-
-        r_output = self._run_os(os_options, json_format=False, commandname='os.server-rebuild')
-
-        if r_output.is_error:
-            return Error(Failure.from_failure('failed to rebuild instance', r_output.unwrap_error()))
-
-        return Ok(True)
 
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -804,9 +663,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             elif name == 'totalInstancesUsed':
                 resources.usage.instances = int(value)
 
-            elif name == 'totalSnapshotsUsed':
-                resources.usage.snapshots = int(value)
-
             elif name == 'totalGigabytesUsed':
                 resources.usage.diskspace = int(value) * 1073741824
 
@@ -820,9 +676,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             # RAM size/usage is reported in megabytes
             elif name == 'maxTotalRAMSize' and resources.limits.memory is None:
                 resources.limits.memory = int(value) * 1048576
-
-            elif name == 'maxTotalSnapshots' and resources.limits.snapshots is None:
-                resources.limits.snapshots = int(value)
 
             elif name == 'maxTotalVolumeGigabytes' and resources.limits.diskspace is None:
                 resources.limits.diskspace = int(value) * 1073741824

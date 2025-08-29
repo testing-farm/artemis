@@ -57,7 +57,6 @@ from ..db import (
     GuestShelf,
     SafeQuery,
     SerializedPoolDataMapping,
-    SnapshotRequest,
     SSHKey,
     TaskRequest,
     TaskSequenceRequest,
@@ -81,7 +80,7 @@ from ..drivers.ibmcloud import (
     power as ibmcloud_power_driver,
     vpc as ibmcloud_vpc_driver,
 )
-from ..guest import GuestLogger, GuestState, ShelfLogger, SnapshotLogger
+from ..guest import GuestLogger, GuestState, ShelfLogger
 from ..knobs import Knob
 from ..profile import Profiler
 from ..script import hook_engine
@@ -1754,12 +1753,6 @@ def get_shelf_logger(
     return TaskLogger(ShelfLogger(logger, shelfname), task_name)
 
 
-def get_snapshot_logger(
-    task_name: str, logger: gluetool.log.ContextAdapter, guestname: str, snapshotname: str
-) -> TaskLogger:
-    return TaskLogger(SnapshotLogger(GuestLogger(logger, guestname), snapshotname), task_name)
-
-
 # TODO: all of the helpers could be converted to chainable methods, suitable for direct use with `step` decorator.
 # That's something to work on, then we could call them directly from tasks. And test them, that would be also cool...
 # But that needs a bit of support from type annotations, because the methods below often take many arguments, and we
@@ -1815,10 +1808,8 @@ class Workspace:
         self.result: Optional[DoerReturnType] = None
 
         self.guestname: Optional[str] = guestname
-        self.snapshotname: Optional[str] = None
 
         self.gr: Optional[GuestRequest] = None
-        self.sr: Optional[SnapshotRequest] = None
         self.shelf: Optional[GuestShelf] = None
         self.ssh_key: Optional[SSHKey] = None
         self.pool: Optional[PoolDriver] = None

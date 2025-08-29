@@ -460,72 +460,6 @@ def test_policy_supports_architecture_no_match(
     do_test_policy_supports_architecture(mock_inputs, monkeypatch, False)
 
 
-def do_test_policy_supports_snapshots(
-    mock_inputs: MockInputs,
-    require_snapshots: bool,
-    provide_snapshots: bool,
-    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
-) -> None:
-    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
-
-    for mock_pool in mock_pools:
-        monkeypatch.setattr(
-            mock_pool, 'capabilities', lambda: Ok(tft.artemis.drivers.PoolCapabilities(supports_snapshots=False))
-        )
-
-    if provide_snapshots:
-        monkeypatch.setattr(
-            mock_pools[0], 'capabilities', lambda: Ok(tft.artemis.drivers.PoolCapabilities(supports_snapshots=True))
-        )
-
-    mock_guest_request.environment = tft.artemis.environment.Environment(
-        hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-        os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-        kickstart=tft.artemis.environment.Kickstart(),
-        snapshots=require_snapshots,
-    )
-
-    r_ruling = tft.artemis.routing_policies.policy_supports_snapshots(
-        mock_logger, mock_session, mock_pools, mock_guest_request
-    )
-
-    assert r_ruling.is_ok
-
-    ruling = r_ruling.unwrap()
-
-    assert isinstance(ruling, tft.artemis.routing_policies.PolicyRuling)
-    assert ruling.cancel is False
-
-    if require_snapshots and provide_snapshots:
-        assert ruling.allowed_pools == [mock_pools[0]]
-
-    elif require_snapshots and not provide_snapshots:
-        assert ruling.allowed_pools == []
-
-    elif not require_snapshots:
-        assert ruling.allowed_pools == mock_pools
-
-    else:
-        assert False, 'unreachable'
-
-
-def test_policy_supports_snapshots(mock_inputs: MockInputs, monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
-    do_test_policy_supports_snapshots(mock_inputs, True, True, monkeypatch)
-
-
-def test_policy_supports_snapshots_no_match(
-    mock_inputs: MockInputs, monkeypatch: _pytest.monkeypatch.MonkeyPatch
-) -> None:
-    do_test_policy_supports_snapshots(mock_inputs, True, False, monkeypatch)
-
-
-def test_policy_supports_snapshots_no_trigger(
-    mock_inputs: MockInputs, monkeypatch: _pytest.monkeypatch.MonkeyPatch
-) -> None:
-    do_test_policy_supports_snapshots(mock_inputs, False, True, monkeypatch)
-    do_test_policy_supports_snapshots(mock_inputs, False, False, monkeypatch)
-
-
 def do_test_policy_least_crowded(
     mockpatch: MockPatcher, mock_inputs: MockInputs, pool_count: Optional[int] = None, one_crowded: bool = True
 ) -> None:
@@ -693,12 +627,10 @@ def do_test_policy_enough_resources(
         mock_pool_metrics.resources.limits.cores = 100
         mock_pool_metrics.resources.limits.memory = 100
         mock_pool_metrics.resources.limits.diskspace = 100
-        mock_pool_metrics.resources.limits.snapshots = 100
 
         mock_pool_metrics.resources.usage.cores = 50
         mock_pool_metrics.resources.usage.memory = 50
         mock_pool_metrics.resources.usage.diskspace = 50
-        mock_pool_metrics.resources.usage.snapshots = 50
 
         mock_metrics.append(mock_pool_metrics)
 

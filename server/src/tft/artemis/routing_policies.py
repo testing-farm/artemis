@@ -476,37 +476,6 @@ def policy_supports_architecture(
 
 
 @policy_boilerplate
-def policy_supports_snapshots(
-    logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver],
-    guest_request: GuestRequest,
-) -> PolicyReturnType:
-    """
-    If guest request requires snapshot support, disallow all pools that lack this capability.
-    """
-
-    if guest_request.environment.snapshots is not True:
-        return Ok(PolicyRuling.from_pools(pools))
-
-    r_capabilities = collect_pool_capabilities(pools)
-
-    if not is_successful(r_capabilities):
-        return Error(r_capabilities.failure())
-
-    pool_capabilities = r_capabilities.unwrap()
-
-    return Ok(
-        PolicyRuling(
-            pools=[
-                PoolPolicyRuling(pool=pool, allowed=capabilities.supports_snapshots)
-                for pool, capabilities in pool_capabilities
-            ]
-        )
-    )
-
-
-@policy_boilerplate
 def policy_supports_guest_logs(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,

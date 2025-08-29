@@ -1041,7 +1041,6 @@ class Failure:
         # https://docs.sentry.io/platforms/python/enriching-events/context/#structured-context
         contexts['contexts'] = {
             'guestname': self.details.get('guestname'),
-            'snapshotname': self.details.get('snapshotname'),
             'poolname': self.details.get('poolname'),
         }
 
@@ -1072,9 +1071,6 @@ class Failure:
 
         if 'guestname' in self.details:
             tags['guestname'] = self.details['guestname']
-
-        if 'snapshotname' in self.details:
-            tags['snapshotname'] = self.details['snapshotname']
 
         if 'poolname' in self.details:
             tags['poolname'] = self.details['poolname']

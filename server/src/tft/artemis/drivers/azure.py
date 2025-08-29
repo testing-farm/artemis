@@ -22,7 +22,7 @@ from tmt.hardware import UNITS
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
 from .. import Failure, JSONType, log_dict_yaml, render_template
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
     Flavor,
     FlavorBoot,
@@ -510,63 +510,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             resource_ids.append(AzurePoolResourcesIDs(boot_log_container=r_boot_log_storage.unwrap()['name']))
 
         return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
-
-    def create_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        """
-        Create snapshot of a guest.
-        If the returned snapshot is not active, ``update_snapshot`` would be scheduled by Artemis core.
-
-        :param SnapshotRequest snapshot_request: snapshot request to process
-        :param Guest guest: a guest, which will be snapshoted
-        :rtype: result.Result[Snapshot, Failure]
-        :returns: :py:class:`result.result` with either :py:class:`artemis.snapshot.Snapshot`
-            or specification of error.
-        """
-        raise NotImplementedError
-
-    def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
-    ) -> Result[ProvisioningProgress, Failure]:
-        """
-        Update state of the snapshot.
-        Called for unfinished snapshot.
-        If snapshot status is active, snapshot request is evaluated as finished
-
-        :param Snapshot snapshot: snapshot to update
-        :param Guest guest: a guest, which was snapshoted
-        :rtype: result.Result[Snapshot, Failure]
-        :returns: :py:class:`result.result` with either :py:class:`artemis.snapshot.Snapshot`
-            or specification of error.
-        """
-        raise NotImplementedError
-
-    def remove_snapshot(
-        self,
-        snapshot_request: SnapshotRequest,
-    ) -> Result[bool, Failure]:
-        """
-        Remove snapshot from the pool.
-
-        :param Snapshot snapshot: snapshot to remove
-        :rtype: result.Result[bool, Failure]
-        :returns: :py:class:`result.result` with either `bool`
-            or specification of error.
-        """
-        raise NotImplementedError
-
-    def restore_snapshot(self, guest_request: GuestRequest, snapshot_request: SnapshotRequest) -> Result[bool, Failure]:
-        """
-        Restore the guest to the snapshot.
-
-        :param SnapshotRequest snapshot_request: snapshot request to process
-        :param Guest guest: a guest, which will be restored
-        :rtype: result.Result[bool, Failure]
-        :returns: :py:class:`result.result` with either `bool`
-            or specification of error.
-        """
-        raise NotImplementedError
 
     def _show_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[Any, Failure]:
         instance_id = guest_request.pool_data.mine(self, AzurePoolData).instance_id
