@@ -457,8 +457,6 @@ properties:
                       type: integer
                     diskspace:
                       type: integer
-                    snapshot:
-                      type: integer
 
                   required: []
 
