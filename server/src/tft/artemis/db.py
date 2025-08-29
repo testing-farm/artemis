@@ -28,6 +28,8 @@ import gluetool.log
 import psycopg2.errors
 import ruamel.yaml.representer
 import sqlalchemy
+import sqlalchemy.dialects
+import sqlalchemy.dialects.postgresql
 import sqlalchemy.engine
 import sqlalchemy.event
 import sqlalchemy.exc
@@ -1528,18 +1530,6 @@ class GuestLog(Base):
         return Ok(guest_log)
 
 
-class SnapshotRequest(Base):
-    __tablename__ = 'snapshot_requests'
-
-    snapshotname: Mapped[str] = mapped_column(String(250), primary_key=True, nullable=False)
-    guestname: Mapped[str] = mapped_column(String(250), ForeignKey('guest_requests.guestname'), nullable=False)
-    poolname: Mapped[Optional[str]] = mapped_column(String(250), ForeignKey('pools.poolname'), nullable=True)
-
-    state: Mapped[GuestState]
-
-    start_again: Mapped[bool]
-
-
 class GuestTag(Base):
     __tablename__ = 'guest_tags'
 
@@ -1991,3 +1981,75 @@ def convert_column_json_to_str(op: AlembicOp, tablename: str, columnname: str, r
     # drop the temporary column
     with op.batch_alter_table(tablename, schema=None) as batch_op:
         batch_op.drop_column(f'__tmp_{columnname}')
+
+
+def swap_enums(
+    op: Any,
+    tablename: str,
+    columnname: str,
+    typename: str,
+    default: str,
+    new_enum_creator: Callable[[str], Union[sqlalchemy.Enum, sqlalchemy.dialects.postgresql.ENUM]],
+) -> None:
+    """
+    Generate SQL statements for converting an enum column from one set of values to another while preserving data.
+
+    This is a helper for Alembic, easing very common schema transformation.
+
+    :param op: Alembic's ``op`` object, providing access to Alembic's operations.
+    :param tablename: name of the table to modify.
+    :param columnname: name of the column to modify.
+    :param typename: name of the enum type.
+    :param default: default value, selected from the new set of values.
+    :param enum_creator: a callback producing SQLAlchemy enum objects with the new set of values. Accepts a single
+        parameter, name the created enum type should have.
+    """
+
+    # create a temporary column, with the new enum
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.add_column(
+            sqlalchemy.Column(
+                f'__tmp_{columnname}', new_enum_creator(f'__new_{typename}'), server_default=default, nullable=False
+            )
+        )
+
+    # copy existing state to the temporary column
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        if op.get_bind().dialect.name == 'postgresql':
+            op.get_bind().execute(
+                sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = state::text::__new_{typename}')
+            )
+
+        else:
+            op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))
+
+    # drop the current column and the current type
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.drop_column(columnname)
+
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        if op.get_bind().dialect.name == 'postgresql':
+            batch_op.execute(sqlalchemy.text(f'DROP TYPE {typename};'))
+
+    # re-create the column, with the updated enum
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.add_column(
+            sqlalchemy.Column(columnname, new_enum_creator(typename), server_default=default, nullable=False)
+        )
+
+    # copy saved state to this recreated column
+    if op.get_bind().dialect.name == 'postgresql':
+        op.get_bind().execute(
+            sqlalchemy.text(f'UPDATE {tablename} SET {columnname} = __tmp_{columnname}::text::{typename}')
+        )
+
+    else:
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {columnname} = __tmp_{columnname}'))
+
+    # drop the temporary column and its type
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        batch_op.drop_column(f'__tmp_{columnname}')
+
+    with op.batch_alter_table(tablename, schema=None) as batch_op:
+        if op.get_bind().dialect.name == 'postgresql':
+            batch_op.execute(sqlalchemy.text(f'DROP TYPE __new_{typename};'))

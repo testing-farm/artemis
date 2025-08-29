@@ -25,10 +25,7 @@ from .dependencies import get_db, get_logger
 from .models import AuthContext
 
 GUEST_ROUTE_PATTERN = re.compile(
-    r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+(?P<url_rest>/(events|snapshots|logs/.+))?$'
-)
-SNAPSHOT_ROUTE_PATTERN = re.compile(
-    r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+/snapshots/[a-z0-9-]+(?P<url_rest>/.+)?$'
+    r'^/(?P<version>(?:current|v\d+\.\d+\.\d+)/)?guests/[a-z0-9-]+(?P<url_rest>/(events|logs/.+))?$'
 )
 
 
@@ -148,8 +145,8 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
 
 def rewrite_request_path(path: str) -> str:
     """
-    Rewrite given request path to replace all guest and snapshot names with ``GUESTNAME`` and ``SNAPSHOTNAME``
-    strings. This is designed to avoid generating HTTP metrics per guest and per snapshot.
+    Rewrite given request path to replace all guest names with ``GUESTNAME`` strings. This is designed to avoid
+    generating HTTP metrics per guest request.
 
     :param str: request path to rewrite.
     """
@@ -159,12 +156,6 @@ def rewrite_request_path(path: str) -> str:
         groups = match.groupdict()
 
         return f'/{groups.get("version") or ""}guests/GUESTNAME{groups.get("url_rest") or ""}'
-
-    match = SNAPSHOT_ROUTE_PATTERN.match(path)
-    if match is not None:
-        groups = match.groupdict()
-
-        return f'/{groups.get("version") or ""}guests/GUESTNAME/snapshots/SNAPSHOTNAME{groups.get("url_rest") or ""}'
 
     return path
 

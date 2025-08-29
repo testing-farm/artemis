@@ -46,26 +46,11 @@ def test_rewrite_request_path_nop(path: str) -> None:
     [
         ('/guests/foo-bar-79', '/guests/GUESTNAME'),
         ('/guests/foo-bar-79/events', '/guests/GUESTNAME/events'),
-        ('/guests/foo-bar-79/snapshots', '/guests/GUESTNAME/snapshots'),
-        ('/guests/foo-bar-79/snapshots/baz-97', '/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
-        ('/guests/foo-bar-79/snapshots/baz-97/restore', '/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore'),
         ('/guests/foo-bar-79/logs/console:dump/blob', '/guests/GUESTNAME/logs/console:dump/blob'),
         ('/current/guests/foo-bar-79', '/current/guests/GUESTNAME'),
         ('/current/guests/foo-bar-79/events', '/current/guests/GUESTNAME/events'),
-        ('/current/guests/foo-bar-79/snapshots', '/current/guests/GUESTNAME/snapshots'),
-        ('/current/guests/foo-bar-79/snapshots/baz-97', '/current/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
-        (
-            '/current/guests/foo-bar-79/snapshots/baz-97/restore',
-            '/current/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore',
-        ),
         ('/v0.0.17/guests/foo-bar-79', '/v0.0.17/guests/GUESTNAME'),
         ('/v0.0.17/guests/foo-bar-79/events', '/v0.0.17/guests/GUESTNAME/events'),
-        ('/v0.0.17/guests/foo-bar-79/snapshots', '/v0.0.17/guests/GUESTNAME/snapshots'),
-        ('/v0.0.17/guests/foo-bar-79/snapshots/baz-97', '/v0.0.17/guests/GUESTNAME/snapshots/SNAPSHOTNAME'),
-        (
-            '/v0.0.17/guests/foo-bar-79/snapshots/baz-97/restore',
-            '/v0.0.17/guests/GUESTNAME/snapshots/SNAPSHOTNAME/restore',
-        ),
     ],
 )
 def test_rewrite_request_path(request_path: str, rewritten_path: str) -> None:
@@ -160,7 +145,6 @@ def test_metrics(
         ('pool_resources_cores', 'gauge'),
         ('pool_resources_memory_bytes', 'gauge'),
         ('pool_resources_diskspace_bytes', 'gauge'),
-        ('pool_resources_snapshot', 'gauge'),
         ('pool_resources_updated_timestamp', 'gauge'),
         # Pool errors
         ('pool_errors', 'counter'),
@@ -186,8 +170,6 @@ def test_metrics(
         ('/_docs', tft.artemis.api.models.NO_AUTH, True),
         ('/_docs', tft.artemis.api.models.PROVISIONING_AUTH, False),
         ('/guests', tft.artemis.api.models.PROVISIONING_AUTH, True),
-        ('/guests/foo/snapshots', tft.artemis.api.models.PROVISIONING_AUTH, True),
-        ('/v0.0.24/guests/foo/snapshots', tft.artemis.api.models.PROVISIONING_AUTH, True),
     ],
 )
 def test_auth_matches_path(path: str, patterns: list[Pattern[str]], expected: bool) -> None:

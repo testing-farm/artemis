@@ -9,7 +9,6 @@ import fastapi
 import gluetool.log
 from fastapi import APIRouter, Depends, Request, Response, status
 
-from .. import errors
 from ..dependencies import get_auth_context, get_logger
 from ..models import (
     AuthContext,
@@ -17,14 +16,11 @@ from ..models import (
     GuestEvent,
     GuestRequest,
     GuestResponse,
-    SnapshotRequest,
-    SnapshotResponse,
 )
 from . import (
     CacheManager,
     GuestEventManager,
     GuestRequestManager,
-    SnapshotRequestManager,
     create_guest_request,
     delete_guest as delete_artemis_guest,
     get_guest_request,
@@ -102,56 +98,6 @@ def get_guest_events(
     manager: Annotated[GuestEventManager, Depends(GuestEventManager)],
 ) -> list[GuestEvent]:
     return manager.get_events_by_guestname(logger, guestname, EventSearchParameters.from_request(request))
-
-
-# NOTE(ivasilev) Snapshots are doomed, so didn't really check them properly
-
-
-@router_guests.get('/{guestname}/snapshots/{snapshotname}', status_code=status.HTTP_200_OK)
-def get_snapshot_request(
-    guestname: str,
-    snapshotname: str,
-    manager: Annotated[SnapshotRequestManager, Depends(SnapshotRequestManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> SnapshotResponse:
-    snapshot_response = manager.get_snapshot(logger, guestname, snapshotname)
-
-    if snapshot_response is None:
-        raise errors.NoSuchEntityError
-
-    return snapshot_response
-
-
-@router_guests.post('/{guestname}/snapshots', status_code=status.HTTP_201_CREATED)
-def create_snapshot_request(
-    guestname: str,
-    snapshot_request: SnapshotRequest,
-    manager: Annotated[SnapshotRequestManager, Depends(SnapshotRequestManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> SnapshotResponse:
-    return manager.create_snapshot(guestname, snapshot_request, logger)
-
-
-@router_guests.delete('/{guestname}/snapshots/{snapshotname}', status_code=status.HTTP_204_NO_CONTENT)
-def delete_snapshot(
-    guestname: str,
-    snapshotname: str,
-    manager: Annotated[SnapshotRequestManager, Depends(SnapshotRequestManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> None:
-    manager.delete_snapshot(guestname, snapshotname, logger)
-
-    return
-
-
-@router_guests.post('/{guestname}/snapshots/{snapshotname}/restore', status_code=status.HTTP_201_CREATED)
-def restore_snapshot_request(
-    guestname: str,
-    snapshotname: str,
-    manager: Annotated[SnapshotRequestManager, Depends(SnapshotRequestManager)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> SnapshotResponse:
-    return manager.restore_snapshot(guestname, snapshotname, logger)
 
 
 @router__cache.get('/pools/{poolname}/image-info', status_code=status.HTTP_200_OK)
