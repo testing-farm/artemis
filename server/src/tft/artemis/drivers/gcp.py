@@ -16,7 +16,7 @@ from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
 
 from .. import Failure, log_dict_yaml
-from ..db import GuestRequest, SnapshotRequest
+from ..db import GuestRequest
 from ..environment import UNITS, Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
@@ -91,7 +91,6 @@ class GCPDriver(PoolDriver):
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supported_architectures = ['x86_64']
-        capabilities.supports_snapshots = False
         capabilities.supports_console_url = False
         capabilities.supports_spot_instances = False
         capabilities.supports_native_post_install_script = False
@@ -460,22 +459,6 @@ class GCPDriver(PoolDriver):
         if access_configs:
             return access_configs[0].nat_i_p
         return None
-
-    def create_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        raise NotImplementedError
-
-    def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
-    ) -> Result[ProvisioningProgress, Failure]:
-        raise NotImplementedError
-
-    def remove_snapshot(self, snapshot_request: SnapshotRequest) -> Result[bool, Failure]:
-        raise NotImplementedError
-
-    def restore_snapshot(self, guest_request: GuestRequest, snapshot_request: SnapshotRequest) -> Result[bool, Failure]:
-        raise NotImplementedError
 
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         """

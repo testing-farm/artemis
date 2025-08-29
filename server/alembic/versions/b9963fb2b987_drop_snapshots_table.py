@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Add shelving-related guest states
+Drop snapshots table
 
-Revision ID: 237cc90c30dc
-Revises: 3af7c26ec4f3
-Create Date: 2023-03-22
+Revision ID: b9963fb2b987
+Revises: d4a6a1fb98fe
+Create Date: 2025-08-29 10:06:25.701218
 
 """
 
@@ -19,8 +19,8 @@ from sqlalchemy.dialects import postgresql
 from tft.artemis.db import swap_enums
 
 # revision identifiers, used by Alembic.
-revision = '237cc90c30dc'
-down_revision = 'b1dcd42e5d5c'
+revision = 'b9963fb2b987'
+down_revision = 'd4a6a1fb98fe'
 branch_labels = None
 depends_on = None
 
@@ -37,13 +37,6 @@ def get_new_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
             'PREPARING',
             'READY',
             'CONDEMNED',
-            'RESTORING',
-            'PROCESSING',
-            'RELEASING',
-            'CREATING',
-            'STOPPING',
-            'STOPPED',
-            'STARTING',
             'SHELVED',
             name=name,
             create_type=False,
@@ -63,13 +56,6 @@ def get_new_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
         'PREPARING',
         'READY',
         'CONDEMNED',
-        'RESTORING',
-        'PROCESSING',
-        'RELEASING',
-        'CREATING',
-        'STOPPING',
-        'STOPPED',
-        'STARTING',
         'SHELVED',
         name=name,
     )
@@ -93,6 +79,7 @@ def get_old_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
             'STOPPING',
             'STOPPED',
             'STARTING',
+            'SHELF_LOOKUP',
             name=name,
             create_type=False,
         )
@@ -117,11 +104,14 @@ def get_old_enum(name: str) -> Union[sa.Enum, postgresql.ENUM]:
         'STOPPING',
         'STOPPED',
         'STARTING',
+        'SHELF_LOOKUP',
         name=name,
     )
 
 
 def upgrade() -> None:
+    op.drop_table('snapshot_requests')
+
     swap_enums(
         op,
         'guest_requests',
@@ -138,6 +128,24 @@ def downgrade() -> None:
         'guest_requests',
         'state',
         'gueststate',
-        'PENDING',
+        'SHELF_LOOKUP',
         get_old_enum,
+    )
+
+    op.create_table(
+        'snapshot_requests',
+        sa.Column('snapshotname', sa.VARCHAR(length=250), nullable=False),
+        sa.Column('guestname', sa.VARCHAR(length=250), nullable=False),
+        sa.Column('poolname', sa.VARCHAR(length=250), nullable=True),
+        sa.Column('state', sa.VARCHAR(length=250), nullable=False),
+        sa.Column('start_again', sa.BOOLEAN(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ['guestname'],
+            ['guest_requests.guestname'],
+        ),
+        sa.ForeignKeyConstraint(
+            ['poolname'],
+            ['pools.poolname'],
+        ),
+        sa.PrimaryKeyConstraint('snapshotname'),
     )
