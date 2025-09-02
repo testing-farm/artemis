@@ -6,21 +6,43 @@ definitions:
   custom_flavor:
     type: object
 
-    properties:
-      name:
-        type: string
+    oneOf:
+      - properties:
+          name:
+            type: string
 
-      base:
-        type: string
+          base:
+            type: string
+        required:
+          - name
+          - base
 
-      disk:
-        "$ref": "#/definitions/patch_flavor_disks"
+      - properties:
+          name:
+            type: string
 
-    required:
-      - name
-      - base
+          arch:
+            type: string
 
-    additionalProperties: false
+          disk:
+            "$ref": "#/definitions/patch_flavor_disks"
+
+          cpu:
+            "$ref": "#/definitions/patch_flavor_cpu"
+
+          network:
+            "$ref": "#/definitions/patch_flavor_networks"
+
+          memory:
+            type: string
+
+        required:
+          - name
+          - arch
+          - disk
+          - cpu
+          - network
+          - memory
 
   patch_flavor_compatible:
     type: object
@@ -34,10 +56,28 @@ definitions:
     required: []
     additionalProperties: false
 
+  patch_flavor_network:
+    type: object
+
+    properties:
+      type:
+        type: string
+
+    required: []
+    additionalProperties: false
+
+  patch_flavor_networks:
+    type: array
+    items:
+      "$ref": "#/definitions/patch_flavor_network"
+
   patch_flavor_cpu:
     type: object
 
     properties:
+      processors:
+        type: integer
+
       family:
         type: integer
 
