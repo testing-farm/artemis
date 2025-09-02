@@ -73,11 +73,8 @@ from ..environment import (
     Flavor,
     FlavorBoot,
     FlavorBootMethodType,
-    FlavorCpu,
     FlavorDisk,
     FlavorDisks,
-    FlavorNetwork,
-    FlavorNetworks,
     MeasurableConstraintValueType,
     SizeType,
 )
@@ -812,6 +809,9 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
     if 'cpu' in flavor_spec:
         cpu_patch = flavor_spec['cpu']
 
+        if 'processors' in cpu_patch:
+            flavor.cpu.processors = cpu_patch['processors']
+
         if 'family' in cpu_patch:
             flavor.cpu.family = cpu_patch['family']
 
@@ -985,6 +985,8 @@ def _custom_flavors(
 
     for custom_flavor_spec in patches:
         customname = custom_flavor_spec['name']
+
+        # Either choose base flavor for modification or start on a blank canvas
         if 'base' in custom_flavor_spec:
             basename = custom_flavor_spec['base']
 
@@ -995,28 +997,18 @@ def _custom_flavors(
 
             custom_flavor = base_flavor.clone()
             custom_flavor.name = customname
-
-            custom_flavors.append(custom_flavor)
-
-            r_apply_spec = _apply_flavor_specification(custom_flavor, custom_flavor_spec)
-
-            if r_apply_spec.is_error:
-                failure = r_apply_spec.unwrap_error()
-                failure.update(customname=customname, basename=basename)
-
-                return Error(failure)
         else:
-            # custom-flavor definition should contain everything needed as there is no base flavor.
-            flavor = Flavor(
-                arch=custom_flavor_spec['arch'],
-                name=custom_flavor_spec['name'],
-                id=custom_flavor_spec['name'],
-                cpu=FlavorCpu(**custom_flavor_spec['cpu']),
-                memory=UNITS(custom_flavor_spec['memory']),
-                disk=FlavorDisks([FlavorDisk(**disk) for disk in custom_flavor_spec['disk']]),
-                network=FlavorNetworks([FlavorNetwork(**network) for network in custom_flavor_spec['network']]),
-            )
-            custom_flavors.append(flavor)
+            custom_flavor = Flavor(name=customname, id=customname, arch=custom_flavor_spec['arch'])
+
+        r_apply_spec = _apply_flavor_specification(custom_flavor, custom_flavor_spec)
+
+        if r_apply_spec.is_error:
+            failure = r_apply_spec.unwrap_error()
+            failure.update(customname=customname, basename=basename)
+
+            return Error(failure)
+
+        custom_flavors.append(custom_flavor)
 
     log_dict_yaml(logger.debug, 'custom flavors', custom_flavors)
 
