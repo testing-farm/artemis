@@ -38,7 +38,8 @@ definitions:
 
         required:
           - name
-          - arch
+
+        additionalProperties: false
 
   patch_flavor_compatible:
     type: object

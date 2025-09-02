@@ -998,7 +998,7 @@ def _custom_flavors(
             custom_flavor = base_flavor.clone()
             custom_flavor.name = customname
         else:
-            custom_flavor = Flavor(name=customname, id=customname, arch=custom_flavor_spec['arch'])
+            custom_flavor = Flavor(name=customname, id=customname)
 
         r_apply_spec = _apply_flavor_specification(custom_flavor, custom_flavor_spec)
 
