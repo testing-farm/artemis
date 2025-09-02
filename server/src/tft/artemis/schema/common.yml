@@ -39,10 +39,6 @@ definitions:
         required:
           - name
           - arch
-          - disk
-          - cpu
-          - network
-          - memory
 
   patch_flavor_compatible:
     type: object
