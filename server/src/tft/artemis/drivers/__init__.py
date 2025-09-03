@@ -1403,7 +1403,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self, logger: gluetool.log.ContextAdapter, imagename: str
     ) -> Result[PoolImageInfo, Failure]:
         """
-        Retrieve image info container a given image name.
+        Retrieve image info container for a given image name.
         """
 
         r_image_info = self.get_cached_pool_image_info(imagename)
