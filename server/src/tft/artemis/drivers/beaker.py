@@ -6,7 +6,7 @@ import datetime
 import os
 import re
 import stat
-from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
+from typing import Any, Callable, Dict, List, Optional, Pattern, Tuple, cast
 
 import bs4
 import gluetool.log
@@ -1617,6 +1617,253 @@ class BeakerDriver(PoolDriver):
 
         return Ok(failures)
 
+    def _handle_job_update_successfully_completed(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        pool_data: BeakerPoolData,
+        job_results: bs4.BeautifulSoup,
+        job_task_results: List[JobTaskResult],
+        job_result: str,
+        job_status: str,
+        job_failed: Optional[BkrErrorCauses],
+        system: Optional[str],
+        failure_details: Dict[str, Any],
+    ) -> Result[Optional[ProvisioningProgress], Failure]:
+        if job_result != 'pass':
+            return Ok(None)
+
+        r_guest_address = self._parse_guest_address(logger, job_results)
+
+        if r_guest_address.is_error:
+            return Error(r_guest_address.unwrap_error().update(**failure_details))
+
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.COMPLETE,
+                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                address=r_guest_address.unwrap(),
+            )
+        )
+
+    def _handle_job_update_new(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        pool_data: BeakerPoolData,
+        job_results: bs4.BeautifulSoup,
+        job_task_results: List[JobTaskResult],
+        job_result: str,
+        job_status: str,
+        job_failed: Optional[BkrErrorCauses],
+        system: Optional[str],
+        failure_details: Dict[str, Any],
+    ) -> Result[Optional[ProvisioningProgress], Failure]:
+        if job_result != 'new':
+            return Ok(None)
+
+        r_console_log = self._get_beaker_machine_log_url(logger, guest_request, 'console.log')
+
+        if r_console_log.is_error:
+            return Error(r_console_log.unwrap_error().update(**failure_details))
+
+        # fetch console log, grab patterns
+        r_failure_patterns = self.console_failure_patterns
+
+        if r_failure_patterns.is_error:
+            return Error(r_failure_patterns.unwrap_error().update(**failure_details))
+
+        console_log = r_console_log.unwrap()
+        failure_patterns = r_failure_patterns.unwrap()
+
+        if console_log and failure_patterns:
+            r_is_failed = self._analyze_beaker_logs([console_log], failure_patterns)
+
+            if r_is_failed.is_error:
+                return Error(r_is_failed.unwrap_error().update(**failure_details))
+
+            failures = r_is_failed.unwrap()
+
+            if failures:
+                return Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                        pool_failures=[Failure('beaker job failed', failures=failures, **failure_details)],
+                    )
+                )
+
+        # Check how long the guest has been in installing state
+        if job_status == 'installing':
+            now = datetime.datetime.utcnow()
+            r_install_started = self._parse_recipe_install_start(logger, job_results)
+
+            if r_install_started.is_error:
+                return Error(r_install_started.unwrap_error().update(**failure_details))
+
+            r_install_timeout = KNOB_INSTALLATION_TIMEOUT.get_value(entityname=self.poolname, session=session)
+
+            if r_install_timeout.is_error:
+                return Error(r_install_timeout.unwrap_error().update(**failure_details))
+
+            install_started = r_install_started.unwrap()
+
+            # We need the check for None as the installation might not have started yet but the state is already
+            # marked as installing and there is not installation start time.
+            if install_started is not None and (now - install_started).total_seconds() > r_install_timeout.unwrap():
+                PoolMetrics.inc_aborts(
+                    self.poolname,
+                    system,
+                    guest_request.environment.os.compose,
+                    guest_request.environment.hw.arch,
+                    BkrErrorCauses.JOB_INSTALLATION_TIMEOUT,
+                )
+
+                return Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                        pool_failures=[Failure('installation did not finish in time', **failure_details)],
+                    )
+                )
+
+        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
+
+        if r_delay.is_error:
+            return Error(r_delay.unwrap_error().update(**failure_details))
+
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                delay_update=r_delay.unwrap(),
+            )
+        )
+
+    def _handle_job_update_failed_avc_denials(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        pool_data: BeakerPoolData,
+        job_results: bs4.BeautifulSoup,
+        job_task_results: List[JobTaskResult],
+        job_result: str,
+        job_status: str,
+        job_failed: Optional[BkrErrorCauses],
+        system: Optional[str],
+        failure_details: Dict[str, Any],
+    ) -> Result[Optional[ProvisioningProgress], Failure]:
+        if job_failed is None:
+            return Ok(None)
+
+        r_failed_avc_patterns = self.failed_avc_patterns
+
+        if r_failed_avc_patterns.is_error:
+            return Error(r_failed_avc_patterns.unwrap_error().update(**failure_details))
+
+        matchable_job_task_results: List[str] = [
+            f'{result.taskname}:{result.task_result}:{result.task_status}:{result.phasename or ""}:{result.phase_result or ""}:{result.message or ""}'  # noqa: E501
+            for result in job_task_results
+        ]
+
+        log_dict_yaml(logger.info, 'matchable job task results', matchable_job_task_results)
+
+        fail_reason_avc_in_install = all(
+            any(pattern.match(result) for result in matchable_job_task_results)
+            for pattern in r_failed_avc_patterns.unwrap()
+        )
+
+        if not fail_reason_avc_in_install:
+            return Ok(None)
+
+        logger.warning('detected AVC denials during installation')
+
+        r_ignore_avc_on_compose_pattern = self.ignore_avc_on_compose_pattern
+
+        if r_ignore_avc_on_compose_pattern.is_error:
+            return Error(r_ignore_avc_on_compose_pattern.unwrap_error().update(**failure_details))
+
+        ignore_avc_on_compose_pattern = r_ignore_avc_on_compose_pattern.unwrap()
+
+        if not ignore_avc_on_compose_pattern or not ignore_avc_on_compose_pattern.match(
+            guest_request.environment.os.compose
+        ):
+            return Ok(None)
+
+        r_guest_address = self._parse_guest_address(logger, job_results)
+
+        if r_guest_address.is_error:
+            return Error(r_guest_address.unwrap_error().update(**failure_details))
+
+        logger.info('ignoring AVC denials during installation')
+
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.COMPLETE,
+                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                pool_failures=[Failure('AVC denials during installation', **failure_details)],
+                address=r_guest_address.unwrap(),
+            )
+        )
+
+    def _handle_job_update_failed(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        pool_data: BeakerPoolData,
+        job_results: bs4.BeautifulSoup,
+        job_task_results: List[JobTaskResult],
+        job_result: str,
+        job_status: str,
+        job_failed: Optional[BkrErrorCauses],
+        system: Optional[str],
+        failure_details: Dict[str, Any],
+    ) -> Result[Optional[ProvisioningProgress], Failure]:
+        if job_failed is None:
+            return Ok(None)
+
+        PoolMetrics.inc_aborts(
+            self.poolname, system, guest_request.environment.os.compose, guest_request.environment.hw.arch, job_failed
+        )
+
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.CANCEL,
+                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                pool_failures=[Failure('beaker job failed', cause=job_failed.value, **failure_details)],
+            )
+        )
+
+    _JOB_UPDATE_HANDLERS: List[
+        Callable[
+            [
+                'BeakerDriver',
+                gluetool.log.ContextAdapter,
+                sqlalchemy.orm.session.Session,
+                GuestRequest,
+                BeakerPoolData,
+                bs4.BeautifulSoup,
+                List[JobTaskResult],
+                str,
+                str,
+                Optional[BkrErrorCauses],
+                Optional[str],
+                Dict[str, Any],
+            ],
+            Result[Optional[ProvisioningProgress], Failure],
+        ]
+    ] = [
+        _handle_job_update_successfully_completed,
+        _handle_job_update_new,
+        _handle_job_update_failed_avc_denials,
+        # This one should be last, as it reports anything that failed and was not claimed by a previous handler.
+        _handle_job_update_failed,
+    ]
+
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -1670,101 +1917,6 @@ class BeakerDriver(PoolDriver):
             tablefmt='psql',
         )
 
-        if job_result == 'pass':
-            r_guest_address = self._parse_guest_address(logger, job_results)
-
-            if r_guest_address.is_error:
-                return Error(r_guest_address.unwrap_error())
-
-            return Ok(
-                ProvisioningProgress(
-                    state=ProvisioningState.COMPLETE,
-                    pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                    address=r_guest_address.unwrap(),
-                )
-            )
-
-        if job_result == 'new':
-            r_console_log = self._get_beaker_machine_log_url(logger, guest_request, 'console.log')
-            if r_console_log.is_error:
-                return Error(r_console_log.unwrap_error())
-            # fetch console log, grab patterns
-            r_failure_patterns = self.console_failure_patterns
-            if r_failure_patterns.is_error:
-                return Error(r_failure_patterns.unwrap_error())
-            console_log = r_console_log.unwrap()
-            failure_patterns = r_failure_patterns.unwrap()
-            if console_log and failure_patterns:
-                r_is_failed = self._analyze_beaker_logs([console_log], failure_patterns)
-                if r_is_failed.is_error:
-                    return Error(r_is_failed.unwrap_error())
-                failures = r_is_failed.unwrap()
-                if failures:
-                    return Ok(
-                        ProvisioningProgress(
-                            state=ProvisioningState.CANCEL,
-                            pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                            pool_failures=[
-                                Failure(
-                                    'beaker job failed',
-                                    job_result=job_result,
-                                    job_status=job_status,
-                                    job_results=job_results.prettify(),
-                                    failures=failures,
-                                )
-                            ],
-                        )
-                    )
-
-            # Check how long the guest has been in installing state
-            if job_status == 'installing':
-                now = datetime.datetime.utcnow()
-                r_install_started = self._parse_recipe_install_start(logger, job_results)
-
-                if r_install_started.is_error:
-                    return Error(r_install_started.unwrap_error())
-
-                r_install_timeout = KNOB_INSTALLATION_TIMEOUT.get_value(entityname=self.poolname, session=session)
-
-                if r_install_timeout.is_error:
-                    return Error(r_install_timeout.unwrap_error())
-
-                install_started = r_install_started.unwrap()
-
-                # We need the check for None as the installation might not have started yet but the state is already
-                # marked as installing and there is not installation start time.
-                if install_started is not None and (now - install_started).total_seconds() > r_install_timeout.unwrap():
-                    PoolMetrics.inc_aborts(
-                        self.poolname,
-                        system,
-                        guest_request.environment.os.compose,
-                        guest_request.environment.hw.arch,
-                        BkrErrorCauses.JOB_INSTALLATION_TIMEOUT,
-                    )
-
-                    return Ok(
-                        ProvisioningProgress(
-                            state=ProvisioningState.CANCEL,
-                            pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                            pool_failures=[
-                                Failure(
-                                    'installation did not finish in time',
-                                    job_result=job_result,
-                                    job_status=job_status,
-                                    job_results=job_results.prettify(),
-                                )
-                            ],
-                        )
-                    )
-
-            return Ok(
-                ProvisioningProgress(
-                    state=ProvisioningState.PENDING,
-                    pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                    delay_update=r_delay.unwrap(),
-                )
-            )
-
         job_failed: Optional[BkrErrorCauses] = None
 
         if job_result == 'fail':
@@ -1779,97 +1931,48 @@ class BeakerDriver(PoolDriver):
         elif job_status == 'reserved' and job_result == 'warn':
             job_failed = BkrErrorCauses.JOB_RESERVED_WITH_WARNING
 
-        if job_failed is not None:
-            r_failed_avc_patterns = self.failed_avc_patterns
+        if any(
+            error_cause_extractor(result.message) == BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
+            for result in job_task_results
+            if result.message
+        ):
+            logger.warning('no system matches recipe')
 
-            if r_failed_avc_patterns.is_error:
-                return Error(r_failed_avc_patterns.unwrap_error())
+            job_failed = BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
 
-            matchable_job_task_results: List[str] = [
-                f'{result.taskname}:{result.task_result}:{result.task_status}:{result.phasename or ""}:{result.phase_result or ""}:{result.message or ""}'  # noqa: E501
-                for result in job_task_results
-            ]
+        failure_details: Dict[str, Any] = {
+            'job_result': job_result,
+            'job_status': job_status,
+            'job_results': job_results.prettify(),
+            'job_failed': job_failed.value if job_failed else None,
+            'system': system,
+        }
 
-            log_dict_yaml(logger.info, 'matchable job task results', matchable_job_task_results)
-
-            fail_reason_avc_in_install = all(
-                any(pattern.match(result) for result in matchable_job_task_results)
-                for pattern in r_failed_avc_patterns.unwrap()
-            )
-
-            if fail_reason_avc_in_install:
-                logger.warning('detected AVC denials during installation')
-
-                r_ignore_avc_on_compose_pattern = self.ignore_avc_on_compose_pattern
-
-                if r_ignore_avc_on_compose_pattern.is_error:
-                    return Error(r_ignore_avc_on_compose_pattern.unwrap_error())
-
-                ignore_avc_on_compose_pattern = r_ignore_avc_on_compose_pattern.unwrap()
-
-                if ignore_avc_on_compose_pattern and ignore_avc_on_compose_pattern.match(
-                    guest_request.environment.os.compose
-                ):
-                    r_guest_address = self._parse_guest_address(logger, job_results)
-
-                    if r_guest_address.is_error:
-                        return Error(r_guest_address.unwrap_error())
-
-                    logger.info('ignoring AVC denials during installation')
-
-                    return Ok(
-                        ProvisioningProgress(
-                            state=ProvisioningState.COMPLETE,
-                            pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                            pool_failures=[
-                                Failure(
-                                    'AVC denials during installation',
-                                    job_result=job_result,
-                                    job_status=job_status,
-                                    job_results=job_results.prettify(),
-                                )
-                            ],
-                            address=r_guest_address.unwrap(),
-                        )
-                    )
-
-            if any(
-                error_cause_extractor(result.message) == BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
-                for result in job_task_results
-                if result.message
-            ):
-                logger.warning('no system matches recipe')
-
-                job_failed = BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
-
-            PoolMetrics.inc_aborts(
-                self.poolname,
-                system,
-                guest_request.environment.os.compose,
-                guest_request.environment.hw.arch,
+        for handler in self._JOB_UPDATE_HANDLERS:
+            r_handler_outcome = handler(
+                self,
+                logger,
+                session,
+                guest_request,
+                pool_data,
+                job_results,
+                job_task_results,
+                job_result,
+                job_status,
                 job_failed,
+                system,
+                failure_details,
             )
 
-            return Ok(
-                ProvisioningProgress(
-                    state=ProvisioningState.CANCEL,
-                    pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                    pool_failures=[
-                        Failure(
-                            'beaker job failed',
-                            job_result=job_result,
-                            job_status=job_status,
-                            job_results=job_results.prettify(),
-                            cause=job_failed.value,
-                            system=system,
-                        )
-                    ],
-                )
-            )
+            if r_handler_outcome.is_error:
+                return Error(r_handler_outcome.unwrap_error().update(**failure_details))
 
-        return Error(
-            Failure('unknown status', job_result=job_result, job_status=job_status, job_results=job_results.prettify())
-        )
+            provisioning_progress = r_handler_outcome.unwrap()
+
+            if provisioning_progress is not None:
+                return Ok(provisioning_progress)
+
+        return Error(Failure('unknown status', **failure_details))
 
     def guest_watchdog(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
