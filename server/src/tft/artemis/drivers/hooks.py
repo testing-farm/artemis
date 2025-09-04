@@ -199,7 +199,7 @@ def map_environment_to_image_info(
         images = []
 
         for imagename in imagenames:
-            r_image = pool.map_image_name_to_image_info(logger, imagename)
+            r_image = pool.image_name_to_image_info(logger, imagename)
 
             if r_image.is_error:
                 return Error(r_image.unwrap_error())

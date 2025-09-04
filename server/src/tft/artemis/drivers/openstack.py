@@ -36,10 +36,9 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
-    CanAcquire,
     ConsoleUrlData,
+    FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
-    HookImageInfoMapper,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -154,10 +153,12 @@ class OpenStackPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
 
 
-class OpenStackDriver(PoolDriver):
+class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
     drivername = 'openstack'
 
     pool_data_class = OpenStackPoolData
+
+    _image_map_hook_name = 'OPENSTACK_ENVIRONMENT_TO_IMAGE'
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
@@ -183,10 +184,6 @@ class OpenStackDriver(PoolDriver):
 
         elif self.pool_config.get('project-domain-id'):
             self._os_cmd_base += ['--os-project-domain-id', self.pool_config['project-domain-id']]
-
-    @property
-    def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
-        return HookImageInfoMapper(self, 'OPENSTACK_ENVIRONMENT_TO_IMAGE')
 
     def login_session(self, logger: gluetool.log.ContextAdapter) -> Result[keystoneauth1.session.Session, Failure]:
         # NOTE(ivasilev) Either project-domain-name or project-domain-id can be used for auth, so let's pass whatever's
@@ -276,13 +273,12 @@ class OpenStackDriver(PoolDriver):
 
         return Ok(cli_output.stdout)
 
-    def map_image_name_to_image_info(
-        self, logger: gluetool.log.ContextAdapter, imagename: str
-    ) -> Result[PoolImageInfo, Failure]:
-        return self._map_image_name_to_image_info_by_cache(logger, imagename)
-
-    def _env_to_flavor_or_none(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    def _guest_request_to_flavor_or_none(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfo,
     ) -> Result[Optional[Flavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger, guest_request.environment
@@ -313,21 +309,6 @@ class OpenStackDriver(PoolDriver):
             return Ok([flavor for flavor in suitable_flavors if flavor.name == self.pool_config['default-flavor']][0])
 
         return Ok(suitable_flavors[0])
-
-    def _env_to_flavor(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[Flavor, Failure]:
-        r_flavor = self._env_to_flavor_or_none(logger, session, guest_request)
-
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
-
-        flavor = r_flavor.unwrap()
-
-        if flavor is None:
-            return Error(Failure('no suitable flavor'))
-
-        return Ok(flavor)
 
     def _env_to_network(self, environment: Environment) -> Result[Any, Failure]:
         metrics = PoolResourcesMetrics(self.poolname)
@@ -425,32 +406,17 @@ class OpenStackDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_images = self.image_info_mapper.map(logger, guest_request)
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
-        images = r_images.unwrap()
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
 
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
 
-        pairs: List[Tuple[PoolImageInfo, Flavor]] = []
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
 
-        for image in images:
-            r_flavor = self._env_to_flavor(logger, session, guest_request)
-            if r_flavor.is_error:
-                return Error(r_flavor.unwrap_error())
-
-            pairs.append((image, r_flavor.unwrap()))
-
-        if not pairs:
-            return Error(Failure('no suitable image/flavor combination found'))
-
-        log_dict_yaml(
-            logger.info,
-            'available image/flavor combinations',
-            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
-        )
+            return Error(Failure(can_acquire.reason.message))
 
         image, flavor = pairs[0]
 
@@ -593,69 +559,6 @@ class OpenStackDriver(PoolDriver):
             return Error(r_start.unwrap_error())
 
         return Ok(True)
-
-    def can_acquire(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[CanAcquire, Failure]:
-        r_answer = super().can_acquire(logger, session, guest_request)
-
-        if r_answer.is_error:
-            return Error(r_answer.unwrap_error())
-
-        if r_answer.unwrap().can_acquire is False:
-            return r_answer
-
-        # Disallow HW constraints the driver does not implement yet
-        if guest_request.environment.has_hw_constraints:
-            r_constraints = guest_request.environment.get_hw_constraints()
-
-            if r_constraints.is_error:
-                return Error(r_constraints.unwrap_error())
-
-            constraints = r_constraints.unwrap()
-            assert constraints is not None
-
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
-
-        images = r_images.unwrap()
-
-        if not images:
-            return Ok(CanAcquire.cannot('compose not supported'))
-
-        # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
-
-            if not images:
-                return Ok(CanAcquire.cannot('compose does not support kickstart'))
-
-        pairs: List[Tuple[PoolImageInfo, Flavor]] = []
-
-        for image in images:
-            r_flavor = self._env_to_flavor_or_none(logger, session, guest_request)
-
-            if r_flavor.is_error:
-                return Error(r_flavor.unwrap_error())
-
-            flavor = r_flavor.unwrap()
-
-            if flavor is None:
-                continue
-
-            pairs.append((image, flavor))
-
-        if not pairs:
-            return Ok(CanAcquire.cannot('no suitable image/flavor combination found'))
-
-        log_dict_yaml(
-            logger.info,
-            'available image/flavor combinations',
-            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
-        )
-
-        return Ok(CanAcquire())
 
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest

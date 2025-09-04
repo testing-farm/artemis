@@ -20,7 +20,6 @@ from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, P
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
-    HookImageInfoMapper,
     PoolCapabilities,
     PoolErrorCauses,
     PoolImageSSHInfo,
@@ -106,6 +105,8 @@ class IBMCloudPowerDriver(PoolDriver):
     image_info_class = IBMCloudPowerPoolImageInfo
     pool_data_class = IBMCloudPoolData
 
+    _image_map_hook_name = 'IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE'
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -113,16 +114,6 @@ class IBMCloudPowerDriver(PoolDriver):
         pool_config: Dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
-
-    # TODO: return value does not match supertype - it should, it does, but mypy ain't happy: why?
-    @property
-    def image_info_mapper(self) -> HookImageInfoMapper[IBMCloudPowerPoolImageInfo]:  # type: ignore[override]
-        return HookImageInfoMapper(self, 'IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE')
-
-    def map_image_name_to_image_info(
-        self, logger: gluetool.log.ContextAdapter, imagename: str
-    ) -> Result[PoolImageInfo, Failure]:
-        return self._map_image_name_to_image_info_by_cache(logger, imagename)
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
@@ -300,15 +291,6 @@ class IBMCloudPowerDriver(PoolDriver):
     def can_acquire(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
-        """
-        Find our whether this driver can provision a guest that would satisfy
-        the given environment.
-
-        :param Environment environment: environmental requirements a guest must satisfy.
-        :rtype: result.Result[bool, Failure]
-        :returns: Ok with True if guest can be acquired.
-        """
-
         # Largely borrowed code from beaker driver
 
         # First, check the parent class, maybe its tests already have the answer.
@@ -320,7 +302,9 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_answer.unwrap().can_acquire is False:
             return r_answer
 
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        r_images: Result[List[IBMCloudPowerPoolImageInfo], Failure] = self._guest_request_to_image_or_none(
+            logger, session, guest_request
+        )
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
@@ -477,7 +461,9 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_images = self.image_info_mapper.map(logger, guest_request)
+        r_images: Result[List[IBMCloudPowerPoolImageInfo], Failure] = self._guest_request_to_image(
+            logger, session, guest_request
+        )
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 

@@ -23,7 +23,6 @@ from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
-    HookImageInfoMapper,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -79,12 +78,10 @@ class GCPDriver(PoolDriver):
 
     pool_data_class = GCPPoolData
 
+    _image_map_hook_name = 'GCP_ENVIRONMENT_TO_IMAGE'
+
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
-
-    @property
-    def image_info_mapper(self) -> HookImageInfoMapper[PoolImageInfo]:
-        return HookImageInfoMapper(self, 'GCP_ENVIRONMENT_TO_IMAGE')
 
     @property
     def _instances_client(self) -> compute_v1.InstancesClient:
@@ -106,7 +103,7 @@ class GCPDriver(PoolDriver):
     def _service_account_info(self) -> Any:
         return self.pool_config['service-account-info']
 
-    def map_image_name_to_image_info(
+    def image_name_to_image_info(
         self, logger: gluetool.log.ContextAdapter, image_name: str
     ) -> Result[PoolImageInfo, Failure]:
         image_project = self.pool_config['image-project']
@@ -132,10 +129,6 @@ class GCPDriver(PoolDriver):
     def can_acquire(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
-        """
-        Check whether this driver can provision a guest that would satisfy the given environment.
-        """
-
         r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
@@ -145,7 +138,9 @@ class GCPDriver(PoolDriver):
         if answer.can_acquire is False:
             return r_answer
 
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
+        r_images: Result[List[PoolImageInfo], Failure] = self._guest_request_to_image_or_none(
+            logger, session, guest_request
+        )
         if r_images.is_error:
             return Error(r_images.unwrap_error())
 
@@ -374,7 +369,9 @@ class GCPDriver(PoolDriver):
         if delay_cfg_option_read_result.is_error:
             return Error(delay_cfg_option_read_result.unwrap_error())
 
-        map_request_to_image_result = self.image_info_mapper.map(logger, guest_request)
+        map_request_to_image_result: Result[List[PoolImageInfo], Failure] = self._guest_request_to_image(
+            logger, session, guest_request
+        )
         if map_request_to_image_result.is_error:
             return Error(map_request_to_image_result.unwrap_error())
 

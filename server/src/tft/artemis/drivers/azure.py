@@ -35,8 +35,8 @@ from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
+    FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
-    HookImageInfoMapper,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -276,12 +276,14 @@ class AzureSession:
         return self._run_cmd(logger, options, json_format, commandname=commandname)
 
 
-class AzureDriver(PoolDriver):
+class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
     drivername = 'azure'
 
     image_info_class = AzurePoolImageInfo
     flavor_info_class = AzureFlavor
     pool_data_class = AzurePoolData
+
+    _image_map_hook_name = 'AZURE_ENVIRONMENT_TO_IMAGE'
 
     def __init__(
         self,
@@ -290,11 +292,6 @@ class AzureDriver(PoolDriver):
         pool_config: Dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
-
-    # TODO: return value does not match supertype - it should, it does, but mypy ain't happy: why?
-    @property
-    def image_info_mapper(self) -> HookImageInfoMapper[AzurePoolImageInfo]:  # type: ignore[override]
-        return HookImageInfoMapper(self, 'AZURE_ENVIRONMENT_TO_IMAGE')
 
     @property
     def use_public_ip(self) -> bool:
@@ -309,18 +306,13 @@ class AzureDriver(PoolDriver):
 
         return Ok(capabilities)
 
-    def map_image_name_to_image_info(
-        self, logger: gluetool.log.ContextAdapter, imagename: str
-    ) -> Result[PoolImageInfo, Failure]:
-        return self._map_image_name_to_image_info_by_cache(logger, imagename)
-
-    def _env_to_instance_type(
+    def _guest_request_to_flavor_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: AzurePoolImageInfo,
-    ) -> Result[AzureFlavor, Failure]:
+    ) -> Result[Optional[AzureFlavor], Failure]:
         r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
             logger, guest_request.environment
         )
@@ -351,7 +343,7 @@ class AzureDriver(PoolDriver):
 
             guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
 
-            return Error(Failure('no suitable flavor'))
+            return Ok(None)
 
         if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
             logger.info('default flavor among suitable ones, using it')
@@ -459,11 +451,6 @@ class AzureDriver(PoolDriver):
     def can_acquire(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
-        """
-        Find our whether this driver can provision a guest that would satisfy
-        the given environment.
-        """
-
         r_answer = super().can_acquire(logger, session, guest_request)
 
         if r_answer.is_error:
@@ -474,21 +461,6 @@ class AzureDriver(PoolDriver):
 
         if guest_request.environment.has_hw_constraints is True:
             return Ok(CanAcquire.cannot('HW constraints are not supported'))
-
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
-
-        images = r_images.unwrap()
-
-        if not images:
-            return Ok(CanAcquire.cannot('compose not supported'))
-
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
-
-            if not images:
-                return Ok(CanAcquire.cannot('compose does not support kickstart'))
 
         return Ok(CanAcquire())
 
@@ -868,36 +840,21 @@ class AzureDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_images = self.image_info_mapper.map(logger, guest_request)
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
-        images = r_images.unwrap()
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
 
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
 
-        pairs: List[Tuple[AzurePoolImageInfo, AzureFlavor]] = []
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
 
-        for image in images:
-            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
-            if r_instance_type.is_error:
-                return Error(r_instance_type.unwrap_error())
+            return Error(Failure(can_acquire.reason.message))
 
-            pairs.append((image, r_instance_type.unwrap()))
+        image, flavor = pairs[0]
 
-        if not pairs:
-            return Error(Failure('no suitable image/flavor combination found'))
-
-        log_dict_yaml(
-            logger.info,
-            'available image/flavor combinations',
-            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
-        )
-
-        image, instance_type = pairs[0]
-
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=instance_type, image=image)
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
         r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
@@ -981,7 +938,7 @@ class AzureDriver(PoolDriver):
                     '--name',
                     tags['ArtemisGuestLabel'],
                     '--size',
-                    instance_type.name,
+                    flavor.name,
                 ] + tags_options
 
                 if custom_data_filename:

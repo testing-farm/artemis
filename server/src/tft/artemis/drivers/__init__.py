@@ -1184,82 +1184,8 @@ class GuestLogUpdateProgress:
 #
 # Mapping guest requests to images
 #
-_PoolImageInfoTypeVar = TypeVar('_PoolImageInfoTypeVar', bound='PoolImageInfo')
+PoolImageInfoT = TypeVar('PoolImageInfoT', bound='PoolImageInfo')
 ImageInfoMapperResultType = Result[List[T], Failure]
-
-
-class ImageInfoMapper(Generic[_PoolImageInfoTypeVar]):
-    """
-    Base class for mappings between a guest request and image info.
-    """
-
-    def __init__(self, pool: 'PoolDriver') -> None:
-        self.pool = pool
-
-    def map_or_none(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
-        """
-        Map given guest request to images.
-
-        :returns: list of images fitting the given request. If no such image can be found, an empty list is returned.
-        """
-
-        raise NotImplementedError
-
-    def map(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
-        """
-        Map given guest request to images.
-
-        :returns: list of images fitting the given request.
-        """
-
-        r_images = self.map_or_none(logger, guest_request)
-
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
-
-        images = r_images.unwrap()
-
-        if not images:
-            return Error(
-                Failure('cannot map guest request to image', environment=guest_request.environment, recoverable=False)
-            )
-
-        return Ok(images)
-
-
-class HookImageInfoMapper(ImageInfoMapper[_PoolImageInfoTypeVar]):
-    """
-    Mapper between a guest request and image info with the use of pool-specific hook script.
-    """
-
-    def __init__(self, pool: 'PoolDriver', hook_name: str) -> None:
-        super().__init__(pool)
-
-        self.hook_name = hook_name
-
-    def map_or_none(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> ImageInfoMapperResultType[_PoolImageInfoTypeVar]:
-        r_engine = hook_engine(self.hook_name)
-
-        if r_engine.is_error:
-            return Error(r_engine.unwrap_error())
-
-        engine = r_engine.unwrap()
-
-        r_images = cast(
-            Result[List[_PoolImageInfoTypeVar], Failure],
-            engine.run_hook(self.hook_name, logger=logger, pool=self.pool, environment=guest_request.environment),
-        )
-
-        if r_images.is_error:
-            r_images.unwrap_error().update(environment=guest_request.environment)
-
-        return r_images
 
 
 class GuestLogUpdaterType(Protocol):
@@ -1302,6 +1228,8 @@ def render_tags(
 
 class PoolDriver(gluetool.log.LoggerMixin):
     drivername: str
+
+    _image_map_hook_name: str
 
     image_info_class: Type[PoolImageInfo] = PoolImageInfo
     flavor_info_class: Type[Flavor] = Flavor
@@ -1457,14 +1385,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return gluetool.utils.normalize_multistring_option(self.pool_config.get('ssh-options', []))
 
     @property
-    def image_info_mapper(self) -> ImageInfoMapper[PoolImageInfo]:
-        """
-        Returns a guest request to image info mapper for this pool.
-        """
-
-        raise NotImplementedError
-
-    @property
     def use_only_when_addressed(self) -> bool:
         return gluetool.utils.normalize_bool_option(self.pool_config.get('use-only-when-addressed', False))
 
@@ -1478,6 +1398,68 @@ class PoolDriver(gluetool.log.LoggerMixin):
         correctness or anything else.
         """
         return Ok(True)
+
+    def image_name_to_image_info(
+        self, logger: gluetool.log.ContextAdapter, imagename: str
+    ) -> Result[PoolImageInfo, Failure]:
+        """
+        Retrieve image info container for a given image name.
+        """
+
+        r_image_info = self.get_cached_pool_image_info(imagename)
+
+        if r_image_info.is_error:
+            return Error(r_image_info.unwrap_error())
+
+        image_info = r_image_info.unwrap()
+
+        if image_info is None:
+            return Error(Failure('cannot find image by name', imagename=imagename))
+
+        return Ok(image_info)
+
+    def _guest_request_to_image_or_none(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+    ) -> Result[List[PoolImageInfoT], Failure]:
+        r_engine = hook_engine(self._image_map_hook_name)
+
+        if r_engine.is_error:
+            return Error(r_engine.unwrap_error().update(environment=guest_request.environment))
+
+        engine = r_engine.unwrap()
+
+        r_images = cast(
+            Result[List[PoolImageInfoT], Failure],
+            engine.run_hook(self._image_map_hook_name, logger=logger, pool=self, environment=guest_request.environment),
+        )
+
+        if r_images.is_error:
+            r_images.unwrap_error().update(environment=guest_request.environment)
+
+        return r_images
+
+    def _guest_request_to_image(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+    ) -> Result[List[PoolImageInfoT], Failure]:
+        r_images: Result[List[PoolImageInfoT], Failure] = self._guest_request_to_image_or_none(
+            logger, session, guest_request
+        )
+
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
+
+        images = r_images.unwrap()
+
+        if not images:
+            return Error(Failure('no suitable image', environment=guest_request.environment, recoverable=False))
+
+        return r_images
 
     def filter_flavors_image_arch(
         self,
@@ -1649,34 +1631,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 return Ok(CanAcquire.cannot('unsupported kickstart metadata option specified'))
 
         return Ok(CanAcquire())
-
-    def _map_image_name_to_image_info_by_cache(
-        self, logger: gluetool.log.ContextAdapter, imagename: str
-    ) -> Result[PoolImageInfo, Failure]:
-        """
-        Retrieve pool-specific information for a given image name from pool image info cache.
-        """
-
-        r_ii = self.get_cached_pool_image_info(imagename)
-
-        if r_ii.is_error:
-            return Error(r_ii.unwrap_error())
-
-        ii = r_ii.unwrap()
-
-        if ii is None:
-            return Error(Failure('cannot find image by name', imagename=imagename))
-
-        return Ok(ii)
-
-    def map_image_name_to_image_info(
-        self, logger: gluetool.log.ContextAdapter, imagename: str
-    ) -> Result[PoolImageInfo, Failure]:
-        """
-        Search pool resources, and find a pool-specific information for an image identified by the given name.
-        """
-
-        raise NotImplementedError
 
     # TODO: I dislike the naming scheme here very much...
     def _map_environment_to_flavor_info_by_cache_by_name_or_none(
@@ -2656,6 +2610,173 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, self.flavor_info_class)
+
+
+class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
+    """
+    A base class for drivers spawning guests from "images" and "flavors".
+
+    Drivers of this type work with images and flavors, and the class provides implementation of shared concepts and
+    behavior of such drivers.
+    """
+
+    def _guest_request_to_flavor_or_none(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfoT,
+    ) -> Result[Optional[FlavorT], Failure]:
+        """
+        Map a guest request and image to the most fitting flavor.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guest_request: guest request to map to a flavor.
+        :param image: image selected for the provisioning.
+        :returns: flavor most suitable for the given combination of the guest request and image, or ``None`` if no
+            suitable flavor was found.
+        """
+
+        raise NotImplementedError
+
+    def _guest_request_to_flavor(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfoT,
+    ) -> Result[FlavorT, Failure]:
+        """
+        Map a guest request and image to the most fitting flavor.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guest_request: guest request to map to a flavor.
+        :param image: image selected for the provisioning.
+        :returns: either a valid result, the most suitable flavor for the given combination of the guest request and
+            image, or an error with a :py:class:`Failure` describing the problem.
+        """
+
+        r_flavor = self._guest_request_to_flavor_or_none(logger, session, guest_request, image)
+
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
+
+        flavor = r_flavor.unwrap()
+
+        if flavor is None:
+            return Error(Failure('no suitable flavor', environment=guest_request.environment))
+
+        return Ok(flavor)
+
+    def _collect_image_flavor_pairs(
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    ) -> Result[Tuple[CanAcquire, List[Tuple[PoolImageInfoT, FlavorT]]], Failure]:
+        """
+        Find all possible image and flavor combinations for a given guest request.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guest_request: guest request to map to image/flavor pairs.
+        :returns: either a valid result, a tuple of :py:class:`CanAcquire` instance and a list of image/flavor tuples,
+            or an error with a :py:class:`Failure` describing the problem. If the list is empty,
+            :py:attr:`CanAcquire.reason` describes the cause.
+
+            .. warning::
+
+                Do not propagate failure stored in :py:attr:`CanAcquire.reason` as its :py:attr:`Failure.recoverable`
+                may be set. Propagating it of the :py:meth:`can_acquire` method may terminate the whole guest request.
+        """
+
+        r_images: Result[List[PoolImageInfoT], Failure] = self._guest_request_to_image_or_none(
+            logger, session, guest_request
+        )
+
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
+
+        images = r_images.unwrap()
+
+        if not images:
+            return Ok((CanAcquire.cannot('compose not supported'), []))
+
+        if guest_request.environment.has_ks_specification:
+            r_capabilities = self.capabilities()
+
+            if r_capabilities.is_error:
+                return Error(r_capabilities.unwrap_error())
+
+            capabilities = r_capabilities.unwrap()
+
+            if not capabilities.supports_native_kickstart:
+                # The driver does not support kickstart natively. Filter only images we can perform ks install on.
+                images = [image for image in images if image.supports_kickstart is True]
+
+            if not images:
+                return Ok((CanAcquire.cannot('compose does not support kickstart'), []))
+
+        pairs: List[Tuple[PoolImageInfoT, FlavorT]] = []
+
+        for image in images:
+            r_flavor = self._guest_request_to_flavor_or_none(logger, session, guest_request, image)
+
+            if r_flavor.is_error:
+                return Error(r_flavor.unwrap_error())
+
+            flavor = r_flavor.unwrap()
+
+            if flavor is None:
+                continue
+
+            pairs.append((image, flavor))
+
+        if not pairs:
+            return Ok((CanAcquire.cannot('no suitable image/flavor combination found'), []))
+
+        log_dict_yaml(
+            logger.info,
+            'available image/flavor combinations',
+            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
+        )
+
+        return Ok((CanAcquire(), pairs))
+
+    def can_acquire(
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    ) -> Result[CanAcquire, Failure]:
+        """
+        Find our whether the pool can provision a guest that would satisfy the given guest request environment.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guest_request: guest_request to check.
+        :returns: either a valid result, a :py:class:`CanAcquire` instance describing the ability to provision from this
+            pool, or an error with a :py:class:`Failure` describing the problem.
+        """
+
+        # Check what the parent implementation thinks about the request first.
+        r_answer = super().can_acquire(logger, session, guest_request)
+
+        if r_answer.is_error:
+            return Error(r_answer.unwrap_error())
+
+        if r_answer.unwrap().can_acquire is False:
+            return r_answer
+
+        # Find out whether there are any image/flavor combinations.
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
+
+        answer, _ = r_image_flavor_pairs.unwrap()
+
+        if answer.can_acquire is False:
+            return Ok(answer)
+
+        # Nothing ruled out the provisioning yet, return a positive answer.
+        return Ok(CanAcquire())
 
 
 def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -> Result[Optional[str], Failure]:
