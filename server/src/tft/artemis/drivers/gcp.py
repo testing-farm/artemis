@@ -148,13 +148,6 @@ class GCPDriver(PoolDriver):
         if not images:
             return Ok(CanAcquire.cannot('compose not supported'))
 
-        # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
-
-            if not images:
-                return Ok(CanAcquire.cannot('compose does not support kickstart'))
-
         if guest_request.environment.has_hw_constraints:
             return Ok(CanAcquire.cannot('HW constraints are not supported by the GCP driver'))
 
