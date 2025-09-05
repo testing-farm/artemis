@@ -905,6 +905,11 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
         if 'hypervisor' in virtualization_patch:
             flavor.virtualization.hypervisor = virtualization_patch['hypervisor']
 
+    if 'memory' in flavor_spec:
+        memory_patch = flavor_spec['memory']
+
+        flavor.memory = UNITS(memory_patch)
+
     return Ok(None)
 
 
