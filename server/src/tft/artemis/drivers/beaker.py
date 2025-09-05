@@ -42,7 +42,7 @@ from ..environment import (
     Or,
     SizeType,
 )
-from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT, Knob
+from ..knobs import KNOB_CONFIG_DIRPATH, KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT, Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
@@ -124,7 +124,11 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN',
     cast_from_str=str,
-    default=r'^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?$',
+    default=(
+        r'^(?P<distro>[^;]+)'
+        r'(?:;variant=(?P<variant>[a-zA-Z]+);?)?'
+        r'(?:;bootc_image=(?P<bootc_image>[a-zA-Z0-9._\-:/]+);?)?$'
+    ),
 )
 
 
@@ -1020,6 +1024,7 @@ def create_beaker_filter(
 @dataclasses.dataclass(repr=False)
 class BeakerPoolImageInfo(PoolImageInfo):
     variant: Optional[str] = 'Server'
+    bootc_image: Optional[str] = None
 
 
 class BeakerDriver(PoolDriver):
@@ -1255,8 +1260,9 @@ class BeakerDriver(PoolDriver):
                     arch=None,
                     boot=FlavorBoot(),
                     ssh=PoolImageSSHInfo(),
-                    supports_kickstart=True,
+                    supports_kickstart=groups['bootc_image'] is None,
                     variant=groups['variant'],
+                    bootc_image=groups['bootc_image'],
                 )
             )
 
@@ -1354,6 +1360,13 @@ class BeakerDriver(PoolDriver):
         for name, value in tags.items():
             command += ['--taskparam', f'ARTEMIS_TAG_{name}={value}']
 
+        # TODO: override ks template altogether install
+
+        if distro.bootc_image:
+            command += ['--kickstart', os.path.join(KNOB_CONFIG_DIRPATH.value, 'beaker-bootc-kickstart.ks')]
+            command += ['--ks-meta',
+                        f'ostree_container_url={distro.bootc_image} no_default_harness_repo disable_debug_repos']
+
         if guest_request.environment.has_ks_specification:
             command += self._create_bkr_kickstart_options(guest_request.environment.kickstart)
 
@@ -1409,6 +1422,7 @@ class BeakerDriver(PoolDriver):
             return Error(r_distros.unwrap_error())
 
         distros = r_distros.unwrap()
+
         distro = distros[0]
 
         r_wow_options = self._create_wow_options(logger, session, guest_request, distro)

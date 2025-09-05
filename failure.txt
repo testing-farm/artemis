@@ -1,0 +1,40 @@
+** Fetching task: 201387218 [/mnt/tests/distribution/check-install]
+use_pty:FALSE rstrnt-package reinstall beaker-core-tasks-distribution-check-install
+No change.
+Checking out tree 595043e...done
+Enabled rpm-md repositories: beaker-harness beaker-tasks rcm-tools rhel-BaseOS rhel-AppStream rhel-CRB beaker-AppStream beaker-BaseOS beaker-CRB beaker-HighAvailability beaker-NFV beaker-RT beaker-SAP beaker-SAPHANA
+Updating metadata for 'beaker-harness'...done
+Updating metadata for 'beaker-tasks'...done
+Updating metadata for 'rcm-tools'...done
+Updating metadata for 'rhel-BaseOS'...done
+Updating metadata for 'rhel-AppStream'...done
+Updating metadata for 'rhel-CRB'...done
+Updating metadata for 'beaker-AppStream'...done
+Updating metadata for 'beaker-BaseOS'...done
+Updating metadata for 'beaker-CRB'...done
+Updating metadata for 'beaker-HighAvailability'...done
+Updating metadata for 'beaker-NFV'...done
+Updating metadata for 'beaker-RT'...done
+Updating metadata for 'beaker-SAP'...done
+Updating metadata for 'beaker-SAPHANA'...done
+Importing rpm-md...done
+rpm-md repo 'beaker-harness'; generated: 2025-07-08T16:29:10Z solvables: 150
+rpm-md repo 'beaker-tasks'; generated: 2025-09-04T10:00:20Z solvables: 24596
+rpm-md repo 'rcm-tools'; generated: 2025-08-26T22:34:10Z solvables: 33
+rpm-md repo 'rhel-BaseOS'; generated: 2025-08-14T08:35:02Z solvables: 947
+rpm-md repo 'rhel-AppStream'; generated: 2025-08-14T08:34:48Z solvables: 4484
+rpm-md repo 'rhel-CRB'; generated: 2025-08-14T08:35:18Z solvables: 1223
+rpm-md repo 'beaker-AppStream'; generated: 2025-08-28T04:21:59Z solvables: 4492
+rpm-md repo 'beaker-BaseOS'; generated: 2025-08-28T04:22:24Z solvables: 946
+rpm-md repo 'beaker-CRB'; generated: 2025-08-28T04:22:50Z solvables: 1223
+rpm-md repo 'beaker-HighAvailability'; generated: 2025-08-28T04:23:00Z solvables: 38
+rpm-md repo 'beaker-NFV'; generated: 2025-08-28T04:23:02Z solvables: 19
+rpm-md repo 'beaker-RT'; generated: 2025-08-28T04:23:13Z solvables: 16
+rpm-md repo 'beaker-SAP'; generated: 2025-08-28T04:23:20Z solvables: 5
+rpm-md repo 'beaker-SAPHANA'; generated: 2025-08-28T04:23:26Z solvables: 7
+Resolving dependencies...done
+Will download: 1 package (4.4 kB)
+Downloading from 'beaker-tasks'...done
+Importing packages...done
+error: importing RPMs: Importing package 'beaker-core-tasks-distribution-check-install': Analyzing /mnt/tests: Unsupported path; see https://github.com/projectatomic/rpm-ostree/issues/233
+
