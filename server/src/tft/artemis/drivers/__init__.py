@@ -1476,8 +1476,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         if r_images.is_error:
             r_images.unwrap_error().update(environment=guest_request.environment)
+            return r_images
 
-        return r_images
+        images = r_images.unwrap()
+
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart]
+
+        return Ok(images)
 
     def _guest_request_to_image(
         self,
@@ -2858,12 +2864,6 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
 
         if not images:
             return Ok((CanAcquire.cannot('compose not supported'), []))
-
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
-
-            if not images:
-                return Ok((CanAcquire.cannot('compose does not support kickstart'), []))
 
         pairs: List[Tuple[PoolImageInfoT, FlavorT]] = []
 

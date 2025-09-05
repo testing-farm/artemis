@@ -85,7 +85,11 @@ KNOB_RESERVATION_EXTENSION_COMMAND_TEMPLATE: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_BEAKER_RESERVATION_EXTENSION_COMMAND_TEMPLATE',
     cast_from_str=str,
-    default='echo {{ (EXTENSION_TIME / 3600) | int }} | extendtesttime.sh',
+    default=(
+        '{% set extension_cmd = "echo %s | extendtesttime.sh" % ((EXTENSION_TIME / 3600) | int | string) %}'  # noqa: FS003,E501
+        '{% if POOL_DATA.is_bootc %}podman exec beaker-harness /bin/bash -c "{{ extension_cmd }}"{% else %}'  # noqa: FS003,E501
+        '{{ extension_cmd }}{% endif %}'  # noqa: FS003
+    ),
 )
 
 KNOB_RESERVATION_EXTENSION_TIME: Knob[int] = Knob(
@@ -124,7 +128,11 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN',
     cast_from_str=str,
-    default=r'^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?$',
+    default=(
+        r'^(?P<distro>[^;]+)'
+        r'(?:;variant=(?P<variant>[a-zA-Z]+);?)?'
+        r'(?:;bootc_image=(?P<bootc_image>[a-zA-Z0-9._\-:/]+);?)?$'
+    ),
 )
 
 
@@ -169,6 +177,29 @@ KNOB_BKR_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
     envvar='ARTEMIS_BEAKER_BKR_TIMEOUT_TERMINATION',
     cast_from_str=int,
     default=120,
+)
+
+KNOB_KICKSTART_TEMPLATE_BOOTC_FILEPATH: Knob[str] = Knob(
+    'beaker.kickstart.template-bootc.filepath',
+    'Path to the kickstart template used for bootc installation.',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_BEAKER_KICKSTART_TEMPLATE_BOOTC_FILEPATH',
+    cast_from_str=str,
+    default='beaker-bootc-kickstart.ks',
+)
+
+KNOB_KICKSTART_METADATA_TEMPLATE: Knob[str] = Knob(
+    'beaker.kickstart.metadata.template',
+    'A template for Beaker .',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_BEAKER_KICKSTART_METADATA_TEMPLATE',
+    cast_from_str=str,
+    default=(
+        '{% if DISTRO.bootc_image %}ostree_container_url={{ DISTRO.bootc_image }} disable_debug_repos '  # noqa: FS003
+        'contained_harness no_ks_template{% endif %}'  # noqa: FS003
+    ),
 )
 
 
@@ -219,6 +250,7 @@ def bkr_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> BkrErrorC
 @dataclasses.dataclass
 class BeakerPoolData(PoolData):
     job_id: Optional[str] = None
+    is_bootc: Optional[bool] = None
 
 
 @dataclasses.dataclass
@@ -1020,6 +1052,7 @@ def create_beaker_filter(
 @dataclasses.dataclass(repr=False)
 class BeakerPoolImageInfo(PoolImageInfo):
     variant: Optional[str] = 'Server'
+    bootc_image: Optional[str] = None
 
 
 class BeakerDriver(PoolDriver):
@@ -1255,8 +1288,9 @@ class BeakerDriver(PoolDriver):
                     arch=None,
                     boot=FlavorBoot(),
                     ssh=PoolImageSSHInfo(),
-                    supports_kickstart=True,
+                    supports_kickstart=groups['bootc_image'] is None,
                     variant=groups['variant'],
+                    bootc_image=groups['bootc_image'],
                 )
             )
 
@@ -1354,6 +1388,32 @@ class BeakerDriver(PoolDriver):
         for name, value in tags.items():
             command += ['--taskparam', f'ARTEMIS_TAG_{name}={value}']
 
+        if distro.bootc_image:
+            # Override kickstart template for bootc installation
+            r_kickstart_filepath = KNOB_KICKSTART_TEMPLATE_BOOTC_FILEPATH.get_value(entityname=self.poolname)
+
+            if r_kickstart_filepath.is_error:
+                return Error(r_kickstart_filepath.unwrap_error())
+
+            command += ['--kickstart', os.path.abspath(r_kickstart_filepath.unwrap())]
+
+        r_ks_meta_template = KNOB_KICKSTART_METADATA_TEMPLATE.get_value(entityname=self.poolname)
+
+        if r_ks_meta_template.is_error:
+            return Error(r_ks_meta_template.unwrap_error())
+
+        r_ks_meta = render_template(
+            r_ks_meta_template.unwrap(), DISTRO=distro, **template_environment(guest_request=guest_request)
+        )
+
+        if r_ks_meta.is_error:
+            return Error(r_ks_meta.unwrap_error())
+
+        ks_meta = r_ks_meta.unwrap()
+
+        if ks_meta:
+            command += ['--ks-meta', ks_meta]
+
         if guest_request.environment.has_ks_specification:
             command += self._create_bkr_kickstart_options(guest_request.environment.kickstart)
 
@@ -1372,7 +1432,7 @@ class BeakerDriver(PoolDriver):
 
     def _create_job_xml(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[bs4.BeautifulSoup, Failure]:
+    ) -> Result[Tuple[bs4.BeautifulSoup, bool], Failure]:
         """
         Create job xml with bkr workflow-simple and environment variables
 
@@ -1409,7 +1469,10 @@ class BeakerDriver(PoolDriver):
             return Error(r_distros.unwrap_error())
 
         distros = r_distros.unwrap()
+
         distro = distros[0]
+
+        is_bootc = distro.bootc_image is not None
 
         r_wow_options = self._create_wow_options(logger, session, guest_request, distro)
 
@@ -1431,7 +1494,7 @@ class BeakerDriver(PoolDriver):
             return Error(Failure.from_exc('failed to parse job XML', exc, command_output=bkr_output.process_output))
 
         if beaker_filter is None:
-            return Ok(job_xml)
+            return Ok((job_xml, is_bootc))
 
         log_xml(logger.debug, 'job', job_xml)
         log_xml(logger.debug, 'filter', beaker_filter)
@@ -1445,7 +1508,7 @@ class BeakerDriver(PoolDriver):
 
         log_xml(logger.debug, 'job with filter', job_xml)
 
-        return Ok(job_xml)
+        return Ok((job_xml, is_bootc))
 
     def _submit_job(self, logger: gluetool.log.ContextAdapter, job: bs4.BeautifulSoup) -> Result[str, Failure]:
         """
@@ -1492,13 +1555,20 @@ class BeakerDriver(PoolDriver):
 
     def _create_job(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[str, Failure]:
+    ) -> Result[Tuple[str, bool], Failure]:
         r_job_xml = self._create_job_xml(logger, session, guest_request)
 
         if r_job_xml.is_error:
             return Error(r_job_xml.unwrap_error())
 
-        return self._submit_job(logger, r_job_xml.unwrap())
+        job_xml, is_bootc = r_job_xml.unwrap()
+
+        r_job_id = self._submit_job(logger, job_xml)
+
+        if r_job_id.is_error:
+            return Error(r_job_id.unwrap_error())
+
+        return Ok((r_job_id.unwrap(), is_bootc))
 
     def _get_job_results(self, logger: gluetool.log.ContextAdapter, job_id: str) -> Result[bs4.BeautifulSoup, Failure]:
         """
@@ -1996,9 +2066,12 @@ class BeakerDriver(PoolDriver):
         if r_ssh_timeout.is_error:
             return Error(r_ssh_timeout.unwrap_error())
 
+        pool_data = guest_request.pool_data.mine(self, BeakerPoolData)
+
         r_command = render_template(
             KNOB_RESERVATION_EXTENSION_COMMAND_TEMPLATE.value,
             EXTENSION_TIME=KNOB_RESERVATION_EXTENSION_TIME.value,
+            POOL_DATA=pool_data,
             **template_environment(guest_request=guest_request),
         )
 
@@ -2135,6 +2208,8 @@ class BeakerDriver(PoolDriver):
 
             return Error(r_create_job.unwrap_error())
 
+        job_id, is_bootc = r_create_job.unwrap()
+
         # The returned guest doesn't have address. The address will be added by executing `update_guest()`
         # after. The reason of this solution is slow beaker system provisioning. It can take hours and
         # we can't use a thread for so large amount of time.
@@ -2142,7 +2217,7 @@ class BeakerDriver(PoolDriver):
         return Ok(
             ProvisioningProgress(
                 state=ProvisioningState.PENDING,
-                pool_data=BeakerPoolData(job_id=r_create_job.unwrap()),
+                pool_data=BeakerPoolData(job_id=job_id, is_bootc=is_bootc),
                 delay_update=r_delay.unwrap(),
             )
         )
