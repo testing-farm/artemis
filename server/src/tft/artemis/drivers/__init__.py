@@ -2702,16 +2702,7 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
             return Ok((CanAcquire.cannot('compose not supported'), []))
 
         if guest_request.environment.has_ks_specification:
-            r_capabilities = self.capabilities()
-
-            if r_capabilities.is_error:
-                return Error(r_capabilities.unwrap_error())
-
-            capabilities = r_capabilities.unwrap()
-
-            if not capabilities.supports_native_kickstart:
-                # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-                images = [image for image in images if image.supports_kickstart is True]
+            images = [image for image in images if image.supports_kickstart is True]
 
             if not images:
                 return Ok((CanAcquire.cannot('compose does not support kickstart'), []))
