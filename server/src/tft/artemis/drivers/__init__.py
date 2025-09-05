@@ -102,6 +102,7 @@ ConfigFlavorCPUSpecType = TypedDict(
         'model-name': Optional[str],
         'stepping': Optional[int],
         'flag': Optional[List[str]],
+        'processors': Optional[int],
     },
 )
 
@@ -181,6 +182,7 @@ ConfigPatchFlavorSpecType = TypedDict(
         'tpm': ConfigFlavorTPMSpecType,
         'virtualization': ConfigFlavorVirtualizationSpecType,
         'boot': ConfigFlavorBootSpecType,
+        'memory': str,
     },
 )
 
@@ -190,6 +192,7 @@ class ConfigCustomFlavorSpecType(TypedDict):
     name: str
     base: str
     arch: str
+    memory: str
     compatible: ConfigFlavorCompatibleSpecType
     cpu: ConfigFlavorCPUSpecType
     disk: List[ConfigFlavorDiskSpecType]
@@ -907,8 +910,8 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
 
     if 'memory' in flavor_spec:
         memory_patch = flavor_spec['memory']
-
-        flavor.memory = UNITS(memory_patch)
+        raw_value = UNITS(str(memory_patch))
+        flavor.memory = UNITS.Quantity(raw_value, UNITS.gibibytes) if isinstance(raw_value, int) else raw_value
 
     return Ok(None)
 

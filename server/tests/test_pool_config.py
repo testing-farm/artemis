@@ -37,13 +37,13 @@ def test_patch_nop() -> None:
     assert r_outcome.is_ok
 
 
-def test_patch_unsupported() -> None:
+def test_patch_memory() -> None:
     flavor_spec = parse_spec(
         """
         ---
 
         arch: aarch64
-        memory: 1024
+        memory: 4
         """
     )
 
@@ -56,7 +56,7 @@ def test_patch_unsupported() -> None:
 
     assert r_outcome.is_ok
     assert flavor.arch == 'aarch64'
-    assert flavor.memory is None
+    assert flavor.memory == UNITS('4 GiB')
 
 
 def test_patch_cpu() -> None:
