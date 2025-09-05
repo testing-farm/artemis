@@ -6,40 +6,32 @@ definitions:
   custom_flavor:
     type: object
 
-    oneOf:
-      - properties:
-          name:
-            type: string
+    properties:
+      name:
+        type: string
 
-          base:
-            type: string
-        required:
-          - name
-          - base
+      base:
+        type: string
 
-      - properties:
-          name:
-            type: string
+      arch:
+        type: string
 
-          arch:
-            type: string
+      disk:
+        "$ref": "#/definitions/patch_flavor_disks"
 
-          disk:
-            "$ref": "#/definitions/patch_flavor_disks"
+      cpu:
+        "$ref": "#/definitions/patch_flavor_cpu"
 
-          cpu:
-            "$ref": "#/definitions/patch_flavor_cpu"
+      network:
+        "$ref": "#/definitions/patch_flavor_networks"
 
-          network:
-            "$ref": "#/definitions/patch_flavor_networks"
+      memory:
+        type: string
 
-          memory:
-            type: string
+    required:
+      - name
 
-        required:
-          - name
-
-        additionalProperties: false
+    additionalProperties: false
 
   patch_flavor_compatible:
     type: object
