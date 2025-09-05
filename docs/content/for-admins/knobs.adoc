@@ -728,7 +728,7 @@ until cancelled and reprovisioned.
 |`beaker.mapping.environment-to-image.pattern`
 |`str`
 |`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN`
-|`^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?$`
+|`^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?(?:;bootc_image=(?P<bootc_image>[a-zA-Z0-9._\-:/]+);?)?$`
 |no
 
 
@@ -792,6 +792,16 @@ until cancelled and reprovisioned.
 
 
 5+|A template for a command to run to extend Beaker reservation.
+
+|`beaker.reservation.extension.container-command-template`
+|`str`
+|`ARTEMIS_BEAKER_RESERVATION_EXTENSION_CONTAINER_COMMAND_TEMPLATE`
+|`podman exec beaker-harness /bin/bash -c "echo {{ (EXTENSION_TIME / 3600) | int }} | extendtesttime.sh"`
+|no
+
+
+
+5+|A template for a command to run to extend Beaker reservation with containerized harness.
 
 |`beaker.reservation.extension.time`
 |`int`
