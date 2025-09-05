@@ -374,7 +374,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         if r_suitable_flavors.is_error:
             return Error(r_suitable_flavors.unwrap_error())
 
-        suitable_flavors = cast(List[Flavor], r_suitable_flavors.unwrap())
+        suitable_flavors = r_suitable_flavors.unwrap()
 
         suitable_flavors = self.filter_flavors_image_arch(logger, session, guest_request, image, suitable_flavors)
 
@@ -457,12 +457,13 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
                     self.pool_config['master-key-name'],
                     '--processors',
                     str(flavor.cpu.processors),
-                    '--memory',
-                    str(flavor.memory.to('GiB').magnitude),
                     '--json',
                 ]
                 if user_data_file:
                     create_cmd_args += ['--user-data', f'@{user_data_file}']
+
+                if flavor.memory:
+                    create_cmd_args += ['--memory', str(flavor.memory.to('GiB').magnitude)]
 
                 r_instance_create = session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
 
