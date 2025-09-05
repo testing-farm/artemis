@@ -19,7 +19,7 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
-    CanAcquire,
+    FlavorBasedPoolDriver,
     PoolCapabilities,
     PoolErrorCauses,
     PoolImageSSHInfo,
@@ -99,7 +99,7 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     href: str
 
 
-class IBMCloudPowerDriver(PoolDriver):
+class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flavor]):
     drivername = 'ibmcloud-power'
 
     image_info_class = IBMCloudPowerPoolImageInfo
@@ -265,76 +265,6 @@ class IBMCloudPowerDriver(PoolDriver):
 
         return Ok(res)
 
-    def can_acquire(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[CanAcquire, Failure]:
-        # Largely borrowed code from beaker driver
-
-        # First, check the parent class, maybe its tests already have the answer.
-        r_answer = super().can_acquire(logger, session, guest_request)
-
-        if r_answer.is_error:
-            return Error(r_answer.unwrap_error())
-
-        if r_answer.unwrap().can_acquire is False:
-            return r_answer
-
-        r_images: Result[List[IBMCloudPowerPoolImageInfo], Failure] = self._guest_request_to_image_or_none(
-            logger, session, guest_request
-        )
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
-
-        images = r_images.unwrap()
-
-        if not images:
-            return Ok(CanAcquire.cannot('compose not supported'))
-
-        # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
-
-            if not images:
-                return Ok(CanAcquire.cannot('compose does not support kickstart'))
-
-        # Parent implementation does not care, but we still might: support for HW constraints is still
-        # far from being complete and fully tested, therefore we should check whether we are able to
-        # convert the constraints - if there are any - to a Beaker XML filter.
-
-        if not guest_request.environment.has_hw_constraints:
-            return Ok(CanAcquire())
-
-        r_constraints = guest_request.environment.get_hw_constraints()
-
-        if r_constraints.is_error:
-            return Error(r_constraints.unwrap_error())
-
-        constraints = r_constraints.unwrap()
-
-        # since `has_hw_constraints` was positive, there should be constraints...
-        assert constraints is not None
-
-        # TODO: copy helpers from tmt for this kind of filtering
-        supported_constraints: List[str] = [
-            'cpu.processors',
-            'cpu.cores',
-            'memory',
-        ]
-
-        for span in constraints.spans(logger):
-            for constraint in span:
-                if constraint.expand_name().spec_name not in supported_constraints:
-                    return Ok(
-                        CanAcquire.cannot(f'HW requirement {constraint.expand_name().spec_name} is not supported')
-                    )
-
-        r_filter = self._translate_constraints_to_cli_args(constraints)
-
-        if r_filter.is_error:
-            return Error(r_filter.unwrap_error())
-
-        return Ok(CanAcquire())
-
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
@@ -430,6 +360,52 @@ class IBMCloudPowerDriver(PoolDriver):
 
         return Ok(resources)
 
+    def _guest_request_to_flavor_or_none(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: IBMCloudPowerPoolImageInfo,
+    ) -> Result[Optional[Flavor], Failure]:
+        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
+            logger, guest_request.environment
+        )
+
+        if r_suitable_flavors.is_error:
+            return Error(r_suitable_flavors.unwrap_error())
+
+        suitable_flavors = cast(List[Flavor], r_suitable_flavors.unwrap())
+
+        suitable_flavors = self.filter_flavors_image_arch(logger, session, guest_request, image, suitable_flavors)
+
+        # FIXME The whole default flavor dance is identical between Azure / aws / openstack / now ibmcloud and is
+        # the candidate for generalization.
+        if not suitable_flavors:
+            if self.pool_config.get('use-default-flavor-when-no-suitable', True):
+                guest_request.log_warning_event(
+                    logger, session, 'no suitable flavors, using default', poolname=self.poolname
+                )
+
+                r_default_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(
+                    logger, self.pool_config['default-flavor']
+                )
+
+                if r_default_flavor.is_error:
+                    return Error(r_default_flavor.unwrap_error())
+
+                return Ok(cast(Flavor, r_default_flavor.unwrap()))
+
+            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
+
+            return Ok(None)
+
+        if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
+            logger.info('default flavor among suitable ones, using it')
+
+            return Ok([flavor for flavor in suitable_flavors if flavor.name == self.pool_config['default-flavor']][0])
+
+        return Ok(suitable_flavors[0])
+
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -438,31 +414,21 @@ class IBMCloudPowerDriver(PoolDriver):
         if r_delay.is_error:
             return Error(r_delay.unwrap_error())
 
-        r_images: Result[List[IBMCloudPowerPoolImageInfo], Failure] = self._guest_request_to_image(
-            logger, session, guest_request
-        )
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
-        images = r_images.unwrap()
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
 
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
 
-        image = images[0]
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
 
-        # In a typical driver there would be a flavor selection, but looks like ibmcloud power doesn't have a concept
-        # of flavors, instead one is specifying the number of cores / memory (in Gb) requested.
-        r_constraints = guest_request.environment.get_hw_constraints()
+            return Error(Failure(can_acquire.reason.message))
 
-        if r_constraints.is_error:
-            return Error(r_constraints.unwrap_error())
+        image, flavor = pairs[0]
 
-        r_constraint_args = self._translate_constraints_to_cli_args(r_constraints.unwrap())
-        if r_constraint_args.is_error:
-            return Error(r_constraint_args.unwrap_error())
-
-        self.log_acquisition_attempt(logger, session, guest_request, image=image)
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
         # A combination of ArtemisGuestLabel-ArtemisGuestName doesn't pass the ibmcloud max name length, so let's cut
         # to just ArtemisGuestName that is definitely unique even on multiple simultaneous create requests for the same
@@ -489,15 +455,12 @@ class IBMCloudPowerDriver(PoolDriver):
                     image.id,
                     '--key-name',
                     self.pool_config['master-key-name'],
-                    '--json',
                     '--processors',
-                    # NOTE(ivasilev) Not happy about magic numbers, but having it this way will instantly work without
-                    # the need to reconfigure pools.. Tempted to let it stay as it should be shortlived anyway, with
-                    # proper flavors taking over once flavor support is introduced.
-                    '2',
+                    str(flavor.cpu.processors),
                     '--memory',
-                    '4',
-                ] + r_constraint_args.unwrap()
+                    str(flavor.memory.to('GiB').magnitude),
+                    '--json',
+                ]
                 if user_data_file:
                     create_cmd_args += ['--user-data', f'@{user_data_file}']
 
