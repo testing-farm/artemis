@@ -490,6 +490,13 @@ class IBMCloudPowerDriver(PoolDriver):
                     '--key-name',
                     self.pool_config['master-key-name'],
                     '--json',
+                    '--processors',
+                    # NOTE(ivasilev) Not happy about magic numbers, but having it this way will instantly work without
+                    # the need to reconfigure pools.. Tempted to let it stay as it should be shortlived anyway, with
+                    # proper flavors taking over once flavor support is introduced.
+                    '2',
+                    '--memory',
+                    '4',
                 ] + r_constraint_args.unwrap()
                 if user_data_file:
                     create_cmd_args += ['--user-data', f'@{user_data_file}']
