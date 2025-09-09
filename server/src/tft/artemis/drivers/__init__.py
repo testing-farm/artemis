@@ -760,6 +760,19 @@ class PoolResourcesIDs(SerializableContainer):
         return super().unserialize_from_json(serialized)
 
 
+def _spec_to_unit(
+    value: Union[str, int], error_msg: str, error_details: Dict[str, Any], default_units: SizeType = UNITS.bytes
+) -> Result[Optional[SizeType], Failure]:
+    r_value = safe_call(UNITS, str(value))
+    if r_value.is_error:
+        return Error(Failure.from_failure(error_msg, r_value.unwrap_error(), details=error_details))
+    raw_value = r_value.unwrap()
+
+    res = UNITS.Quantity(raw_value, default_units) if isinstance(raw_value, int) else raw_value
+
+    return Ok(res)
+
+
 def _parse_flavor_disk_size(
     field_name: str, value: Optional[Union[str, int]], disk: FlavorDisk
 ) -> Result[Optional[SizeType], Failure]:
@@ -768,18 +781,13 @@ def _parse_flavor_disk_size(
 
     property_name = field_name.replace('-', '_')
 
-    r_value = safe_call(UNITS, str(value))
-
+    r_value = _spec_to_unit(
+        value=value, error_msg=f'failed to parse flavor disk.{field_name}', error_details={property_name: value}
+    )
     if r_value.is_error:
-        return Error(
-            Failure.from_failure(
-                f'failed to parse flavor disk.{field_name}', r_value.unwrap_error(), details={property_name: value}
-            )
-        )
+        return Error(r_value.unwrap_error())
 
-    raw_value = r_value.unwrap()
-
-    real_value = UNITS.Quantity(raw_value, UNITS.bytes) if isinstance(raw_value, int) else raw_value
+    real_value = r_value.unwrap()
 
     setattr(disk, property_name, real_value)
 
@@ -910,8 +918,17 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
 
     if 'memory' in flavor_spec:
         memory_patch = flavor_spec['memory']
-        raw_value = UNITS(str(memory_patch))
-        flavor.memory = UNITS.Quantity(raw_value, UNITS.gibibytes) if isinstance(raw_value, int) else raw_value
+
+        r_value = _spec_to_unit(
+            value=memory_patch,
+            error_msg='failed to parse flavor memory',
+            error_details={'memory': memory_patch},
+            default_units=UNITS.gibibytes,
+        )
+        if r_value.is_error:
+            return Error(r_value.unwrap_error())
+
+        flavor.memory = r_value.unwrap()
 
     return Ok(None)
 
