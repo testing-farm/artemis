@@ -67,7 +67,7 @@ def downgrade() -> None:
             sa.text(
                 """
                 UPDATE guest_requests
-                SET pool_data = json_extract(_pool_data, poolname)::text
+                SET pool_data = jsonb_extract_path(_pool_data, poolname)::text
                 WHERE poolname IS NOT NULL
                 """
             )
