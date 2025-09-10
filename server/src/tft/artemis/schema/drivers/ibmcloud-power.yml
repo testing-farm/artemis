@@ -61,6 +61,9 @@ properties:
   installed-plugins-dir:
     type: string
 
+  custom-flavors:
+    type: array
+
 additionalProperties: false
 
 required:

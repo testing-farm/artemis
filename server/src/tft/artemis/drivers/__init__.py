@@ -102,6 +102,7 @@ ConfigFlavorCPUSpecType = TypedDict(
         'model-name': Optional[str],
         'stepping': Optional[int],
         'flag': Optional[List[str]],
+        'processors': Optional[int],
     },
 )
 
@@ -181,6 +182,7 @@ ConfigPatchFlavorSpecType = TypedDict(
         'tpm': ConfigFlavorTPMSpecType,
         'virtualization': ConfigFlavorVirtualizationSpecType,
         'boot': ConfigFlavorBootSpecType,
+        'memory': str,
     },
 )
 
@@ -190,6 +192,7 @@ class ConfigCustomFlavorSpecType(TypedDict):
     name: str
     base: str
     arch: str
+    memory: str
     compatible: ConfigFlavorCompatibleSpecType
     cpu: ConfigFlavorCPUSpecType
     disk: List[ConfigFlavorDiskSpecType]
@@ -757,6 +760,19 @@ class PoolResourcesIDs(SerializableContainer):
         return super().unserialize_from_json(serialized)
 
 
+def _spec_to_unit(
+    value: Union[str, int], error_msg: str, error_details: Dict[str, Any], default_units: SizeType = UNITS.bytes
+) -> Result[Optional[SizeType], Failure]:
+    r_value = safe_call(UNITS, str(value))
+    if r_value.is_error:
+        return Error(Failure.from_failure(error_msg, r_value.unwrap_error(), details=error_details))
+    raw_value = r_value.unwrap()
+
+    res = UNITS.Quantity(raw_value, default_units) if isinstance(raw_value, int) else raw_value
+
+    return Ok(res)
+
+
 def _parse_flavor_disk_size(
     field_name: str, value: Optional[Union[str, int]], disk: FlavorDisk
 ) -> Result[Optional[SizeType], Failure]:
@@ -765,18 +781,13 @@ def _parse_flavor_disk_size(
 
     property_name = field_name.replace('-', '_')
 
-    r_value = safe_call(UNITS, str(value))
-
+    r_value = _spec_to_unit(
+        value=value, error_msg=f'failed to parse flavor disk.{field_name}', error_details={property_name: value}
+    )
     if r_value.is_error:
-        return Error(
-            Failure.from_failure(
-                f'failed to parse flavor disk.{field_name}', r_value.unwrap_error(), details={property_name: value}
-            )
-        )
+        return Error(r_value.unwrap_error())
 
-    raw_value = r_value.unwrap()
-
-    real_value = UNITS.Quantity(raw_value, UNITS.bytes) if isinstance(raw_value, int) else raw_value
+    real_value = r_value.unwrap()
 
     setattr(disk, property_name, real_value)
 
@@ -808,6 +819,9 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
 
     if 'cpu' in flavor_spec:
         cpu_patch = flavor_spec['cpu']
+
+        if 'processors' in cpu_patch:
+            flavor.cpu.processors = cpu_patch['processors']
 
         if 'family' in cpu_patch:
             flavor.cpu.family = cpu_patch['family']
@@ -902,6 +916,20 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
         if 'hypervisor' in virtualization_patch:
             flavor.virtualization.hypervisor = virtualization_patch['hypervisor']
 
+    if 'memory' in flavor_spec:
+        memory_patch = flavor_spec['memory']
+
+        r_value = _spec_to_unit(
+            value=memory_patch,
+            error_msg='failed to parse flavor memory',
+            error_details={'memory': memory_patch},
+            default_units=UNITS.gibibytes,
+        )
+        if r_value.is_error:
+            return Error(r_value.unwrap_error())
+
+        flavor.memory = r_value.unwrap()
+
     return Ok(None)
 
 
@@ -982,17 +1010,20 @@ def _custom_flavors(
 
     for custom_flavor_spec in patches:
         customname = custom_flavor_spec['name']
-        basename = custom_flavor_spec['base']
 
-        if basename not in flavors:
-            return Error(Failure('unknown base flavor', customname=customname, basename=basename))
+        # Either choose base flavor for modification or start on a blank canvas
+        if 'base' in custom_flavor_spec:
+            basename = custom_flavor_spec['base']
 
-        base_flavor = flavors[basename]
+            if basename not in flavors:
+                return Error(Failure('unknown base flavor', customname=customname, basename=basename))
 
-        custom_flavor = base_flavor.clone()
-        custom_flavor.name = customname
+            base_flavor = flavors[basename]
 
-        custom_flavors.append(custom_flavor)
+            custom_flavor = base_flavor.clone()
+            custom_flavor.name = customname
+        else:
+            custom_flavor = Flavor(name=customname, id=customname)
 
         r_apply_spec = _apply_flavor_specification(custom_flavor, custom_flavor_spec)
 
@@ -1001,6 +1032,8 @@ def _custom_flavors(
             failure.update(customname=customname, basename=basename)
 
             return Error(failure)
+
+        custom_flavors.append(custom_flavor)
 
     log_dict_yaml(logger.debug, 'custom flavors', custom_flavors)
 
