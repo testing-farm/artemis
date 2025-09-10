@@ -374,7 +374,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         if r_suitable_flavors.is_error:
             return Error(r_suitable_flavors.unwrap_error())
 
-        suitable_flavors = cast(List[Flavor], r_suitable_flavors.unwrap())
+        suitable_flavors = r_suitable_flavors.unwrap()
 
         suitable_flavors = self.filter_flavors_image_arch(logger, session, guest_request, image, suitable_flavors)
 
@@ -443,6 +443,10 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         instance_name = f'{tags["ArtemisGuestLabel"]}-{tags["ArtemisGuestName"].split("-")[0]}'
 
         def _create(user_data_file: Optional[str] = None) -> Result[JSONType, Failure]:
+            # Here will be setting defaults for memory/processors, just in case.
+            memory = flavor.memory.to('GiB').magnitude if flavor.memory else 4
+            processors = flavor.cpu.processors if flavor.cpu.processors else 2
+
             with IBMCloudPowerSession(logger, self) as session:
                 create_cmd_args = [
                     'pi',
@@ -456,9 +460,9 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
                     '--key-name',
                     self.pool_config['master-key-name'],
                     '--processors',
-                    str(flavor.cpu.processors),
+                    str(processors),
                     '--memory',
-                    str(flavor.memory.to('GiB').magnitude),
+                    str(memory),
                     '--json',
                 ]
                 if user_data_file:
