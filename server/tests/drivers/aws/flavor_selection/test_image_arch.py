@@ -18,9 +18,9 @@ def test_sanity(
     flavors: List[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
-    suitable_flavors = aws_pool.filter_flavors_image_arch(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_image_arch(logger, session, guest_request, image, flavors)
 
-    assert [flavor.id for flavor in suitable_flavors] == ['x86_64.1', 'x86_64.2', 'x86_64.3']
+    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == ['x86_64.1', 'x86_64.2', 'x86_64.3']
 
 
 def test_no_arch(
@@ -33,6 +33,6 @@ def test_no_arch(
 ) -> None:
     image.arch = None
 
-    suitable_flavors = aws_pool.filter_flavors_image_arch(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_image_arch(logger, session, guest_request, image, flavors)
 
-    assert suitable_flavors == flavors
+    assert r_suitable_flavors.unwrap() == flavors

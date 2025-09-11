@@ -25,9 +25,9 @@ def test_irrelevant_hw_constraints(
         return_value=constraints_from_environment_requirements({'memory': '> 0'})
     )
 
-    suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
-    assert suitable_flavors == flavors
+    assert r_suitable_flavors.unwrap() == flavors
 
 
 def test_no_constraints(
@@ -40,9 +40,9 @@ def test_no_constraints(
 ) -> None:
     cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(return_value=Ok(None))
 
-    suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
-    assert suitable_flavors == flavors
+    assert r_suitable_flavors.unwrap() == flavors
 
 
 def test_boot_method_match(
@@ -59,9 +59,9 @@ def test_boot_method_match(
         return_value=constraints_from_environment_requirements({'boot': {'method': '= uefi'}})
     )
 
-    suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
-    assert [flavor.id for flavor in suitable_flavors] == ['x86_64.3', 'aarch64.1']
+    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == ['x86_64.3', 'aarch64.1']
 
 
 def test_boot_method_mismatch(
@@ -78,6 +78,6 @@ def test_boot_method_mismatch(
         return_value=constraints_from_environment_requirements({'boot': {'method': 'none'}})
     )
 
-    suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
-    assert not suitable_flavors
+    assert not r_suitable_flavors.unwrap()

@@ -20,9 +20,9 @@ def test_overlap(
 ) -> None:
     image.boot.method = ['bios']
 
-    suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
 
-    assert [flavor.id for flavor in suitable_flavors] == ['x86_64.1', 'x86_64.2', 'x86_64.3']
+    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == ['x86_64.1', 'x86_64.2', 'x86_64.3']
 
 
 def test_no_overlap(
@@ -35,9 +35,9 @@ def test_no_overlap(
 ) -> None:
     image.boot.method = ['none']  # type: ignore[list-item]
 
-    suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
 
-    assert not suitable_flavors
+    assert not r_suitable_flavors.unwrap()
 
 
 def test_no_boot_method(
@@ -50,6 +50,6 @@ def test_no_boot_method(
 ) -> None:
     image.boot.method = []
 
-    suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
 
-    assert suitable_flavors == flavors
+    assert r_suitable_flavors.unwrap() == flavors
