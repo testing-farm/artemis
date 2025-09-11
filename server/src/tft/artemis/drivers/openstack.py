@@ -273,43 +273,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
 
         return Ok(cli_output.stdout)
 
-    def _guest_request_to_flavor_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-    ) -> Result[Optional[Flavor], Failure]:
-        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
-            logger, guest_request.environment
-        )
-
-        if r_suitable_flavors.is_error:
-            return Error(r_suitable_flavors.unwrap_error())
-
-        suitable_flavors = r_suitable_flavors.unwrap()
-
-        if not suitable_flavors:
-            if self.pool_config.get('use-default-flavor-when-no-suitable', True):
-                guest_request.log_warning_event(
-                    logger, session, 'no suitable flavors, using default', poolname=self.poolname
-                )
-
-                return self._map_environment_to_flavor_info_by_cache_by_name_or_none(
-                    logger, self.pool_config['default-flavor']
-                )
-
-            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
-
-            return Ok(None)
-
-        if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
-            logger.info('default flavor among suitable ones, using it')
-
-            return Ok([flavor for flavor in suitable_flavors if flavor.name == self.pool_config['default-flavor']][0])
-
-        return Ok(suitable_flavors[0])
-
     def _env_to_network(self, environment: Environment) -> Result[Any, Failure]:
         metrics = PoolResourcesMetrics(self.poolname)
         metrics.sync()
