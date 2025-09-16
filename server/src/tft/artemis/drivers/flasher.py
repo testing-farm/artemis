@@ -14,7 +14,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from .. import Failure
-from ..db import GuestLog, GuestLogContentType, GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
@@ -294,6 +294,10 @@ class FlasherDriver(PoolDriver):
         GET the data at the URL, return it with the state to signal that more data is available.
         """
         pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
+
+        if not pool_data.flasher_id:
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS))
+
         url = f'{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/{log_name}'
 
         try:

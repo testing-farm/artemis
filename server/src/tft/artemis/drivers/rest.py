@@ -364,7 +364,7 @@ class RestDriver(PoolDriver):
 
         return Ok(resources)
 
-    def _get_guest_log_url(self, guest_request: GuestRequest, log_name: str) -> str:
+    def _get_guest_log_url(self, guest_request: GuestRequest, log_name: str) -> Optional[str]:
         """
         Create location (URL) of guest log.
 
@@ -376,15 +376,20 @@ class RestDriver(PoolDriver):
 
         pool_data = guest_request.pool_data.mine(self, RestPoolData)
 
+        if not pool_data.guest_id:
+            return None
+
         return f'{self.url}/getlog/{pool_data.guest_id}/{log_name}'
 
     def _update_guest_log_blob(
-        self, logger: gluetool.log.ContextAdapter, guest_log: GuestLog, url: str
+        self, logger: gluetool.log.ContextAdapter, guest_log: GuestLog, url: Optional[str]
     ) -> Result[GuestLogUpdateProgress, Failure]:
         """
         GET the data at the URL, return it with the state to signal that more data is available.
         """
-        assert url is not None
+
+        if not url:
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS))
 
         try:
             response = requests.get(
