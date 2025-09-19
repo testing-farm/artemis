@@ -517,16 +517,21 @@ class PoolImageInfo(SerializableContainer):
 class FlavorKeyGetterType(Protocol):
     def __call__(
         self, flavor: Flavor
-    ) -> Tuple[int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
+    ) -> Tuple[int, int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
         pass
 
 
 def flavor_to_key(
     flavor: Flavor,
-) -> Tuple[int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
+) -> Tuple[int, int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
     # All are optional, meaning "don't care", and in this sorting it doesn't matter (possible?)
     # TODO: better algorithm would be better, one aware of optional values (first? last?)
-    return (flavor.cpu.cores or 0, flavor.memory or 0, tuple(disk.size or 0 for disk in flavor.disk))
+    return (
+        flavor.cpu.cores or 0,
+        flavor.cpu.processors or 0,
+        flavor.memory or 0,
+        tuple(disk.size or 0 for disk in flavor.disk),
+    )
 
 
 @dataclasses.dataclass
