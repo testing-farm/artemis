@@ -455,6 +455,31 @@ class PoolErrorCauses(enum.Enum):
     A base class for enums listing various error causes recognized by pools for the purpose of collecting metrics.
     """
 
+    # unfortunately enums can't be extended, so can't define default NONE cause here. This should be defined in the
+    # child class.
+
+
+def error_cause_extractor(
+    output: gluetool.utils.ProcessOutput, cli_error_patterns: Dict[str, str], causes: PoolErrorCauses
+) -> PoolErrorCauses:
+    if output.exit_code == 0:
+        return causes.NONE
+
+    stdout = process_output_to_str(output, stream='stdout')
+    stderr = process_output_to_str(output, stream='stderr')
+
+    stdout = stdout.strip() if stdout is not None else None
+    stderr = stderr.strip() if stderr is not None else None
+
+    for cause, pattern in cli_error_patterns.items():
+        if stdout and pattern.search(stdout):
+            return cause
+
+        if stderr and pattern.search(stderr):
+            return cause
+
+    return causes.NONE
+
 
 class CommonPoolErrorCauses(enum.Enum):
     NONE = 'none'
