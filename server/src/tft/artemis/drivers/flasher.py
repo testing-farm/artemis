@@ -45,6 +45,8 @@ class FlasherPoolResourcesIDs(PoolResourcesIDs):
 
 
 class FlasherDriver(PoolDriver):
+    drivername = 'flasher'  # PoolDriver needs this. See __init__.py
+
     pool_data_class = FlasherPoolData
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
