@@ -81,3 +81,22 @@ def test_boot_method_mismatch(
     r_suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
     assert not r_suitable_flavors.unwrap()
+
+
+def test_boot_method_match_exclusive_bios(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    aws_pool: AWSDriver,
+    guest_request: GuestRequest,
+    flavors: List[AWSFlavor],
+    image: AWSPoolImageInfo,
+) -> None:
+    image.boot.method = ['bios']
+
+    cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(
+        return_value=constraints_from_environment_requirements({'boot': {'method': '= bios'}})
+    )
+
+    r_suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
+
+    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == ['x86_64.1', 'x86_64.2']
