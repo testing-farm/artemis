@@ -1611,7 +1611,12 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
                 if property_name == 'boot' and child_property == 'method':
                     if constraint.operator == Operator.CONTAINS:
-                        return constraint.value in (image.boot.method + flavor.boot.method)
+                        requested = constraint.value
+                        image_methods = set(image.boot.method or [])
+                        flavor_methods = set(flavor.boot.method or [])
+
+                        # Enforce exclusivity for both image and flavor when a specific method is requested
+                        return image_methods == {requested} and flavor_methods == {requested}
 
                     if constraint.operator == Operator.NOTCONTAINS:
                         return constraint.value not in (image.boot.method + flavor.boot.method)
