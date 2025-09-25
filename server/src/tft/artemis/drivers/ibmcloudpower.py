@@ -415,52 +415,6 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
 
         return Ok(resources)
 
-    def _guest_request_to_flavor_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: IBMCloudPowerPoolImageInfo,
-    ) -> Result[Optional[Flavor], Failure]:
-        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
-            logger, guest_request.environment
-        )
-
-        if r_suitable_flavors.is_error:
-            return Error(r_suitable_flavors.unwrap_error())
-
-        suitable_flavors = r_suitable_flavors.unwrap()
-
-        suitable_flavors = self.filter_flavors_image_arch(logger, session, guest_request, image, suitable_flavors)
-
-        # FIXME The whole default flavor dance is identical between Azure / aws / openstack / now ibmcloud and is
-        # the candidate for generalization.
-        if not suitable_flavors:
-            if self.pool_config.get('use-default-flavor-when-no-suitable', True):
-                guest_request.log_warning_event(
-                    logger, session, 'no suitable flavors, using default', poolname=self.poolname
-                )
-
-                r_default_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(
-                    logger, self.pool_config['default-flavor']
-                )
-
-                if r_default_flavor.is_error:
-                    return Error(r_default_flavor.unwrap_error())
-
-                return Ok(cast(Flavor, r_default_flavor.unwrap()))
-
-            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
-
-            return Ok(None)
-
-        if self.pool_config['default-flavor'] in [flavor.name for flavor in suitable_flavors]:
-            logger.info('default flavor among suitable ones, using it')
-
-            return Ok([flavor for flavor in suitable_flavors if flavor.name == self.pool_config['default-flavor']][0])
-
-        return Ok(suitable_flavors[0])
-
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:

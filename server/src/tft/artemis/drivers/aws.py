@@ -793,7 +793,7 @@ def _honor_constraint_disk(
 
 
 def _get_constraint_spans(
-    logger: ContextAdapter, guest_request: GuestRequest, image: AWSPoolImageInfo, flavor: Flavor
+    logger: ContextAdapter, guest_request: GuestRequest, flavor: Flavor
 ) -> Result[List[List[Constraint]], Failure]:
     if not guest_request.environment.has_hw_constraints:
         return Ok([])
@@ -830,9 +830,9 @@ def _get_constraint_spans(
 
 
 def _get_constraint_span(
-    logger: ContextAdapter, guest_request: GuestRequest, image: AWSPoolImageInfo, flavor: Flavor
+    logger: ContextAdapter, guest_request: GuestRequest, flavor: Flavor
 ) -> Result[List[Constraint], Failure]:
-    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+    r_spans = _get_constraint_spans(logger, guest_request, flavor)
 
     if r_spans.is_error:
         return Error(r_spans.unwrap_error())
@@ -867,7 +867,7 @@ def setup_extra_volumes(
     :param flavor: a flavor that would serve as a basis for the provisioned instance.
     """
 
-    r_span = _get_constraint_span(logger, guest_request, image, flavor)
+    r_span = _get_constraint_span(logger, guest_request, flavor)
 
     if r_span.is_error:
         return Error(r_span.unwrap_error())
@@ -1188,7 +1188,7 @@ def setup_extra_network_interfaces(
     flavor: Flavor,
     security_groups: List[str],
 ) -> Result[NetworkInterfaces, Failure]:
-    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+    r_spans = _get_constraint_spans(logger, guest_request, flavor)
 
     if r_spans.is_error:
         return Error(r_spans.unwrap_error())
@@ -1504,22 +1504,24 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
+        image: PoolImageInfo,
         suitable_flavors: List[AWSFlavor],
-    ) -> List[AWSFlavor]:
+    ) -> Result[List[AWSFlavor], Failure]:
         """
         Console/URL logs require ENA support
         """
 
         if not guest_request.requests_guest_log('console:interactive', GuestLogContentType.URL):
-            return suitable_flavors
+            return Ok(suitable_flavors)
 
-        return list(
-            logging_filter(
-                logger,
-                suitable_flavors,
-                'console requires flavor ENA support',
-                lambda logger, flavor: flavor.ena_support in ('required', 'supported'),
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'console requires flavor ENA support',
+                    lambda logger, flavor: flavor.ena_support in ('required', 'supported'),
+                )
             )
         )
 
@@ -1528,22 +1530,24 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
+        image: PoolImageInfo,
         suitable_flavors: List[AWSFlavor],
-    ) -> List[AWSFlavor]:
+    ) -> Result[List[AWSFlavor], Failure]:
         """
         Make sure that, if image does not support ENA, we drop all flavors that require the support
         """
 
-        if image.ena_support is True:
-            return suitable_flavors
+        if cast(AWSPoolImageInfo, image).ena_support is True:
+            return Ok(suitable_flavors)
 
-        return list(
-            logging_filter(
-                logger,
-                suitable_flavors,
-                'image and flavor ENA compatibility',
-                lambda logger, flavor: flavor.ena_support != 'required',
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'image and flavor ENA compatibility',
+                    lambda logger, flavor: flavor.ena_support != 'required',
+                )
             )
         )
 
@@ -1552,22 +1556,24 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
+        image: PoolImageInfo,
         suitable_flavors: List[AWSFlavor],
-    ) -> List[AWSFlavor]:
+    ) -> Result[List[AWSFlavor], Failure]:
         """
         Make sure that, if image supports a particular boot method only, we drop all flavors that do not support it
         """
 
         if not image.boot.method:
-            return suitable_flavors
+            return Ok(suitable_flavors)
 
-        return list(
-            logging_filter(
-                logger,
-                suitable_flavors,
-                'image boot method is supported',
-                lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method),
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'image boot method is supported',
+                    lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method),
+                )
             )
         )
 
@@ -1576,23 +1582,26 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
+        image: PoolImageInfo,
         suitable_flavors: List[AWSFlavor],
-    ) -> List[AWSFlavor]:
+    ) -> Result[List[AWSFlavor], Failure]:
+        if not guest_request.environment.has_hw_constraints:
+            return Ok(suitable_flavors)
+
         r_constraints = guest_request.environment.get_hw_constraints()
 
         if r_constraints.is_error:
             r_constraints.unwrap_error().handle(logger)
 
-            return []
+            return Ok([])
 
         constraints = r_constraints.unwrap()
 
         if constraints is None:
-            return suitable_flavors
+            return Ok(suitable_flavors)
 
         def _boot_method_requested(logger: ContextAdapter, flavor: AWSFlavor) -> bool:
-            r_span = _get_constraint_span(logger, guest_request, image, flavor)
+            r_span = _get_constraint_span(logger, guest_request, flavor)
 
             if r_span.is_error:
                 r_span.unwrap_error().handle(logger)
@@ -1620,12 +1629,14 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             # boot method has not been requested, and therefore it does not matter.
             return True
 
-        return list(
-            logging_filter(
-                logger,
-                suitable_flavors,
-                'requested boot method is supported by image and flavor',
-                _boot_method_requested,
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'requested boot method is supported by image and flavor',
+                    _boot_method_requested,
+                )
             )
         )
 
@@ -1636,62 +1647,19 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         guest_request: GuestRequest,
         image: AWSPoolImageInfo,
     ) -> Result[Optional[AWSFlavor], Failure]:
-        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
-            logger, guest_request.environment
+        return self._do_guest_request_to_flavor_or_none(
+            logger,
+            session,
+            guest_request,
+            image,
+            self._filter_flavors_image_arch,
+            self._filter_flavors_console_url_support,
+            self._filter_flavors_image_ena_support,
+            self._filter_flavors_image_boot_method,
+            self._filter_flavors_hw_constraints,
+            self._filter_flavors_prefer_default_flavor,
+            self._filter_flavors_default_fallback,
         )
-
-        if r_suitable_flavors.is_error:
-            return Error(r_suitable_flavors.unwrap_error())
-
-        suitable_flavors = cast(List[AWSFlavor], r_suitable_flavors.unwrap())
-
-        suitable_flavors = self.filter_flavors_image_arch(logger, session, guest_request, image, suitable_flavors)
-
-        suitable_flavors = self._filter_flavors_console_url_support(
-            logger, session, guest_request, image, suitable_flavors
-        )
-
-        suitable_flavors = self._filter_flavors_image_ena_support(
-            logger, session, guest_request, image, suitable_flavors
-        )
-
-        suitable_flavors = self._filter_flavors_image_boot_method(
-            logger, session, guest_request, image, suitable_flavors
-        )
-
-        # Make sure the image and flavor support requested HW
-        if guest_request.environment.has_hw_constraints:
-            suitable_flavors = self._filter_flavors_hw_constraints(
-                logger, session, guest_request, image, suitable_flavors
-            )
-
-        if not suitable_flavors:
-            if self.pool_config.get('use-default-flavor-when-no-suitable', True):
-                guest_request.log_warning_event(
-                    logger, session, 'no suitable flavors, using default', poolname=self.poolname
-                )
-
-                r_default_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(
-                    logger, self.pool_config['default-instance-type']
-                )
-
-                if r_default_flavor.is_error:
-                    return Error(r_default_flavor.unwrap_error())
-
-                return Ok(cast(AWSFlavor, r_default_flavor.unwrap()))
-
-            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
-
-            return Ok(None)
-
-        if self.pool_config['default-instance-type'] in [flavor.name for flavor in suitable_flavors]:
-            logger.info('default flavor among suitable ones, using it')
-
-            return Ok(
-                [flavor for flavor in suitable_flavors if flavor.name == self.pool_config['default-instance-type']][0]
-            )
-
-        return Ok(suitable_flavors[0])
 
     def _describe_instance(self, guest_request: GuestRequest) -> Result[InstanceOwnerType, Failure]:
         aws_options = [

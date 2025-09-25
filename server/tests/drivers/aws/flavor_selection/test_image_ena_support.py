@@ -20,9 +20,9 @@ def test_ena_supported(
 ) -> None:
     image.ena_support = True
 
-    suitable_flavors = aws_pool._filter_flavors_image_ena_support(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_image_ena_support(logger, session, guest_request, image, flavors)
 
-    assert suitable_flavors == flavors
+    assert r_suitable_flavors.unwrap() == flavors
 
 
 def test_ena_not_supported(
@@ -35,6 +35,6 @@ def test_ena_not_supported(
 ) -> None:
     image.ena_support = False
 
-    suitable_flavors = aws_pool._filter_flavors_image_ena_support(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = aws_pool._filter_flavors_image_ena_support(logger, session, guest_request, image, flavors)
 
-    assert [flavor.id for flavor in suitable_flavors] == ['x86_64.1', 'x86_64.2']
+    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == ['x86_64.1', 'x86_64.2']
