@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import re
 from typing import Any, Dict, List, Optional, Pattern, TypedDict, cast
 
@@ -12,14 +13,15 @@ from gluetool.result import Error, Ok, Result
 from tft.artemis.drivers import PoolDriver, PoolImageInfo
 from tft.artemis.drivers.ibmcloudvpc import IBMCloudPoolData, IBMCloudPoolResourcesIDs, IBMCloudSession
 
-from .. import Failure, JSONType, log_dict_yaml
-from ..db import GuestRequest
+from .. import Failure, JSONType, log_dict_yaml, process_output_to_str
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import UNITS, And, Constraint, ConstraintBase, Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     KNOB_UPDATE_GUEST_REQUEST_TICK,
     FlavorBasedPoolDriver,
+    GuestLogUpdateProgress,
     PoolCapabilities,
     PoolErrorCauses,
     PoolImageSSHInfo,
@@ -28,6 +30,7 @@ from . import (
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
     create_tempfile,
+    guest_log_updater,
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -50,6 +53,25 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     default='{{ os.compose }}',
 )
 
+KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
+    'ibmcloud-power.console.url.expires',
+    'How long, in seconds, it takes for a console url to be qualified as expired.',
+    has_db=False,
+    envvar='ARTEMIS_IBMCLOUD_POWER_CONSOLE_URL_EXPIRES',
+    cast_from_str=int,
+    default=300,
+)
+
+KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
+    'ibmcloud-power.logs.console.blob.update-tick',
+    'How long, in seconds, to take between updating guest console log.',
+    has_db=False,
+    envvar='ARTEMIS_IBMCLOUD_POWER_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK',
+    cast_from_str=int,
+    default=300,
+)
+
+
 ConfigImageFilter = TypedDict(
     'ConfigImageFilter',
     {
@@ -69,7 +91,37 @@ class APIImageType(TypedDict):
 class IBMCloudPowerErrorCauses(PoolErrorCauses):
     NONE = 'none'
 
+    MISSING_INSTANCE = 'missing-instance'
+    INSTANCE_NOT_READY = 'instance-not-ready'
     UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
+
+
+CLI_ERROR_PATTERNS = {
+    IBMCloudPowerErrorCauses.MISSING_INSTANCE: re.compile(r'pvm-instance does not exist'),
+    IBMCloudPowerErrorCauses.INSTANCE_NOT_READY: re.compile(
+        r'server is still initializing, wait a few minutes and try again'
+    ),
+}
+
+
+def ibm_cloud_power_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> IBMCloudPowerErrorCauses:
+    if output.exit_code == 0:
+        return IBMCloudPowerErrorCauses.NONE
+
+    stdout = process_output_to_str(output, stream='stdout')
+    stderr = process_output_to_str(output, stream='stderr')
+
+    stdout = stdout.strip() if stdout is not None else None
+    stderr = stderr.strip() if stderr is not None else None
+
+    for cause, pattern in CLI_ERROR_PATTERNS.items():
+        if stdout and pattern.search(stdout):
+            return cause
+
+        if stderr and pattern.search(stderr):
+            return cause
+
+    return IBMCloudPowerErrorCauses.NONE
 
 
 class IBMCloudPowerSession(IBMCloudSession):
@@ -118,6 +170,9 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
+        capabilities.supported_guest_logs = [
+            ('console:interactive', GuestLogContentType.URL),
+        ]
 
         return Ok(capabilities)
 
@@ -644,6 +699,67 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
             return Error(Failure.from_failure('failed to trigger instance reboot', r_output.unwrap_error()))
 
         return Ok(None)
+
+    def _do_fetch_console(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> Result[Optional[JSONType], Failure]:
+        # NOTE(ivasilev) Code duplication, nearly identical to openstack driver, another candidate for technical debt
+        # epic
+        pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
+
+        if not pool_data.instance_id:
+            return Error(Failure('cannot fetch console without instance ID'))
+
+        with IBMCloudPowerSession(logger, self) as session:
+            r_output = session.run(
+                logger,
+                ['pi', 'instance', 'console', 'get', pool_data.instance_id, '--json'],
+                commandname='ibmcloud.pi.get-console-url',
+                json_format=True,
+            )
+        if r_output.is_error:
+            failure = r_output.unwrap_error()
+            # Detect "instance not ready".
+            if (
+                failure.command_output
+                and ibm_cloud_power_error_cause_extractor(failure.command_output)
+                == IBMCloudPowerErrorCauses.INSTANCE_NOT_READY
+            ):
+                return Ok(None)
+
+        return r_output
+
+    @guest_log_updater('ibmcloud-power', 'console:interactive', GuestLogContentType.URL)  # type: ignore[arg-type]
+    def _update_guest_log_console_url(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
+    ) -> Result[GuestLogUpdateProgress, Failure]:
+        """
+        Update console.interactive/url guest log.
+        """
+        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(entityname=self.poolname)
+
+        if r_delay_update.is_error:
+            return Error(r_delay_update.unwrap_error())
+
+        delay_update = r_delay_update.unwrap()
+
+        r_output = self._do_fetch_console(logger, guest_request)
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        output = r_output.unwrap()
+
+        if output is None:
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, delay_update=delay_update))
+
+        return Ok(
+            GuestLogUpdateProgress(
+                state=GuestLogState.COMPLETE,
+                url=cast(Dict[str, str], output)['consoleURL'],
+                expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value),
+            )
+        )
 
 
 PoolDriver._drivers_registry['ibmcloud-power'] = IBMCloudPowerDriver
