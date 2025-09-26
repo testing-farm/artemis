@@ -3,7 +3,7 @@ image: quay.io/testing-farm/gitlab-ci-artemis
 
 stages:
   - build
-  - promote
+  - publish
 
 variables:
   IMAGE: quay.io/testing-farm/artemis
@@ -57,7 +57,7 @@ tests:
 build container:
   extends: .container
 
-  stage: build
+  stage: publish
 
   script:
     # Setup push secret
@@ -88,7 +88,7 @@ build container:
 publish latest container:
   extends: .container
 
-  stage: promote
+  stage: publish
 
   rules:
     # for the tip of the default branch
@@ -116,7 +116,7 @@ publish latest container:
 publish tagged container:
   extends: .container
 
-  stage: promote
+  stage: publish
 
   rules:
     # for tagged commits
@@ -171,7 +171,7 @@ publish tagged container:
 
 # The name must be "pages" for Gitlab to spot it, and upload the docs.
 pages:
-  stage: promote
+  stage: publish
   extends: .docs
   only:
     - main
@@ -189,7 +189,7 @@ pages:
 # value, which is different that the one for `main` branch - it is actually URL Gitlab uses when job saves
 # its artifacts, and Gitlab lets us browse them.
 pages:preview:
-  stage: promote
+  stage: publish
   extends: .docs
   except:
     - main
@@ -219,7 +219,7 @@ pages:preview:
 
 # And final step: when our parent MR is merged, this job takes care of removing the Gitlab environment \o/
 pages:preview:stop:
-  stage: promote
+  stage: publish
   except:
     - main
   when: manual
@@ -231,7 +231,7 @@ pages:preview:stop:
     - echo "bye"
 
 publish_cli:
-  stage: promote
+  stage: publish
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
