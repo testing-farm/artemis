@@ -140,6 +140,7 @@ lint.select = [
     "E",      # pycodestyle error
     "F",      # pyflakes
     "FLY",    # flynt
+    "FURB",   # refurb
     "I",      # isort
     "ICN",    # flake8-import-conventions
     "INT",    # flake8-gettext
