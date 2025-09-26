@@ -2,8 +2,9 @@
 image: quay.io/testing-farm/gitlab-ci-artemis
 
 stages:
-  - test_stage
-  - deploy
+  - build
+  - publish
+  - promote
 
 variables:
   IMAGE: quay.io/testing-farm/artemis
@@ -18,13 +19,19 @@ workflow:
     - if: $CI_COMMIT_TAG
 
 tests:
-  stage: test_stage
+  stage: build
+
+  rules:
+    # for merge requests only
+    - if: $CI_MERGE_REQUEST_ID
+
   variables:
     TERM: "xterm"
     POETRY_ADDOPTS: "--ansi"
     MYPY_FORCE_COLOR: "1"
     PYTEST_ADDOPTS: "--color=yes"
     PRE_COMMIT_COLOR: "always"
+
   script:
     - make -C server/ test-pre-commit
     - make -C server/ test-units
@@ -33,22 +40,35 @@ tests:
     - make -C cli/ test-pre-commit
     - make -C cli/ test-units
 
-container:
-  stage: deploy
+.container:
   image: quay.io/buildah/stable:v1.29.0
+
   variables:
     IMAGE_REF: $IMAGE:$CI_COMMIT_REF_NAME
     IMAGE_REF_DEBUG: $IMAGE:$CI_COMMIT_REF_NAME.debug
     IMAGE_SHA: $IMAGE:$CI_COMMIT_SHORT_SHA
     IMAGE_SHA_DEBUG: $IMAGE:$CI_COMMIT_SHORT_SHA.debug
+    IMAGE_BRANCH: $IMAGE:$CI_COMMIT_BRANCH
+    IMAGE_BRANCH_DEBUG: $IMAGE:$CI_COMMIT_BRANCH.debug
     IMAGE_TAG: $IMAGE:$CI_COMMIT_TAG
     IMAGE_TAG_DEBUG: $IMAGE:$CI_COMMIT_TAG.debug
     IMAGE_LATEST: $IMAGE:latest
     IMAGE_LATEST_DEBUG: $IMAGE:latest.debug
+
+build container:
+  extends: .container
+
+  stage: publish
+
   script:
     # Setup push secret
     - mkdir -p $HOME/.docker
     - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
+
+    - echo "IMAGE_REF=$IMAGE_REF"
+    - echo "IMAGE_REF_DEBUG=$IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA=$IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG=$IMAGE_SHA_DEBUG"
 
     # Build image - and its debugging variant - tagged with ref (usualy a branch)
     - echo "Building image from the ref, $IMAGE_REF"
@@ -68,27 +88,77 @@ container:
     - buildah tag "$IMAGE_REF_DEBUG" "$IMAGE_SHA_DEBUG"
     - buildah push "$IMAGE_SHA_DEBUG"
 
-    # For default branch, publish also a `:latest` image
-    - if [ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]; then
-        echo "Tagging the ref image, $IMAGE_REF, as latest image, $IMAGE_LATEST";
-        buildah tag "$IMAGE_REF"       "$IMAGE_LATEST";
-        buildah push "$IMAGE_LATEST";
+publish latest container:
+  extends: .container
 
-        echo "Tagging the ref debugging image, $IMAGE_REF_DEBUG, as latest debugging image, $IMAGE_LATEST_DEBUG";
-        buildah tag "$IMAGE_REF_DEBUG" "$IMAGE_LATEST_DEBUG";
-        buildah push "$IMAGE_LATEST_DEBUG";
-      fi
+  stage: promote
+
+  rules:
+    # for the tip of the default branch
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+  script:
+    # Setup push secret
+    - mkdir -p $HOME/.docker
+    - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
+
+    - echo "IMAGE_REF=$IMAGE_REF"
+    - echo "IMAGE_REF_DEBUG=$IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA=$IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG=$IMAGE_SHA_DEBUG"
+    - echo "IMAGE_LATEST=$IMAGE_LATEST"
+    - echo "IMAGE_LATEST_DEBUG=$IMAGE_LATEST_DEBUG"
+
+    - echo "Pulling the SHA image $IMAGE_SHA"
+    - buildah pull "$IMAGE_SHA"
+
+    - echo "Pulling the SHA debugging image, $IMAGE_SHA_DEBUG"
+    - buildah pull "$IMAGE_SHA_DEBUG"
+
+    # For default branch, publish the `:latest` image
+    - echo "Tagging the SHA image, $IMAGE_SHA, as latest image, $IMAGE_LATEST";
+    - buildah tag "$IMAGE_SHA"       "$IMAGE_LATEST";
+    - buildah push "$IMAGE_LATEST";
+
+    - echo "Tagging the SHA debugging image, $IMAGE_SHA_DEBUG, as latest debugging image, $IMAGE_LATEST_DEBUG";
+    - buildah tag "$IMAGE_SHA_DEBUG" "$IMAGE_LATEST_DEBUG";
+    - buildah push "$IMAGE_LATEST_DEBUG";
+
+publish tagged container:
+  extends: .container
+
+  stage: promote
+
+  rules:
+    # for tagged commits
+    - if: $CI_COMMIT_TAG
+
+  script:
+    # Setup push secret
+    - mkdir -p $HOME/.docker
+    - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
+
+    - echo "IMAGE_REF=$IMAGE_REF"
+    - echo "IMAGE_REF_DEBUG=$IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA=$IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG=$IMAGE_SHA_DEBUG"
+    - echo "IMAGE_TAG=$IMAGE_TAG"
+    - echo "IMAGE_TAG_DEBUG=$IMAGE_TAG_DEBUG"
+
+    - echo "Pulling the SHA image $IMAGE_SHA"
+    - buildah pull "$IMAGE_SHA"
+
+    - echo "Pulling the SHA debugging image, $IMAGE_SHA_DEBUG"
+    - buildah pull "$IMAGE_SHA_DEBUG"
 
     # When a commit tag is known (in a pipeline running for a tag), push image with the git tag.
-    - if [ "$CI_COMMIT_TAG" != "" ]; then
-        echo "Tagging the ref image, $IMAGE_REF, as tag image, $IMAGE_TAG"
-        buildah tag "$IMAGE_REF"       "$IMAGE_TAG";
-        buildah push "$IMAGE_TAG";
+    - echo "Tagging the ref image, $IMAGE_SHA, as tag image, $IMAGE_TAG"
+    - buildah tag "$IMAGE_SHA"       "$IMAGE_TAG";
+    - buildah push "$IMAGE_TAG";
 
-        echo "Tagging the ref debugging image, $IMAGE_REF_DEBUG, as tag debugging image, $IMAGE_TAG_DEBUG";
-        buildah tag "$IMAGE_REF_DEBUG" "$IMAGE_TAG_DEBUG";
-        buildah push "$IMAGE_TAG_DEBUG";
-      fi
+    - echo "Tagging the ref debugging image, $IMAGE_SHA_DEBUG, as tag debugging image, $IMAGE_TAG_DEBUG";
+    - buildah tag "$IMAGE_SHA_DEBUG" "$IMAGE_TAG_DEBUG";
+    - buildah push "$IMAGE_TAG_DEBUG";
 
 .docs:
   image: quay.io/testing-farm/gitlab-pages-hugo:latest
@@ -120,7 +190,7 @@ container:
 
 # The name must be "pages" for Gitlab to spot it, and upload the docs.
 pages:
-  stage: deploy
+  stage: publish
   extends: .docs
   only:
     - main
@@ -138,7 +208,7 @@ pages:
 # value, which is different that the one for `main` branch - it is actually URL Gitlab uses when job saves
 # its artifacts, and Gitlab lets us browse them.
 pages:preview:
-  stage: deploy
+  stage: publish
   extends: .docs
   except:
     - main
@@ -168,7 +238,7 @@ pages:preview:
 
 # And final step: when our parent MR is merged, this job takes care of removing the Gitlab environment \o/
 pages:preview:stop:
-  stage: deploy
+  stage: publish
   except:
     - main
   when: manual
@@ -180,7 +250,7 @@ pages:preview:stop:
     - echo "bye"
 
 publish_cli:
-  stage: deploy
+  stage: publish
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
