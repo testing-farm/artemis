@@ -47,6 +47,8 @@ tests:
     IMAGE_REF_DEBUG: $IMAGE:$CI_COMMIT_REF_NAME.debug
     IMAGE_SHA: $IMAGE:$CI_COMMIT_SHORT_SHA
     IMAGE_SHA_DEBUG: $IMAGE:$CI_COMMIT_SHORT_SHA.debug
+    IMAGE_BRANCH: $IMAGE:$CI_COMMIT_BRANCH
+    IMAGE_BRANCH_DEBUG: $IMAGE:$CI_COMMIT_BRANCH.debug
     IMAGE_TAG: $IMAGE:$CI_COMMIT_TAG
     IMAGE_TAG_DEBUG: $IMAGE:$CI_COMMIT_TAG.debug
     IMAGE_LATEST: $IMAGE:latest
@@ -57,14 +59,21 @@ build container:
 
   stage: build
 
-  rules:
-    # for merge requests only
-    - if: $CI_MERGE_REQUEST_ID
-
   script:
     # Setup push secret
     - mkdir -p $HOME/.docker
     - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
+
+    - echo "IMAGE_REF: $IMAGE_REF"
+    - echo "IMAGE_REF_DEBUG: $IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA: $IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG: $IMAGE_SHA_DEBUG"
+    - echo "IMAGE_BRANCH: $IMAGE_BRANCH"
+    - echo "IMAGE_BRANCH_DEBUG: $IMAGE_BRANCH_DEBUG"
+    - echo "IMAGE_TAG: $IMAGE_TAG"
+    - echo "IMAGE_TAG_DEBUG: $IMAGE_TAG_DEBUG"
+    - echo "IMAGE_LATEST: $IMAGE_LATEST"
+    - echo "IMAGE_LATEST_DEBUG: $IMAGE_LATEST_DEBUG"
 
     # Build image - and its debugging variant - tagged with ref (usualy a branch)
     - echo "Building image from the ref, $IMAGE_REF"
@@ -98,6 +107,17 @@ publish latest container:
     - mkdir -p $HOME/.docker
     - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
 
+    - echo "IMAGE_REF: $IMAGE_REF"
+    - echo "IMAGE_REF_DEBUG: $IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA: $IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG: $IMAGE_SHA_DEBUG"
+    - echo "IMAGE_BRANCH: $IMAGE_BRANCH"
+    - echo "IMAGE_BRANCH_DEBUG: $IMAGE_BRANCH_DEBUG"
+    - echo "IMAGE_TAG: $IMAGE_TAG"
+    - echo "IMAGE_TAG_DEBUG: $IMAGE_TAG_DEBUG"
+    - echo "IMAGE_LATEST: $IMAGE_LATEST"
+    - echo "IMAGE_LATEST_DEBUG: $IMAGE_LATEST_DEBUG"
+
     - echo "Pulling the SHA image $IMAGE_SHA"
     - buildah pull "$IMAGE_SHA"
 
@@ -126,6 +146,17 @@ publish tagged container:
     # Setup push secret
     - mkdir -p $HOME/.docker
     - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
+
+    - echo "IMAGE_REF: $IMAGE_REF"
+    - echo "IMAGE_REF_DEBUG: $IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA: $IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG: $IMAGE_SHA_DEBUG"
+    - echo "IMAGE_BRANCH: $IMAGE_BRANCH"
+    - echo "IMAGE_BRANCH_DEBUG: $IMAGE_BRANCH_DEBUG"
+    - echo "IMAGE_TAG: $IMAGE_TAG"
+    - echo "IMAGE_TAG_DEBUG: $IMAGE_TAG_DEBUG"
+    - echo "IMAGE_LATEST: $IMAGE_LATEST"
+    - echo "IMAGE_LATEST_DEBUG: $IMAGE_LATEST_DEBUG"
 
     # When a commit tag is known (in a pipeline running for a tag), push image with the git tag.
     - echo "Tagging the ref image, $IMAGE_REF, as tag image, $IMAGE_TAG"
