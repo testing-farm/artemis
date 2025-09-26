@@ -18,7 +18,7 @@ workflow:
     # for tagged commits
     - if: $CI_COMMIT_TAG
 
-tests:
+.tests:
   stage: build
 
   rules:
@@ -32,12 +32,34 @@ tests:
     PYTEST_ADDOPTS: "--color=yes"
     PRE_COMMIT_COLOR: "always"
 
+test/server/pre-commit:
+  extends: .tests
+
   script:
     - make -C server/ test-pre-commit
+
+test/server/unittests:
+  extends: .tests
+
+  script:
     - make -C server/ test-units
+
+test/server/db-schema:
+  extends: .tests
+
+  script:
     - make -C server/ test-db-schema-revisions
 
+test/cli/pre-commit:
+  extends: .tests
+
+  script:
     - make -C cli/ test-pre-commit
+
+test/cli/unittests:
+  extends: .tests
+
+  script:
     - make -C cli/ test-units
 
 .container:
