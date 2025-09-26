@@ -64,16 +64,16 @@ build container:
     - mkdir -p $HOME/.docker
     - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
 
-    - echo "IMAGE_REF: $IMAGE_REF"
-    - echo "IMAGE_REF_DEBUG: $IMAGE_REF_DEBUG"
-    - echo "IMAGE_SHA: $IMAGE_SHA"
-    - echo "IMAGE_SHA_DEBUG: $IMAGE_SHA_DEBUG"
-    - echo "IMAGE_BRANCH: $IMAGE_BRANCH"
-    - echo "IMAGE_BRANCH_DEBUG: $IMAGE_BRANCH_DEBUG"
-    - echo "IMAGE_TAG: $IMAGE_TAG"
-    - echo "IMAGE_TAG_DEBUG: $IMAGE_TAG_DEBUG"
-    - echo "IMAGE_LATEST: $IMAGE_LATEST"
-    - echo "IMAGE_LATEST_DEBUG: $IMAGE_LATEST_DEBUG"
+    - echo "IMAGE_REF=$IMAGE_REF"
+    - echo "IMAGE_REF_DEBUG=$IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA=$IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG=$IMAGE_SHA_DEBUG"
+    - echo "IMAGE_BRANCH=$IMAGE_BRANCH"
+    - echo "IMAGE_BRANCH_DEBUG=$IMAGE_BRANCH_DEBUG"
+    - echo "IMAGE_TAG=$IMAGE_TAG"
+    - echo "IMAGE_TAG_DEBUG=$IMAGE_TAG_DEBUG"
+    - echo "IMAGE_LATEST=$IMAGE_LATEST"
+    - echo "IMAGE_LATEST_DEBUG=$IMAGE_LATEST_DEBUG"
 
     # Build image - and its debugging variant - tagged with ref (usualy a branch)
     - echo "Building image from the ref, $IMAGE_REF"
@@ -107,16 +107,16 @@ publish latest container:
     - mkdir -p $HOME/.docker
     - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
 
-    - echo "IMAGE_REF: $IMAGE_REF"
-    - echo "IMAGE_REF_DEBUG: $IMAGE_REF_DEBUG"
-    - echo "IMAGE_SHA: $IMAGE_SHA"
-    - echo "IMAGE_SHA_DEBUG: $IMAGE_SHA_DEBUG"
-    - echo "IMAGE_BRANCH: $IMAGE_BRANCH"
-    - echo "IMAGE_BRANCH_DEBUG: $IMAGE_BRANCH_DEBUG"
-    - echo "IMAGE_TAG: $IMAGE_TAG"
-    - echo "IMAGE_TAG_DEBUG: $IMAGE_TAG_DEBUG"
-    - echo "IMAGE_LATEST: $IMAGE_LATEST"
-    - echo "IMAGE_LATEST_DEBUG: $IMAGE_LATEST_DEBUG"
+    - echo "IMAGE_REF=$IMAGE_REF"
+    - echo "IMAGE_REF_DEBUG=$IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA=$IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG=$IMAGE_SHA_DEBUG"
+    - echo "IMAGE_BRANCH=$IMAGE_BRANCH"
+    - echo "IMAGE_BRANCH_DEBUG=$IMAGE_BRANCH_DEBUG"
+    - echo "IMAGE_TAG=$IMAGE_TAG"
+    - echo "IMAGE_TAG_DEBUG=$IMAGE_TAG_DEBUG"
+    - echo "IMAGE_LATEST=$IMAGE_LATEST"
+    - echo "IMAGE_LATEST_DEBUG=$IMAGE_LATEST_DEBUG"
 
     - echo "Pulling the SHA image $IMAGE_SHA"
     - buildah pull "$IMAGE_SHA"
@@ -147,16 +147,16 @@ publish tagged container:
     - mkdir -p $HOME/.docker
     - echo "$DOCKER_AUTH_CONFIG" > $HOME/.docker/config.json
 
-    - echo "IMAGE_REF: $IMAGE_REF"
-    - echo "IMAGE_REF_DEBUG: $IMAGE_REF_DEBUG"
-    - echo "IMAGE_SHA: $IMAGE_SHA"
-    - echo "IMAGE_SHA_DEBUG: $IMAGE_SHA_DEBUG"
-    - echo "IMAGE_BRANCH: $IMAGE_BRANCH"
-    - echo "IMAGE_BRANCH_DEBUG: $IMAGE_BRANCH_DEBUG"
-    - echo "IMAGE_TAG: $IMAGE_TAG"
-    - echo "IMAGE_TAG_DEBUG: $IMAGE_TAG_DEBUG"
-    - echo "IMAGE_LATEST: $IMAGE_LATEST"
-    - echo "IMAGE_LATEST_DEBUG: $IMAGE_LATEST_DEBUG"
+    - echo "IMAGE_REF=$IMAGE_REF"
+    - echo "IMAGE_REF_DEBUG=$IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA=$IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG=$IMAGE_SHA_DEBUG"
+    - echo "IMAGE_BRANCH=$IMAGE_BRANCH"
+    - echo "IMAGE_BRANCH_DEBUG=$IMAGE_BRANCH_DEBUG"
+    - echo "IMAGE_TAG=$IMAGE_TAG"
+    - echo "IMAGE_TAG_DEBUG=$IMAGE_TAG_DEBUG"
+    - echo "IMAGE_LATEST=$IMAGE_LATEST"
+    - echo "IMAGE_LATEST_DEBUG=$IMAGE_LATEST_DEBUG"
 
     # When a commit tag is known (in a pipeline running for a tag), push image with the git tag.
     - echo "Tagging the ref image, $IMAGE_REF, as tag image, $IMAGE_TAG"
