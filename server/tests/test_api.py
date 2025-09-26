@@ -169,12 +169,12 @@ def test_metrics(
     data = response.content.decode('utf-8')
     for metric_name, metric_type in expected_metrics:
         if metric_type == 'counter':
-            assert re.search(f'^# TYPE {metric_name}_total {metric_type}$', data, re.M) is not None, (
+            assert re.search(f'^# TYPE {metric_name}_total {metric_type}$', data, re.MULTILINE) is not None, (
                 f'metric "{metric_name}_total" not found in the output'
             )
 
         else:
-            assert re.search(f'^# TYPE {metric_name} {metric_type}$', data, re.M) is not None, (
+            assert re.search(f'^# TYPE {metric_name} {metric_type}$', data, re.MULTILINE) is not None, (
                 f'metric "{metric_name}" not found in the output'
             )
 

@@ -624,8 +624,7 @@ def format_dict_yaml(data: Any) -> str:
     ruamel.yaml.scalarstring.walk_tree(data)
 
     def strip_document_end_marker(s: str) -> str:
-        if s.endswith('...\n'):
-            s = s[:-4]
+        s = s.removesuffix('...\n')
 
         return s.strip()
 
