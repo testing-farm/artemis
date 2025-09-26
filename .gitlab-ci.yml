@@ -4,6 +4,7 @@ image: quay.io/testing-farm/gitlab-ci-artemis
 stages:
   - build
   - publish
+  - promote
 
 variables:
   IMAGE: quay.io/testing-farm/artemis
@@ -66,6 +67,8 @@ build container:
 
     - echo "IMAGE_REF=$IMAGE_REF"
     - echo "IMAGE_REF_DEBUG=$IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA=$IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG=$IMAGE_SHA_DEBUG"
 
     # Build image - and its debugging variant - tagged with ref (usualy a branch)
     - echo "Building image from the ref, $IMAGE_REF"
@@ -77,18 +80,18 @@ build container:
     - buildah push "$IMAGE_REF_DEBUG"
 
     # Tag it with short SHA
-    # - echo "Tagging the ref image, $IMAGE_REF, as SHA image, $IMAGE_SHA"
-    # - buildah tag "$IMAGE_REF"       "$IMAGE_SHA"
-    # - buildah push "$IMAGE_SHA"
+    - echo "Tagging the ref image, $IMAGE_REF, as SHA image, $IMAGE_SHA"
+    - buildah tag "$IMAGE_REF"       "$IMAGE_SHA"
+    - buildah push "$IMAGE_SHA"
 
-    # - echo "Tagging the ref debugging image, $IMAGE_REF_DEBUG, as SHA debugging image, $IMAGE_SHA_DEBUG"
-    # - buildah tag "$IMAGE_REF_DEBUG" "$IMAGE_SHA_DEBUG"
-    # - buildah push "$IMAGE_SHA_DEBUG"
+    - echo "Tagging the ref debugging image, $IMAGE_REF_DEBUG, as SHA debugging image, $IMAGE_SHA_DEBUG"
+    - buildah tag "$IMAGE_REF_DEBUG" "$IMAGE_SHA_DEBUG"
+    - buildah push "$IMAGE_SHA_DEBUG"
 
 publish latest container:
   extends: .container
 
-  stage: publish
+  stage: promote
 
   rules:
     # for the tip of the default branch
@@ -101,22 +104,30 @@ publish latest container:
 
     - echo "IMAGE_REF=$IMAGE_REF"
     - echo "IMAGE_REF_DEBUG=$IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA=$IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG=$IMAGE_SHA_DEBUG"
     - echo "IMAGE_LATEST=$IMAGE_LATEST"
     - echo "IMAGE_LATEST_DEBUG=$IMAGE_LATEST_DEBUG"
 
-    # Build image - and its debugging variant - tagged with ref (usualy a branch)
-    - echo "Building image from the ref, $IMAGE_REF"
-    - buildah bud -t "$IMAGE_REF"       -f container/Dockerfile                             .
-    - buildah push "$IMAGE_REF"
+    - echo "Pulling the SHA image $IMAGE_SHA"
+    - buildah pull "$IMAGE_SHA"
 
-    - echo "Building debugging image from the ref, $IMAGE_REF_DEBUG"
-    - buildah bud -t "$IMAGE_REF_DEBUG" -f container/Dockerfile.debug --from "${IMAGE_REF}" .
-    - buildah push "$IMAGE_REF_DEBUG"
+    - echo "Pulling the SHA debugging image, $IMAGE_SHA_DEBUG"
+    - buildah pull "$IMAGE_SHA_DEBUG"
+
+    # For default branch, publish the `:latest` image
+    - echo "Tagging the SHA image, $IMAGE_SHA, as latest image, $IMAGE_LATEST";
+    - buildah tag "$IMAGE_SHA"       "$IMAGE_LATEST";
+    - buildah push "$IMAGE_LATEST";
+
+    - echo "Tagging the SHA debugging image, $IMAGE_SHA_DEBUG, as latest debugging image, $IMAGE_LATEST_DEBUG";
+    - buildah tag "$IMAGE_SHA_DEBUG" "$IMAGE_LATEST_DEBUG";
+    - buildah push "$IMAGE_LATEST_DEBUG";
 
 publish tagged container:
   extends: .container
 
-  stage: publish
+  stage: promote
 
   rules:
     # for tagged commits
@@ -129,16 +140,24 @@ publish tagged container:
 
     - echo "IMAGE_REF=$IMAGE_REF"
     - echo "IMAGE_REF_DEBUG=$IMAGE_REF_DEBUG"
+    - echo "IMAGE_SHA=$IMAGE_SHA"
+    - echo "IMAGE_SHA_DEBUG=$IMAGE_SHA_DEBUG"
     - echo "IMAGE_TAG=$IMAGE_TAG"
     - echo "IMAGE_TAG_DEBUG=$IMAGE_TAG_DEBUG"
 
+    - echo "Pulling the SHA image $IMAGE_SHA"
+    - buildah pull "$IMAGE_SHA"
+
+    - echo "Pulling the SHA debugging image, $IMAGE_SHA_DEBUG"
+    - buildah pull "$IMAGE_SHA_DEBUG"
+
     # When a commit tag is known (in a pipeline running for a tag), push image with the git tag.
-    - echo "Tagging the ref image, $IMAGE_REF, as tag image, $IMAGE_TAG"
-    - buildah tag "$IMAGE_REF"       "$IMAGE_TAG";
+    - echo "Tagging the ref image, $IMAGE_SHA, as tag image, $IMAGE_TAG"
+    - buildah tag "$IMAGE_SHA"       "$IMAGE_TAG";
     - buildah push "$IMAGE_TAG";
 
-    - echo "Tagging the ref debugging image, $IMAGE_REF_DEBUG, as tag debugging image, $IMAGE_TAG_DEBUG";
-    - buildah tag "$IMAGE_REF_DEBUG" "$IMAGE_TAG_DEBUG";
+    - echo "Tagging the ref debugging image, $IMAGE_SHA_DEBUG, as tag debugging image, $IMAGE_TAG_DEBUG";
+    - buildah tag "$IMAGE_SHA_DEBUG" "$IMAGE_TAG_DEBUG";
     - buildah push "$IMAGE_TAG_DEBUG";
 
 .docs:
