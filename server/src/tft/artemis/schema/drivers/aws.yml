@@ -23,7 +23,7 @@ properties:
   custom-flavors:
     type: array
 
-  default-instance-type:
+  default-flavor:
     type: string
 
   use-default-flavor-when-no-suitable:
@@ -149,7 +149,7 @@ required:
 - access-key-id
 - availability-zone
 - command
-- default-instance-type
+- default-flavor
 - default-region
 - master-key-name
 - secret-access-key
