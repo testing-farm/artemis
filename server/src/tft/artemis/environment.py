@@ -11,6 +11,7 @@ size, etc.
 
 import dataclasses
 import enum
+import functools
 import itertools
 import operator
 import re
@@ -134,7 +135,7 @@ class _FlavorSubsystemContainer(SerializableContainer):
     CONTAINER_PREFIX: ClassVar[Optional[str]] = None
 
     #: A list of properties that exist but are not backed by any attribute or value.
-    VIRTUAL_PROPERTIES: List[str] = []
+    VIRTUAL_PROPERTIES: ClassVar[List[str]] = []
 
     # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone some complex fields.
     def clone(self) -> Self:
@@ -629,7 +630,7 @@ class Flavor(_FlavorSubsystemContainer):
     Represents various properties of a flavor.
     """
 
-    VIRTUAL_PROPERTIES = ['hostname']
+    VIRTUAL_PROPERTIES: ClassVar[List[str]] = ['hostname']
 
     #: Human-readable name of the flavor.
     name: str
@@ -1336,7 +1337,7 @@ class And(CompoundConstraint):
         for compounds in itertools.product(*[constraint.spans(logger) for constraint in compound_constraints]):
             # Note that `product` returns an item for each iterable, and those items are lists, because
             # that's what `spans()` returns. Use `sum` to linearize the list of lists.
-            yield members + sum(compounds, []) + simple_constraints
+            yield members + functools.reduce(operator.iadd, compounds, []) + simple_constraints
 
 
 @dataclasses.dataclass(repr=False)

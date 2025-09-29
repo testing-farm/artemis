@@ -1,11 +1,13 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import functools
 import inspect
 import logging
+import operator
 import os
 import re
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Optional, Pattern, Tuple, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generic, List, Optional, Pattern, Tuple, TypeVar, cast
 
 import gluetool.log
 import gluetool.utils
@@ -296,14 +298,14 @@ class Knob(Generic[T]):
     """
 
     #: All known knobs.
-    ALL_KNOBS: Dict[str, 'Knob[Any]'] = {}
+    ALL_KNOBS: ClassVar[Dict[str, 'Knob[Any]']] = {}
 
     #: Collect all known ``Knob`` instances that are backed by the DB.
-    DB_BACKED_KNOBS: Dict[str, 'Knob[Any]'] = {}
+    DB_BACKED_KNOBS: ClassVar[Dict[str, 'Knob[Any]']] = {}
 
     #: List of patterns matching knob names that belong to knobs with per-entity capability. These names cannot be
     #: used for normal knobs.
-    RESERVED_PATTERNS: List[Pattern[str]] = [re.compile(r'^([a-z\-.]+):.+$')]
+    RESERVED_PATTERNS: ClassVar[List[Pattern[str]]] = [re.compile(r'^([a-z\-.]+):.+$')]
 
     def __init__(
         self,
@@ -404,7 +406,7 @@ class Knob(Generic[T]):
         if self.cast_from_str:
             traits += [f'cast-from-str={self.cast_from_str.__name__}']
 
-        traits += sum((source.to_repr() for source in self._sources), [])
+        traits += functools.reduce(operator.iadd, (source.to_repr() for source in self._sources), [])
 
         return f'<Knob: {self.knobname}: {" ".join(traits)}>'
 

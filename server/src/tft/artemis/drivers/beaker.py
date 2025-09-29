@@ -385,7 +385,7 @@ def constraint_to_beaker_filter(
                 child_constraint,
                 guest_request,
                 pool,
-                constraint_parents=constraint_parents + [constraint],
+                constraint_parents=[*constraint_parents, constraint],
                 constraint_siblings=constraint.constraints,
             )
 
@@ -404,7 +404,7 @@ def constraint_to_beaker_filter(
                 child_constraint,
                 guest_request,
                 pool,
-                constraint_parents=constraint_parents + [constraint],
+                constraint_parents=[*constraint_parents, constraint],
                 constraint_siblings=constraint.constraints,
             )
 
@@ -1179,7 +1179,7 @@ class BeakerDriver(PoolDriver):
             logger,
             bkr_command,
             json_output=False,
-            command_scrubber=lambda cmd: (['bkr'] + options),
+            command_scrubber=lambda cmd: ['bkr', *options],
             poolname=self.poolname,
             commandname=commandname,
             cause_extractor=bkr_error_cause_extractor,
@@ -1343,7 +1343,7 @@ class BeakerDriver(PoolDriver):
             '--task',
             '/distribution/reservesys',
             '--taskparam',
-            f'RESERVETIME={str(KNOB_RESERVATION_DURATION.value)}',
+            f'RESERVETIME={KNOB_RESERVATION_DURATION.value!s}',
             '--whiteboard',
             r_whiteboard.unwrap(),
         ]
@@ -1441,7 +1441,7 @@ class BeakerDriver(PoolDriver):
         if len(job_xml.find_all('hostRequires')) != 1:
             return Error(Failure('job XML is missing hostRequires element', job=job_xml.prettify()))
 
-        list(host_requires)[0].append(beaker_filter)
+        next(iter(host_requires)).append(beaker_filter)
 
         log_xml(logger.debug, 'job with filter', job_xml)
 
@@ -1838,7 +1838,7 @@ class BeakerDriver(PoolDriver):
             )
         )
 
-    _JOB_UPDATE_HANDLERS: List[
+    _JOB_UPDATE_HANDLERS: Tuple[
         Callable[
             [
                 'BeakerDriver',
@@ -1855,14 +1855,15 @@ class BeakerDriver(PoolDriver):
                 Dict[str, Any],
             ],
             Result[Optional[ProvisioningProgress], Failure],
-        ]
-    ] = [
+        ],
+        ...,
+    ] = (
         _handle_job_update_successfully_completed,
         _handle_job_update_new,
         _handle_job_update_failed_avc_denials,
         # This one should be last, as it reports anything that failed and was not claimed by a previous handler.
         _handle_job_update_failed,
-    ]
+    )
 
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest

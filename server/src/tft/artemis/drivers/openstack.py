@@ -3,6 +3,8 @@
 
 import dataclasses
 import datetime
+import functools
+import operator
 import re
 import sys
 from typing import Any, Dict, Iterator, List, Optional, Pattern, Tuple, Union, cast
@@ -245,7 +247,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             self.logger,
             os_base + options,
             json_output=json_format,
-            command_scrubber=lambda cmd: (['openstack'] + options),
+            command_scrubber=lambda cmd: ['openstack', *options],
             poolname=self.poolname,
             commandname=commandname,
             cause_extractor=os_error_cause_extractor,
@@ -401,29 +403,29 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
 
             tags = r_tags.unwrap()
 
-            property_options: List[str] = sum((['--property', f'{tag}={value}'] for tag, value in tags.items()), [])
+            property_options: List[str] = functools.reduce(
+                operator.iadd, (['--property', f'{tag}={value}'] for tag, value in tags.items()), []
+            )
 
             user_data_options: List[str] = [] if not user_data_filename else ['--user-data', user_data_filename]
 
-            os_options = (
-                [
-                    'server',
-                    'create',
-                    '--flavor',
-                    flavor.id,
-                    '--image',
-                    image.id,
-                    '--network',
-                    network,
-                    '--key-name',
-                    self.pool_config['master-key-name'],
-                    '--security-group',
-                    self.pool_config.get('security-group', 'default'),
-                ]
-                + property_options
-                + user_data_options
-                + [tags['ArtemisGuestLabel']]
-            )
+            os_options = [
+                'server',
+                'create',
+                '--flavor',
+                flavor.id,
+                '--image',
+                image.id,
+                '--network',
+                network,
+                '--key-name',
+                self.pool_config['master-key-name'],
+                '--security-group',
+                self.pool_config.get('security-group', 'default'),
+                *property_options,
+                *user_data_options,
+                tags['ArtemisGuestLabel'],
+            ]
 
             return self._run_os(os_options, commandname='os.server-create')
 
@@ -704,7 +706,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             )
 
         try:
-            raw_address = list(instance.addresses.values())[0]
+            raw_address = next(iter(instance.addresses.values()))
             ip_address = cast(str, raw_address[0]['addr'])
 
         except Exception as exc:

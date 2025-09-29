@@ -697,7 +697,7 @@ def policy_most_free_addresses(
     log_table(
         logger.info,
         'pool addresses',
-        [['Pool', 'Metric', 'Limit', 'Usage', 'Free']] + usage_report,
+        [['Pool', 'Metric', 'Limit', 'Usage', 'Free'], *usage_report],
         headers='firstrow',
         tablefmt='psql',
     )
@@ -848,7 +848,7 @@ def policy_enough_resources(
     log_table(
         logger.info,
         'pool resources',
-        [['Pool', 'Metric', 'Limit', 'Usage', 'Threshold', 'Enough?']] + usage_report,
+        [['Pool', 'Metric', 'Limit', 'Usage', 'Threshold', 'Enough?'], *usage_report],
         headers='firstrow',
         tablefmt='psql',
     )

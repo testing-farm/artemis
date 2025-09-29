@@ -371,7 +371,7 @@ def upsert(
         where = sqlalchemy.sql.expression.and_(*[column == value for column, value in primary_keys.items()])
 
     else:
-        column, value = list(primary_keys.items())[0]
+        column, value = next(iter(primary_keys.items()))
 
         where = column == value
 

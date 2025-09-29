@@ -18,6 +18,7 @@ import time
 from typing import (
     Any,
     Callable,
+    ClassVar,
     Dict,
     Generic,
     Iterable,
@@ -1282,7 +1283,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     POOL_FLAVOR_INFO_CACHE_KEY = 'pool.{}.flavor-info'
 
     #: Hold all known guest log updaters, with key being driver name, log name and its content type.
-    guest_log_updaters: Dict[Tuple[str, str, GuestLogContentType], str] = {}
+    guest_log_updaters: ClassVar[Dict[Tuple[str, str, GuestLogContentType], str]] = {}
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
         super().__init__(logger)
@@ -1296,7 +1297,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
         self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
-    _drivers_registry: Dict[str, Type['PoolDriver']] = {}
+    _drivers_registry: ClassVar[Dict[str, Type['PoolDriver']]] = {}
 
     @staticmethod
     def _instantiate(
@@ -3127,30 +3128,26 @@ def run_remote(
     ssh_options = ssh_options or []
 
     with create_tempfile(file_contents=key.private) as private_key_filepath:
-        ssh_command = (
-            [
-                'ssh',
-                '-i',
-                private_key_filepath,
-                '-o',
-                'UserKnownHostsFile=/dev/null',
-                '-o',
-                'StrictHostKeyChecking=no',
-                '-o',
-                f'ConnectTimeout={ssh_timeout}',
-            ]
-            + ssh_options
-            + [
-                '-l',
-                guest_request.ssh_username,
-                '-p',
-                str(guest_request.ssh_port),
-                guest_request.address,
-                # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
-                # parameters. Therefore joining it into a single string here, instead of bothering the caller.
-                command_join(command),
-            ]
-        )
+        ssh_command = [
+            'ssh',
+            '-i',
+            private_key_filepath,
+            '-o',
+            'UserKnownHostsFile=/dev/null',
+            '-o',
+            'StrictHostKeyChecking=no',
+            '-o',
+            f'ConnectTimeout={ssh_timeout}',
+            *ssh_options,
+            '-l',
+            guest_request.ssh_username,
+            '-p',
+            str(guest_request.ssh_port),
+            guest_request.address,
+            # To stay consistent, command is given as a list of strings, but we pass it down to SSH as one of its
+            # parameters. Therefore joining it into a single string here, instead of bothering the caller.
+            command_join(command),
+        ]
 
         return run_cli_tool(
             logger, ssh_command, poolname=poolname, commandname=commandname, cause_extractor=cause_extractor
@@ -3178,26 +3175,22 @@ def copy_to_remote(
     ssh_options = ssh_options or []
 
     with create_tempfile(file_contents=key.private) as private_key_filepath:
-        scp_command = (
-            [
-                'scp',
-                '-i',
-                private_key_filepath,
-                '-o',
-                'UserKnownHostsFile=/dev/null',
-                '-o',
-                'StrictHostKeyChecking=no',
-                '-o',
-                f'ConnectTimeout={ssh_timeout}',
-            ]
-            + ssh_options
-            + [
-                '-P',
-                str(guest_request.ssh_port),
-                src,
-                f'{guest_request.ssh_username}@{guest_request.address}:{dst}',
-            ]
-        )
+        scp_command = [
+            'scp',
+            '-i',
+            private_key_filepath,
+            '-o',
+            'UserKnownHostsFile=/dev/null',
+            '-o',
+            'StrictHostKeyChecking=no',
+            '-o',
+            f'ConnectTimeout={ssh_timeout}',
+            *ssh_options,
+            '-P',
+            str(guest_request.ssh_port),
+            src,
+            f'{guest_request.ssh_username}@{guest_request.address}:{dst}',
+        ]
 
         return run_cli_tool(
             logger, scp_command, poolname=poolname, commandname=commandname, cause_extractor=cause_extractor
@@ -3225,21 +3218,22 @@ def copy_from_remote(
     ssh_options = ssh_options or []
 
     with create_tempfile(file_contents=key.private) as private_key_filepath:
-        scp_command = (
-            [
-                'scp',
-                '-i',
-                private_key_filepath,
-                '-o',
-                'UserKnownHostsFile=/dev/null',
-                '-o',
-                'StrictHostKeyChecking=no',
-                '-o',
-                f'ConnectTimeout={ssh_timeout}',
-            ]
-            + ssh_options
-            + ['-P', str(guest_request.ssh_port), f'{guest_request.ssh_username}@{guest_request.address}:{src}', dst]
-        )
+        scp_command = [
+            'scp',
+            '-i',
+            private_key_filepath,
+            '-o',
+            'UserKnownHostsFile=/dev/null',
+            '-o',
+            'StrictHostKeyChecking=no',
+            '-o',
+            f'ConnectTimeout={ssh_timeout}',
+            *ssh_options,
+            '-P',
+            str(guest_request.ssh_port),
+            f'{guest_request.ssh_username}@{guest_request.address}:{src}',
+            dst,
+        ]
 
         return run_cli_tool(
             logger, scp_command, poolname=poolname, commandname=commandname, cause_extractor=cause_extractor
@@ -3410,10 +3404,10 @@ class CLISessionPermanentDir:
         # Run command, isolation should be guaranteed now
         r_run = run_cli_tool(
             logger,
-            [self.CLI_CMD] + options,
+            [self.CLI_CMD, *options],
             env=environ,
             json_output=json_format,
-            command_scrubber=lambda cmd: ([self.CLI_PREFIX] + options),
+            command_scrubber=lambda cmd: [self.CLI_PREFIX, *options],
             poolname=self.pool.poolname,
             commandname=commandname,
             cause_extractor=self.pool.cli_error_cause_extractor,

@@ -445,7 +445,7 @@ class DBMetrics(MetricsBase):
     """
 
     #: Database connection pool metrics.
-    pool: DBPoolMetrics = DBPoolMetrics()
+    pool: DBPoolMetrics = dataclasses.field(default_factory=DBPoolMetrics)
 
 
 class PoolMetricsBase(MetricsBase):
@@ -1377,7 +1377,7 @@ class PoolsMetrics(MetricsBase):
 
         def _create_pool_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
-                f'pool_resources_{name}{"_{}".format(unit) if unit else ""}',  # noqa: FS002
+                f'pool_resources_{name}{f"_{unit}" if unit else ""}',  # noqa: FS002
                 f'Limits and usage of pool {name}',
                 ['pool', 'dimension'],
                 registry=registry,
@@ -1385,7 +1385,7 @@ class PoolsMetrics(MetricsBase):
 
         def _create_network_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
-                f'pool_resources_network_{name}{"_{}".format(unit) if unit else ""}',
+                f'pool_resources_network_{name}{f"_{unit}" if unit else ""}',
                 f'Limits and usage of pool network {name}',
                 ['pool', 'network', 'dimension'],
                 registry=registry,
@@ -2654,7 +2654,7 @@ class TaskMetrics(MetricsBase):
             field_split = tuple(field.split(':', 3))
 
             if len(field_split) == 3:
-                field_split = field_split + (UNDEFINED_POOL_NAME,)
+                field_split = (*field_split, UNDEFINED_POOL_NAME)
 
             self.message_durations[cast(Tuple[str, str, str, str], field_split)] = count
 
@@ -3425,15 +3425,15 @@ class Metrics(MetricsBase):
     Global metrics that don't fit anywhere else, and also a root of the tree of metrics.
     """
 
-    db: DBMetrics = DBMetrics()
-    pools: PoolsMetrics = PoolsMetrics()
-    provisioning: ProvisioningMetrics = ProvisioningMetrics()
-    routing: RoutingMetrics = RoutingMetrics()
-    tasks: TaskMetrics = TaskMetrics()
-    shelves: ShelvesMetrics = ShelvesMetrics()
-    api: APIMetrics = APIMetrics()
-    workers: WorkerMetrics = WorkerMetrics()
-    dispatcher: DispatcherMetrics = DispatcherMetrics()
+    db: DBMetrics = dataclasses.field(default_factory=DBMetrics)
+    pools: PoolsMetrics = dataclasses.field(default_factory=PoolsMetrics)
+    provisioning: ProvisioningMetrics = dataclasses.field(default_factory=ProvisioningMetrics)
+    routing: RoutingMetrics = dataclasses.field(default_factory=RoutingMetrics)
+    tasks: TaskMetrics = dataclasses.field(default_factory=TaskMetrics)
+    shelves: ShelvesMetrics = dataclasses.field(default_factory=ShelvesMetrics)
+    api: APIMetrics = dataclasses.field(default_factory=APIMetrics)
+    workers: WorkerMetrics = dataclasses.field(default_factory=WorkerMetrics)
+    dispatcher: DispatcherMetrics = dataclasses.field(default_factory=DispatcherMetrics)
 
     # Registry this tree of metrics containers is tied to.
     _registry: Optional[CollectorRegistry] = None

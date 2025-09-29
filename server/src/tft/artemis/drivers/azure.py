@@ -227,10 +227,10 @@ class AzureSession:
 
         r_run = run_cli_tool(
             logger,
-            ['az'] + options,
+            ['az', *options],
             env=environ,
             json_output=json_format,
-            command_scrubber=lambda cmd: (['azure'] + options),
+            command_scrubber=lambda cmd: ['azure', *options],
             poolname=self.pool.poolname,
             commandname=commandname,
             cause_extractor=awscli_error_cause_extractor,
@@ -847,8 +847,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                             self.pool_config['default-location'],
                             '--name',
                             resource_group,
-                        ]
-                        + tags_options,
+                            *tags_options,
+                        ],
                         commandname='az.vm-create',
                     )
 
@@ -870,7 +870,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                     tags['ArtemisGuestLabel'],
                     '--size',
                     flavor.name,
-                ] + tags_options
+                    *tags_options,
+                ]
 
                 if custom_data_filename:
                     az_vm_create_options += ['--custom-data', custom_data_filename]

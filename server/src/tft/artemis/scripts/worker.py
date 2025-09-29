@@ -103,7 +103,7 @@ def cmd_root(
     if queue:
         logger.info(f'listening to limited number of queues: {", ".join(queue)}')
 
-        cmd += ['--queues'] + list(queue)
+        cmd += ['--queues', *queue]
 
     else:
         logger.info('listening to all queues')

@@ -1715,7 +1715,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         :param str key: Optional key to return.
         """
 
-        command = [self.pool_config['command']] + args
+        command = [self.pool_config['command'], *args]
 
         r_run = run_cli_tool(
             self.logger,
@@ -2031,7 +2031,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             ]
 
             if tags:
-                command += ['--tag-specifications'] + _tags_to_tag_specifications(tags, 'security-group')
+                command += ['--tag-specifications', *_tags_to_tag_specifications(tags, 'security-group')]
 
             # Create a new security group and retrieve it's id
             r_create_sg = self._aws_command(command, key='GroupId', commandname='aws.ec2-create-security-group')
@@ -2130,7 +2130,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             command.extend(self.pool_config['additional-options'])
 
         if tags:
-            command += ['--tag-specifications'] + _tags_to_tag_specifications(tags, 'instance', 'volume')
+            command += ['--tag-specifications', *_tags_to_tag_specifications(tags, 'instance', 'volume')]
 
         # Note: this is actually not used for anything but logging alone. We re-use the spot template, the fields are
         # pretty much the same.
@@ -2259,7 +2259,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         ]
 
         if tags:
-            command += ['--tag-specifications'] + _tags_to_tag_specifications(tags, 'spot-instances-request')
+            command += ['--tag-specifications', *_tags_to_tag_specifications(tags, 'spot-instances-request')]
 
         r_spot_request = self._aws_command(
             command, key='SpotInstanceRequests', commandname='aws.ec2-request-spot-instances'
@@ -2445,7 +2445,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         except Exception as exc:
             return Error(Failure.from_exc('failed to parse AWS output', exc))
 
-        taggable_resource_ids = [pool_data.instance_id] + volume_ids
+        taggable_resource_ids = [pool_data.instance_id, *volume_ids]
 
         r_tag = self._tag_resources(taggable_resource_ids, tags)
 
@@ -2553,7 +2553,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
     def _tag_resources(self, resource_ids: List[str], tags: GuestTagsType) -> Result[JSONType, Failure]:
         return self._aws_command(
-            ['ec2', 'create-tags', '--resources'] + resource_ids + ['--tags'] + _serialize_tags(tags),
+            ['ec2', 'create-tags', '--resources', *resource_ids, '--tags', *_serialize_tags(tags)],
             json_output=False,
             commandname='aws.tag-resources',
         )

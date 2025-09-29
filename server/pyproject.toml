@@ -152,6 +152,7 @@ lint.select = [
     "PYI",    # flake8-pyi
     "N",      # pep8-naming
     "RSE",    # flake8-raise
+    "RUF",    # Ruff-specific rules
     "SIM",    # flake8-simplify
     "T10",    # flake8-debugger
     "W",      # pycodestyle warning
@@ -160,6 +161,8 @@ lint.select = [
 lint.ignore = [
     "PLC0415",  # `import` should be at the top-level of a file
     "S101",     # Use of `assert` detected
+    # Conflicts with our use of other linters that ruff does not recognize.
+    "RUF100",   # unused-noqa	Unused noqa directive
     ]
 
 [tool.ruff.lint.isort]
