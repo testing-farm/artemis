@@ -38,6 +38,7 @@ import gluetool.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from tmt.hardware import UNITS
 from typing_extensions import Literal, Protocol, Self, TypedDict
 
 from .. import (
@@ -68,7 +69,6 @@ from ..db import (
     SSHKey,
 )
 from ..environment import (
-    UNITS,
     Environment,
     Flavor,
     FlavorBoot,

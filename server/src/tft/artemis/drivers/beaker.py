@@ -17,6 +17,7 @@ import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter, log_table, log_xml
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import ProcessOutput
+from tmt.hardware import Operator
 from typing_extensions import TypedDict
 
 from .. import (
@@ -38,7 +39,6 @@ from ..environment import (
     Flavor,
     FlavorBoot,
     Kickstart,
-    Operator,
     Or,
     SizeType,
 )

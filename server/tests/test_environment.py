@@ -9,12 +9,12 @@ import gluetool.utils
 import pytest
 from gluetool.log import ContextAdapter
 from gluetool.result import Result
+from tmt.hardware import UNITS, Operator
 
 import tft.artemis
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
 from tft.artemis.environment import (
-    UNITS,
     Constraint,
     ConstraintBase,
     Environment,
@@ -25,7 +25,6 @@ from tft.artemis.environment import (
     FlavorNetwork,
     FlavorNetworks,
     FlavorVirtualization,
-    Operator,
 )
 
 
@@ -1555,20 +1554,20 @@ def test_beaker_preset(
                 ),
             ),
             [
-                ['disk[0].size >= 11 gibibyte', 'disk[0].size >= 40 gibibyte', 'disk[1].size >= 1 tebibyte'],
-                ['disk[0].size >= 11 gibibyte', 'disk[0].size >= 40 gibibyte', 'disk[1].size < 2 tebibyte'],
-                ['disk[0].size >= 11 gibibyte', 'cpu.processors >= 4'],
-                ['disk[0].size >= 11 gibibyte', 'disk[0].size >= 40 gibibyte'],
-                ['disk[0].size >= 11 gibibyte', 'disk[0].size >= 10 gibibyte', 'disk[0].size >= 20 gibibyte'],
-                ['disk[0].size >= 11 gibibyte', 'cpu.processors >= 2'],
-                ['disk[0].size >= 11 gibibyte', 'cpu.processors >= 3'],
-                ['disk[0].size >= 13 gibibyte', 'disk[0].size >= 40 gibibyte', 'disk[1].size >= 1 tebibyte'],
-                ['disk[0].size >= 13 gibibyte', 'disk[0].size >= 40 gibibyte', 'disk[1].size < 2 tebibyte'],
-                ['disk[0].size >= 13 gibibyte', 'cpu.processors >= 4'],
-                ['disk[0].size >= 13 gibibyte', 'disk[0].size >= 40 gibibyte'],
-                ['disk[0].size >= 13 gibibyte', 'disk[0].size >= 10 gibibyte', 'disk[0].size >= 20 gibibyte'],
-                ['disk[0].size >= 13 gibibyte', 'cpu.processors >= 2'],
-                ['disk[0].size >= 13 gibibyte', 'cpu.processors >= 3'],
+                ['disk[0].size >= 11 GiB', 'disk[0].size >= 40 GiB', 'disk[1].size >= 1 TiB'],
+                ['disk[0].size >= 11 GiB', 'disk[0].size >= 40 GiB', 'disk[1].size < 2 TiB'],
+                ['disk[0].size >= 11 GiB', 'cpu.processors >= 4'],
+                ['disk[0].size >= 11 GiB', 'disk[0].size >= 40 GiB'],
+                ['disk[0].size >= 11 GiB', 'disk[0].size >= 10 GiB', 'disk[0].size >= 20 GiB'],
+                ['disk[0].size >= 11 GiB', 'cpu.processors >= 2'],
+                ['disk[0].size >= 11 GiB', 'cpu.processors >= 3'],
+                ['disk[0].size >= 13 GiB', 'disk[0].size >= 40 GiB', 'disk[1].size >= 1 TiB'],
+                ['disk[0].size >= 13 GiB', 'disk[0].size >= 40 GiB', 'disk[1].size < 2 TiB'],
+                ['disk[0].size >= 13 GiB', 'cpu.processors >= 4'],
+                ['disk[0].size >= 13 GiB', 'disk[0].size >= 40 GiB'],
+                ['disk[0].size >= 13 GiB', 'disk[0].size >= 10 GiB', 'disk[0].size >= 20 GiB'],
+                ['disk[0].size >= 13 GiB', 'cpu.processors >= 2'],
+                ['disk[0].size >= 13 GiB', 'cpu.processors >= 3'],
             ],
         ),
     ],
@@ -1655,7 +1654,7 @@ def test_expand_name(constraint_name: str, expected: tft.artemis.environment.Con
             # The following don't match expected type, but they are not used by any code we're going to run.
             operator=None,  # type: ignore[arg-type]
             operator_handler=None,  # type: ignore[arg-type]
-            value=tft.artemis.environment.UNITS.Quantity(1, 'gibibyte'),
+            value=UNITS.Quantity(1, 'gibibyte'),
             raw_value=None,  # type: ignore[arg-type]
         ).expand_name()
         == expected

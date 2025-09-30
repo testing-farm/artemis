@@ -6,12 +6,12 @@ from typing import Any
 
 import gluetool.utils
 from gluetool.log import ContextAdapter
+from tmt.hardware import UNITS
 
 import tft.artemis
 import tft.artemis.drivers
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
-from tft.artemis.environment import UNITS
 
 
 def parse_spec(text: str) -> Any:

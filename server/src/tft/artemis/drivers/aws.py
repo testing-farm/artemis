@@ -32,6 +32,7 @@ from gluetool.log import ContextAdapter, log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
+from tmt.hardware import UNITS, Operator
 from typing_extensions import Literal, TypedDict
 
 from .. import (
@@ -47,7 +48,6 @@ from ..cache import get_cached_mapping_item, get_cached_mapping_values
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
-    UNITS,
     Constraint,
     Flavor,
     FlavorBoot,
@@ -56,7 +56,6 @@ from ..environment import (
     FlavorNetwork,
     FlavorNetworks,
     FlavorVirtualization,
-    Operator,
     SizeType,
 )
 from ..knobs import Knob
