@@ -6,10 +6,11 @@ from unittest.mock import MagicMock
 
 # import gluetool.log
 import pytest
+from tmt.hardware import UNITS
 
 from tft.artemis.drivers import PoolImageSSHInfo
 from tft.artemis.drivers.aws import AWSFlavor, AWSPoolImageInfo
-from tft.artemis.environment import UNITS, FlavorBoot
+from tft.artemis.environment import FlavorBoot
 
 
 @pytest.fixture(name='guest_request', scope='function')

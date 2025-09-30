@@ -13,13 +13,13 @@ from typing import Any, Optional, TypedDict, cast
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from tmt.hardware import UNITS
 
 from tft.artemis.drivers import CLISessionPermanentDir, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs
 
 from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestRequest
 from ..environment import (
-    UNITS,
     Flavor,
     FlavorBoot,
     FlavorCpu,
