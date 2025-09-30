@@ -5,6 +5,7 @@ import dataclasses
 import json
 import uuid
 from typing import Any, Dict, Optional
+from urllib.parse import urljoin
 
 import gluetool.log
 import gluetool.utils
@@ -93,9 +94,11 @@ class FlasherDriver(PoolDriver):
             ),
         }
 
+        url = urljoin(self.url, f'/loan/{self.poolname}')
+
         try:
             response = requests.post(
-                f'{self.url}/loan/{self.poolname}',
+                url,
                 json=body,
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value,
@@ -124,10 +127,11 @@ class FlasherDriver(PoolDriver):
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
+        url = urljoin(self.url, f'/loan/{pool_data.flasher_id}')
 
         try:
             response = requests.get(
-                f'{self.url}/loan/{pool_data.flasher_id}',
+                url,
                 verify=not KNOB_DISABLE_CERT_VERIFICATION.value,
                 timeout=KNOB_HTTP_TIMEOUT.value,
             )
@@ -165,7 +169,7 @@ class FlasherDriver(PoolDriver):
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
         pool_resources = FlasherPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
-        url = f'{self.url}/loan/{pool_resources.flasher_id}'
+        url = urljoin(self.url, f'/loan/{pool_resources.flasher_id}')
 
         try:
             response = requests.delete(
@@ -194,7 +198,7 @@ class FlasherDriver(PoolDriver):
             return Error(r_resources.unwrap_error())
 
         resources = r_resources.unwrap()
-        url = f'{self.url}/{self.poolname}/summary/metrics'
+        url = urljoin(self.url, f'{self.poolname}/summary/metrics')
 
         try:
             response = requests.get(
@@ -221,7 +225,7 @@ class FlasherDriver(PoolDriver):
         if not pool_data:
             return Ok(None)
 
-        url = f'{self.url}/loan/reboot/{pool_data.flasher_id}'
+        url = urljoin(self.url, f'/loan/reboot/{pool_data.flasher_id}')
 
         try:
             response = requests.put(
@@ -293,7 +297,7 @@ class FlasherDriver(PoolDriver):
         if not pool_data.flasher_id:
             return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS))
 
-        url = f'{self.url}/{self.poolname}/getlog/{pool_data.flasher_id}/{log_name}'
+        url = urljoin(self.url, f'/{self.poolname}/getlog/{pool_data.flasher_id}/{log_name}')
 
         try:
             response = requests.get(
