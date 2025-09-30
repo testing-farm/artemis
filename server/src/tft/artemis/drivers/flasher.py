@@ -206,8 +206,8 @@ class FlasherDriver(PoolDriver):
         if response.status_code != 200:
             return Error(Failure('unexpected response', url=url, status_code=response.status_code, body=response.text))
 
-        data = response.json()
         try:
+            data = response.json()
             resources.usage.instances = int(data['borrowed'])
             resources.limits.instances = int(data['enabled'])
         except ValueError as exc:
