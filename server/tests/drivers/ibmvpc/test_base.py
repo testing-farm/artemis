@@ -1,11 +1,10 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import Dict
 
 import tft.artemis.drivers.ibmcloudvpc
 
-IBMVPC_TAGS_EXAMPLES: Dict[str, str] = {
+IBMVPC_TAGS_EXAMPLES: dict[str, str] = {
     'tag1': 'value1',
     'tag2': 'value2',
     # TODO: wrong type, but that's on purpose: our code expects `str`, but we already encountered `None` there.

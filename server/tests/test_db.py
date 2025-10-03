@@ -3,7 +3,6 @@
 
 import datetime
 import threading
-from typing import Dict
 from unittest.mock import MagicMock
 
 import _pytest.logging
@@ -440,7 +439,7 @@ def test_transaction_conflict(
     checkpoint_transactions_started = threading.Barrier(2)
     checkpoint_thread1_done = threading.Barrier(2)
 
-    transaction_results: Dict[int, TransactionResult] = {}
+    transaction_results: dict[int, TransactionResult] = {}
 
     def thread1() -> None:
         with db.get_session(logger) as session:

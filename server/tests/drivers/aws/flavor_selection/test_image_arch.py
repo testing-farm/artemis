@@ -1,7 +1,6 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import List
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -15,7 +14,7 @@ def test_sanity(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     r_suitable_flavors = aws_pool._filter_flavors_image_arch(logger, session, guest_request, image, flavors)
@@ -28,7 +27,7 @@ def test_no_arch(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     image.arch = None

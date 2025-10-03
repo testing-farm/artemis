@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pkgutil
-from typing import Generator
+from collections.abc import Generator
 
 from .. import tasks
 

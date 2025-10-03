@@ -8,7 +8,8 @@ import functools
 import json
 import os
 import uuid
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, Union, cast
+from collections.abc import Generator
+from typing import Annotated, Any, Callable, Optional, TypeVar, Union, cast
 
 import fastapi
 import gluetool.log
@@ -20,7 +21,7 @@ import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.orm.exc
 from fastapi import Depends, Request, Response, status
-from typing_extensions import Annotated, ParamSpec
+from typing_extensions import ParamSpec
 
 from ... import (
     __VERSION__,
@@ -124,8 +125,8 @@ class GuestRequestManager:
     def get_guest_requests(
         self,
         logger: gluetool.log.ContextAdapter,
-        response_model: Type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
-    ) -> List[GuestResponseType]:
+        response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
+    ) -> list[GuestResponseType]:
         with get_session(logger, self.db, read_only=True) as (session, _):
             # Include deferred `mtime` field, query guests and fields in one step.
             r_guests = (
@@ -145,7 +146,7 @@ class GuestRequestManager:
         ownername: str,
         logger: gluetool.log.ContextAdapter,
         environment_schema: JSONSchemaType,
-        response_model: Type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
+        response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
     ) -> GuestResponseType:
         from ...tasks import get_guest_logger
         from ...tasks.guest_shelf_lookup import guest_shelf_lookup
@@ -246,7 +247,7 @@ class GuestRequestManager:
         self,
         logger: gluetool.log.ContextAdapter,
         guestname: str,
-        response_model: Type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
+        response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
     ) -> Optional[GuestResponseType]:
         with get_session(logger, self.db, read_only=True) as (session, _):
             r_guest_request_record = (
@@ -498,7 +499,7 @@ def _validate_guest_request(
     return guest_request
 
 
-def _environment_compat(environment: Dict[str, Optional[Any]]) -> Dict[str, Optional[Any]]:
+def _environment_compat(environment: dict[str, Optional[Any]]) -> dict[str, Optional[Any]]:
     # COMPAT: v0.0.17, v0.0.18: `environment.arch` belongs to `environment.hw.arch`
     if 'arch' in environment:
         environment['hw'] = {'arch': environment.pop('arch')}
@@ -513,10 +514,10 @@ def _environment_compat(environment: Dict[str, Optional[Any]]) -> Dict[str, Opti
 
 def _validate_environment(
     logger: gluetool.log.ContextAdapter,
-    environment: Dict[str, Optional[Any]],
+    environment: dict[str, Optional[Any]],
     schema: JSONSchemaType,
     failure_details: FailureDetailsType,
-) -> Dict[str, Optional[Any]]:
+) -> dict[str, Optional[Any]]:
     r_validation = validate_data(environment, schema)
 
     if r_validation.is_error:
@@ -539,7 +540,7 @@ def _validate_environment(
 
 
 def _parse_environment(
-    logger: gluetool.log.ContextAdapter, environment: Dict[str, Optional[Any]], failure_details: FailureDetailsType
+    logger: gluetool.log.ContextAdapter, environment: dict[str, Optional[Any]], failure_details: FailureDetailsType
 ) -> Environment:
     try:
         return Environment.unserialize(environment)
@@ -555,9 +556,9 @@ def _parse_environment(
 
 def _parse_security_group_rules(
     logger: gluetool.log.ContextAdapter,
-    security_group_rules: Optional[List[Dict[str, Any]]],
+    security_group_rules: Optional[list[dict[str, Any]]],
     failure_details: FailureDetailsType,
-) -> Optional[List[SecurityGroupRule]]:
+) -> Optional[list[SecurityGroupRule]]:
     try:
         return [SecurityGroupRule.unserialize(rule) for rule in security_group_rules] if security_group_rules else None
 
@@ -571,9 +572,9 @@ def _parse_security_group_rules(
 
 
 def _parse_log_types(
-    logger: gluetool.log.ContextAdapter, log_types: Optional[List[Any]], failure_details: FailureDetailsType
-) -> List[Tuple[str, artemis_db.GuestLogContentType]]:
-    parsed_log_types: List[Tuple[str, artemis_db.GuestLogContentType]] = []
+    logger: gluetool.log.ContextAdapter, log_types: Optional[list[Any]], failure_details: FailureDetailsType
+) -> list[tuple[str, artemis_db.GuestLogContentType]]:
+    parsed_log_types: list[tuple[str, artemis_db.GuestLogContentType]] = []
 
     if log_types:
         try:
@@ -596,8 +597,8 @@ def get_guest_requests(
     logger: gluetool.log.ContextAdapter,
     manager: GuestRequestManager,
     request: Request,
-    response_model: Type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
-) -> List[GuestResponseType]:
+    response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
+) -> list[GuestResponseType]:
     return manager.get_guest_requests(logger, response_model=response_model)
 
 
@@ -607,7 +608,7 @@ def get_guest_request(
     guestname: str,
     manager: GuestRequestManager,
     request: Request,
-    response_model: Type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
+    response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
 ) -> GuestResponseType:
     guest_response = manager.get_by_guestname(logger, guestname, response_model=response_model)
 
@@ -637,7 +638,7 @@ class GuestEventManager:
     def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
         self.db = db
 
-    def get_events(self, logger: gluetool.log.ContextAdapter, search_params: EventSearchParameters) -> List[GuestEvent]:
+    def get_events(self, logger: gluetool.log.ContextAdapter, search_params: EventSearchParameters) -> list[GuestEvent]:
         with get_session(logger, self.db, read_only=True) as (session, _):
             r_events = artemis_db.GuestEvent.fetch(
                 session,
@@ -655,7 +656,7 @@ class GuestEventManager:
 
     def get_events_by_guestname(
         self, logger: gluetool.log.ContextAdapter, guestname: str, search_params: EventSearchParameters
-    ) -> List[GuestEvent]:
+    ) -> list[GuestEvent]:
         with get_session(logger, self.db, read_only=True) as (session, _):
             r_events = artemis_db.GuestEvent.fetch(
                 session,
@@ -679,7 +680,7 @@ def execute_dml(
     session: sqlalchemy.orm.session.Session,
     query: Any,
     conflict_error: Union[
-        Type[errors.ConflictError], Type[errors.NoSuchEntityError], Type[errors.InternalServerError]
+        type[errors.ConflictError], type[errors.NoSuchEntityError], type[errors.InternalServerError]
     ] = errors.ConflictError,
     failure_details: Optional[FailureDetailsType] = None,
 ) -> None:
@@ -705,7 +706,7 @@ def execute_dml(
 @contextlib.contextmanager
 def get_session(
     logger: gluetool.log.ContextAdapter, db: artemis_db.DB, read_only: bool = False
-) -> Generator[Tuple[sqlalchemy.orm.session.Session, artemis_db.TransactionResult], None, None]:
+) -> Generator[tuple[sqlalchemy.orm.session.Session, artemis_db.TransactionResult], None, None]:
     with db.get_session(logger, read_only=read_only) as session:
         with artemis_db.transaction(logger, session) as t:
             yield session, t
@@ -726,7 +727,7 @@ class GuestShelfManager:
     @staticmethod
     def entry_get_shelves(
         manager: 'GuestShelfManager', auth: AuthContext, logger: gluetool.log.ContextAdapter
-    ) -> List[GuestShelfResponse]:
+    ) -> list[GuestShelfResponse]:
         # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
         # and we got so far means user must be authenticated.
         if auth.is_authentication_enabled and auth.is_authenticated:
@@ -799,7 +800,7 @@ class GuestShelfManager:
     def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
         self.db = db
 
-    def get_shelves(self, logger: gluetool.log.ContextAdapter, ownername: str) -> List[GuestShelfResponse]:
+    def get_shelves(self, logger: gluetool.log.ContextAdapter, ownername: str) -> list[GuestShelfResponse]:
         with get_session(logger, self.db, read_only=True) as (session, _):
             r_shelves = (
                 artemis_db.SafeQuery.from_session(session, artemis_db.GuestShelf)
@@ -1073,7 +1074,7 @@ class KnobManager:
     # Entry points hooked to routes
     #
     @staticmethod
-    def entry_get_knobs(manager: 'KnobManager', logger: gluetool.log.ContextAdapter) -> List[KnobResponse]:
+    def entry_get_knobs(manager: 'KnobManager', logger: gluetool.log.ContextAdapter) -> list[KnobResponse]:
         return manager.get_knobs(logger)
 
     @staticmethod
@@ -1104,8 +1105,8 @@ class KnobManager:
 
         return None
 
-    def get_knobs(self, logger: gluetool.log.ContextAdapter) -> List[KnobResponse]:
-        knobs: Dict[str, KnobResponse] = {}
+    def get_knobs(self, logger: gluetool.log.ContextAdapter) -> list[KnobResponse]:
+        knobs: dict[str, KnobResponse] = {}
 
         # First, collect all known knobs.
         for knobname, knob in Knob.ALL_KNOBS.items():
@@ -1363,7 +1364,7 @@ class UserManager:
         self.db = db
 
     @staticmethod
-    def entry_get_users(manager: 'UserManager', logger: gluetool.log.ContextAdapter) -> List[UserResponse]:
+    def entry_get_users(manager: 'UserManager', logger: gluetool.log.ContextAdapter) -> list[UserResponse]:
         with get_session(logger, manager.db, read_only=True) as (session, _):
             return [UserResponse.from_db(user) for user in manager.get_users(session)]
 
@@ -1408,7 +1409,7 @@ class UserManager:
     #
     # Actual API workers
     #
-    def get_users(self, session: sqlalchemy.orm.session.Session) -> List[artemis_db.User]:
+    def get_users(self, session: sqlalchemy.orm.session.Session) -> list[artemis_db.User]:
         r_users = artemis_db.SafeQuery.from_session(session, artemis_db.User).all()
 
         if r_users.is_error:
@@ -1493,7 +1494,7 @@ class StatusManager:
     ) -> Response:
         from ...middleware import WorkerTraffic
 
-        tasks: List[Dict[str, Any]] = []
+        tasks: list[dict[str, Any]] = []
 
         for task_key in iter_cache_keys(logger, cache, WorkerTraffic.KEY_WORKER_TASK_PATTERN):
             value = get_cache_value(logger, cache, task_key.decode())
@@ -1517,7 +1518,7 @@ def get_guest_request_log(
     contenttype: str,
     manager: GuestRequestManager,
     logger: gluetool.log.ContextAdapter,
-    guest_log_response_model: Type[GuestLogResponseType] = GuestLogResponse,  # type: ignore[assignment]
+    guest_log_response_model: type[GuestLogResponseType] = GuestLogResponse,  # type: ignore[assignment]
 ) -> GuestLogResponseType:
     from ...tasks import get_guest_logger
 
@@ -1640,7 +1641,7 @@ def get_about(request: Request) -> AboutResponse:
     )
 
 
-def define_openapi_schema(app: fastapi.FastAPI) -> Dict[str, str]:
+def define_openapi_schema(app: fastapi.FastAPI) -> dict[str, str]:
     openapi_schema = fastapi.openapi.utils.get_openapi(
         title=global_env.OPENAPI_METADATA['title'],
         version=global_env.OPENAPI_METADATA['version'],
@@ -1659,7 +1660,7 @@ def create_guest_request(
     request: Request,
     auth: AuthContext,
     logger: gluetool.log.ContextAdapter,
-    response_model: Type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
+    response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
 ) -> GuestResponseType:
     # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
     # and we got so far means user must be authenticated.

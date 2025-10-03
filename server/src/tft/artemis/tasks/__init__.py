@@ -12,7 +12,8 @@ import inspect
 import os
 import random
 import threading
-from typing import Any, Callable, Dict, Generator, List, Literal, Optional, Tuple, TypeVar, Union, cast
+from collections.abc import Generator
+from typing import Any, Callable, Literal, Optional, TypeVar, Union, cast
 
 import dramatiq
 import dramatiq.broker
@@ -380,7 +381,7 @@ BareActorType = Callable[..., None]
 ActorArgumentType = Union[None, str, enum.Enum]
 
 #: A type of name/value container with actor arguments.
-NamedActorArgumentsType = Dict[str, ActorArgumentType]
+NamedActorArgumentsType = dict[str, ActorArgumentType]
 
 
 # Task doer type.
@@ -415,7 +416,7 @@ class ActorOptions(TypedDict):
     singleton_no_retry_on_lock_fail: bool
 
     # Middleware notes
-    artemis_notes: Optional[Dict[str, str]]
+    artemis_notes: Optional[dict[str, str]]
 
 
 class Actor(Protocol):
@@ -430,8 +431,8 @@ class Actor(Protocol):
 
     def send_with_options(
         self,
-        args: Optional[Tuple[ActorArgumentType, ...]] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
+        args: Optional[tuple[ActorArgumentType, ...]] = None,
+        kwargs: Optional[dict[str, Any]] = None,
         delay: Optional[int] = None,
         **options: Any,
     ) -> None: ...
@@ -440,7 +441,7 @@ class Actor(Protocol):
 
     def message_with_options(
         self,
-        args: Optional[Tuple[ActorArgumentType, ...]] = None,
+        args: Optional[tuple[ActorArgumentType, ...]] = None,
         delay: Optional[int] = None,
         pipe_ignore: bool = False,
         **options: Any,
@@ -456,10 +457,10 @@ class TaskCall(SerializableContainer):
     #: A task callable that has been executed.
     actor: Actor
     #: Arguments given to the task.
-    args: Tuple[ActorArgumentType, ...]
+    args: tuple[ActorArgumentType, ...]
 
     #: Argument names, listed in the same order as arguments in :py:attr:`args`.
-    arg_names: Tuple[str, ...]
+    arg_names: tuple[str, ...]
 
     delay: Optional[int] = None
 
@@ -499,7 +500,7 @@ class TaskCall(SerializableContainer):
 
         return all([name in self.named_args for name in names])
 
-    def extract_args(self, *names: str) -> List[ActorArgumentType]:
+    def extract_args(self, *names: str) -> list[ActorArgumentType]:
         """
         Extract all arguments specified by their names.
         """
@@ -507,7 +508,7 @@ class TaskCall(SerializableContainer):
         return [self.named_args[name] for name in names]
 
     def logger(
-        self, logger: gluetool.log.ContextAdapter, failure_details: Optional[Dict[str, Any]] = None
+        self, logger: gluetool.log.ContextAdapter, failure_details: Optional[dict[str, Any]] = None
     ) -> gluetool.log.ContextAdapter:
         logger = TaskLogger(logger, self.actor.actor_name.replace('_', '-'), message=self.broker_message)
 
@@ -629,7 +630,7 @@ class TaskCall(SerializableContainer):
             )
         )
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         return {
             'actor': self.actor.actor_name,
             'args': self.named_args,
@@ -644,7 +645,7 @@ class TaskCall(SerializableContainer):
         }
 
     @classmethod
-    def unserialize(cls, serialized: Dict[str, Any]) -> 'TaskCall':
+    def unserialize(cls, serialized: dict[str, Any]) -> 'TaskCall':
         raise NotImplementedError
 
 
@@ -689,7 +690,7 @@ class TaskLogger(gluetool.log.ContextAdapter):
     def taskname(self) -> str:
         return cast(str, self._contexts['task_name'][1])
 
-    def begin(self, actor_args: Optional[Tuple[ActorArgumentType, ...]] = None) -> None:
+    def begin(self, actor_args: Optional[tuple[ActorArgumentType, ...]] = None) -> None:
         if actor_args is not None:
             self.info(f'beginning: ({", ".join(str(arg) for arg in actor_args)})')
 
@@ -719,7 +720,7 @@ def actor_kwargs(
     priority: TaskPriority = TaskPriority.DEFAULT,
     queue_name: TaskQueue = TaskQueue.DEFAULT,
     periodic: Optional[periodiq.CronSpec] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     # We need to preserve the special queues requested by tasks, but still giving maintainers a chance
     # to change that. Therefore we accept the priority and queue name as parameters, and use them as
     # defaults when checking knobs. That way, if maintainer uses envvar to specify queue, it'd be used,
@@ -816,7 +817,7 @@ def resolve_actor(actorname: str) -> Result[Actor, Failure]:
     return Ok(actor)
 
 
-GuestFieldStates = Dict[str, Union[str, int, None, datetime.datetime, GuestState, SerializedPoolDataMapping]]
+GuestFieldStates = dict[str, Union[str, int, None, datetime.datetime, GuestState, SerializedPoolDataMapping]]
 
 
 #: Type variable representing :py:class:_Workspace and its child classes.
@@ -1081,8 +1082,8 @@ def _task_core(
     logger: TaskLogger,
     db: Optional[DB] = None,
     session: Optional[sqlalchemy.orm.session.Session] = None,
-    doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
-    doer_kwargs: Optional[Dict[str, Any]] = None,
+    doer_args: Optional[tuple[ActorArgumentType, ...]] = None,
+    doer_kwargs: Optional[dict[str, Any]] = None,
     session_isolation: bool = True,
     session_read_only: bool = False,
 ) -> None:
@@ -1231,8 +1232,8 @@ def task_core(
     logger: TaskLogger,
     db: Optional[DB] = None,
     session: Optional[sqlalchemy.orm.session.Session] = None,
-    doer_args: Optional[Tuple[ActorArgumentType, ...]] = None,
-    doer_kwargs: Optional[Dict[str, Any]] = None,
+    doer_args: Optional[tuple[ActorArgumentType, ...]] = None,
+    doer_kwargs: Optional[dict[str, Any]] = None,
     session_isolation: bool = True,
     session_read_only: bool = False,
 ) -> None:
@@ -1280,18 +1281,18 @@ def _randomize_delay(delay: int) -> int:
     return max(0, delay + int(random.uniform(-KNOB_DELAY_UNIFORM_SPREAD.value, KNOB_DELAY_UNIFORM_SPREAD.value)))
 
 
-def serialize_task_invocation(task: TaskCall) -> Dict[str, Any]:
+def serialize_task_invocation(task: TaskCall) -> dict[str, Any]:
     return {'tasks': task.serialize()}
 
 
-def serialize_task_group_invocation(tasks: List[TaskCall], on_complete: Optional[TaskCall] = None) -> Dict[str, Any]:
+def serialize_task_group_invocation(tasks: list[TaskCall], on_complete: Optional[TaskCall] = None) -> dict[str, Any]:
     return {
         'group': [task_call.serialize() for task_call in tasks],
         'on-complete': on_complete.serialize() if on_complete is not None else None,
     }
 
 
-def serialize_task_sequence_invocation(tasks: List[TaskCall], on_complete: Optional[TaskCall] = None) -> Dict[str, Any]:
+def serialize_task_sequence_invocation(tasks: list[TaskCall], on_complete: Optional[TaskCall] = None) -> dict[str, Any]:
     return {
         'sequence': [task_call.serialize() for task_call in tasks],
         'on-complete': on_complete.serialize() if on_complete is not None else None,
@@ -1344,7 +1345,7 @@ def dispatch_task(
 
 def dispatch_group(
     logger: gluetool.log.ContextAdapter,
-    tasks: List[Actor],
+    tasks: list[Actor],
     *args: ActorArgumentType,
     on_complete: Optional[Actor] = None,
     delay: Optional[int] = None,
@@ -1365,7 +1366,7 @@ def dispatch_group(
     try:
         messages = [task.message(*args) for task in tasks]
 
-        task_calls: List[TaskCall] = [TaskCall.from_message(BROKER, message, delay=delay) for message in messages]
+        task_calls: list[TaskCall] = [TaskCall.from_message(BROKER, message, delay=delay) for message in messages]
 
         on_complete_task_call: Optional[TaskCall] = None
 
@@ -1402,8 +1403,8 @@ def dispatch_group(
 
 def dispatch_sequence(
     logger: gluetool.log.ContextAdapter,
-    tasks: List[Tuple[Optional[int], Actor, Tuple[ActorArgumentType, ...]]],
-    on_complete: Optional[Tuple[Actor, Tuple[ActorArgumentType, ...]]] = None,
+    tasks: list[tuple[Optional[int], Actor, tuple[ActorArgumentType, ...]]],
+    on_complete: Optional[tuple[Actor, tuple[ActorArgumentType, ...]]] = None,
     delay: Optional[int] = None,
     task_sequence_request_id: Optional[int] = None,
 ) -> Result[None, Failure]:
@@ -1425,7 +1426,7 @@ def dispatch_sequence(
     # Add `pipe_ignore` to disable result propagation. We ignore task results.
     messages = [task.message_with_options(args=args, pipe_ignore=True) for _, task, args in tasks]
 
-    task_calls: List[TaskCall] = [
+    task_calls: list[TaskCall] = [
         TaskCall.from_message(
             BROKER, message, task_request_id=task_request_id, task_sequence_request_id=task_sequence_request_id
         )
@@ -1517,7 +1518,7 @@ def _request_task(
 def _request_task_sequence(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]],
+    tasks: list[tuple[Actor, tuple[ActorArgumentType, ...]]],
     delay: Optional[int] = None,
 ) -> Result[None, Failure]:
     r = TaskSequenceRequest.create(logger, session)
@@ -1831,14 +1832,14 @@ class Workspace:
         self.ssh_key: Optional[SSHKey] = None
         self.pool: Optional[PoolDriver] = None
         self.is_pool_enabled: Optional[bool] = None
-        self.guest_events: Optional[List[GuestEvent]] = None
+        self.guest_events: Optional[list[GuestEvent]] = None
 
-        self.pools: List[PoolDriver] = []
+        self.pools: list[PoolDriver] = []
         self.master_key: Optional[SSHKey] = None
 
         self.shelfname: Optional[str] = None
 
-        self.spice_details: Dict[str, Any] = {**default_details}
+        self.spice_details: dict[str, Any] = {**default_details}
 
         if task:
             self.spice_details['task'] = task
@@ -2159,7 +2160,7 @@ class Workspace:
             self._error(r, 'failed to create task request')
 
     def request_task_sequence(
-        self, tasks: List[Tuple[Actor, Tuple[ActorArgumentType, ...]]], delay: Optional[int] = None
+        self, tasks: list[tuple[Actor, tuple[ActorArgumentType, ...]]], delay: Optional[int] = None
     ) -> None:
         if self.result:
             return
@@ -2275,7 +2276,7 @@ class GuestRequestWorkspace(Workspace):
 class TailHandler:
     def get_failure_details(
         self, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, task_call: TaskCall
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         return {}
 
     def get_logger(self, logger: gluetool.log.ContextAdapter, task_call: TaskCall) -> gluetool.log.ContextAdapter:
@@ -2287,7 +2288,7 @@ class TailHandler:
         db: DB,
         session: sqlalchemy.orm.session.Session,
         task_call: TaskCall,
-        failure_details: Dict[str, str],
+        failure_details: dict[str, str],
     ) -> DoerReturnType:
         raise NotImplementedError
 
@@ -2345,8 +2346,8 @@ class ProvisioningTailHandler(TailHandler):
 
     def get_failure_details(
         self, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, task_call: TaskCall
-    ) -> Dict[str, str]:
-        details: Dict[str, str] = {}
+    ) -> dict[str, str]:
+        details: dict[str, str] = {}
 
         if 'guestname' in task_call.named_args:
             details['guestname'] = cast(str, task_call.named_args['guestname'])
@@ -2362,7 +2363,7 @@ class ProvisioningTailHandler(TailHandler):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         task_call: TaskCall,
-        failure_details: Dict[str, str],
+        failure_details: dict[str, str],
     ) -> DoerReturnType:
         workspace = Workspace(logger, session, db=db, task='provisioning-tail', **failure_details)
 
@@ -2468,8 +2469,8 @@ class ProvisioningTailHandler(TailHandler):
 class LoggingTailHandler(TailHandler):
     def get_failure_details(
         self, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, task_call: TaskCall
-    ) -> Dict[str, str]:
-        details: Dict[str, str] = {}
+    ) -> dict[str, str]:
+        details: dict[str, str] = {}
 
         if 'guestname' in task_call.named_args:
             details['guestname'] = cast(str, task_call.named_args['guestname'])
@@ -2491,7 +2492,7 @@ class LoggingTailHandler(TailHandler):
         db: DB,
         session: sqlalchemy.orm.session.Session,
         task_call: TaskCall,
-        failure_details: Dict[str, str],
+        failure_details: dict[str, str],
     ) -> DoerReturnType:
         workspace = Workspace(logger, session, db=db, task='logging-tail', **failure_details)
 

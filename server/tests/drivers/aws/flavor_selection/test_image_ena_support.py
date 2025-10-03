@@ -1,7 +1,6 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import List
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -15,7 +14,7 @@ def test_ena_supported(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     image.ena_support = True
@@ -30,7 +29,7 @@ def test_ena_not_supported(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     image.ena_support = False

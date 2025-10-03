@@ -10,19 +10,14 @@ import hashlib
 import secrets
 import threading
 import time
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    Generator,
     Generic,
-    Iterator,
-    List,
     Optional,
-    Tuple,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -107,7 +102,7 @@ class SafeQuery(Generic[T]):
         self.failure: Optional[Failure] = None
 
     @staticmethod
-    def from_session(session: sqlalchemy.orm.session.Session, klass: Type[T]) -> 'SafeQuery[T]':
+    def from_session(session: sqlalchemy.orm.session.Session, klass: type[T]) -> 'SafeQuery[T]':
         return SafeQuery(session, session.query(klass))
 
     def _error(self, message: str, exc: Exception) -> 'Failure':
@@ -217,7 +212,7 @@ class SafeQuery(Generic[T]):
 
         return Error(self.failure)
 
-    def all(self) -> Result[List[T], 'Failure']:
+    def all(self) -> Result[list[T], 'Failure']:
         if self.failure is None:
             from . import Sentry, TracingOp
 
@@ -323,13 +318,13 @@ def execute_dml(
 def upsert(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    model: Type[Base],
-    primary_keys: Dict[Any, Any],
+    model: type[Base],
+    primary_keys: dict[Any, Any],
     constraint: PrimaryKeyConstraint,
     *,
-    update_data: Optional[Dict[Any, Any]] = None,
-    insert_data: Optional[Dict[Any, Any]] = None,
-    expected_records: Union[int, Tuple[int, int]] = 1,
+    update_data: Optional[dict[Any, Any]] = None,
+    insert_data: Optional[dict[Any, Any]] = None,
+    expected_records: Union[int, tuple[int, int]] = 1,
 ) -> Result[bool, 'Failure']:
     """
     Provide "INSERT ... ON CONFLICT UPDATE ..." primitive, also known as "UPSERT". Using primary key as a constraint,
@@ -597,7 +592,7 @@ class User(Base):
         return m.hexdigest()
 
     @staticmethod
-    def generate_token() -> Tuple[str, str]:
+    def generate_token() -> tuple[str, str]:
         """
         Generate new token. Returns a tuple of two items: the token and its hash.
         """
@@ -651,12 +646,12 @@ class Pool(Base):
 
     poolname: Mapped[str]
     driver: Mapped[str] = mapped_column(String(250), nullable=False)
-    _parameters: Mapped[Dict[str, Any]] = mapped_column(JSON(), nullable=False)
+    _parameters: Mapped[dict[str, Any]] = mapped_column(JSON(), nullable=False)
 
     __table_args__ = (PrimaryKeyConstraint('poolname'),)
 
     @property
-    def parameters(self) -> Dict[str, Any]:
+    def parameters(self) -> dict[str, Any]:
         return self._parameters
 
     guests = relationship('GuestRequest', back_populates='pool')
@@ -774,7 +769,7 @@ class GuestEvent(Base):
     # Details are stored as JSON blob, in a "hidden" column - when accessing event details, we'd like to cast them to
     # proper type, and there will never ever be an event having a list or an integer as a detail, it will always
     # be a mapping. Therefore `_details` column and `details` property to apply proper cast call.
-    _details: Mapped[Dict[str, Any]] = mapped_column(JSON(), nullable=False, server_default='{}')
+    _details: Mapped[dict[str, Any]] = mapped_column(JSON(), nullable=False, server_default='{}')
 
     __table_args__ = (Index('ix_guest_events_guestname_updated', guestname, updated.asc()),)
 
@@ -787,7 +782,7 @@ class GuestEvent(Base):
         self._details = details
 
     @property
-    def details(self) -> Dict[str, Any]:
+    def details(self) -> dict[str, Any]:
         return self._details
 
     @classmethod
@@ -802,7 +797,7 @@ class GuestEvent(Base):
         sort_order: str = 'desc',
         since: Optional[str] = None,
         until: Optional[str] = None,
-    ) -> Result[List['GuestEvent'], 'Failure']:
+    ) -> Result[list['GuestEvent'], 'Failure']:
         query = SafeQuery.from_session(session, GuestEvent)
 
         if guestname is not None:
@@ -836,16 +831,16 @@ class GuestEvent(Base):
         return query.all()
 
 
-UserDataType = Dict[str, Optional[str]]
+UserDataType = dict[str, Optional[str]]
 PoolDataT = TypeVar('PoolDataT', bound='PoolData')
-SerializedPoolDataMapping = Dict[str, 'SerializedPoolData']
+SerializedPoolDataMapping = dict[str, 'SerializedPoolData']
 
 
 class _PoolDataMapping:
     def __init__(self, guest_request: 'GuestRequest') -> None:
         self._guest_request = guest_request
 
-    def one_or_none(self, poolname: str, pool_data_class: Type[PoolDataT]) -> Optional[PoolDataT]:
+    def one_or_none(self, poolname: str, pool_data_class: type[PoolDataT]) -> Optional[PoolDataT]:
         pool_data = self._guest_request._pool_data.get(poolname, {})
 
         if not pool_data:
@@ -853,15 +848,15 @@ class _PoolDataMapping:
 
         return pool_data_class.unserialize(pool_data)
 
-    def one(self, poolname: str, pool_data_class: Type[PoolDataT]) -> PoolDataT:
+    def one(self, poolname: str, pool_data_class: type[PoolDataT]) -> PoolDataT:
         pool_data = self._guest_request._pool_data.get(poolname, {})
 
         return pool_data_class.unserialize(pool_data)
 
-    def mine_or_none(self, pool: 'PoolDriver', pool_data_class: Type[PoolDataT]) -> Optional[PoolDataT]:
+    def mine_or_none(self, pool: 'PoolDriver', pool_data_class: type[PoolDataT]) -> Optional[PoolDataT]:
         return self.one_or_none(pool.poolname, pool_data_class)
 
-    def mine(self, pool: 'PoolDriver', pool_data_class: Type[PoolDataT]) -> PoolDataT:
+    def mine(self, pool: 'PoolDriver', pool_data_class: type[PoolDataT]) -> PoolDataT:
         return self.one(pool.poolname, pool_data_class)
 
     def update(self, poolname: str, pool_data: PoolDataT) -> SerializedPoolDataMapping:
@@ -882,14 +877,14 @@ class GuestRequest(Base):
     __tablename__ = 'guest_requests'
 
     guestname: Mapped[str] = mapped_column(primary_key=True, nullable=False)
-    _environment: Mapped[Dict[str, Any]] = mapped_column(JSON(), nullable=False)
+    _environment: Mapped[dict[str, Any]] = mapped_column(JSON(), nullable=False)
     ownername: Mapped[str] = mapped_column(String(250), ForeignKey('users.username'), nullable=False)
     shelfname: Mapped[Optional[str]] = mapped_column(String(250), ForeignKey('guest_shelves.shelfname'), nullable=True)
     priorityname: Mapped[Optional[str]] = mapped_column(String(250), ForeignKey('priority_groups.name'), nullable=True)
     poolname: Mapped[Optional[str]] = mapped_column(String(250), ForeignKey('pools.poolname'), nullable=True)
     last_poolname: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
-    _security_group_rules_ingress: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON(), nullable=True)
-    _security_group_rules_egress: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON(), nullable=True)
+    _security_group_rules_ingress: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON(), nullable=True)
+    _security_group_rules_egress: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON(), nullable=True)
 
     @property
     def environment(self) -> 'Environment':
@@ -904,21 +899,21 @@ class GuestRequest(Base):
         return Environment.unserialize(self._environment)
 
     @property
-    def security_group_rules_ingress(self) -> List['SecurityGroupRule']:
+    def security_group_rules_ingress(self) -> list['SecurityGroupRule']:
         from .security_group_rules import SecurityGroupRule
 
         return [
             SecurityGroupRule.unserialize(rule)
-            for rule in cast(List[Dict[str, Any]], self._security_group_rules_ingress or [])
+            for rule in cast(list[dict[str, Any]], self._security_group_rules_ingress or [])
         ]
 
     @property
-    def security_group_rules_egress(self) -> List['SecurityGroupRule']:
+    def security_group_rules_egress(self) -> list['SecurityGroupRule']:
         from .security_group_rules import SecurityGroupRule
 
         return [
             SecurityGroupRule.unserialize(rule)
-            for rule in cast(List[Dict[str, Any]], self._security_group_rules_egress or [])
+            for rule in cast(list[dict[str, Any]], self._security_group_rules_egress or [])
         ]
 
     @property
@@ -972,7 +967,7 @@ class GuestRequest(Base):
     ssh_username: Mapped[str] = mapped_column(String(250), nullable=False)
 
     # Pool-specific data.
-    _pool_data: Mapped[Dict[str, Dict[str, Any]]] = mapped_column(
+    _pool_data: Mapped[dict[str, dict[str, Any]]] = mapped_column(
         JSONB(),  # type: ignore[no-untyped-call]
         nullable=False,
         server_default='{}',
@@ -1036,12 +1031,12 @@ class GuestRequest(Base):
         bypass_shelf_lookup: bool,
         skip_prepare_verify_ssh: bool,
         post_install_script: Optional[str],
-        log_types: List[Tuple[str, GuestLogContentType]],
+        log_types: list[tuple[str, GuestLogContentType]],
         watchdog_dispatch_delay: Optional[int],
         watchdog_period_delay: Optional[int],
-        on_ready: Optional[List[Tuple['Actor', List['ActorArgumentType']]]],
-        security_group_rules_ingress: Optional[List['SecurityGroupRule']],
-        security_group_rules_egress: Optional[List['SecurityGroupRule']],
+        on_ready: Optional[list[tuple['Actor', list['ActorArgumentType']]]],
+        security_group_rules_ingress: Optional[list['SecurityGroupRule']],
+        security_group_rules_egress: Optional[list['SecurityGroupRule']],
     ) -> sqlalchemy.Insert:
         return sqlalchemy.insert(cls).values(
             guestname=guestname,
@@ -1094,7 +1089,7 @@ class GuestRequest(Base):
 
         from . import log_dict_yaml
 
-        r: DMLResult['GuestEvent'] = execute_dml(
+        r: DMLResult[GuestEvent] = execute_dml(
             logger,
             session,
             sqlalchemy.insert(GuestEvent).values(guestname=guestname, eventname=eventname, _details=details),
@@ -1239,7 +1234,7 @@ class GuestRequest(Base):
         sort_order: str = 'desc',
         since: Optional[str] = None,
         until: Optional[str] = None,
-    ) -> Result[List['GuestEvent'], 'Failure']:
+    ) -> Result[list['GuestEvent'], 'Failure']:
         return GuestEvent.fetch(
             session,
             guestname=self.guestname,
@@ -1253,23 +1248,23 @@ class GuestRequest(Base):
         )
 
     @property
-    def log_types(self) -> List[Tuple[str, GuestLogContentType]]:
+    def log_types(self) -> list[tuple[str, GuestLogContentType]]:
         if not self._log_types:
             return []
-        self._log_types = cast(List[Dict[str, str]], self._log_types)
+        self._log_types = cast(list[dict[str, str]], self._log_types)
         return [(log_type['logtype'], GuestLogContentType(log_type['contenttype'])) for log_type in self._log_types]
 
     def requests_guest_log(self, logname: str, contenttype: GuestLogContentType) -> bool:
         return (logname, contenttype) in self.log_types
 
     @property
-    def on_ready(self) -> List[Tuple[str, List['ActorArgumentType']]]:
+    def on_ready(self) -> list[tuple[str, list['ActorArgumentType']]]:
         if not self._on_ready:
             return []
 
-        on_ready = cast(List[List[Any]], self._on_ready)
+        on_ready = cast(list[list[Any]], self._on_ready)
 
-        return [(cast(str, actorname), cast(List['ActorArgumentType'], args)) for actorname, args in on_ready]
+        return [(cast(str, actorname), cast(list['ActorArgumentType'], args)) for actorname, args in on_ready]
 
 
 class GuestLogBlob(Base):
@@ -1309,7 +1304,7 @@ class GuestLogBlob(Base):
         :param content_hash: the hash of the log content.
         """
 
-        r: DMLResult['GuestLogBlob'] = execute_dml(
+        r: DMLResult[GuestLogBlob] = execute_dml(
             logger,
             session,
             sqlalchemy.update(GuestLogBlob)
@@ -1350,7 +1345,7 @@ class GuestLogBlob(Base):
         :param content_hash: the hash of the log content.
         """
 
-        r: DMLResult['GuestLogBlob'] = execute_dml(
+        r: DMLResult[GuestLogBlob] = execute_dml(
             logger,
             session,
             sqlalchemy.insert(GuestLogBlob).values(
@@ -1381,7 +1376,7 @@ class GuestLog(Base):
     state: Mapped[GuestLogState] = mapped_column(nullable=False, default=GuestLogState.PENDING.value)
 
     url: Mapped[Optional[str]]
-    blobs: Mapped[List[GuestLogBlob]] = relationship('GuestLogBlob', back_populates='guest_log')
+    blobs: Mapped[list[GuestLogBlob]] = relationship('GuestLogBlob', back_populates='guest_log')
 
     updated: Mapped[Optional[datetime.datetime]]
     expires: Mapped[Optional[datetime.datetime]]
@@ -1394,15 +1389,15 @@ class GuestLog(Base):
         return self.expires < datetime.datetime.utcnow()
 
     @property
-    def blob_timestamps(self) -> List[datetime.datetime]:
+    def blob_timestamps(self) -> list[datetime.datetime]:
         return [blob.ctime for blob in self.blobs]
 
     @property
-    def blob_contents(self) -> List[str]:
+    def blob_contents(self) -> list[str]:
         return [blob.content for blob in self.blobs]
 
     @property
-    def blob_content_hashes(self) -> List[str]:
+    def blob_content_hashes(self) -> list[str]:
         return [blob.content_hash for blob in self.blobs]
 
     def update(
@@ -1424,7 +1419,7 @@ class GuestLog(Base):
         :param url: optional URL of the log if contenttype is URL.
         """
 
-        r: DMLResult['GuestLog'] = execute_dml(
+        r: DMLResult[GuestLog] = execute_dml(
             logger,
             session,
             sqlalchemy.update(GuestLog)
@@ -1470,7 +1465,7 @@ class GuestLog(Base):
         :param url: optional URL of the log if contenttype is URL.
         """
 
-        r: DMLResult['GuestLog'] = execute_dml(
+        r: DMLResult[GuestLog] = execute_dml(
             logger,
             session,
             sqlalchemy.insert(GuestLog)
@@ -1524,7 +1519,7 @@ class GuestTag(Base):
     __table_args__ = (PrimaryKeyConstraint('poolname', 'tag'),)
 
     @classmethod
-    def fetch_system_tags(cls, session: sqlalchemy.orm.session.Session) -> Result[List['GuestTag'], 'Failure']:
+    def fetch_system_tags(cls, session: sqlalchemy.orm.session.Session) -> Result[list['GuestTag'], 'Failure']:
         """
         Load all system-wide guest tags.
         """
@@ -1534,7 +1529,7 @@ class GuestTag(Base):
     @classmethod
     def fetch_pool_tags(
         cls, session: sqlalchemy.orm.session.Session, poolname: str
-    ) -> Result[List['GuestTag'], 'Failure']:
+    ) -> Result[list['GuestTag'], 'Failure']:
         """
         Load all pool-wide guest tags for a given pool.
         """
@@ -1685,7 +1680,7 @@ class DB:
         else:
             self._echo_pool = gluetool.utils.normalize_bool_option(KNOB_LOGGING_DB_POOL.value)
 
-        connect_args: Dict[str, Any] = {}
+        connect_args: dict[str, Any] = {}
 
         # We want a nice way how to change default for pool size and maximum overflow for PostgreSQL
         if url.startswith('postgresql://'):

@@ -7,7 +7,9 @@ import functools
 import operator
 import re
 import sys
-from typing import Any, Dict, Iterator, List, Optional, Pattern, Tuple, Union, cast
+from collections.abc import Iterator
+from re import Pattern
+from typing import Any, Optional, Union, cast
 
 import glanceclient
 import gluetool.log
@@ -161,7 +163,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
 
     _image_map_hook_name = 'OPENSTACK_ENVIRONMENT_TO_IMAGE'
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
 
         self._os_cmd_base = [
@@ -223,7 +225,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         return Ok(capabilities)
 
     def _run_os(
-        self, options: List[str], json_format: bool = True, commandname: Optional[str] = None
+        self, options: list[str], json_format: bool = True, commandname: Optional[str] = None
     ) -> Result[Union[JSONType, str], Failure]:
         """
         Run os command with additional options and return output in json format
@@ -279,7 +281,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         metrics.sync()
 
         # For each network, we need to extract number of free addresses, noting its name as well.
-        suitable_networks: List[Tuple[int, str]] = []
+        suitable_networks: list[tuple[int, str]] = []
 
         for network_name in metrics.usage.networks:
             limit, usage = metrics.limits.networks.get(network_name), metrics.usage.networks.get(network_name)
@@ -397,11 +399,11 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
 
             tags = r_tags.unwrap()
 
-            property_options: List[str] = functools.reduce(
+            property_options: list[str] = functools.reduce(
                 operator.iadd, (['--property', f'{tag}={value}'] for tag, value in tags.items()), []
             )
 
-            user_data_options: List[str] = [] if not user_data_filename else ['--user-data', user_data_filename]
+            user_data_options: list[str] = [] if not user_data_filename else ['--user-data', user_data_filename]
 
             os_options = [
                 'server',
@@ -533,7 +535,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         if r_output.is_error:
             return Error(Failure.from_failure('failed to fetch console URL', r_output.unwrap_error()))
         # NOTE(ivasilev) The following cast is needed to keep quiet the typing check
-        data = cast(Dict[str, str], r_output.unwrap())
+        data = cast(dict[str, str], r_output.unwrap())
 
         return Ok(
             ConsoleUrlData(
@@ -734,7 +736,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         resources = r_resources.unwrap()
 
         # Resource usage - instances and flavors
-        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, str]], Failure]:
+        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, str]], Failure]:
             r_servers = self._run_os(
                 ['server', 'list', '--user', self.pool_config['username']],
                 json_format=True,
@@ -744,12 +746,12 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             if r_servers.is_error:
                 return Error(Failure.from_failure('failed to fetch server list', r_servers.unwrap_error()))
 
-            return Ok(cast(List[Dict[str, str]], r_servers.unwrap()))
+            return Ok(cast(list[dict[str, str]], r_servers.unwrap()))
 
         def _update_instance_usage(
             logger: gluetool.log.ContextAdapter,
             usage: PoolResourcesUsage,
-            raw_instance: Dict[str, str],
+            raw_instance: dict[str, str],
             flavor: Optional[Flavor],
         ) -> Result[None, Failure]:
             assert usage.instances is not None  # narrow type
@@ -847,7 +849,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
 
         network_pattern = re.compile(self.pool_config['network-regex'])
 
-        for network in cast(List[Dict[str, str]], r_networks.unwrap()):
+        for network in cast(list[dict[str, str]], r_networks.unwrap()):
             network_name = network['Network Name']
 
             if not network_pattern.match(network_name):
@@ -858,7 +860,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
 
         return Ok(resources)
 
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
+    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
         r_glance = self._get_glance()
         if r_glance.is_error:
             return Error(r_glance.unwrap_error())
@@ -893,7 +895,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         except KeyError as exc:
             return Error(Failure.from_exc('malformed image description', exc, image_info=r_images.unwrap()))
 
-    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # Flavors are described by OpenStack CLI with the following structure:
         # [
         #   {
@@ -908,7 +910,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         #   ...
         # ]
 
-        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[novaclient.v2.flavors.Flavor], Failure]:
+        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[list[novaclient.v2.flavors.Flavor], Failure]:
             r_nova = self._get_nova()
 
             if r_nova.is_error:
@@ -993,7 +995,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         return Ok(
             GuestLogUpdateProgress(
                 state=GuestLogState.COMPLETE,
-                url=cast(Dict[str, str], output)['url'],
+                url=cast(dict[str, str], output)['url'],
                 expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value),
             )
         )

@@ -8,7 +8,8 @@ import platform
 import re
 import shutil
 import sys
-from typing import Any, List, NoReturn, Optional, Sequence, cast
+from collections.abc import Sequence
+from typing import Any, NoReturn, Optional, cast
 
 import fastapi
 import gluetool.log
@@ -157,7 +158,7 @@ except Exception as exc:
 
 
 def generate_redirects(
-    app: fastapi.FastAPI, api_version: str, routes: List[fastapi.routing.APIRoute], redirects: List[str]
+    app: fastapi.FastAPI, api_version: str, routes: list[fastapi.routing.APIRoute], redirects: list[str]
 ) -> None:
     async def _redirect_endpoint_current(request: fastapi.Request) -> RedirectResponse:
         to_url = request.url.path.replace('current', api_version, 1)
@@ -203,7 +204,7 @@ def _create_app(
         generate_redirects(
             app,
             api_version,
-            cast(List[fastapi.routing.APIRoute], subapi.routes),
+            cast(list[fastapi.routing.APIRoute], subapi.routes),
             environment.get_redirects(api_version),
         )
 
@@ -235,7 +236,7 @@ def run_app() -> fastapi.FastAPI:
             lambda _unused: Ok((1, KNOB_API_THREADS.value)),
         )
 
-    mw: List[Middleware] = []
+    mw: list[Middleware] = []
 
     if KNOB_API_ENABLE_PROFILING.value is True:
         mw += [Middleware(ProfileMiddleware)]
@@ -281,7 +282,7 @@ def _main_uvicorn() -> NoReturn:
     sys.stdout.flush()
     sys.stderr.flush()
 
-    uvicorn_options: List[str] = []
+    uvicorn_options: list[str] = []
 
     uvicorn_options += [
         'tft.artemis.api:run_app',
@@ -316,7 +317,7 @@ def _main_gunicorn() -> NoReturn:
     if not gunicorn_path:
         raise Exception('No "gunicorn" executable found')
 
-    gunicorn_options: List[str] = []
+    gunicorn_options: list[str] = []
 
     gunicorn_options += [
         '-k',

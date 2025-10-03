@@ -3,12 +3,11 @@
 
 # flake8: noqa: FS003 f-string missing prefix
 
-from typing import List
+from typing import Annotated
 
 import gluetool.log
 import redis
 from fastapi import APIRouter, Depends, Request, Response, status
-from typing_extensions import Annotated
 
 from ... import db as artemis_db
 from ..dependencies import get_cache, get_db, get_logger, get_metrics_tree
@@ -67,7 +66,7 @@ def get_knobs(
     manager: Annotated[KnobManager, Depends(KnobManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     request: Request,
-) -> List[KnobResponse]:
+) -> list[KnobResponse]:
     return manager.entry_get_knobs(manager=manager, logger=logger)
 
 
@@ -110,7 +109,7 @@ def delete_knob(
 def get_users(
     manager: Annotated[UserManager, Depends(UserManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> List[UserResponse]:
+) -> list[UserResponse]:
     return manager.entry_get_users(manager, logger)
 
 

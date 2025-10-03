@@ -3,7 +3,6 @@
 
 import dataclasses
 import textwrap
-from typing import List
 
 import pytest
 import ruamel.yaml.main
@@ -19,7 +18,7 @@ def fixture_yaml() -> ruamel.yaml.main.YAML:
 @dataclasses.dataclass
 class Container(tft.artemis.SerializableContainer):
     bar: int = 79
-    baz: List[str] = dataclasses.field(default_factory=list)
+    baz: list[str] = dataclasses.field(default_factory=list)
 
 
 # This container is not used in tests to create instances, we just want to make sure even subclasses of subclasses

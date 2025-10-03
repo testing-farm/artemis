@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import textwrap
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 from unittest.mock import MagicMock
 
 import bs4
@@ -556,7 +556,7 @@ def test_environment_to_beaker_filter(
     ],
     ids=['no-avoid-group', 'avoid-groups'],
 )
-def test_groups_to_beaker_filter(avoid_groups: List[str], expected: str) -> None:
+def test_groups_to_beaker_filter(avoid_groups: list[str], expected: str) -> None:
     r_beaker_filter = tft.artemis.drivers.beaker.groups_to_beaker_filter(avoid_groups)
 
     assert r_beaker_filter.is_ok
@@ -577,7 +577,7 @@ def test_groups_to_beaker_filter(avoid_groups: List[str], expected: str) -> None
     ],
     ids=['no-hostnames', 'with-avoid-hostnames'],
 )
-def test_hostnames_to_beaker_filter(avoid_hostnames: List[str], expected: str) -> None:
+def test_hostnames_to_beaker_filter(avoid_hostnames: list[str], expected: str) -> None:
     r_beaker_filter = tft.artemis.drivers.beaker.hostnames_to_beaker_filter(avoid_hostnames)
 
     assert r_beaker_filter.is_ok
@@ -606,7 +606,7 @@ def test_hostnames_to_beaker_filter(avoid_hostnames: List[str], expected: str) -
     ],
     ids=['no-filters', 'filters', 'filter-with-and', 'filter-with-or'],
 )
-def test_merge_beaker_filters(filters: List[str], expected: str) -> None:
+def test_merge_beaker_filters(filters: list[str], expected: str) -> None:
     r_final_filter = tft.artemis.drivers.beaker.merge_beaker_filters(
         [bs4.BeautifulSoup(a_filter, 'xml').contents[0] for a_filter in filters]
     )
@@ -758,8 +758,8 @@ def test_create_beaker_filter(
     dummy_guest_request: MagicMock,
     pool: tft.artemis.drivers.beaker.BeakerDriver,
     env: str,
-    avoid_groups: List[str],
-    avoid_hostnames: List[str],
+    avoid_groups: list[str],
+    avoid_hostnames: list[str],
     expected: Optional[str],
 ) -> None:
     environment = parse_env(env)
@@ -786,7 +786,7 @@ def test_create_beaker_filter(
     [({}, []), ({'avoid-groups': ['dummy-group-1', 'dummy-group-2']}, ['dummy-group-1', 'dummy-group-2'])],
     ids=['no-groups', 'with-groups'],
 )
-def test_avoid_groups(logger: ContextAdapter, pool_config: Dict[str, Any], expected: List[str]) -> None:
+def test_avoid_groups(logger: ContextAdapter, pool_config: dict[str, Any], expected: list[str]) -> None:
     pool = tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', pool_config)
 
     r_avoid_groups = pool.avoid_groups
@@ -814,8 +814,8 @@ def test_avoid_groups(logger: ContextAdapter, pool_config: Dict[str, Any], expec
 def test_avoid_hostnames(
     logger: ContextAdapter,
     mockpatch: MockPatcher,
-    cached_data: Dict[str, tft.artemis.drivers.beaker.AvoidGroupHostnames],
-    expected: List[str],
+    cached_data: dict[str, tft.artemis.drivers.beaker.AvoidGroupHostnames],
+    expected: list[str],
 ) -> None:
     pool = tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', cached_data)
     mockpatch(pool, 'get_avoid_groups_hostnames').return_value = Ok(cached_data)
@@ -879,7 +879,7 @@ def test_avoid_hostnames(
         'full-ks',
     ],
 )
-def test_bkr_ks_options(pool: tft.artemis.drivers.beaker.BeakerDriver, env: str, expected: List[str]) -> None:
+def test_bkr_ks_options(pool: tft.artemis.drivers.beaker.BeakerDriver, env: str, expected: list[str]) -> None:
     environment = parse_env(env)
 
     r_wow_options = tft.artemis.drivers.beaker.BeakerDriver._create_bkr_kickstart_options(pool, environment.kickstart)

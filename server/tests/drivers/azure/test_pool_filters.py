@@ -1,6 +1,6 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
-from typing import Any, List, Optional
+from typing import Any, Optional
 from unittest import mock
 
 import gluetool.log
@@ -107,9 +107,9 @@ AZURE_SIZE_LIST = [
 class AzureSessionMock:
     def run_az(  # type: ignore[misc]
         logger: gluetool.log.ContextAdapter,  # noqa: N805
-        options: List[str],
+        options: list[str],
         commandname: Optional[str] = None,
-    ) -> Result[List[dict[str, Any]], Failure]:
+    ) -> Result[list[dict[str, Any]], Failure]:
         if commandname == 'az.vm-image-list':
             return Ok(AZURE_IMAGE_LIST)
         elif commandname == 'az.vm-flavors-list':

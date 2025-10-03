@@ -4,7 +4,7 @@
 import dataclasses
 import json
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 import gluetool.log
@@ -49,7 +49,7 @@ class FlasherDriver(PoolDriver):
 
     pool_data_class = FlasherPoolData
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
         self.url = self.pool_config['url']
 

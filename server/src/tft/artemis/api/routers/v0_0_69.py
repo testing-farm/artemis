@@ -5,12 +5,11 @@
 # NEW: zcrypt HW requirement
 # NEW: disk.model-name HW requirement
 
-from typing import List
+from typing import Annotated
 
 import fastapi
 import gluetool.log
 from fastapi import APIRouter, Depends, Request, status
-from typing_extensions import Annotated
 
 from .. import errors
 from ..dependencies import get_auth_context, get_logger
@@ -51,7 +50,7 @@ def get_guests(
     manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     request: Request,
-) -> List[GuestResponse]:
+) -> list[GuestResponse]:
     return get_guest_requests(logger, manager=manager, request=request)
 
 
@@ -93,7 +92,7 @@ def get_events(
     request: Request,
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     manager: Annotated[GuestEventManager, Depends(GuestEventManager)],
-) -> List[GuestEvent]:
+) -> list[GuestEvent]:
     return manager.get_events(logger, EventSearchParameters.from_request(request))
 
 
@@ -103,7 +102,7 @@ def get_guest_events(
     request: Request,
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     manager: Annotated[GuestEventManager, Depends(GuestEventManager)],
-) -> List[GuestEvent]:
+) -> list[GuestEvent]:
     return manager.get_events_by_guestname(logger, guestname, EventSearchParameters.from_request(request))
 
 
