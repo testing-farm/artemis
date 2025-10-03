@@ -15,19 +15,14 @@ import shlex
 import sys
 import tempfile
 import time
+from collections.abc import Iterable, Iterator
+from re import Pattern
 from typing import (
     Any,
     Callable,
     ClassVar,
-    Dict,
     Generic,
-    Iterable,
-    Iterator,
-    List,
     Optional,
-    Pattern,
-    Tuple,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -86,7 +81,7 @@ from ..script import hook_engine
 T = TypeVar('T')
 FlavorT = TypeVar('FlavorT', bound=Flavor)
 
-GuestTagsType = Dict[str, str]
+GuestTagsType = dict[str, str]
 
 
 # Types for configuration of custom/patched flavors
@@ -102,7 +97,7 @@ ConfigFlavorCPUSpecType = TypedDict(
         'model': Optional[int],
         'model-name': Optional[str],
         'stepping': Optional[int],
-        'flag': Optional[List[str]],
+        'flag': Optional[list[str]],
         'processors': Optional[int],
     },
 )
@@ -161,12 +156,12 @@ ConfigFlavorVirtualizationSpecType = TypedDict(
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].compatible
 class ConfigFlavorCompatibleSpecType(TypedDict):
-    distro: List[str]
+    distro: list[str]
 
 
 #: pools[].parameters.{custom-flavors,patch-flavors}[].boot
 class ConfigFlavorBootSpecType(TypedDict):
-    method: List[FlavorBootMethodType]
+    method: list[FlavorBootMethodType]
 
 
 #: pools[].parameters.patch-flavors[]
@@ -178,7 +173,7 @@ ConfigPatchFlavorSpecType = TypedDict(
         'arch': str,
         'compatible': ConfigFlavorCompatibleSpecType,
         'cpu': ConfigFlavorCPUSpecType,
-        'disk': List[ConfigFlavorDiskSpecType],
+        'disk': list[ConfigFlavorDiskSpecType],
         'gpu': ConfigFlavorGPUSpecType,
         'tpm': ConfigFlavorTPMSpecType,
         'virtualization': ConfigFlavorVirtualizationSpecType,
@@ -196,7 +191,7 @@ class ConfigCustomFlavorSpecType(TypedDict):
     memory: str
     compatible: ConfigFlavorCompatibleSpecType
     cpu: ConfigFlavorCPUSpecType
-    disk: List[ConfigFlavorDiskSpecType]
+    disk: list[ConfigFlavorDiskSpecType]
     gpu: ConfigFlavorGPUSpecType
     tpm: ConfigFlavorTPMSpecType
     virtualization: ConfigFlavorVirtualizationSpecType
@@ -227,11 +222,11 @@ ConfigCapabilitiesDisableGuestLogType = TypedDict(
 ConfigCapabilitiesType = TypedDict(
     'ConfigCapabilitiesType',
     {
-        'supported-architectures': Union[Literal['any'], List[str]],
+        'supported-architectures': Union[Literal['any'], list[str]],
         'supports-hostnames': Union[str, bool],
         'supports-snapshots': Union[str, bool],
         'supports-spot-instances': Union[str, bool],
-        'disable-guest-logs': List[ConfigCapabilitiesDisableGuestLogType],
+        'disable-guest-logs': list[ConfigCapabilitiesDisableGuestLogType],
     },
 )
 
@@ -393,7 +388,7 @@ except Exception as exc:
 
 # Precompile the timeout command patterns
 try:
-    CLI_TIMEOUT_PATTERNS: List[Tuple[Pattern[str], int]] = [
+    CLI_TIMEOUT_PATTERNS: list[tuple[Pattern[str], int]] = [
         (re.compile(command_pattern.split(':', 1)[1]), int(command_pattern.split(':', 1)[0]))
         for command_pattern in KNOB_CLI_COMMAND_TIMEOUT_PATTERNS.value.split(';')
     ]
@@ -501,7 +496,7 @@ class PoolImageInfo(SerializableContainer):
 
     supports_kickstart: bool
 
-    def serialize_scrubbed(self) -> Dict[str, Any]:
+    def serialize_scrubbed(self) -> dict[str, Any]:
         """
         Serialize properties to JSON while scrubbing sensitive information.
 
@@ -518,13 +513,13 @@ class PoolImageInfo(SerializableContainer):
 class FlavorKeyGetterType(Protocol):
     def __call__(
         self, flavor: Flavor
-    ) -> Tuple[int, int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
+    ) -> tuple[int, int, MeasurableConstraintValueType, tuple[MeasurableConstraintValueType, ...]]:
         pass
 
 
 def flavor_to_key(
     flavor: Flavor,
-) -> Tuple[int, int, MeasurableConstraintValueType, Tuple[MeasurableConstraintValueType, ...]]:
+) -> tuple[int, int, MeasurableConstraintValueType, tuple[MeasurableConstraintValueType, ...]]:
     # All are optional, meaning "don't care", and in this sorting it doesn't matter (possible?)
     # TODO: better algorithm would be better, one aware of optional values (first? last?)
     return (
@@ -537,7 +532,7 @@ def flavor_to_key(
 
 @dataclasses.dataclass
 class PoolCapabilities:
-    supported_architectures: Union[List[str], _AnyArchitecture] = AnyArchitecture
+    supported_architectures: Union[list[str], _AnyArchitecture] = AnyArchitecture
 
     #: If set, the pool driver can handle snapshots.
     supports_snapshots: bool = False
@@ -551,7 +546,7 @@ class PoolCapabilities:
     supports_native_post_install_script: bool = False
 
     #: List of log name/log content type pairs describing that logs are supported by the driver.
-    supported_guest_logs: List[Tuple[str, GuestLogContentType]] = dataclasses.field(default_factory=list)
+    supported_guest_logs: list[tuple[str, GuestLogContentType]] = dataclasses.field(default_factory=list)
 
     #: If set, the pool can find instances by their hostnames.
     supports_hostnames: bool = False
@@ -573,7 +568,7 @@ class PoolCapabilities:
 
         # Here we know the attribute must be a list, because we ruled out the `AnyArchitecture` above, but mypy
         # can't deduce it.
-        return arch in cast(List[str], self.supported_architectures)
+        return arch in cast(list[str], self.supported_architectures)
 
     def supports_guest_log(self, logname: str, contenttype: GuestLogContentType) -> bool:
         return (logname, contenttype) in self.supported_guest_logs
@@ -590,7 +585,7 @@ class ConsoleUrlData:
     expires: datetime.datetime
 
 
-SerializedPoolData = Dict[str, Any]
+SerializedPoolData = dict[str, Any]
 
 
 @dataclasses.dataclass
@@ -604,7 +599,7 @@ class PoolData:
         return dataclasses.asdict(self)
 
     @classmethod
-    def unserialize(cls: Type[T], serialized: SerializedPoolData) -> T:
+    def unserialize(cls, serialized: SerializedPoolData) -> Self:
         return cls(**serialized)
 
     @property
@@ -693,7 +688,7 @@ class ProvisioningProgress:
     #: If pool driver encountered errors that were not critical enough to be returned immediately, causing
     #: reschedule of the provisioning step, then to make them visible and logged, such failures should
     #: be stored in this list.
-    pool_failures: List[Failure] = dataclasses.field(default_factory=list)
+    pool_failures: list[Failure] = dataclasses.field(default_factory=list)
 
 
 class ReleasePoolResourcesState(enum.Enum):
@@ -740,7 +735,7 @@ class PoolResourcesIDs(SerializableContainer):
     def is_empty(self) -> bool:
         return all([value is None for key, value in dataclasses.asdict(self).items() if key != 'ctime'])
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         serialized = super().serialize()
 
         # Convert datetime object to string
@@ -749,7 +744,7 @@ class PoolResourcesIDs(SerializableContainer):
         return serialized
 
     @classmethod
-    def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
+    def unserialize(cls, serialized: dict[str, Any]) -> Self:
         # Convert ctime string to datetime object
         serialized['ctime'] = (
             datetime.datetime.strptime(serialized['ctime'], RESOURCE_CTIME_FMT) if serialized['ctime'] else None
@@ -762,12 +757,12 @@ class PoolResourcesIDs(SerializableContainer):
         return super().serialize_to_json()
 
     @classmethod
-    def unserialize_from_json(cls: Type[S], serialized: SerializedPoolResourcesIDs) -> S:
+    def unserialize_from_json(cls, serialized: SerializedPoolResourcesIDs) -> Self:
         return super().unserialize_from_json(serialized)
 
 
 def _spec_to_unit(
-    value: Union[str, int], error_msg: str, error_details: Dict[str, Any], default_units: SizeType = UNITS.bytes
+    value: Union[str, int], error_msg: str, error_details: dict[str, Any], default_units: SizeType = UNITS.bytes
 ) -> Result[Optional[SizeType], Failure]:
     r_value = safe_call(UNITS, str(value))
     if r_value.is_error:
@@ -850,7 +845,7 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
     if 'disk' in flavor_spec:
         # TODO: introduce way how to actually patch the list of disks, instead of recreating it. It's easier,
         # but hardly future-proof.
-        patched_disks: List[FlavorDisk] = []
+        patched_disks: list[FlavorDisk] = []
 
         for disk_patch in flavor_spec['disk']:
             disk = FlavorDisk()
@@ -940,7 +935,7 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
 
 
 def _patch_flavors(
-    logger: gluetool.log.ContextAdapter, flavors: Dict[str, Flavor], patches: List[ConfigPatchFlavorSpecType]
+    logger: gluetool.log.ContextAdapter, flavors: dict[str, Flavor], patches: list[ConfigPatchFlavorSpecType]
 ) -> Result[None, Failure]:
     """
     "Patch" existing flavors as specified by configuration.
@@ -995,8 +990,8 @@ def _patch_flavors(
 
 
 def _custom_flavors(
-    logger: gluetool.log.ContextAdapter, flavors: Dict[str, Flavor], patches: List[ConfigCustomFlavorSpecType]
-) -> Result[List[Flavor], Failure]:
+    logger: gluetool.log.ContextAdapter, flavors: dict[str, Flavor], patches: list[ConfigCustomFlavorSpecType]
+) -> Result[list[Flavor], Failure]:
     """
     Create custom flavors based on existing ones.
 
@@ -1224,7 +1219,7 @@ class GuestLogUpdateProgress:
 # Mapping guest requests to images
 #
 PoolImageInfoT = TypeVar('PoolImageInfoT', bound='PoolImageInfo')
-ImageInfoMapperResultType = Result[List[T], Failure]
+ImageInfoMapperResultType = Result[list[T], Failure]
 
 
 class GuestLogUpdaterType(Protocol):
@@ -1248,7 +1243,7 @@ def guest_log_updater(
 
 
 def render_tags(
-    logger: gluetool.log.ContextAdapter, tags: GuestTagsType, vars: Dict[str, Any]
+    logger: gluetool.log.ContextAdapter, tags: GuestTagsType, vars: dict[str, Any]
 ) -> Result[GuestTagsType, Failure]:
     for name, tag_template in tags.items():
         r_rendered = render_template(tag_template, **vars)
@@ -1270,10 +1265,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     _image_map_hook_name: str
 
-    image_info_class: Type[PoolImageInfo] = PoolImageInfo
-    flavor_info_class: Type[Flavor] = Flavor
-    pool_data_class: Type[PoolData] = PoolData
-    pool_error_causes_enum: Type[PoolErrorCauses]
+    image_info_class: type[PoolImageInfo] = PoolImageInfo
+    flavor_info_class: type[Flavor] = Flavor
+    pool_data_class: type[PoolData] = PoolData
+    pool_error_causes_enum: type[PoolErrorCauses]
     cli_error_cause_extractor: Optional[PoolErrorCauseExtractor] = None
 
     #: Template for a cache key holding pool image info.
@@ -1283,9 +1278,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
     POOL_FLAVOR_INFO_CACHE_KEY = 'pool.{}.flavor-info'
 
     #: Hold all known guest log updaters, with key being driver name, log name and its content type.
-    guest_log_updaters: ClassVar[Dict[Tuple[str, str, GuestLogContentType], str]] = {}
+    guest_log_updaters: ClassVar[dict[tuple[str, str, GuestLogContentType], str]] = {}
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger)
 
         self.poolname = poolname
@@ -1297,11 +1292,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
         self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
-    _drivers_registry: ClassVar[Dict[str, Type['PoolDriver']]] = {}
+    _drivers_registry: ClassVar[dict[str, type['PoolDriver']]] = {}
 
     @staticmethod
     def _instantiate(
-        logger: gluetool.log.ContextAdapter, driver_name: str, poolname: str, pool_config: Dict[str, Any]
+        logger: gluetool.log.ContextAdapter, driver_name: str, poolname: str, pool_config: dict[str, Any]
     ) -> Result['PoolDriver', Failure]:
         pool_driver_class = PoolDriver._drivers_registry.get(driver_name)
 
@@ -1384,13 +1379,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
     @staticmethod
     def load_all(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, enabled_only: bool = True
-    ) -> Result[List['PoolDriver'], Failure]:
+    ) -> Result[list['PoolDriver'], Failure]:
         r_pools = SafeQuery.from_session(session, Pool).all()
 
         if r_pools.is_error:
             return Error(r_pools.unwrap_error())
 
-        pools: List[PoolDriver] = []
+        pools: list[PoolDriver] = []
 
         for pool_record in r_pools.unwrap():
             r_pool = PoolDriver._instantiate(logger, pool_record.driver, pool_record.poolname, pool_record.parameters)
@@ -1420,7 +1415,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return KNOB_POOL_ENABLED.get_value(session=session, entityname=self.poolname)
 
     @property
-    def ssh_options(self) -> List[str]:
+    def ssh_options(self) -> list[str]:
         return gluetool.utils.normalize_multistring_option(self.pool_config.get('ssh-options', []))
 
     @property
@@ -1462,7 +1457,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-    ) -> Result[List[PoolImageInfoT], Failure]:
+    ) -> Result[list[PoolImageInfoT], Failure]:
         r_engine = hook_engine(self._image_map_hook_name)
 
         if r_engine.is_error:
@@ -1471,7 +1466,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         engine = r_engine.unwrap()
 
         r_images = cast(
-            Result[List[PoolImageInfoT], Failure],
+            Result[list[PoolImageInfoT], Failure],
             engine.run_hook(self._image_map_hook_name, logger=logger, pool=self, environment=guest_request.environment),
         )
 
@@ -1485,8 +1480,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-    ) -> Result[List[PoolImageInfoT], Failure]:
-        r_images: Result[List[PoolImageInfoT], Failure] = self._guest_request_to_image_or_none(
+    ) -> Result[list[PoolImageInfoT], Failure]:
+        r_images: Result[list[PoolImageInfoT], Failure] = self._guest_request_to_image_or_none(
             logger, session, guest_request
         )
 
@@ -1690,7 +1685,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         logger: gluetool.log.ContextAdapter,
         environment: Environment,
         sort_key_getter: FlavorKeyGetterType = flavor_to_key,
-    ) -> Result[List[Flavor], Failure]:
+    ) -> Result[list[Flavor], Failure]:
         """
         Evaluate the given environment, and return flavors suitable for the environment given its HW constraints.
 
@@ -2144,7 +2139,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self,
         logger: gluetool.log.ContextAdapter,
         usage: PoolResourcesUsage,
-        fetch: Callable[[gluetool.log.ContextAdapter], Result[List[T], Failure]],
+        fetch: Callable[[gluetool.log.ContextAdapter], Result[list[T], Failure]],
         flavor_name_getter: Optional[Callable[[T], str]],
         update: Callable[[gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[Flavor]], Result[None, Failure]],
     ) -> Result[None, Failure]:
@@ -2281,7 +2276,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(None)
 
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
+    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
         """
         Responsible for fetching the most up-to-date image info..
 
@@ -2312,7 +2307,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return render_template(post_install_template, **template_environment(guest_request))
 
     def _patch_pool_image_info_from_config(
-        self, logger: gluetool.log.ContextAdapter, images: Dict[str, PoolImageInfo]
+        self, logger: gluetool.log.ContextAdapter, images: dict[str, PoolImageInfo]
     ) -> Result[None, Failure]:
         """
         "Patch" existing images as specified by configuration. Some information may not be available via API,
@@ -2321,7 +2316,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         :param images: actual existing images.
         """
 
-        patch_image_specs = cast(List[ConfigImageSpecType], self.pool_config.get('patch-images', []))
+        patch_image_specs = cast(list[ConfigImageSpecType], self.pool_config.get('patch-images', []))
 
         if not patch_image_specs:
             return Ok(None)
@@ -2364,8 +2359,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return Ok(None)
 
     def _update_pool_image_info_from_config(
-        self, logger: gluetool.log.ContextAdapter, images: List[PoolImageInfo]
-    ) -> Result[List[PoolImageInfo], Failure]:
+        self, logger: gluetool.log.ContextAdapter, images: list[PoolImageInfo]
+    ) -> Result[list[PoolImageInfo], Failure]:
         """
         "Fetch" image infos from the driver configuration. This includes both custom image and patch information.
 
@@ -2431,10 +2426,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def do_fetch_pool_flavor_info(
         self,
         logger: gluetool.log.ContextAdapter,
-        fetch: Callable[[gluetool.log.ContextAdapter], Result[List[T], Failure]],
+        fetch: Callable[[gluetool.log.ContextAdapter], Result[list[T], Failure]],
         name_getter: Callable[[T], str],
         constructor: Callable[[gluetool.log.ContextAdapter, T], Iterator[Result[Flavor, Failure]]],
-    ) -> Result[List[Flavor], Failure]:
+    ) -> Result[list[Flavor], Failure]:
         """
         A helper implementation for constructing flavor info.
 
@@ -2463,7 +2458,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raw_flavors = r_raw_flavors.unwrap()
 
-        flavors: List[Flavor] = []
+        flavors: list[Flavor] = []
 
         for raw_flavor in raw_flavors:
             try:
@@ -2491,7 +2486,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(flavors)
 
-    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         """
         Responsible for fetching the most up-to-date flavor info..
 
@@ -2503,8 +2498,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return Ok([])
 
     def _fetch_custom_pool_flavor_info_from_config(
-        self, logger: gluetool.log.ContextAdapter, flavors: Dict[str, Flavor]
-    ) -> Result[List[Flavor], Failure]:
+        self, logger: gluetool.log.ContextAdapter, flavors: dict[str, Flavor]
+    ) -> Result[list[Flavor], Failure]:
         """
         "Fetch" custom flavors specified in driver configuration. These are clones of existing flavors, but with
         some of the original properties changed in the clone.
@@ -2513,11 +2508,11 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         return _custom_flavors(
-            logger, flavors, cast(List[ConfigCustomFlavorSpecType], self.pool_config.get('custom-flavors', []))
+            logger, flavors, cast(list[ConfigCustomFlavorSpecType], self.pool_config.get('custom-flavors', []))
         )
 
     def _fetch_patched_pool_flavor_info_from_config(
-        self, logger: gluetool.log.ContextAdapter, flavors: Dict[str, Flavor]
+        self, logger: gluetool.log.ContextAdapter, flavors: dict[str, Flavor]
     ) -> Result[None, Failure]:
         """
         "Patch" existing flavors as specified by configuration. Some information may not be available via API,
@@ -2527,12 +2522,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
         """
 
         return _patch_flavors(
-            logger, flavors, cast(List[ConfigPatchFlavorSpecType], self.pool_config.get('patch-flavors', []))
+            logger, flavors, cast(list[ConfigPatchFlavorSpecType], self.pool_config.get('patch-flavors', []))
         )
 
     def _fetch_pool_flavor_info_from_config(
-        self, logger: gluetool.log.ContextAdapter, flavors: List[Flavor]
-    ) -> Result[List[Flavor], Failure]:
+        self, logger: gluetool.log.ContextAdapter, flavors: list[Flavor]
+    ) -> Result[list[Flavor], Failure]:
         """
         "Fetch" flavor infos from the driver configuration. This includes both custom flavors and patch information.
 
@@ -2612,14 +2607,14 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
 
-    def get_cached_pool_image_infos(self) -> Result[List[PoolImageInfo], Failure]:
+    def get_cached_pool_image_infos(self) -> Result[list[PoolImageInfo], Failure]:
         """
         Retrieve pool image info for all known images.
         """
 
         return get_cached_mapping_values(CACHE.get(), self.image_info_cache_key, self.image_info_class)
 
-    def get_cached_pool_flavor_infos(self) -> Result[List[Flavor], Failure]:
+    def get_cached_pool_flavor_infos(self) -> Result[list[Flavor], Failure]:
         """
         Retrieve all flavor info known to the pool.
         """
@@ -2634,8 +2629,8 @@ class FlavorFilter(Protocol, Generic[FlavorT]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[FlavorT],
-    ) -> Result[List[FlavorT], Failure]:
+        suitable_flavors: list[FlavorT],
+    ) -> Result[list[FlavorT], Failure]:
         pass
 
 
@@ -2653,8 +2648,8 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[FlavorT],
-    ) -> Result[List[FlavorT], Failure]:
+        suitable_flavors: list[FlavorT],
+    ) -> Result[list[FlavorT], Failure]:
         if image.arch is None:
             return Ok(suitable_flavors)
 
@@ -2675,8 +2670,8 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[FlavorT],
-    ) -> Result[List[FlavorT], Failure]:
+        suitable_flavors: list[FlavorT],
+    ) -> Result[list[FlavorT], Failure]:
         if not suitable_flavors:
             return Ok(suitable_flavors)
 
@@ -2702,8 +2697,8 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[FlavorT],
-    ) -> Result[List[FlavorT], Failure]:
+        suitable_flavors: list[FlavorT],
+    ) -> Result[list[FlavorT], Failure]:
         if suitable_flavors:
             return Ok(suitable_flavors)
 
@@ -2729,9 +2724,9 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[FlavorT],
+        suitable_flavors: list[FlavorT],
         *flavor_filters: FlavorFilter[FlavorT],
-    ) -> Result[List[FlavorT], Failure]:
+    ) -> Result[list[FlavorT], Failure]:
         for flavor_filter in flavor_filters:
             r_suitable_flavors = flavor_filter(logger, session, guest_request, image, suitable_flavors)
 
@@ -2761,7 +2756,7 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
             return Error(r_suitable_flavors.unwrap_error())
 
         r_filtered_suitable_flavors = self._filter_suitable_flavors(
-            logger, session, guest_request, image, cast(List[FlavorT], r_suitable_flavors.unwrap()), *flavor_filters
+            logger, session, guest_request, image, cast(list[FlavorT], r_suitable_flavors.unwrap()), *flavor_filters
         )
 
         if r_filtered_suitable_flavors.is_error:
@@ -2831,7 +2826,7 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
 
     def _collect_image_flavor_pairs(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[Tuple[CanAcquire, List[Tuple[PoolImageInfoT, FlavorT]]], Failure]:
+    ) -> Result[tuple[CanAcquire, list[tuple[PoolImageInfoT, FlavorT]]], Failure]:
         """
         Find all possible image and flavor combinations for a given guest request.
 
@@ -2848,7 +2843,7 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
                 may be set. Propagating it of the :py:meth:`can_acquire` method may terminate the whole guest request.
         """
 
-        r_images: Result[List[PoolImageInfoT], Failure] = self._guest_request_to_image_or_none(
+        r_images: Result[list[PoolImageInfoT], Failure] = self._guest_request_to_image_or_none(
             logger, session, guest_request
         )
 
@@ -2875,7 +2870,7 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
             if not images:
                 return Ok((CanAcquire.cannot('compose does not support kickstart'), []))
 
-        pairs: List[Tuple[PoolImageInfoT, FlavorT]] = []
+        pairs: list[tuple[PoolImageInfoT, FlavorT]] = []
 
         for image in images:
             r_flavor = self._guest_request_to_flavor_or_none(logger, session, guest_request, image)
@@ -2955,11 +2950,11 @@ def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -
 
 def run_cli_tool(
     logger: gluetool.log.ContextAdapter,
-    command: List[str],
+    command: list[str],
     json_output: bool = False,
-    command_scrubber: Optional[Callable[[List[str]], List[str]]] = None,
+    command_scrubber: Optional[Callable[[list[str]], list[str]]] = None,
     allow_empty: bool = True,
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[dict[str, str]] = None,
     deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
@@ -2990,11 +2985,11 @@ def run_cli_tool(
     """
 
     # We have our own no-op scrubber, preserving the command.
-    def _noop_scrubber(_command: List[str]) -> List[str]:
+    def _noop_scrubber(_command: list[str]) -> list[str]:
         return _command
 
     command_scrubber = command_scrubber or _noop_scrubber
-    failure_details: Dict[str, Any] = {
+    failure_details: dict[str, Any] = {
         'scrubbed_command': command_scrubber(command),
         'poolname': poolname,
         'commandname': commandname,
@@ -3111,11 +3106,11 @@ def run_cli_tool(
 def run_remote(
     logger: gluetool.log.ContextAdapter,
     guest_request: GuestRequest,
-    command: List[str],
+    command: list[str],
     *,
     key: SSHKey,
     ssh_timeout: int,
-    ssh_options: Optional[List[str]] = None,
+    ssh_options: Optional[list[str]] = None,
     deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
@@ -3162,7 +3157,7 @@ def copy_to_remote(
     *,
     key: SSHKey,
     ssh_timeout: int,
-    ssh_options: Optional[List[str]] = None,
+    ssh_options: Optional[list[str]] = None,
     deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
@@ -3205,7 +3200,7 @@ def copy_from_remote(
     *,
     key: SSHKey,
     ssh_timeout: int,
-    ssh_options: Optional[List[str]] = None,
+    ssh_options: Optional[list[str]] = None,
     deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
@@ -3246,7 +3241,7 @@ def ping_shell_remote(
     *,
     key: SSHKey,
     ssh_timeout: int,
-    ssh_options: Optional[List[str]] = None,
+    ssh_options: Optional[list[str]] = None,
     # for CLI calls metrics
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
@@ -3379,7 +3374,7 @@ class CLISessionPermanentDir:
     def _run_cmd(
         self,
         logger: gluetool.log.ContextAdapter,
-        options: List[str],
+        options: list[str],
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
@@ -3432,7 +3427,7 @@ class CLISessionPermanentDir:
     def run(
         self,
         logger: gluetool.log.ContextAdapter,
-        options: List[str],
+        options: list[str],
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:

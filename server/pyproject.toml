@@ -155,6 +155,7 @@ lint.select = [
     "RUF",    # Ruff-specific rules
     "SIM",    # flake8-simplify
     "T10",    # flake8-debugger
+    "UP",     # pyupgrade
     "W",      # pycodestyle warning
     "YTT",   # flake8-2020
     ]

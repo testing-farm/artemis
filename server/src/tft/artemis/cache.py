@@ -9,7 +9,8 @@ Helpful building blocks for cache operations.
 
 import datetime
 import uuid
-from typing import Any, Callable, Dict, Generator, List, Optional, Protocol, Set, Tuple, Type, TypeVar, Union, cast
+from collections.abc import Generator
+from typing import Any, Callable, Optional, Protocol, TypeVar, Union, cast
 
 import gluetool.log
 import redis
@@ -51,10 +52,10 @@ RedisHGetType = Callable[[str, str], Optional[bytes]]
 # TODO: hmset is deprecated, hset should be used instead, but hset takes mapping as a keyword parameter
 # and that's not easy enough to express here with Callable. Leaving that for another patch.
 RedisHSet = Callable[[str, bytes, bytes], None]
-RedisHMSet = Callable[[str, Dict[bytes, bytes]], None]
-RedisHGetAllType = Callable[[str], Optional[Dict[bytes, bytes]]]
+RedisHMSet = Callable[[str, dict[bytes, bytes]], None]
+RedisHGetAllType = Callable[[str], Optional[dict[bytes, bytes]]]
 
-RedisSMembersType = Callable[[str], Optional[Set[bytes]]]
+RedisSMembersType = Callable[[str], Optional[set[bytes]]]
 
 RedisDeleteType = Callable[[str], None]
 RedisRenameType = Callable[[str, str], None]
@@ -178,7 +179,7 @@ def set_cache_fields(
     logger: gluetool.log.ContextAdapter,
     cache: redis.Redis,
     key: str,
-    fields: Optional[Dict[bytes, bytes]] = None,
+    fields: Optional[dict[bytes, bytes]] = None,
     ttl: Optional[int] = None,
 ) -> None:
     """
@@ -204,7 +205,7 @@ def set_cache_fields(
 
 def iter_cache_fields(
     logger: gluetool.log.ContextAdapter, cache: redis.Redis, key: str
-) -> Generator[Tuple[bytes, bytes], None, None]:
+) -> Generator[tuple[bytes, bytes], None, None]:
     """
     Iterate over pairs of fields and their values for a given key.
 
@@ -226,7 +227,7 @@ def iter_cache_fields(
     yield from all_fields.items()
 
 
-def get_cache_fields(logger: gluetool.log.ContextAdapter, cache: redis.Redis, key: str) -> Dict[bytes, bytes]:
+def get_cache_fields(logger: gluetool.log.ContextAdapter, cache: redis.Redis, key: str) -> dict[bytes, bytes]:
     """
     Return a mapping between fields and their values for a given cache key.
 
@@ -265,7 +266,7 @@ def iter_cache_keys(
 
 
 def refresh_cached_mapping(
-    cache: redis.Redis, key: str, items: Dict[str, SerializableContainer]
+    cache: redis.Redis, key: str, items: dict[str, SerializableContainer]
 ) -> Result[None, Failure]:
     """
     Store a given mapping in a cache.
@@ -314,7 +315,7 @@ def refresh_cached_mapping(
     return Ok(None)
 
 
-def get_cached_mapping(cache: redis.Redis, key: str, item_klass: Type[S]) -> Result[Dict[str, S], Failure]:
+def get_cached_mapping(cache: redis.Redis, key: str, item_klass: type[S]) -> Result[dict[str, S], Failure]:
     """
     Retrieve cached mapping.
 
@@ -335,7 +336,7 @@ def get_cached_mapping(cache: redis.Redis, key: str, item_klass: Type[S]) -> Res
 
     serialized = r_fetch.unwrap()
 
-    items: Dict[str, S] = {}
+    items: dict[str, S] = {}
 
     if serialized is None:
         return Ok(items)
@@ -351,7 +352,7 @@ def get_cached_mapping(cache: redis.Redis, key: str, item_klass: Type[S]) -> Res
     return Ok(items)
 
 
-def get_cached_mapping_values(cache: redis.Redis, key: str, item_klass: Type[S]) -> Result[List[S], Failure]:
+def get_cached_mapping_values(cache: redis.Redis, key: str, item_klass: type[S]) -> Result[list[S], Failure]:
     """
     Retrieve cached mapping values as a list.
 
@@ -374,7 +375,7 @@ def get_cached_mapping_values(cache: redis.Redis, key: str, item_klass: Type[S])
 
 
 def get_cached_mapping_item(
-    cache: redis.Redis, key: str, item_key: str, item_klass: Type[S]
+    cache: redis.Redis, key: str, item_key: str, item_klass: type[S]
 ) -> Result[Optional[S], Failure]:
     """
     Retrieve one item of a cached mapping.
@@ -409,7 +410,7 @@ def get_cached_mapping_item(
 #
 # Manipulation of cached lists
 #
-def refresh_cached_list(cache: redis.Redis, key: str, items: List[SerializableContainer]) -> Result[None, Failure]:
+def refresh_cached_list(cache: redis.Redis, key: str, items: list[SerializableContainer]) -> Result[None, Failure]:
     """
     Store a given list in a cache.
 
@@ -453,7 +454,7 @@ def refresh_cached_list(cache: redis.Redis, key: str, items: List[SerializableCo
     return Ok(None)
 
 
-def get_cached_list(cache: redis.Redis, key: str, item_klass: Type[S]) -> Result[List[S], Failure]:
+def get_cached_list(cache: redis.Redis, key: str, item_klass: type[S]) -> Result[list[S], Failure]:
     """
     Retrieve cached list.
 
@@ -472,7 +473,7 @@ def get_cached_list(cache: redis.Redis, key: str, item_klass: Type[S]) -> Result
 
     serialized = r_fetch.unwrap()
 
-    items: List[S] = []
+    items: list[S] = []
 
     if serialized is None:
         return Ok(items)
@@ -498,7 +499,7 @@ def get_cached_list(cache: redis.Redis, key: str, item_klass: Type[S]) -> Result
 #
 
 
-def collect_locks(logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Dict[str, Dict[str, Any]]:
+def collect_locks(logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> dict[str, dict[str, Any]]:
     """
     Collect info about currently hold locks.
 
@@ -507,7 +508,7 @@ def collect_locks(logger: gluetool.log.ContextAdapter, cache: redis.Redis) -> Di
     :returns: a mapping between lock names and corresponding token and remaining TTL.
     """
 
-    locks: Dict[str, Dict[str, Any]] = {}
+    locks: dict[str, dict[str, Any]] = {}
 
     for raw_lockname in iter_cache_keys(logger, cache, 'tasks.singleton.*'):
         lockname = raw_lockname.decode()

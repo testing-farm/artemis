@@ -1,7 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 import gluetool.log
 from fastapi import HTTPException, Request, status
@@ -9,7 +9,7 @@ from fastapi import HTTPException, Request, status
 from .. import Failure, FailureDetailsType, get_logger
 
 
-def get_failure_details_from_request(request: Optional[Request]) -> Dict[str, Any]:
+def get_failure_details_from_request(request: Optional[Request]) -> dict[str, Any]:
     """
     Extract interesting bits from the given request. We plan to use them as :py:class:`Failure` details when
     reporting HTTP error as a failure.
@@ -21,7 +21,7 @@ def get_failure_details_from_request(request: Optional[Request]) -> Dict[str, An
     # Request params are dict-like, but not a dict alone which makes it harder for our YAML-ish logging
     # to represent them as strings. To overcome this difficulty, help our logging until it gets smarter.
     if request.query_params is None:
-        serialized_params: Optional[Union[str, Dict[str, str]]] = None
+        serialized_params: Optional[Union[str, dict[str, str]]] = None
 
     elif isinstance(request.query_params, dict):
         serialized_params = dict(request.query_params)

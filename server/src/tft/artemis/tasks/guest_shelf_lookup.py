@@ -11,7 +11,7 @@ Try to find a suitable guest, which can satisfy the request from the specified s
 """
 
 import random
-from typing import List, Optional, cast
+from typing import Optional, cast
 
 import gluetool.log
 import sqlalchemy
@@ -71,7 +71,7 @@ class Workspace(_Workspace):
             if r_guests.is_error:
                 return self._error(r_guests, 'failed to load shelved guests')
 
-            shelved_guests: List[GuestRequest] = r_guests.unwrap()
+            shelved_guests: list[GuestRequest] = r_guests.unwrap()
 
             # TODO: if number of guests low start falling back to full provisioning
             # Try to find a suitable guest if the shelf is not empty

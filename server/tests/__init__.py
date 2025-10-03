@@ -5,7 +5,8 @@ import dataclasses
 import logging
 import operator
 import re
-from typing import Any, Callable, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Any, Callable, Optional
 from unittest.mock import MagicMock
 
 import _pytest.logging
@@ -108,7 +109,7 @@ def assert_log(
     # two parameters, and the given (expected) value. With these, we can reduce the matching into functions
     # calls without worrying what functions we work with.
 
-    operators: List[Tuple[str, Callable[[Any, Any], bool], Any]] = []
+    operators: list[tuple[str, Callable[[Any, Any], bool], Any]] = []
 
     for field_name, expected_value in tests.items():
         # Special case: if the expected value is a pattern matching instance, it represents a regular expression.

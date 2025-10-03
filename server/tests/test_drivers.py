@@ -1,7 +1,8 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import Optional, Pattern, cast
+from re import Pattern
+from typing import Optional, cast
 from unittest.mock import MagicMock
 
 import gluetool

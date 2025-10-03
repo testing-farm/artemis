@@ -10,7 +10,7 @@ Remove shelf and schedule the removal of all shelved guests
     MUST preserve consistent and restartable state.
 """
 
-from typing import List, cast
+from typing import cast
 
 import gluetool.log
 import sqlalchemy
@@ -38,7 +38,7 @@ class Workspace(_Workspace):
     """
 
     TASKNAME = 'remove-shelf'
-    shelved_guests: List[GuestRequest]
+    shelved_guests: list[GuestRequest]
 
     @step
     def run(self) -> None:
@@ -60,7 +60,7 @@ class Workspace(_Workspace):
             if r_guests.is_error:
                 return self._error(r_guests, 'failed to load shelved guests')
 
-            shelved_guests: List[GuestRequest] = r_guests.unwrap()
+            shelved_guests: list[GuestRequest] = r_guests.unwrap()
 
             from .release_guest_request import release_guest_request
 

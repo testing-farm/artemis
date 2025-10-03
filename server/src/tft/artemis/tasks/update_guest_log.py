@@ -10,7 +10,7 @@ Inspect the provisioning progress of a given request, and update info Artemis ho
    MUST preserve consistent and restartable state.
 """
 
-from typing import Any, Dict, Optional, cast
+from typing import Any, Optional, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -85,7 +85,7 @@ class Workspace(_Workspace):
                 assert guest_log is not None
                 assert self.gr is not None
 
-                kwargs: Dict[str, Any] = {}
+                kwargs: dict[str, Any] = {}
 
                 if resolution is not None:
                     kwargs['resolution'] = resolution

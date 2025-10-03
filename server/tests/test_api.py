@@ -3,7 +3,8 @@
 
 import base64
 import re
-from typing import Dict, List, Pattern, cast
+from re import Pattern
+from typing import cast
 from unittest.mock import MagicMock
 
 import _pytest.monkeypatch
@@ -189,7 +190,7 @@ def test_metrics(
         ('/v0.0.24/guests/foo/snapshots', tft.artemis.api.models.PROVISIONING_AUTH, True),
     ],
 )
-def test_auth_matches_path(path: str, patterns: List[Pattern[str]], expected: bool) -> None:
+def test_auth_matches_path(path: str, patterns: list[Pattern[str]], expected: bool) -> None:
     assert tft.artemis.api.models.matches_path(MagicMock(url=MagicMock(path=path)), patterns) is expected
 
 
@@ -708,7 +709,7 @@ def test_auth_middleware_full(
 
 
 @pytest.fixture(name='schemas')
-def fixture_schemas(logger: gluetool.log.ContextAdapter) -> Dict[str, tft.artemis.JSONSchemaType]:
+def fixture_schemas(logger: gluetool.log.ContextAdapter) -> dict[str, tft.artemis.JSONSchemaType]:
     r_schemas = tft.artemis.api.environment.get_environment_schemas()
 
     return r_schemas.unwrap()
@@ -747,7 +748,7 @@ def test_validate_environment(
     schema_version: str,
     valid: bool,
     logger: gluetool.log.ContextAdapter,
-    schemas: Dict[str, tft.artemis.JSONSchemaType],
+    schemas: dict[str, tft.artemis.JSONSchemaType],
 ) -> None:
     schema = schemas[schema_version]
 

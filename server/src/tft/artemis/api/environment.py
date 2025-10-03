@@ -1,7 +1,6 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 import threading
-from typing import Dict, List, Tuple
 
 from gluetool.result import Error, Ok, Result
 
@@ -18,12 +17,12 @@ DEFAULT_EVENTS_SORT_FIELD = 'updated'
 DEFAULT_EVENTS_SORT_ORDER = 'desc'
 
 # Will be filled with the actual schema during API server bootstrap.
-ENVIRONMENT_SCHEMAS: Dict[str, JSONSchemaType] = {}
+ENVIRONMENT_SCHEMAS: dict[str, JSONSchemaType] = {}
 
 #: API milestones: describes milestone API version and optionally also compatible
 #: API versions. Based on this list, routers for proper endpoints will be added to the application with appropriate
 #: redirects if specified.
-API_MILESTONES: List[Tuple[str, List[str]]] = [
+API_MILESTONES: list[tuple[str, list[str]]] = [
     # NEW: guest reboot
     # NEW: cpu.stepping HW requirement
     (
@@ -102,7 +101,7 @@ METRICS_LOCK = threading.Lock()
 OPENAPI_METADATA = {'title': 'Artemis API', 'description': 'Artemis provisioning system API.', 'version': __VERSION__}
 
 
-def get_environment_schemas() -> Result[Dict[str, JSONSchemaType], Failure]:
+def get_environment_schemas() -> Result[dict[str, JSONSchemaType], Failure]:
     global ENVIRONMENT_SCHEMAS
     if not ENVIRONMENT_SCHEMAS:
         logger = get_logger()
@@ -127,7 +126,7 @@ def get_environment_schemas() -> Result[Dict[str, JSONSchemaType], Failure]:
     return Ok(ENVIRONMENT_SCHEMAS)
 
 
-def get_redirects(version: str) -> List[str]:
+def get_redirects(version: str) -> list[str]:
     _, redirects = next(
         (
             (milestone_version, redirects)

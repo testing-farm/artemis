@@ -7,7 +7,7 @@ Helpers for driver hooks. Common, often-used actions and primitives.
 
 import os
 import threading
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import gluetool.log
 import gluetool.utils
@@ -29,7 +29,7 @@ KNOB_CACHE_PATTERN_MAPS: Knob[bool] = Knob(
 )
 
 
-_PATTERN_MAP_CACHE: Dict[str, Tuple[float, gluetool.utils.PatternMap]] = {}
+_PATTERN_MAP_CACHE: dict[str, tuple[float, gluetool.utils.PatternMap]] = {}
 _PATTERN_MAP_CACHE_LOCK = threading.Lock()
 
 
@@ -83,7 +83,7 @@ def map_environment_to_imagename_by_pattern_map(
     needle_template: str,
     mapping_filename: Optional[str] = None,
     mapping_filepath: Optional[str] = None,
-) -> Result[List[str], Failure]:
+) -> Result[list[str], Failure]:
     """
     Using a given pattern mapping file, try to map an environment to its corresponding image name.
 

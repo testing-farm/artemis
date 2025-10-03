@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # import sqlalchemy.orm.session
-from typing import List
 from unittest.mock import MagicMock
 
 # import gluetool.log
@@ -35,7 +34,7 @@ def fixture_image() -> AWSPoolImageInfo:
 
 
 @pytest.fixture(name='flavors', scope='function')
-def fixture_flavors() -> List[AWSFlavor]:
+def fixture_flavors() -> list[AWSFlavor]:
     return [
         AWSFlavor(
             name='generic x86_64 flavor',

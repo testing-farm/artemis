@@ -3,7 +3,7 @@
 
 import logging
 import uuid
-from typing import Any, List
+from typing import Any
 from unittest.mock import MagicMock
 
 import _pytest.logging
@@ -37,7 +37,7 @@ def test_sequence(
     caplog: _pytest.logging.LogCaptureFixture,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
 ) -> None:
-    results: List[str] = []
+    results: list[str] = []
     mock_uuids = ['uuid1', 'uuid2', 'uuid3', 'uuid4', 'uuid5', 'uuid6']
 
     def mock_uuid4() -> str:

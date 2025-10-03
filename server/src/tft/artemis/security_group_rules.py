@@ -3,13 +3,13 @@
 
 import dataclasses
 import ipaddress
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from gluetool.result import Error, Ok, Result
 
 from . import Failure, SerializableContainer
 
-SecurityGroupRulesInput = Optional[List[Dict[str, Any]]]
+SecurityGroupRulesInput = Optional[list[dict[str, Any]]]
 
 
 @dataclasses.dataclass(repr=False)
@@ -36,10 +36,10 @@ class SecurityGroupRule(SerializableContainer):
 
 @dataclasses.dataclass(repr=False)
 class SecurityGroupRules(SerializableContainer):
-    ingress: List[SecurityGroupRule] = dataclasses.field(default_factory=list)
-    egress: List[SecurityGroupRule] = dataclasses.field(default_factory=list)
+    ingress: list[SecurityGroupRule] = dataclasses.field(default_factory=list)
+    egress: list[SecurityGroupRule] = dataclasses.field(default_factory=list)
 
-    def update(self, data: List[SecurityGroupRule]) -> None:
+    def update(self, data: list[SecurityGroupRule]) -> None:
         self.ingress.extend([rule for rule in data if rule.type == 'ingress'])
         self.egress.extend([rule for rule in data if rule.type == 'egress'])
 
@@ -49,14 +49,14 @@ class SecurityGroupRules(SerializableContainer):
         self.egress.extend(rules.egress)
 
     @classmethod
-    def unserialize(cls, serialized: Dict[str, Any]) -> 'SecurityGroupRules':
+    def unserialize(cls, serialized: dict[str, Any]) -> 'SecurityGroupRules':
         return SecurityGroupRules(
             ingress=[SecurityGroupRule.unserialize(rule) for rule in serialized['ingress']],
             egress=[SecurityGroupRule.unserialize(rule) for rule in serialized['egress']],
         )
 
     @classmethod
-    def load_from_pool_config(cls, serialized_config: List[Dict[str, Any]]) -> Result['SecurityGroupRules', Failure]:
+    def load_from_pool_config(cls, serialized_config: list[dict[str, Any]]) -> Result['SecurityGroupRules', Failure]:
         """
         We are being permissive with clients and allow then to specify multiple cidrs per rule, pool config not
         excluded. However artemis expects one rule to hold one cidr only, so in case more are there we need to convert

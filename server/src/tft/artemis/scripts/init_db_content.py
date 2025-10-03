@@ -3,7 +3,7 @@
 
 import os.path
 import sys
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Optional, cast
 
 import click
 import gluetool.log
@@ -27,7 +27,7 @@ from ..guest import GuestState
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION
 
 
-def _load_bundled_schema(logger: gluetool.log.ContextAdapter) -> Tuple[JSONSchemaType, Dict[str, JSONSchemaType]]:
+def _load_bundled_schema(logger: gluetool.log.ContextAdapter) -> tuple[JSONSchemaType, dict[str, JSONSchemaType]]:
     logger.info('validating server config against bundled schema')
 
     r_schema = load_packaged_validation_schema('common.yml')
@@ -39,7 +39,7 @@ def _load_bundled_schema(logger: gluetool.log.ContextAdapter) -> Tuple[JSONSchem
 
     schema = r_schema.unwrap()
 
-    driver_schemas: Dict[str, JSONSchemaType] = {}
+    driver_schemas: dict[str, JSONSchemaType] = {}
 
     for driver_name in PoolDriver._drivers_registry:
         r_schema = load_packaged_validation_schema(os.path.join('drivers', f'{driver_name}.yml'))
@@ -56,7 +56,7 @@ def _load_bundled_schema(logger: gluetool.log.ContextAdapter) -> Tuple[JSONSchem
 
 def _load_local_schema(
     logger: gluetool.log.ContextAdapter, basedir: str
-) -> Tuple[JSONSchemaType, Dict[str, JSONSchemaType]]:
+) -> tuple[JSONSchemaType, dict[str, JSONSchemaType]]:
     logger.info(f'validating server config against schema from {basedir}')
 
     def _fetch_schema(path: str) -> Result[JSONSchemaType, Failure]:
@@ -75,7 +75,7 @@ def _load_local_schema(
 
     schema = r_schema.unwrap()
 
-    driver_schemas: Dict[str, JSONSchemaType] = {}
+    driver_schemas: dict[str, JSONSchemaType] = {}
 
     for driver_name in PoolDriver._drivers_registry:
         r_schema = _fetch_schema(os.path.join('drivers', f'{driver_name}.yml'))
@@ -92,7 +92,7 @@ def _load_local_schema(
 
 def _load_remote_schema(
     logger: gluetool.log.ContextAdapter, baseurl: str
-) -> Tuple[JSONSchemaType, Dict[str, JSONSchemaType]]:
+) -> tuple[JSONSchemaType, dict[str, JSONSchemaType]]:
     logger.info(f'validating server config against schema from {baseurl}')
 
     def _fetch_schema(path: str) -> Result[JSONSchemaType, Failure]:
@@ -122,7 +122,7 @@ def _load_remote_schema(
 
     schema = r_schema.unwrap()
 
-    driver_schemas: Dict[str, JSONSchemaType] = {}
+    driver_schemas: dict[str, JSONSchemaType] = {}
 
     for driver_name in PoolDriver._drivers_registry:
         r_schema = _fetch_schema(os.path.join('drivers', f'{driver_name}.yml'))
@@ -145,10 +145,10 @@ def _load_remote_schema(
 
 def validate_config(
     logger: gluetool.log.ContextAdapter,
-    server_config: Dict[str, Any],
+    server_config: dict[str, Any],
     schema: JSONSchemaType,
-    driver_schemas: Dict[str, JSONSchemaType],
-) -> Result[List[str], Failure]:
+    driver_schemas: dict[str, JSONSchemaType],
+) -> Result[list[str], Failure]:
     """
     Validate a server configuration data using a JSON schema.
 
@@ -157,7 +157,7 @@ def validate_config(
     """
 
     # In this list we will accumulate all validation errors reported by `validate_data`.
-    validation_errors: List[str] = []
+    validation_errors: list[str] = []
 
     r_validation = validate_data(server_config, schema)
 
@@ -186,7 +186,7 @@ def validate_config(
     return Ok(validation_errors)
 
 
-def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: Dict[str, Any]) -> None:
+def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dict[str, Any]) -> None:
     # Note: the current approach of "init schema" is crappy, it basically either succeeds or fails at
     # the first conflict, skipping the rest. To avoid collisions, it must be refactored, and sooner
     # or later CLI will take over once we get full support for user accounts.

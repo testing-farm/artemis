@@ -9,17 +9,12 @@ import json
 import operator
 import os
 import re
+from collections.abc import Generator, Iterator, MutableSequence
+from re import Pattern
 from typing import (
     Any,
     Callable,
-    Dict,
-    Generator,
-    Iterator,
-    List,
-    MutableSequence,
     Optional,
-    Pattern,
-    Tuple,
     Union,
     cast,
 )
@@ -86,7 +81,7 @@ from . import (
 #
 # Custom typing types
 #
-InstanceOwnerType = Tuple[Dict[str, Any], str]
+InstanceOwnerType = tuple[dict[str, Any], str]
 
 # EBS volume types.
 #
@@ -123,7 +118,7 @@ class APIBlockDeviceMappingType(TypedDict, total=True):
 # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
 # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ProcessorInfo.html
 class APIInstanceTypeProcessorInfo(TypedDict):
-    SupportedArchitectures: List[str]
+    SupportedArchitectures: list[str]
     SustainedClockSpeedInGhz: float
 
 
@@ -135,7 +130,7 @@ DEFAULT_VOLUME_TYPE: EBSVolumeTypeType = 'gp3'
 # Type of container holding block device mappings.
 #
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-instance.html
-APIBlockDeviceMappingsType = List[APIBlockDeviceMappingType]
+APIBlockDeviceMappingsType = list[APIBlockDeviceMappingType]
 
 
 #: Device names allowed or recommended by AWS EC2.
@@ -149,11 +144,11 @@ class APINetworkInterfaceType(TypedDict, total=True):
     DeviceIndex: int
     SubnetId: str
     DeleteOnTermination: bool
-    Groups: List[str]
+    Groups: list[str]
     AssociatePublicIpAddress: bool
 
 
-APINetworkInterfacesType = List[APINetworkInterfaceType]
+APINetworkInterfacesType = list[APINetworkInterfaceType]
 
 
 class APINetworkInfo(TypedDict, total=False):
@@ -381,7 +376,7 @@ class AWSPoolImageInfo(PoolImageInfo):
     #: Carries original `BootMode` image field.
     boot_mode: Optional[str]
 
-    def serialize_scrubbed(self) -> Dict[str, Any]:
+    def serialize_scrubbed(self) -> dict[str, Any]:
         serialized = super().serialize_scrubbed()
 
         for bd_mapping in serialized['block_device_mappings']:
@@ -435,7 +430,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     host helper methods we use for modifications of mappings.
     """
 
-    def __init__(self, mappings: Optional[List[APIBlockDeviceMappingType]] = None):
+    def __init__(self, mappings: Optional[list[APIBlockDeviceMappingType]] = None):
         super().__init__()
 
         self.data = mappings[:] if mappings else []
@@ -461,11 +456,11 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         self[index] = value
 
     # Override serialization - we're fine with quite a trivial approach.
-    def serialize(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.data)
+    def serialize(self) -> dict[str, Any]:
+        return cast(dict[str, Any], self.data)
 
     @classmethod
-    def unserialize(cls, serialized: Dict[str, Any]) -> 'BlockDeviceMappings':
+    def unserialize(cls, serialized: dict[str, Any]) -> 'BlockDeviceMappings':
         cast_serialized = cast(APIBlockDeviceMappingsType, serialized)
 
         return BlockDeviceMappings(cast_serialized)
@@ -794,7 +789,7 @@ def _honor_constraint_disk(
 
 def _get_constraint_spans(
     logger: ContextAdapter, guest_request: GuestRequest, flavor: Flavor
-) -> Result[List[List[Constraint]], Failure]:
+) -> Result[list[list[Constraint]], Failure]:
     if not guest_request.environment.has_hw_constraints:
         return Ok([])
 
@@ -831,7 +826,7 @@ def _get_constraint_spans(
 
 def _get_constraint_span(
     logger: ContextAdapter, guest_request: GuestRequest, flavor: Flavor
-) -> Result[List[Constraint], Failure]:
+) -> Result[list[Constraint], Failure]:
     r_spans = _get_constraint_spans(logger, guest_request, flavor)
 
     if r_spans.is_error:
@@ -1002,7 +997,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
     host helper methods we use for modifications of network interface list.
     """
 
-    def __init__(self, interfaces: Optional[List[APINetworkInterfaceType]] = None):
+    def __init__(self, interfaces: Optional[list[APINetworkInterfaceType]] = None):
         super().__init__()
 
         self.data = interfaces[:] if interfaces else []
@@ -1028,11 +1023,11 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         self[index] = value
 
     # Override serialization - we're fine with quite a trivial approach.
-    def serialize(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.data)
+    def serialize(self) -> dict[str, Any]:
+        return cast(dict[str, Any], self.data)
 
     @classmethod
-    def unserialize(cls, serialized: Dict[str, Any]) -> 'NetworkInterfaces':
+    def unserialize(cls, serialized: dict[str, Any]) -> 'NetworkInterfaces':
         cast_serialized = cast(APINetworkInterfacesType, serialized)
 
         return NetworkInterfaces(cast_serialized)
@@ -1044,7 +1039,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
     def create_nic(
         device_index: int,
         subnet_id: str,
-        security_groups: List[str],
+        security_groups: list[str],
         delete_on_termination: bool = True,
         associate_public_ip_address: bool = False,
     ) -> Result[APINetworkInterfaceType, Failure]:
@@ -1063,7 +1058,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         nic: APINetworkInterfaceType,
         device_index: Optional[int] = None,
         subnet_id: Optional[str] = None,
-        security_groups: Optional[List[str]] = None,
+        security_groups: Optional[list[str]] = None,
         delete_on_termination: Optional[bool] = None,
         associate_public_ip_address: Optional[bool] = None,
     ) -> Result[APINetworkInterfaceType, Failure]:
@@ -1104,7 +1099,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         self,
         count: int,
         subnet_id: str,
-        security_groups: List[str],
+        security_groups: list[str],
         delete_on_termination: bool,
         associate_public_ip_address: bool,
     ) -> Result[None, Failure]:
@@ -1130,7 +1125,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         self,
         device_index: int,
         subnet_id: str,
-        security_groups: List[str],
+        security_groups: list[str],
         delete_on_termination: bool = True,
         associate_public_ip_address: bool = False,
     ) -> Result[APINetworkInterfaceType, Failure]:
@@ -1156,7 +1151,7 @@ def _honor_constraint_network(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
-    security_groups: List[str],
+    security_groups: list[str],
 ) -> Result[bool, Failure]:
     _, index, child_property_name, _ = constraint.expand_name()
 
@@ -1186,7 +1181,7 @@ def setup_extra_network_interfaces(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
-    security_groups: List[str],
+    security_groups: list[str],
 ) -> Result[NetworkInterfaces, Failure]:
     r_spans = _get_constraint_spans(logger, guest_request, flavor)
 
@@ -1240,7 +1235,7 @@ def create_network_interfaces(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: AWSFlavor,
-    security_groups: List[str],
+    security_groups: list[str],
 ) -> Result[NetworkInterfaces, Failure]:
     nics = NetworkInterfaces()
 
@@ -1260,7 +1255,7 @@ def create_network_interfaces(
     return Ok(r_nics.unwrap())
 
 
-def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None]:
+def _sanitize_tags(tags: GuestTagsType) -> Generator[tuple[str, str], None, None]:
     """
     Sanitize tags to make their values acceptable for AWS API and CLI.
 
@@ -1276,7 +1271,7 @@ def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None
         yield name, value or '""'
 
 
-def _serialize_tags(tags: GuestTagsType) -> List[str]:
+def _serialize_tags(tags: GuestTagsType) -> list[str]:
     """
     Serialize tags to make them acceptable for AWS CLI.
 
@@ -1292,7 +1287,7 @@ def _serialize_tags(tags: GuestTagsType) -> List[str]:
     return [f'Key={name},Value={value}' for name, value in _sanitize_tags(tags)]
 
 
-def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> List[str]:
+def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> list[str]:
     """
     Serialize tags to make them acceptable for ``--tag-specifications`` CLI option.
 
@@ -1363,7 +1358,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
     _image_map_hook_name = 'AWS_ENVIRONMENT_TO_IMAGE'
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
         self.environ = {
             **os.environ,
@@ -1374,11 +1369,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         }
 
     @property
-    def _image_owners(self) -> List[str]:
-        return cast(List[str], self.pool_config.get('image-owners', ['self']))
+    def _image_owners(self) -> list[str]:
+        return cast(list[str], self.pool_config.get('image-owners', ['self']))
 
     @property
-    def _pool_security_groups(self) -> List[str]:
+    def _pool_security_groups(self) -> list[str]:
         """Get security groups from pool config as a list."""
         security_group_config = self.pool_config.get('security-group', [])
 
@@ -1398,8 +1393,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-    ) -> Result[List[AWSPoolImageInfo], Failure]:
-        r_images: Result[List[AWSPoolImageInfo], Failure] = super()._guest_request_to_image_or_none(
+    ) -> Result[list[AWSPoolImageInfo], Failure]:
+        r_images: Result[list[AWSPoolImageInfo], Failure] = super()._guest_request_to_image_or_none(
             logger, session, guest_request
         )
 
@@ -1482,7 +1477,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                     )
                 )
 
-            if cast(List[Any], r_check.unwrap()):
+            if cast(list[Any], r_check.unwrap()):
                 # We have a VNIC still attached to the security group and have to wait for the VM to terminate fully
                 return Ok(ReleasePoolResourcesState.BLOCKED)
 
@@ -1505,8 +1500,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[AWSFlavor],
-    ) -> Result[List[AWSFlavor], Failure]:
+        suitable_flavors: list[AWSFlavor],
+    ) -> Result[list[AWSFlavor], Failure]:
         """
         Console/URL logs require ENA support
         """
@@ -1531,8 +1526,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[AWSFlavor],
-    ) -> Result[List[AWSFlavor], Failure]:
+        suitable_flavors: list[AWSFlavor],
+    ) -> Result[list[AWSFlavor], Failure]:
         """
         Make sure that, if image does not support ENA, we drop all flavors that require the support
         """
@@ -1557,8 +1552,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[AWSFlavor],
-    ) -> Result[List[AWSFlavor], Failure]:
+        suitable_flavors: list[AWSFlavor],
+    ) -> Result[list[AWSFlavor], Failure]:
         """
         Make sure that, if image supports a particular boot method only, we drop all flavors that do not support it
         """
@@ -1583,8 +1578,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: List[AWSFlavor],
-    ) -> Result[List[AWSFlavor], Failure]:
+        suitable_flavors: list[AWSFlavor],
+    ) -> Result[list[AWSFlavor], Failure]:
         if not guest_request.environment.has_hw_constraints:
             return Ok(suitable_flavors)
 
@@ -1676,7 +1671,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
             return Error(r_output.unwrap_error())
 
-        output = cast(List[Dict[str, Any]], r_output.unwrap())
+        output = cast(list[dict[str, Any]], r_output.unwrap())
 
         # get instance info from command output
         try:
@@ -1687,7 +1682,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         return Ok((instance, owner))
 
-    def _describe_spot_instance(self, guest_request: GuestRequest) -> Result[Dict[str, Any], Failure]:
+    def _describe_spot_instance(self, guest_request: GuestRequest) -> Result[dict[str, Any], Failure]:
         aws_options = [
             'ec2',
             'describe-spot-instance-requests',
@@ -1703,10 +1698,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                 Failure.from_failure('failed to fetch spot instance request information', r_output.unwrap_error())
             )
 
-        return Ok(cast(List[Dict[str, Any]], r_output.unwrap())[0])
+        return Ok(cast(list[dict[str, Any]], r_output.unwrap())[0])
 
     def _aws_command(
-        self, args: List[str], json_output: bool = True, key: Optional[str] = None, commandname: Optional[str] = None
+        self, args: list[str], json_output: bool = True, key: Optional[str] = None, commandname: Optional[str] = None
     ) -> Result[JSONType, Failure]:
         """
         Runs command via aws cli and returns a dictionary with command reply.
@@ -1751,7 +1746,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             return Ok(output.json)
 
         try:
-            return Ok(cast(Dict[str, Any], output.json)[key])
+            return Ok(cast(dict[str, Any], output.json)[key])
 
         except KeyError:
             return Error(
@@ -1783,7 +1778,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         if r_spot_price.is_error:
             return Error(Failure.from_failure('failed to fetch spot price history', r_spot_price.unwrap_error()))
 
-        prices = cast(List[Dict[str, str]], r_spot_price.unwrap())
+        prices = cast(list[dict[str, str]], r_spot_price.unwrap())
 
         log_dict(logger.debug, 'spot prices', prices)
 
@@ -1846,7 +1841,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         guest_request: GuestRequest,
         image: AWSPoolImageInfo,
         flavor: AWSFlavor,
-        security_groups: List[str],
+        security_groups: list[str],
     ) -> Result[NetworkInterfaces, Failure]:
         return create_network_interfaces(logger, self, guest_request, image, flavor, security_groups)
 
@@ -1863,7 +1858,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
     def _assign_security_group_rules(
         self, logger: ContextAdapter, guest_request: GuestRequest, guest_security_group_id: str
-    ) -> Result[List[str], Failure]:
+    ) -> Result[list[str], Failure]:
         """
         Ideally there should be a dedicated stage in the artemis lifecycle, when upon startup the artemis config's
         security-group-rules are matched against existing rules in the security-group (with correction
@@ -1904,7 +1899,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
             guest_secgroup_rules.extend(r_rules_from_config.unwrap())
 
-        def _create_ip_permissions_payload(rules: List[SecurityGroupRule]) -> str:
+        def _create_ip_permissions_payload(rules: list[SecurityGroupRule]) -> str:
             ip_permissions = []
             for rule in rules:
                 ip_permissions.append(
@@ -1961,7 +1956,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         if r_security_group_info.is_error:
             return Error(r_security_group_info.unwrap_error())
 
-        security_group_ids: List[str] = list(JQ_QUERY_SECURITY_GROUP_IDS.input(r_security_group_info.unwrap()).all())
+        security_group_ids: list[str] = list(JQ_QUERY_SECURITY_GROUP_IDS.input(r_security_group_info.unwrap()).all())
 
         if not security_group_ids:
             return Ok(None)
@@ -1972,8 +1967,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         self,
         logger: ContextAdapter,
         guest_request: GuestRequest,
-        tags: Dict[str, str],
-    ) -> Result[List[str], Failure]:
+        tags: dict[str, str],
+    ) -> Result[list[str], Failure]:
         # Get the name of the new group from the template
         r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_security_group_template.is_error:
@@ -2005,7 +2000,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                 )
             )
 
-        subnet_details = cast(List[Dict[str, str]], r_subnet_details.unwrap())
+        subnet_details = cast(list[dict[str, str]], r_subnet_details.unwrap())
         vpc_id = subnet_details[0]['VpcId']
 
         r_security_group_id = self._find_security_group_id(logger, security_group_name, vpc_id)
@@ -2153,7 +2148,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         if r_instance_request.is_error:
             return Error(Failure.from_failure('failed to start instance', r_instance_request.unwrap_error()))
 
-        instance_request = cast(List[Dict[str, str]], r_instance_request.unwrap())
+        instance_request = cast(list[dict[str, str]], r_instance_request.unwrap())
 
         try:
             instance_id = instance_request[0]['InstanceId']
@@ -2268,7 +2263,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         if r_spot_request.is_error:
             return Error(Failure.from_failure('failed to request spot instance', r_spot_request.unwrap_error()))
 
-        spot_instance_id = cast(List[Dict[str, str]], r_spot_request.unwrap())[0]['SpotInstanceRequestId']
+        spot_instance_id = cast(list[dict[str, str]], r_spot_request.unwrap())[0]['SpotInstanceRequestId']
 
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-request-status.html
         logger.info(f'current spot instance request state {spot_instance_id}:open:pending-evaluation')
@@ -2551,7 +2546,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         # Nothing else to watch here, termination reported, we're done
         return Ok(WatchdogState.COMPLETE)
 
-    def _tag_resources(self, resource_ids: List[str], tags: GuestTagsType) -> Result[JSONType, Failure]:
+    def _tag_resources(self, resource_ids: list[str], tags: GuestTagsType) -> Result[JSONType, Failure]:
         return self._aws_command(
             ['ec2', 'create-tags', '--resources', *resource_ids, '--tags', *_serialize_tags(tags)],
             json_output=False,
@@ -2603,7 +2598,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         if not pool_data:
             return Ok(None)
 
-        resource_ids: List[AWSPoolResourcesIDs] = []
+        resource_ids: list[AWSPoolResourcesIDs] = []
 
         # Prevent "double free" error by using a sequence: if we succeed freeing the instance,
         # we no longer try to free it in the case of retries, we'd focus on spot request only.
@@ -2618,8 +2613,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
 
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:
+    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
+        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
             name_patern: Optional[Pattern[str]] = None
             creation_date_patern: Optional[Pattern[str]] = None
             max_age: Optional[int] = None
@@ -2650,9 +2645,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             if r_images.is_error:
                 return Error(Failure.from_failure('failed to fetch image information', r_images.unwrap_error()))
 
-            images: List[PoolImageInfo] = []
+            images: list[PoolImageInfo] = []
 
-            for image in cast(List[APIImageType], r_images.unwrap()):
+            for image in cast(list[APIImageType], r_images.unwrap()):
                 if name_patern is not None and not name_patern.match(image.get('Name') or image['ImageId']):
                     continue
 
@@ -2706,8 +2701,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
             return Ok(images)
 
-        images: List[PoolImageInfo] = []
-        image_filters = cast(List[ConfigImageFilter], self.pool_config.get('image-filters', []))
+        images: list[PoolImageInfo] = []
+        image_filters = cast(list[ConfigImageFilter], self.pool_config.get('image-filters', []))
 
         if image_filters:
             for filters in image_filters:
@@ -2728,7 +2723,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         return Ok(images)
 
-    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
 
         r_capabilities = self.capabilities()
@@ -2738,7 +2733,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         capabilities = r_capabilities.unwrap()
 
-        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
             r_raw_flavors = self._aws_command(
                 ['ec2', 'describe-instance-types'], key='InstanceTypes', commandname='aws.ec2-describe-instance-types'
             )
@@ -2746,14 +2741,14 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             if r_raw_flavors.is_error:
                 return Error(r_raw_flavors.unwrap_error())
 
-            return Ok(cast(List[Dict[str, Any]], r_raw_flavors.unwrap()))
+            return Ok(cast(list[dict[str, Any]], r_raw_flavors.unwrap()))
 
         # Here we covert instance types retrieved from API into flavors. We take a look at architectures
         # supported by instance type, and create distinct flavors for each architecture. That way, we can
         # have pools supporting more than one architecture, and let Artemis match flavors and requestes
         # based on their attributes, not because maintainers "hide" the instance types with wrong parameters.
         def _constructor(
-            logger: gluetool.log.ContextAdapter, raw_flavor: Dict[str, Any]
+            logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
         ) -> Iterator[Result[Flavor, Failure]]:
             for arch in cast(APIInstanceTypeProcessorInfo, raw_flavor['ProcessorInfo'])['SupportedArchitectures']:
                 artemis_arch = _aws_arch_to_arch(arch)
@@ -2762,7 +2757,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                     continue
 
                 try:
-                    boot_methods: List[FlavorBootMethodType] = [
+                    boot_methods: list[FlavorBootMethodType] = [
                         _aws_boot_to_boot(boot_method)
                         for boot_method in JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES.input(raw_flavor).all()
                     ]
@@ -2813,7 +2808,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
     def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
         return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
 
-    def get_cached_pool_flavor_infos(self) -> Result[List[Flavor], Failure]:
+    def get_cached_pool_flavor_infos(self) -> Result[list[Flavor], Failure]:
         """
         Retrieve all flavor info known to the pool.
         """
@@ -2833,7 +2828,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         resources = r_resources.unwrap()
 
         # Resource usage - instances and flavors
-        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
             # Count only instance using our subnet
             r = self._aws_command(
                 ['ec2', 'describe-instances', '--filter', f'Name=subnet-id,Values={subnet_id}'],
@@ -2848,7 +2843,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         def _update_instance_usage(
             logger: gluetool.log.ContextAdapter,
             usage: PoolResourcesUsage,
-            raw_instance: Dict[str, Any],
+            raw_instance: dict[str, Any],
             flavor: Optional[Flavor],
         ) -> Result[None, Failure]:
             assert usage.instances is not None  # narrow type
@@ -2906,7 +2901,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
     def _fetch_guest_console_blob(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[Union[Tuple[None, None], Tuple[datetime.datetime, Optional[str]]], Failure]:
+    ) -> Result[Union[tuple[None, None], tuple[datetime.datetime, Optional[str]]], Failure]:
         pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         # This can actually happen, spot instances may take some time to get the instance ID.
@@ -2921,7 +2916,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         if r_output.is_error:
             return Error(Failure.from_failure('failed to fetch console output', r_output.unwrap_error()))
 
-        output = cast(Dict[str, str], r_output.unwrap())
+        output = cast(dict[str, str], r_output.unwrap())
 
         timestamp = datetime.datetime.strptime(output['Timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ')
         console_output = output.get('Output')

@@ -15,19 +15,14 @@ import functools
 import itertools
 import operator
 import re
+from collections.abc import Iterable, Iterator, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
     ClassVar,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
     NamedTuple,
     Optional,
-    Sequence,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -135,7 +130,7 @@ class _FlavorSubsystemContainer(SerializableContainer):
     CONTAINER_PREFIX: ClassVar[Optional[str]] = None
 
     #: A list of properties that exist but are not backed by any attribute or value.
-    VIRTUAL_PROPERTIES: ClassVar[List[str]] = []
+    VIRTUAL_PROPERTIES: ClassVar[list[str]] = []
 
     # Similar to dataclasses.replace(), but that one isn't recursive, and we have to clone some complex fields.
     def clone(self) -> Self:
@@ -167,19 +162,19 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
     """
 
     #: A class of one of the items.
-    ITEM_CLASS: Type[U]
+    ITEM_CLASS: type[U]
 
     #: A label to use when rendering item fields.
     ITEM_LABEL: str
 
-    def __init__(self, items: Optional[List[U]] = None) -> None:
+    def __init__(self, items: Optional[list[U]] = None) -> None:
         """
         Create a container with a given items.
 
         :param items: initial set of items.
         """
 
-        self.items: List[U] = items or []
+        self.items: list[U] = items or []
 
     def __getitem__(self, index: int) -> U:  # type: ignore[override]  # does not match the superclass but that's fine
         """
@@ -203,7 +198,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
     def clone(self) -> Self:
         return self.__class__([item.clone() for item in self.items])
 
-    def serialize(self) -> List[Dict[str, Any]]:  # type: ignore[override]  # expected
+    def serialize(self) -> list[dict[str, Any]]:  # type: ignore[override]  # expected
         """
         Return Python built-in types representing the content of this container.
 
@@ -213,7 +208,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
         return [item.serialize() for item in self.items]
 
     @classmethod
-    def unserialize(cls: Type[V], serialized: List[Dict[str, Any]]) -> V:  # type: ignore[override]
+    def unserialize(cls, serialized: list[dict[str, Any]]) -> Self:  # type: ignore[override]
         """
         Create container instance representing the content described with Python built-in types.
 
@@ -291,7 +286,7 @@ class FlavorBoot(_FlavorSubsystemContainer):
     #:
     #:    Plural is correct here, internally we hold the list of supported boot methods, because some flavors (and
     #:    images) can support more than one.
-    method: List[FlavorBootMethodType] = dataclasses.field(default_factory=list)
+    method: list[FlavorBootMethodType] = dataclasses.field(default_factory=list)
 
 
 # Note: This class holds a list of mappings related to a HW requirement `compatible`. At this point only
@@ -304,7 +299,7 @@ class FlavorCompatible(_FlavorSubsystemContainer):
 
     CONTAINER_PREFIX = 'compatible'
 
-    distro: List[str] = dataclasses.field(default_factory=list)
+    distro: list[str] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass(repr=False)
@@ -348,7 +343,7 @@ class FlavorCpu(_FlavorSubsystemContainer):
     stepping: Optional[int] = None
 
     #: CPU flags.
-    flag: List[str] = dataclasses.field(default_factory=list)
+    flag: list[str] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass(repr=False)
@@ -383,7 +378,7 @@ class FlavorDisk(_FlavorSubsystemContainer):
     max_size: Optional[SizeType] = None
     model_name: Optional[str] = None
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         """
         Return Python built-in types representing the content of this container.
 
@@ -404,7 +399,7 @@ class FlavorDisk(_FlavorSubsystemContainer):
         return serialized
 
     @classmethod
-    def unserialize(cls: Type[W], serialized: Dict[str, Any]) -> W:
+    def unserialize(cls, serialized: dict[str, Any]) -> Self:
         """
         Create container instance representing the content described with Python built-in types.
 
@@ -630,7 +625,7 @@ class Flavor(_FlavorSubsystemContainer):
     Represents various properties of a flavor.
     """
 
-    VIRTUAL_PROPERTIES: ClassVar[List[str]] = ['hostname']
+    VIRTUAL_PROPERTIES: ClassVar[list[str]] = ['hostname']
 
     #: Human-readable name of the flavor.
     name: str
@@ -671,7 +666,7 @@ class Flavor(_FlavorSubsystemContainer):
     #: Virtualization properties.
     virtualization: FlavorVirtualization = dataclasses.field(default_factory=FlavorVirtualization)
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         """
         Return Python built-in types representing the content of this container.
 
@@ -685,7 +680,7 @@ class Flavor(_FlavorSubsystemContainer):
 
         return serialized
 
-    def serialize_scrubbed(self) -> Dict[str, Any]:
+    def serialize_scrubbed(self) -> dict[str, Any]:
         """
         Serialize properties to JSON while scrubbing sensitive information.
 
@@ -699,7 +694,7 @@ class Flavor(_FlavorSubsystemContainer):
         return serialized
 
     @classmethod
-    def unserialize(cls, serialized: Dict[str, Any]) -> 'Flavor':
+    def unserialize(cls, serialized: dict[str, Any]) -> 'Flavor':
         """
         Create container instance representing the content described with Python built-in types.
 
@@ -756,7 +751,7 @@ def notmatch(text: str, pattern: str) -> bool:
     return re.match(pattern, text) is None
 
 
-def notcontains(haystack: List[str], needle: str) -> bool:
+def notcontains(haystack: list[str], needle: str) -> bool:
     """
     Find out whether an item is in the given list.
 
@@ -789,7 +784,7 @@ OPERATOR_SIGN_TO_OPERATOR = {
 }
 
 
-OPERATOR_TO_HANDLER: Dict[Operator, OperatorHandlerType] = {
+OPERATOR_TO_HANDLER: dict[Operator, OperatorHandlerType] = {
     Operator.EQ: operator.eq,
     Operator.NEQ: operator.ne,
     Operator.GT: operator.gt,
@@ -874,8 +869,8 @@ class ConstraintBase(SerializableContainer):
         return Ok(self if r.unwrap() else None)
 
     def spans(
-        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
-    ) -> Iterator[List['Constraint']]:
+        self, logger: gluetool.log.ContextAdapter, members: Optional[list['Constraint']] = None
+    ) -> Iterator[list['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
 
@@ -920,7 +915,7 @@ class CompoundConstraint(ConstraintBase):
     Base class for all *compound* constraints, constraints imposed to more than one dimension.
     """
 
-    def __init__(self, reducer: ReducerType = _reduce_any, constraints: Optional[List[ConstraintBase]] = None) -> None:
+    def __init__(self, reducer: ReducerType = _reduce_any, constraints: Optional[list[ConstraintBase]] = None) -> None:
         """
         Construct a compound constraint, constraint imposed to more than one dimension.
 
@@ -931,7 +926,7 @@ class CompoundConstraint(ConstraintBase):
         self.reducer = reducer
         self.constraints = constraints or []
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         """
         Return Python built-in types representing the content of this container.
 
@@ -946,7 +941,7 @@ class CompoundConstraint(ConstraintBase):
         return {self.__class__.__name__.lower(): [constraint.serialize() for constraint in self.constraints]}
 
     @classmethod
-    def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
+    def unserialize(cls, serialized: dict[str, Any]) -> Self:
         """
         Create container instance representing the content described with Python built-in types.
 
@@ -1007,7 +1002,7 @@ class CompoundConstraint(ConstraintBase):
         if r.unwrap() is not True:
             return Ok(None)
 
-        pruned_constraints: List[ConstraintBase] = []
+        pruned_constraints: list[ConstraintBase] = []
 
         for constraint in self.constraints:
             r_pruned = constraint.prune_on_flavor(logger, flavor)
@@ -1025,8 +1020,8 @@ class CompoundConstraint(ConstraintBase):
         return Ok(self.__class__(constraints=pruned_constraints))
 
     def spans(
-        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
-    ) -> Iterator[List['Constraint']]:
+        self, logger: gluetool.log.ContextAdapter, members: Optional[list['Constraint']] = None
+    ) -> Iterator[list['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
 
@@ -1071,13 +1066,13 @@ class Constraint(ConstraintBase):
 
     @classmethod
     def from_specification(
-        cls: Type[T],
+        cls,
         name: str,
         raw_value: str,
         as_quantity: bool = True,
         as_cast: Optional[Callable[[str], ConstraintValueType]] = None,
         original_constraint: Optional['Constraint'] = None,
-    ) -> T:
+    ) -> Self:
         """
         Parse raw constraint specification into our internal representation.
 
@@ -1122,7 +1117,7 @@ class Constraint(ConstraintBase):
         )
 
     @classmethod
-    def from_arch(cls: Type[T], value: str) -> T:
+    def from_arch(cls, value: str) -> Self:
         """
         Create a constraint for ``arch`` HW requirement.
 
@@ -1157,7 +1152,7 @@ class Constraint(ConstraintBase):
         return f'{self.name} {self.operator.value} {self.value}'
 
     @classmethod
-    def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
+    def unserialize(cls, serialized: dict[str, Any]) -> Self:
         """
         Create container instance representing the content described with Python built-in types.
 
@@ -1185,7 +1180,7 @@ class Constraint(ConstraintBase):
 
         groups = match.groupdict()
 
-        spec_name_components: List[str] = [groups['property_name']]
+        spec_name_components: list[str] = [groups['property_name']]
 
         if groups['index']:
             spec_name_components += ['[]']
@@ -1277,8 +1272,8 @@ class Constraint(ConstraintBase):
         return Ok(self.expand_name().spec_name == constraint_name)
 
     def spans(
-        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
-    ) -> Iterator[List['Constraint']]:
+        self, logger: gluetool.log.ContextAdapter, members: Optional[list['Constraint']] = None
+    ) -> Iterator[list['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
 
@@ -1299,7 +1294,7 @@ class And(CompoundConstraint):
     Represents constraints that are grouped in ``and`` fashion.
     """
 
-    def __init__(self, constraints: Optional[List[ConstraintBase]] = None) -> None:
+    def __init__(self, constraints: Optional[list[ConstraintBase]] = None) -> None:
         """
         Hold constraints that are grouped in ``and`` fashion.
 
@@ -1309,8 +1304,8 @@ class And(CompoundConstraint):
         super().__init__(_reduce_all, constraints=constraints)
 
     def spans(
-        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
-    ) -> Iterator[List['Constraint']]:
+        self, logger: gluetool.log.ContextAdapter, members: Optional[list['Constraint']] = None
+    ) -> Iterator[list['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
 
@@ -1346,7 +1341,7 @@ class Or(CompoundConstraint):
     Represents constraints that are grouped in ``or`` fashion.
     """
 
-    def __init__(self, constraints: Optional[List[ConstraintBase]] = None) -> None:
+    def __init__(self, constraints: Optional[list[ConstraintBase]] = None) -> None:
         """
         Hold constraints that are grouped in ``or`` fashion.
 
@@ -1356,8 +1351,8 @@ class Or(CompoundConstraint):
         super().__init__(_reduce_any, constraints=constraints)
 
     def spans(
-        self, logger: gluetool.log.ContextAdapter, members: Optional[List['Constraint']] = None
-    ) -> Iterator[List['Constraint']]:
+        self, logger: gluetool.log.ContextAdapter, members: Optional[list['Constraint']] = None
+    ) -> Iterator[list['Constraint']]:
         """
         Generate all distinct spans covered by this constraint.
 
@@ -2035,7 +2030,7 @@ class Kickstart(SerializableContainer):
         self.kernel_options: Optional[str] = kwargs.get('kernel-options')
         self.kernel_options_post: Optional[str] = kwargs.get('kernel-options-post')
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         """Ensure that the parameters are saved with dashes to the database.
 
         We need to represent the data in the database with the same naming as in the API scheme.

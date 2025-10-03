@@ -11,7 +11,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 import colorama
 
@@ -23,7 +23,7 @@ class GuestRequest:
 
     active: bool = True
 
-    details: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    details: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     ctime: datetime.datetime = dataclasses.field(default_factory=datetime.datetime.utcnow)
     state_mtime: datetime.datetime = dataclasses.field(default_factory=datetime.datetime.utcnow)
@@ -131,10 +131,10 @@ class GuestRequest:
 class HerdPrinter(threading.Thread):
     KEEP_PRINTING = True
 
-    def __init__(self, guests: List[GuestRequest]) -> None:
+    def __init__(self, guests: list[GuestRequest]) -> None:
         super().__init__(target=self.do_run, args=(guests,), daemon=False)
 
-    def do_run(self, guests: List[GuestRequest]) -> None:
+    def do_run(self, guests: list[GuestRequest]) -> None:
         start = datetime.datetime.utcnow()
 
         print(
@@ -182,8 +182,8 @@ class HerdPrinter(threading.Thread):
         print(str(end - start))
 
 
-def run_herd(populate: Callable[[List[GuestRequest]], None]) -> List[GuestRequest]:
-    guests: List[GuestRequest] = []
+def run_herd(populate: Callable[[list[GuestRequest]], None]) -> list[GuestRequest]:
+    guests: list[GuestRequest] = []
 
     populate(guests)
 

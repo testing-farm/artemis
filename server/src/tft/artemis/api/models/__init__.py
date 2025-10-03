@@ -8,7 +8,8 @@ import enum
 import json
 import re
 import urllib.parse
-from typing import Any, Dict, List, Optional, Pattern, Tuple
+from re import Pattern
+from typing import Any, Optional
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -50,11 +51,11 @@ ADMIN_AUTH = [re.compile(r'(?:/v\d+\.\d+\.\d+)?/users(?:/.+)?'), re.compile(r'(?
 AUTH_CTX_HEADER = 'x-auth-ctx'
 
 
-def matches_path(request: Request, patterns: List[Pattern[str]]) -> bool:
+def matches_path(request: Request, patterns: list[Pattern[str]]) -> bool:
     return any(pattern.match(request.url.path) for pattern in patterns)
 
 
-def _add_to_headers(request: Request, new_data_tuple: Tuple[str, Any]) -> None:
+def _add_to_headers(request: Request, new_data_tuple: tuple[str, Any]) -> None:
     # NOTE(ivasilev) fastapi's Request headers are immutable by default so copy -> add -> set & update scope
     key, value = new_data_tuple
     new_headers = request.headers.mutablecopy()
@@ -229,14 +230,14 @@ class AuthContext:
 @dataclasses.dataclass
 class GuestRequest:
     keyname: str
-    environment: Dict[str, Optional[Any]]
+    environment: dict[str, Optional[Any]]
     priority_group: Optional[str] = None
     shelfname: Optional[str] = None
     user_data: Optional[artemis_db.UserDataType] = None
     post_install_script: Optional[str] = None
     # NOTE(ivasilev) Putting Any there instead of Tuple[str, str] as otherwise hitting
     # TypeError: Subscripted generics cannot be used with class and instance checks
-    log_types: Optional[List[Any]] = None
+    log_types: Optional[list[Any]] = None
     watchdog_dispatch_delay: Optional[int] = None
     watchdog_period_delay: Optional[int] = None
     bypass_shelf_lookup: bool = False
@@ -255,7 +256,7 @@ class GuestResponse(BaseModel):
     guestname: str
     owner: str
     shelf: Optional[str]
-    environment: Dict[str, Any]
+    environment: dict[str, Any]
     address: Optional[str]
     ssh: GuestSSHInfo
     state: GuestState
@@ -267,7 +268,7 @@ class GuestResponse(BaseModel):
     ctime: datetime.datetime
     console_url: Optional[str]
     console_url_expires: Optional[datetime.datetime]
-    log_types: List[Tuple[str, artemis_db.GuestLogContentType]]
+    log_types: list[tuple[str, artemis_db.GuestLogContentType]]
     watchdog_dispatch_delay: Optional[int]
     watchdog_period_delay: Optional[int]
 
@@ -303,7 +304,7 @@ class GuestResponse(BaseModel):
 class GuestEvent(BaseModel):
     eventname: str
     guestname: str
-    details: Dict[str, Any]
+    details: dict[str, Any]
     updated: datetime.datetime
 
     @classmethod
@@ -372,7 +373,7 @@ class AboutResponse:
     image_url: Optional[str]
     artemis_deployment: Optional[str]
     artemis_deployment_environment: Optional[str]
-    api_versions: List[str]
+    api_versions: list[str]
 
 
 @dataclasses.dataclass
@@ -471,7 +472,7 @@ class GuestLogResponse:
     contenttype: artemis_db.GuestLogContentType
 
     url: Optional[str]
-    blobs: List[GuestLogBlobResponse]
+    blobs: list[GuestLogBlobResponse]
 
     updated: Optional[datetime.datetime]
     expires: Optional[datetime.datetime]

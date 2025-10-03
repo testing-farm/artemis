@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import textwrap
-from typing import Any, List
+from typing import Any
 from unittest.mock import MagicMock
 
 import gluetool.utils
@@ -1575,7 +1575,7 @@ def test_beaker_preset(
     ids=['SPANS1', 'SPANS2'],
 )
 def test_spans(
-    logger: ContextAdapter, hw: str, flavor: tft.artemis.environment.Flavor, expected_spans: List[List[str]]
+    logger: ContextAdapter, hw: str, flavor: tft.artemis.environment.Flavor, expected_spans: list[list[str]]
 ) -> None:
     constraint = parse_hw(hw)
 

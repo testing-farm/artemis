@@ -3,7 +3,7 @@
 
 import logging
 import unittest
-from typing import Any, Dict, Tuple, cast
+from typing import Any, cast
 from unittest.mock import MagicMock, call
 
 import _pytest.logging
@@ -121,8 +121,8 @@ def test_dispatcher_task_exception(
 #
 #    assert False
 
-TaskCoreArgsType = Tuple[
-    tft.artemis.tasks.TaskLogger, MagicMock, MagicMock, Tuple[MagicMock, MagicMock], Dict[str, MagicMock]
+TaskCoreArgsType = tuple[
+    tft.artemis.tasks.TaskLogger, MagicMock, MagicMock, tuple[MagicMock, MagicMock], dict[str, MagicMock]
 ]
 
 

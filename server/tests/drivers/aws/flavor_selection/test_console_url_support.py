@@ -1,7 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import List, cast
+from typing import cast
 from unittest.mock import MagicMock
 
 import gluetool.log
@@ -16,7 +16,7 @@ def test_sanity(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     cast(MagicMock, guest_request).requests_guest_log = MagicMock('guest_request.requests_guest_log', return_value=True)
@@ -31,7 +31,7 @@ def test_not_requested(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     cast(MagicMock, guest_request).requests_guest_log = MagicMock(

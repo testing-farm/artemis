@@ -7,7 +7,8 @@ import json
 import os
 import re
 import time
-from typing import Awaitable, Callable, Optional, Tuple
+from collections.abc import Awaitable
+from typing import Callable, Optional
 
 import sentry_sdk
 from fastapi import FastAPI, HTTPException, Request, Response, status as http_status
@@ -60,7 +61,7 @@ KNOB_API_ENABLE_AUTHORIZATION: Knob[bool] = Knob(
 
 
 class BaseHTTPMiddleware(FastAPIBaseHTTPMiddleware):
-    def get_request_info(self, request: Request) -> Tuple[str, str]:
+    def get_request_info(self, request: Request) -> tuple[str, str]:
         client = request.scope.get('client')
 
         return (

@@ -3,7 +3,7 @@
 
 import dataclasses
 import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -15,25 +15,25 @@ from . import GuestSSHInfo
 @dataclasses.dataclass
 class GuestRequest_v0_0_72:  # noqa: N801
     keyname: str
-    environment: Dict[str, Optional[Any]]
+    environment: dict[str, Optional[Any]]
     priority_group: Optional[str] = None
     shelfname: Optional[str] = None
     user_data: Optional[artemis_db.UserDataType] = None
     post_install_script: Optional[str] = None
-    log_types: Optional[List[Any]] = None
+    log_types: Optional[list[Any]] = None
     watchdog_dispatch_delay: Optional[int] = None
     watchdog_period_delay: Optional[int] = None
     bypass_shelf_lookup: bool = False
     skip_prepare_verify_ssh: bool = False
-    security_group_rules_ingress: Optional[List[Dict[str, Any]]] = None
-    security_group_rules_egress: Optional[List[Dict[str, Any]]] = None
+    security_group_rules_ingress: Optional[list[dict[str, Any]]] = None
+    security_group_rules_egress: Optional[list[dict[str, Any]]] = None
 
 
 class GuestResponse_v0_0_72(BaseModel):  # noqa: N801
     guestname: str
     owner: str
     shelf: Optional[str]
-    environment: Dict[str, Any]
+    environment: dict[str, Any]
     address: Optional[str]
     ssh: GuestSSHInfo
     state: GuestState
@@ -45,11 +45,11 @@ class GuestResponse_v0_0_72(BaseModel):  # noqa: N801
     ctime: datetime.datetime
     console_url: Optional[str]
     console_url_expires: Optional[datetime.datetime]
-    log_types: List[Tuple[str, artemis_db.GuestLogContentType]]
+    log_types: list[tuple[str, artemis_db.GuestLogContentType]]
     watchdog_dispatch_delay: Optional[int]
     watchdog_period_delay: Optional[int]
-    security_group_rules_ingress: Optional[List[Dict[str, Any]]] = None
-    security_group_rules_egress: Optional[List[Dict[str, Any]]] = None
+    security_group_rules_ingress: Optional[list[dict[str, Any]]] = None
+    security_group_rules_egress: Optional[list[dict[str, Any]]] = None
 
     poolname: Optional[str]
     last_poolname: Optional[str]

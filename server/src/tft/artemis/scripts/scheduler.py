@@ -4,7 +4,6 @@
 import os
 import shutil
 import sys
-from typing import List
 
 import click
 
@@ -23,7 +22,7 @@ PERIODIQ_PATH = shutil.which('periodiq')
     help='If specified, only tasks from these modules will run. (default: unset, all tasks will run)',
     default=[],
 )
-def cmd_root(tasks: List[str]) -> None:
+def cmd_root(tasks: list[str]) -> None:
     logger = get_logger()
 
     if PERIODIQ_PATH is None:
@@ -31,7 +30,7 @@ def cmd_root(tasks: List[str]) -> None:
 
         sys.exit(1)
 
-    cmd: List[str] = ['periodiq']
+    cmd: list[str] = ['periodiq']
 
     if tasks:
         logger.info(f'scheduling limited set of tasks: {", ".join(tasks)}')
