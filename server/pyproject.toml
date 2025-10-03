@@ -155,6 +155,7 @@ lint.select = [
     "RUF",    # Ruff-specific rules
     "SIM",    # flake8-simplify
     "T10",    # flake8-debugger
+    "TRY",    # tryceratops
     "W",      # pycodestyle warning
     "YTT",   # flake8-2020
     ]
@@ -163,6 +164,11 @@ lint.ignore = [
     "S101",     # Use of `assert` detected
     # Conflicts with our use of other linters that ruff does not recognize.
     "RUF100",   # unused-noqa	Unused noqa directive
+    # Creating our own exceptions does not seem tempting for now.
+    "TRY002",   # raise-vanilla-class
+    "TRY003",   # raise-vanilla-args
+    # `logger.error` is preferred over `logger.exception`.
+    "TRY400",   # error-instead-of-exception
     ]
 
 [tool.ruff.lint.isort]

@@ -193,12 +193,13 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
             elif dataclasses.is_dataclass(response):
                 status = str(http_status.HTTP_200_OK)
 
-            return response
-
         except HTTPException as exc:
             status = str(exc.status_code)
 
             raise
+
+        else:
+            return response
 
         finally:
             end_time = time.monotonic()
