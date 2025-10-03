@@ -1,19 +1,19 @@
 version: '3'
 services:
   redis:
-    image: "docker.io/bitnami/redis:7.4.2"
+    image: "docker.io/bitnamilegacy/redis:7.4.2"
     environment:
       ALLOW_EMPTY_PASSWORD: "yes"
     ports:
       - "6379:6379"
 
   redis-exporter:
-    image: "docker.io/bitnami/redis-exporter:1.69.0"
+    image: "docker.io/bitnamilegacy/redis-exporter:1.69.0"
     environment:
       REDIS_ADDR: "redis://redis:6379"
 
   rabbitmq:
-    image: "docker.io/bitnami/rabbitmq:4.0.7"
+    image: "docker.io/bitnamilegacy/rabbitmq:4.0.7"
     ports:
       - "5672:5672"
     environment:
@@ -24,7 +24,7 @@ services:
       - ./configuration/podman-compose/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:Z,ro
 
   postgresql:
-    image: "docker.io/bitnami/postgresql:17.4.0"
+    image: "docker.io/bitnamilegacy/postgresql:17.4.0"
     environment:
       POSTGRESQL_USERNAME: "artemis"
       POSTGRESQL_PASSWORD: "artemis"
@@ -39,7 +39,7 @@ services:
       - postgresql_data:/var/lib/postgresql/data
 
   postgresql-exporter:
-    image: "docker.io/bitnami/postgres-exporter:0.17.1"
+    image: "docker.io/bitnamilegacy/postgres-exporter:0.17.1"
     environment:
       DATA_SOURCE_NAME: "postgresql://artemis:artemis@postgresql:5432/artemis?sslmode=disable"
       PG_EXPORTER_EXTEND_QUERY_PATH: /tmp/queries.yaml
@@ -47,7 +47,7 @@ services:
       - ./configuration/podman-compose/postgresql-exporter/custom-metrics.yaml:/tmp/queries.yaml:Z,ro
 
   prometheus:
-    image: "docker.io/bitnami/prometheus:3.0.1"
+    image: "docker.io/bitnamilegacy/prometheus:3.0.1"
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
     ports:
