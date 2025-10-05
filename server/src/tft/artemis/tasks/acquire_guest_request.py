@@ -8,7 +8,7 @@ import sqlalchemy.orm.session
 
 from .. import Failure, log_dict_yaml
 from ..db import DB
-from ..drivers import PoolData, ProvisioningProgress, ProvisioningState
+from ..drivers import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolData, ProvisioningProgress, ProvisioningState
 from ..guest import GuestState
 from . import (
     _ROOT_LOGGER,
@@ -45,6 +45,11 @@ class Workspace(_Workspace):
             assert self.gr
             assert self.pool
             assert self.gr.poolname
+
+            r_update_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.gr.poolname)
+
+            if r_update_delay.is_error:
+                return self._error(r_update_delay, 'failed to load update delay')
 
             if self.is_pool_enabled:
                 skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
@@ -93,7 +98,7 @@ class Workspace(_Workspace):
                     set_values=new_guest_values,
                     pool=self.gr.poolname,
                     pool_data=self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data),
-                    delay=provisioning_progress.delay_update,
+                    delay=provisioning_progress.delay_update or r_update_delay.unwrap(),
                 )
 
                 if self.result:

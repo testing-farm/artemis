@@ -63,7 +63,6 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
-    KNOB_UPDATE_GUEST_REQUEST_TICK,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
     GuestTagsType,
@@ -2060,11 +2059,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         instance_type: AWSFlavor,
         image: AWSPoolImageInfo,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_base_tags.is_error:
@@ -2174,7 +2168,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                         security_group_ids[0] if security_group_ids[0] not in self._pool_security_groups else None
                     ),
                 ),
-                delay_update=r_delay.unwrap(),
                 ssh_info=image.ssh,
             )
         )
@@ -2187,11 +2180,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         instance_type: AWSFlavor,
         image: AWSPoolImageInfo,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_base_tags.is_error:
@@ -2282,7 +2270,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                         security_group_ids[0] if security_group_ids[0] not in self._pool_security_groups else None
                     ),
                 ),
-                delay_update=r_delay.unwrap(),
                 ssh_info=image.ssh,
             )
         )
@@ -2292,11 +2279,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         assert pool_data.spot_instance_id is not None
@@ -2322,7 +2304,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                         spot_instance_id=pool_data.spot_instance_id,
                         security_group=pool_data.security_group,
                     ),
-                    delay_update=r_delay.unwrap(),
                 )
             )
 
@@ -2360,9 +2341,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                 )
             )
 
-        return Ok(
-            ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data, delay_update=r_delay.unwrap())
-        )
+        return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
 
     def _do_update_instance(
         self,
@@ -2370,11 +2349,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_output = self._describe_instance(guest_request)
 
         if r_output.is_error:
@@ -2416,11 +2390,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                     )
                 )
 
-            return Ok(
-                ProvisioningProgress(
-                    state=ProvisioningState.PENDING, pool_data=pool_data, delay_update=r_delay.unwrap()
-                )
-            )
+            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
 
         # Once we have a working instance, we need to apply tags, because:
         #

@@ -18,7 +18,6 @@ from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
-    KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
     GuestLogUpdateProgress,
     PoolCapabilities,
@@ -224,10 +223,6 @@ class RestDriver(PoolDriver):
             "address": optional[string]
            }
         '''
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
 
         pool_data = guest_request.pool_data.mine(self, RestPoolData)
 
@@ -257,7 +252,6 @@ class RestDriver(PoolDriver):
                 state=state,
                 pool_data=pool_data,
                 address=address,
-                delay_update=r_delay.unwrap(),
             )
         )
 

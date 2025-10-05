@@ -685,9 +685,9 @@ class ProvisioningProgress:
     ssh_info: Optional[PoolImageSSHInfo] = None
 
     #: If set, it represents a suggestion from the pool driver: it does not make much sense
-    #: to run :py:meth:`PoolDriver.update_guest` sooner than this second in the future.
-    #: It is advised for a pool driver implementation to consider the value of 'KNOB_UPDATE_GUEST_REQUEST_TICK'
-    #: knob when setting this field. If left unset, Artemis core will run the update as soon as possible.
+    #: to run :py:meth:`PoolDriver.update_guest` sooner than this many seconds in the future.
+    #:
+    #: If unset, :py:data:`KNOB_UPDATE_GUEST_REQUEST_TICK` will be used as a default value.
     delay_update: Optional[int] = None
 
     #: If pool driver encountered errors that were not critical enough to be returned immediately, causing

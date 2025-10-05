@@ -31,7 +31,6 @@ from ..environment import (
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
-    KNOB_UPDATE_GUEST_REQUEST_TICK,
     FlavorBasedPoolDriver,
     GuestTagsType,
     PoolErrorCauses,
@@ -509,10 +508,6 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
     ) -> Result[ProvisioningProgress, Failure]:
         # FIXME Again, that is massive code duplication -> same flavor/image pairs choosing algo is happeing in
         # other drivers.
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
 
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
@@ -633,7 +628,6 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
             ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=IBMCloudPoolData(instance_id=created['id'], instance_name=created['name']),
-                delay_update=r_delay.unwrap(),
                 ssh_info=image.ssh,
             )
         )
@@ -677,10 +671,6 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
         with an address set, driver signals the provisioning is now complete. Returning a guest instance without an
         address would schedule yet another call to this method in the future.
         """
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
 
         r_output = self._show_guest(logger, guest_request)
 
@@ -733,11 +723,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
         if status == 'starting':
-            return Ok(
-                ProvisioningProgress(
-                    state=ProvisioningState.PENDING, pool_data=pool_data, delay_update=r_delay.unwrap()
-                )
-            )
+            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
 
         if status == 'running':
             # Currently there is no support for public ips, so just taking primary ip

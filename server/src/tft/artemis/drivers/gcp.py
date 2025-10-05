@@ -21,7 +21,6 @@ from ..environment import UNITS, Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
-    KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
     PoolCapabilities,
     PoolData,
@@ -363,10 +362,6 @@ class GCPDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None,
     ) -> Result[ProvisioningProgress, Failure]:
-        delay_cfg_option_read_result = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-        if delay_cfg_option_read_result.is_error:
-            return Error(delay_cfg_option_read_result.unwrap_error())
-
         map_request_to_image_result: Result[List[PoolImageInfo], Failure] = self._guest_request_to_image(
             logger, session, guest_request
         )
@@ -430,7 +425,6 @@ class GCPDriver(PoolDriver):
                         pool_data=GCPPoolData(
                             id=r_instance_id.unwrap(), project=project_id, name=instance_name, zone=zone
                         ),
-                        delay_update=delay_cfg_option_read_result.ok,
                         ssh_info=image.ssh,
                         address=None,
                     )
@@ -449,7 +443,6 @@ class GCPDriver(PoolDriver):
             ProvisioningProgress(
                 state=provisioninig_state,
                 pool_data=GCPPoolData(id=instance.id, project=project_id, name=instance_name, zone=zone),
-                delay_update=delay_cfg_option_read_result.ok,
                 ssh_info=image.ssh,
                 address=None,
             )
