@@ -18,9 +18,8 @@ from gluetool.result import Ok, Result
 
 from .. import Failure
 from ..db import DB, GuestLog, GuestLogContentType, GuestLogState, SafeQuery
-from ..drivers import GuestLogUpdateProgress
+from ..drivers import KNOB_UPDATE_GUEST_REQUEST_LOG_TICK, GuestLogUpdateProgress
 from ..guest import GuestState
-from ..knobs import Knob
 from . import (
     _ROOT_LOGGER,
     DoerReturnType,
@@ -31,16 +30,6 @@ from . import (
     step,
     task,
     task_core,
-)
-
-#: A delay, in second, between successful acquire of a cloud instance and dispatching of post-acquire preparation tasks.
-KNOB_UPDATE_GUEST_LOG_DELAY: Knob[int] = Knob(
-    'actor.dispatch-preparing.delay',
-    'How often to run guest log update',
-    has_db=False,
-    envvar='ARTEMIS_LOGS_UPDATE_TICK',
-    cast_from_str=int,
-    default=60,
 )
 
 
@@ -143,6 +132,14 @@ class Workspace(_Workspace):
                 return
 
             assert self.pool
+            assert self.gr.poolname
+
+            r_delay_update = KNOB_UPDATE_GUEST_REQUEST_LOG_TICK.get_value(
+                entityname=f'{self.gr.poolname}:{guest_log.logname}/{guest_log.contenttype.value}'
+            )
+
+            if r_delay_update.is_error:
+                return self._error(r_delay_update, 'failed to load update delay')
 
             r_capabilities = self.pool.capabilities()
 
@@ -242,7 +239,7 @@ class Workspace(_Workspace):
                 self.guestname,
                 self.logname,
                 self.contenttype.value,
-                delay=update_progress.delay_update or KNOB_UPDATE_GUEST_LOG_DELAY.value,
+                delay=update_progress.delay_update or r_delay_update.unwrap(),
             )
 
     @classmethod

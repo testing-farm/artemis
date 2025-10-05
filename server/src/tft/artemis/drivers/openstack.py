@@ -76,16 +76,6 @@ KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
     default=600,
 )
 
-KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
-    'openstack.console.blob.update-tick',
-    'How long, in seconds, to take between updating guest console log.',
-    has_db=False,
-    per_entity=True,
-    envvar='ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK',
-    cast_from_str=int,
-    default=30,
-)
-
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'openstack.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
@@ -975,13 +965,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
     def _update_guest_log_console_url(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(entityname=self.poolname)
-
-        if r_delay_update.is_error:
-            return Error(r_delay_update.unwrap_error())
-
-        delay_update = r_delay_update.unwrap()
-
         r_output = self._do_fetch_console(guest_request, 'url')
 
         if r_output.is_error:
@@ -990,7 +973,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         output = r_output.unwrap()
 
         if output is None:
-            return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, delay_update=delay_update))
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS))
 
         return Ok(
             GuestLogUpdateProgress(
@@ -1004,13 +987,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
     def _update_guest_log_console_blob(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
-        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(entityname=self.poolname)
-
-        if r_delay_update.is_error:
-            return Error(r_delay_update.unwrap_error())
-
-        delay_update = r_delay_update.unwrap()
-
         r_output = self._do_fetch_console(guest_request, 'log', json_format=False)
 
         if r_output.is_error:
@@ -1023,7 +999,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             cast(str, r_output.unwrap()),
             lambda guest_log, timestamp, content, content_hash: content_hash in guest_log.blob_content_hashes,
         )
-        progress.delay_update = delay_update
 
         return Ok(progress)
 

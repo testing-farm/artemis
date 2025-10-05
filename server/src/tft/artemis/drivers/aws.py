@@ -286,15 +286,6 @@ KNOB_PENDING_TIMEOUT: Knob[int] = Knob(
     default=600,
 )
 
-KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK: Knob[int] = Knob(
-    'aws.logs.console.dump.blob.update-tick',
-    'How long, in seconds, to take between updating guest console log.',
-    has_db=False,
-    envvar='ARTEMIS_AWS_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK',
-    cast_from_str=int,
-    default=300,
-)
-
 KNOB_CONSOLE_INTERACTIVE_URL: Knob[str] = Knob(
     'aws.logs.console.interactive.url',
     'Templated URL of serial console of an AWS EC2 instance.',
@@ -2919,8 +2910,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             lambda guest_log, timestamp, content, content_hash: timestamp in guest_log.blob_timestamps,
         )
 
-        progress.delay_update = KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
-
         return Ok(progress)
 
     @guest_log_updater('aws', 'console:interactive', GuestLogContentType.URL)  # type: ignore[arg-type]
@@ -2935,11 +2924,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         # This can actually happen, spot instances may take some time to get the instance ID.
         if pool_data.instance_id is None:
-            return Ok(
-                GuestLogUpdateProgress(
-                    state=GuestLogState.PENDING, delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
-                )
-            )
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.PENDING))
 
         # In AWS case only logged in users can access the console (1 session a time). The url has fixed format
         # depending on instance_id only, let's just generate it for every instance.
