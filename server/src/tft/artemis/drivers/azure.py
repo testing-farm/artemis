@@ -84,15 +84,6 @@ KNOB_RESOURCE_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
     default='{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}',
 )
 
-KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK: Knob[int] = Knob(
-    'azure.logs.console.dump.blob.update-tick',
-    'How long, in seconds, to take between updating guest console log.',
-    has_db=False,
-    envvar='ARTEMIS_AZURE_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK',
-    cast_from_str=int,
-    default=300,
-)
-
 
 AZURE_RESOURCE_TYPE: dict[str, ResourceType] = {
     'Microsoft.Compute/virtualMachines': ResourceType.VIRTUAL_MACHINE,
@@ -1114,11 +1105,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         pool_data = guest_request.pool_data.mine(self, AzurePoolData)
         # No vm id -> no guest log
         if pool_data.vm_id is None:
-            return Ok(
-                GuestLogUpdateProgress(
-                    state=GuestLogState.PENDING, delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
-                )
-            )
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.PENDING))
 
         timestamp, output = self._fetch_guest_console_blob(logger, guest_request).unwrap()
 
@@ -1129,8 +1116,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             output,
             lambda guest_log, timestamp, content, content_hash: timestamp in guest_log.blob_timestamps,
         )
-
-        progress.delay_update = KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
 
         return Ok(progress)
 

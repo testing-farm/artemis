@@ -502,16 +502,6 @@ for the requested action.
 
 5+|Number of threads to spawn in each process for servicing API requests.
 
-|`aws.logs.console.dump.blob.update-tick`
-|`int`
-|`ARTEMIS_AWS_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK`
-|`300`
-|no
-
-
-
-5+|How long, in seconds, to take between updating guest console log.
-
 |`aws.logs.console.interactive.url`
 |`str`
 |`ARTEMIS_AWS_LOGS_CONSOLE_INTERACTIVE_URL`
@@ -601,16 +591,6 @@ task in aws and actual attempt to clean up the resource.
 
 5+|How long, in seconds, is an spot instance request allowed to stay in `open` state
 until cancelled and reprovisioned.
-
-|`azure.logs.console.dump.blob.update-tick`
-|`int`
-|`ARTEMIS_AZURE_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK`
-|`300`
-|no
-
-
-
-5+|How long, in seconds, to take between updating guest console log.
 
 |`azure.mapping.environment-to-image.pattern-map.filepath`
 |`str`
@@ -1036,16 +1016,6 @@ for full list of connection parameters that can be specified via URL.
 
 5+|How long, in seconds, it takes for a console url to be qualified as expired.
 
-|`ibmcloud-power.logs.console.blob.update-tick`
-|`int`
-|`ARTEMIS_IBMCLOUD_POWER_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK`
-|`300`
-|no
-
-
-
-5+|How long, in seconds, to take between updating guest console log.
-
 |`ibmcloud-power.mapping.environment-to-image.pattern-map.filepath`
 |`str`
 |`ARTEMIS_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
@@ -1253,22 +1223,6 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 
 5+|How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.
 
-|`openstack.console.blob.update-tick`
-|`int`
-|`ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK`
-|`30`
-|no
-
-
-|`openstack.console.blob.update-tick:$entityname`
-|
-|`ARTEMIS_OPENSTACK_CONSOLE_BLOB_UPDATE_TICK_$entityname`
-|
-|
-
-
-5+|How long, in seconds, to take between updating guest console log.
-
 |`openstack.console.url.expires`
 |`int`
 |`ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES`
@@ -1415,6 +1369,22 @@ of crashed resources.
 
 
 5+|A delay, in seconds, between two calls of `update-guest-request` task checking provisioning progress.
+
+|`pool.update-guest-request.log-tick`
+|`int`
+|`ARTEMIS_UPDATE_GUEST_REQUEST_LOG_TICK`
+|`300`
+|no
+
+
+|`pool.update-guest-request.log-tick:$entityname`
+|
+|`ARTEMIS_UPDATE_GUEST_REQUEST_LOG_TICK_$entityname`
+|
+|
+
+
+5+|How long, in seconds, to take between updating a guest log.
 
 |`route.policies.can-acquire.cancel-early`
 |`bool`

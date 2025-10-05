@@ -63,15 +63,6 @@ KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
     default=300,
 )
 
-KNOB_CONSOLE_BLOB_UPDATE_TICK: Knob[int] = Knob(
-    'ibmcloud-power.logs.console.blob.update-tick',
-    'How long, in seconds, to take between updating guest console log.',
-    has_db=False,
-    envvar='ARTEMIS_IBMCLOUD_POWER_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK',
-    cast_from_str=int,
-    default=300,
-)
-
 
 ConfigImageFilter = TypedDict(
     'ConfigImageFilter',
@@ -677,12 +668,6 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         """
         Update console.interactive/url guest log.
         """
-        r_delay_update = KNOB_CONSOLE_BLOB_UPDATE_TICK.get_value(entityname=self.poolname)
-
-        if r_delay_update.is_error:
-            return Error(r_delay_update.unwrap_error())
-
-        delay_update = r_delay_update.unwrap()
 
         r_output = self._do_fetch_console(logger, guest_request)
 
@@ -692,7 +677,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         output = r_output.unwrap()
 
         if output is None:
-            return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS, delay_update=delay_update))
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS))
 
         return Ok(
             GuestLogUpdateProgress(
