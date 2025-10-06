@@ -363,6 +363,16 @@ def FAIL(result: Result[Any, Failure]) -> DoerReturnType:  # noqa: N802
     return Error(result.unwrap_error())
 
 
+class RetrySignalError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(f'message processing failed: {message}')
+
+
+class RescheduleSignalError(Exception):
+    def __init__(self) -> None:
+        super().__init__('message processing requested reschedule')
+
+
 # Task actor type *before* applying `@dramatiq.actor` decorator, which is hidden in our `@task` decorator.
 BareActorType = Callable[..., None]
 
@@ -1204,7 +1214,7 @@ def _task_core(
         logger.finished()
 
         if result is Reschedule:
-            raise Exception('message processing requested reschedule')
+            raise RescheduleSignalError
 
         return
 
@@ -1213,7 +1223,7 @@ def _task_core(
 
     # To avoid chain a of exceptions in the log - which we already logged above - raise a generic,
     # insignificant exception to notify scheduler that this task failed and needs to be retried.
-    raise Exception(f'message processing failed: {doer_result.unwrap_error().message}')
+    raise RetrySignalError(doer_result.unwrap_error().message)
 
 
 def task_core(

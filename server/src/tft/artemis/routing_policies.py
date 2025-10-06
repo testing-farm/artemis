@@ -275,10 +275,11 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
 
             policy_logger.debug(f'ruling: {r.unwrap()}')
 
-            return r
-
         except Exception as exc:
             return Error(Failure.from_exc('routing policy crashed', exc, routing_policy=policy_name))
+
+        else:
+            return r
 
     cast(PolicyWrapperType, wrapper).policy_name = policy_name
 

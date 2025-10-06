@@ -10,7 +10,7 @@ from tft.artemis import Failure
 def fixture_failure() -> Failure:
     # Create a nice traceback for our failure...
     def _a() -> None:
-        raise ValueError('dummy error happened')
+        raise ValueError
 
     def _b() -> None:
         _a()
@@ -34,7 +34,7 @@ message: dummy failure
 recoverable: true
 fail_guest_request: true
 exception:
-    instance: dummy error happened
+    instance: ''
     type: <class 'ValueError'>
 traceback: |-
     File "__FILE__", line 22, in fixture_failure
@@ -67,9 +67,9 @@ traceback: |-
 
     File "__FILE__", line 13, in _a
         12   def _a() -> None:
-    --> 13       raise ValueError('dummy error happened')
+    --> 13       raise ValueError
 
-    ValueError: dummy error happened""".replace('__FILE__', __file__)
+    ValueError""".replace('__FILE__', __file__)
 
 
 def test_printable(failure: Failure) -> None:
