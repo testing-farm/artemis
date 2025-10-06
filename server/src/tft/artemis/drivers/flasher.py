@@ -18,7 +18,6 @@ from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
-    KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
     GuestLogUpdateProgress,
     PoolCapabilities,
@@ -124,11 +123,6 @@ class FlasherDriver(PoolDriver):
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         pool_data = guest_request.pool_data.mine(self, FlasherPoolData)
 
         try:
@@ -145,7 +139,6 @@ class FlasherDriver(PoolDriver):
                 state=self._http_code_to_status(response.status_code),
                 pool_data=pool_data,
                 address=response.text or None,
-                delay_update=r_delay.unwrap(),
             )
         )
 

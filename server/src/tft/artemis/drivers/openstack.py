@@ -37,7 +37,6 @@ from ..environment import (
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
-    KNOB_UPDATE_GUEST_REQUEST_TICK,
     ConsoleUrlData,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
@@ -364,11 +363,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
         if r_image_flavor_pairs.is_error:
@@ -459,7 +453,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=OpenStackPoolData(instance_id=instance_id),
-                delay_update=r_delay.unwrap(),
                 ssh_info=image.ssh,
             )
         )
@@ -558,11 +551,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         if not pool_data.instance_id:
             return Error(Failure('cannot create snapshot without instance ID'))
 
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         os_options = ['server', 'image', 'create', '--name', snapshot_request.snapshotname, pool_data.instance_id]
 
         r_output = self._run_os(os_options, commandname='os.server-image-create')
@@ -574,18 +562,12 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=guest_request.pool_data.mine(self, OpenStackPoolData),
-                delay_update=r_delay.unwrap(),
             )
         )
 
     def update_snapshot(
         self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_output = self._show_snapshot(snapshot_request)
 
         if r_output.is_error:
@@ -602,11 +584,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         self.logger.info(f'snapshot status is {status}')
 
         if status != 'active':
-            return Ok(
-                ProvisioningProgress(
-                    state=ProvisioningState.PENDING, pool_data=pool_data, delay_update=r_delay.unwrap()
-                )
-            )
+            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
 
         return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data))
 
@@ -646,11 +624,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_instance = self._show_guest(guest_request)
 
         if r_instance.is_error:
@@ -699,11 +672,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
                         )
                     )
 
-            return Ok(
-                ProvisioningProgress(
-                    state=ProvisioningState.PENDING, pool_data=pool_data, delay_update=r_delay.unwrap()
-                )
-            )
+            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
 
         try:
             raw_address = next(iter(instance.addresses.values()))

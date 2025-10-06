@@ -33,7 +33,6 @@ from ..environment import (
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
-    KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
@@ -766,11 +765,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
         if r_image_flavor_pairs.is_error:
@@ -978,7 +972,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                     vm_id=vm_info['vmId'],
                     resource_group=resource_group,
                 ),
-                delay_update=r_delay.unwrap(),
                 ssh_info=image.ssh,
             )
         )

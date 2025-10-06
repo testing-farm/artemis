@@ -45,7 +45,6 @@ from ..environment import (
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT, Knob
 from ..metrics import PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
-    KNOB_UPDATE_GUEST_REQUEST_TICK,
     CanAcquire,
     CLIOutput,
     GuestLogUpdateProgress,
@@ -1729,16 +1728,10 @@ class BeakerDriver(PoolDriver):
                     )
                 )
 
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error().update(**failure_details))
-
         return Ok(
             ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
-                delay_update=r_delay.unwrap(),
             )
         )
 
@@ -1877,11 +1870,6 @@ class BeakerDriver(PoolDriver):
         :rtype: Result[BeakerGuest, Failure]
         :returns: :py:class:`result.Result` with guest, or specification of error.
         """
-
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
 
         pool_data = guest_request.pool_data.mine(self, BeakerPoolData)
 
@@ -2118,11 +2106,6 @@ class BeakerDriver(PoolDriver):
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_create_job = self._create_job(logger, session, guest_request)
 
         if r_create_job.is_error:
@@ -2144,7 +2127,6 @@ class BeakerDriver(PoolDriver):
             ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=BeakerPoolData(job_id=r_create_job.unwrap()),
-                delay_update=r_delay.unwrap(),
             )
         )
 
