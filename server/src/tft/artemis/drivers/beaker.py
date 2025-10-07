@@ -677,7 +677,18 @@ def constraint_to_beaker_filter(
             Failure('constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name)
         )
 
-    if constraint_name.property == 'zcrypt':
+    if constraint_name.property == 'system':  # noqa: SIM102
+        if constraint_name.child_property == 'numa_nodes':
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+            system = _new_tag('system')
+            numanodes = _new_tag('numanodes', op=op, value=value)
+
+            system.append(numanodes)
+
+            return Ok(system)
+
+    if constraint_name.property == 'zcrypt':  # noqa: SIM102
         if constraint_name.child_property == 'adapter':
             return _translate_constraint_by_config(
                 constraint,
@@ -2086,6 +2097,7 @@ class BeakerDriver(PoolDriver):
             'network[].max_size',
             'network.length',
             'network.expanded_length',
+            'system.numa_node',
             'zcrypt.adapter',
             'zcrypt.mode',
         ]
